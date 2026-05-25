@@ -105,9 +105,15 @@ if (window.__bridge && window.__bridge.clozeItems) {
 console.log('[vue] Phase 8 — bridge data synced to Pinia')
 
 // Sync reactive rendering flag — Pinia ref drives window.__USE_VUE_RENDERING
+// Also show/hide old vs Vue containers
 transcriptStore.useVueRendering = window.__USE_VUE_RENDERING || false
 watch(function () { return transcriptStore.useVueRendering }, function (val) {
   window.__USE_VUE_RENDERING = val
+  // Show/hide containers: Vue visible + old hidden when rendering is on
+  var oldContainer = document.getElementById('transcript-container')
+  if (oldContainer) {
+    oldContainer.style.display = val ? 'none' : ''
+  }
 })
 
 // Sync Pinia store state from IIFE store (app.js has already called init())
