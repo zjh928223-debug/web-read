@@ -4,71 +4,14 @@
     // 3) Feature layer: import handlers, matching, rendering, interactions
     // 4) Input layer: keyboard/mouse/global listeners (kept behavior-intact)
 
-    // === Storage primitives (IndexedDB) ===
-    const DB_NAME = 'SeekPlayerDB';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'files';
+    // [MIGRATED] DB schema constants → window.__audioStore
 
-    let db;
-
-    function initDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onerror = (event) => reject("DB Error");
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(STORE_NAME)) {
-                    db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                }
-            };
-            request.onsuccess = (event) => {
-                db = event.target.result;
-                resolve(db);
-            };
-        });
-    }
-
-    function saveToDB(id, data) {
-        if (!db) return;
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        store.put({ id: id, content: data, timestamp: new Date().getTime() });
-    }
-
-    function loadFromDB(id) {
-        return new Promise((resolve) => {
-            if (!db) { resolve(null); return; }
-            const transaction = db.transaction([STORE_NAME], 'readonly');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.get(id);
-            request.onsuccess = (event) => {
-                resolve(event.target.result ? event.target.result.content : null);
-            };
-            request.onerror = () => resolve(null);
-        });
-    }
-
-    function deleteFromDB(id) {
-        return new Promise((resolve) => {
-            if (!db) { resolve(); return; }
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.delete(id);
-            request.onsuccess = () => resolve();
-            request.onerror = () => resolve();
-        });
-    }
-
-    function clearDBStore() {
-        return new Promise((resolve) => {
-            if (!db) { resolve(); return; }
-            const transaction = db.transaction([STORE_NAME], 'readwrite');
-            const store = transaction.objectStore(STORE_NAME);
-            const request = store.clear();
-            request.onsuccess = () => resolve();
-            request.onerror = () => resolve();
-        });
-    }
+    // [MIGRATED] DB operations → window.__audioStore
+    var initDB = function () { return window.__audioStore.initDB(); };
+    var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
+    var loadFromDB = function (id) { return window.__audioStore.loadFromDB(id); };
+    var deleteFromDB = function (id) { return window.__audioStore.deleteFromDB(id); };
+    var clearDBStore = function () { return window.__audioStore.clearDBStore(); };
 
     function safeParseLocalJSON(key, fallbackValue) {
         try {
@@ -81,23 +24,12 @@
         }
     }
 
-    let toastTimer = null;
-    function showToast(message, type = 'info', timeoutMs = 2600) {
-        const toast = document.getElementById('app-toast');
-        if (!toast) return;
-        toast.textContent = message || '';
-        toast.className = '';
-        toast.classList.add(type);
-        toast.classList.add('show');
-        if (toastTimer) clearTimeout(toastTimer);
-        if (timeoutMs > 0) {
-            toastTimer = setTimeout(() => toast.classList.remove('show'), timeoutMs);
-        }
+    // [MIGRATED] toast → window.__uiStore (wrappers kept for ~29 internal call sites)
+    function showToast(message, type, timeoutMs) {
+        return window.__uiStore.showToast(message, type, timeoutMs);
     }
-
     function showError(code, detail) {
-        const suffix = detail ? `\n${detail}` : '';
-        showToast(`Error [${code}]${suffix}`, 'error', 3800);
+        return window.__uiStore.showError(code, detail);
     }
 
     // === Validation/parsing utilities (extracted to data-utils.js) ===
@@ -6568,35 +6500,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
     }
 
+    // [MIGRATED] mark ops → window.__marksStore
     function syncMarkedWordVisual(globalIndex, isMarked) {
-        if (!Number.isFinite(globalIndex) || globalIndex < 0) return;
-        const selector = `[data-word-index="${globalIndex}"]`;
-        document.querySelectorAll(selector).forEach((el) => {
-            el.classList.toggle('marked', !!isMarked);
-        });
+        window.__marksStore.syncMarkedWordVisual(globalIndex, isMarked);
     }
 
     function toggleMarkCurrent() {
-        if(currentWordIndex === -1) return;
-        const w = words[currentWordIndex];
-        if (!w) return;
-        let isMarked = false;
-        
-        if(markedMap.has(currentWordIndex)) {
-            markedMap.delete(currentWordIndex);
-        } else {
-            markedMap.set(currentWordIndex, {
-                word: w.word,
-                start: w.start,
-                globalIndex: currentWordIndex,
-                sourceType: 'manual-mark'
-            });
-            isMarked = true;
-        }
-        syncMarkedWordVisual(currentWordIndex, isMarked);
-        const arr = Array.from(markedMap.values());
-        saveToDB('marks', arr);
-        syncAnnotationGenerationEntryStatus();
+        window.__marksStore.toggleMark(markedMap, currentWordIndex, words, saveToDB, syncAnnotationGenerationEntryStatus);
     }
 
     highlightColorInput.addEventListener('input', e => {
