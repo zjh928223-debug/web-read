@@ -83,3 +83,14 @@ read-web/
 - Store files (plain objects, delegating)
 - ES module copies (not yet consumed)
 - Utility files (pure functions)
+
+## Migration Phases
+
+| Phase | Status | Git Tag |
+|-------|--------|---------|
+| 1 — Vite shell | ✅ | phase-1-done |
+| 2 — 9 stores | ✅ | phase-2-done |
+| 3 — ToastMessage.vue | ✅ | phase-3-done |
+| 4 — 5 component shells | ✅ | phase-4-done |
+| 5 — 22 ES module copies | ✅ | phase-5-done |
+| 6 — Cleanup + docs | ✅ | phase-6-done |
