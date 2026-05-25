@@ -1,34 +1,50 @@
 <template>
-  <div v-if="vueActive" id="chunk-vue-container" class="reading-area chunk-mode">
+  <div v-if="ts.useVueRendering && chunkState.isChunkMode" id="chunk-vue-container" class="reading-area chunk-mode">
     <div
-      v-for="chunk in chunks"
-      :key="chunk.idx || chunk.segId"
+      v-for="(chunk, idx) in chunkState.chunkItems"
+      :key="idx"
       class="chunk-block"
-      :data-chunk-idx="chunk.idx"
+      :data-chunk-idx="idx"
       :data-chunk-ref="chunk.segId"
-      @click="onChunkClick(chunk.idx)"
+      @click="onChunkClick(idx)"
     >
       <div class="chunk-en">
-        <span v-if="chunk.words" v-for="word in chunk.words" :key="word.globalIndex"
-          :id="'word-' + word.globalIndex" :data-word-index="word.globalIndex">
+        <span v-if="chunk.words" v-for="(word, widx) in chunk.words" :key="word.globalIndex != null ? word.globalIndex : widx"
+          :id="'word-' + (word.globalIndex != null ? word.globalIndex : widx)"
+          :data-word-index="word.globalIndex != null ? word.globalIndex : widx"
+          :class="wordClasses(word)">
           {{ word.word || word.text }}
         </span>
       </div>
-      <div v-if="cnVisible && chunk.ch" class="chunk-cn">{{ chunk.ch }}</div>
+      <div v-if="chunk.ch" class="chunk-cn">{{ chunk.ch }}</div>
     </div>
   </div>
 </template>
 
 <script>
+import { useTranscriptStore } from '../pinia-stores/transcript.js'
+import { useChunkStore } from '../pinia-stores/chunk.js'
+
 export default {
   name: 'ChunkModeView',
-  computed: {
-    vueActive() { return window.__USE_VUE_RENDERING === true },
-    chunks() { return [] },
-    cnVisible() { return true }
-  },
-  methods: {
-    onChunkClick(idx) {}
+  setup() {
+    const ts = useTranscriptStore()
+    const chunkState = useChunkStore()
+
+    function wordClasses(word) {
+      var idx = word.globalIndex
+      var classes = {}
+      if (idx != null && idx === ts.activeChunkIdx) {
+        classes['word-highlight'] = true
+      }
+      return classes
+    }
+
+    function onChunkClick(idx) {
+      // Handle chunk click
+    }
+
+    return { ts, chunkState, wordClasses, onChunkClick }
   }
 }
 </script>

@@ -1,4 +1,4 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import '../styles.css'
@@ -83,6 +83,12 @@ window.__piniaStores = {
 }
 
 console.log('[vue] Phase 7 — Pinia stores bridged to IIFE stores')
+
+// Sync reactive rendering flag — Pinia ref drives window.__USE_VUE_RENDERING
+transcriptStore.useVueRendering = window.__USE_VUE_RENDERING || false
+watch(function () { return transcriptStore.useVueRendering }, function (val) {
+  window.__USE_VUE_RENDERING = val
+})
 
 // Sync Pinia store state from IIFE store (app.js has already called init())
 // Read current theme from localStorage to sync Pinia state
