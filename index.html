@@ -157,7 +157,6 @@
   </div>
 
   <div class="modal-backdrop" id="modal-backdrop"></div>
-  <div id="app-toast" role="status" aria-live="polite"></div>
 
   <div id="chunk-style-modal">
       <div class="modal-header">
@@ -179,17 +178,14 @@
 
       <div class="style-section">
           <h4>布局与颜色</h4>
-          
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">块间距</span>
               <input type="number" id="chunk-gap-input" class="style-input-num" value="20" step="1" oninput="updateChunkStyle()"> px
           </div>
-
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">中文字色</span>
               <input type="color" id="chunk-cn-color-input" class="color-input" value="#4b5563" oninput="updateChunkStyle()">
           </div>
-
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">高亮背景</span>
               <input type="color" id="chunk-bg-color-input" class="color-input" value="#e5e7eb" oninput="updateChunkStyle()">

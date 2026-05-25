@@ -1,28 +1,18 @@
 (function () {
   'use strict';
 
-  var toastTimer = null;
-
   function showToast(message, type, timeoutMs) {
-    if (type === undefined) type = 'info';
-    if (timeoutMs === undefined) timeoutMs = 2600;
-    var toast = document.getElementById('app-toast');
-    if (!toast) return;
-    toast.textContent = message || '';
-    toast.className = '';
-    toast.classList.add(type);
-    toast.classList.add('show');
-    if (toastTimer) clearTimeout(toastTimer);
-    if (timeoutMs > 0) {
-      toastTimer = setTimeout(function () {
-        toast.classList.remove('show');
-      }, timeoutMs);
+    // Delegate to Vue ToastMessage component (set on window by component setup)
+    if (typeof window.showToast === 'function') {
+      return window.showToast(message, type);
     }
+    // Should not reach here — Vue mounts before any toast calls
   }
 
   function showError(code, detail) {
-    var suffix = detail ? '\n' + detail : '';
-    showToast('Error [' + code + ']' + suffix, 'error', 3800);
+    if (typeof window.showError === 'function') {
+      return window.showError(code, detail);
+    }
   }
 
   window.__uiStore = {
@@ -30,3 +20,4 @@
     showError: showError
   };
 })();
+
