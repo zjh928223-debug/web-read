@@ -13,6 +13,7 @@
         :value="card.userAnswer"
         placeholder="输入答案"
         @input="onInput"
+        @keydown.enter="onCheck"
       >
       <button type="button" class="small-btn cloze-check-btn" :data-cloze-check="index" @click="onCheck">
         检查答案
@@ -31,6 +32,9 @@
 </template>
 
 <script>
+import { computed } from 'vue'
+import { useClozeStore } from '../pinia-stores/cloze.js'
+
 export default {
   name: 'ClozeCard',
   props: {
@@ -38,26 +42,41 @@ export default {
     index: { type: Number, required: true }
   },
   emits: ['check'],
-  computed: {
-    escapedSentence() {
-      return this.htmlEscape(this.card.clozeSentence || '')
+  setup(props, { emit }) {
+    const cloze = useClozeStore()
+
+    const escapedSentence = computed(function () {
+      return htmlEscape(props.card.clozeSentence || '')
+    })
+
+    function htmlEscape(value) {
+      return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
     }
-  },
-  methods: {
-    htmlEscape(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-    },
-    onInput(e) {
-      // User typed — no action needed, clozeAnswerState is read from window
-    },
-    onCheck() {
-      this.$emit('check', this.index)
+
+    function onInput(e) {
+      var state = cloze.answerState || []
+      if (!state[props.index]) {
+        state[props.index] = { checked: false, correct: false, userAnswer: '' }
+      }
+      state[props.index].userAnswer = e.target.value
+      cloze.answerState = state.slice()
     }
+
+    function onCheck() {
+      var input = document.querySelector('[data-cloze-input="' + props.index + '"]')
+      if (input) {
+        var state = cloze.answerState || []
+        if (!state[props.index]) {
+          state[props.index] = { checked: false, correct: false, userAnswer: '' }
+        }
+        state[props.index].userAnswer = input.value
+        cloze.answerState = state.slice()
+      }
+      emit('check', props.index)
+    }
+
+    return { escapedSentence, onInput, onCheck }
   }
 }
 </script>

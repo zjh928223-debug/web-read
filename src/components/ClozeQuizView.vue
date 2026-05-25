@@ -1,12 +1,12 @@
 <template>
-  <section v-if="__USE_VUE_RENDERING && hasData" class="cloze-quiz-section" id="cloze-quiz-section">
+  <section v-if="cloze.hasData && ts.useVueRendering" class="cloze-quiz-section" id="cloze-quiz-section">
     <div class="cloze-quiz-header">
       <h3>文章填空</h3>
       <p>AI 切分内容读完后，可以直接在这里做题。无论回答对错，都会显示标准答案和解释。</p>
     </div>
     <div class="cloze-quiz-list">
       <ClozeCard
-        v-for="(card, idx) in cards"
+        v-for="(card, idx) in cardList"
         :key="idx"
         :card="card"
         :index="idx"
@@ -17,38 +17,34 @@
 </template>
 
 <script>
+import { computed } from 'vue'
+import { useClozeStore } from '../pinia-stores/cloze.js'
+import { useTranscriptStore } from '../pinia-stores/transcript.js'
+import ClozeCard from './ClozeCard.vue'
+
 export default {
   name: 'ClozeQuizView',
-  computed: {
-    __USE_VUE_RENDERING() {
-      return window.__USE_VUE_RENDERING || false
-    },
-    hasData() {
-      return window.__hasClozeData || false
-    },
-    clozeItems() {
-      return window.__clozeItems || []
-    },
-    answerState() {
-      return window.__clozeAnswerState || []
-    },
-    cards() {
-      var items = this.clozeItems
-      var state = this.answerState
-      if (!items.length) return []
-      if (typeof window.ClozeViewModelHelpers !== 'undefined' && window.ClozeViewModelHelpers.buildClozeQuizViewModel) {
+  components: { ClozeCard },
+  setup() {
+    const cloze = useClozeStore()
+    const ts = useTranscriptStore()
+
+    const cardList = computed(function () {
+      var items = cloze.items
+      var state = cloze.answerState
+      if (!items || !items.length) return []
+      if (window.ClozeViewModelHelpers && window.ClozeViewModelHelpers.buildClozeQuizViewModel) {
         var vm = window.ClozeViewModelHelpers.buildClozeQuizViewModel(items, state)
         return vm.cards || []
       }
       return []
+    })
+
+    function onCheck(index) {
+      if (window.__clozeCheck) window.__clozeCheck(index)
     }
-  },
-  methods: {
-    onCheck(index) {
-      if (window.__clozeCheck) {
-        window.__clozeCheck(index)
-      }
-    }
+
+    return { cloze, ts, cardList, onCheck }
   }
 }
 </script>
