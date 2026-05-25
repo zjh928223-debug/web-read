@@ -82,7 +82,27 @@ window.__piniaStores = {
   notes: notesStore, annotation: annotationStore
 }
 
-console.log('[vue] Phase 7 — Pinia stores bridged to IIFE stores')
+// Phase 8: Read from __bridge (app.js writes data here before main.js runs)
+// This syncs the initial data loaded during startup restore
+if (window.__bridge && window.__bridge.transcript) {
+  var t = window.__bridge.transcript
+  transcriptStore.segments = t.segments || []
+  transcriptStore.words = t.words || []
+  transcriptStore.wordStarts = t.wordStarts || []
+  transcriptStore.highlightMode = t.highlightMode || 1
+}
+if (window.__bridge && window.__bridge.chunkItems) {
+  chunkStore.chunkItems = window.__bridge.chunkItems || []
+  chunkStore.isChunkMode = window.__bridge.isChunkMode || false
+  chunkStore.hasAiChunkData = window.__bridge.hasAiChunkData || false
+}
+if (window.__bridge && window.__bridge.clozeItems) {
+  clozeStore.items = window.__bridge.clozeItems || []
+  clozeStore.hasData = window.__bridge.hasClozeData || false
+  clozeStore.answerState = window.__bridge.clozeAnswerState || []
+}
+
+console.log('[vue] Phase 8 — bridge data synced to Pinia')
 
 // Sync reactive rendering flag — Pinia ref drives window.__USE_VUE_RENDERING
 transcriptStore.useVueRendering = window.__USE_VUE_RENDERING || false

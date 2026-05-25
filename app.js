@@ -9,6 +9,28 @@
     // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
     window.__USE_VUE_RENDERING = false;
 
+    // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
+    window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
+    function bridgeToPinia() {
+        var ps = window.__piniaStores;
+        var b = window.__bridge;
+        // Always write to bridge (for main.js init consumption)
+        if (b) {
+            b.transcript = { segments: segments, words: words, wordStarts: wordStarts, highlightMode: highlightMode };
+            b.chunkItems = chunkItems; b.isChunkMode = isChunkMode; b.hasAiChunkData = hasAiChunkData;
+            b.clozeItems = clozeItems; b.hasClozeData = hasClozeData; b.clozeAnswerState = clozeAnswerState;
+        }
+        // If Pinia already exists, write directly for reactive updates
+        if (ps) {
+            if (ps.transcript) {
+                ps.transcript.segments = segments; ps.transcript.words = words;
+                ps.transcript.wordStarts = wordStarts; ps.transcript.highlightMode = highlightMode;
+            }
+            if (ps.chunk) { ps.chunk.chunkItems = chunkItems; ps.chunk.isChunkMode = isChunkMode; ps.chunk.hasAiChunkData = hasAiChunkData; }
+            if (ps.cloze) { ps.cloze.items = clozeItems; ps.cloze.hasData = hasClozeData; ps.cloze.answerState = clozeAnswerState; }
+        }
+    }
+
     // [MIGRATED] DB operations → window.__audioStore
     var initDB = function () { return window.__audioStore.initDB(); };
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
@@ -2393,8 +2415,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                 const normalizedMark = normalizeAnnotationMark(mark);
                 if (normalizedMark) markedMap.set(normalizedMark.globalIndex, normalizedMark);
             });
-            if (!isChunkMode) renderTranscript();
-            syncAnnotationGenerationEntryStatus();
+           if (!isChunkMode) renderTranscript();
+           syncAnnotationGenerationEntryStatus();
+           bridgeToPinia();
         }
         const generatedStore = getAnnotationGeneratedResultStore();
         emitAnnotationDiagnostics('app.restore_session_complete', {
@@ -4488,13 +4511,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
               segmentCount: segments.length,
               wordCount: words.length
           });
-          if (!isChunkMode) renderTranscript();
-          syncAnnotationGenerationEntryStatus();
-          // 濡傛灉宸茬粡鏈夊垏鍒嗘暟鎹紝闇€瑕侀噸鏂板鐞嗕竴閬嶏紝鍥犱负 segments 鍙樹簡
-          if (chunkItems.length > 0) {
-             // 瀹為檯涓?processChunkData 闇€瑕佸師濮嬫暟鎹€?
-             // 杩欓噷绠€鍖栵細濡傛灉鍒囧垎鏂囦欢涔熸槸閫氳繃 DB 鎭㈠鐨勶紝restoreSession 浼氳皟 processChunkData
-          }
+           if (!isChunkMode) renderTranscript();
+           syncAnnotationGenerationEntryStatus();
+           bridgeToPinia();
+           // 濡傛灉宸茬粡鏈夊垏鍒嗘暟鎹囷紝闇€瑕侀噸鏂板鐞嗕竴閬嶏紝鍥犱负 segments 鍙樹簡
+           if (chunkItems.length > 0) {
+           }
     }
 
 
@@ -4545,6 +4567,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (loadClozeBtn) {
             loadClozeBtn.classList.toggle('active', hasClozeData);
         }
+        bridgeToPinia();
     }
 
     function buildClozeQuizMarkup() {
@@ -4887,6 +4910,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         hasAiChunkData = chunkItems.length > 0;
         toggleChunkBtn.innerText = hasAiChunkData ? "AI切分(已就绪)" : "AI切分";
         if (isChunkMode) renderChunkMode();
+        bridgeToPinia();
     }
     // === Transcript/chunk context matching logic ===
     function rebuildVocabMatching() {
