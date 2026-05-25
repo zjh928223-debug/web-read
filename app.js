@@ -6811,29 +6811,16 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
       }, {passive:true});
     })();
 
-    (function initLiquidGlassUIInteractions() {
-      const panelSelector = [
-        '.controls',
-        '.extra-controls',
-        '.transcript-header',
-        '#helper-panel',
-        '#style-editor-modal',
-        '#chunk-style-modal',
-        '#chunk-note-style-modal',
-        '#app-toast',
-        '#chunk-note-ctx-menu',
-        '.control-group',
-        '.hotkey-box'
-      ].join(', ');
-
+    // [MIGRATED] glass effects → src/composables/glass-effects.js
+    (function () {
       function lockChunkNoteDimensions() {
-        Object.values(chunkNotesMap).forEach((note) => {
+        Object.values(chunkNotesMap).forEach(function (note) {
           if (!note || !note.id) return;
-          const tag = getChunkNoteTagById(note.id);
+          var tag = getChunkNoteTagById(note.id);
           if (tag) {
-            const contentBox = getChunkNoteContentBoxSize(tag);
-            const w = Math.max(40, Math.round(contentBox && Number.isFinite(contentBox.width) ? contentBox.width : 0));
-            const h = Math.max(18, Math.round(contentBox && Number.isFinite(contentBox.height) ? contentBox.height : 0));
+            var contentBox = getChunkNoteContentBoxSize(tag);
+            var w = Math.max(40, Math.round(contentBox && Number.isFinite(contentBox.width) ? contentBox.width : 0));
+            var h = Math.max(18, Math.round(contentBox && Number.isFinite(contentBox.height) ? contentBox.height : 0));
             note.w = w;
             note.h = h;
           }
@@ -6842,88 +6829,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
           }
         });
       }
-      const buttonSelector = [
-        'button',
-        '.file-btn',
-        '.mini-toggle',
-        '.style-btn-toggle'
-      ].join(', ');
-
-      function setGlassPointerVars(el, clientX, clientY) {
-        const rect = el.getBoundingClientRect();
-        const x = ((clientX - rect.left) / Math.max(rect.width, 1)) * 100;
-        const y = ((clientY - rect.top) / Math.max(rect.height, 1)) * 100;
-        el.style.setProperty('--glass-mx', `${Math.max(0, Math.min(100, x))}%`);
-        el.style.setProperty('--glass-my', `${Math.max(0, Math.min(100, y))}%`);
-      }
-
-      function bindGlassDynamic(el) {
-        if (!el || el.dataset.glassBound === '1') return;
-        el.dataset.glassBound = '1';
-        el.classList.add('ui-glass-dynamic');
-
-        let rafId = 0;
-        let px = 50;
-        let py = 50;
-        const onMove = (ev) => {
-          px = ev.clientX;
-          py = ev.clientY;
-          if (rafId) return;
-          rafId = requestAnimationFrame(() => {
-            setGlassPointerVars(el, px, py);
-            rafId = 0;
-          });
-        };
-        const onEnter = (ev) => {
-          setGlassPointerVars(el, ev.clientX, ev.clientY);
-        };
-        const onLeave = () => {
-          el.style.setProperty('--glass-mx', '50%');
-          el.style.setProperty('--glass-my', '50%');
-        };
-        el.addEventListener('pointermove', onMove, { passive: true });
-        el.addEventListener('pointerenter', onEnter, { passive: true });
-        el.addEventListener('pointerleave', onLeave, { passive: true });
-      }
-
-      function decorateExisting() {
-        document.querySelectorAll(panelSelector).forEach((el) => {
-          el.classList.add('glass-panel');
-          bindGlassDynamic(el);
-        });
-        document.querySelectorAll(buttonSelector).forEach((el) => {
-          el.classList.add('glass-button');
-        });
-      }
-
-      decorateExisting();
-
-      const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-          if (!mutation.addedNodes || mutation.addedNodes.length === 0) continue;
-          for (const node of mutation.addedNodes) {
-            if (!(node instanceof Element)) continue;
-            if (node.matches && node.matches(panelSelector)) {
-              node.classList.add('glass-panel');
-              bindGlassDynamic(node);
-            }
-            if (node.matches && node.matches(buttonSelector)) {
-              node.classList.add('glass-button');
-            }
-            node.querySelectorAll?.(panelSelector).forEach((el) => {
-              el.classList.add('glass-panel');
-              bindGlassDynamic(el);
-            });
-            node.querySelectorAll?.(buttonSelector).forEach((el) => {
-              el.classList.add('glass-button');
-            });
-          }
-        }
-      });
-
-      observer.observe(document.body, { childList: true, subtree: true });
-      window.__lockChunkNoteDimensionsForTheme = lockChunkNoteDimensions;
+      window.__glassEffects.init(lockChunkNoteDimensions);
     })();
+  
+    // Init hold button label
   
     // Init hold button label
     setTimeout(()=>{ try{updateChunkCnHoldBtn();}catch(e){} }, 0);
