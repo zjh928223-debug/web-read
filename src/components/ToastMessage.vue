@@ -6,7 +6,7 @@
 </template>
 
 <script>
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 
 export default {
   name: 'ToastMessage',

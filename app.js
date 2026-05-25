@@ -6,6 +6,9 @@
 
     // [MIGRATED] DB schema constants → window.__audioStore
 
+    // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
+    window.__USE_VUE_RENDERING = false;
+
     // [MIGRATED] DB operations → window.__audioStore
     var initDB = function () { return window.__audioStore.initDB(); };
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
@@ -4517,24 +4520,35 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     });
 
     function resetClozeState() {
-        clozeItems = [];
+        clozeItems.length = 0;
+        clozeAnswerState.length = 0;
         hasClozeData = false;
-        clozeAnswerState = [];
+        window.__hasClozeData = false;
         if (loadClozeBtn) {
             loadClozeBtn.classList.remove('active');
         }
     }
 
+    // Cloze State (exposed for Vue Phase 4)
+    window.__clozeItems = clozeItems;
+    window.__clozeAnswerState = clozeAnswerState;
+    window.__hasClozeData = hasClozeData;
+
     function setClozeData(items) {
         clozeItems = Array.isArray(items) ? items : [];
         hasClozeData = clozeItems.length > 0;
         clozeAnswerState = createInitialClozeAnswerState(clozeItems);
+        // Sync window refs for Vue Phase 4
+        window.__clozeItems = clozeItems;
+        window.__clozeAnswerState = clozeAnswerState;
+        window.__hasClozeData = hasClozeData;
         if (loadClozeBtn) {
             loadClozeBtn.classList.toggle('active', hasClozeData);
         }
     }
 
     function buildClozeQuizMarkup() {
+        if (window.__USE_VUE_RENDERING) return ''; // Vue handles it
         if (!hasClozeData || !clozeItems.length) return '';
         const quizVm = buildClozeQuizViewModel(clozeItems, clozeAnswerState);
         const cards = quizVm.cards.map((card) => {
@@ -4574,21 +4588,28 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function handleClozeCheck(index) {
         const item = clozeItems[index];
         if (!item) return;
-        const input = transcriptContainer.querySelector(`[data-cloze-input="${index}"]`);
-        const userAnswer = input ? input.value : '';
+        // Phase 4 fallback: check input value from Vue or old DOM
+        var input = document.querySelector(`[data-cloze-input="${index}"]`);
+        var userAnswer = input ? input.value : '';
         const correct = normalizeClozeAnswer(userAnswer) === normalizeClozeAnswer(item.targetWord);
         clozeAnswerState[index] = {
             checked: true,
             correct,
             userAnswer
         };
-        renderChunkMode();
-        const nextInput = transcriptContainer.querySelector(`[data-cloze-input="${index}"]`);
-        if (nextInput) {
-            nextInput.focus();
-            nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+        if (!window.__USE_VUE_RENDERING) {
+            renderChunkMode();
+            const nextInput = transcriptContainer.querySelector(`[data-cloze-input="${index}"]`);
+            if (nextInput) {
+                nextInput.focus();
+                nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
+            }
         }
     }
+
+    // Expose for Vue Phase 4
+    window.__clozeCheck = handleClozeCheck;
+    window.__buildClozeQuizMarkup = buildClozeQuizMarkup;
 
     if (clozeFileInput) {
         clozeFileInput.addEventListener('change', event => {
