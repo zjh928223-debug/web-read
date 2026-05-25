@@ -1,37 +1,27 @@
 <template>
-  <div id="app-toast" role="status" aria-live="polite" v-if="toastVisible"
-       :class="'glass-panel ' + toastType + ' show'">
-    {{ toastText }}
+  <div id="app-toast" role="status" aria-live="polite" v-if="uiStore.toastVisible"
+       :class="['glass-panel', uiStore.toastType, 'show']">
+    {{ uiStore.toastMessage }}
   </div>
 </template>
 
 <script>
-import { ref } from 'vue'
+import { useUiStore } from '../pinia-stores/ui.js'
 
 export default {
   name: 'ToastMessage',
   setup() {
-    const toastVisible = ref(false)
-    const toastText = ref('')
-    const toastType = ref('success')
-    let timer = null
+    const uiStore = useUiStore()
 
-    function showToastFn(msgText, msgType, timeoutMs) {
-      if (msgType === undefined) msgType = 'success'
-      if (timeoutMs === undefined) timeoutMs = 2600
-      toastText.value = msgText
-      toastType.value = msgType
-      toastVisible.value = true
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(function () { toastVisible.value = false }, timeoutMs)
+    // Bridge for legacy callers (app.js showToast wrappers)
+    window.showToast = function (msg, type, timeoutMs) {
+      return uiStore.showToast(msg, type, timeoutMs)
     }
-
-    window.showToast = showToastFn
     window.showError = function (code, detail) {
-      showToastFn('Error [' + code + ']' + (detail ? '\n' + detail : ''), 'error', 3800)
+      return uiStore.showError(code, detail)
     }
 
-    return { toastVisible, toastText, toastType }
+    return { uiStore }
   }
 }
 </script>

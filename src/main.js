@@ -46,11 +46,14 @@ if (window.__themeStore) {
   origTheme.CUSTOM_THEME_DEFAULTS = themeStore.CUSTOM_THEME_DEFAULTS
 }
 
-// Bridge UI — replace showToast/showError
+// Bridge UI — replace showToast/showError AND window.showToast for Vue component
 if (window.__uiStore) {
   var origUi = window.__uiStore
   origUi.showToast = function (msg, type, timeoutMs) { return uiStore.showToast(msg, type, timeoutMs) }
   origUi.showError = function (code, detail) { return uiStore.showError(code, detail) }
+  // Also bridge window.showToast so Vue ToastMessage component receives calls
+  window.showToast = function (msg, type, timeoutMs) { return uiStore.showToast(msg, type, timeoutMs) }
+  window.showError = function (code, detail) { return uiStore.showError(code, detail) }
 }
 
 // Bridge Audio — replace DB ops
