@@ -1,0 +1,25 @@
+schema: spec-driven
+
+context: |
+  所有 OpenSpec 产出物请使用简体中文撰写。
+  代码、函数名、变量名、文件名、路径、命令、技术术语保留英文，不要翻译。
+  只把说明性文字写成中文。
+  
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours

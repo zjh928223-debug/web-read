@@ -1,0 +1,16 @@
+*:Zone.Identifier
+.DS_Store
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+__tmp_*
+node_modules/
+.playwright-artifacts/
+.playwright-deps/
+output/*.log
+output/playwright/*.png
+output/playwright/*.json
+dist/
+vite-*.txt

@@ -1,0 +1,29 @@
+{
+  "name": "read-final",
+  "version": "1.0.0",
+  "description": "Local verification tooling for read-26.html",
+  "main": "app.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "http-server . -a 127.0.0.1 -p 4173 -c-1",
+    "preview:vite": "vite preview --port 4173",
+    "verify:read26": "node scripts/read26-verify.js",
+    "verify:vite": "node scripts/vite-verify.js",
+    "test": "npm run verify:read26"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.7",
+    "http-server": "^14.1.1",
+    "playwright": "^1.58.2",
+    "vite": "^8.0.14"
+  },
+  "dependencies": {
+    "pinia": "^3.0.4",
+    "vue": "^3.5.34"
+  }
+}
