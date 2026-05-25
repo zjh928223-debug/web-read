@@ -16,18 +16,19 @@ export default {
     const toastType = ref('success')
     let timer = null
 
-    function showToastFn(msgText, msgType) {
+    function showToastFn(msgText, msgType, timeoutMs) {
       if (msgType === undefined) msgType = 'success'
+      if (timeoutMs === undefined) timeoutMs = 2600
       toastText.value = msgText
       toastType.value = msgType
       toastVisible.value = true
       if (timer) clearTimeout(timer)
-      timer = setTimeout(function () { toastVisible.value = false }, 2600)
+      timer = setTimeout(function () { toastVisible.value = false }, timeoutMs)
     }
 
     window.showToast = showToastFn
     window.showError = function (code, detail) {
-      showToastFn('Error [' + code + ']' + (detail ? '\n' + detail : ''), 'error')
+      showToastFn('Error [' + code + ']' + (detail ? '\n' + detail : ''), 'error', 3800)
     }
 
     return { toastVisible, toastText, toastType }

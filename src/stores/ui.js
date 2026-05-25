@@ -4,9 +4,8 @@
   function showToast(message, type, timeoutMs) {
     // Delegate to Vue ToastMessage component (set on window by component setup)
     if (typeof window.showToast === 'function') {
-      return window.showToast(message, type);
+      return window.showToast(message, type, timeoutMs);
     }
-    // Should not reach here — Vue mounts before any toast calls
   }
 
   function showError(code, detail) {
