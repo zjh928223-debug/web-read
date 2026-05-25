@@ -98,179 +98,24 @@
     const getLegacySentenceNotesStorageKey = (audioKey = currentAudioKey) => window.IdentityStorageKeys.getLegacySentenceNotesStorageKey(audioKey);
     const buildCurrentSentenceDocId = (transcriptSource = null) => window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey, segments);
 
-    // === Chunk-note data/layout utilities ===
-    function findNearestChunkWord(enDiv, clientX, clientY) {
-        if (!enDiv) return null;
-        const spans = Array.from(enDiv.querySelectorAll('span[id^="word-"]'));
-        if (!spans.length) return null;
-        let best = null;
-        let bestScore = Infinity;
-        spans.forEach(span => {
-            const rect = span.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const dx = cx - clientX;
-            const dy = cy - clientY;
-            const score = (dx * dx) + (dy * dy);
-            if (score < bestScore) {
-                bestScore = score;
-                best = span;
-            }
-        });
-        return best;
-    }
-
-    function getChunkNoteMeasureFont() {
-        return "'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif";
-    }
-
-    function measureChunkNoteTextBox(text, minW, minH, maxW) {
-        const t = String(text || '').trim();
-        const baseFs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-size')) || 16;
-        if (!chunkNoteProbe || !t) {
-            return { width: minW, height: minH, fontSize: baseFs };
-        }
-        const widthCap = Math.max(minW, maxW || minW);
-        chunkNoteProbe.style.position = 'fixed';
-        chunkNoteProbe.style.left = '-9999px';
-        chunkNoteProbe.style.top = '-9999px';
-        chunkNoteProbe.style.width = 'auto';
-        chunkNoteProbe.style.maxWidth = `${widthCap}px`;
-        chunkNoteProbe.style.fontFamily = getChunkNoteMeasureFont();
-        chunkNoteProbe.style.fontSize = `${baseFs}px`;
-        chunkNoteProbe.style.lineHeight = '1.28';
-        chunkNoteProbe.style.whiteSpace = 'pre-wrap';
-        chunkNoteProbe.style.wordBreak = 'break-word';
-        chunkNoteProbe.textContent = t;
-        const width = Math.max(minW, Math.min(widthCap, Math.ceil(chunkNoteProbe.scrollWidth) + 14));
-        chunkNoteProbe.style.width = `${Math.max(8, width - 12)}px`;
-        const height = Math.max(minH, Math.ceil(chunkNoteProbe.scrollHeight) + 8);
-        return { width, height, fontSize: baseFs };
-    }
-
-    function applyChunkNoteAutoSize(note) {
-        if (!note || note.autoSize === false) return;
-        const { minW, minH } = getChunkNoteLayoutBase();
-        const maxW = Math.max(minW, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-width')) || 260);
-        const box = measureChunkNoteTextBox(note.note || '', minW, minH, maxW);
-        note.w = box.width;
-        note.h = box.height;
-        note.fontSize = box.fontSize;
-    }
-
-    function getChunkRef(chunk, idx) {
-        if (chunk && chunk.noteId) return chunk.noteId;
-        const segId = (chunk && Number.isFinite(chunk.segId)) ? chunk.segId : -1;
-        const st = Math.round(((chunk && chunk.start) || 0) * 1000);
-        const ed = Math.round(((chunk && chunk.end) || 0) * 1000);
-        return `seg-${segId}-t-${st}-${ed}-i-${idx}`;
-    }
-
-    function getChunkNoteBaseFontSize() {
-        return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-size')) || 16;
-    }
-
-    function getChunkNoteMinReadableFontSize() {
-        const base = getChunkNoteBaseFontSize();
-        return Math.max(12, Math.round(base * 0.75));
-    }
-
-    function sanitizeChunkNoteFontSize(rawSize) {
-        const base = getChunkNoteBaseFontSize();
-        const n = Number(rawSize);
-        if (!Number.isFinite(n)) return base;
-        const maxAllowed = Math.max(22, base * 1.6);
-        if (n < 1 || n > maxAllowed) return base;
-        return n;
-    }
-
-    function getChunkNoteLayoutContext() {
-        if (!getChunkNoteLayoutContext.canvas) {
-            getChunkNoteLayoutContext.canvas = document.createElement('canvas');
-            getChunkNoteLayoutContext.ctx = getChunkNoteLayoutContext.canvas.getContext('2d');
-        }
-        return getChunkNoteLayoutContext.ctx;
-    }
-
-    function buildChunkNoteLayout(note, width, height) {
-        const text = String((note && note.note) || '').trim();
-        const w = Math.max(1, Math.round(Number(width) || 1));
-        const h = Math.max(1, Math.round(Number(height) || 1));
-        const padX = Math.max(3, Math.min(8, Math.round(w * 0.08)));
-        const padY = Math.max(2, Math.min(6, Math.round(h * 0.08)));
-        const maxTextW = Math.max(8, w - padX * 2);
-        const maxTextH = Math.max(8, h - padY * 2);
-        const preferredFs = sanitizeChunkNoteFontSize(note && note.fontSize);
-        const minFs = Math.min(getChunkNoteMinReadableFontSize(), preferredFs);
-        const ctx = getChunkNoteLayoutContext();
-        const makeLayout = (fontSize) => {
-            const fs = Math.max(1, Math.floor(fontSize));
-            const lineHeight = Math.max(12, Math.round(fs * 1.24));
-            ctx.font = `${fs}px ${getChunkNoteMeasureFont()}`;
-            const lines = wrapChunkNoteTextForCanvas(ctx, text, maxTextW);
-            const totalH = lines.length * lineHeight;
-            return { fontSize: fs, lineHeight, lines, fits: totalH <= maxTextH, totalH };
-        };
-        if (!text) {
-            return buildEmptyChunkNoteLayoutResult(preferredFs, {
-                padX,
-                padY,
-                maxTextW,
-                maxTextH
-            });
-        }
-        let best = makeLayout(preferredFs);
-        if (!best.fits) {
-            let lo = minFs;
-            let hi = preferredFs;
-            let lastFit = null;
-            for (let i = 0; i < 14; i++) {
-                const mid = Math.floor((lo + hi) / 2);
-                const current = makeLayout(mid);
-                if (current.fits) {
-                    lastFit = current;
-                    lo = mid + 1;
-                } else {
-                    hi = mid - 1;
-                }
-            }
-            best = lastFit || makeLayout(minFs);
-        }
-        return buildChunkNoteLayoutResult(best, {
-            padX,
-            padY,
-            maxTextW,
-            maxTextH
-        });
-    }
-
-    function canChunkNoteTextFitMinReadable(note, width, height) {
-        return buildChunkNoteLayout(note, width, height).valid;
-    }
-
-    function makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal) {
-        return `${chunkRef}::${startGlobal}-${endGlobal}`;
-    }
-
-    function makeSelectionNoteId(chunkRef, startGlobal, endGlobal) {
-        return `${makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal)}::${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    }
-
-    function buildChunkNotesSnapshot() {
-        return {
-            version: 1,
-            audioKey: currentAudioKey || 'default-audio',
-            updatedAt: Date.now(),
-            notes: Object.values(chunkNotesMap).sort((a, b) => (a.chunkIdx - b.chunkIdx) || (a.startGlobal - b.startGlobal))
-        };
-    }
-
-    function saveChunkNotesDebounced() {
-        if (chunkNoteSaveTimer) clearTimeout(chunkNoteSaveTimer);
-        chunkNoteSaveTimer = setTimeout(() => {
-            saveToDB(getChunkNotesStorageKey(), buildChunkNotesSnapshot());
-        }, 180);
-    }
+    // [MIGRATED] chunk-note utilities → src/composables/chunk-note-layout.js
+    var CL = window.__chunkNoteLayout;
+    var _chunkSaveRef = { timer: chunkNoteSaveTimer };
+    function findNearestChunkWord(enDiv, clientX, clientY) { return CL.findNearestChunkWord(enDiv, clientX, clientY); }
+    function getChunkNoteMeasureFont() { return CL.getChunkNoteMeasureFont(); }
+    function measureChunkNoteTextBox(text, minW, minH, maxW) { return CL.measureChunkNoteTextBox(text, minW, minH, maxW); }
+    function applyChunkNoteAutoSize(note) { return CL.applyChunkNoteAutoSize(note); }
+    function getChunkRef(chunk, idx) { return CL.getChunkRef(chunk, idx); }
+    function getChunkNoteBaseFontSize() { return CL.getChunkNoteBaseFontSize(); }
+    function getChunkNoteMinReadableFontSize() { return CL.getChunkNoteMinReadableFontSize(); }
+    function sanitizeChunkNoteFontSize(rawSize) { return CL.sanitizeChunkNoteFontSize(rawSize); }
+    function getChunkNoteLayoutContext() { return CL.getChunkNoteLayoutContext(); }
+    function buildChunkNoteLayout(note, width, height) { return CL.buildChunkNoteLayout(note, width, height); }
+    function canChunkNoteTextFitMinReadable(note, width, height) { return CL.canChunkNoteTextFitMinReadable(note, width, height); }
+    function makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal) { return CL.makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal); }
+    function makeSelectionNoteId(chunkRef, startGlobal, endGlobal) { return CL.makeSelectionNoteId(chunkRef, startGlobal, endGlobal); }
+    function buildChunkNotesSnapshot() { return CL.buildChunkNotesSnapshot(currentAudioKey, chunkNotesMap); }
+    function saveChunkNotesDebounced() { return CL.saveChunkNotesDebounced(_chunkSaveRef, saveToDB, getChunkNotesStorageKey, currentAudioKey, chunkNotesMap); }
 
     // === Chunk-note persistence lifecycle ===
     async function loadChunkNotesForCurrentAudio() {
