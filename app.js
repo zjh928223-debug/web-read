@@ -2059,229 +2059,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
-    // === 鏍峰紡缂栬緫鍣ㄩ€昏緫 (Style Editor Logic) ===
-    const styleSettings = {
-        word: { prefix: '--v-word-', label: 'Word (鍗曡瘝)' },
-        context: { prefix: '--v-context-', label: 'Context (璇)' },
-        meaning: { prefix: '--v-meaning-', label: 'Meaning (閲婁箟)' },
-        not: { prefix: '--v-not-', label: 'Not Meaning (闈炰箟)' },
-        global: { prefix: '--v-', label: 'Global (鍏ㄥ眬)' } 
-    };
-    
-    const defaultStyles = {
-        '--v-word-size': '28px', '--v-word-color': '#1c1e21', '--v-word-weight': '900', '--v-word-style': 'normal', '--v-word-spacing': '-0.5px',
-        '--v-context-size': '14px', '--v-context-color': '#555555', '--v-context-weight': '400', '--v-context-style': 'italic', '--v-context-spacing': '0px',
-        '--v-meaning-size': '15px', '--v-meaning-color': '#4b5563', '--v-meaning-weight': '700', '--v-meaning-style': 'normal', '--v-meaning-spacing': '0px',
-        '--v-not-size': '12px', '--v-not-color': '#999999', '--v-not-weight': '400', '--v-not-style': 'normal', '--v-not-spacing': '0px',
-        '--v-word-display': 'block',
-        '--v-context-display': 'block',
-        '--v-meaning-display': 'block',
-        '--v-not-display': 'block',
-        '--v-gap': '8px'
-    };
-
-    function initStyleEditor() {
-        const saved = safeParseLocalJSON('visualStyles', {});
-        Object.keys(defaultStyles).forEach(key => {
-            const val = saved[key] || defaultStyles[key];
-            document.documentElement.style.setProperty(key, val);
-        });
-
-        const container = document.getElementById('style-controls-container');
-        if (!container) return;
-        container.innerHTML = '';
-
-        container.appendChild(createControlSection('global', '鍏ㄥ眬甯冨眬', [
-            { type: 'number', label: 'Gap', prop: 'gap', suffix: 'px' }
-        ]));
-
-        Object.keys(styleSettings).forEach(key => {
-            if(key === 'global') return;
-            const def = styleSettings[key];
-            const controls = [
-                { type: 'toggle', label: 'B', prop: 'weight', onVal: '900', offVal: '400', title: '鍔犵矖' },
-                { type: 'toggle', label: 'I', prop: 'style', onVal: 'italic', offVal: 'normal', title: '鏂滀綋' },
-                { type: 'color', label: 'Color', prop: 'color' },
-                { type: 'number', label: 'Size', prop: 'size', suffix: 'px' },
-                { type: 'number', label: 'Space', prop: 'spacing', suffix: 'px', step: 0.5 }
-            ];
-            container.appendChild(createControlSection(key, def.label, controls));
-        });
-    }
-
-   function createControlSection(sectionKey, title, controls) {
-        const div = document.createElement('div');
-        div.className = 'style-section';
-        div.innerHTML = `<h4>${title}</h4>`;
-        
-        const row = document.createElement('div');
-        row.className = 'control-row';
-        div.appendChild(row);
-
-        const prefix = styleSettings[sectionKey].prefix;
-
-        if (sectionKey !== 'global') {
-            const eyeBtn = document.createElement('button');
-            eyeBtn.className = 'style-btn-toggle';
-            eyeBtn.style.marginRight = '8px';
-            eyeBtn.title = '鏄剧ず/闅愯棌';
-            const displayVar = prefix + 'display';
-            let currentDisplay = getComputedStyle(document.documentElement).getPropertyValue(displayVar).trim();
-            if(!currentDisplay) currentDisplay = 'block';
-
-            const isVisible = currentDisplay !== 'none';
-            eyeBtn.innerText = isVisible ? 'Show' : 'Hide';
-            if (!isVisible) eyeBtn.style.opacity = '0.5';
-
-            eyeBtn.onclick = () => {
-                const nowVisible = eyeBtn.innerText === 'Show';
-                if (nowVisible) {
-                    applyStyle(displayVar, 'none');
-                    eyeBtn.innerText = 'Hide';
-                    eyeBtn.style.opacity = '0.5';
-                } else {
-                    applyStyle(displayVar, 'block');
-                    eyeBtn.innerText = 'Show';
-                    eyeBtn.style.opacity = '1';
-                }
-            };
-            row.appendChild(eyeBtn);
-        }
-
-        controls.forEach(ctrl => {
-            const varName = prefix + ctrl.prop;
-            let currentVal = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-            if (!currentVal && defaultStyles[varName]) currentVal = defaultStyles[varName];
-
-            if (ctrl.type === 'toggle') {
-                const btn = document.createElement('button');
-                btn.className = 'style-btn-toggle';
-                btn.innerText = ctrl.label;
-                btn.title = ctrl.title || '';
-                if(currentVal === ctrl.onVal) btn.classList.add('active');
-                
-                btn.onclick = () => {
-                    const isNowActive = btn.classList.toggle('active');
-                    const newVal = isNowActive ? ctrl.onVal : ctrl.offVal;
-                    applyStyle(varName, newVal);
-                };
-                row.appendChild(btn);
-            } 
-            else if (ctrl.type === 'color') {
-                const input = document.createElement('input');
-                input.type = 'color';
-                input.className = 'color-input';
-                input.value = (currentVal.length === 7 && currentVal.startsWith('#')) ? currentVal : '#000000'; 
-                input.oninput = (e) => applyStyle(varName, e.target.value);
-                row.appendChild(input);
-            }
-            else if (ctrl.type === 'number') {
-                const wrap = document.createElement('div');
-                wrap.style.display = 'flex'; wrap.style.alignItems='center'; wrap.style.marginRight='4px';
-                
-                const lbl = document.createElement('span');
-                lbl.innerText = ctrl.label;
-                lbl.style.fontSize = '12px'; lbl.style.marginRight='2px';
-
-                const input = document.createElement('input');
-                input.type = 'number';
-                input.className = 'style-input-num';
-                input.step = ctrl.step || 1;
-                input.value = parseFloat(currentVal) || 0;
-                
-                input.oninput = (e) => applyStyle(varName, e.target.value + (ctrl.suffix || ''));
-                
-                wrap.appendChild(lbl);
-                wrap.appendChild(input);
-                row.appendChild(wrap);
-            }
-        });
-        return div;
-    }
-    function applyStyle(varName, value) {
-        document.documentElement.style.setProperty(varName, value);
-        const saved = safeParseLocalJSON('visualStyles', {});
-        saved[varName] = value;
-        localStorage.setItem('visualStyles', JSON.stringify(saved));
-    }
-
-    // Modal Events
-    const openStyleEditorBtn = document.getElementById('open-style-editor');
-    if (openStyleEditorBtn) {
-        openStyleEditorBtn.onclick = () => {
-            document.getElementById('modal-backdrop').style.display = 'block';
-            document.getElementById('style-editor-modal').style.display = 'block';
-            initStyleEditor(); 
-        };
-    }
-    function closeStyleEditor() {}
-    document.getElementById('modal-backdrop').onclick = () => {
-        closeStyleEditor();
-        closeChunkStyleModal();
-        closeChunkNoteStyleModal();
-        closeChunkNotePopover();
-        closeAnnotationPromptPanel();
-    };
-    
-    // Chunk Style Modal Logic (Modified)
-    function openChunkStyleModal() {
-        document.getElementById('modal-backdrop').style.display = 'block';
-        document.getElementById('chunk-style-modal').style.display = 'block';
-        
-        // Read current computed values
-        const styles = getComputedStyle(document.documentElement);
-        
-        const enSize = styles.getPropertyValue('--chunk-en-size').trim().replace('px','');
-        const cnSize = styles.getPropertyValue('--chunk-cn-size').trim().replace('px','');
-        const gapSize = styles.getPropertyValue('--chunk-gap').trim().replace('px','');
-        
-        // Colors: Try localStorage first for HEX, otherwise use computed (might be RGB) fallback
-        let cnColor = localStorage.getItem('chunkCnColor') || styles.getPropertyValue('--chunk-cn-color').trim();
-        let bgColor = localStorage.getItem('chunkBgColor') || styles.getPropertyValue('--chunk-active-bg').trim();
-        
-        // Basic HEX check, default if invalid
-        if (!cnColor.startsWith('#') || cnColor.length !== 7) cnColor = '#4b5563';
-        if (!bgColor.startsWith('#') || bgColor.length !== 7) bgColor = '#e5e7eb';
-
-        document.getElementById('chunk-en-size-input').value = parseInt(enSize) || 20;
-        document.getElementById('chunk-cn-size-input').value = parseInt(cnSize) || 16;
-        document.getElementById('chunk-gap-input').value = parseInt(gapSize) || 20;
-        
-        document.getElementById('chunk-cn-color-input').value = cnColor;
-        document.getElementById('chunk-bg-color-input').value = bgColor;
-        
-        updateShadowBtnText();
-    }
-    
-    function closeChunkStyleModal() {
-        document.getElementById('modal-backdrop').style.display = 'none';
-        document.getElementById('chunk-style-modal').style.display = 'none';
-    }
-    
-    function updateChunkStyle() {
-        const en = document.getElementById('chunk-en-size-input').value;
-        const cn = document.getElementById('chunk-cn-size-input').value;
-        const gap = document.getElementById('chunk-gap-input').value;
-        const cnColor = document.getElementById('chunk-cn-color-input').value;
-        const bgColor = document.getElementById('chunk-bg-color-input').value;
-
-        document.documentElement.style.setProperty('--chunk-en-size', en + 'px');
-        document.documentElement.style.setProperty('--chunk-cn-size', cn + 'px');
-        document.documentElement.style.setProperty('--chunk-gap', gap + 'px');
-        document.documentElement.style.setProperty('--chunk-cn-color', cnColor);
-        document.documentElement.style.setProperty('--chunk-active-bg', bgColor);
-
-        localStorage.setItem('chunkEnSize', en + 'px');
-        localStorage.setItem('chunkCnSize', cn + 'px');
-        localStorage.setItem('chunkGap', gap + 'px');
-        localStorage.setItem('chunkCnColor', cnColor);
-        localStorage.setItem('chunkBgColor', bgColor);
-        adjustChunkNoteArrowSizeByGap();
-        if (isChunkMode) {
-            renderAllChunkNoteTags();
-        }
-        scheduleChunkNoteConnectorRedraw();
-    }
+    // [MIGRATED] style editor → src/composables/style-editor.js
+    window.__styleEditor.init({
+        safeParseLocalJSON: safeParseLocalJSON,
+        adjustChunkNoteArrowSizeByGap: adjustChunkNoteArrowSizeByGap,
+        renderAllChunkNoteTags: renderAllChunkNoteTags,
+        scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
+        getIsChunkMode: function () { return isChunkMode; },
+        closeChunkNotePopover: closeChunkNotePopover,
+        closeAnnotationPromptPanel: closeAnnotationPromptPanel,
+        updateShadowBtnText: updateShadowBtnText
+    });
 
     // === Startup restore/init flow ===
     initDB().then(async () => {
@@ -2315,7 +2103,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (localStorage.getItem('chunkBgColor')) document.documentElement.style.setProperty('--chunk-active-bg', localStorage.getItem('chunkBgColor'));
         adjustChunkNoteArrowSizeByGap();
         
-        initStyleEditor(); 
+    function initStyleEditor() { /* moved to style-editor module */ }
         
         // Update UI buttons based on loaded state
         if (chunkCnMode === 'focus') {
