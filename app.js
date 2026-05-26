@@ -5127,175 +5127,27 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
              return; 
         }
 
-        // === Playback navigation logic (kept intact) ===
-        if (wordIndex !== -1) {
-            currentWordIndex = wordIndex;
-        }
-        activeChunkEl = swapActiveClass(null, activeChunkEl, 'chunk-active');
-
-        if (highlightMode === 2) {
-            const segIdx = getCurrentSegmentIndex(currentTime);
-
-            if (segIdx !== -1) {
-                if (segIdx !== lastActiveSegIndex) {
-                    activeWordHighlightEl = swapActiveClass(null, activeWordHighlightEl, 'word-highlight');
-                    const lineDiv = document.getElementById(`segment-${segIdx}`);
-                    activeSentenceEl = swapActiveClass(lineDiv, activeSentenceEl, 'sentence-active');
-                    followPlaybackTarget(lineDiv);
-                    lastActiveSegIndex = segIdx;
-                }
-            } else {
-                activeSentenceEl = swapActiveClass(null, activeSentenceEl, 'sentence-active');
-                lastActiveSegIndex = -1;
-            }
-            return;
-        }
-
-        activeSentenceEl = swapActiveClass(null, activeSentenceEl, 'sentence-active');
-
-        if (highlightMode === 1 && wordIndex !== -1) {
-            const span = document.getElementById(`word-${wordIndex}`);
-            activeWordHighlightEl = swapActiveClass(span, activeWordHighlightEl, 'word-highlight');
-            followPlaybackTarget(span);
-        } else {
-            activeWordHighlightEl = swapActiveClass(null, activeWordHighlightEl, 'word-highlight');
-        }
-        lastActiveSegIndex = -1; 
+        // [MIGRATED] playback navigation → src/composables/playback-module.js
+        window.__playbackModule.init({
+            audioPlayer: audioPlayer,
+            getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+            getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
+            bsFindActiveHelper: bsFindActiveHelper,
+            findChunkIndexByTime: findChunkIndexByTime,
+            swapActiveClass: swapActiveClass,
+            followPlaybackTarget: followPlaybackTarget,
+            getAnnotationBubble: getAnnotationBubble,
+            jumpPrevSentence: jumpPrevSentence,
+            jumpNextSentence: jumpNextSentence
+        });
     };
 
-    function bsFindActive(time) {
-        return bsFindActiveHelper(wordStarts, words, time);
-    }
-
-    function forceUpdateUI(time) {
-        const idx = bsFindActive(time);
-        window.mainUpdateHighlight(idx);
-    }
-
-    function getCurrentSegmentIndex(time = audioPlayer.currentTime) {
-        return getCurrentSegmentIndexHelper(segments, words, wordStarts, time);
-    }
-
-    function getSegmentCheckpoints(segIndex) {
-        return getSegmentCheckpointsHelper(segments, segIndex);
-    }
-
-    function smartBackward() {
-        const cur = audioPlayer.currentTime;
-        let sIdx = getCurrentSegmentIndex(cur);
-        if (sIdx === -1) { audioPlayer.currentTime = 0; forceUpdateUI(0); return; }
-
-        let points = getSegmentCheckpoints(sIdx);
-        let validPoints = points.filter(p => p < cur - 0.5);
-
-        if (validPoints.length > 0) {
-            let target = validPoints[validPoints.length - 1];
-            audioPlayer.currentTime = Math.max(0, target - 0.15);
-            forceUpdateUI(audioPlayer.currentTime);
-            return;
-        }
-        if (sIdx > 0) {
-            let prevPoints = getSegmentCheckpoints(sIdx - 1);
-            if (prevPoints.length > 0) {
-                let target = prevPoints[prevPoints.length - 1];
-                audioPlayer.currentTime = Math.max(0, target - 0.15);
-            } else {
-                audioPlayer.currentTime = Math.max(0, segments[sIdx - 1].start - 0.15);
-            }
-            forceUpdateUI(audioPlayer.currentTime);
-        } else {
-            audioPlayer.currentTime = 0;
-            forceUpdateUI(0);
-        }
-    }
-
-    function smartForward() {
-        const cur = audioPlayer.currentTime;
-        const sIdx = getCurrentSegmentIndex(cur);
-        const nextSeg = (sIdx >= 0 && sIdx < segments.length - 1) ? segments[sIdx + 1] : null;
-        if (nextSeg && Number.isFinite(nextSeg.start)) {
-            audioPlayer.currentTime = nextSeg.start;
-            forceUpdateUI(nextSeg.start);
-        }
-    }
-
-    function getActiveAiChunkIndex(time = audioPlayer.currentTime) {
-        if (!chunkItems || chunkItems.length === 0 || !hasAiChunkData) return -1;
-        const idx = findChunkIndexByTime(time);
-        if (idx !== -1) return idx;
-        return time < chunkItems[0].start ? 0 : chunkItems.length - 1;
-    }
-
-    function isAiChunkNavMode() {
-        return isChunkMode && hasAiChunkData && Array.isArray(chunkItems) && chunkItems.length > 0;
-    }
-
-    function seekAndPlay(targetTime) {
-        audioPlayer.currentTime = targetTime;
-        forceUpdateUI(targetTime);
-        if (audioPlayer.paused) {
-            const p = audioPlayer.play();
-            if (p && typeof p.catch === 'function') p.catch(() => {});
-        }
-    }
-
-    function aiChunkBackward() {
-        const idx = getActiveAiChunkIndex();
-        if (idx === -1) return;
-
-        const repeatWindowMs = 600;
-        const now = Date.now();
-        const isRepeatedPrevOnSameChunk =
-            lastAiPrevTapChunkIndex === idx &&
-            (now - lastAiPrevTapAt) <= repeatWindowMs;
-        const targetIdx = isRepeatedPrevOnSameChunk ? Math.max(0, idx - 1) : idx;
-        const targetTime = chunkItems[targetIdx].start;
-
-        seekAndPlay(targetTime);
-        lastAiPrevTapChunkIndex = targetIdx;
-        lastAiPrevTapAt = now;
-    }
-
-    function aiChunkForward() {
-        const idx = getActiveAiChunkIndex();
-        if (idx === -1) return;
-
-        const targetIdx = Math.min(chunkItems.length - 1, idx + 1);
-        const targetTime = chunkItems[targetIdx].start;
-
-        seekAndPlay(targetTime);
-        lastAiPrevTapChunkIndex = -1;
-        lastAiPrevTapAt = 0;
-    }
-
-    // Keep normal mode navigation logic untouched.
-    function handleBackwardClickNormalMode() {
-        if (highlightMode === 2 && !isChunkMode) jumpPrevSentence();
-        else smartBackward();
-    }
-
-    // Keep normal mode navigation logic untouched.
-    function handleForwardClickNormalMode() {
-        if (highlightMode === 2 && !isChunkMode) jumpNextSentence();
-        else smartForward();
-    }
-
-    function handleBackwardClick() {
-        if (isAiChunkNavMode()) aiChunkBackward();
-        else handleBackwardClickNormalMode();
-    }
-
-    function handleForwardClick() {
-        if (isAiChunkNavMode()) aiChunkForward();
-        else handleForwardClickNormalMode();
-    }
-
-    function toggleAnnotationBubble() {
-        const bubble = getAnnotationBubble();
-        if (bubble && typeof bubble.toggle === 'function') {
-            bubble.toggle();
-        }
-    }
+    // Re-bind local references to functions now in playback-module
+    var forceUpdateUI = function () { return window.forceUpdateUI.apply(null, arguments); };
+    var mainUpdateHighlight = function () { return window.mainUpdateHighlight.apply(null, arguments); };
+    var toggleAnnotationBubble = function () { return window.toggleAnnotationBubble.apply(null, arguments); };
+    var handleBackwardClick = function () { return window.handleBackwardClick.apply(null, arguments); };
+    var handleForwardClick = function () { return window.handleForwardClick.apply(null, arguments); };
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({
