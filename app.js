@@ -4972,146 +4972,16 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     // === Main transcript/chunk rendering ===
+    // [PHASE 9] Body replaced — Vue renders. Old logic preserved in git history.
     
-    // 1. Normal Mode Render
+    // 1. Normal Mode Render (gutted — Vue handles rendering)
     function renderTranscript() {
-      clearPlaybackHighlightState();
-      playbackUiSignature = '';
-      document.body.classList.toggle('highlight-sentence-mode', highlightMode === 2);
-      transcriptContainer.innerHTML = '';
-      transcriptContainer.classList.remove('chunk-mode');
-      lastActiveSegIndex = -1; 
-      
-      if (!segments.length && words.length) { 
-        const div = document.createElement('div');
-        div.className = 'transcript-line';
-        renderWordsToContainer(words, div);
-        transcriptContainer.appendChild(div);
-        return;
-      }
-      if (!segments.length) return;
-
-      segments.forEach((seg, sIdx) => {
-        const lineDiv = document.createElement('div');
-        lineDiv.className = 'transcript-line';
-        lineDiv.id = `segment-${sIdx}`; 
-
-        if (seg.words) renderWordsToContainer(seg.words, lineDiv);
-
-        if (seg.translation) {
-            const details = document.createElement('details');
-            details.className = 'grok-box has-content'; 
-            details.id = `note-${sIdx}`; 
-            
-            const summary = document.createElement('summary');
-            summary.className = 'grok-summary';
-            summary.innerText = ''; 
-            const content = document.createElement('div');
-            content.className = 'grok-content';
-            content.innerText = seg.translation;
-            details.appendChild(summary);
-            details.appendChild(content);
-            lineDiv.appendChild(details);
-        }
-        transcriptContainer.appendChild(lineDiv);
-      });
+        bridgeToPinia();
     }
 
-    // 2. AI Chunk Mode Render (Modified)
+    // 2. AI Chunk Mode Render (gutted — Vue handles rendering)
     function renderChunkMode() {
-        clearPlaybackHighlightState();
-        playbackUiSignature = '';
-        document.body.classList.remove('highlight-sentence-mode');
-        transcriptContainer.innerHTML = '';
-        transcriptContainer.classList.add('chunk-mode');
-        lastActiveChunkIndex = -1;
-
-        if (chunkCnMode === 'focus') {
-            transcriptContainer.classList.add('cn-mode-focus');
-        } else {
-            transcriptContainer.classList.remove('cn-mode-focus');
-        }
-
-        if (!chunkItems.length) {
-            transcriptContainer.innerHTML = '<div style="padding:20px;text-align:center;">暂无 AI 切分数据，请点击上方“AI切分”加载 JSON。</div>';
-            return;
-        }
-        adjustChunkNoteArrowSizeByGap();
-        chunkItems.forEach((chunk, idx) => {
-            const chunkBlock = document.createElement('div');
-            chunkBlock.className = 'chunk-block';
-            chunkBlock.id = `chunk-${idx}`;
-            const chunkRef = getChunkRef(chunk, idx);
-            chunkBlock.dataset.chunkRef = chunkRef;
-            chunkBlock.dataset.chunkIdx = String(idx);
-            if (selectedSentence && selectedSentence.chunkRef === chunkRef) {
-                chunkBlock.classList.add('chunk-selected');
-            }
-            
-            // 濡傛灉璇ュ彞鍦ㄥ瓧鍏搁噷璁板綍涓?true锛屽姞涓?manual-show 绫?
-            if (manualChunkStates[idx]) {
-                chunkBlock.classList.add('manual-show');
-            }
-            
-            const rowDiv = document.createElement('div');
-            rowDiv.className = 'chunk-row';
-            const leftDiv = document.createElement('div');
-            leftDiv.className = 'chunk-left';
-
-            const enDiv = document.createElement('div');
-            enDiv.className = 'chunk-en';
-            if (chunk.words && chunk.words.length) {
-                renderWordsToContainer(chunk.words, enDiv);
-            } else {
-                enDiv.textContent = chunk.rawEn || "";
-            }
-            leftDiv.appendChild(enDiv);
-
-            const cnDiv = document.createElement('div');
-            cnDiv.className = 'chunk-cn';
-            if (!chunkCnVisible) cnDiv.classList.add('hidden-cn');
-            
-            cnDiv.innerText = chunk.ch || " "; // 鍗犱綅锛岀‘淇濆彲鐐?
-            
-            cnDiv.title = "点击显示/隐藏中文";
-            cnDiv.onclick = (e) => {
-                e.stopPropagation(); 
-                toggleManualChunkState(idx, chunkBlock);
-            };
-
-            leftDiv.appendChild(cnDiv);
-            rowDiv.appendChild(leftDiv);
-
-            const notesForChunk = getChunkNotesForRef(chunkRef);
-            if (notesForChunk.length > 0) {
-                markChunkWordsByNotes(enDiv, notesForChunk);
-            } else {
-                clearChunkWordAnnotations(enDiv);
-            }
-            chunkBlock.appendChild(rowDiv);
-
-            chunkBlock.addEventListener('mousedown', (e) => {
-                if (e.button !== 0) return;
-                if (e.target.closest('.chunk-note-tag')) return;
-                chunkPointerDown = {
-                    chunkRef,
-                    x: e.clientX,
-                    y: e.clientY
-                };
-            });
-
-            chunkBlock.onclick = (e) => {
-                if (e.target.closest('.chunk-note-tag')) return;
-                const moved = !!(chunkPointerDown && chunkPointerDown.chunkRef === chunkRef && ((Math.abs(e.clientX - chunkPointerDown.x) > 4) || (Math.abs(e.clientY - chunkPointerDown.y) > 4)));
-                chunkPointerDown = null;
-                if (hasActiveTextSelectionWithinChunk() || moved) return;
-                audioPlayer.currentTime = chunk.start;
-                forceUpdateUI(chunk.start);
-                try { selectSentenceFromChunkTarget(chunkBlock); } catch (err) {}
-            };
-
-            transcriptContainer.appendChild(chunkBlock);
-        });
+        bridgeToPinia();
         const clozeMarkup = buildClozeQuizMarkup();
         if (clozeMarkup) {
             transcriptContainer.insertAdjacentHTML('beforeend', clozeMarkup);
@@ -5127,8 +4997,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                 });
             });
         }
-        renderAllChunkNoteTags();
-        setChunkNoteVisible(chunkNoteVisible, false);
         tryRestoreChunkNoteDraft();
     }
 
