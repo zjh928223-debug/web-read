@@ -5390,25 +5390,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
     }
 
-    if (annotationPromptCopyBtn) {
-        annotationPromptCopyBtn.addEventListener('click', () => {
-            copyAnnotationPromptToClipboard().catch((error) => {
-                showError('ANNOTATION_PROMPT_COPY', error && error.message ? error.message : 'Copy failed');
-            });
-        });
-    }
-
-    if (annotationPromptExportBtn) {
-        annotationPromptExportBtn.addEventListener('click', exportAnnotationPromptPackage);
-    }
-
-    if (annotationPromptCloseBtn) {
-        annotationPromptCloseBtn.addEventListener('click', closeAnnotationPromptPanel);
-    }
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeAnnotationPromptPanel();
-    });
+    // Annotation prompt handlers → controls-module
     
     importMarksInput.addEventListener('change', e => {
         const f = getFirstFileFromEvent(e);
@@ -5455,41 +5437,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         showToast: showToast, showError: showError
     });
 
-    function changeSpeed(r) { 
-        audioPlayer.playbackRate = r;
-        document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('speed-button-active', parseFloat(b.dataset.speed) === r));
-    }
-    toggleFollowBtn.onclick = () => {
-        autoFollow = !autoFollow;
-        toggleFollowBtn.classList.toggle('on', autoFollow);
-        toggleFollowBtn.innerText = autoFollow ? '跟随:开' : '跟随:关';
-    };
-
-    (function(){
-      function loop(){
-        if(!audioPlayer.paused){
-          const currentTime = audioPlayer.currentTime;
-          const idx = bsFindActive(currentTime);
-          const chunkIdx = isChunkMode ? findChunkIndexByTime(currentTime) : -1;
-          const segIdx = (!isChunkMode && highlightMode === 2)
-            ? getCurrentSegmentIndex(currentTime)
-            : ((!isChunkMode && idx !== -1 && words[idx]) ? words[idx].segIndex : -1);
-          const signatureWordIdx = idx;
-          const signature = `${isChunkMode ? 'chunk' : 'line'}|${highlightMode}|${signatureWordIdx}|${chunkIdx}|${segIdx}`;
-          if (signature !== playbackUiSignature) {
-            playbackUiSignature = signature;
-            window.mainUpdateHighlight(idx);
-          }
-        }
-        requestAnimationFrame(loop);
-      }
-      loop();
-      document.getElementById('main-app-area').addEventListener('wheel', () => {
-        userScrollSuppress = true;
-        if(suppressTimer) clearTimeout(suppressTimer);
-        suppressTimer = setTimeout(() => userScrollSuppress = false, 3000);
-      }, {passive:true});
-    })();
+    // [MIGRATED] controls + rAF loop → src/composables/controls-module.js
+    window.__controlsModule.init({
+        audioPlayer: audioPlayer,
+        bsFindActiveHelper: bsFindActiveHelper,
+        findChunkIndexByTime: findChunkIndexByTime,
+        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        toggleFollowBtn: toggleFollowBtn,
+        mainAppArea: mainAppArea,
+        annotationPromptCopyBtn: annotationPromptCopyBtn,
+        annotationPromptExportBtn: annotationPromptExportBtn,
+        annotationPromptCloseBtn: annotationPromptCloseBtn
+    });
 
     // [MIGRATED] glass effects → src/composables/glass-effects.js
     (function () {
