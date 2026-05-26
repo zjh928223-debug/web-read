@@ -5087,96 +5087,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
     }
 
-    // 鍒囨崲鍗曚釜鍙ュ潡鐨勬墜鍔ㄦ樉绀虹姸鎬?
-    function toggleManualChunkState(index, blockEl) {
-        if (manualChunkStates[index]) {
-            delete manualChunkStates[index]; 
-            blockEl.classList.remove('manual-show');
-        } else {
-            manualChunkStates[index] = true; 
-            blockEl.classList.add('manual-show');
-        }
-        localStorage.setItem('manualChunkStates', JSON.stringify(manualChunkStates));
-    }
-
-    function renderWordsToContainer(wordList, container) {
-      const frag = document.createDocumentFragment();
-      wordList.forEach(word => {
-          const token = (word.word || word.text || '');
-          const m = token.match(/^(\s*[\W]*)([\w\u00C0-\u024F\u4E00-\u9FFF'-]+)([\W]*)$/) || [token, '', token, ''];
-          const coreTxt = m[2] || token.trim(); 
-          const leadTxt = m[1] || '';
-          const trailTxt = m[3] || '';
-
-          if(leadTxt) frag.appendChild(makeSpan(leadTxt, -1));
-          
-          const coreSpan = makeSpan(coreTxt, word.globalIndex, true, word);
-          if(markedMap.has(word.globalIndex)) coreSpan.classList.add('marked');
-          frag.appendChild(coreSpan);
-          
-          if(trailTxt) frag.appendChild(makeSpan(trailTxt, -1));
-          frag.appendChild(document.createTextNode(' '));
-      });
-      container.appendChild(frag);
-    }
-
-    function makeSpan(text, index, isCore=false, wordMeta=null) {
-        const s = document.createElement('span');
-        s.textContent = text;
-        if (Number.isFinite(index) && index >= 0) {
-            s.dataset.wordIndex = String(index);
-        }
-        if (wordMeta && Number.isFinite(Number(wordMeta.start))) {
-            s.dataset.wordStart = String(Number(wordMeta.start));
-        }
-        if (wordMeta && Number.isFinite(Number(wordMeta.end))) {
-            s.dataset.wordEnd = String(Number(wordMeta.end));
-        }
-
-        if(isCore) {
-            s.id = `word-${index}`;
-            s.style.cursor = 'pointer';
-            s.onclick = (e) => { 
-                if (isChunkMode && hasActiveTextSelectionWithinChunk()) return;
-                e.stopPropagation(); 
-                const w = Number.isFinite(index) ? words[index] : null;
-                const fallbackStart = Number(s.dataset.wordStart);
-                const targetTime = w && Number.isFinite(Number(w.start))
-                    ? Number(w.start)
-                    : (Number.isFinite(fallbackStart) ? fallbackStart : NaN);
-                if (Number.isFinite(targetTime)) {
-                    audioPlayer.currentTime = targetTime; 
-                    forceUpdateUI(targetTime);
-                }
-                if (isChunkMode) {
-                    try { selectSentenceFromChunkTarget(e.currentTarget); } catch (err) {}
-                }
-            };
-        } else {
-            s.className = 'punct';
-            if (index !== -1) { 
-                 s.onclick = (e) => { 
-                     if (isChunkMode && hasActiveTextSelectionWithinChunk()) return;
-                     e.stopPropagation(); 
-                     const w = Number.isFinite(index) ? words[index] : null;
-                     const fallbackStart = Number(s.dataset.wordStart);
-                     const targetTime = w && Number.isFinite(Number(w.start))
-                        ? Number(w.start)
-                        : (Number.isFinite(fallbackStart) ? fallbackStart : NaN);
-                     if (Number.isFinite(targetTime)) {
-                        audioPlayer.currentTime = targetTime; 
-                        forceUpdateUI(targetTime);
-                     }
-                     if (isChunkMode) {
-                        try { selectSentenceFromChunkTarget(e.currentTarget); } catch (err) {}
-                     }
-                 };
-                 s.style.cursor = 'pointer';
-            }
-        }
-        return s;
-    }
-
     function getAnnotationBubble() {
         const bubble = window.AnnotationBubble || null;
         if (!bubble) return null;
@@ -6004,15 +5914,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (prevEl && prevEl !== nextEl) prevEl.classList.remove(className);
         if (nextEl && nextEl !== prevEl) nextEl.classList.add(className);
         return nextEl || null;
-    }
-
-    function clearPlaybackHighlightState() {
-        if (activeWordHighlightEl) activeWordHighlightEl.classList.remove('word-highlight');
-        if (activeSentenceEl) activeSentenceEl.classList.remove('sentence-active');
-        if (activeChunkEl) activeChunkEl.classList.remove('chunk-active');
-        activeWordHighlightEl = null;
-        activeSentenceEl = null;
-        activeChunkEl = null;
     }
 
     function followPlaybackTarget(el) {
