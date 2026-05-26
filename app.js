@@ -1761,6 +1761,94 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         persistSelectedSentenceNote: persistSelectedSentenceNote,
         renderNotePreviewSidebar: renderNotePreviewSidebar
     });
+
+    // === Import module delegation (M4+M5 extracted → src/composables/import-module.js) ===
+    var _impState = {};
+    Object.defineProperty(_impState, 'segments', { get: function() { return segments; }, set: function(v) { segments = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'words', { get: function() { return words; }, set: function(v) { words = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'wordStarts', { get: function() { return wordStarts; }, set: function(v) { wordStarts = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'chunkItems', { get: function() { return chunkItems; }, set: function(v) { chunkItems = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'hasAiChunkData', { get: function() { return hasAiChunkData; }, set: function(v) { hasAiChunkData = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'hasClozeData', { get: function() { return hasClozeData; }, set: function(v) { hasClozeData = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'clozeItems', { get: function() { return clozeItems; }, set: function(v) { clozeItems = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'clozeAnswerState', { get: function() { return clozeAnswerState; }, set: function(v) { clozeAnswerState = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'manualChunkStates', { get: function() { return manualChunkStates; }, set: function(v) { manualChunkStates = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'chunkNotesFileHandle', { get: function() { return chunkNotesFileHandle; }, set: function(v) { chunkNotesFileHandle = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'chunkNotesFileHandleAudioKey', { get: function() { return chunkNotesFileHandleAudioKey; }, set: function(v) { chunkNotesFileHandleAudioKey = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'chunkNotesFileName', { get: function() { return chunkNotesFileName; }, set: function(v) { chunkNotesFileName = v; }, enumerable: true });
+    Object.defineProperty(_impState, 'isChunkMode', { get: function() { return isChunkMode; }, enumerable: true });
+    Object.defineProperty(_impState, 'currentAudioKey', { get: function() { return currentAudioKey; }, enumerable: true });
+
+    var _cpApi = window.__importModule.initChunkPipeline({
+        state: _impState,
+        getIsChunkMode: function() { return isChunkMode; },
+        renderChunkMode: renderChunkMode,
+        bridgeToPinia: bridgeToPinia,
+        toggleChunkBtn: toggleChunkBtn,
+        cleanTextHelper: cleanTextHelper,
+        tokenizeTextHelper: tokenizeTextHelper,
+        findExactMatchRangeHelper: findExactMatchRangeHelper
+    });
+
+    var _ihApi = window.__importModule.initImportHandlers({
+        state: _impState,
+        audioFileInput: audioFileInput,
+        transcriptFileInput: transcriptFileInput,
+        chunkFileInput: chunkFileInput,
+        clozeFileInput: clozeFileInput,
+        getFirstFileFromEvent: getFirstFileFromEvent,
+        readFileAsText: readFileAsText,
+        saveToDB: saveToDB,
+        applyCurrentAudioMeta: applyCurrentAudioMeta,
+        clearGeneratedAnnotationIndex: clearGeneratedAnnotationIndex,
+        restoreReaderFocus: restoreReaderFocus,
+        showToast: showToast,
+        showError: showError,
+        markFileLoaded: markFileLoaded,
+        lblAudio: lblAudio,
+        lblTranscript: lblTranscript,
+        validateTranscriptData: validateTranscriptData,
+        validateChunkData: validateChunkData,
+        validateClozeData: validateClozeData,
+        clearPersistedChunkSession: clearPersistedChunkSession,
+        switchSentenceNotesDoc: switchSentenceNotesDoc,
+        getAnnotationGenerationScope: getAnnotationGenerationScope,
+        emitAnnotationDiagnostics: emitAnnotationDiagnostics,
+        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
+        scheduleGeneratedAnnotationIndexRefresh: scheduleGeneratedAnnotationIndexRefresh,
+        renderTranscript: renderTranscript,
+        renderChunkMode: renderChunkMode,
+        forceUpdateUI: forceUpdateUI,
+        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
+        bridgeToPinia: bridgeToPinia,
+        rebuildVocabMatching: rebuildVocabMatching,
+        closeChunkNoteExportDialog: closeChunkNoteExportDialog,
+        loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
+        processChunkData: _cpApi.processChunkData,
+        audioPlayer: audioPlayer,
+        transcriptContainer: transcriptContainer,
+        loadClozeBtn: loadClozeBtn,
+        _ns: _ns,
+        markedMap: markedMap
+    });
+
+    var _importApi = {
+        processTranscript: _ihApi.processTranscript,
+        processChunkData: _cpApi.processChunkData,
+        setClozeData: _ihApi.setClozeData,
+        resetClozeState: _ihApi.resetClozeState,
+        buildClozeQuizMarkup: _ihApi.buildClozeQuizMarkup,
+        handleClozeCheck: _ihApi.handleClozeCheck
+    };
+
+    function processTranscript(json) {
+        return _importApi.processTranscript(json);
+    }
+    function processChunkData(data) {
+        return _importApi.processChunkData(data);
+    }
+
     let chunkNoteDraftSaveTimer = null;
     let notePopoverCtx = null;
     let chunkNoteModalEl = null;
@@ -3951,485 +4039,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     initAnnotationApiSettingsUi();
     initAnnotationGenerationEntryUi();
 
-    // === Import handlers (audio/transcript/chunk/marks) ===
-    
-    // Audio
-    audioFileInput.addEventListener('change', e => { 
-        const file = getFirstFileFromEvent(e);
-        if(!file) return;
-        saveToDB('audio', file);
-        applyCurrentAudioMeta({ name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' });
-        clearGeneratedAnnotationIndex();
-        chunkNotesFileHandle = null;
-        chunkNotesFileHandleAudioKey = '';
-        chunkNotesFileName = '';
-        closeChunkNoteExportDialog();
-        saveToDB('audioMeta', currentAudioMeta);
-        loadChunkNotesForCurrentAudio().then(() => {
-            if (isChunkMode) renderChunkMode();
-        });
-        audioPlayer.src = URL.createObjectURL(file);
-        markFileLoaded(lblAudio);
-        e.target.value = '';
-        restoreReaderFocus();
-    });
+    // M4+M5 delegated → src/composables/import-module.js
 
-    // Transcript
-    transcriptFileInput.addEventListener('change', event => {
-      const file = getFirstFileFromEvent(event);
-      if(!file) return;
-      readFileAsText(file, async (rawText) => {
-        try {
-            const json = validateTranscriptData(JSON.parse(rawText));
-          await clearPersistedChunkSession();
-          saveToDB('transcript', json);
-          processTranscript(json);
-          await switchSentenceNotesDoc(json);
-          emitAnnotationDiagnostics('app.import_scope_updated', {
-              scope: getAnnotationGenerationScope(),
-              currentAudioKey,
-              currentDocId: _ns.currentDocId,
-              derivedDocId: buildCurrentSentenceDocId(json),
-              segmentCount: Array.isArray(json && json.segments) ? json.segments.length : 0
-          });
-          scheduleGeneratedAnnotationIndexRefresh();
-          markFileLoaded(lblTranscript);
-          showToast('Transcript loaded', 'success');
-        } catch(err) { showError('TRANSCRIPT_PARSE', err && err.message ? err.message : 'Invalid transcript JSON'); }
-        finally { event.target.value = ''; restoreReaderFocus(); }
-      });
-    });
-
-    function processTranscript(json) {
-          segments = json.segments || [];
-          // Transcript source changed; require re-importing or restoring AI chunk mapping
-          hasAiChunkData = false;
-          chunkItems = [];
-          resetClozeState();
-          words = segments.flatMap(s => s.words || []);
-          let gIdx = 0;
-          segments.forEach((seg, sIdx) => {
-            if (seg.words && seg.words.length > 0) {
-                 if (!seg.end) seg.end = seg.words[seg.words.length - 1].end;
-            }
-            if(seg.words) seg.words.forEach(w => {
-              w.globalIndex = gIdx++;
-              w.segIndex = sIdx;
-            });
-          });
-          wordStarts = words.map(w => w.start ?? 0);
-          markedMap.clear();
-          clearGeneratedAnnotationIndex();
-          rebuildVocabMatching(); 
-          emitAnnotationDiagnostics('app.process_transcript', {
-              scope: getAnnotationGenerationScope(),
-              currentAudioKey,
-              currentDocId: _ns.currentDocId,
-              derivedDocId: buildCurrentSentenceDocId(json),
-              segmentCount: segments.length,
-              wordCount: words.length
-          });
-           if (!isChunkMode) renderTranscript();
-           syncAnnotationGenerationEntryStatus();
-           bridgeToPinia();
-           // 濡傛灉宸茬粡鏈夊垏鍒嗘暟鎹囷紝闇€瑕侀噸鏂板鐞嗕竴閬嶏紝鍥犱负 segments 鍙樹簡
-           if (chunkItems.length > 0) {
-           }
-    }
-
-
-
-    // Chunk File
-    chunkFileInput.addEventListener('change', event => {
-        const file = getFirstFileFromEvent(event);
-        if(!file) return;
-        readFileAsText(file, (rawText) => {
-            try {
-                const data = validateChunkData(JSON.parse(rawText));
-                manualChunkStates = {};
-                resetClozeState();
-                try {
-                    localStorage.removeItem('manualChunkStates');
-                } catch (e) {}
-                saveToDB('chunkData', data); // 淇濆瓨鍘熷鏁版嵁
-                processChunkData(data);
-                showToast('AI chunk data loaded', 'success');
-            } catch(err) { showError('CHUNK_PARSE', err && err.message ? err.message : 'Invalid chunk JSON'); }
-            finally { event.target.value = ''; restoreReaderFocus(); }
-        });
-    });
-
-    function resetClozeState() {
-        clozeItems.length = 0;
-        clozeAnswerState.length = 0;
-        hasClozeData = false;
-        window.__hasClozeData = false;
-        if (loadClozeBtn) {
-            loadClozeBtn.classList.remove('active');
-        }
-    }
-
-    // Cloze State (exposed for Vue Phase 4)
-    window.__clozeItems = clozeItems;
-    window.__clozeAnswerState = clozeAnswerState;
-    window.__hasClozeData = hasClozeData;
-
-    function setClozeData(items) {
-        clozeItems = Array.isArray(items) ? items : [];
-        hasClozeData = clozeItems.length > 0;
-        clozeAnswerState = createInitialClozeAnswerState(clozeItems);
-        // Sync window refs for Vue Phase 4
-        window.__clozeItems = clozeItems;
-        window.__clozeAnswerState = clozeAnswerState;
-        window.__hasClozeData = hasClozeData;
-        if (loadClozeBtn) {
-            loadClozeBtn.classList.toggle('active', hasClozeData);
-        }
-        bridgeToPinia();
-    }
-
-    function buildClozeQuizMarkup() {
-        if (window.__USE_VUE_RENDERING) return ''; // Vue handles it
-        if (!hasClozeData || !clozeItems.length) return '';
-        const quizVm = buildClozeQuizViewModel(clozeItems, clozeAnswerState);
-        const cards = quizVm.cards.map((card) => {
-            const resultHtml = card.resultKind === 'hint'
-                ? '<div class="cloze-result-hint">填写后点击“检查答案”。</div>'
-                : card.resultKind === 'ok'
-                    ? `<div class="cloze-result-ok">回答正确。标准答案：<strong>${escapeHtml(card.targetWord)}</strong></div>${card.reasoning ? `<div class="cloze-result-reason">${escapeHtml(card.reasoning)}</div>` : ''}`
-                    : `<div class="cloze-result-error">不匹配。标准答案：<strong>${escapeHtml(card.targetWord)}</strong></div>${card.reasoning ? `<div class="cloze-result-reason">${escapeHtml(card.reasoning)}</div>` : ''}`;
-            const metaHtml = card.wordType ? `<div class="cloze-meta">${escapeHtml(card.wordType)}</div>` : '';
-            return `
-                <section class="cloze-card ${card.statusClass}" data-cloze-card="${card.index}">
-                    <div class="cloze-card-head">
-                        <span class="cloze-index">${card.indexLabel}</span>
-                        ${metaHtml}
-                    </div>
-                    <div class="cloze-sentence">${escapeHtml(card.clozeSentence)}</div>
-                    <div class="cloze-answer-row">
-                        <input type="text" class="cloze-answer-input" data-cloze-input="${card.index}" value="${escapeHtml(card.userAnswer)}" placeholder="输入答案">
-                        <button type="button" class="small-btn cloze-check-btn" data-cloze-check="${card.index}">检查答案</button>
-                    </div>
-                    ${resultHtml}
-                </section>
-            `;
-        }).join('');
-
-        return `
-            <section class="cloze-quiz-section" id="cloze-quiz-section">
-                <div class="cloze-quiz-header">
-                    <h3>文章填空</h3>
-                    <p>AI 切分内容读完后，可以直接在这里做题。无论回答对错，都会显示标准答案和解释。</p>
-                </div>
-                <div class="cloze-quiz-list">${cards}</div>
-            </section>
-        `;
-    }
-
-    function handleClozeCheck(index) {
-        const item = clozeItems[index];
-        if (!item) return;
-        // Phase 4 fallback: check input value from Vue or old DOM
-        var input = document.querySelector(`[data-cloze-input="${index}"]`);
-        var userAnswer = input ? input.value : '';
-        const correct = normalizeClozeAnswer(userAnswer) === normalizeClozeAnswer(item.targetWord);
-        clozeAnswerState[index] = {
-            checked: true,
-            correct,
-            userAnswer
-        };
-        if (!window.__USE_VUE_RENDERING) {
-            renderChunkMode();
-            const nextInput = transcriptContainer.querySelector(`[data-cloze-input="${index}"]`);
-            if (nextInput) {
-                nextInput.focus();
-                nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
-            }
-        }
-    }
-
-    // Expose for Vue Phase 4
-    window.__clozeCheck = handleClozeCheck;
-    window.__buildClozeQuizMarkup = buildClozeQuizMarkup;
-
-    if (clozeFileInput) {
-        clozeFileInput.addEventListener('change', event => {
-            const file = getFirstFileFromEvent(event);
-            if (!file) return;
-            readFileAsText(file, (rawText) => {
-                try {
-                    const data = validateClozeData(JSON.parse(rawText));
-                    setClozeData(data);
-                    if (isChunkMode) renderChunkMode();
-                    showToast('Cloze questions loaded', 'success');
-                } catch (err) {
-                    showError('CLOZE_PARSE', err && err.message ? err.message : 'Invalid cloze JSON');
-                } finally {
-                    event.target.value = '';
-                    restoreReaderFocus();
-                }
-            });
-        });
-    }
-
-    // === AI chunk alignment/matching pipeline ===
-    // 淇濈暀鐜版湁绛栫暐锛氭柊鏃ф牸寮忓吋瀹?+ 鍐呭鎰熺煡 + 鍙岀閿氬畾
-    
-    function processChunkData(data) {
-        if (!segments || segments.length === 0) {
-            chunkItems = [];
-            return;
-        }
-
-        chunkItems = [];
-
-        // 杈呭姪宸ュ叿锛氭竻鐞嗘枃鏈互渚挎瘮杈?(鍘绘爣鐐广€佽浆灏忓啓)
-        const clean = cleanTextHelper;
-
-        // 鍙ュ瓙鍒嗚瘝 (鐢ㄤ簬绮剧‘鍖归厤)
-        const tokenize = tokenizeTextHelper;
-
-        // 鍏滃簳锛氭嬁鍒颁竴涓钀藉彲鐐瑰嚮鐨勬椂闂磋寖鍥?
-        const getSegTimeRange = (seg) => {
-            if (seg && typeof seg.start === "number" && typeof seg.end === "number") return [seg.start, seg.end];
-            if (seg && seg.words && seg.words.length) return [seg.words[0].start, seg.words[seg.words.length - 1].end];
-            return [0, 0];
-        };
-
-        // 鍏滃簳锛氬榻愬け璐ヤ篃涓嶄涪鍧楋紝鑷冲皯鏄剧ず Gemini 鐨勮嫳鏂囧拰涓枃
-        const pushFallbackChunk = (seg, chunk, segId) => {
-            const [st, ed] = getSegTimeRange(seg);
-            chunkItems.push({
-                words: [],
-                start: st,
-                end: ed,
-                ch: chunk && (chunk.zh || chunk.ch) ? (chunk.zh || chunk.ch) : " ",
-                rawEn: chunk && chunk.en ? chunk.en : "",
-                isFallback: true,
-                segId: (typeof segId === "number") ? segId : -1
-            });
-        };
-
-        // 绮剧‘鍖归厤锛氬湪鏁存閲屾壘瀹屾暣鐭 (鏈€绋筹紝鐩存帴鏃犺 a/b 婕傜Щ)
-        const findExactPhrase = (segWords, phraseTokens) => findExactMatchRangeHelper(segWords, phraseTokens, 0);
-
-        const findExactPhraseFromIndex = (wordList, phraseTokens, fromIndex = 0) => (
-            findExactMatchRangeHelper(wordList, phraseTokens, fromIndex)
-        );
-
-        const clamp = clampHelper;
-
-        // 鍦ㄦ寚瀹氱储寮曢檮杩戝鎵剧洰鏍囧崟璇?(鐢ㄤ簬閿氱偣鏍″噯)
-        const findMatchIndex = (baseIdx, targetWord, segWords, searchRange) => (
-            adjustIndexHelper(baseIdx, targetWord, segWords, searchRange)
-        );
-
-        // 鏇村ぇ鐨勬悳绱㈠崐寰勶細鍏佽 Gemini 鐨?a/b 鏈?10 涓瘝浠ュ唴鐨勮宸?
-        const START_RANGE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10];
-        const END_RANGE   = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, -1, -2, -3, -4, -5, -6, -7, -8, -9, -10, -11, -12];
-
-        // 1. 澶勭悊鏂版牸寮?
-        if (data.s && Array.isArray(data.s)) {
-            const useGlobalWordIndexMode = data.s.length === 1;
-            let globalWordCursor = 0;
-            data.s.forEach(segItem => {
-                const segId = segItem.id;
-                const targetSeg = (segId >= 0 && segId < segments.length) ? segments[segId] : null;
-
-                if (!segItem.chunks || !Array.isArray(segItem.chunks)) return;
-
-                segItem.chunks.forEach(chunk => {
-                    const segWords = targetSeg && targetSeg.words ? targetSeg.words : null;
-
-                    // 娌℃湁璇嶇骇鏁版嵁涔熶笉涓?
-                    if (!segWords || !segWords.length) {
-                        pushFallbackChunk(targetSeg, chunk, segId);
-                        return;
-                    }
-
-                    const phraseTokens = tokenize(chunk.en);
-
-                    // 鍏堝仛鏁村彞绮剧‘鍖归厤锛氭壘鍒板氨鐩存帴鐢?(鏈€绋?
-                    const exact = findExactPhrase(segWords, phraseTokens);
-
-                    let finalStart = null;
-                    let finalEnd = null;
-
-                    if (useGlobalWordIndexMode && Number.isFinite(Number(chunk.a)) && Number.isFinite(Number(chunk.b))) {
-                        const globalStart = Math.max(0, Number(chunk.a) - 1);
-                        const globalEnd = Math.max(globalStart, Number(chunk.b) - 1);
-                        const matchedWords = words.slice(globalStart, globalEnd + 1);
-                        if (matchedWords.length) {
-                            chunkItems.push({
-                                words: matchedWords,
-                                start: matchedWords[0].start,
-                                end: matchedWords[matchedWords.length - 1].end,
-                                ch: chunk.zh || " ",
-                                rawEn: chunk.en || "",
-                                isFallback: false,
-                                segId: Number.isInteger(matchedWords[0].segIndex) ? matchedWords[0].segIndex : segId
-                            });
-                            globalWordCursor = globalEnd + 1;
-                            return;
-                        }
-                    }
-
-                    if (exact) {
-                        finalStart = exact[0];
-                        finalEnd = exact[1];
-                    } else {
-                        const globalExact = findExactPhraseFromIndex(words, phraseTokens, globalWordCursor);
-                        if (globalExact) {
-                            const matchedWords = words.slice(globalExact[0], globalExact[1] + 1);
-                            if (matchedWords.length) {
-                                chunkItems.push({
-                                    words: matchedWords,
-                                    start: matchedWords[0].start,
-                                    end: matchedWords[matchedWords.length - 1].end,
-                                    ch: chunk.zh || " ",
-                                    rawEn: chunk.en || "",
-                                    isFallback: false,
-                                    segId: Number.isInteger(matchedWords[0].segIndex) ? matchedWords[0].segIndex : segId
-                                });
-                                globalWordCursor = globalExact[1] + 1;
-                                return;
-                            }
-                        }
-
-                        // 閿氱偣鏍″噯 (鎵╁ぇ鎼滅储鍗婂緞)
-                        const { start: a, end: b } = normalizeChunkCandidateBoundsHelper(chunk.a, chunk.b);
-
-                        // 鍚屾椂灏濊瘯 0-based 鍜?1-based 涓ゅ鍧愭爣锛岄€夋洿闈犺氨鐨?
-                        const candidates = buildChunkCandidateVariantsHelper(a, b);
-
-                        const firstWord = phraseTokens.length ? phraseTokens[0] : "";
-                        const lastWord  = phraseTokens.length ? phraseTokens[phraseTokens.length - 1] : "";
-
-                        let best = null;
-
-                        candidates.forEach(c => {
-                            const { startIndex: s0, endIndex: e0 } = clampChunkMatchCandidateHelper(c, segWords.length);
-
-                            let st = s0;
-                            let ed = e0;
-
-                            if (firstWord) st = findMatchIndex(s0, firstWord, segWords, START_RANGE);
-
-                            const { minEnd, baseEnd } = buildChunkCandidateEndWindowHelper(st, e0, phraseTokens.length, segWords.length);
-
-                            if (lastWord) ed = findMatchIndex(baseEnd, lastWord, segWords, END_RANGE);
-
-                            if (ed < minEnd) ed = Math.min(segWords.length - 1, minEnd);
-
-                            const { startWord: wStart, endWord: wEnd } = getChunkCandidateBoundaryWordsHelper(segWords, st, ed);
-
-                            const score = scoreMatchCandidateHelper(firstWord, lastWord, wStart, wEnd);
-
-                            const candidate = normalizeChunkMatchCandidateHelper(st, ed, score);
-
-                            if (!best || candidate.score > best.score) best = candidate;
-                        });
-
-                        if (best) {
-                            // 濡傛灉杩為灏捐瘝閮藉涓嶄笂锛屽氨鍒啋闄╁垏閿欒瘝浜嗭紝鐩存帴璧板厹搴曟樉绀哄師鏂?
-                            if (phraseTokens.length && best.score === 0) {
-                                finalStart = null;
-                                finalEnd = null;
-                            } else {
-                                finalStart = best.st;
-                                finalEnd = best.ed;
-                            }
-                        }
-                    }
-
-                    // 鏈€缁堝厹搴曪細浠讳綍寮傚父閮戒笉涓㈠潡
-                    if (finalStart === null || finalEnd === null || finalStart > finalEnd) {
-                        pushFallbackChunk(targetSeg, chunk, segId);
-                        return;
-                    }
-
-                    if (finalStart < 0 || finalStart >= segWords.length) {
-                        pushFallbackChunk(targetSeg, chunk, segId);
-                        return;
-                    }
-
-                    finalEnd = clamp(finalEnd, 0, segWords.length - 1);
-
-                    const chunkWords = segWords.slice(finalStart, finalEnd + 1);
-
-                    if (!chunkWords.length) {
-                        pushFallbackChunk(targetSeg, chunk, segId);
-                        return;
-                    }
-
-                    chunkItems.push({
-                        words: chunkWords,
-                        start: chunkWords[0].start,
-                        end: chunkWords[chunkWords.length - 1].end,
-                        ch: chunk.zh || " ",
-                        rawEn: chunk.en || "",
-                        isFallback: false,
-                        segId: segId
-                    });
-                    if (chunkWords.length && Number.isFinite(Number(chunkWords[chunkWords.length - 1].globalIndex))) {
-                        globalWordCursor = Math.max(globalWordCursor, Number(chunkWords[chunkWords.length - 1].globalIndex) + 1);
-                    }
-                });
-            });
-        }
-        // 2. 澶勭悊鏃ф牸寮?
-        else {
-            const items = Array.isArray(data) ? data : (data.items || []);
-            chunkItems = items.map(item => {
-                const seg = segments[item.segment_id];
-                if (!seg || !seg.words || !seg.words.length) {
-                    const [st, ed] = getSegTimeRange(seg);
-                    return {
-                        ...item,
-                        words: [],
-                        start: st,
-                        end: ed,
-                        ch: item.ch || item.zh || " ",
-                        rawEn: item.en || "",
-                        isFallback: true,
-                        segId: item.segment_id
-                    };
-                }
-
-                const startIdx = (item.w_start_1based || 1) - 1;
-                const endIdx = (item.w_end_1based || seg.words.length);
-                const chunkWords = seg.words.slice(startIdx, endIdx);
-
-                if (!chunkWords.length) {
-                    const [st, ed] = getSegTimeRange(seg);
-                    return {
-                        ...item,
-                        words: [],
-                        start: st,
-                        end: ed,
-                        ch: item.ch || item.zh || " ",
-                        rawEn: item.en || "",
-                        isFallback: true,
-                        segId: item.segment_id
-                    };
-                }
-
-                return {
-                    ...item,
-                    words: chunkWords,
-                    start: chunkWords[0].start,
-                    end: chunkWords[chunkWords.length - 1].end,
-                    isFallback: false,
-                    rawEn: item.en || ""
-                };
-            }).filter(item => item !== null);
-        }
-
-        hasAiChunkData = chunkItems.length > 0;
-        toggleChunkBtn.innerText = hasAiChunkData ? "AI切分(已就绪)" : "AI切分";
-        if (isChunkMode) renderChunkMode();
-        bridgeToPinia();
-    }
     // === Transcript/chunk context matching logic ===
     function rebuildVocabMatching() {
         vocabMatchMap.clear();
@@ -4500,17 +4111,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // 2. AI Chunk Mode Render (gutted — Vue handles rendering)
     function renderChunkMode() {
         bridgeToPinia();
-        const clozeMarkup = buildClozeQuizMarkup();
+        const clozeMarkup = window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
         if (clozeMarkup) {
             transcriptContainer.insertAdjacentHTML('beforeend', clozeMarkup);
             transcriptContainer.querySelectorAll('[data-cloze-check]').forEach((btn) => {
-                btn.addEventListener('click', () => handleClozeCheck(Number(btn.dataset.clozeCheck)));
+                btn.addEventListener('click', () => window.__clozeCheck(Number(btn.dataset.clozeCheck)));
             });
             transcriptContainer.querySelectorAll('[data-cloze-input]').forEach((input) => {
                 input.addEventListener('keydown', (event) => {
                     if (event.key === 'Enter') {
                         event.preventDefault();
-                        handleClozeCheck(Number(input.dataset.clozeInput));
+                        window.__clozeCheck(Number(input.dataset.clozeInput));
                     }
                 });
             });
