@@ -6527,13 +6527,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     });
 
     // [MIGRATED] exports → src/composables/app-handlers.js
-    _kh.initExports({
+    window.__appHandlers.initExports({
         exportJsonBtn: exportJsonBtn, exportMdAllBtn: exportMdAllBtn,
         markedMap: markedMap, segments: segments,
         showError: showError, showToast: showToast
     });
 
-    _kh.initMarksImport({
+    window.__appHandlers.initMarksImport({
         importMarksBtn: importMarksBtn, importMarksInput: importMarksInput,
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
@@ -6608,3 +6608,20 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
   
     // Init hold button label
     setTimeout(()=>{ try{updateChunkCnHoldBtn();}catch(e){} }, 0);
+
+    // === ES Module exports (for HTML onclick compatibility) ===
+    window.handleBackwardClick = handleBackwardClick;
+    window.handleForwardClick = handleForwardClick;
+    window.changeSpeed = changeSpeed;
+    window.cycleHighlightMode = cycleHighlightMode;
+    window.toggleChunkMode = toggleChunkMode;
+    window.toggleChunkFocusMode = toggleChunkFocusMode;
+    window.openChunkStyleModal = openChunkStyleModal;
+    window.closeChunkStyleModal = closeChunkStyleModal;
+    window.openChunkNoteStyleModal = openChunkNoteStyleModal;
+    window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
+    window.toggleChunkShadowManual = toggleChunkShadowManual;
+    window.updateChunkStyle = updateChunkStyle;
+    window.updateChunkNoteStyle = updateChunkNoteStyle;
+    window.forceUpdateUI = forceUpdateUI;
+    window.mainUpdateHighlight = mainUpdateHighlight;
