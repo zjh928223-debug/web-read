@@ -7,7 +7,7 @@
     // [MIGRATED] DB schema constants → window.__audioStore
 
     // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
-    window.__USE_VUE_RENDERING = false;
+    window.__USE_VUE_RENDERING = true;
 
     // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
     window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
