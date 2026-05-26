@@ -5297,182 +5297,98 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
     }
 
-    document.addEventListener('keydown', e => {
-        if (isInputLikeTarget(e.target)) return;
-        if (e.ctrlKey || e.metaKey || e.altKey) return;
-        const key = e.key; 
-        const lowerKey = key.toLowerCase();
-        
-        if (key === ' ') {
-            e.preventDefault();
-            audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
-        } 
-        else if (lowerKey === markKey) {
-            e.preventDefault();
-            toggleMarkCurrent();
-        } 
-        else if (lowerKey === notesKey) {
-            e.preventDefault();
-            toggleCurrentNote(); 
-        }
-        else if (lowerKey === annotationBubbleKey) {
-            e.preventDefault();
-            toggleAnnotationBubble();
-        }
-        else if (lowerKey === chunkCnKey && isChunkMode) {
-            e.preventDefault();
-            if (chunkCnHoldMode) {
-                if (!e.repeat) beginHoldChunkCn();
-            } else {
-                toggleChunkCn();
-            }
-        }
-        else if (lowerKey === chunkShadowKey && isChunkMode) { 
-            e.preventDefault();
-            toggleChunkShadow();
-        }
-        else if (lowerKey === chunkNoteKey && isChunkMode) {
-            e.preventDefault();
-            setChunkNoteVisible(!_ns.chunkNoteVisible, true);
-        }
-        else if (key === backwardKey) {
-            e.preventDefault();
-            handleBackwardClick(); 
-        }
-        else if (key === forwardKey) {
-            e.preventDefault();
-            handleForwardClick();  
-        }
+    // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
+    window.__keyboardModule.init({
+        audioPlayer: audioPlayer,
+        isInputLikeTarget: isInputLikeTarget,
+        isChunkMode: function () { return isChunkMode; },
+        chunkCnHoldMode: function () { return chunkCnHoldMode; },
+        chunkNoteVisible: function () { return _ns.chunkNoteVisible; },
+        markKey: markKey, notesKey: notesKey, annotationBubbleKey: annotationBubbleKey,
+        chunkCnKey: chunkCnKey, chunkShadowKey: chunkShadowKey, chunkNoteKey: chunkNoteKey,
+        backwardKey: backwardKey, forwardKey: forwardKey,
+        toggleMarkCurrent: toggleMarkCurrent,
+        toggleCurrentNote: toggleCurrentNote,
+        toggleAnnotationBubble: toggleAnnotationBubble,
+        beginHoldChunkCn: beginHoldChunkCn, endHoldChunkCn: endHoldChunkCn,
+        toggleChunkCn: toggleChunkCn, toggleChunkShadow: toggleChunkShadow,
+        setChunkNoteVisible: setChunkNoteVisible,
+        handleBackwardClick: handleBackwardClick, handleForwardClick: handleForwardClick,
+        closeCustomThemePanel: function () { window.__themeStore.closeCustomThemePanel(); },
+        cancelChunkNoteModal: cancelChunkNoteModal,
+        closeChunkNoteContextMenu: typeof closeChunkNoteContextMenuRN !== 'undefined' ? closeChunkNoteContextMenuRN : closeChunkNoteContextMenu,
+        closeChunkNoteDeleteDialog: closeChunkNoteDeleteDialog,
+        closeChunkNoteExportDialog: closeChunkNoteExportDialog,
+        setSelectedChunkNote: setSelectedChunkNote,
+        openChunkNoteDeleteDialog: openChunkNoteDeleteDialog,
+        selectedChunkNoteId: function () { return _ns.selectedChunkNoteId || ''; },
+        handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
+        chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
+        pendingChunkSelectionCtx: function () { return _ns.pendingChunkSelectionCtx; },
+        openChunkNotePopover: openChunkNotePopover,
+        hotkeyInput: hotkeyInput, hotkeyNotesInput: hotkeyNotesInput,
+        hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
+        hotkeyBackwardInput: hotkeyBackwardInput, hotkeyForwardInput: hotkeyForwardInput,
+        hotkeyChunkCnInput: hotkeyChunkCnInput, hotkeyChunkShadowInput: hotkeyChunkShadowInput,
+        hotkeyChunkNoteInput: hotkeyChunkNoteInput,
+        highlightColorInput: highlightColorInput, sentenceColorInput: sentenceColorInput,
+        themeCustomPanel: themeCustomPanel, themeControlsEl: themeControlsEl,
+        closeAnnotationPromptPanel: closeAnnotationPromptPanel,
+        setMarkKey: function (v) { markKey = v; },
+        setNotesKey: function (v) { notesKey = v; },
+        setAnnotationBubbleKey: function (v) { annotationBubbleKey = v; },
+        setChunkCnKey: function (v) { chunkCnKey = v; },
+        setChunkShadowKey: function (v) { chunkShadowKey = v; },
+        setChunkNoteKey: function (v) { chunkNoteKey = v; },
+        setBackwardKey: function (v) { backwardKey = v; },
+        setForwardKey: function (v) { forwardKey = v; },
+        chunkNoteCtxMenu: chunkNoteCtxMenu,
+        chunkNoteDeleteDialogEl: chunkNoteDeleteDialogEl,
+        chunkNoteExportDialogEl: chunkNoteExportDialogEl,
+        chunkNoteModalEl: chunkNoteModalEl,
+        saveChunkNoteFromModal: saveChunkNoteFromModal
     });
 
-    addEventListener('keyup', e => {
-        if (isInputLikeTarget(e.target)) return;
-        if (!isChunkMode) return;
-        const key = e.key;
-        const lowerKey = key.toLowerCase();
-        if (lowerKey === chunkCnKey && chunkCnHoldMode) {
-            endHoldChunkCn();
-        }
-    });
-
-    window.addEventListener('blur', () => {
-        if (chunkCnHoldMode) endHoldChunkCn();
-    });
-
-    document.addEventListener('contextmenu', handleChunkSelectionContextMenu);
-    if (chunkNoteCtxAddBtn) {
-        chunkNoteCtxAddBtn.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!_ns.pendingChunkSelectionCtx) return;
-            const ctx = _ns.pendingChunkSelectionCtx;
-            closeChunkNoteContextMenu();
-            openChunkNotePopover(ctx);
-            const selection = window.getSelection();
-            if (selection) {
-                try { selection.removeAllRanges(); } catch (err) {}
-            }
-        });
-    }
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-            window.__themeStore.closeCustomThemePanel();
-            cancelChunkNoteModal();
-            closeChunkNoteContextMenu();
-            closeChunkNoteDeleteDialog();
-            closeChunkNoteExportDialog();
-            setSelectedChunkNote('');
-        } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedChunkNoteId) {
-            const target = e.target;
-            if (isInputLikeTarget(target) || (target && target.isContentEditable)) return;
-            e.preventDefault();
-            openChunkNoteDeleteDialog(selectedChunkNoteId);
-        }
-    });
-    document.addEventListener('mousedown', (e) => {
-        if (themeCustomPanel && !themeCustomPanel.hidden && themeControlsEl && !themeControlsEl.contains(e.target)) {
-            window.__themeStore.closeCustomThemePanel();
-        }
-        document.querySelectorAll('.chunk-note-tag.editing').forEach((tag) => {
-            if (tag.contains(e.target)) return;
-            const finish = tag.__finishChunkNoteEdit;
-            if (typeof finish === 'function') finish(false);
-        });
-        if (chunkNoteCtxMenu && chunkNoteCtxMenu.style.display === 'block') {
-            if (!chunkNoteCtxMenu.contains(e.target)) closeChunkNoteContextMenu();
-        }
-        if (chunkNoteDeleteDialogEl && !chunkNoteDeleteDialogEl.contains(e.target) && !e.target.closest('.chunk-note-tag')) {
-            closeChunkNoteDeleteDialog();
-            setSelectedChunkNote('');
-        }
-        if (chunkNoteExportDialogEl && !chunkNoteExportDialogEl.contains(e.target)) {
-            closeChunkNoteExportDialog();
-        }
-        if (!chunkNoteModalEl) return;
-        if (chunkNoteModalEl.contains(e.target)) return;
-        saveChunkNoteFromModal();
-    }, true);
-    window.addEventListener('resize', () => {
-        if (!isChunkMode) return;
-        scheduleChunkNoteLayoutRefresh();
-    });
-    window.addEventListener('beforeunload', () => {
-        persistChunkNoteDraft(true);
-    });
-
+    // Functions called by keyboard-module (defined here to avoid circular deps)
     function toggleCurrentNote() {
         if (isChunkMode) return;
-        let targetIdx = -1;
+        var targetIdx = -1;
         if (currentWordIndex !== -1) {
-            const w = words[currentWordIndex];
+            var w = words[currentWordIndex];
             if (w) targetIdx = w.segIndex;
         } else if (lastActiveSegIndex !== -1) {
             targetIdx = lastActiveSegIndex;
         }
-
         if (targetIdx !== -1) {
-            const noteEl = document.getElementById(`note-${targetIdx}`);
+            var noteEl = document.getElementById('note-' + targetIdx);
             if (noteEl) noteEl.open = !noteEl.open;
         }
     }
 
     function jumpPrevSentence() {
-        const cur = audioPlayer.currentTime;
-        const sIdx = getCurrentSegmentIndex(cur);
-        let targetTime = 0;
+        var cur = audioPlayer.currentTime;
+        var sIdx = getCurrentSegmentIndex(cur);
+        var targetTime = 0;
         if (sIdx !== -1) {
-            const repeatWindowMs = 600;
-            const now = Date.now();
-            const isRepeatedPrevOnSameSentence =
-                lastSentencePrevTapSegIndex === sIdx &&
-                (now - lastSentencePrevTapAt) <= repeatWindowMs;
-
-            targetTime = isRepeatedPrevOnSameSentence && sIdx > 0
-                ? segments[sIdx - 1].start
-                : segments[sIdx].start;
-
-            if (isRepeatedPrevOnSameSentence) {
-                lastSentencePrevTapSegIndex = -1;
-                lastSentencePrevTapAt = 0;
+            var now = Date.now();
+            if (lastSentencePrevTapSegIndex === sIdx && (now - lastSentencePrevTapAt) <= 600) {
+                targetTime = sIdx > 0 ? segments[sIdx - 1].start : segments[sIdx].start;
+                lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
             } else {
-                lastSentencePrevTapSegIndex = sIdx;
-                lastSentencePrevTapAt = now;
+                targetTime = segments[sIdx].start;
+                lastSentencePrevTapSegIndex = sIdx; lastSentencePrevTapAt = now;
             }
-        } else {
-            lastSentencePrevTapSegIndex = -1;
-            lastSentencePrevTapAt = 0;
-        }
+        } else { lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0; }
         audioPlayer.currentTime = targetTime;
         forceUpdateUI(targetTime);
     }
 
     function jumpNextSentence() {
-        const cur = audioPlayer.currentTime;
-        const sIdx = getCurrentSegmentIndex(cur);
-        const next = (sIdx >= 0 && sIdx < segments.length - 1) ? segments[sIdx + 1] : null;
-        lastSentencePrevTapSegIndex = -1;
-        lastSentencePrevTapAt = 0;
-        if(next && Number.isFinite(next.start)) {
+        var cur = audioPlayer.currentTime;
+        var sIdx = getCurrentSegmentIndex(cur);
+        var next = (sIdx >= 0 && sIdx < segments.length - 1) ? segments[sIdx + 1] : null;
+        lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
+        if (next && Number.isFinite(next.start)) {
             audioPlayer.currentTime = next.start;
             forceUpdateUI(next.start);
         }
@@ -5487,31 +5403,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         window.__marksStore.toggleMark(markedMap, currentWordIndex, words, saveToDB, syncAnnotationGenerationEntryStatus);
     }
 
-    highlightColorInput.addEventListener('input', e => {
-        document.documentElement.style.setProperty('--word-highlight-bg', e.target.value);
-        localStorage.setItem('highlightColor', e.target.value);
-    });
-    sentenceColorInput.addEventListener('input', e => {
-        document.documentElement.style.setProperty('--sentence-highlight-bg', e.target.value);
-        localStorage.setItem('sentenceColor', e.target.value);
-    });
-
-    [hotkeyInput, hotkeyNotesInput, hotkeyAnnotationBubbleInput, hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput, hotkeyChunkShadowInput, hotkeyChunkNoteInput].filter(Boolean).forEach(inp => {
-       inp.addEventListener('keydown', e => {
-           e.preventDefault();
-           const validKey = (e.key.length === 1) ? e.key.toLowerCase() : e.key;
-           inp.value = validKey;
-           
-           if(inp === hotkeyInput) { markKey = validKey; localStorage.setItem('markKey', markKey); }
-           if(inp === hotkeyNotesInput) { notesKey = validKey; localStorage.setItem('notesKey', notesKey); }
-           if(inp === hotkeyAnnotationBubbleInput) { annotationBubbleKey = validKey; localStorage.setItem('annotationBubbleKey', annotationBubbleKey); }
-        if(inp === hotkeyChunkCnInput) { chunkCnKey = validKey; localStorage.setItem('chunkCnKey', chunkCnKey); }
-           if(inp === hotkeyChunkShadowInput) { chunkShadowKey = validKey; localStorage.setItem('chunkShadowKey', chunkShadowKey); }
-           if(inp === hotkeyChunkNoteInput) { chunkNoteKey = validKey; localStorage.setItem('chunkNoteKey', chunkNoteKey); }
-           if(inp === hotkeyBackwardInput) { backwardKey = validKey; localStorage.setItem('backwardKey', backwardKey); }
-           if(inp === hotkeyForwardInput) { forwardKey = validKey; localStorage.setItem('forwardKey', forwardKey); }
-       });
-    });
+    // Highlight colors + hotkey bindings → keyboard-module
 
     function applyImportedChunkNotes(data) {
         const arr = Array.isArray(data) ? data : (data && Array.isArray(data.notes) ? data.notes : null);
