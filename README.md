@@ -1,69 +1,70 @@
 # Read-Web
 
-Vue 3 + Vite — language reading tool with audio sync, AI chunking, cloze quizzes, and annotation generation via Google Gemini API.
+Vue 3 + Vite — language reading tool with audio sync, AI chunking, cloze quizzes, and annotation via Google Gemini API.
 
 ## Quick Start
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
+npm run build      # production build
+npm test           # Playwright verification
 ```
 
-## Project Status
-
-**Phase 6 — Cleanup complete.** Vue 3 migration in progress.
-
-- ✅ Vite + Vue shell (Phase 1)
-- ✅ 9 stores extracted from app.js (Phase 2)
-- ✅ ToastMessage Vue component (Phase 3)
-- ✅ 5 component shells (Phase 4)
-- ✅ 22 ES module copies (Phase 5)
-- ✅ Cleanup + docs (Phase 6)
-
-## Stack
-
-| Layer | Tech |
-|-------|------|
-| Framework | Vue 3 (Options API) |
-| Build | Vite |
-| State | Plain JS objects on `window` (→ Pinia deferred) |
-| DB | IndexedDB (`SeekPlayerDB` v1) |
-| AI | Google Gemini API (`gemini-2.5-flash`) |
-| CSS | Liquid Glass design system |
-| Test | Playwright |
-
-## File Map
+## Architecture
 
 ```
-read-web/
-├── index.html              ← Vite entry
-├── vite.config.js
-├── package.json
-├── app.js                  ← Legacy monolith (6900 lines, being phased out)
-├── styles.css              ← Global CSS
-├── read-26.html            ← Original (reference only)
-├── src/
-│   ├── main.js             ← Vue app bootstrap
-│   ├── App.vue             ← Root component
-│   ├── components/         ← 6 Vue components
-│   ├── stores/             ← 9 store files
-│   ├── services/annotation/ ← 14 ES module pipeline files
-│   ├── utils/              ← 8 ES module utility files
-│   └── styles.css
-├── scripts/                ← Verification tools
-├── cankao/                 ← Reference (old version)
-└── openspec/               ← Spec documentation
+index.html → 27 legacy IIFE + 9 stores + app.js + Vue entry (main.js)
+                ↓                              ↓
+         (data + pipeline)              Vue 3 App (Pinia + 6 SFCs)
 ```
 
-## Scripts
+| Layer | Tech | Status |
+|-------|------|--------|
+| Rendering | Vue 3 SFC (Options API) | ✅ Active |
+| State | Pinia (9 stores) + IIFE bridge | ✅ Active |
+| Build | Vite | ✅ |
+| DB | IndexedDB (SeekPlayerDB v1) | ✅ |
+| AI | Gemini API (gemini-2.5-flash) | ✅ |
+| CSS | Liquid Glass system | ✅ |
+| Test | Playwright | ✅ |
 
-| Command | Purpose |
-|---------|---------|
-| `npm run dev` | Start Vite dev server |
-| `npm run build` | Production build |
-| `npm test` | Run legacy Playwright check |
-| `npm run verify:vite` | Run Vite Playwright check |
+## Structure
+
+```
+src/
+├── main.js                     ← createApp + Pinia + bridge
+├── App.vue                     ← Root
+├── components/                 ← 6 Vue SFCs
+│   ├── ToastMessage.vue        ← Pinia reactive
+│   ├── TranscriptContainer.vue ← Normal mode
+│   ├── ChunkModeView.vue       ← AI chunk mode
+│   ├── ClozeQuizView.vue       ← Quiz container
+│   ├── ClozeCard.vue           ← Quiz card
+│   └── SentenceNoteSidebar.vue ← (shell)
+├── pinia-stores/               ← 9 Pinia stores
+├── stores/                     ← 9 IIFE stores (bridge)
+├── composables/                ← 2 composables
+├── services/annotation/        ← 14 ES modules
+└── utils/                      ← 8 ES modules
+```
 
 ## Key Constraint
 
-**Do not modify `SeekPlayerDB` IndexedDB schema.** DB name, version, store name, and keyPath are fixed. All persistence must use existing store.
+Do not modify `SeekPlayerDB` IndexedDB schema. DB name, version, store, keyPath fixed.
+
+## Migration History
+
+20 commits, 7 phases.
+
+| Phase | What |
+|-------|------|
+| 1 | Vite + Vue shell |
+| 2 | 9 stores extracted |
+| 3 | ToastMessage.vue |
+| 4 | 5 component shells + render toggle |
+| 5 | 22 ES module copies |
+| 6 | Cleanup + docs |
+| 7 | Pinia bridge |
+| 8 | Composables + default Vue render |
+| 9 | Gut old render, delete read-26.html |
