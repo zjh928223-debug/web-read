@@ -6446,23 +6446,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     importMarksBtn.addEventListener('click', () => importMarksInput.click());
 
-    if (importAnnotationGeneratedBtn && importAnnotationGeneratedInput) {
-        importAnnotationGeneratedBtn.addEventListener('click', () => importAnnotationGeneratedInput.click());
-        importAnnotationGeneratedInput.addEventListener('change', async (event) => {
-            const file = getFirstFileFromEvent(event);
-            importAnnotationGeneratedInput.value = '';
-            if (!file) return;
-            try {
-                const result = await importFullArticleAnnotations(file);
-                if (isChunkMode) renderChunkMode(); else renderTranscript();
-                forceUpdateUI(audioPlayer.currentTime);
-                showToast(`全文注释已导入 ${result.itemCount} 条`, 'success');
-            } catch (error) {
-                showError('ANNOTATION_IMPORT', error && error.message ? error.message : 'Import failed');
-            }
-        });
-    }
-
     if (exportAnnotationLightweightBtn) {
         exportAnnotationLightweightBtn.addEventListener('click', () => {
             try {
@@ -6543,29 +6526,25 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
     });
 
-    exportJsonBtn.addEventListener('click', () => {
-        if(markedMap.size === 0) { showError('MARKS_EMPTY', 'No marks to export'); return; }
-        const arr = Array.from(markedMap.values());
-        const blob = new Blob([JSON.stringify(arr, null, 2)], {type:'application/json'});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'marks.json';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    // [MIGRATED] exports → src/composables/app-handlers.js
+    _kh.initExports({
+        exportJsonBtn: exportJsonBtn, exportMdAllBtn: exportMdAllBtn,
+        markedMap: markedMap, segments: segments,
+        showError: showError, showToast: showToast
     });
 
-    exportMdAllBtn.addEventListener('click', () => {
-        if (!segments.length) { showError('TRANSCRIPT_EMPTY', 'No transcript to export'); return; }
-        const lines = segments.map(seg => {
-            if(!seg.words) return "";
-            return seg.words.map(w => {
-                const txt = w.word || w.text || "";
-                if (markedMap.has(w.globalIndex)) return `**${txt.trim()}**`; 
-                return txt.trim();
-            }).join(" "); 
-        }).join("\n\n");
-        const blob = new Blob([lines], {type:'text/plain'});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'transcript_full.txt';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    _kh.initMarksImport({
+        importMarksBtn: importMarksBtn, importMarksInput: importMarksInput,
+        getFirstFileFromEvent: getFirstFileFromEvent,
+        readFileAsText: readFileAsText,
+        validateMarksArray: validateMarksArray,
+        words: words, markedMap: markedMap,
+        saveToDB: saveToDB,
+        isChunkModeFn: function () { return isChunkMode; },
+        renderTranscript: renderTranscript, renderChunkMode: renderChunkMode,
+        forceUpdateUI: forceUpdateUI, audioPlayer: audioPlayer,
+        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
+        showToast: showToast, showError: showError
     });
 
     function changeSpeed(r) { 
