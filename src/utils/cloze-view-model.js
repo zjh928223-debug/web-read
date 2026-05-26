@@ -38,3 +38,5 @@ export function buildClozeQuizViewModel(items, answerState) {
     cards: items.map((item, index) => buildClozeCardViewModel(item, answerState && answerState[index], index))
   };
 }
+
+window.ClozeViewModelHelpers = { createInitialClozeAnswerState, getClozeCardStateViewModel, buildClozeCardViewModel, buildClozeQuizViewModel };

@@ -18,3 +18,5 @@ export function ensureLegacySentenceNotesForDoc(docId, deps) {
 export function getCurrentSentenceDocIdForExport(currentDocId, buildCurrentSentenceDocId) {
   return currentDocId || buildCurrentSentenceDocId();
 }
+
+window.SentenceNotesPersistenceUtils = { ensureLegacySentenceNotesForDoc, getCurrentSentenceDocIdForExport };

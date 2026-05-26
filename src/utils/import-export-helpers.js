@@ -31,3 +31,5 @@ export function markFileLoaded(labelEl, text = '已加载') {
   labelEl.classList.add('loaded');
   labelEl.innerText = text;
 }
+
+window.ImportExportSharedHelpers = { getFirstFileFromEvent, readFileAsText, getCurrentAudioFilenameBase, buildCurrentAudioMetaState, markFileLoaded };

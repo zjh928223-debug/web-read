@@ -39,3 +39,5 @@ export function escapeHtml(value) {
     "'": '&#39;'
   }[ch]));
 }
+
+window.ClozeUtils = { validateClozeData, normalizeClozeAnswer };

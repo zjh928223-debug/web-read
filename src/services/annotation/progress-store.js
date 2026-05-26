@@ -115,3 +115,5 @@ function defaultMessage(state) {
         retryable: 'Annotation generation can be retried.'
     }[state] || 'Annotation generation status updated.';
 }
+
+window.AnnotationGenerationProgressStore = { createProgressStore };

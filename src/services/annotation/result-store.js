@@ -214,3 +214,5 @@ function normalizeScope(scope) {
 function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+window.AnnotationGeneratedResultStore = { clear, indexBundle, query, queryByOccurrence, getScope, getItems, normalizeToTokens };

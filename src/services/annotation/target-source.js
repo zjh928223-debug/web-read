@@ -399,3 +399,5 @@ function toInteger(value) {
     const number = Number(value);
     return Number.isInteger(number) ? number : null;
 }
+
+window.AnnotationTargetSource = { buildTargetSource };

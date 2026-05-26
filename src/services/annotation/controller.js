@@ -1586,3 +1586,5 @@ function toInteger(value, fallback) {
     const next = Number(value);
     return Number.isInteger(next) ? next : fallback;
 }
+
+window.AnnotationGenerationController = { startFullArticle, requestStop, getActiveRunInfo, isConfigured, getConfigState };

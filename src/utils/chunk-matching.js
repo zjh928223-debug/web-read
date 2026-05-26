@@ -126,3 +126,5 @@ export function normalizeChunkMatchCandidate(startIndex, endIndex, score) {
         score
     };
 }
+
+window.ChunkMatchingHelpers = { clamp, cleanText, tokenizeText, findExactMatchRange, findExactMatch, adjustIndex, scoreMatchCandidate, normalizeChunkCandidateBounds, buildChunkCandidateVariants, buildChunkMatchWindow, clampChunkMatchCandidate, buildChunkCandidateEndWindow, getChunkCandidateBoundaryWords, normalizeChunkMatchCandidate };

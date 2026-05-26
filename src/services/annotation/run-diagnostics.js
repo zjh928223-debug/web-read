@@ -334,3 +334,5 @@ function toInteger(value, fallback) {
     const next = Number(value);
     return Number.isFinite(next) ? Math.trunc(next) : fallback;
 }
+
+window.AnnotationRunDiagnostics = { STORAGE_PREFIX, isEnabled, createRun, record, finish, getRuns, getLatestRun, getRun, clearScope, normalizeScope, buildScopeKey, buildSummary };

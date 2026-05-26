@@ -54,3 +54,5 @@ export function buildCurrentSentenceDocId(transcriptSource, currentAudioKey, seg
   const transcriptScope = buildTranscriptKey(transcriptSource, segmentsFallback);
   return `${audioScope}::${transcriptScope}`;
 }
+
+window.IdentityStorageKeys = { buildAudioKey, buildTranscriptKey, getChunkNotesStorageKey, getChunkNoteDraftStorageKey, getSentenceNotesStorageKey, getLegacySentenceNotesStorageKey, buildCurrentSentenceDocId };

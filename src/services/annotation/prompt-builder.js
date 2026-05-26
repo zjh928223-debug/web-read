@@ -161,3 +161,5 @@ function toInteger(value, fallback) {
     const next = Number(value);
     return Number.isInteger(next) ? next : fallback;
 }
+
+window.AnnotationPromptBuilder = { buildPromptPayload, getPromptTemplate };

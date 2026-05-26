@@ -549,3 +549,5 @@ function readText(value) {
 function trimTrailingSlash(value) {
     return String(value || '').replace(/\/+$/, '');
 }
+
+window.AnnotationApiConfig = { STORAGE_KEY, STORE_VERSION, DEFAULT_BASE_URL, DEFAULT_MODEL, SUPPORTED_PROVIDER, SUPPORTED_PLATFORM, PLATFORM_DEFAULTS, getRawConfig, getStoredConfig, getMode, getConfigState, getValidatedConfig, read, getEditableConfig, getEditorState, saveConfig, clearConfig, restore, saveProfile, createProfile, selectProfile, deleteCurrentProfile, clearAllProfiles, syncWindowConfig, syncWindowConfigFromStore, getSupportedPlatforms, getPlatformMeta, getDefaultBaseUrl };

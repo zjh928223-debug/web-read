@@ -209,3 +209,5 @@ function normalizeToTokens(text) {
         .split(/\s+/)
         .filter(Boolean);
 }
+
+window.AnnotationClickResolver = { resolveClick, normalizeGeneratedAnnotationHit };

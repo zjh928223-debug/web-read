@@ -68,3 +68,5 @@ export function getSegmentCheckpoints(segments, segIndex) {
     }
     return points;
 }
+
+window.PlaybackIndexHelpers = { findChunkIndexByTime, bsFindActive, getCurrentSegmentIndex, getSegmentCheckpoints };

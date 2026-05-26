@@ -257,3 +257,5 @@ function emitDiagnostics(event, payload) {
 function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+window.AnnotationGenerationStorage = { GENERATED_FILE, STATUS_FILE, FULL_EXPORT_FILE, setDirectoryHandle, getStorageMode, loadBundle, saveBundle, createGeneratedJson, createStatusJson, inspectRuntimeArtifacts, getLocalStorageKey, normalizeScope };

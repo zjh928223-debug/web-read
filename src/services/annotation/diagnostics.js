@@ -161,3 +161,5 @@ function sanitizePlainObject(source = {}) {
 function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+window.AnnotationGenerationDiagnostics = { isEnabled, emit, clearEvents, getEvents, normalizeScope, buildScopeKey, summarizeBundle, summarizeTargets, sampleValues };

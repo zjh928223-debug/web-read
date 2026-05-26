@@ -323,3 +323,5 @@ function toNumber(value) {
     const next = Number(value);
     return Number.isFinite(next) ? next : 0;
 }
+
+window.AnnotationBlockPlanner = { planFromContext };

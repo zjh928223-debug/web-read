@@ -788,3 +788,5 @@ function readFallbackConfig(override) {
     }
     return { state: 'ready', reason: 'ok', config: raw };
 }
+
+window.AnnotationApiClient = { generateAnnotations, parseModelJson, compactMeaning, compactMemoryHint, isRetryableFailureType };

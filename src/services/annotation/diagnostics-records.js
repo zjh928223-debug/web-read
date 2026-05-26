@@ -171,3 +171,5 @@ function cloneValue(value) {
 function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+window.AnnotationGenerationDiagnosticsRecords = { STORAGE_PREFIX, createRun, finalizeRun, recordEvent, getRuns, getScopeEvents, getLatestRun, clearScope, normalizeScope, buildScopeKey };

@@ -170,3 +170,5 @@ export function validateMarksArray(input, maxWordLen) {
   });
   return input;
 }
+
+window.DataUtils = { isPlainObjectRecord, isFiniteNum, normalizeLooseKey, getLooseProp, looksLikeSegmentArray, validateTranscriptData, validateVisualData, validateChunkData, validateMarksArray };

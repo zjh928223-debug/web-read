@@ -41,3 +41,5 @@ function normalizeGeneratedItems(items) {
 function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
+
+window.AnnotationGenerationDiff = { diffContextAgainstBundle };
