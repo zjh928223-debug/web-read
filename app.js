@@ -7,6 +7,21 @@
     import './src/utils/cloze-view-model.js';
     import './src/utils/playback-index.js';
     import './src/utils/chunk-matching.js';
+    import './src/services/annotation/target-source.js';
+    import './src/services/annotation/diagnostics.js';
+    import './src/services/annotation/diagnostics-records.js';
+    import './src/services/annotation/run-diagnostics.js';
+    import './src/services/annotation/diff.js';
+    import './src/services/annotation/progress-store.js';
+    import './src/services/annotation/result-store.js';
+    import './src/services/annotation/click-resolver.js';
+    import './src/services/annotation/api-config.js';
+    import './src/services/annotation/storage.js';
+    import './src/services/annotation/prompt-builder.js';
+    import './src/services/annotation/block-planner.js';
+    import './src/services/annotation/api-client.js';
+    import './src/services/annotation/controller.js';
+
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
