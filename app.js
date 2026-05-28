@@ -2267,7 +2267,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function discardSentenceNoteDraft(shouldRender = true) {
         if (!_ns.sentenceNoteDraft) return;
-        if (_ns.notePreviewEditingItemId === _ns.sentenceNoteDraft.itemId) _ns.notePreviewEditingItemId = '';
+        if (_ns._ns.notePreviewEditingItemId === _ns.sentenceNoteDraft.itemId) _ns.notePreviewEditingItemId = '';
         _ns.sentenceNoteDraft = null;
         if (shouldRender) renderNotePreviewSidebar();
     }
@@ -2345,7 +2345,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         wrapper.className = 'sentence-note-item';
         wrapper.dataset.itemId = String(item.itemId || '');
         if (isDraft) wrapper.classList.add('is-draft');
-        if (_ns.notePreviewEditingItemId && _ns.notePreviewEditingItemId === item.itemId) wrapper.classList.add('is-editing');
+        if (_ns.notePreviewEditingItemId && _ns._ns.notePreviewEditingItemId === item.itemId) wrapper.classList.add('is-editing');
 
         const selectedTextEl = document.createElement('p');
         selectedTextEl.className = 'sentence-note-item-text';
@@ -2363,9 +2363,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
         const meta = document.createElement('div');
         meta.className = 'sentence-note-item-meta';
-        if (_ns.notePreviewEditingItemId && _ns.notePreviewEditingItemId === item.itemId) meta.classList.add('is-editing');
+        if (_ns.notePreviewEditingItemId && _ns._ns.notePreviewEditingItemId === item.itemId) meta.classList.add('is-editing');
         if (_ns.notePreviewSavedItemId && _ns.notePreviewSavedItemId === item.itemId) meta.classList.add('is-saved');
-        meta.textContent = formatSentenceNoteItemMeta(item, item.itemId, _ns.notePreviewEditingItemId === item.itemId);
+        meta.textContent = formatSentenceNoteItemMeta(item, item.itemId, _ns._ns.notePreviewEditingItemId === item.itemId);
         wrapper.appendChild(meta);
 
         textarea.addEventListener('focus', () => {
