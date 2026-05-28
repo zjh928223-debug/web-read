@@ -18,6 +18,6 @@ import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
 
 onMounted(() => {
-  console.log('[vue] Phase 4 — components ready, old path running (__USE_VUE_RENDERING=false)')
+  console.log('[vue] Phase 9 — Vue components active (__USE_VUE_RENDERING=' + window.__USE_VUE_RENDERING + ')')
 })
 </script>
