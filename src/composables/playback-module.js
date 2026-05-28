@@ -1,5 +1,3 @@
-(function () {
-  'use strict';
   function init(deps) {
     var audioPlayer = deps.audioPlayer;
     var getCurrentSegmentIndexHelper = deps.getCurrentSegmentIndexHelper;
@@ -195,4 +193,3 @@
   }
 
   window.__playbackModule = { init: init };
-})();

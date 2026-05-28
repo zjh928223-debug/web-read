@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   // === Chunk-note persistence lifecycle ===
   function initChunkNotes(deps) {
     var ns = deps.state;          // { chunkNotesMap, chunkNoteVisible, activeChunkNoteId, chunkNoteSaveTimer, pendingChunkSelectionCtx }
@@ -405,4 +402,3 @@
     initChunkNotes: initChunkNotes,
     initSentenceNotes: initSentenceNotes
   };
-})();

@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   function showToast(message, type, timeoutMs) {
     // Delegate to Vue ToastMessage component (set on window by component setup)
     if (typeof window.showToast === 'function') {
@@ -18,5 +15,3 @@
     showToast: showToast,
     showError: showError
   };
-})();
-

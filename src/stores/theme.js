@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   var CUSTOM_THEME_STORAGE_KEY = 'themeCustomColors';
   var CUSTOM_THEME_DEFAULTS = {
     bg: '#eef2f7',
@@ -293,4 +290,3 @@
     getStoredCustomThemeColors: getStoredCustomThemeColors,
     CUSTOM_THEME_DEFAULTS: CUSTOM_THEME_DEFAULTS
   };
-})();

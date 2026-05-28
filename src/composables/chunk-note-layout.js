@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   // === Pure utility functions (no app.js state dependency) ===
 
   function findNearestChunkWord(enDiv, clientX, clientY) {
@@ -168,4 +165,3 @@
     buildChunkNotesSnapshot: buildChunkNotesSnapshot,
     saveChunkNotesDebounced: saveChunkNotesDebounced
   };
-})();

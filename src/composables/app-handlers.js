@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   // === Keyboard handler init ===
   function initKeyboard(config) {
     var audioPlayer = config.audioPlayer;
@@ -181,4 +178,3 @@
     initExports: initExports,
     initMarksImport: initMarksImport
   };
-})();

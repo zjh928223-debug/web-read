@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   // === M5: AI chunk alignment/matching pipeline ===
   function initChunkPipeline(deps) {
     var state = deps.state;
@@ -528,4 +525,3 @@
     initChunkPipeline: initChunkPipeline,
     initImportHandlers: initImportHandlers
   };
-})();

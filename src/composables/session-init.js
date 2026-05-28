@@ -1,5 +1,3 @@
-(function () {
-  'use strict';
   var st = window.__state;
   var _ns = window._ns || {};
 
@@ -2113,5 +2111,3 @@
     window.__session_closeAnnotationPromptPanel = closeAnnotationPromptPanel;
     window.__session_initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
     window.__session_initAnnotationGenerationEntryUi = initAnnotationGenerationEntryUi;
-
-})();

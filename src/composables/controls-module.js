@@ -1,5 +1,3 @@
-(function () {
-  'use strict';
   function init(deps) {
     var audioPlayer = deps.audioPlayer;
     var bsFindActiveHelper = deps.bsFindActiveHelper;
@@ -89,4 +87,3 @@
   }
 
   window.__controlsModule = { init: init };
-})();

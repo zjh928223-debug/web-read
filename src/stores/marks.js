@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   function syncMarkedWordVisual(globalIndex, isMarked) {
     if (!Number.isFinite(globalIndex) || globalIndex < 0) return;
     var selector = '[data-word-index="' + globalIndex + '"]';
@@ -44,4 +41,3 @@
     syncMarkedWordVisual: syncMarkedWordVisual,
     exportMarksToArray: exportMarksToArray
   };
-})();

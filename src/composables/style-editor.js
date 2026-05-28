@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   function init(deps) {
     var safeParseLocalJSON = deps.safeParseLocalJSON;
     var adjustChunkNoteArrowSizeByGap = deps.adjustChunkNoteArrowSizeByGap;
@@ -204,4 +201,3 @@
   }
 
   window.__styleEditor = { init: init };
-})();

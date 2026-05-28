@@ -3274,3 +3274,45 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
   
     // Init hold button label
     setTimeout(()=>{ try{updateChunkCnHoldBtn();}catch(e){} }, 0);
+
+    // === ES Module exports for HTML onclick + cross-module access ===
+    window.handleBackwardClick = handleBackwardClick;
+    window.handleForwardClick = handleForwardClick;
+    window.changeSpeed = changeSpeed;
+    window.cycleHighlightMode = cycleHighlightMode;
+    window.toggleChunkMode = toggleChunkMode;
+    window.toggleChunkFocusMode = toggleChunkFocusMode;
+    window.openChunkStyleModal = openChunkStyleModal;
+    window.closeChunkStyleModal = closeChunkStyleModal;
+    window.openChunkNoteStyleModal = openChunkNoteStyleModal;
+    window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
+    window.toggleChunkShadowManual = toggleChunkShadowManual;
+    window.updateChunkStyle = updateChunkStyle;
+    window.updateChunkNoteStyle = updateChunkNoteStyle;
+    window.forceUpdateUI = forceUpdateUI;
+    window.mainUpdateHighlight = mainUpdateHighlight;
+    window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;
+    window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
+    window.showToast = showToast; window.showError = showError;
+    window.bridgeToPinia = bridgeToPinia;
+    window.renderTranscript = renderTranscript; window.renderChunkMode = renderChunkMode;
+    window.processTranscript = processTranscript;
+    window.isInputLikeTarget = isInputLikeTarget;
+    window.adjustChunkNoteArrowSizeByGap = adjustChunkNoteArrowSizeByGap;
+    window.getAnnotationGenerationScope = getAnnotationGenerationScope;
+    window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
+    window.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;
+    window.loadChunkNotesForCurrentAudio = loadChunkNotesForCurrentAudio;
+    window.setChunkNoteVisible = setChunkNoteVisible;
+    window.loadSentenceNotesForCurrentAudio = loadSentenceNotesForCurrentAudio;
+    window.switchSentenceNotesDoc = switchSentenceNotesDoc;
+    window.applyCurrentAudioMeta = applyCurrentAudioMeta;
+    window.clearPersistedChunkSession = clearPersistedChunkSession;
+    window.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
+    window.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
+    window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
+    window.closeAnnotationPromptPanel = closeAnnotationPromptPanel;
+    window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
+    window.initAnnotationGenerationEntryUi = initAnnotationGenerationEntryUi;
+    window.processChunkData = processChunkData;
+    window.updateChunkCnHoldBtn = updateChunkCnHoldBtn;

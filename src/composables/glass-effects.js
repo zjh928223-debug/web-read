@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   function init(lockChunkDimensionsFn) {
     var panelSelector = [
       '.controls','.extra-controls','.transcript-header','#helper-panel',
@@ -96,4 +93,3 @@
   }
 
   window.__glassEffects = { init: init };
-})();

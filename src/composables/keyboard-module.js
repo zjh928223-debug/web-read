@@ -1,5 +1,3 @@
-(function () {
-  'use strict';
   function init(deps) {
     var audioPlayer = deps.audioPlayer;
     var isInputLikeTarget = deps.isInputLikeTarget;
@@ -229,4 +227,3 @@
   }
 
   window.__keyboardModule = { init: init };
-})();

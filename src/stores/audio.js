@@ -1,6 +1,3 @@
-(function () {
-  'use strict';
-
   var DB_NAME = 'SeekPlayerDB';
   var DB_VERSION = 1;
   var STORE_NAME = 'files';
@@ -75,4 +72,3 @@
     deleteFromDB: deleteFromDB,
     clearDBStore: clearDBStore
   };
-})();
