@@ -1,10 +1,10 @@
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 
 const host = '127.0.0.1';
-const port = 4173;
-const targetUrl = `http://${host}:${port}/`;
+const port = Number(process.env.READ_WEB_PORT || 4173);
+const targetUrl = process.env.READ_WEB_URL || `http://${host}:${port}/`;
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,6 +36,15 @@ async function waitForServer(url, timeoutMs = 20000) {
   return false;
 }
 
+function killProcessTree(child) {
+  if (!child || child.killed) return;
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+    return;
+  }
+  child.kill('SIGTERM');
+}
+
 function runLoadCheck() {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [path.join('scripts', 'read26-load-check.cjs')], {
@@ -54,28 +63,34 @@ function runLoadCheck() {
 
 async function main() {
   let serverProcess = null;
+  const alreadyRunning = await canReach(targetUrl);
 
   try {
-    const alreadyRunning = await canReach(targetUrl);
     if (!alreadyRunning) {
-      serverProcess = spawn('npx', ['vite', '--port', String(port), '--strictPort'], {
+      const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
+      serverProcess = spawn(process.execPath, [
+        viteBin,
+        '--host', host,
+        '--port', String(port),
+        '--strictPort',
+        '--clearScreen', 'false'
+      ], {
         cwd: process.cwd(),
         stdio: 'ignore',
-        windowsHide: true,
-        shell: true
+        windowsHide: true
       });
 
       const ready = await waitForServer(targetUrl);
       if (!ready) {
-        throw new Error(`Vite preview server did not start at ${targetUrl}`);
+        throw new Error(`Vite server did not start at ${targetUrl}`);
       }
     }
 
     const exitCode = await runLoadCheck();
     process.exitCode = exitCode;
   } finally {
-    if (serverProcess && !serverProcess.killed) {
-      serverProcess.kill();
+    if (serverProcess) {
+      killProcessTree(serverProcess);
     }
   }
 }

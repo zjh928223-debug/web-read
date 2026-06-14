@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const targetUrl = process.env.READ26_URL || 'http://127.0.0.1:4173/read-26.html';
+const targetUrl = process.env.READ26_URL || 'http://127.0.0.1:4173/';
 const artifactsDir = path.join(process.cwd(), '.playwright-artifacts');
-const screenshotPath = path.join(artifactsDir, 'read-26-load.png');
-const reportPath = path.join(artifactsDir, 'read-26-load-report.json');
+const screenshotPath = path.join(artifactsDir, 'read-web-load.png');
+const reportPath = path.join(artifactsDir, 'read-web-load-report.json');
 
 const expectedGlobals = [
   'ImportExportSharedHelpers',
@@ -104,12 +104,12 @@ async function main() {
   await browser.close();
 
   if (!report.ok) {
-    console.error(`read-26 load check failed. Report: ${reportPath}`);
+    console.error(`read-web load check failed. Report: ${reportPath}`);
     process.exitCode = 1;
     return;
   }
 
-  console.log(`read-26 load check passed. Report: ${reportPath}`);
+  console.log(`read-web load check passed. Report: ${reportPath}`);
 }
 
 main().catch(async (error) => {
@@ -125,6 +125,6 @@ main().catch(async (error) => {
 
   await ensureArtifactsDir();
   await fs.promises.writeFile(reportPath, `${JSON.stringify(fallback, null, 2)}\n`, 'utf8');
-  console.error(`read-26 load check crashed. Report: ${reportPath}`);
+  console.error(`read-web load check crashed. Report: ${reportPath}`);
   process.exit(1);
 });

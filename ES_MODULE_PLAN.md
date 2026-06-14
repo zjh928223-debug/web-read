@@ -1,5 +1,7 @@
 # app.js → ES Module 迁移方案
 
+> Historical note: this file is an old migration plan. The current runtime state is documented in `AGENTS.md`, `README.md`, and `PROJECT_MAP.md`. Do not use this file as the source of truth for current load order or file counts.
+
 ## 当前架构
 
 ```

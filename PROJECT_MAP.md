@@ -1,96 +1,140 @@
-# PROJECT_MAP.md — Read-Web (Vue 3)
+# PROJECT_MAP.md - Read-Web Current Map
 
-## Overview
+## Top-Level Runtime Files
 
-```
+```text
 read-web/
-├── index.html                ← Vite entry (legacy scripts + Vue mount)
-├── vite.config.js            ← Vite config
-├── app.js                    ← Legacy monolith (~6900 lines)
-├── styles.css                ← Global Liquid Glass CSS
-├── read-26.html              ← Original (reference)
-├── package.json
-├── .gitignore
-│
-├── src/
-│   ├── main.js               ← createApp + Pinia
-│   ├── App.vue               ← Root (ToastMessage + 5 shells)
-│   ├── styles.css            ← (moved from root)
-│   ├── components/            ← 6 Vue SFCs
-│   │   ├── ToastMessage.vue       ← ✅ Active (Options API)
-│   │   ├── ClozeQuizView.vue      ← 🔲 Shell (v-if flag)
-│   │   ├── ClozeCard.vue          ← 🔲 Shell
-│   │   ├── TranscriptContainer.vue← 🔲 Shell
-│   │   ├── ChunkModeView.vue      ← 🔲 Shell
-│   │   └── SentenceNoteSidebar.vue← 🔲 Shell
-│   ├── stores/                ← 9 store files (IIFE, pre-Pinia)
-│   │   ├── theme.js           ← ✅ Active (theme logic)
-│   │   ├── ui.js              ← ✅ Active (toast delegation)
-│   │   ├── audio.js           ← ✅ Active (IndexedDB)
-│   │   ├── marks.js           ← ✅ Active (mark ops)
-│   │   └── ... (5 placeholder)
-│   ├── services/annotation/   ← 14 ES module pipeline copies
-│   └── utils/                 ← 8 ES module utility copies
-│
-├── (28 legacy IIFE JS files)  ← Still loaded by index.html
-├── scripts/                   ← Verification utilities
-├── cankao/                    ← Reference (never touch)
-└── openspec/                  ← Spec docs
+├── index.html                         # Vite-served browser entry and legacy DOM shell
+├── app.js                             # Legacy central bus, about 3330 lines
+├── styles.css                         # Global CSS imported by src/main.js
+├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
+├── package.json                       # Current commands and dependencies
+├── chunk-note-layout-helpers.js       # Remaining regular script
+├── chunk-note-layout-core.js          # Remaining regular script
+├── annotation-bubble.js               # Remaining regular script
+├── annotation-api-settings-ui.js      # Remaining regular script
+└── annotation-generation-entry-ui.js  # Remaining regular script
 ```
 
-## Data Flow
+## Browser Execution Order
 
-```
-[Audio + JSON files] → app.js (parse via DataUtils)
-       ↓
-    app.js builds: words[], segments[], wordStarts[]
-       ↓
-    <audio> timeupdate → bsFindActive → highlight
-       ↓
-    [Normal mode] renderTranscript() — sentence-level
-    [Chunk mode]  renderChunkMode() — block-level + CN
-       ↓
-    Mark word (m key) → markedMap → saveToDB('marks')
-       ↓
-    Annotation Pipeline (14 modules):
-      marks + segments → target-source → block-planner
-        → prompt-builder → api-client (Gemini)
-        → storage (save) → result-store (index)
-        → UI update
-       ↓
-    Notes: chunk notes, sentence notes → IndexedDB
+```text
+index.html
+├── root regular scripts
+├── src/stores/*.js compatibility modules
+├── src/composables/*.js compatibility modules
+├── app.js
+├── src/composables/session-init.js
+└── src/main.js
 ```
 
-## Risk Levels
+The page still contains inline `onclick` and `oninput` handlers. `app.js` and some composables therefore export functions onto `window`.
 
-### 🔴 High Risk
-| File | Lines | Why |
-|------|-------|-----|
-| `app.js` | ~6900 | Central state, rendering, event wiring |
-| `annotation-generation-controller.js` | ~1591 | Async state machine, rate limit, retry, abort |
-| `annotation-api-client.js` | ~795 | API key handling, HTTP |
+## `src/` Structure
 
-### 🟡 Medium Risk
-| File | Lines | Why |
-|------|-------|-----|
-| `styles.css` | ~2500 | Glass-morphism system, theme variables |
-| `annotation-target-source.js` | ~411 | Parsing used by entire pipeline |
-| `annotation-block-planner.js` | ~333 | Block size constraints affect LLM output |
-| `data-utils.js` | ~186 | Transcript parsing — failure blocks loading |
+```text
+src/
+├── main.js
+├── App.vue
+├── components/
+│   ├── ToastMessage.vue
+│   ├── ClozeQuizView.vue
+│   ├── ClozeCard.vue
+│   ├── TranscriptContainer.vue
+│   ├── ChunkModeView.vue
+│   └── SentenceNoteSidebar.vue
+├── pinia-stores/
+│   ├── theme.js
+│   ├── ui.js
+│   ├── audio.js
+│   ├── marks.js
+│   ├── cloze.js
+│   ├── transcript.js
+│   ├── chunk.js
+│   ├── notes.js
+│   └── annotation.js
+├── stores/
+│   ├── theme.js
+│   ├── ui.js
+│   ├── audio.js
+│   ├── marks.js
+│   ├── cloze.js
+│   ├── transcript.js
+│   ├── chunk.js
+│   ├── notes.js
+│   └── annotation.js
+├── composables/
+│   ├── session-init.js
+│   ├── import-module.js
+│   ├── notes-module.js
+│   ├── keyboard-module.js
+│   ├── style-editor.js
+│   ├── playback-module.js
+│   ├── app-handlers.js
+│   ├── chunk-note-layout.js
+│   ├── glass-effects.js
+│   └── controls-module.js
+├── utils/
+│   ├── data-utils.js
+│   ├── identity-storage-keys.js
+│   ├── import-export-helpers.js
+│   ├── sentence-notes-persistence.js
+│   ├── cloze-utils.js
+│   ├── cloze-view-model.js
+│   ├── playback-index.js
+│   └── chunk-matching.js
+└── services/annotation/
+    ├── controller.js
+    ├── api-client.js
+    ├── api-config.js
+    ├── storage.js
+    ├── target-source.js
+    ├── block-planner.js
+    ├── prompt-builder.js
+    ├── result-store.js
+    ├── progress-store.js
+    ├── click-resolver.js
+    ├── diagnostics.js
+    ├── diagnostics-records.js
+    ├── run-diagnostics.js
+    └── diff.js
+```
 
-### 🟢 Low Risk
-- Vue components (isolated, flag-gated)
-- Store files (plain objects, delegating)
-- ES module copies (not yet consumed)
-- Utility files (pure functions)
+## State Ownership
 
-## Migration Phases
+Current state ownership is transitional:
 
-| Phase | Status | Git Tag |
-|-------|--------|---------|
-| 1 — Vite shell | ✅ | phase-1-done |
-| 2 — 9 stores | ✅ | phase-2-done |
-| 3 — ToastMessage.vue | ✅ | phase-3-done |
-| 4 — 5 component shells | ✅ | phase-4-done |
-| 5 — 22 ES module copies | ✅ | phase-5-done |
-| 6 — Cleanup + docs | ✅ | phase-6-done |
+```text
+app.js let state
+  ↕ window.__state proxy
+  ↕ window.__bridge
+  ↕ src/pinia-stores real Pinia state
+  ↕ Vue components
+```
+
+Compatibility stores in `src/stores/` attach `window.__themeStore`, `window.__audioStore`, `window.__uiStore`, and similar objects. `src/main.js` replaces selected compatibility methods with Pinia-backed methods after the Vue app is mounted.
+
+## Rendering
+
+Vue rendering is enabled by default.
+
+```text
+TranscriptContainer.vue   # normal transcript rendering
+ChunkModeView.vue         # AI chunk rendering
+ClozeQuizView.vue         # quiz list
+ClozeCard.vue             # quiz card
+ToastMessage.vue          # reactive toast
+SentenceNoteSidebar.vue   # still mostly placeholder
+```
+
+Legacy DOM and handlers still exist and must remain compatible until the migration is completed.
+
+## Verification
+
+```text
+npm run build        # Vite build and legacy script copy
+npm run verify:vite  # Vite dev server + Playwright load check
+npm test             # Alias for verify:vite
+```
+
+The old `read-26.html` path is gone. Do not use it as the current app entry.

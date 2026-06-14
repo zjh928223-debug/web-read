@@ -1,16 +1,17 @@
 {
   "name": "read-final",
   "version": "1.0.0",
-  "description": "Local verification tooling for read-26.html",
+  "description": "Vite/Vue reader with audio sync, AI chunking, cloze quizzes, and annotation tooling",
   "main": "app.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "http-server . -a 127.0.0.1 -p 4173 -c-1",
-    "preview:vite": "vite preview --port 4173",
-    "verify:read26": "node scripts/read26-verify.js",
+    "preview": "vite --host 127.0.0.1 --port 4173",
+    "preview:vite": "vite --host 127.0.0.1 --port 4173",
+    "verify": "npm run verify:vite",
+    "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
-    "test": "npm run verify:read26"
+    "test": "npm run verify:vite"
   },
   "keywords": [],
   "author": "",

@@ -1,87 +1,125 @@
-# AGENTS.md — Read-Web Project (Vue 3 Migration)
+# AGENTS.md - Read-Web Current Project Notes
 
 ## What This Is
 
-A Vue 3 + Vite + Pinia application for language learning with audio playback, synchronized transcripts, AI-powered chunking, cloze quizzes, and annotation generation via Google Gemini API.
+Read-Web is a Vite-hosted Vue 3 + Pinia migration of a legacy plain HTML/JS language-learning reader.
 
-Migrated from a zero-framework SPA (`read-26.html` + `app.js` monolith).
+It supports audio playback, synchronized transcripts, AI chunk mode, cloze quizzes, sentence/chunk notes, and generated annotations through API-backed annotation modules.
 
-## Entry Point
+The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 
-- `index.html` — Vite entry; loads legacy IIFE scripts + Vue app mount
-- `src/main.js` — Vue app bootstrap (createApp + Pinia)
-- `src/App.vue` — Root component (shell, 5 child components)
-- `app.js` (~6900 lines) — Legacy orchestrator, being phased out. Do NOT add new features here.
+## Current Entry Points
 
-## Current Architecture (Hybrid)
+- `index.html` - browser entry and legacy DOM shell.
+- `app.js` - legacy central bus, still owns most runtime state and many UI handlers.
+- `src/composables/session-init.js` - startup/session restore plus annotation import/export/status logic.
+- `src/main.js` - Vue mount, Pinia setup, and bridge from legacy globals into Pinia.
 
-```
+There is no `read-26.html` in the current root. Any script or doc that refers to it is legacy context.
+
+## Actual Browser Load Order
+
+Keep this order unless you are deliberately changing the architecture and have verified the full app:
+
+```text
 index.html
-├── 28 legacy IIFE scripts (regular <script>)  ← still load, being migrated
-├── 9 store scripts (regular <script>)         ← Phase 2 stores
-├── app.js (regular <script>)                  ← legacy monolith
-└── <script type="module" src="/src/main.js">  ← Vue app entry
+├── 5 root regular scripts
+│   ├── chunk-note-layout-helpers.js
+│   ├── chunk-note-layout-core.js
+│   ├── annotation-bubble.js
+│   ├── annotation-api-settings-ui.js
+│   └── annotation-generation-entry-ui.js
+├── 9 src/stores/*.js module compatibility stores
+├── 9 src/composables/*.js module compatibility modules
+├── app.js as type="module"
+├── src/composables/session-init.js as type="module"
+└── /src/main.js as type="module" for Vue + Pinia
 ```
 
-## Directory Structure
+`src/main.js` also imports the 8 `src/utils/*.js` modules and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
 
-```
-src/
-├── main.js                     ← Vue createApp + Pinia
-├── App.vue                     ← Root component
-├── components/                 ← Vue components (6 total)
-│   ├── ToastMessage.vue        ← Phase 3, functional
-│   ├── ClozeQuizView.vue       ← Phase 4 shell
-│   ├── ClozeCard.vue           ← Phase 4 shell
-│   ├── TranscriptContainer.vue ← Phase 4 shell
-│   ├── ChunkModeView.vue       ← Phase 4 shell
-│   └── SentenceNoteSidebar.vue ← Phase 4 shell
-├── stores/                     ← Store files (3 active + 6 placeholder)
-│   ├── theme.js                ← Full theme logic
-│   ├── ui.js                   ← Toast delegation
-│   ├── audio.js                ← IndexedDB CRUD
-│   ├── marks.js                ← Mark operations
-│   └── ... (5 placeholders)    ← cloze, transcript, chunk, notes, annotation
-├── services/
-│   └── annotation/             ← 14 ES module copies of annotation pipeline
-├── utils/                      ← 8 ES module copies of utility functions
-└── styles.css                  ← Global CSS (moved from root)
+## Runtime Architecture
+
+The current state flow is:
+
+```text
+app.js let variables
+  ↕
+window.__state getter/setter proxy
+  ↕
+window.__bridge initial/runtime sync
+  ↕
+src/pinia-stores/*.js real Pinia stores
+  ↕
+Vue components
 ```
 
-## Critical Constraints
+There is also a compatibility layer:
 
-### DO NOT Modify IndexedDB Schema
-Database: `SeekPlayerDB`, version 1, store `files` with keyPath `id`. Object store structure must NOT change.
+```text
+src/stores/*.js -> window.__themeStore / __audioStore / __uiStore / ...
+src/main.js     -> replaces selected window store methods with Pinia delegation
+```
 
-### DO NOT Change Script Load Order in index.html
-The 28 legacy IIFE scripts load in a specific order. Breaking this breaks all legacy code.
+Do not confuse `src/stores/` with real Pinia stores. The real Pinia definitions are under `src/pinia-stores/`.
 
-### Vue Shells are Phase 4 (Not Active)
-The Vue components under `src/components/` (except ToastMessage.vue) are **shells**. They render `v-if="__USE_VUE_RENDERING"` which is currently `false`. They will become active in a future rendering migration phase.
+## Current Rendering State
 
-### Stores are Plain Objects
-The stores under `src/stores/` are plain JS objects attached to `window`. They are NOT Pinia stores yet. Pinia migration is deferred.
+Vue rendering is enabled by default:
 
-### app.js is Legacy
-Do not add new features to app.js. New features should go into Vue components or store files.
+```js
+window.__USE_VUE_RENDERING = true
+```
+
+The Vue components are active but thin. A lot of interaction still relies on `app.js`, `window.xxx` exports, inline `onclick`/`oninput` handlers in `index.html`, and legacy DOM behavior.
+
+## Important Files
+
+- `app.js` - about 3330 lines. High risk. Central state, chunk notes UI, playback wiring, note sidebar, and legacy exports.
+- `src/composables/session-init.js` - about 2113 lines. High risk. Startup restore, persisted state cleanup, annotation prompt/export/import/status logic.
+- `src/main.js` - Vue/Pinia bridge.
+- `src/pinia-stores/` - 9 real Pinia stores.
+- `src/stores/` - 9 window compatibility stores.
+- `src/services/annotation/` - 14 ES modules for generated annotation flow.
+- Root `annotation-*.js` and `chunk-note-layout-*.js` - 5 remaining regular scripts still required by `index.html`.
+- `styles.css` - global CSS loaded by `src/main.js`.
+
+## Hard Constraints
+
+### IndexedDB Schema
+
+Do not change the IndexedDB schema unless the user explicitly asks for a migration.
+
+```text
+DB name: SeekPlayerDB
+Version: 1
+Object store: files
+Key path: id
+```
+
+### Script Order
+
+Do not reorder `index.html` scripts casually. The app still uses globals and side effects for compatibility.
+
+### app.js
+
+Do not add new feature logic to `app.js` unless there is no reasonable alternative. Prefer focused modules, Pinia stores, or Vue components, but respect the existing bridge while migrating.
+
+### session-init.js
+
+Treat `src/composables/session-init.js` as high-risk. It is not just startup code; it also owns annotation workflow glue and persisted session behavior.
 
 ## Commands
 
 ```bash
-npm run dev           # Vite dev server (port 5173)
-npm run build         # Production build
-npm run verify:read26 # Legacy verification (http-server + Playwright)
-npm run verify:vite   # Vite verification (vite + Playwright)
-npm test              # Default: verify:read26
+npm run dev          # Vite dev server, port 5173
+npm run build        # Production build, copies 5 legacy root scripts into dist
+npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
+npm test             # Same as verify:vite
 ```
 
-## Migration Status
+`verify:read26` is now only a legacy alias to the current Vite verification.
 
-| Phase | Status | Git Tag |
-|-------|--------|---------|
-| 1 — Vite shell | ✅ Done | phase-1-done |
-| 2 — 9 stores | ✅ Done | phase-2-done |
-| 3 — ToastMessage.vue | ✅ Done | phase-3-done |
-| 4 — 5 component shells | ✅ Done | phase-4-done |
-| 5 — 22 ES module copies | ✅ Done | phase-5-done |
-| 6 — Cleanup | ✅ Done | phase-6-done |
+## Documentation Status
+
+Use this file, `README.md`, and `PROJECT_MAP.md` as current architecture references. `ES_MODULE_PLAN.md` is historical planning context unless explicitly updated.
