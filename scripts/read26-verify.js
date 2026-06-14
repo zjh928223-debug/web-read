@@ -38,7 +38,7 @@ async function waitForServer(url, timeoutMs = 15000) {
 
 function runLoadCheck() {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join('scripts', 'read26-load-check.js')], {
+    const child = spawn(process.execPath, [path.join('scripts', 'read26-load-check.cjs')], {
       cwd: process.cwd(),
       stdio: 'inherit',
       env: {

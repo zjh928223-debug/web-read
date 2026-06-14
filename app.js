@@ -1564,7 +1564,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let holdPrevHadFocusClass = null;
     let isChunkShadowOn = true; 
     let chunkCnMode = 'global'; // 'global' or 'focus'
-    let manualChunkStates = {}; // 璁板綍鎵嬪姩鐘舵€?    let lastActiveChunkIndex = -1;
+    let manualChunkStates = {};
+    let lastActiveChunkIndex = -1;
     let lastAiPrevTapChunkIndex = -1;
     let lastAiPrevTapAt = 0;
     let lastSentencePrevTapSegIndex = -1;
@@ -3299,6 +3300,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.toggleChunkShadowManual = toggleChunkShadowManual;
     window.updateChunkStyle = updateChunkStyle;
     window.updateChunkNoteStyle = updateChunkNoteStyle;
+    window.toggleChunkBtn = toggleChunkBtn;
     window.forceUpdateUI = forceUpdateUI;
     window.mainUpdateHighlight = mainUpdateHighlight;
     window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;

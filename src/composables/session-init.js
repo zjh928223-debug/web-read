@@ -21,7 +21,7 @@
         const savedShadowState = localStorage.getItem('st.isChunkShadowOn');
         if (savedShadowState !== null) {
             st.isChunkShadowOn= (savedShadowState === 'true');
-            if (!isChunkShadowOn) document.body.classList.add('hide-chunk-shadow');
+            if (!st.isChunkShadowOn) document.body.classList.add('hide-chunk-shadow');
         }
 
         // Restore Chunk Settings
@@ -55,7 +55,7 @@
         
         if (savedChunkMode) {
             setTimeout(() => {
-                if (st.chunkItems.length > 0 && hasAiChunkData) toggleChunkMode(true);
+                if (st.chunkItems.length > 0 && st.hasAiChunkData) window.toggleChunkMode(true);
             }, 500);
         }
     });
@@ -132,7 +132,7 @@
                 const normalizedMark = normalizeAnnotationMark(mark);
                 if (normalizedMark) st.markedMap.set(normalizedMark.globalIndex, normalizedMark);
             });
-           if (!isChunkMode) renderTranscript();
+           if (!st.isChunkMode) window.renderTranscript();
            syncAnnotationGenerationEntryStatus();
            bridgeToPinia();
         }
@@ -334,7 +334,7 @@
         st.markedMap.clear();
         nextMap.forEach((value, key) => st.markedMap.set(key, value));
         saveToDB('marks', Array.from(st.markedMap.values()));
-        if (isChunkMode) renderChunkMode(); else renderTranscript();
+        if (st.isChunkMode) window.renderChunkMode(); else window.renderTranscript();
         forceUpdateUI(audioPlayer.currentTime);
         syncAnnotationGenerationEntryStatus();
         return { addedCount, totalCount: st.markedMap.size };
@@ -2029,8 +2029,8 @@
         } catch (e) {}
         await deleteFromDB('chunkData');
         await deleteFromDB('marks');
-        toggleChunkBtn.innerText = 'AI切分';
-        if (isChunkMode) {
+        window.toggleChunkBtn.innerText = 'AI切分';
+        if (st.isChunkMode) {
             st.isChunkMode= false;
         }
     }
