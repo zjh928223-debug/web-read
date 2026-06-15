@@ -5,6 +5,7 @@
     var renderChunkMode = deps.renderChunkMode;
     var bridgeToPinia = deps.bridgeToPinia;
     var toggleChunkBtn = deps.toggleChunkBtn;
+    var enterChunkMode = deps.enterChunkMode;
 
     var cleanTextHelper = deps.cleanTextHelper;
     var tokenizeTextHelper = deps.tokenizeTextHelper;
@@ -263,7 +264,11 @@
 
         state.hasAiChunkData = state.chunkItems.length > 0;
         toggleChunkBtn.innerText = state.hasAiChunkData ? "AI切分(已就绪)" : "AI切分";
-        if (getIsChunkMode()) renderChunkMode();
+        if (state.hasAiChunkData && !getIsChunkMode() && typeof enterChunkMode === 'function') {
+            enterChunkMode();
+        } else if (getIsChunkMode()) {
+            renderChunkMode();
+        }
         bridgeToPinia();
     }
 
@@ -478,6 +483,8 @@
             correct: correct,
             userAnswer: userAnswer
         };
+        window.__clozeAnswerState = state.clozeAnswerState;
+        bridgeToPinia();
         if (!window.__USE_VUE_RENDERING) {
             renderChunkMode();
             var nextInput = transcriptContainer.querySelector('[data-cloze-input="' + index + '"]');

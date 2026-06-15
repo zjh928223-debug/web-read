@@ -9,6 +9,8 @@
     "preview": "vite --host 127.0.0.1 --port 4173",
     "preview:vite": "vite --host 127.0.0.1 --port 4173",
     "verify": "npm run verify:vite",
+    "verify:playback": "node scripts/read-web-playback-check.cjs",
+    "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"

@@ -10,8 +10,64 @@
     var jumpPrevSentence = deps.jumpPrevSentence;
     var jumpNextSentence = deps.jumpNextSentence;
 
+    function syncPlaybackStores(activeWordIdx, activeSegIdx, activeChunkIdx) {
+      var ps = window.__piniaStores;
+      var st = window.__state;
+      if (!ps) return;
+      if (ps.transcript) {
+        ps.transcript.currentWordIndex = st.currentWordIndex;
+        ps.transcript.highlightMode = st.highlightMode;
+        ps.transcript.activeWordIdx = activeWordIdx;
+        ps.transcript.activeSegIdx = activeSegIdx;
+      }
+      if (ps.chunk) {
+        ps.chunk.activeChunkIdx = activeChunkIdx;
+      }
+    }
+
+    function getChunkIndexAt(time) {
+      var st = window.__state;
+      var idx = findChunkIndexByTime(time);
+      if (idx !== -1) return idx;
+      if (!st.chunkItems || st.chunkItems.length === 0) return -1;
+      return time < st.chunkItems[0].start ? 0 : st.chunkItems.length - 1;
+    }
+
     function mainUpdateHighlight(wordIndex, currentTime) {
       var st = window.__state;
+      if (currentTime === undefined) currentTime = audioPlayer.currentTime;
+
+      if (st.isChunkMode) {
+        if (wordIndex !== -1) {
+          st.currentWordIndex = wordIndex;
+          if (st.words[wordIndex] && Number.isInteger(st.words[wordIndex].segIndex)) {
+            st.lastActiveSegIndex = st.words[wordIndex].segIndex;
+          }
+        }
+
+        var chunkIdx = findChunkIndexByTime(currentTime);
+        var nextWordEl = (st.highlightMode === 1 && wordIndex !== -1)
+          ? document.getElementById('word-' + wordIndex)
+          : null;
+        st.activeWordHighlightEl = swapActiveClass(nextWordEl, st.activeWordHighlightEl, 'word-highlight');
+        st.activeSentenceEl = swapActiveClass(null, st.activeSentenceEl, 'sentence-active');
+
+        if (chunkIdx !== -1) {
+          if (chunkIdx !== st.lastActiveChunkIndex) {
+            var chunkBlock = document.getElementById('chunk-' + chunkIdx);
+            st.activeChunkEl = swapActiveClass(chunkBlock, st.activeChunkEl, 'chunk-active');
+            followPlaybackTarget(chunkBlock);
+            st.lastActiveChunkIndex = chunkIdx;
+          }
+        } else {
+          st.activeChunkEl = swapActiveClass(null, st.activeChunkEl, 'chunk-active');
+          st.lastActiveChunkIndex = -1;
+        }
+
+        syncPlaybackStores(st.highlightMode === 1 && wordIndex !== -1 ? wordIndex : -1, -1, chunkIdx);
+        return;
+      }
+
       if (wordIndex !== -1) {
         st.currentWordIndex = wordIndex;
       }
@@ -27,9 +83,11 @@
             followPlaybackTarget(lineDiv);
             st.lastActiveSegIndex = segIdx;
           }
+          syncPlaybackStores(-1, segIdx, -1);
         } else {
           st.activeSentenceEl = swapActiveClass(null, st.activeSentenceEl, 'sentence-active');
           st.lastActiveSegIndex = -1;
+          syncPlaybackStores(-1, -1, -1);
         }
         return;
       }
@@ -40,8 +98,10 @@
         var span = document.getElementById('word-' + wordIndex);
         st.activeWordHighlightEl = swapActiveClass(span, st.activeWordHighlightEl, 'word-highlight');
         followPlaybackTarget(span);
+        syncPlaybackStores(wordIndex, -1, -1);
       } else {
         st.activeWordHighlightEl = swapActiveClass(null, st.activeWordHighlightEl, 'word-highlight');
+        syncPlaybackStores(-1, -1, -1);
       }
       st.lastActiveSegIndex = -1;
     }
@@ -110,9 +170,7 @@
       if (time === undefined) time = audioPlayer.currentTime;
       var st = window.__state;
       if (!st.chunkItems || st.chunkItems.length === 0 || !st.hasAiChunkData) return -1;
-      var idx = findChunkIndexByTime(st.chunkItems, time);
-      if (idx !== -1) return idx;
-      return time < st.chunkItems[0].start ? 0 : st.chunkItems.length - 1;
+      return getChunkIndexAt(time);
     }
 
     function isAiChunkNavMode() {

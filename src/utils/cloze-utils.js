@@ -40,4 +40,7 @@ export function escapeHtml(value) {
   }[ch]));
 }
 
-window.ClozeUtils = { validateClozeData, normalizeClozeAnswer };
+window.ClozeUtils = { validateClozeData, normalizeClozeAnswer, escapeHtml };
+window.validateClozeData = validateClozeData;
+window.normalizeClozeAnswer = normalizeClozeAnswer;
+window.escapeHtml = escapeHtml;

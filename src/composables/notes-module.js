@@ -78,7 +78,7 @@
     function getChunkBlockByRef(chunkRef) {
       var blocks = document.querySelectorAll('.chunk-block');
       for (var i = 0; i < blocks.length; i++) {
-        if ((blocks[i].dataset.chunkRef || '') === chunkRef) return blocks[i];
+        if ((blocks[i].dataset.chunkRef || '') === chunkRef || (blocks[i].dataset.legacyChunkRef || '') === chunkRef) return blocks[i];
       }
       return null;
     }
@@ -161,8 +161,12 @@
       if (!ns.activeChunkNoteId) return;
       var note = ns.chunkNotesMap[ns.activeChunkNoteId];
       if (!note || !note.chunkRef) return;
-      var block = getChunkBlockByRef(note.chunkRef);
-      var enDiv = block ? block.querySelector('.chunk-en') : null;
+      var firstSpan = document.getElementById('word-' + Number(note.startGlobal));
+      var enDiv = firstSpan && firstSpan.closest ? firstSpan.closest('.chunk-en') : null;
+      if (!enDiv) {
+        var block = getChunkBlockByRef(note.chunkRef);
+        enDiv = block ? block.querySelector('.chunk-en') : null;
+      }
       if (!enDiv) return;
       var start = Number(note.startGlobal);
       var end = Number(note.endGlobal);

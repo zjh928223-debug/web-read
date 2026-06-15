@@ -45,14 +45,14 @@ function killProcessTree(child) {
   child.kill('SIGTERM');
 }
 
-function runLoadCheck() {
+function runNodeCheck(scriptName) {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join('scripts', 'read26-load-check.cjs')], {
+    const child = spawn(process.execPath, [path.join('scripts', scriptName)], {
       cwd: process.cwd(),
       stdio: 'inherit',
       env: {
         ...process.env,
-        READ26_URL: targetUrl
+        READ_WEB_URL: targetUrl
       }
     });
 
@@ -86,8 +86,18 @@ async function main() {
       }
     }
 
-    const exitCode = await runLoadCheck();
-    process.exitCode = exitCode;
+    const loadExitCode = await runNodeCheck('read26-load-check.cjs');
+    if (loadExitCode !== 0) {
+      process.exitCode = loadExitCode;
+      return;
+    }
+    const playbackExitCode = await runNodeCheck('read-web-playback-check.cjs');
+    if (playbackExitCode !== 0) {
+      process.exitCode = playbackExitCode;
+      return;
+    }
+    const interactionsExitCode = await runNodeCheck('read-web-interactions-check.cjs');
+    process.exitCode = interactionsExitCode;
   } finally {
     if (serverProcess) {
       killProcessTree(serverProcess);

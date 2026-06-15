@@ -42,7 +42,11 @@
   function applyChunkNoteAutoSize(note) {
     if (!note || note.autoSize === false) return;
     var baseWnd = document.defaultView || window;
-    var minDim = window.ChunkNoteLayoutHelpers ? window.ChunkNoteLayoutHelpers.getChunkNoteLayoutBase() : { minW: 200, minH: 18 };
+    var helperBase = window.ChunkNoteLayoutHelpers
+      && typeof window.ChunkNoteLayoutHelpers.getChunkNoteLayoutBase === 'function'
+      ? window.ChunkNoteLayoutHelpers.getChunkNoteLayoutBase()
+      : null;
+    var minDim = helperBase || { minW: 40, minH: 18 };
     var minW = minDim.minW; var minH = minDim.minH;
     var maxW = Math.max(minW, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-width')) || 260);
     var box = measureChunkNoteTextBox(note.note || '', minW, minH, maxW);
@@ -151,6 +155,7 @@
 
   window.__chunkNoteLayout = {
     findNearestChunkWord: findNearestChunkWord,
+    getChunkNoteMeasureFont: getChunkNoteMeasureFont,
     measureChunkNoteTextBox: measureChunkNoteTextBox,
     applyChunkNoteAutoSize: applyChunkNoteAutoSize,
     getChunkRef: getChunkRef,

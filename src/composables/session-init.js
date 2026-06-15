@@ -1,5 +1,7 @@
   var st = window.__state;
   var _ns = window._ns || {};
+  var annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
+  var annotationApiSettingsPanel = document.getElementById('annotation-api-settings-panel');
 
     initDB().then(async () => {
         await clearPersistedReaderContentOnStartup();
@@ -146,14 +148,6 @@
                 ? generatedStore.getItems().length
                 : 0
         });
-    }
-
-    function getAnnotationGenerationEntryUi() {
-        return window.AnnotationGenerationEntryUI || null;
-    }
-
-    function getAnnotationGenerationController() {
-        return window.AnnotationGenerationController || null;
     }
 
     function getAnnotationGenerationStorage() {
@@ -340,101 +334,8 @@
         return { addedCount, totalCount: st.markedMap.size };
     }
 
-    function getAnnotationGenerationConfigState(controller) {
-        if (!controller) return 'not-connected';
-        if (typeof controller.getConfigState === 'function') {
-            const state = controller.getConfigState();
-            if (state === 'unconfigured' || state === 'configured') return state;
-        }
-        if (typeof controller.isConfigured === 'function') {
-            return controller.isConfigured() ? 'configured' : 'unconfigured';
-        }
-        if ('configured' in controller) {
-            return controller.configured ? 'configured' : 'unconfigured';
-        }
-        return 'configured';
-    }
-
     async function syncAnnotationGenerationEntryStatus() {
-        const ui = getAnnotationGenerationEntryUi();
-        if (!ui || typeof ui.setStatus !== 'function') return;
-
-        const controller = getAnnotationGenerationController();
-        const activeRunInfo = controller && typeof controller.getActiveRunInfo === 'function'
-            ? controller.getActiveRunInfo()
-            : null;
-        if (activeRunInfo) {
-            ui.setStatus({
-                state: activeRunInfo.state || 'running',
-                requestBudget: activeRunInfo.requestBudget,
-                requestCount: activeRunInfo.requestCount,
-                nextAllowedStartAt: activeRunInfo.nextAllowedStartAt || '',
-                stopRequested: !!activeRunInfo.stopRequested,
-                stopHandled: !!activeRunInfo.stopHandled,
-                requestAborted: false,
-                message: activeRunInfo.state === 'waiting-next-block'
-                    ? '冷却中：等待下一次请求窗口。'
-                    : (activeRunInfo.state === 'stopping'
-                        ? '停止已请求：等待当前请求结束。'
-                        : '正在执行全文注释生成。')
-            });
-            return;
-        }
-        const context = buildAnnotationGenerationDocumentContext();
-        if (!context.totalBlocks) {
-            ui.setStatus({
-                state: 'empty',
-                total: 0,
-                completed: 0,
-                failed: 0,
-                message: '请先导入字幕或切分数据，再提取 Prompt 或导入全文注释。'
-            });
-            return;
-        }
-
-        const targetSource = getAnnotationTargetSource();
-        let totalTargets = 0;
-        if (targetSource && typeof targetSource.countTargetsFromContext === 'function') {
-            totalTargets = targetSource.countTargetsFromContext(context);
-            if (!totalTargets) {
-                ui.setStatus({
-                    state: 'no-targets',
-                    total: context.totalBlocks,
-                    completed: 0,
-                    failed: 0,
-                    message: '当前文档没有可生成的标注目标。'
-                });
-                return;
-            }
-        }
-
-        const storage = getAnnotationGenerationStorage();
-        if (storage && typeof storage.loadBundle === 'function') {
-            try {
-                const bundle = await storage.loadBundle(getAnnotationGenerationScope());
-                const importedCount = Array.isArray(bundle && bundle.generated && bundle.generated.items)
-                    ? bundle.generated.items.length
-                    : 0;
-                if (importedCount > 0) {
-                    ui.setStatus({
-                        state: 'imported',
-                        total: totalTargets || context.totalBlocks,
-                        completed: importedCount,
-                        failed: 0,
-                        message: `已导入全文注释 ${importedCount} 条，可继续查看/导出 Prompt。`
-                    });
-                    return;
-                }
-            } catch (error) {}
-        }
-
-        ui.setStatus({
-            state: 'ready',
-            total: totalTargets || context.totalBlocks,
-            completed: 0,
-            failed: 0,
-            message: '可查看 Prompt，或手动导入模型分析好的全文注释 JSON。'
-        });
+        return undefined;
     }
 
     let annotationGeneratedIndexRefreshSeq= 0;
@@ -468,60 +369,6 @@
         return normalizeAnnotationGenerationScope({
             audioKey: st.currentAudioKey,
             documentId: _ns.currentDocId
-        });
-    }
-
-    function buildAnnotationEntryActiveStatus(controller, progress = {}) {
-        const activeRunInfo = controller && typeof controller.getActiveRunInfo === 'function'
-            ? controller.getActiveRunInfo()
-            : null;
-        const state = activeRunInfo && activeRunInfo.state
-            ? activeRunInfo.state
-            : 'running';
-        return {
-            state,
-            ...progress,
-            requestBudget: activeRunInfo && Number.isFinite(Number(activeRunInfo.requestBudget))
-                ? Number(activeRunInfo.requestBudget)
-                : undefined,
-            requestCount: activeRunInfo && Number.isFinite(Number(activeRunInfo.requestCount))
-                ? Number(activeRunInfo.requestCount)
-                : undefined,
-            nextAllowedStartAt: activeRunInfo && activeRunInfo.nextAllowedStartAt || '',
-            stopRequested: !!(activeRunInfo && activeRunInfo.stopRequested),
-            stopHandled: !!(activeRunInfo && activeRunInfo.stopHandled),
-            message: state === 'waiting-next-block'
-                ? '冷却中：等待下一次请求窗口。'
-                : (state === 'stopping'
-                    ? '停止已请求：等待当前请求结束。'
-                    : '正在执行全文注释生成。')
-        };
-    }
-
-    function requestAnnotationGenerationStopFromEntry(entryUi) {
-        const ui = entryUi || getAnnotationGenerationEntryUi();
-        const controller = getAnnotationGenerationController();
-        if (!controller || typeof controller.requestStop !== 'function') return;
-        const response = controller.requestStop();
-        emitAnnotationDiagnostics('app.entry_stop_requested', {
-            scope: getAnnotationGenerationScope(),
-            accepted: !!(response && response.accepted),
-            state: response && response.state || '',
-            runId: response && response.runId || ''
-        });
-        if (!response || !response.accepted) return;
-        ui?.setStatus({
-            state: response.state || 'stopping',
-            requestBudget: controller && typeof controller.getActiveRunInfo === 'function' && controller.getActiveRunInfo()
-                ? controller.getActiveRunInfo().requestBudget
-                : undefined,
-            requestCount: controller && typeof controller.getActiveRunInfo === 'function' && controller.getActiveRunInfo()
-                ? controller.getActiveRunInfo().requestCount
-                : undefined,
-            stopRequested: true,
-            message: response.state === 'stopped'
-                ? '本轮已停止，不会继续后续请求。'
-                : '停止已请求：等待当前请求结束。'
         });
     }
 
@@ -677,149 +524,6 @@
             },
             blocks
         };
-    }
-
-    function buildAnnotationPromptPackage() {
-        const promptBuilder = getAnnotationPromptBuilder();
-        const planner = getAnnotationBlockPlanner();
-        const context = buildAnnotationGenerationDocumentContext();
-        if (!context.totalBlocks) {
-            return {
-                ok: false,
-                status: {
-                    state: 'empty',
-                    total: 0,
-                    completed: 0,
-                    failed: 0,
-                    message: '请先导入字幕或切分数据。'
-                }
-            };
-        }
-
-        const targetSource = getAnnotationTargetSource();
-        const targetCount = targetSource && typeof targetSource.countTargetsFromContext === 'function'
-            ? targetSource.countTargetsFromContext(context)
-            : 0;
-        if (!targetCount) {
-            return {
-                ok: false,
-                status: {
-                    state: 'no-targets',
-                    total: context.totalBlocks,
-                    completed: 0,
-                    failed: 0,
-                    message: '当前文档没有可生成的标注目标。'
-                }
-            };
-        }
-
-        if (!planner || typeof planner.planFromContext !== 'function' || !promptBuilder || typeof promptBuilder.buildPromptPayload !== 'function') {
-            return {
-                ok: false,
-                status: {
-                    state: 'not-connected',
-                    total: targetCount,
-                    completed: 0,
-                    failed: 0,
-                    message: 'Prompt builder 未接入，暂时无法提取。'
-                }
-            };
-        }
-
-        const plan = planner.planFromContext(context);
-        const blocks = Array.isArray(plan && plan.blocks) ? plan.blocks : [];
-        const promptBlocks = blocks
-            .map((block, blockIndex) => {
-                const payload = promptBuilder.buildPromptPayload(block, { blockIndex });
-                if (!payload || payload.skipped) return null;
-                return {
-                    blockId: payload.blockId,
-                    targetCount: payload.targetCount,
-                    text: payload.text,
-                    contextText: payload.contextText,
-                    prompt: payload.prompt,
-                    targets: payload.targets
-                };
-            })
-            .filter(Boolean);
-
-        if (!promptBlocks.length) {
-            return {
-                ok: false,
-                status: {
-                    state: 'no-targets',
-                    total: targetCount,
-                    completed: 0,
-                    failed: 0,
-                    message: '没有可导出的 prompt block。'
-                }
-            };
-        }
-
-        const combinedPrompt = promptBlocks
-            .map((block, index) => [`### BLOCK ${index + 1} / ${promptBlocks.length} (${block.blockId})`, block.prompt].join('\n'))
-            .join('\n\n');
-
-        return {
-            ok: true,
-            data: {
-                schemaVersion: 1,
-                createdAt: new Date().toISOString(),
-                template: typeof promptBuilder.getPromptTemplate === 'function'
-                    ? promptBuilder.getPromptTemplate()
-                    : '',
-                meta: {
-                    audioKey: context.audioKey,
-                    documentId: context.documentId,
-                    sourceMode: context.sourceMode,
-                    documentBlockCount: context.totalBlocks,
-                    blockCount: promptBlocks.length,
-                    targetCount
-                },
-                blocks: promptBlocks,
-                combinedPrompt
-            }
-        };
-    }
-
-    function renderAnnotationPromptPanel(promptPackage) {
-        if (!annotationPromptPanel || !annotationPromptSummaryEl || !annotationPromptTextEl) return;
-        const itemCount = Number(promptPackage && promptPackage.meta && promptPackage.meta.itemCount) || 0;
-        const articleId = String(promptPackage && promptPackage.meta && promptPackage.meta.articleId || '');
-        annotationPromptSummaryEl.textContent = `轻量手动模式：共 ${itemCount} 个 target${articleId ? `，articleId：${articleId}` : ''}`;
-        annotationPromptTextEl.value = String(promptPackage && promptPackage.combinedPrompt || '');
-        if (modalBackdrop) modalBackdrop.style.display = 'block';
-        annotationPromptPanel.hidden = false;
-    }
-
-    function closeAnnotationPromptPanel() {
-        if (!annotationPromptPanel || annotationPromptPanel.hidden) return;
-        annotationPromptPanel.hidden = true;
-        if (modalBackdrop) modalBackdrop.style.display = 'none';
-    }
-
-    async function copyAnnotationPromptToClipboard() {
-        if (!st.currentAnnotationPromptPackage || !st.currentAnnotationPromptPackage.combinedPrompt) {
-            showError('ANNOTATION_PROMPT_EMPTY', 'No prompt available');
-            return;
-        }
-        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
-            showError('ANNOTATION_PROMPT_COPY', 'Clipboard API unavailable');
-            return;
-        }
-        await navigator.clipboard.writeText(st.currentAnnotationPromptPackage.combinedPrompt);
-        showToast('Prompt copied', 'success');
-    }
-
-    function exportAnnotationPromptPackage() {
-        if (!currentAnnotationPromptPackage) {
-            showError('ANNOTATION_PROMPT_EMPTY', 'No prompt package available');
-            return;
-        }
-        const exportPayload = st.currentAnnotationPromptPackage.exportPayload || st.currentAnnotationPromptPackage;
-        const articleId = sanitizeFilenamePart(exportPayload && exportPayload.articleId, getCurrentAudioFilenameBase('article'));
-        downloadJsonFile(exportPayload, `${articleId}_annotation_light.json`);
-        showToast('轻量 JSON exported', 'success');
     }
 
     function normalizeAnnotationTextValue(value) {
@@ -1540,93 +1244,14 @@
 
     function exportManualLightweightAnnotations() {
         const payload = buildManualLightweightAnnotationExportPayload();
-        const filenameBase = sanitizeFilenamePart(payload.articleId || getCurrentAudioFilenameBase('article'), 'article');
+        const helper = window.ImportExportSharedHelpers || null;
+        const audioBase = helper && typeof helper.getCurrentAudioFilenameBase === 'function'
+            ? helper.getCurrentAudioFilenameBase(st.currentAudioMeta, 'article')
+            : 'article';
+        const filenameBase = sanitizeFilenamePart(payload.articleId || audioBase, 'article');
         downloadJsonFile(payload, `${filenameBase}_annotation_light.json`);
         showToast(`轻量标注导出完成，共 ${payload.items.length} 条`, 'success');
         return payload;
-    }
-
-    function getManualLightweightPromptTemplate() {
-        return [
-            '你会收到一个 JSON 对象，其中包含 articleText 和 items 数组。',
-            '每个 item 至少包含这些定位字段：targetId、markedText、cleanMarkedText、sourceSentence、anchorSentence、sentenceBefore、sentenceAfter、sentenceIndex、occurrenceIndex、matchType。',
-            '请针对每个 item 返回：targetId、markedText、sourceSentence、occurrenceIndex、boundary、type、meaning、memoryHint。',
-            'targetId、sourceSentence、occurrenceIndex 必须原样保留，不能改写或省略。',
-            '输出格式必须是：',
-            '{',
-            '  "items": [',
-            '    {',
-            '      "targetId": "...",',
-            '      "markedText": "...",',
-            '      "sourceSentence": "...",',
-            '      "occurrenceIndex": 0,',
-            '      "boundary": "...",',
-            '      "type": "...",',
-            '      "meaning": "...",',
-            '      "memoryHint": "..."',
-            '    }',
-            '  ]',
-            '}',
-            '只输出 JSON，不要解释，不要 markdown。'
-        ].join('\n');
-    }
-
-    function buildManualLightweightPromptPackage() {
-        const exportPayload = buildManualLightweightAnnotationExportPayload();
-        const template = getManualLightweightPromptTemplate();
-        return {
-            schemaVersion: 1,
-            mode: 'manual-lightweight',
-            createdAt: new Date().toISOString(),
-            template,
-            exportPayload,
-            meta: {
-                articleId: exportPayload.articleId,
-                itemCount: Array.isArray(exportPayload.items) ? exportPayload.items.length : 0
-            },
-            combinedPrompt: `${template}\n\n${JSON.stringify(exportPayload, null, 2)}`
-        };
-    }
-
-    function normalizeImportedAnnotationItem(raw, index, target) {
-        if (!raw || typeof raw !== 'object') return null;
-        const targetMarkedText = normalizeAnnotationTextValue(target && target.markedText);
-        const targetBoundary = normalizeAnnotationTextValue(target && (target.sentenceText || target.sentencePlainText || target.boundary || target.markedText));
-        const targetBlockId = normalizeAnnotationTextValue(target && (target.sentenceId || target.blockId));
-        const encodedTarget = buildSyntheticAnnotationTargetFromEncodedId(raw.targetId || (target && target.id) || '', raw);
-        const markedText = String(raw.markedText || raw.marked_text || raw.word || raw.text || targetMarkedText || '').replace(/\s+/g, ' ').trim();
-        const boundary = String(raw.boundary || raw.match_context || raw.context || raw.phrase || markedText).replace(/\s+/g, ' ').trim();
-        const meaning = String(raw.meaning || raw.means || raw.explanation || raw.definition || raw.cn || raw.zh || '').trim();
-        const memoryHint = String(raw.memoryHint || raw.memory_hint || raw.remember || raw.note || raw.not_meaning || raw.hint || '').trim();
-        const rawStartValue = raw.occurrenceGlobalStart ?? raw.occurrence_global_start ?? raw.globalStart;
-        const rawEndValue = raw.occurrenceGlobalEnd ?? raw.occurrence_global_end ?? raw.globalEnd;
-        const targetStartValue = target && target.occurrenceGlobalStart;
-        const targetEndValue = target && target.occurrenceGlobalEnd;
-        const encodedStartValue = encodedTarget && encodedTarget.occurrenceGlobalStart;
-        const encodedEndValue = encodedTarget && encodedTarget.occurrenceGlobalEnd;
-        if (!markedText && !boundary) return null;
-        return {
-            ...raw,
-            id: String(raw.id || raw.itemId || `imported-${index}`),
-            targetId: String(raw.targetId || target && target.id || ''),
-            blockId: String(raw.blockId || targetBlockId || ''),
-            markedText: markedText || targetMarkedText,
-            boundary: boundary || targetBoundary || markedText || targetMarkedText,
-            type: String(raw.type || raw.category || raw.label || raw.tag || ''),
-            meaning,
-            memoryHint,
-            occurrenceKey: String(raw.occurrenceKey || raw.occurrence_key || raw.hitKey || target && target.occurrenceKey || encodedTarget && encodedTarget.occurrenceKey || ''),
-            occurrenceGlobalStart: rawStartValue != null && Number.isInteger(Number(rawStartValue))
-                ? Number(rawStartValue)
-                : (targetStartValue != null && Number.isInteger(Number(targetStartValue))
-                    ? Number(targetStartValue)
-                    : (encodedStartValue != null && Number.isInteger(Number(encodedStartValue)) ? Number(encodedStartValue) : null)),
-            occurrenceGlobalEnd: rawEndValue != null && Number.isInteger(Number(rawEndValue))
-                ? Number(rawEndValue)
-                : (targetEndValue != null && Number.isInteger(Number(targetEndValue))
-                    ? Number(targetEndValue)
-                    : (encodedEndValue != null && Number.isInteger(Number(encodedEndValue)) ? Number(encodedEndValue) : null))
-        };
     }
 
     function buildImportedAnnotationStatusBlocks(items, existingBlocks) {
@@ -1645,96 +1270,6 @@
             blocks[blockId].insertedCount += 1;
         });
         return blocks;
-    }
-
-    function normalizeImportedAnnotationPayload(parsed, scope, storage) {
-        const { context, byId } = buildAnnotationTargetCollection();
-        let rawGenerated = null;
-        let rawStatus = null;
-        let rawItems = null;
-
-        if (Array.isArray(parsed)) {
-            rawItems = parsed;
-        } else if (parsed && Array.isArray(parsed.items)) {
-            rawGenerated = parsed;
-            rawItems = parsed.items;
-        } else if (parsed && parsed.generated && Array.isArray(parsed.generated.items)) {
-            rawGenerated = parsed.generated;
-            rawStatus = parsed.status;
-            rawItems = parsed.generated.items;
-        } else if (parsed && parsed.generatedBundle && Array.isArray(parsed.generatedBundle.items)) {
-            rawGenerated = parsed.generatedBundle;
-            rawStatus = parsed.status || parsed.generatedBundle.status;
-            rawItems = parsed.generatedBundle.items;
-        }
-
-        if (!Array.isArray(rawItems)) {
-            throw new Error('JSON 必须是 items 数组，或包含 generated.items 的对象');
-        }
-        if (!context.totalBlocks) {
-            throw new Error('请先导入字幕或切分数据。');
-        }
-
-        const items = rawItems
-            .map((item, index) => {
-                const targetId = normalizeAnnotationTextValue(item && item.targetId);
-                return normalizeImportedAnnotationItem(item, index, targetId ? byId.get(targetId) : null);
-            })
-            .filter(Boolean);
-        if (!items.length) {
-            throw new Error('导入文件里没有可用的注释 items');
-        }
-
-        const generatedBase = storage && typeof storage.createGeneratedJson === 'function'
-            ? storage.createGeneratedJson(scope, [])
-            : { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, items: [] };
-        const statusBase = storage && typeof storage.createStatusJson === 'function'
-            ? storage.createStatusJson(scope, {})
-            : { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, blocks: {} };
-        const importedAt = new Date().toISOString();
-
-        return {
-            generated: {
-                ...generatedBase,
-                ...(rawGenerated && typeof rawGenerated === 'object' ? rawGenerated : {}),
-                schemaVersion: 1,
-                audioKey: scope.audioKey,
-                documentId: scope.documentId,
-                importedAt,
-                source: 'manual-import',
-                items
-            },
-            status: {
-                ...statusBase,
-                ...(rawStatus && typeof rawStatus === 'object' ? rawStatus : {}),
-                schemaVersion: 1,
-                audioKey: scope.audioKey,
-                documentId: scope.documentId,
-                importedAt,
-                source: 'manual-import',
-                blocks: buildImportedAnnotationStatusBlocks(items, rawStatus && rawStatus.blocks)
-            },
-            itemCount: items.length
-        };
-    }
-
-    async function importFullArticleAnnotations(file) {
-        const storage = getAnnotationGenerationStorage();
-        if (!storage || typeof storage.saveBundle !== 'function') {
-            throw new Error('AnnotationGenerationStorage 不可用');
-        }
-        const rawText = await file.text();
-        const parsed = JSON.parse(rawText);
-        const scope = getAnnotationGenerationScope();
-        const normalized = normalizeImportedAnnotationPayload(parsed, scope, storage);
-        await storage.saveBundle(scope, normalized.generated, normalized.status);
-        await refreshGeneratedAnnotationIndexForCurrentDocument();
-        rebuildMarksFromAnnotationItems(normalized.generated && normalized.generated.items, {
-            sourceType: 'annotation-full-import',
-            replaceExisting: true
-        });
-        await syncAnnotationGenerationEntryStatus();
-        return normalized;
     }
 
     function normalizeManualLightweightImportedItem(raw, index) {
@@ -1926,77 +1461,6 @@
         return normalized;
     }
 
-    async function startAnnotationGenerationFromEntry(entryUi) {
-        const ui = entryUi || getAnnotationGenerationEntryUi();
-        let promptPackage = null;
-        try {
-            promptPackage = buildManualLightweightPromptPackage();
-        } catch (error) {
-            ui?.setStatus({
-                state: 'retryable',
-                total: 0,
-                completed: 0,
-                failed: 0,
-                message: error && error.message ? error.message : '轻量 Prompt 提取失败。'
-            });
-            return;
-        }
-
-        st.currentAnnotationPromptPackage= promptPackage;
-        renderAnnotationPromptPanel(promptPackage);
-        ui?.setStatus({
-            state: 'ready',
-            total: promptPackage.meta.itemCount,
-            completed: 0,
-            failed: 0,
-            message: `轻量 Prompt 已提取，共 ${promptPackage.meta.itemCount} 个 target。`
-        });
-        showToast('轻量 Prompt 已提取，可复制或导出 JSON', 'success');
-    }
-
-    function buildAnnotationEntryResultMessage(result) {
-        if (!result || typeof result !== 'object') return '';
-        const message = String(result.message || '').trim();
-        const failureType = String(result.failureType || '').trim();
-        const failureMessage = String(result.failureMessage || '').trim();
-        if (result.state === 'stopped') {
-            return message || (result.requestAborted ? '本轮已停止，当前请求已取消。' : '本轮已停止，不会继续后续请求。');
-        }
-        if (result.finalRunReason === 'budget_exhausted') {
-            return message || '本轮已用尽 10 次请求预算，剩余目标请手工再次触发。';
-        }
-        if ((result.state === 'failed' || result.state === 'partial-failed') && (failureType || failureMessage)) {
-            const detail = failureMessage || message;
-            return `生成失败：${buildAnnotationFailureLabel(failureType)}${detail ? ` - ${detail}` : ''}`;
-        }
-        if (message) return message;
-        return '';
-    }
-
-    function buildAnnotationFailureLabel(failureType) {
-        const type = String(failureType || '').trim();
-        if (type === 'provider_server') return '503 Service Unavailable';
-        if (type === 'request_invalid') return '400 request_invalid';
-        if (type === 'network') return 'network error';
-        if (type === 'rate_limited') return 'provider rate limited';
-        if (type === 'timeout') return 'request timeout';
-        if (type === 'aborted') return 'request aborted';
-        if (type) return type;
-        return 'request_failed';
-    }
-
-    function initAnnotationGenerationEntryUi() {
-        const entryUi = getAnnotationGenerationEntryUi();
-        if (!entryUi || typeof entryUi.init !== 'function') return;
-        entryUi.init({
-            buttonEl: annotationGenerateBtn,
-            rootEl: annotationGenerationStatusEl,
-            onStart: startAnnotationGenerationFromEntry,
-            onStop: requestAnnotationGenerationStopFromEntry
-        });
-        syncAnnotationGenerationEntryStatus();
-    }
-
     function initAnnotationApiSettingsUi() {
         if (!annotationApiSettingsBtn || annotationApiSettingsBtn.hidden) return;
         const configHelper = getAnnotationApiConfigHelper();
@@ -2053,14 +1517,23 @@
 
     // --- Settings Load ---
     try {
-      if(localStorage.getItem('st.markKey')) { st.markKey= localStorage.getItem('st.markKey').toLowerCase(); hotkeyInput.value = st.markKey; }
-      if(localStorage.getItem('st.notesKey')) { st.notesKey= localStorage.getItem('st.notesKey').toLowerCase(); hotkeyNotesInput.value = st.notesKey; }
-      if(localStorage.getItem('st.annotationBubbleKey')) { st.annotationBubbleKey= localStorage.getItem('st.annotationBubbleKey').toLowerCase(); if (hotkeyAnnotationBubbleInput) hotkeyAnnotationBubbleInput.value = st.annotationBubbleKey; }
-      if(localStorage.getItem('st.chunkCnKey')) { st.chunkCnKey= localStorage.getItem('st.chunkCnKey').toLowerCase(); hotkeyChunkCnInput.value = st.chunkCnKey; }
-      if(localStorage.getItem('st.chunkShadowKey')) { st.chunkShadowKey= localStorage.getItem('st.chunkShadowKey').toLowerCase(); hotkeyChunkShadowInput.value = st.chunkShadowKey; }
-      if(localStorage.getItem('st.chunkNoteKey')) { st.chunkNoteKey= localStorage.getItem('st.chunkNoteKey').toLowerCase(); if (hotkeyChunkNoteInput) hotkeyChunkNoteInput.value = st.chunkNoteKey; }
-      if(localStorage.getItem('st.backwardKey')) { st.backwardKey= localStorage.getItem('st.backwardKey'); hotkeyBackwardInput.value = st.backwardKey; }
-      if(localStorage.getItem('st.forwardKey')) { st.forwardKey= localStorage.getItem('st.forwardKey'); hotkeyForwardInput.value = st.forwardKey; }
+      const readStoredHotkey = (key, legacyKey) => localStorage.getItem(key) || localStorage.getItem(legacyKey);
+      const savedMarkKey = readStoredHotkey('st.markKey', 'markKey');
+      const savedNotesKey = readStoredHotkey('st.notesKey', 'notesKey');
+      const savedAnnotationBubbleKey = readStoredHotkey('st.annotationBubbleKey', 'annotationBubbleKey');
+      const savedChunkCnKey = readStoredHotkey('st.chunkCnKey', 'chunkCnKey');
+      const savedChunkShadowKey = readStoredHotkey('st.chunkShadowKey', 'chunkShadowKey');
+      const savedChunkNoteKey = readStoredHotkey('st.chunkNoteKey', 'chunkNoteKey');
+      const savedBackwardKey = readStoredHotkey('st.backwardKey', 'backwardKey');
+      const savedForwardKey = readStoredHotkey('st.forwardKey', 'forwardKey');
+      if(savedMarkKey) { st.markKey= savedMarkKey.toLowerCase(); hotkeyInput.value = st.markKey; }
+      if(savedNotesKey) { st.notesKey= savedNotesKey.toLowerCase(); hotkeyNotesInput.value = st.notesKey; }
+      if(savedAnnotationBubbleKey) { st.annotationBubbleKey= savedAnnotationBubbleKey.toLowerCase(); if (hotkeyAnnotationBubbleInput) hotkeyAnnotationBubbleInput.value = st.annotationBubbleKey; }
+      if(savedChunkCnKey) { st.chunkCnKey= savedChunkCnKey.toLowerCase(); hotkeyChunkCnInput.value = st.chunkCnKey; }
+      if(savedChunkShadowKey) { st.chunkShadowKey= savedChunkShadowKey.toLowerCase(); hotkeyChunkShadowInput.value = st.chunkShadowKey; }
+      if(savedChunkNoteKey) { st.chunkNoteKey= savedChunkNoteKey.toLowerCase(); if (hotkeyChunkNoteInput) hotkeyChunkNoteInput.value = st.chunkNoteKey; }
+      if(savedBackwardKey) { st.backwardKey= savedBackwardKey; hotkeyBackwardInput.value = st.backwardKey; }
+      if(savedForwardKey) { st.forwardKey= savedForwardKey; hotkeyForwardInput.value = st.forwardKey; }
       if(localStorage.getItem('highlightColor')) { document.documentElement.style.setProperty('--word-highlight-bg', localStorage.getItem('highlightColor')); highlightColorInput.value = localStorage.getItem('highlightColor'); }
       if(localStorage.getItem('sentenceColor')) { document.documentElement.style.setProperty('--sentence-highlight-bg', localStorage.getItem('sentenceColor')); sentenceColorInput.value = localStorage.getItem('sentenceColor'); }
       if(localStorage.getItem('chunkNoteSize')) { document.documentElement.style.setProperty('--chunk-note-size', localStorage.getItem('chunkNoteSize')); }
@@ -2108,6 +1581,7 @@
     window.__session_emitAnnotationDiagnostics = emitAnnotationDiagnostics;
     window.__session_scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
     window.__session_syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
-    window.__session_closeAnnotationPromptPanel = closeAnnotationPromptPanel;
+    window.__session_exportManualLightweightAnnotations = exportManualLightweightAnnotations;
+    window.__session_importManualLightweightAnnotations = importManualLightweightAnnotations;
     window.__session_initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
-    window.__session_initAnnotationGenerationEntryUi = initAnnotationGenerationEntryUi;
+    initAnnotationApiSettingsUi();

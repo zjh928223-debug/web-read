@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Advanced Seek Player + Smart Chunking (Pro)</title>
+  <link rel="stylesheet" href="./styles.css" />
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500&family=Noto+Serif+SC:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -84,7 +85,7 @@
             泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" type="text" maxlength="1" value="b" />
           </span>
           
-          <button id="highlight-mode-btn" onclick="cycleHighlightMode()">高亮:词</button>
+          <button id="highlight-mode-btn" onclick="cycleHighlightMode()">高亮:句</button>
           
           <span class="hotkey-box" title="句子高亮底色">
             句<input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb">
@@ -97,30 +98,11 @@
           <button id="import-marks-btn" class="small-btn">导标记</button>
           <button id="export-json" class="small-btn">存JSON</button>
           <button id="export-md-all" class="small-btn">存TXT</button>
-          <button id="btn-annotation-generate" class="small-btn" type="button">查看Prompt</button>
           <button id="btn-export-annotation-lightweight" class="small-btn" type="button" title="导出轻量回填模板，适合补 boundary/type/meaning/memoryHint">导出轻回填模板</button>
           <input type="file" id="import-annotation-lightweight-file" accept=".json" style="display: none;" />
           <button id="btn-import-annotation-lightweight" class="small-btn" type="button" title="导入轻量回填结果，适合日常补释义">导入轻回填结果</button>
-          <input type="file" id="import-annotation-generated-file" accept=".json" style="display: none;" />
-          <button id="btn-import-annotation-generated" class="small-btn" type="button" title="导入完整全文注释包，适合整包恢复或替换">导入完整注释包</button>
           <button id="btn-annotation-api-settings" class="small-btn" type="button" aria-haspopup="dialog" aria-expanded="false" hidden>API设置</button>
-          <span id="annotation-generation-status" class="annotation-generation-status" role="status" aria-live="polite">
-            <span class="annotation-generation-status__label">待命</span>
-            <span class="annotation-generation-status__message">Prompt/导入入口加载中</span>
-          </span>
           <div id="annotation-api-settings-panel" class="annotation-api-settings-panel" role="dialog" aria-label="Annotation API Settings" hidden></div>
-          <div id="annotation-prompt-panel" class="annotation-prompt-panel" role="dialog" aria-label="Annotation Prompt" hidden>
-            <div class="annotation-prompt-panel__header">
-              <strong>全文注释 Prompt</strong>
-              <div class="annotation-prompt-panel__actions">
-                <button id="btn-annotation-prompt-copy" class="small-btn" type="button">复制Prompt</button>
-                <button id="btn-annotation-prompt-export" class="small-btn" type="button">导出JSON</button>
-                <button id="btn-annotation-prompt-close" class="small-btn" type="button">关闭</button>
-              </div>
-            </div>
-            <div id="annotation-prompt-summary" class="annotation-prompt-panel__summary"></div>
-            <textarea id="annotation-prompt-text" class="annotation-prompt-panel__textarea" spellcheck="false" readonly></textarea>
-          </div>
 
           <input type="file" id="chunk-file" accept=".json" style="display: none;">
           <input type="file" id="cloze-file" accept=".json" style="display: none;">
@@ -131,10 +113,10 @@
           
           <span class="hotkey-box">
             中<input id="hotkey-chunk-cn-input" class="hotkey-input" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
-            <button id="btn-chunk-cn-hold" class="mini-toggle" title="切换：按住快捷键才显示中文">持续</button>
+            <button id="btn-chunk-cn-hold" class="mini-toggle active" title="切换：按住快捷键才显示中文">按住</button>
           </span>
 
-          <button id="btn-chunk-focus" class="small-btn" onclick="toggleChunkFocusMode()" title="切换中文显示模式：全局/聚焦" style="padding: 3px 10px; min-width:30px;">全局</button>
+          <button id="btn-chunk-focus" class="small-btn active" onclick="toggleChunkFocusMode()" title="切换中文显示模式：全局/聚焦" style="padding: 3px 10px; min-width:30px;">聚焦</button>
           
           <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
             影<input id="hotkey-chunk-shadow-input" class="hotkey-input" type="text" maxlength="1" value="s" />
@@ -143,15 +125,21 @@
           <span class="hotkey-box" title="AI切分模式下开关右侧备注">
             注<input id="hotkey-chunk-note-input" class="hotkey-input" type="text" maxlength="1" value="x" />
           </span>
-          <input type="file" id="import-chunk-notes-file" accept=".json" style="display:none;">
-          <button id="btn-import-chunk-notes" class="small-btn" title="导入备注 JSON">导注</button>
-          <button id="btn-export-chunk-notes" class="small-btn" title="导出备注 JSON">存注</button>
-          <button id="btn-chunk-note-style" title="调整备注样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;" onclick="openChunkNoteStyleModal()">N</button>
+          <details class="deprecated-options">
+            <summary class="small-btn" title="旧备注工具">过时选项</summary>
+            <span class="deprecated-options-body">
+              <input type="file" id="import-chunk-notes-file" accept=".json" style="display:none;">
+              <button id="btn-import-chunk-notes" class="small-btn" title="导入备注 JSON">导注</button>
+              <button id="btn-export-chunk-notes" class="small-btn" title="导出备注 JSON">存注</button>
+              <button id="btn-chunk-note-style" title="调整备注样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;" onclick="openChunkNoteStyleModal()">N</button>
+            </span>
+          </details>
         </div>
       </div>
 
       <div class="reading-shell">
         <div id="transcript-container">请按顺序加载文件...</div>
+        <div id="vue-root"></div>
       </div>
     </div>
   </div>
@@ -230,7 +218,6 @@
   <script src="chunk-note-layout-core.js"></script>
   <script src="annotation-bubble.js"></script>
   <script src="annotation-api-settings-ui.js"></script>
-  <script src="annotation-generation-entry-ui.js"></script>
   <script type="module" src="src/stores/theme.js"></script>
   <script type="module" src="src/stores/ui.js"></script>
   <script type="module" src="src/stores/audio.js"></script>
@@ -252,8 +239,7 @@
   <script type="module" src="app.js"></script>
   <script type="module" src="src/composables/session-init.js"></script>
 
-  <!-- Vue mount point + entry (module script runs after all regular scripts) -->
-  <div id="vue-root"></div>
+  <!-- Vue entry (module script runs after all regular scripts) -->
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
-const targetUrl = process.env.READ26_URL || 'http://127.0.0.1:4173/';
+const targetUrl = process.env.READ_WEB_URL || process.env.READ26_URL || 'http://127.0.0.1:4173/';
 const artifactsDir = path.join(process.cwd(), '.playwright-artifacts');
 const screenshotPath = path.join(artifactsDir, 'read-web-load.png');
 const reportPath = path.join(artifactsDir, 'read-web-load-report.json');

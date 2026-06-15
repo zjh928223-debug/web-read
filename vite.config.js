@@ -7,8 +7,7 @@ const legacyScripts = [
   'chunk-note-layout-helpers.js',
   'chunk-note-layout-core.js',
   'annotation-bubble.js',
-  'annotation-api-settings-ui.js',
-  'annotation-generation-entry-ui.js'
+  'annotation-api-settings-ui.js'
 ]
 
 function copyLegacyScripts() {

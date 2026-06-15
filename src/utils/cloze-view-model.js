@@ -40,3 +40,5 @@ export function buildClozeQuizViewModel(items, answerState) {
 }
 
 window.ClozeViewModelHelpers = { createInitialClozeAnswerState, getClozeCardStateViewModel, buildClozeCardViewModel, buildClozeQuizViewModel };
+window.createInitialClozeAnswerState = createInitialClozeAnswerState;
+window.buildClozeQuizViewModel = buildClozeQuizViewModel;

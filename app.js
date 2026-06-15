@@ -28,6 +28,8 @@
         if (b) {
             b.transcript = { segments: segments, words: words, wordStarts: wordStarts, highlightMode: highlightMode };
             b.chunkItems = chunkItems; b.isChunkMode = isChunkMode; b.hasAiChunkData = hasAiChunkData;
+            b.chunkCNVisible = chunkCnVisible; b.chunkCNHoldMode = chunkCnHoldMode;
+            b.chunkFocusMode = chunkCnMode === 'focus'; b.chunkShadowVisible = isChunkShadowOn;
             b.clozeItems = clozeItems; b.hasClozeData = hasClozeData; b.clozeAnswerState = clozeAnswerState;
         }
         // If Pinia already exists, write directly for reactive updates
@@ -36,7 +38,12 @@
                 ps.transcript.segments = segments; ps.transcript.words = words;
                 ps.transcript.wordStarts = wordStarts; ps.transcript.highlightMode = highlightMode;
             }
-            if (ps.chunk) { ps.chunk.chunkItems = chunkItems; ps.chunk.isChunkMode = isChunkMode; ps.chunk.hasAiChunkData = hasAiChunkData; }
+            if (ps.chunk) {
+                ps.chunk.chunkItems = chunkItems; ps.chunk.isChunkMode = isChunkMode; ps.chunk.hasAiChunkData = hasAiChunkData;
+                ps.chunk.chunkCNVisible = chunkCnVisible; ps.chunk.chunkCNHoldMode = chunkCnHoldMode;
+                ps.chunk.chunkFocusMode = chunkCnMode === 'focus'; ps.chunk.chunkShadowVisible = isChunkShadowOn;
+                ps.chunk.chunkNoteVisible = !!(_ns && _ns.chunkNoteVisible);
+            }
             if (ps.cloze) { ps.cloze.items = clozeItems; ps.cloze.hasData = hasClozeData; ps.cloze.answerState = clozeAnswerState; }
         }
     }
@@ -131,6 +138,15 @@
     const buildCurrentSentenceDocId = (transcriptSource = null) => window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey, segments);
 
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
+    const findNearestChunkWord = (enDiv, clientX, clientY) => window.__chunkNoteLayout.findNearestChunkWord(enDiv, clientX, clientY);
+    const getChunkNoteMeasureFont = () => window.__chunkNoteLayout.getChunkNoteMeasureFont();
+    const measureChunkNoteTextBox = (text, minW, minH, maxW) => window.__chunkNoteLayout.measureChunkNoteTextBox(text, minW, minH, maxW);
+    const applyChunkNoteAutoSize = (note) => window.__chunkNoteLayout.applyChunkNoteAutoSize(note);
+    const buildChunkNoteLayout = (note, width, height) => window.__chunkNoteLayout.buildChunkNoteLayout(note, width, height);
+    const canChunkNoteTextFitMinReadable = (note, width, height) => window.__chunkNoteLayout.canChunkNoteTextFitMinReadable(note, width, height);
+    const sanitizeChunkNoteFontSize = (rawSize) => window.__chunkNoteLayout.sanitizeChunkNoteFontSize(rawSize);
+    const makeSelectionNoteBaseId = (chunkRef, startGlobal, endGlobal) => window.__chunkNoteLayout.makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal);
+    const makeSelectionNoteId = (chunkRef, startGlobal, endGlobal) => window.__chunkNoteLayout.makeSelectionNoteId(chunkRef, startGlobal, endGlobal);
 
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
     // State bridge (var _ns, _cnApi, _snApi) + API init happens in startup block
@@ -206,6 +222,7 @@
 
     function setSelectedChunkNote(noteId) {
         selectedChunkNoteId = String(noteId || '');
+        _ns.selectedChunkNoteId = selectedChunkNoteId;
         document.querySelectorAll('.chunk-note-tag.selected').forEach(el => el.classList.remove('selected'));
         if (!selectedChunkNoteId) return;
         const tag = getChunkNoteTagById(selectedChunkNoteId);
@@ -374,6 +391,8 @@
 
     function getChunkWordSpan(note) {
         if (!note || !note.chunkRef || !Number.isFinite(Number(note.startGlobal))) return null;
+        const direct = document.getElementById(`word-${Number(note.startGlobal)}`);
+        if (direct && direct.closest && direct.closest('.chunk-block')) return direct;
         const block = getChunkBlockByRef(note.chunkRef);
         if (!block) return null;
         const enDiv = block.querySelector('.chunk-en');
@@ -494,12 +513,8 @@
     }
 
     function getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal) {
-        const block = getChunkBlockByRef(chunkRef);
-        if (!block) return null;
-        const enDiv = block.querySelector('.chunk-en');
-        if (!enDiv) return null;
-        const startSpan = enDiv.querySelector(`#word-${startGlobal}`);
-        const endSpan = enDiv.querySelector(`#word-${endGlobal}`);
+        const startSpan = document.getElementById(`word-${startGlobal}`);
+        const endSpan = document.getElementById(`word-${endGlobal}`);
         if (!startSpan || !endSpan) return null;
         const a = startSpan.getBoundingClientRect();
         const b = endSpan.getBoundingClientRect();
@@ -1155,7 +1170,9 @@
 
     function applyTempAnnotationByCtx(ctx) {
         if (!ctx || !ctx.chunkRef) return;
-        const block = getChunkBlockByRef(ctx.chunkRef);
+        const block = Number.isFinite(Number(ctx.chunkIdx))
+            ? document.querySelector(`.chunk-block[data-chunk-idx="${Number(ctx.chunkIdx)}"]`)
+            : getChunkBlockByRef(ctx.chunkRef);
         if (!block) return;
         const enDiv = block.querySelector('.chunk-en');
         if (!enDiv) return;
@@ -1183,11 +1200,12 @@
         const noteText = (chunkNoteModalInputEl.value || '').trim();
         const ctx = notePopoverCtx;
         if (noteText) {
-            upsertChunkNote(ctx, noteText);
+            const savedNoteId = upsertChunkNote(ctx, noteText);
             saveChunkNotesDebounced();
             clearChunkNoteDraft();
             if (!_ns.chunkNoteVisible) setChunkNoteVisible(true, true);
             refreshChunkNoteForChunkRef(ctx.chunkRef);
+            setSelectedChunkNote(savedNoteId);
         } else {
             if (ctx.noteId && _ns.chunkNotesMap[ctx.noteId]) delete _ns.chunkNotesMap[ctx.noteId];
             refreshChunkNoteForChunkRef(ctx.chunkRef);
@@ -1210,6 +1228,7 @@
         closeChunkNoteContextMenu();
         closeChunkNotePopover();
         notePopoverCtx = ctx;
+        if (!_ns.chunkNoteVisible) setChunkNoteVisible(true, true);
         applyTempAnnotationByCtx(ctx);
 
         const modal = document.createElement('div');
@@ -1316,7 +1335,7 @@
         const noteId = String(ctx.noteId || makeSelectionNoteId(ctx.chunkRef, ctx.startGlobal, ctx.endGlobal));
         if (!noteText) {
             delete _ns.chunkNotesMap[noteId];
-            return;
+            return '';
         }
         const existed = _ns.chunkNotesMap[noteId];
         const next = {
@@ -1353,24 +1372,23 @@
         }
         applyChunkNoteAutoSize(next);
         _ns.chunkNotesMap[noteId] = next;
+        return noteId;
     }
 
     function refreshChunkNoteForChunkRef(chunkRef) {
-        const block = getChunkBlockByRef(chunkRef);
-        if (!block) {
+        const blocks = getChunkBlocksMatchingRef(chunkRef);
+        if (!blocks.length) {
             renderAllChunkNoteTags();
             scheduleChunkNoteConnectorRedraw();
             return;
         }
-        const enDiv = block.querySelector('.chunk-en');
-        const notes = getChunkNotesForRef(chunkRef);
-        if (!notes.length) {
-            clearChunkWordAnnotations(enDiv);
-            renderAllChunkNoteTags();
-            scheduleChunkNoteConnectorRedraw();
-            return;
-        }
-        markChunkWordsByNotes(enDiv, notes);
+        blocks.forEach((block) => {
+            const enDiv = block.querySelector('.chunk-en');
+            if (!enDiv) return;
+            const notes = getChunkNotesForBlock(block);
+            if (!notes.length) clearChunkWordAnnotations(enDiv);
+            else markChunkWordsByNotes(enDiv, notes);
+        });
         renderAllChunkNoteTags();
         scheduleChunkNoteConnectorRedraw();
     }
@@ -1500,21 +1518,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const importMarksInput = document.getElementById('import-marks-file');
     const exportJsonBtn = document.getElementById('export-json');
     const exportMdAllBtn = document.getElementById('export-md-all');
-    const annotationGenerateBtn = document.getElementById('btn-annotation-generate');
     const exportAnnotationLightweightBtn = document.getElementById('btn-export-annotation-lightweight');
     const importAnnotationLightweightInput = document.getElementById('import-annotation-lightweight-file');
     const importAnnotationLightweightBtn = document.getElementById('btn-import-annotation-lightweight');
-    const importAnnotationGeneratedBtn = document.getElementById('btn-import-annotation-generated');
-    const importAnnotationGeneratedInput = document.getElementById('import-annotation-generated-file');
     const annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
     const annotationApiSettingsPanel = document.getElementById('annotation-api-settings-panel');
-    const annotationGenerationStatusEl = document.getElementById('annotation-generation-status');
-    const annotationPromptPanel = document.getElementById('annotation-prompt-panel');
-    const annotationPromptSummaryEl = document.getElementById('annotation-prompt-summary');
-    const annotationPromptTextEl = document.getElementById('annotation-prompt-text');
-    const annotationPromptCopyBtn = document.getElementById('btn-annotation-prompt-copy');
-    const annotationPromptExportBtn = document.getElementById('btn-annotation-prompt-export');
-    const annotationPromptCloseBtn = document.getElementById('btn-annotation-prompt-close');
     const modalBackdrop = document.getElementById('modal-backdrop');
     const loadClozeBtn = document.getElementById('btn-load-cloze');
 
@@ -1526,7 +1534,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let userScrollSuppress = false;
     let suppressTimer = null;
     
-    let highlightMode = 1; 
+    let highlightMode = 2;
     let lastActiveSegIndex = -1;
     let activeWordHighlightEl = null;
     let activeSentenceEl = null;
@@ -1543,11 +1551,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let backwardKey = 'ArrowLeft';
     let forwardKey = 'ArrowRight';
     const markedMap = new Map();
-    let currentAnnotationPromptPackage = null;
-
-    if (annotationPromptPanel && annotationPromptPanel.parentElement !== document.body) {
-        document.body.appendChild(annotationPromptPanel);
-    }
 
     let wordStarts = [];
     let globalVocab = []; 
@@ -1556,14 +1559,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // === AI Chunk Mode State ===
     let isChunkMode = false;
     let chunkItems = [];
-    let chunkCnVisible = false; // 榛樿鏀逛负 false锛屼互渚胯瀵熷崰浣嶆晥鏋?
-    let chunkCnHoldMode = false; // true=鎸変綇蹇嵎閿墠鏄剧ず涓枃
-    try { const _h = localStorage.getItem('chunkCnHoldMode'); if (_h !== null) chunkCnHoldMode = (_h === 'true'); } catch(e) {}
+    let chunkCnVisible = false; // hidden by default; hold key reveals focused Chinese
+    let chunkCnHoldMode = true; // true = show Chinese only while holding shortcut
     let isHoldingChunkCn = false;
     let holdPrevChunkCnVisible = null;
     let holdPrevHadFocusClass = null;
     let isChunkShadowOn = true; 
-    let chunkCnMode = 'global'; // 'global' or 'focus'
+    let chunkCnMode = 'focus'; // 'global' or 'focus'
     let manualChunkStates = {};
     let lastActiveChunkIndex = -1;
     let lastAiPrevTapChunkIndex = -1;
@@ -1580,6 +1582,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         chunkNoteVisible: false,
         chunkNoteSaveTimer: null,
         activeChunkNoteId: '',
+        selectedChunkNoteId: '',
         pendingChunkSelectionCtx: null,
         sentenceNotesMap: {},
         allSentenceNotesByDoc: {},
@@ -1636,10 +1639,28 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
         return { audioKey: 'default-audio', documentId: 'default-document' };
     }
+    function getAnnotationGenerationScopeKey(scope) {
+        const rawScope = scope || getAnnotationGenerationScope();
+        const audioKey = rawScope && rawScope.audioKey ? String(rawScope.audioKey) : 'default-audio';
+        const documentId = rawScope && rawScope.documentId ? String(rawScope.documentId) : 'default-document';
+        return `${audioKey}::${documentId}`;
+    }
+    function getAnnotationGeneratedIndexScopeKey() {
+        return window.__state && window.__state.annotationGeneratedIndexScopeKey
+            ? String(window.__state.annotationGeneratedIndexScopeKey)
+            : '';
+    }
     function emitAnnotationDiagnostics() {
         if (typeof window.__session_emitAnnotationDiagnostics === 'function') {
             return window.__session_emitAnnotationDiagnostics.apply(null, arguments);
         }
+    }
+    function emitAnnotationDebug(step, payload) {
+        try {
+            if (window.ANNOTATION_DEBUG === true || localStorage.getItem('annotationDebug') === '1') {
+                console.debug(`[annotation-debug] ${step}`, payload || {});
+            }
+        } catch (error) {}
     }
     function scheduleGeneratedAnnotationIndexRefresh() {
         if (typeof window.__session_scheduleGeneratedAnnotationIndexRefresh === 'function') {
@@ -1652,19 +1673,27 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             return window.__session_syncAnnotationGenerationEntryStatus();
         }
     }
-    function closeAnnotationPromptPanel() {
-        if (typeof window.__session_closeAnnotationPromptPanel === 'function') {
-            return window.__session_closeAnnotationPromptPanel();
+    function getAnnotationGeneratedResultStore() {
+        return window.AnnotationGeneratedResultStore || null;
+    }
+    function getAnnotationClickResolver() {
+        return window.AnnotationClickResolver || null;
+    }
+    function exportManualLightweightAnnotations() {
+        if (typeof window.__session_exportManualLightweightAnnotations === 'function') {
+            return window.__session_exportManualLightweightAnnotations();
         }
+        throw new Error('Annotation lightweight export module is not ready');
+    }
+    async function importManualLightweightAnnotations(file) {
+        if (typeof window.__session_importManualLightweightAnnotations === 'function') {
+            return window.__session_importManualLightweightAnnotations(file);
+        }
+        throw new Error('Annotation lightweight import module is not ready');
     }
     function initAnnotationApiSettingsUi() {
         if (typeof window.__session_initAnnotationApiSettingsUi === 'function') {
             return window.__session_initAnnotationApiSettingsUi();
-        }
-    }
-    function initAnnotationGenerationEntryUi() {
-        if (typeof window.__session_initAnnotationGenerationEntryUi === 'function') {
-            return window.__session_initAnnotationGenerationEntryUi();
         }
     }
     window.__state = {};
@@ -1684,9 +1713,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return chunkNotesFileHandle; }, set: function(v) { chunkNotesFileHandle = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileHandleAudioKey', { get: function() { return chunkNotesFileHandleAudioKey; }, set: function(v) { chunkNotesFileHandleAudioKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileName', { get: function() { return chunkNotesFileName; }, set: function(v) { chunkNotesFileName = v; }, enumerable: true, configurable: true });
-    var __isChunkMode = false, __cak = 'default-audio', __markedMap = new Map();
-    var __vocabMatchMap = new Map();
-    Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return __isChunkMode; }, set: function(v) { __isChunkMode = v; }, enumerable: true, configurable: true });
+    var __cak = 'default-audio';
+    Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return isChunkMode; }, set: function(v) { isChunkMode = !!v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentWordIndex', { get: function() { return currentWordIndex; }, set: function(v) { currentWordIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'autoFollow', { get: function() { return autoFollow; }, set: function(v) { autoFollow = v; }, enumerable: true, configurable: true });
@@ -1706,10 +1734,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'chunkNoteKey', { get: function() { return chunkNoteKey; }, set: function(v) { chunkNoteKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'backwardKey', { get: function() { return backwardKey; }, set: function(v) { backwardKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'forwardKey', { get: function() { return forwardKey; }, set: function(v) { forwardKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'markedMap', { get: function() { return __markedMap; }, set: function(v) { __markedMap = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'currentAnnotationPromptPackage', { get: function() { return currentAnnotationPromptPackage; }, set: function(v) { currentAnnotationPromptPackage = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'markedMap', { get: function() { return markedMap; }, set: function(v) { markedMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { markedMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'globalVocab', { get: function() { return globalVocab; }, set: function(v) { globalVocab = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'vocabMatchMap', { get: function() { return __vocabMatchMap; }, set: function(v) { __vocabMatchMap = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'vocabMatchMap', { get: function() { return vocabMatchMap; }, set: function(v) { vocabMatchMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { vocabMatchMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkCnVisible', { get: function() { return chunkCnVisible; }, set: function(v) { chunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkCnHoldMode', { get: function() { return chunkCnHoldMode; }, set: function(v) { chunkCnHoldMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'isHoldingChunkCn', { get: function() { return isHoldingChunkCn; }, set: function(v) { isHoldingChunkCn = v; }, enumerable: true, configurable: true });
@@ -1730,6 +1757,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         renderChunkMode: renderChunkMode,
         bridgeToPinia: bridgeToPinia,
         toggleChunkBtn: toggleChunkBtn,
+        enterChunkMode: function () { toggleChunkMode(true); },
         cleanTextHelper: cleanTextHelper,
         tokenizeTextHelper: tokenizeTextHelper,
         findExactMatchRangeHelper: findExactMatchRangeHelper
@@ -1829,7 +1857,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
         getIsChunkMode: function () { return isChunkMode; },
         closeChunkNotePopover: closeChunkNotePopover,
-        closeAnnotationPromptPanel: closeAnnotationPromptPanel,
         updateShadowBtnText: updateShadowBtnText
     });
 
@@ -1882,7 +1909,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
     }
     initAnnotationApiSettingsUi();
-    initAnnotationGenerationEntryUi();
 
     // M4+M5 delegated → src/composables/import-module.js
 
@@ -1980,13 +2006,30 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             .sort((a, b) => (a.startGlobal - b.startGlobal) || (a.endGlobal - b.endGlobal));
     }
 
+    function getChunkBlocksMatchingRef(chunkRef) {
+        const ref = String(chunkRef || '');
+        return Array.from(document.querySelectorAll('.chunk-block')).filter(block => {
+            return String(block.dataset.chunkRef || '') === ref || String(block.dataset.legacyChunkRef || '') === ref;
+        });
+    }
+
+    function getChunkNotesForBlock(block) {
+        if (!block) return [];
+        const refs = new Set([
+            String(block.dataset.chunkRef || ''),
+            String(block.dataset.legacyChunkRef || '')
+        ].filter(Boolean));
+        return Object.values(_ns.chunkNotesMap)
+            .filter(note => note && refs.has(String(note.chunkRef || '')))
+            .sort((a, b) => (a.startGlobal - b.startGlobal) || (a.endGlobal - b.endGlobal));
+    }
+
     function refreshAllChunkNoteVisuals() {
         if (!isChunkMode || !hasAiChunkData) return;
-        document.querySelectorAll('#transcript-container .chunk-block').forEach(block => {
-            const chunkRef = String(block.dataset.chunkRef || '');
+        document.querySelectorAll('.chunk-block').forEach(block => {
             const enDiv = block.querySelector('.chunk-en');
             if (!enDiv) return;
-            const notes = getChunkNotesForRef(chunkRef);
+            const notes = getChunkNotesForBlock(block);
             if (notes.length > 0) markChunkWordsByNotes(enDiv, notes);
             else clearChunkWordAnnotations(enDiv);
         });
@@ -1994,18 +2037,39 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         scheduleChunkNoteConnectorRedraw();
     }
 
+    function findNearestChunkBlock(clientX, clientY) {
+        const blocks = Array.from(document.querySelectorAll('.chunk-block'));
+        if (!blocks.length) return null;
+        let best = null;
+        let bestScore = Infinity;
+        blocks.forEach((block) => {
+            const rect = block.getBoundingClientRect();
+            const dx = clientX < rect.left ? rect.left - clientX : (clientX > rect.right ? clientX - rect.right : 0);
+            const dy = clientY < rect.top ? rect.top - clientY : (clientY > rect.bottom ? clientY - rect.bottom : 0);
+            const score = (dy * dy) + (dx * dx * 0.2);
+            if (score < bestScore) {
+                bestScore = score;
+                best = block;
+            }
+        });
+        return best;
+    }
+
     function handleChunkSelectionContextMenu(e) {
-        if (!isChunkMode || !hasAiChunkData) return;
+        if (!isChunkMode || !hasAiChunkData) return false;
         if (chunkNoteModalEl) saveChunkNoteFromModal();
-        const chunkBlock = e.target.closest('.chunk-block');
+        let chunkBlock = e.target && e.target.closest ? e.target.closest('.chunk-block') : null;
+        if (!chunkBlock && e.target && e.target.closest && (e.target.closest('#chunk-vue-container') || e.target.closest('#transcript-container'))) {
+            chunkBlock = findNearestChunkBlock(e.clientX, e.clientY);
+        }
         if (!chunkBlock) {
             closeChunkNoteContextMenu();
-            return;
+            return false;
         }
         const enDiv = chunkBlock.querySelector('.chunk-en');
         if (!enDiv) {
             closeChunkNoteContextMenu();
-            return;
+            return false;
         }
         const selection = window.getSelection();
         let startGlobal = NaN;
@@ -2033,12 +2097,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             const nearest = findNearestChunkWord(enDiv, e.clientX, e.clientY);
             if (!nearest) {
                 closeChunkNoteContextMenu();
-                return;
+                return false;
             }
             const idx = parseInt(String(nearest.id || '').replace('word-', ''), 10);
             if (!Number.isFinite(idx)) {
                 closeChunkNoteContextMenu();
-                return;
+                return false;
             }
             startGlobal = idx;
             endGlobal = idx;
@@ -2059,6 +2123,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             noteExists: false,
             anchorRect
         });
+        return true;
+    }
+
+    function openChunkNoteContextFromEvent(event) {
+        return handleChunkSelectionContextMenu(event);
     }
 
     function getAnnotationBubble() {
@@ -2100,16 +2169,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         const store = getAnnotationGeneratedResultStore();
         if (!resolver || typeof resolver.resolveClick !== 'function' || !store) return null;
         const currentScopeKey = getAnnotationGenerationScopeKey();
-        if (annotationGeneratedIndexScopeKey !== currentScopeKey) {
+        const indexedScopeKey = getAnnotationGeneratedIndexScopeKey();
+        if (indexedScopeKey && indexedScopeKey !== currentScopeKey) {
             emitAnnotationDebug('app.generated_click_scope_mismatch', {
                 scope: getAnnotationGenerationScope(),
-                indexedScopeKey: annotationGeneratedIndexScopeKey,
+                indexedScopeKey,
                 currentScopeKey,
                 wordIndex
             });
             emitAnnotationDiagnostics('app.generated_click_scope_mismatch', {
                 scope: getAnnotationGenerationScope(),
-                indexedScopeKey: annotationGeneratedIndexScopeKey,
+                indexedScopeKey,
                 currentScopeKey,
                 wordIndex
             });
@@ -2136,7 +2206,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             scope: getAnnotationGenerationScope(),
             wordIndex,
             hit: !!result,
-            indexedScopeKey: annotationGeneratedIndexScopeKey,
+            indexedScopeKey,
             generatedItemCount: typeof store.getItems === 'function' ? store.getItems().length : 0,
             occurrenceKey: result && result.occurrenceKey || ''
         });
@@ -2146,22 +2216,22 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function resolveAnnotationBubbleForSpan(span) {
         const wordIndex = Number(span && span.dataset ? span.dataset.wordIndex : NaN);
         if (!Number.isFinite(wordIndex) || wordIndex < 0) return null;
-        if (!markedMap.has(wordIndex)) return null;
         const generated = resolveGeneratedAnnotationBubbleForSpan(span, wordIndex);
         if (generated) return generated;
+        if (!markedMap.has(wordIndex)) return null;
         const match = vocabMatchMap.get(wordIndex);
         if (!match) return null;
         return normalizeAnnotationBubbleHit(match, wordIndex, span);
     }
 
-    function notifyAnnotationBubbleWordClick(span) {
+    function notifyAnnotationBubbleWordClick(span, options = {}) {
         const bubble = getAnnotationBubble();
         if (!bubble) {
             emitAnnotationDiagnostics('app.generated_bubble_click_skipped', {
                 scope: getAnnotationGenerationScope(),
                 reason: 'bubble-missing'
             });
-            return;
+            return false;
         }
         const annotation = resolveAnnotationBubbleForSpan(span);
         const bubbleVisible = typeof bubble.isVisible === 'function' ? bubble.isVisible() : false;
@@ -2176,10 +2246,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
         if (annotation && typeof bubble.setAnnotation === 'function') {
             bubble.setAnnotation(annotation);
-            if (!bubbleVisible && typeof bubble.show === 'function') {
+            if ((!bubbleVisible || options.forceShow) && typeof bubble.show === 'function') {
                 bubble.show();
             }
-            return;
+            return true;
         }
         if (typeof bubble.clearAnnotation === 'function') {
             bubble.clearAnnotation();
@@ -2187,6 +2257,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (typeof bubble.hide === 'function') {
             bubble.hide();
         }
+        return false;
     }
 
     transcriptContainer.addEventListener('click', (event) => {
@@ -2667,6 +2738,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
         localStorage.setItem('isChunkMode', isChunkMode);
         toggleChunkBtn.classList.toggle('active', isChunkMode);
+        updateHighlightModeUI();
         closeChunkNoteContextMenu();
         closeChunkNotePopover();
         
@@ -2677,8 +2749,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             document.querySelectorAll('.chunk-note-tag').forEach(el => el.remove());
             clearChunkNoteConnectors();
         }
+        updateChunkFocusModeUI();
         
         requestAnimationFrame(() => {
+            updateChunkFocusModeUI();
             forceUpdateUI(audioPlayer.currentTime);
             
             let newAnchor = null;
@@ -2699,12 +2773,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function setChunkCnVisible(value, persist=true) {
         if (!isChunkMode) return;
         chunkCnVisible = !!value;
-        if (persist) localStorage.setItem('chunkCnVisible', chunkCnVisible);
+        if (persist) localStorage.setItem('st.chunkCnVisible', String(chunkCnVisible));
         const els = document.querySelectorAll('.chunk-cn');
         els.forEach(el => {
             if (chunkCnVisible) el.classList.remove('hidden-cn');
             else el.classList.add('hidden-cn');
         });
+        bridgeToPinia();
     }
 
     function toggleChunkCn() {
@@ -2717,11 +2792,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (!btn) return;
         btn.classList.toggle('active', chunkCnHoldMode);
         btn.innerText = chunkCnHoldMode ? '按住' : '持续';
+        bridgeToPinia();
     }
 
     function toggleChunkCnHoldMode() {
         chunkCnHoldMode = !chunkCnHoldMode;
-        localStorage.setItem('chunkCnHoldMode', chunkCnHoldMode);
+        localStorage.setItem('st.chunkCnHoldMode', String(chunkCnHoldMode));
         updateChunkCnHoldBtn();
     }
 
@@ -2747,30 +2823,30 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (holdPrevChunkCnVisible === false) setChunkCnVisible(false, false);
         holdPrevChunkCnVisible = null;
         holdPrevHadFocusClass = null;
+        bridgeToPinia();
     }
 
     // Toggle Focus Mode
 
+    function updateChunkFocusModeUI() {
+        const btn = document.getElementById('btn-chunk-focus');
+        const legacyContainer = document.getElementById('transcript-container');
+        const vueContainer = document.getElementById('chunk-vue-container');
+        const isFocus = chunkCnMode === 'focus';
+        if (btn) {
+            btn.innerText = isFocus ? '聚焦' : '全局';
+            btn.classList.toggle('active', isFocus);
+        }
+        if (legacyContainer) legacyContainer.classList.toggle('cn-mode-focus', isFocus);
+        if (vueContainer) vueContainer.classList.toggle('cn-mode-focus', isFocus);
+        bridgeToPinia();
+    }
+
     function toggleChunkFocusMode() {
         if (!isChunkMode) return;
-
-        const btn = document.getElementById('btn-chunk-focus');
-        const container = document.getElementById('transcript-container');
-
-        if (chunkCnMode === 'global') {
-            chunkCnMode = 'focus';
-            btn.innerText = "聚焦";
-            btn.classList.add('active'); // 鎸夐挳鍙樿壊
-            container.classList.add('cn-mode-focus'); // 娣诲姞 CSS 绫?
-        } else {
-            chunkCnMode = 'global';
-            btn.innerText = "全局";
-            btn.classList.remove('active');
-            container.classList.remove('cn-mode-focus');
-        }
-        
-        // 淇濆瓨鐘舵€?
-        localStorage.setItem('chunkCnMode', chunkCnMode);
+        chunkCnMode = chunkCnMode === 'global' ? 'focus' : 'global';
+        localStorage.setItem('st.chunkCnMode', chunkCnMode);
+        updateChunkFocusModeUI();
     }
 
     // Shadow Toggle Logic
@@ -2875,10 +2951,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function updateHighlightModeUI() {
         const txt = ['高亮:关', '高亮:词', '高亮:句'][highlightMode];
+        if (!highlightModeBtn) return;
         highlightModeBtn.textContent = txt;
         highlightModeBtn.classList.toggle('active', highlightMode !== 0);
         document.body.classList.toggle('highlight-sentence-mode', highlightMode === 2 && !isChunkMode);
     }
+    updateHighlightModeUI();
 
     function findChunkIndexByTime(t) {
         return findChunkIndexByTimeHelper(chunkItems, t);
@@ -2899,65 +2977,39 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
         const containerRect = container.getBoundingClientRect();
         const elRect = el.getBoundingClientRect();
-        const margin = Math.max(24, Math.min(120, containerRect.height * 0.2));
-        const fullyVisible =
-            elRect.top >= containerRect.top + margin &&
-            elRect.bottom <= containerRect.bottom - margin;
-        if (fullyVisible) return;
+        const viewportHeight = Math.max(1, containerRect.height || container.clientHeight || window.innerHeight || 1);
+        const topGuard = Math.max(24, Math.min(96, viewportHeight * 0.08));
+        const bottomTrigger = Math.max(96, Math.min(220, viewportHeight * 0.18));
+        const safeTop = containerRect.top + topGuard;
+        const safeBottom = containerRect.bottom - bottomTrigger;
+        const needsPageForward = elRect.bottom > safeBottom;
+        const needsPageBack = elRect.top < safeTop;
+        if (!needsPageForward && !needsPageBack) return;
         const offsetTop = elRect.top - containerRect.top + container.scrollTop;
-        const targetTop = offsetTop - Math.max(0, (container.clientHeight - elRect.height) / 2);
+        const targetTop = offsetTop - topGuard;
         container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
     }
 
-    window.mainUpdateHighlight = function(wordIndex) {
-        const currentTime = audioPlayer.currentTime;
-        if (isChunkMode) {
-             if (wordIndex !== -1) {
-                 currentWordIndex = wordIndex;
-                 if (words[wordIndex] && Number.isInteger(words[wordIndex].segIndex)) {
-                     lastActiveSegIndex = words[wordIndex].segIndex;
-                 }
-             }
-             const chunkIdx = findChunkIndexByTime(currentTime);
-             const nextWordEl = (highlightMode === 1 && wordIndex !== -1) ? document.getElementById(`word-${wordIndex}`) : null;
-             activeWordHighlightEl = swapActiveClass(nextWordEl, activeWordHighlightEl, 'word-highlight');
-             activeSentenceEl = swapActiveClass(null, activeSentenceEl, 'sentence-active');
-
-             if (chunkIdx !== -1) {
-                 if (chunkIdx !== lastActiveChunkIndex) {
-                     const chunkBlock = document.getElementById(`chunk-${chunkIdx}`);
-                     activeChunkEl = swapActiveClass(chunkBlock, activeChunkEl, 'chunk-active');
-                     followPlaybackTarget(chunkBlock);
-                     lastActiveChunkIndex = chunkIdx;
-                 }
-             } else {
-                 activeChunkEl = swapActiveClass(null, activeChunkEl, 'chunk-active');
-                 lastActiveChunkIndex = -1;
-             }
-             return; 
-        }
-
-        // [MIGRATED] playback navigation → src/composables/playback-module.js
-        window.__playbackModule.init({
-            audioPlayer: audioPlayer,
-            getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
-            getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
-            bsFindActiveHelper: bsFindActiveHelper,
-            findChunkIndexByTime: findChunkIndexByTime,
-            swapActiveClass: swapActiveClass,
-            followPlaybackTarget: followPlaybackTarget,
-            getAnnotationBubble: getAnnotationBubble,
-            jumpPrevSentence: jumpPrevSentence,
-            jumpNextSentence: jumpNextSentence
-        });
-    };
+    // [MIGRATED] playback navigation → src/composables/playback-module.js
+    window.__playbackModule.init({
+        audioPlayer: audioPlayer,
+        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
+        bsFindActiveHelper: bsFindActiveHelper,
+        findChunkIndexByTime: findChunkIndexByTime,
+        swapActiveClass: swapActiveClass,
+        followPlaybackTarget: followPlaybackTarget,
+        getAnnotationBubble: getAnnotationBubble,
+        jumpPrevSentence: jumpPrevSentence,
+        jumpNextSentence: jumpNextSentence
+    });
 
     // Re-bind local references to functions now in playback-module
-    var forceUpdateUI = function () { return window.forceUpdateUI.apply(null, arguments); };
-    var mainUpdateHighlight = function () { return window.mainUpdateHighlight.apply(null, arguments); };
-    var toggleAnnotationBubble = function () { return window.toggleAnnotationBubble.apply(null, arguments); };
-    var handleBackwardClick = function () { return window.handleBackwardClick.apply(null, arguments); };
-    var handleForwardClick = function () { return window.handleForwardClick.apply(null, arguments); };
+    var forceUpdateUI = window.forceUpdateUI;
+    var mainUpdateHighlight = window.mainUpdateHighlight;
+    var toggleAnnotationBubble = window.toggleAnnotationBubble;
+    var handleBackwardClick = window.handleBackwardClick;
+    var handleForwardClick = window.handleForwardClick;
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({
@@ -2983,7 +3035,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         setSelectedChunkNote: setSelectedChunkNote,
         openChunkNoteDeleteDialog: openChunkNoteDeleteDialog,
-        selectedChunkNoteId: function () { return _ns.selectedChunkNoteId || ''; },
+        selectedChunkNoteId: function () { return selectedChunkNoteId || ''; },
         handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
         chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
         pendingChunkSelectionCtx: function () { return _ns.pendingChunkSelectionCtx; },
@@ -2995,7 +3047,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         hotkeyChunkNoteInput: hotkeyChunkNoteInput,
         highlightColorInput: highlightColorInput, sentenceColorInput: sentenceColorInput,
         themeCustomPanel: themeCustomPanel, themeControlsEl: themeControlsEl,
-        closeAnnotationPromptPanel: closeAnnotationPromptPanel,
         setMarkKey: function (v) { markKey = v; },
         setNotesKey: function (v) { notesKey = v; },
         setAnnotationBubbleKey: function (v) { annotationBubbleKey = v; },
@@ -3029,7 +3080,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function jumpPrevSentence() {
         var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndex(cur);
+        var sIdx = getCurrentSegmentIndexHelper(segments, words, wordStarts, cur);
         var targetTime = 0;
         if (sIdx !== -1) {
             var now = Date.now();
@@ -3047,7 +3098,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function jumpNextSentence() {
         var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndex(cur);
+        var sIdx = getCurrentSegmentIndexHelper(segments, words, wordStarts, cur);
         var next = (sIdx >= 0 && sIdx < segments.length - 1) ? segments[sIdx + 1] : null;
         lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
         if (next && Number.isFinite(next.start)) {
@@ -3254,10 +3305,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         findChunkIndexByTime: findChunkIndexByTime,
         getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
         toggleFollowBtn: toggleFollowBtn,
-        mainAppArea: mainAppArea,
-        annotationPromptCopyBtn: annotationPromptCopyBtn,
-        annotationPromptExportBtn: annotationPromptExportBtn,
-        annotationPromptCloseBtn: annotationPromptCloseBtn
+        mainAppArea: mainAppArea
     });
 
     // [MIGRATED] glass effects → src/composables/glass-effects.js
@@ -3309,6 +3357,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.bridgeToPinia = bridgeToPinia;
     window.renderTranscript = renderTranscript; window.renderChunkMode = renderChunkMode;
     window.processTranscript = processTranscript;
+    window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
+    window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
+    window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;
     window.isInputLikeTarget = isInputLikeTarget;
     window.adjustChunkNoteArrowSizeByGap = adjustChunkNoteArrowSizeByGap;
     window.getAnnotationGenerationScope = getAnnotationGenerationScope;
@@ -3323,8 +3374,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
     window.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
     window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
-    window.closeAnnotationPromptPanel = closeAnnotationPromptPanel;
     window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
-    window.initAnnotationGenerationEntryUi = initAnnotationGenerationEntryUi;
     window.processChunkData = processChunkData;
     window.updateChunkCnHoldBtn = updateChunkCnHoldBtn;

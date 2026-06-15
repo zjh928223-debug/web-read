@@ -52,7 +52,7 @@ npm test             # Same as verify:vite
 `index.html` currently loads:
 
 ```text
-5 root regular scripts
+4 root regular scripts
 9 src/stores/*.js module compatibility stores
 9 src/composables/*.js module compatibility modules
 app.js module
@@ -60,14 +60,13 @@ src/composables/session-init.js module
 /src/main.js Vue + Pinia module
 ```
 
-The 5 remaining root regular scripts are:
+The 4 remaining root regular scripts are:
 
 ```text
 chunk-note-layout-helpers.js
 chunk-note-layout-core.js
 annotation-bubble.js
 annotation-api-settings-ui.js
-annotation-generation-entry-ui.js
 ```
 
 ## Source Map
@@ -100,6 +99,6 @@ Do not change this schema without an explicit migration plan.
 ## Current High-Risk Areas
 
 - `app.js` still owns most core runtime state.
-- `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, annotation status, prompt export, and annotation import/export.
+- `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and annotation import/export glue.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
 - Root regular scripts are still required at runtime and must be copied for production builds.

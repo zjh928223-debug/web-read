@@ -6,14 +6,13 @@
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
 ├── app.js                             # Legacy central bus, about 3330 lines
-├── styles.css                         # Global CSS imported by src/main.js
+├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
 ├── chunk-note-layout-helpers.js       # Remaining regular script
 ├── chunk-note-layout-core.js          # Remaining regular script
 ├── annotation-bubble.js               # Remaining regular script
-├── annotation-api-settings-ui.js      # Remaining regular script
-└── annotation-generation-entry-ui.js  # Remaining regular script
+└── annotation-api-settings-ui.js      # Remaining regular script
 ```
 
 ## Browser Execution Order

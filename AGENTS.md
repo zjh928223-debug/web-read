@@ -12,7 +12,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 
 - `index.html` - browser entry and legacy DOM shell.
 - `app.js` - legacy central bus, still owns most runtime state and many UI handlers.
-- `src/composables/session-init.js` - startup/session restore plus annotation import/export/status logic.
+- `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, and bridge from legacy globals into Pinia.
 
 There is no `read-26.html` in the current root. Any script or doc that refers to it is legacy context.
@@ -23,12 +23,11 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 5 root regular scripts
+├── 4 root regular scripts
 │   ├── chunk-note-layout-helpers.js
 │   ├── chunk-note-layout-core.js
 │   ├── annotation-bubble.js
-│   ├── annotation-api-settings-ui.js
-│   └── annotation-generation-entry-ui.js
+│   └── annotation-api-settings-ui.js
 ├── 9 src/stores/*.js module compatibility stores
 ├── 9 src/composables/*.js module compatibility modules
 ├── app.js as type="module"
@@ -76,13 +75,13 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 ## Important Files
 
 - `app.js` - about 3330 lines. High risk. Central state, chunk notes UI, playback wiring, note sidebar, and legacy exports.
-- `src/composables/session-init.js` - about 2113 lines. High risk. Startup restore, persisted state cleanup, annotation prompt/export/import/status logic.
+- `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
 - `src/stores/` - 9 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
-- Root `annotation-*.js` and `chunk-note-layout-*.js` - 5 remaining regular scripts still required by `index.html`.
-- `styles.css` - global CSS loaded by `src/main.js`.
+- Root `annotation-*.js` and `chunk-note-layout-*.js` - 4 remaining regular scripts still required by `index.html`.
+- `styles.css` - global CSS loaded directly by `index.html`.
 
 ## Hard Constraints
 
@@ -113,7 +112,7 @@ Treat `src/composables/session-init.js` as high-risk. It is not just startup cod
 
 ```bash
 npm run dev          # Vite dev server, port 5173
-npm run build        # Production build, copies 5 legacy root scripts into dist
+npm run build        # Production build, copies 4 legacy root scripts into dist
 npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
 npm test             # Same as verify:vite
 ```

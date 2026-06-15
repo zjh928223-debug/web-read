@@ -46,7 +46,6 @@
     var sentenceColorInput = deps.sentenceColorInput;
     var themeCustomPanel = deps.themeCustomPanel;
     var themeControlsEl = deps.themeControlsEl;
-    var closeAnnotationPromptPanel = deps.closeAnnotationPromptPanel;
 
     // === Main keyboard handler ===
     document.addEventListener('keydown', function (e) {
@@ -87,11 +86,11 @@
         e.preventDefault();
         setChunkNoteVisible(!chunkNoteVisible(), true);
       }
-      else if (key === backwardKey) {
+      else if (key === backwardKey || lowerKey === backwardKey) {
         e.preventDefault();
         handleBackwardClick();
       }
-      else if (key === forwardKey) {
+      else if (key === forwardKey || lowerKey === forwardKey) {
         e.preventDefault();
         handleForwardClick();
       }
@@ -139,7 +138,6 @@
         closeChunkNoteDeleteDialog();
         closeChunkNoteExportDialog();
         setSelectedChunkNote('');
-        if (typeof closeAnnotationPromptPanel === 'function') closeAnnotationPromptPanel();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedChunkNoteId()) {
         var tgt = e.target;
         if (isInputLikeTarget(tgt) || (tgt && tgt.isContentEditable)) return;
@@ -194,34 +192,177 @@
     }
 
     // === Hotkey input bindings ===
-    var hotkeyRefs = {
-      hotkeyInput: hotkeyInput, hotkeyNotesInput: hotkeyNotesInput,
-      hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
-      hotkeyBackwardInput: hotkeyBackwardInput, hotkeyForwardInput: hotkeyForwardInput,
-      hotkeyChunkCnInput: hotkeyChunkCnInput, hotkeyChunkShadowInput: hotkeyChunkShadowInput,
-      hotkeyChunkNoteInput: hotkeyChunkNoteInput
-    };
-
     var setMarkKey = deps.setMarkKey, setNotesKey = deps.setNotesKey;
     var setAnnotationBubbleKey = deps.setAnnotationBubbleKey;
     var setChunkCnKey = deps.setChunkCnKey, setChunkShadowKey = deps.setChunkShadowKey;
     var setChunkNoteKey = deps.setChunkNoteKey;
     var setBackwardKey = deps.setBackwardKey, setForwardKey = deps.setForwardKey;
 
-    [hotkeyInput, hotkeyNotesInput, hotkeyAnnotationBubbleInput, hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput, hotkeyChunkShadowInput, hotkeyChunkNoteInput].filter(function (el) { return !!el; }).forEach(function (inp) {
+    function persistHotkey(storageKey, value) {
+      try { localStorage.setItem(storageKey, value); } catch (err) {}
+    }
+
+    function returnFocusToReader(inputEl) {
+      if (inputEl && typeof inputEl.blur === 'function') inputEl.blur();
+      var focusTarget = document.getElementById('main-app-area') || document.body;
+      if (focusTarget && typeof focusTarget.focus === 'function') focusTarget.focus();
+    }
+
+    function normalizeHotkeyEvent(e) {
+      if (!e) return '';
+      if (e.key === 'Escape') return '__escape__';
+      if (['CapsLock', 'Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) return '';
+      var code = String(e.code || '');
+      if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+      if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+      if (/^Numpad[0-9]$/.test(code)) return code.slice(6);
+      var key = String(e.key || '');
+      if (key.length === 1) return key.toLowerCase();
+      return key;
+    }
+
+    function normalizeStoredHotkeyValue(value) {
+      var raw = String(value || '').trim();
+      if (!raw) return '';
+      if (raw.length === 1) return raw.toLowerCase();
+      var lower = raw.toLowerCase();
+      if (/^([a-z0-9])\1+$/.test(lower)) return lower.charAt(0);
+      return raw;
+    }
+
+    var activeHotkeyInput = null;
+
+    function applyHotkeyValue(inputEl, validKey) {
+      if (inputEl === hotkeyInput) {
+        markKey = validKey;
+        if (typeof setMarkKey === 'function') setMarkKey(validKey);
+        persistHotkey('st.markKey', validKey);
+      }
+      if (inputEl === hotkeyNotesInput) {
+        notesKey = validKey;
+        if (typeof setNotesKey === 'function') setNotesKey(validKey);
+        persistHotkey('st.notesKey', validKey);
+      }
+      if (inputEl === hotkeyAnnotationBubbleInput) {
+        annotationBubbleKey = validKey;
+        if (typeof setAnnotationBubbleKey === 'function') setAnnotationBubbleKey(validKey);
+        persistHotkey('st.annotationBubbleKey', validKey);
+      }
+      if (inputEl === hotkeyChunkCnInput) {
+        chunkCnKey = validKey;
+        if (typeof setChunkCnKey === 'function') setChunkCnKey(validKey);
+        persistHotkey('st.chunkCnKey', validKey);
+      }
+      if (inputEl === hotkeyChunkShadowInput) {
+        chunkShadowKey = validKey;
+        if (typeof setChunkShadowKey === 'function') setChunkShadowKey(validKey);
+        persistHotkey('st.chunkShadowKey', validKey);
+      }
+      if (inputEl === hotkeyChunkNoteInput) {
+        chunkNoteKey = validKey;
+        if (typeof setChunkNoteKey === 'function') setChunkNoteKey(validKey);
+        persistHotkey('st.chunkNoteKey', validKey);
+      }
+      if (inputEl === hotkeyBackwardInput) {
+        backwardKey = validKey;
+        if (typeof setBackwardKey === 'function') setBackwardKey(validKey);
+        persistHotkey('st.backwardKey', validKey);
+      }
+      if (inputEl === hotkeyForwardInput) {
+        forwardKey = validKey;
+        if (typeof setForwardKey === 'function') setForwardKey(validKey);
+        persistHotkey('st.forwardKey', validKey);
+      }
+    }
+
+    function setHotkeyDisplay(inputEl, value) {
+      inputEl.dataset.hotkeyValue = value;
+      inputEl.value = value;
+    }
+
+    function clearHotkeyWaiting(inputEl) {
+      if (!inputEl) return;
+      inputEl.classList.remove('is-hotkey-waiting');
+      inputEl.removeAttribute('aria-busy');
+      inputEl.value = inputEl.dataset.hotkeyValue || '';
+      if (activeHotkeyInput === inputEl) activeHotkeyInput = null;
+    }
+
+    function armHotkeyInput(inputEl) {
+      if (!inputEl) return;
+      if (activeHotkeyInput && activeHotkeyInput !== inputEl) {
+        clearHotkeyWaiting(activeHotkeyInput);
+      }
+      activeHotkeyInput = inputEl;
+      inputEl.classList.add('is-hotkey-waiting');
+      inputEl.setAttribute('aria-busy', 'true');
+      inputEl.value = '按键';
+      if (typeof inputEl.select === 'function') inputEl.select();
+    }
+
+    function commitHotkeyInput(inputEl, validKey) {
+      setHotkeyDisplay(inputEl, validKey);
+      applyHotkeyValue(inputEl, validKey);
+      clearHotkeyWaiting(inputEl);
+      returnFocusToReader(inputEl);
+    }
+
+    var hotkeyInputs = [hotkeyInput, hotkeyNotesInput, hotkeyAnnotationBubbleInput, hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput, hotkeyChunkShadowInput, hotkeyChunkNoteInput].filter(function (el) { return !!el; });
+
+    document.addEventListener('keydown', function (e) {
+      if (!activeHotkeyInput) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
+      var validKey = normalizeHotkeyEvent(e);
+      if (validKey === '__escape__') {
+        clearHotkeyWaiting(activeHotkeyInput);
+        returnFocusToReader(activeHotkeyInput);
+        return;
+      }
+      if (!validKey) return;
+      commitHotkeyInput(activeHotkeyInput, validKey);
+    }, true);
+
+    hotkeyInputs.forEach(function (inp) {
+      inp.setAttribute('lang', 'en');
+      inp.setAttribute('autocomplete', 'off');
+      inp.setAttribute('autocapitalize', 'off');
+      inp.setAttribute('spellcheck', 'false');
+      inp.setAttribute('readonly', 'readonly');
+      inp.setAttribute('role', 'button');
+      inp.setAttribute('aria-label', '点击后按键设置快捷键');
+      var rawInitialValue = inp.value || '';
+      var initialValue = normalizeStoredHotkeyValue(rawInitialValue);
+      setHotkeyDisplay(inp, initialValue);
+      if (initialValue && initialValue !== rawInitialValue) {
+        applyHotkeyValue(inp, initialValue);
+      }
+      inp.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        armHotkeyInput(inp);
+      });
+      inp.addEventListener('focus', function () {
+        armHotkeyInput(inp);
+      });
       inp.addEventListener('keydown', function (e) {
         e.preventDefault();
-        var validKey = (e.key.length === 1) ? e.key.toLowerCase() : e.key;
-        inp.value = validKey;
-
-        if (inp === hotkeyInput) { setMarkKey(validKey); localStorage.setItem('markKey', validKey); }
-        if (inp === hotkeyNotesInput) { setNotesKey(validKey); localStorage.setItem('notesKey', validKey); }
-        if (inp === hotkeyAnnotationBubbleInput) { setAnnotationBubbleKey(validKey); localStorage.setItem('annotationBubbleKey', validKey); }
-        if (inp === hotkeyChunkCnInput) { setChunkCnKey(validKey); localStorage.setItem('chunkCnKey', validKey); }
-        if (inp === hotkeyChunkShadowInput) { setChunkShadowKey(validKey); localStorage.setItem('chunkShadowKey', validKey); }
-        if (inp === hotkeyChunkNoteInput) { setChunkNoteKey(validKey); localStorage.setItem('chunkNoteKey', validKey); }
-        if (inp === hotkeyBackwardInput) { setBackwardKey(validKey); localStorage.setItem('backwardKey', validKey); }
-        if (inp === hotkeyForwardInput) { setForwardKey(validKey); localStorage.setItem('forwardKey', validKey); }
+        e.stopPropagation();
+      });
+      inp.addEventListener('beforeinput', function (e) {
+        e.preventDefault();
+      });
+      inp.addEventListener('input', function () {
+        inp.value = activeHotkeyInput === inp ? '按键' : (inp.dataset.hotkeyValue || '');
+      });
+      inp.addEventListener('blur', function () {
+        setTimeout(function () {
+          if (activeHotkeyInput === inp && document.activeElement !== inp) {
+            clearHotkeyWaiting(inp);
+          }
+        }, 0);
       });
     });
   }

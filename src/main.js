@@ -1,7 +1,6 @@
 import { createApp, watch } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
-import '../styles.css'
 
 // === Phase 10: Import all utility + annotation ES modules (replaces IIFE <script> tags) ===
 // Side-effect imports — they also set window globals for app.js compatibility
@@ -114,12 +113,16 @@ if (window.__bridge && window.__bridge.transcript) {
   transcriptStore.segments = t.segments || []
   transcriptStore.words = t.words || []
   transcriptStore.wordStarts = t.wordStarts || []
-  transcriptStore.highlightMode = t.highlightMode || 1
+  transcriptStore.highlightMode = t.highlightMode == null ? 2 : t.highlightMode
 }
 if (window.__bridge && window.__bridge.chunkItems) {
   chunkStore.chunkItems = window.__bridge.chunkItems || []
   chunkStore.isChunkMode = window.__bridge.isChunkMode || false
   chunkStore.hasAiChunkData = window.__bridge.hasAiChunkData || false
+  chunkStore.chunkCNVisible = window.__bridge.chunkCNVisible === true
+  chunkStore.chunkCNHoldMode = window.__bridge.chunkCNHoldMode !== false
+  chunkStore.chunkFocusMode = window.__bridge.chunkFocusMode !== false
+  chunkStore.chunkShadowVisible = window.__bridge.chunkShadowVisible !== false
 }
 if (window.__bridge && window.__bridge.clozeItems) {
   clozeStore.items = window.__bridge.clozeItems || []
@@ -147,4 +150,3 @@ watch(function () { return transcriptStore.useVueRendering }, function (val) {
 // Sync Pinia store state from IIFE store (app.js has already called init())
 // Read current theme from localStorage to sync Pinia state
 themeStore.init()
-

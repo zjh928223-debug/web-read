@@ -5,7 +5,6 @@
     var scheduleChunkNoteConnectorRedraw = deps.scheduleChunkNoteConnectorRedraw;
     var getIsChunkMode = deps.getIsChunkMode;
     var closeChunkNotePopover = deps.closeChunkNotePopover;
-    var closeAnnotationPromptPanel = deps.closeAnnotationPromptPanel;
     var updateShadowBtnText = deps.updateShadowBtnText;
 
     var styleSettings = {
@@ -183,7 +182,6 @@
         var noteModal = document.getElementById('chunk-note-style-modal');
         if (noteModal) noteModal.style.display = 'none';
         if (typeof closeChunkNotePopover === 'function') closeChunkNotePopover();
-        if (typeof closeAnnotationPromptPanel === 'function') closeAnnotationPromptPanel();
       };
     }
 
