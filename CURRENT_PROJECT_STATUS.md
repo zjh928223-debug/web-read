@@ -360,6 +360,7 @@ Current checks cover:
 - removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
+- confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
