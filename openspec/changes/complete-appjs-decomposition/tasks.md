@@ -57,7 +57,7 @@
 
 ## 6. Phase 5 - Root Script and Entry Cleanup
 
-- [ ] 6.1 Audit consumers of `chunk-note-layout-helpers.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.
+- [x] 6.1 Audit consumers of `chunk-note-layout-helpers.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.
 - [ ] 6.2 Audit consumers of `chunk-note-layout-core.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.
 - [ ] 6.3 Audit consumers of `annotation-bubble.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.
 - [ ] 6.4 Audit consumers of `annotation-api-settings-ui.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.

@@ -8,6 +8,7 @@
     import './src/utils/playback-index.js';
     import './src/utils/chunk-matching.js';
     import './src/utils/vocab-matching.js';
+    import './src/utils/chunk-note-layout-helpers.js';
     import './src/composables/transcript-state.js';
     import './src/composables/chunk-state.js';
     import './src/composables/cloze-state.js';
@@ -100,12 +101,6 @@
         createInitialClozeAnswerState,
         buildClozeQuizViewModel
     } = window.ClozeViewModelHelpers;
-    const {
-        getChunkNoteWrapTokens: getChunkNoteWrapTokensHelper,
-        splitTokenToFitWidth: splitTokenToFitWidthHelper,
-        wrapChunkNoteTextForCanvas: wrapChunkNoteTextForCanvasHelper,
-        truncateCanvasLine: truncateCanvasLineHelper
-    } = window.ChunkNoteLayoutHelpers;
     const {
         buildEmptyChunkNoteLayoutResult,
         buildChunkNoteLayoutResult
@@ -404,22 +399,6 @@
 
     function applyChunkNoteTextStyle(textEl, note, options = {}) {
         return _cnApi.applyChunkNoteTextStyle(textEl, note, options);
-    }
-
-    function getChunkNoteWrapTokens(text) {
-        return getChunkNoteWrapTokensHelper(text);
-    }
-
-    function splitTokenToFitWidth(ctx, token, maxWidth) {
-        return splitTokenToFitWidthHelper(ctx, token, maxWidth);
-    }
-
-    function wrapChunkNoteTextForCanvas(ctx, text, maxWidth) {
-        return wrapChunkNoteTextForCanvasHelper(ctx, text, maxWidth);
-    }
-
-    function truncateCanvasLine(ctx, text, maxWidth) {
-        return truncateCanvasLineHelper(ctx, text, maxWidth);
     }
 
     function renderChunkNoteImage(tag, note) {

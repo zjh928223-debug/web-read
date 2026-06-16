@@ -35,7 +35,7 @@ index.html
 └── /src/main.js as type="module" for Vue + Pinia
 ```
 
-`src/main.js` also imports the 9 `src/utils/*.js` modules and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
+`src/main.js` also imports the 10 `src/utils/*.js` modules and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
 
 ## Runtime Architecture
 
@@ -70,7 +70,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1838 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1817 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -132,6 +132,7 @@ npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check
 npm run verify:render-facades  # Focused legacy render facade removal check
 npm run verify:script-order  # Focused index.html script order guard
+npm run verify:chunk-note-layout-helpers  # Focused chunk note layout helper module check
 npm test             # Same as verify:vite
 ```
 

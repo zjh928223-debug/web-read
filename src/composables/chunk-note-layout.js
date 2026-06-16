@@ -1,3 +1,5 @@
+import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.js';
+
   // === Pure utility functions (no app.js state dependency) ===
 
   function findNearestChunkWord(enDiv, clientX, clientY) {
@@ -42,11 +44,7 @@
   function applyChunkNoteAutoSize(note) {
     if (!note || note.autoSize === false) return;
     var baseWnd = document.defaultView || window;
-    var helperBase = window.ChunkNoteLayoutHelpers
-      && typeof window.ChunkNoteLayoutHelpers.getChunkNoteLayoutBase === 'function'
-      ? window.ChunkNoteLayoutHelpers.getChunkNoteLayoutBase()
-      : null;
-    var minDim = helperBase || { minW: 40, minH: 18 };
+    var minDim = { minW: 40, minH: 18 };
     var minW = minDim.minW; var minH = minDim.minH;
     var maxW = Math.max(minW, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-width')) || 260);
     var box = measureChunkNoteTextBox(note.note || '', minW, minH, maxW);
@@ -96,14 +94,13 @@
     var preferredFs = sanitizeChunkNoteFontSize(note && note.fontSize);
     var minFs = Math.min(getChunkNoteMinReadableFontSize(), preferredFs);
     var ctx = getChunkNoteLayoutContext();
-    var ChunkLH = window.ChunkNoteLayoutHelpers;
     var ChunkLC = window.ChunkNoteLayoutCore;
 
     function makeLayout(fontSize) {
       var fs = Math.max(1, Math.floor(fontSize));
       var lineHeight = Math.max(12, Math.round(fs * 1.24));
       ctx.font = fs + 'px ' + getChunkNoteMeasureFont();
-      var lines = ChunkLH ? ChunkLH.wrapChunkNoteTextForCanvas(ctx, text, maxTextW) : [text];
+      var lines = wrapChunkNoteTextForCanvas(ctx, text, maxTextW);
       var totalH = lines.length * lineHeight;
       return { fontSize: fs, lineHeight: lineHeight, lines: lines, fits: totalH <= maxTextH, totalH: totalH };
     }
