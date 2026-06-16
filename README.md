@@ -55,6 +55,8 @@ npm run build        # Build and copy required root legacy scripts into dist
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
+npm run verify:sentence-notes-state # Focused sentence note state helper check
+npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
 npm test             # Same as verify:vite
 ```
 
@@ -91,7 +93,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 10 moduleized legacy behavior chunks
+├── composables/               # 11 moduleized legacy behavior chunks
 ├── utils/                     # 9 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -111,8 +113,9 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` still owns most core runtime state.
-- Chunk note state CRUD/import/export-handle rules now live in `src/composables/notes-module.js`; chunk note overlay DOM still remains in `app.js`.
-- `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and annotation import/export glue.
+- `app.js` still owns central runtime state and compatibility facades, but chunk note, sentence note, and annotation lightweight glue have started moving into focused modules.
+- Chunk note and sentence note subsystem runtime now live behind `src/composables/notes-module.js`.
+- Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
+- `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
 - Root regular scripts are still required at runtime and must be copied for production builds.

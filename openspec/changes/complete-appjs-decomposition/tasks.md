@@ -26,7 +26,7 @@
 - [x] 3.3 Move chunk note overlay/tag interaction logic behind a subsystem API, preserving right-click note creation, underline markers, connectors, drag/resize/edit, and delete prompt behavior.
 - [x] 3.4 Define the public API and deletion conditions for the sentence note / note preview subsystem.
 - [x] 3.5 Move sentence note draft, persistence, selection, and sidebar rendering orchestration out of `app.js` or into Vue/runtime modules, preserving existing import/export behavior.
-- [ ] 3.6 Move annotation lightweight import/export glue out of `app.js` into a focused module, preserving existing `session-init.js` integration points.
+- [x] 3.6 Move annotation lightweight import/export glue out of `app.js` into a focused module, preserving existing `session-init.js` integration points.
 - [ ] 3.7 Tighten `keyboard-module.js` and event boundary ownership so `app.js` no longer owns shortcut behavior beyond temporary delegation.
 - [ ] 3.8 Run `npm test` and `npm run verify:interactions`; run `npm run verify:playback` if shortcut or playback navigation behavior changed.
 - [ ] 3.9 Update the runtime map to mark subsystem facades and their deletion conditions.

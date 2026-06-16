@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1754 lines
+app.js                             legacy central runtime, about 1721 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    10 compatibility/runtime modules
+  composables/                    11 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -112,6 +112,7 @@ app-handlers.js                   about 170 lines
 chunk-note-layout.js              about 152 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
+annotation-lightweight-module.js  about 76 lines
 ```
 
 Current annotation service modules:
@@ -221,6 +222,7 @@ The current migration goal should be to keep behavior stable while gradually mov
   - `#btn-export-annotation-lightweight`
   - `#btn-import-annotation-lightweight`
   - `#import-annotation-lightweight-file`
+- Lightweight annotation import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - API settings remain through `annotation-api-settings-ui.js` and `#annotation-api-settings-panel`.
 
 ## 8. Current Commands
@@ -259,6 +261,7 @@ scripts/read-web-interactions-check.cjs
 scripts/vocab-matching-helper-check.cjs
 scripts/chunk-notes-state-check.cjs
 scripts/sentence-notes-state-check.cjs
+scripts/annotation-lightweight-module-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -274,6 +277,7 @@ Current checks cover:
 - chunk note right-click, save, underline, connector, and delete prompt
 - chunk note state normalization/upsert/delete/import/file-handle behavior through `verify:chunk-notes-state`
 - sentence note selection/draft/persistence/import/export behavior through `verify:sentence-notes-state`
+- annotation lightweight DOM glue through `verify:annotation-lightweight-module`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

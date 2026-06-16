@@ -74,7 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1754 lines. High risk. Central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1721 lines. High risk. Central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -122,6 +122,7 @@ npm run build        # Production build, copies 4 legacy root scripts into dist
 npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
 npm run verify:chunk-notes-state  # Focused chunk note state helper check
 npm run verify:sentence-notes-state  # Focused sentence note state helper check
+npm run verify:annotation-lightweight-module  # Focused annotation lightweight glue check
 npm test             # Same as verify:vite
 ```
 

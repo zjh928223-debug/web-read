@@ -8,6 +8,7 @@
     import './src/utils/playback-index.js';
     import './src/utils/chunk-matching.js';
     import './src/utils/vocab-matching.js';
+    import './src/composables/annotation-lightweight-module.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -775,18 +776,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
     function getAnnotationClickResolver() {
         return window.AnnotationClickResolver || null;
-    }
-    function exportManualLightweightAnnotations() {
-        if (typeof window.__session_exportManualLightweightAnnotations === 'function') {
-            return window.__session_exportManualLightweightAnnotations();
-        }
-        throw new Error('Annotation lightweight export module is not ready');
-    }
-    async function importManualLightweightAnnotations(file) {
-        if (typeof window.__session_importManualLightweightAnnotations === 'function') {
-            return window.__session_importManualLightweightAnnotations(file);
-        }
-        throw new Error('Annotation lightweight import module is not ready');
     }
     function initAnnotationApiSettingsUi() {
         if (typeof window.__session_initAnnotationApiSettingsUi === 'function') {
@@ -1769,41 +1758,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     importMarksBtn.addEventListener('click', () => importMarksInput.click());
 
-    if (exportAnnotationLightweightBtn) {
-        exportAnnotationLightweightBtn.addEventListener('click', () => {
-            try {
-                exportManualLightweightAnnotations();
-            } catch (error) {
-                showError('ANNOTATION_LIGHT_EXPORT', error && error.message ? error.message : 'Export failed');
-            }
-        });
-    }
-
-    if (importAnnotationLightweightBtn && importAnnotationLightweightInput) {
-        importAnnotationLightweightBtn.addEventListener('click', () => importAnnotationLightweightInput.click());
-        importAnnotationLightweightInput.addEventListener('change', async (event) => {
-            const file = getFirstFileFromEvent(event);
-                importAnnotationLightweightInput.value = '';
-            if (!file) return;
-            try {
-                const result = await importManualLightweightAnnotations(file);
-                if (isChunkMode) renderChunkMode(); else renderTranscript();
-                forceUpdateUI(audioPlayer.currentTime);
-                const mismatchSuffix = result.markedTextMismatchTargetIds.length
-                    ? `，markedText 校验不一致 ${result.markedTextMismatchTargetIds.length} 条`
-                    : '';
-                const ambiguousSuffix = result.ambiguousItems.length
-                    ? `，歧义未导入 ${result.ambiguousItems.length} 条`
-                    : '';
-                const skippedSuffix = result.skippedCount
-                    ? `，跳过 ${result.skippedCount} 条`
-                    : '';
-                showToast(`轻量回填完成 ${result.importedCount} 条${skippedSuffix}${ambiguousSuffix}${mismatchSuffix}`, 'success');
-            } catch (error) {
-                showError('ANNOTATION_LIGHT_IMPORT', error && error.message ? error.message : 'Import failed');
-            }
-        });
-    }
+    window.__annotationLightweightModule.initManualLightweightAnnotationControls({
+        exportButton: exportAnnotationLightweightBtn,
+        importButton: importAnnotationLightweightBtn,
+        importInput: importAnnotationLightweightInput,
+        getFirstFileFromEvent,
+        refreshAfterImport: function () {
+            if (isChunkMode) renderChunkMode(); else renderTranscript();
+            forceUpdateUI(audioPlayer.currentTime);
+        },
+        showToast,
+        showError
+    });
 
     // Annotation prompt handlers → controls-module
     
