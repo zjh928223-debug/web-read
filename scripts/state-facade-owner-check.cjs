@@ -4,7 +4,9 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appPath = path.join(repoRoot, 'app.js');
+const importModulePath = path.join(repoRoot, 'src', 'composables', 'import-module.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
+const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const appLines = appSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -23,6 +25,14 @@ function assertFacade(field, fragments) {
   });
 }
 
+function assertNoStateProperty(field) {
+  assert.equal(
+    findStatePropertyLine(field),
+    '',
+    `${field} should not remain on window.__state`
+  );
+}
+
 [
   ['segments', ['_tr.segments']],
   ['words', ['_tr.words']],
@@ -36,8 +46,6 @@ function assertFacade(field, fragments) {
   ['isChunkMode', ['_ch.isChunkMode']],
   ['chunkCnVisible', ['_ch.chunkCnVisible']],
   ['chunkCnHoldMode', ['_ch.chunkCnHoldMode']],
-  ['isHoldingChunkCn', ['_ch.isHoldingChunkCn']],
-  ['holdPrevChunkCnVisible', ['_ch.holdPrevChunkCnVisible']],
   ['isChunkShadowOn', ['_ch.isChunkShadowOn']],
   ['chunkCnMode', ['_ch.chunkCnMode']],
   ['lastActiveChunkIndex', ['_ch.lastActiveChunkIndex']],
@@ -56,13 +64,17 @@ function assertFacade(field, fragments) {
   ['activeSentenceEl', ['_pb.activeSentenceEl']],
   ['activeChunkEl', ['_pb.activeChunkEl']],
   ['playbackUiSignature', ['_pb.playbackUiSignature']],
-  ['lastSentencePrevTapSegIndex', ['_pb.lastSentencePrevTapSegIndex']],
-  ['lastSentencePrevTapAt', ['_pb.lastSentencePrevTapAt']],
-
-  ['chunkNotesFileHandle', ['_cnApi.getChunkNotesFileState().handle', '_cnApi.setChunkNotesFileState({ handle: v })']],
-  ['chunkNotesFileHandleAudioKey', ['_cnApi.getChunkNotesFileState().audioKey', '_cnApi.setChunkNotesFileState({ audioKey: v })']],
-  ['chunkNotesFileName', ['_cnApi.getChunkNotesFileState().fileName', '_cnApi.setChunkNotesFileState({ fileName: v })']],
 ].forEach(([field, fragments]) => assertFacade(field, fragments));
+
+[
+  'chunkNotesFileHandle',
+  'chunkNotesFileHandleAudioKey',
+  'chunkNotesFileName',
+  'isHoldingChunkCn',
+  'holdPrevChunkCnVisible',
+  'lastSentencePrevTapSegIndex',
+  'lastSentencePrevTapAt',
+].forEach(assertNoStateProperty);
 
 [
   /\blet\s+segments\b/,
@@ -93,5 +105,8 @@ assert.ok(appSource.includes('const _ch = window.__chunkState;'));
 assert.ok(appSource.includes('const _clz = window.__clozeState;'));
 assert.ok(appSource.includes('const _pb = window.__playbackState;'));
 assert.ok(appSource.includes('var _ns = window.__notesModule.getNotesState();'));
+assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);
+assert.equal(importModuleSource.includes('state.chunkNotesFileHandleAudioKey'), false);
+assert.equal(importModuleSource.includes('state.chunkNotesFileName'), false);
 
 console.log('state facade owner check passed');

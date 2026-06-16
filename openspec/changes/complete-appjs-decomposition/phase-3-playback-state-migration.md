@@ -43,8 +43,7 @@ This task does not move playback algorithms, event ownership, or DOM binding own
 - `window.__state.activeSentenceEl`
 - `window.__state.activeChunkEl`
 - `window.__state.playbackUiSignature`
-- `window.__state.lastSentencePrevTapSegIndex`
-- `window.__state.lastSentencePrevTapAt`
+- `window.__state.lastSentencePrevTapSegIndex` and `window.__state.lastSentencePrevTapAt` were removed in task 4.8 after the runtime map showed no direct external consumers.
 
 These facades remain because `playback-module.js`, `controls-module.js`, and Playwright verification scripts still access `window.__state` directly.
 

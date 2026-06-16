@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1844 lines
+app.js                             legacy central runtime, about 1838 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -103,7 +103,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1587 lines
-import-module.js                  about 468 lines
+import-module.js                  about 540 lines
 notes-module.js                   about 2485 lines
 keyboard-module.js                about 359 lines
 playback-module.js                about 224 lines
@@ -309,6 +309,7 @@ Current checks cover:
 - cloze state adapter ownership through `verify:cloze-state`
 - playback transient state adapter ownership through `verify:playback-state`
 - migrated `window.__state` owner facades through `verify:state-facades`
+- removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
@@ -360,7 +361,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and many global exports, while transcript, chunk, cloze, playback transient, and note state now delegate through focused adapters/modules.
+- `app.js` still owns some remaining central runtime state and many global exports, while transcript, chunk, cloze, playback transient, and note state now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

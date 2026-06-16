@@ -745,9 +745,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'clozeAnswerState', { get: function() { return _clz.clozeAnswerState; }, set: function(v) { _clz.clozeAnswerState = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'manualChunkStates', { get: function() { return _ch.manualChunkStates; }, set: function(v) { _ch.manualChunkStates = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return _cnApi.getChunkNotesFileState().handle; }, set: function(v) { _cnApi.setChunkNotesFileState({ handle: v }); }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileHandleAudioKey', { get: function() { return _cnApi.getChunkNotesFileState().audioKey; }, set: function(v) { _cnApi.setChunkNotesFileState({ audioKey: v }); }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileName', { get: function() { return _cnApi.getChunkNotesFileState().fileName; }, set: function(v) { _cnApi.setChunkNotesFileState({ fileName: v }); }, enumerable: true, configurable: true });
     var __cak = 'default-audio';
     Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return _ch.isChunkMode; }, set: function(v) { _ch.isChunkMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
@@ -774,16 +771,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'vocabMatchMap', { get: function() { return vocabMatchMap; }, set: function(v) { vocabMatchMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { vocabMatchMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkCnVisible', { get: function() { return _ch.chunkCnVisible; }, set: function(v) { _ch.chunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkCnHoldMode', { get: function() { return _ch.chunkCnHoldMode; }, set: function(v) { _ch.chunkCnHoldMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'isHoldingChunkCn', { get: function() { return _ch.isHoldingChunkCn; }, set: function(v) { _ch.isHoldingChunkCn = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'holdPrevChunkCnVisible', { get: function() { return _ch.holdPrevChunkCnVisible; }, set: function(v) { _ch.holdPrevChunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'holdPrevHadFocusClass', { get: function() { return holdPrevHadFocusClass; }, set: function(v) { holdPrevHadFocusClass = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'isChunkShadowOn', { get: function() { return _ch.isChunkShadowOn; }, set: function(v) { _ch.isChunkShadowOn = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkCnMode', { get: function() { return _ch.chunkCnMode; }, set: function(v) { _ch.chunkCnMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastActiveChunkIndex', { get: function() { return _ch.lastActiveChunkIndex; }, set: function(v) { _ch.lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastAiPrevTapChunkIndex', { get: function() { return _ch.lastAiPrevTapChunkIndex; }, set: function(v) { _ch.lastAiPrevTapChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastAiPrevTapAt', { get: function() { return _ch.lastAiPrevTapAt; }, set: function(v) { _ch.lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastSentencePrevTapSegIndex', { get: function() { return _pb.lastSentencePrevTapSegIndex; }, set: function(v) { _pb.lastSentencePrevTapSegIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastSentencePrevTapAt', { get: function() { return _pb.lastSentencePrevTapAt; }, set: function(v) { _pb.lastSentencePrevTapAt = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkPointerDown', { get: function() { return chunkPointerDown; }, set: function(v) { chunkPointerDown = v; }, enumerable: true, configurable: true });
 
     var _cpApi = window.__importModule.initChunkPipeline({
@@ -832,6 +825,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         rebuildVocabMatching: rebuildVocabMatching,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
+        clearChunkNotesFileState: function () { return _cnApi.clearChunkNotesFileState(); },
         processChunkData: _cpApi.processChunkData,
         audioPlayer: audioPlayer,
         transcriptContainer: transcriptContainer,

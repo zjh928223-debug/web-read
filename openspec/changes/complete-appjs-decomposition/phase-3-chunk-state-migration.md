@@ -56,15 +56,13 @@ Removed these `app.js` local variables as chunk state sources:
 - `window.__state.isChunkMode`
 - `window.__state.chunkCnVisible`
 - `window.__state.chunkCnHoldMode`
-- `window.__state.isHoldingChunkCn`
-- `window.__state.holdPrevChunkCnVisible`
 - `window.__state.isChunkShadowOn`
 - `window.__state.chunkCnMode`
 - `window.__state.lastActiveChunkIndex`
 - `window.__state.lastAiPrevTapChunkIndex`
 - `window.__state.lastAiPrevTapAt`
 
-These properties remain compatibility facades and are not removed in this task.
+`window.__state.isHoldingChunkCn` and `window.__state.holdPrevChunkCnVisible` were removed in task 4.8 after the runtime map showed no direct external consumers. The remaining properties stay as compatibility facades.
 
 ## Related Module Changes
 
@@ -83,7 +81,7 @@ These properties remain compatibility facades and are not removed in this task.
 ## Preserved Compatibility
 
 - `window.__bridge` chunk fields remain in place for startup sync. Reducing them is task 4.9.
-- `window.__state` chunk properties remain available for `session-init.js`, `playback-module.js`, `controls-module.js`, and verification scripts.
+- Remaining `window.__state` chunk properties stay available for `session-init.js`, `playback-module.js`, `controls-module.js`, and verification scripts.
 - `toggleChunkMode()`, chunk Chinese hold/focus behavior, chunk shadow toggles, chunk playback navigation, and import/session restore paths retain their public entrypoints.
 - No IndexedDB schema changes.
 - No `index.html` script order changes.

@@ -98,9 +98,9 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | verification scripts directly set | cloze store/runtime adapter |
 | `manualChunkStates` | `window.__chunkState.manualChunkStates` | `session-init.js` | chunk store/runtime adapter |
 | `currentAudioMeta` | `currentAudioMeta` | `session-init.js` | audio/session identity owner |
-| `chunkNotesFileHandle` | `window.__notesState.chunkNotesFileHandle` | no direct external field access found | notes runtime adapter |
-| `chunkNotesFileHandleAudioKey` | `window.__notesState.chunkNotesFileHandleAudioKey` | no direct external field access found | notes runtime adapter |
-| `chunkNotesFileName` | `window.__notesState.chunkNotesFileName` | no direct external field access found | notes runtime adapter |
+| `chunkNotesFileHandle` | removed from `window.__state` in 4.8; owner is `window.__notesState.chunkNotesFileHandle` | no direct external field access found | notes runtime adapter |
+| `chunkNotesFileHandleAudioKey` | removed from `window.__state` in 4.8; owner is `window.__notesState.chunkNotesFileHandleAudioKey` | no direct external field access found | notes runtime adapter |
+| `chunkNotesFileName` | removed from `window.__state` in 4.8; owner is `window.__notesState.chunkNotesFileName` | no direct external field access found | notes runtime adapter |
 | `isChunkMode` | `window.__chunkState.isChunkMode` | `playback-module.js`, `controls-module.js`, `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `currentAudioKey` | `__cak` / `currentAudioKey` accessor | `session-init.js` | audio/session identity owner |
 | `currentWordIndex` | `currentWordIndex` | `playback-module.js` | playback runtime or transcript store |
@@ -126,16 +126,16 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `vocabMatchMap` | `vocabMatchMap` | verification scripts directly mutate | annotation/marks matching owner |
 | `chunkCnVisible` | `window.__chunkState.chunkCnVisible` | `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `chunkCnHoldMode` | `window.__chunkState.chunkCnHoldMode` | `session-init.js`, verification scripts | chunk store/runtime adapter |
-| `isHoldingChunkCn` | `window.__chunkState.isHoldingChunkCn` | no direct external field access found | chunk controls runtime adapter |
-| `holdPrevChunkCnVisible` | `window.__chunkState.holdPrevChunkCnVisible` | no direct external field access found | chunk controls runtime adapter |
+| `isHoldingChunkCn` | removed from `window.__state` in 4.8; owner is `window.__chunkState.isHoldingChunkCn` | no direct external field access found | chunk controls runtime adapter |
+| `holdPrevChunkCnVisible` | removed from `window.__state` in 4.8; owner is `window.__chunkState.holdPrevChunkCnVisible` | no direct external field access found | chunk controls runtime adapter |
 | `holdPrevHadFocusClass` | `holdPrevHadFocusClass` | no direct external field access found | chunk controls runtime |
 | `isChunkShadowOn` | `window.__chunkState.isChunkShadowOn` | `session-init.js` | chunk store/runtime adapter |
 | `chunkCnMode` | `window.__chunkState.chunkCnMode` | `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `lastActiveChunkIndex` | `window.__chunkState.lastActiveChunkIndex` -> `chunk.activeChunkIdx` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `lastAiPrevTapChunkIndex` | `window.__chunkState.lastAiPrevTapChunkIndex` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `lastAiPrevTapAt` | `window.__chunkState.lastAiPrevTapAt` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
-| `lastSentencePrevTapSegIndex` | `window.__playbackState.lastSentencePrevTapSegIndex` | no direct external field access found | playback runtime adapter |
-| `lastSentencePrevTapAt` | `window.__playbackState.lastSentencePrevTapAt` | no direct external field access found | playback runtime adapter |
+| `lastSentencePrevTapSegIndex` | removed from `window.__state` in 4.8; owner is `window.__playbackState.lastSentencePrevTapSegIndex` | no direct external field access found | playback runtime adapter |
+| `lastSentencePrevTapAt` | removed from `window.__state` in 4.8; owner is `window.__playbackState.lastSentencePrevTapAt` | no direct external field access found | playback runtime adapter |
 | `chunkPointerDown` | `chunkPointerDown` | no direct external field access found | chunk interaction runtime |
 
 Observed direct application module users:

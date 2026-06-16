@@ -119,7 +119,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, playback transient, and note state now go through focused adapters/modules.
+- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, playback transient, and note state now go through focused adapters/modules. No-consumer `window.__state` facades are being removed behind `verify:state-facades`.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds to the real Pinia transcript store after startup bridge hydration.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to the real Pinia chunk store after startup bridge hydration.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to the real Pinia cloze store after startup bridge hydration.

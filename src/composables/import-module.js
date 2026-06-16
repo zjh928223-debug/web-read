@@ -314,12 +314,20 @@
     var rebuildVocabMatching = deps.rebuildVocabMatching;
     var closeChunkNoteExportDialog = deps.closeChunkNoteExportDialog;
     var loadChunkNotesForCurrentAudio = deps.loadChunkNotesForCurrentAudio;
+    var _ns = deps._ns || window.__notesState || null;
+    var clearChunkNotesFileState = typeof deps.clearChunkNotesFileState === 'function'
+        ? deps.clearChunkNotesFileState
+        : function () {
+            if (!_ns || typeof _ns !== 'object') return;
+            _ns.chunkNotesFileHandle = null;
+            _ns.chunkNotesFileHandleAudioKey = '';
+            _ns.chunkNotesFileName = '';
+        };
     var processChunkData = deps.processChunkData;
 
     var audioPlayer = deps.audioPlayer;
     var transcriptContainer = deps.transcriptContainer;
     var loadClozeBtn = deps.loadClozeBtn;
-    var _ns = deps._ns;
     var markedMap = deps.markedMap;
 
     // Audio
@@ -329,9 +337,7 @@
         saveToDB('audio', file);
         applyCurrentAudioMeta({ name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' });
         clearGeneratedAnnotationIndex();
-        state.chunkNotesFileHandle = null;
-        state.chunkNotesFileHandleAudioKey = '';
-        state.chunkNotesFileName = '';
+        clearChunkNotesFileState();
         closeChunkNoteExportDialog();
         saveToDB('audioMeta', state.currentAudioMeta);
         loadChunkNotesForCurrentAudio().then(function () {

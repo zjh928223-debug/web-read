@@ -34,7 +34,7 @@ The shared notes state now owns:
 
 - `app.js` still keeps a local `_ns` reference, but it points to `window.__notesState`.
 - `window._ns` remains available for `session-init.js`.
-- `window.__state.chunkNotesFileHandle`, `window.__state.chunkNotesFileHandleAudioKey`, and `window.__state.chunkNotesFileName` remain compatibility facades over `_cnApi`.
+- `window.__state.chunkNotesFileHandle`, `window.__state.chunkNotesFileHandleAudioKey`, and `window.__state.chunkNotesFileName` were removed in task 4.8 after direct consumers were migrated or confirmed absent.
 - Existing `notes-module` APIs continue to accept an injected `state` object for focused tests and future isolation.
 
 ## Persistence Preserved

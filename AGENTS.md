@@ -74,7 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1844 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1838 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
