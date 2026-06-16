@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 3175 lines
+├── app.js                             # Legacy central bus, about 3294 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -28,6 +28,17 @@ index.html
 ```
 
 The page still contains inline `onclick` and `oninput` handlers. `app.js` and some composables therefore export functions onto `window`.
+
+## Cleanup Baseline
+
+Current cleanup work follows `openspec/changes/complete-appjs-decomposition/`. The Phase 0 runtime map is `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md`.
+
+Cleanup rules:
+
+- Do not add user-facing feature logic to `app.js`.
+- Migrate one boundary at a time and keep compatibility globals only until callers are moved.
+- Do not change IndexedDB schema or `index.html` script order without an explicit migration and full verification.
+- Treat `src/stores/` as compatibility only; long-term ownership belongs in `src/pinia-stores/`, focused runtime modules, or Vue components.
 
 ## `src/` Structure
 
@@ -64,7 +75,7 @@ src/
 ├── composables/
 │   ├── session-init.js
 │   ├── import-module.js
-│   ├── notes-module.js
+│   ├── notes-module.js          # chunk note state CRUD/import plus sentence notes compatibility
 │   ├── keyboard-module.js
 │   ├── style-editor.js
 │   ├── playback-module.js
@@ -80,7 +91,8 @@ src/
 │   ├── cloze-utils.js
 │   ├── cloze-view-model.js
 │   ├── playback-index.js
-│   └── chunk-matching.js
+│   ├── chunk-matching.js
+│   └── vocab-matching.js
 └── services/annotation/
     ├── controller.js
     ├── api-client.js
@@ -131,6 +143,7 @@ Legacy DOM and handlers still exist and must remain compatible until the migrati
 ```text
 npm run build        # Vite build and legacy script copy
 npm run verify:vite  # Vite dev server + Playwright load check
+npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm test             # Alias for verify:vite
 ```
 

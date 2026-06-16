@@ -7,6 +7,7 @@
     import './src/utils/cloze-view-model.js';
     import './src/utils/playback-index.js';
     import './src/utils/chunk-matching.js';
+    import './src/utils/vocab-matching.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -127,6 +128,9 @@
         getChunkCandidateBoundaryWords: getChunkCandidateBoundaryWordsHelper,
         normalizeChunkMatchCandidate: normalizeChunkMatchCandidateHelper
     } = window.ChunkMatchingHelpers;
+    const {
+        buildVocabMatchMap: buildVocabMatchMapHelper
+    } = window.VocabMatchingHelpers;
 
     // === Identity/storage key helpers (extracted to identity-and-storage-keys.js) ===
     const buildAudioKey = window.IdentityStorageKeys.buildAudioKey;
@@ -155,6 +159,7 @@
     function saveChunkNotesDebounced() { return _cnApi.saveChunkNotesDebounced(); }
     // === Chunk-note persistence lifecycle ===
     async function loadChunkNotesForCurrentAudio() { return _cnApi.loadChunkNotesForCurrentAudio(); }
+    function saveChunkNotesNow() { return _cnApi.saveChunkNotesNow(); }
     function setChunkNoteVisible(next, persist) { return _cnApi.setChunkNoteVisible(next, persist); }
     function getChunkBlockByRef(chunkRef) { return _cnApi.getChunkBlockByRef(chunkRef); }
     function closeChunkNoteContextMenu() { return _cnApi.closeChunkNoteContextMenu(); }
@@ -237,7 +242,7 @@
     }
 
     function openChunkNoteDeleteDialog(noteId) {
-        const note = _ns.chunkNotesMap[String(noteId || '')];
+        const note = _cnApi.getChunkNote(noteId);
         const tag = getChunkNoteTagById(String(noteId || ''));
         if (!note || !tag) return;
         closeChunkNoteDeleteDialog();
@@ -277,7 +282,7 @@
         }
         const [delBtn, cancelBtn] = dialog.querySelectorAll('.chunk-note-delete-btn');
         if (delBtn) delBtn.addEventListener('click', () => {
-            delete _ns.chunkNotesMap[note.id];
+            _cnApi.deleteChunkNote(note.id);
             closeChunkNoteDeleteDialog();
             setSelectedChunkNote('');
             saveChunkNotesDebounced();
@@ -322,9 +327,7 @@
     async function saveChunkNotesAs(snapshot, suggestedName) {
         if (!supportsChunkNotesDirectOverwrite()) {
             triggerChunkNotesDownload(snapshot, suggestedName);
-            chunkNotesFileHandle = null;
-            chunkNotesFileHandleAudioKey = '';
-            chunkNotesFileName = suggestedName;
+            _cnApi.setChunkNotesFileState({ handle: null, audioKey: '', fileName: suggestedName });
             return;
         }
         const handle = await window.showSaveFilePicker({
@@ -332,9 +335,11 @@
             types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
         });
         await writeChunkNotesToHandle(handle, snapshot);
-        chunkNotesFileHandle = handle;
-        chunkNotesFileHandleAudioKey = currentAudioKey || 'default-audio';
-        chunkNotesFileName = handle.name || suggestedName;
+        _cnApi.setChunkNotesFileState({
+            handle,
+            audioKey: currentAudioKey || 'default-audio',
+            fileName: handle.name || suggestedName
+        });
     }
 
     function openChunkNotesExportConfirmDialog(fileName, onSaveAs, onOverwrite) {
@@ -558,7 +563,7 @@
         const anchorRect = getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal);
         if (!anchorRect) return;
         if (!noteId) noteId = makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal);
-        const existing = _ns.chunkNotesMap[noteId];
+        const existing = _cnApi.getChunkNote(noteId);
         const block = getChunkBlockByRef(chunkRef);
         const enDiv = block ? block.querySelector('.chunk-en') : null;
         let selectedText = String(ctxRaw.selectedText || '');
@@ -969,7 +974,7 @@
                 else {
                     const nextText = (textEl.textContent || '').trim();
                     if (!nextText) {
-                        delete _ns.chunkNotesMap[note.id];
+                        _cnApi.deleteChunkNote(note.id);
                         saveChunkNotesDebounced();
                         refreshChunkNoteForChunkRef(note.chunkRef);
                         textEl.contentEditable = 'false';
@@ -1207,7 +1212,7 @@
             refreshChunkNoteForChunkRef(ctx.chunkRef);
             setSelectedChunkNote(savedNoteId);
         } else {
-            if (ctx.noteId && _ns.chunkNotesMap[ctx.noteId]) delete _ns.chunkNotesMap[ctx.noteId];
+            if (ctx.noteId) _cnApi.deleteChunkNote(ctx.noteId);
             refreshChunkNoteForChunkRef(ctx.chunkRef);
             saveChunkNotesDebounced();
             clearChunkNoteDraft();
@@ -1218,7 +1223,7 @@
     function cancelChunkNoteModal() {
         clearChunkNoteDraft();
         if (notePopoverCtx && notePopoverCtx.noteId && !notePopoverCtx.noteExists) {
-            delete _ns.chunkNotesMap[notePopoverCtx.noteId];
+            _cnApi.deleteChunkNote(notePopoverCtx.noteId);
             refreshChunkNoteForChunkRef(notePopoverCtx.chunkRef);
         }
         closeChunkNotePopover();
@@ -1332,47 +1337,23 @@
     }
 
     function upsertChunkNote(ctx, noteText) {
-        const noteId = String(ctx.noteId || makeSelectionNoteId(ctx.chunkRef, ctx.startGlobal, ctx.endGlobal));
-        if (!noteText) {
-            delete _ns.chunkNotesMap[noteId];
-            return '';
-        }
-        const existed = _ns.chunkNotesMap[noteId];
-        const next = {
-            id: noteId,
-            chunkRef: ctx.chunkRef,
-            chunkIdx: ctx.chunkIdx,
-            startGlobal: ctx.startGlobal,
-            endGlobal: ctx.endGlobal,
-            selectedText: ctx.selectedText || '',
-            note: noteText,
-            autoSize: existed ? existed.autoSize !== false : true,
-            updatedAt: Date.now()
-        };
-        if (existed) {
-            next.coordSpace = existed.coordSpace === 'main' ? 'main' : existed.coordSpace;
-            if (Number.isFinite(Number(existed.x))) next.x = Number(existed.x);
-            if (Number.isFinite(Number(existed.y))) next.y = Number(existed.y);
-            if (Number.isFinite(Number(existed.offsetX))) next.offsetX = Number(existed.offsetX);
-            if (Number.isFinite(Number(existed.offsetY))) next.offsetY = Number(existed.offsetY);
-            if (Number.isFinite(Number(existed.w))) next.w = Number(existed.w);
-            if (Number.isFinite(Number(existed.h))) next.h = Number(existed.h);
-            if (Number.isFinite(Number(existed.fontSize))) next.fontSize = Number(existed.fontSize);
-            if (typeof existed.color === 'string' && existed.color) next.color = existed.color;
-        } else if (ctx && ctx.anchorRect) {
+        let layoutContext = null;
+        if (ctx && ctx.anchorRect) {
             const { minW, minH, margin } = getChunkNoteLayoutBase();
             const anchorRect = rectToMainAreaSpace(ctx.anchorRect);
             const areaW = mainAppArea ? Math.max(mainAppArea.clientWidth, mainAppArea.scrollWidth) : window.innerWidth;
             const areaH = mainAppArea ? Math.max(mainAppArea.clientHeight, mainAppArea.scrollHeight) : window.innerHeight;
-            next.x = Math.min(areaW - minW - margin, Math.max(margin, anchorRect.right + 24));
-            next.y = Math.min(areaH - minH - margin, Math.max(margin, anchorRect.top - 6));
-            next.offsetX = next.x - anchorRect.left;
-            next.offsetY = next.y - anchorRect.top;
-            next.coordSpace = 'main';
+            layoutContext = {
+                minW,
+                minH,
+                margin,
+                areaW,
+                areaH,
+                anchorRect,
+                autoSize: applyChunkNoteAutoSize
+            };
         }
-        applyChunkNoteAutoSize(next);
-        _ns.chunkNotesMap[noteId] = next;
-        return noteId;
+        return _cnApi.upsertChunkNote(ctx, noteText, layoutContext);
     }
 
     function refreshChunkNoteForChunkRef(chunkRef) {
@@ -1600,6 +1581,22 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
         getIsChunkMode: function () { return isChunkMode; },
         currentAudioKeyGetter: function () { return currentAudioKey; },
+        makeSelectionNoteBaseId: makeSelectionNoteBaseId,
+        makeSelectionNoteId: makeSelectionNoteId,
+        applyChunkNoteAutoSize: applyChunkNoteAutoSize,
+        getChunkNotesFileState: function () {
+            return {
+                handle: chunkNotesFileHandle,
+                audioKey: chunkNotesFileHandleAudioKey,
+                fileName: chunkNotesFileName
+            };
+        },
+        setChunkNotesFileState: function (next) {
+            next = next || {};
+            if (Object.prototype.hasOwnProperty.call(next, 'handle')) chunkNotesFileHandle = next.handle || null;
+            if (Object.prototype.hasOwnProperty.call(next, 'audioKey')) chunkNotesFileHandleAudioKey = String(next.audioKey || '');
+            if (Object.prototype.hasOwnProperty.call(next, 'fileName')) chunkNotesFileName = String(next.fileName || '');
+        },
         chunkNoteCtxMenuEl: chunkNoteCtxMenu,
         closeChunkNotePopover: closeChunkNotePopover,
         clearChunkNoteConnectors: clearChunkNoteConnectors,
@@ -1710,9 +1707,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'clozeAnswerState', { get: function() { return clozeAnswerState; }, set: function(v) { clozeAnswerState = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'manualChunkStates', { get: function() { return manualChunkStates; }, set: function(v) { manualChunkStates = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return chunkNotesFileHandle; }, set: function(v) { chunkNotesFileHandle = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileHandleAudioKey', { get: function() { return chunkNotesFileHandleAudioKey; }, set: function(v) { chunkNotesFileHandleAudioKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkNotesFileName', { get: function() { return chunkNotesFileName; }, set: function(v) { chunkNotesFileName = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return _cnApi.getChunkNotesFileState().handle; }, set: function(v) { _cnApi.setChunkNotesFileState({ handle: v }); }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkNotesFileHandleAudioKey', { get: function() { return _cnApi.getChunkNotesFileState().audioKey; }, set: function(v) { _cnApi.setChunkNotesFileState({ audioKey: v }); }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkNotesFileName', { get: function() { return _cnApi.getChunkNotesFileState().fileName; }, set: function(v) { _cnApi.setChunkNotesFileState({ fileName: v }); }, enumerable: true, configurable: true });
     var __cak = 'default-audio';
     Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return isChunkMode; }, set: function(v) { isChunkMode = !!v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
@@ -1916,59 +1913,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function rebuildVocabMatching() {
         vocabMatchMap.clear();
         if (!segments.length || !globalVocab.length) return;
-
-        const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, "");
-
-        globalVocab.forEach(vData => {
-            const anchorText = vData.match_context ? vData.match_context : vData.word;
-            const targetWord = vData.word;
-
-            const anchorTokens = anchorText.trim().split(/\s+/).map(normalize).filter(t => t);
-            const targetTokens = targetWord.trim().split(/\s+/).map(normalize).filter(t => t);
-
-            if (anchorTokens.length === 0 || targetTokens.length === 0) return;
-
-            for (let i = 0; i <= words.length - anchorTokens.length; i++) {
-                let isAnchorMatch = true;
-                for (let k = 0; k < anchorTokens.length; k++) {
-                    const docWord = words[i + k].word || words[i + k].text || "";
-                    if (normalize(docWord) !== anchorTokens[k]) {
-                        isAnchorMatch = false;
-                        break;
-                    }
-                }
-
-                if (isAnchorMatch) {
-                    let offsetInAnchor = -1;
-                    for(let m = 0; m <= anchorTokens.length - targetTokens.length; m++) {
-                        let subMatch = true;
-                        for(let n = 0; n < targetTokens.length; n++) {
-                            if(anchorTokens[m + n] !== targetTokens[n]) {
-                                subMatch = false;
-                                break;
-                            }
-                        }
-                        if(subMatch) {
-                            offsetInAnchor = m;
-                            break; 
-                        }
-                    }
-
-                    if (offsetInAnchor !== -1) {
-                        const realStartIndex = i + offsetInAnchor;
-                        const groupIndices = [];
-                        for (let len = 0; len < targetTokens.length; len++) {
-                            const exactIndex = realStartIndex + len;
-                            groupIndices.push(exactIndex);
-                            vocabMatchMap.set(exactIndex, { 
-                                data: vData, 
-                                group: groupIndices 
-                            });
-                        }
-                    }
-                }
-            }
-        });
+        const nextMap = buildVocabMatchMapHelper(words, globalVocab);
+        nextMap.forEach((value, key) => vocabMatchMap.set(key, value));
     }
 
     // === Main transcript/chunk rendering ===
@@ -3119,40 +3065,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // Highlight colors + hotkey bindings → keyboard-module
 
     function applyImportedChunkNotes(data) {
-        const arr = Array.isArray(data) ? data : (data && Array.isArray(data.notes) ? data.notes : null);
-        if (!arr) throw new Error('invalid chunk notes json');
-        const next = {};
-        arr.forEach((n, i) => {
-            if (!n || typeof n !== 'object') return;
-            const chunkRef = String(n.chunkRef || '');
-            const startGlobal = Number(n.startGlobal);
-            const endGlobal = Number(n.endGlobal);
-            const note = String(n.note || '').trim();
-            const selectedText = String(n.selectedText || '').trim();
-            if (!chunkRef || !Number.isFinite(startGlobal) || !Number.isFinite(endGlobal) || !note) return;
-            const id = String(n.id || makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal));
-            next[id] = {
-                id,
-                chunkRef,
-                chunkIdx: Number.isFinite(Number(n.chunkIdx)) ? Number(n.chunkIdx) : -1,
-                startGlobal,
-                endGlobal,
-                selectedText,
-                note,
-                coordSpace: typeof n.coordSpace === 'string' ? n.coordSpace : undefined,
-                x: Number.isFinite(Number(n.x)) ? Number(n.x) : undefined,
-                y: Number.isFinite(Number(n.y)) ? Number(n.y) : undefined,
-                offsetX: Number.isFinite(Number(n.offsetX)) ? Number(n.offsetX) : undefined,
-                offsetY: Number.isFinite(Number(n.offsetY)) ? Number(n.offsetY) : undefined,
-                w: Number.isFinite(Number(n.w)) ? Number(n.w) : undefined,
-                h: Number.isFinite(Number(n.h)) ? Number(n.h) : undefined,
-                autoSize: n.autoSize !== false,
-                fontSize: sanitizeChunkNoteFontSize(n.fontSize),
-                color: (typeof n.color === 'string' && n.color.trim()) ? n.color.trim() : undefined,
-                updatedAt: Number.isFinite(Number(n.updatedAt)) ? Number(n.updatedAt) : Date.now()
-            };
-        });
-        _ns.chunkNotesMap = next;
+        return _cnApi.applyImportedChunkNotes(data);
     }
 
     if (importChunkNotesBtn && importChunkNotesInput) {
@@ -3164,7 +3077,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                 try {
                     const data = JSON.parse(rawText);
                     applyImportedChunkNotes(data);
-                    saveToDB(getChunkNotesStorageKey(), buildChunkNotesSnapshot());
+                    saveChunkNotesNow();
                     if (hasAiChunkData) {
                         if (!isChunkMode) toggleChunkMode(true);
                         setChunkNoteVisible(true, true);
@@ -3184,7 +3097,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             const snapshot = buildChunkNotesSnapshot();
             const filenameBase = getCurrentAudioFilenameBase('audio');
             const suggestedName = `${filenameBase}_chunk_notes.json`;
-            const sameAudioHandle = !!chunkNotesFileHandle && (chunkNotesFileHandleAudioKey === (currentAudioKey || 'default-audio'));
+            const fileState = _cnApi.getChunkNotesFileState();
+            const sameAudioHandle = !!fileState.handle && (fileState.audioKey === (currentAudioKey || 'default-audio'));
             try {
                 if (!sameAudioHandle) {
                     await saveChunkNotesAs(snapshot, suggestedName);
@@ -3192,16 +3106,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                     return;
                 }
                 openChunkNotesExportConfirmDialog(
-                    chunkNotesFileName || suggestedName,
+                    fileState.fileName || suggestedName,
                     async () => {
                         await saveChunkNotesAs(snapshot, suggestedName);
                         showToast('Chunk notes saved as new file', 'success');
                     },
                     async () => {
-                        if (!chunkNotesFileHandle) {
+                        const currentFileState = _cnApi.getChunkNotesFileState();
+                        if (!currentFileState.handle) {
                             await saveChunkNotesAs(snapshot, suggestedName);
                         } else {
-                            await writeChunkNotesToHandle(chunkNotesFileHandle, snapshot);
+                            await writeChunkNotesToHandle(currentFileState.handle, snapshot);
                         }
                         showToast('Chunk notes overwritten', 'success');
                     }

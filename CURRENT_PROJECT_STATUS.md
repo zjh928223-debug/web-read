@@ -1,6 +1,6 @@
 # Read-Web Current Project Status
 
-Last scanned: 2026-06-15
+Last scanned: 2026-06-16
 
 This document records the current state of the `E:\read-web` project from the actual file tree and entry files. It should be treated as the primary current-status document when it conflicts with older migration notes.
 
@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 3175 lines
+app.js                             legacy central runtime, about 3294 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -83,7 +83,7 @@ src/
   composables/                    10 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
-  utils/                          8 utility modules
+  utils/                          9 utility modules
   services/annotation/            14 annotation pipeline modules
 ```
 
@@ -104,7 +104,7 @@ Current composables:
 ```text
 session-init.js                   about 1437 lines
 import-module.js                  about 468 lines
-notes-module.js                   about 375 lines
+notes-module.js                   about 604 lines
 keyboard-module.js                about 346 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
@@ -200,6 +200,8 @@ The current migration goal should be to keep behavior stable while gradually mov
 ### Chunk Notes
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
+- Chunk note record CRUD, import normalization, snapshot saving, and export file handle state now delegate through `src/composables/notes-module.js`.
+- Chunk note overlay/tag rendering, popover DOM, drag/resize/edit behavior, style modal, and right-click context resolution still remain in `app.js`.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
@@ -222,6 +224,8 @@ npm run build
 npm run verify:vite
 npm run verify:playback
 npm run verify:interactions
+npm run verify:vocab-matching
+npm run verify:chunk-notes-state
 npm test
 ```
 
@@ -245,6 +249,8 @@ scripts/read26-load-check.js
 scripts/read26-load-check.cjs
 scripts/read-web-playback-check.cjs
 scripts/read-web-interactions-check.cjs
+scripts/vocab-matching-helper-check.cjs
+scripts/chunk-notes-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -258,6 +264,7 @@ Current checks cover:
 - AI chunk auto-entry
 - chunk Chinese focus/hold behavior
 - chunk note right-click, save, underline, connector, and delete prompt
+- chunk note state normalization/upsert/delete/import/file-handle behavior through `verify:chunk-notes-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
@@ -334,12 +341,14 @@ When documents conflict, prefer this file, then verify against the actual file t
 ## 14. Maintenance Rules
 
 - Prefer small, behavior-preserving changes.
+- Current cleanup mode: do not add user-facing features until the `complete-appjs-decomposition` route has removed or fully neutralized `app.js`.
 - Do not move script order unless the full app is verified afterward.
 - Do not add new feature logic to `app.js` unless there is no safer place.
 - Prefer modules, Pinia stores, and Vue components for new work.
 - Keep compatibility globals in place until the caller paths are migrated.
+- Treat `window.__state`, `window.__bridge`, and `window.*` exports as compatibility surfaces to retire, not as places to add new architecture.
+- Keep each cleanup step stage-gated: update the runtime map, migrate one boundary, then run the required verification before starting the next boundary.
 - Do not use `file:///E:/read-web/index.html` as the normal launch path; use Vite.
 - Do not treat `read-26.html` as the current project entry.
 - Run `npm test` for behavior changes.
 - Run `npm run build` when changing entry files, scripts, Vite config, or root regular scripts.
-

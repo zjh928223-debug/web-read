@@ -35,7 +35,7 @@ index.html
 └── /src/main.js as type="module" for Vue + Pinia
 ```
 
-`src/main.js` also imports the 8 `src/utils/*.js` modules and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
+`src/main.js` also imports the 9 `src/utils/*.js` modules and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
 
 ## Runtime Architecture
 
@@ -74,7 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 3175 lines. High risk. Central state, chunk notes UI, playback wiring, note sidebar, and legacy exports.
+- `app.js` - about 3294 lines. High risk. Central state, chunk notes UI, playback wiring, note sidebar, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -84,6 +84,12 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 - `styles.css` - global CSS loaded directly by `index.html`.
 
 ## Hard Constraints
+
+### Cleanup Mode
+
+The current priority is to finish `complete-appjs-decomposition` before adding new user-facing features. Use `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md` as the current cleanup baseline.
+
+Do not add feature logic to `app.js`. Treat `window.__state`, `window.__bridge`, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
 
 ### IndexedDB Schema
 
@@ -102,7 +108,7 @@ Do not reorder `index.html` scripts casually. The app still uses globals and sid
 
 ### app.js
 
-Do not add new feature logic to `app.js` unless there is no reasonable alternative. Prefer focused modules, Pinia stores, or Vue components, but respect the existing bridge while migrating.
+Do not add new feature logic to `app.js`. Prefer focused modules, Pinia stores, or Vue components, but respect the existing bridge while migrating existing callers away.
 
 ### session-init.js
 
@@ -114,6 +120,7 @@ Treat `src/composables/session-init.js` as high-risk. It is not just startup cod
 npm run dev          # Vite dev server, port 5173
 npm run build        # Production build, copies 4 legacy root scripts into dist
 npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
+npm run verify:chunk-notes-state  # Focused chunk note state helper check
 npm test             # Same as verify:vite
 ```
 

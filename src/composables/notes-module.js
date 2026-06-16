@@ -13,15 +13,201 @@
     var renderAllChunkNoteTags = deps.renderAllChunkNoteTags;
     var scheduleChunkNoteLayoutRefresh = deps.scheduleChunkNoteLayoutRefresh;
     var scheduleChunkNoteConnectorRedraw = deps.scheduleChunkNoteConnectorRedraw;
+    var makeSelectionNoteBaseId = deps.makeSelectionNoteBaseId;
+    var makeSelectionNoteId = deps.makeSelectionNoteId;
+    var now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
+    var fallbackFileState = { handle: null, audioKey: '', fileName: '' };
+
+    function getChunkNotesMap() {
+      if (!ns.chunkNotesMap || typeof ns.chunkNotesMap !== 'object') ns.chunkNotesMap = {};
+      return ns.chunkNotesMap;
+    }
+
+    function replaceChunkNotesMap(nextMap) {
+      ns.chunkNotesMap = nextMap && typeof nextMap === 'object' ? nextMap : {};
+      return ns.chunkNotesMap;
+    }
+
+    function listChunkNotes() {
+      return Object.values(getChunkNotesMap()).sort(function (a, b) {
+        return (Number(a && a.chunkIdx) - Number(b && b.chunkIdx)) || (Number(a && a.startGlobal) - Number(b && b.startGlobal));
+      });
+    }
+
+    function getChunkNote(noteId) {
+      return getChunkNotesMap()[String(noteId || '')] || null;
+    }
+
+    function getChunkNotesForRef(chunkRef) {
+      var ref = String(chunkRef || '');
+      return Object.values(getChunkNotesMap())
+        .filter(function (n) { return n && String(n.chunkRef || '') === ref; })
+        .sort(function (a, b) { return (Number(a.startGlobal) - Number(b.startGlobal)) || (Number(a.endGlobal) - Number(b.endGlobal)); });
+    }
+
+    function deleteChunkNote(noteId) {
+      var id = String(noteId || '');
+      if (!id || !getChunkNotesMap()[id]) return null;
+      var note = getChunkNotesMap()[id];
+      delete getChunkNotesMap()[id];
+      return note;
+    }
+
+    function makeBaseId(chunkRef, startGlobal, endGlobal) {
+      if (typeof makeSelectionNoteBaseId === 'function') {
+        return makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal);
+      }
+      return String(chunkRef || '') + '::' + startGlobal + '-' + endGlobal;
+    }
+
+    function makeNoteId(chunkRef, startGlobal, endGlobal) {
+      if (typeof makeSelectionNoteId === 'function') {
+        return makeSelectionNoteId(chunkRef, startGlobal, endGlobal);
+      }
+      return makeBaseId(chunkRef, startGlobal, endGlobal) + '::' + now().toString(36);
+    }
+
+    function normalizeLoadedChunkNoteRecord(n) {
+      if (!n || typeof n !== 'object') return null;
+      if (!n.id || !n.chunkRef) return null;
+      return Object.assign({}, n, {
+        coordSpace: typeof n.coordSpace === 'string' ? n.coordSpace : undefined,
+        x: Number.isFinite(Number(n.x)) ? Number(n.x) : undefined,
+        y: Number.isFinite(Number(n.y)) ? Number(n.y) : undefined,
+        offsetX: Number.isFinite(Number(n.offsetX)) ? Number(n.offsetX) : undefined,
+        offsetY: Number.isFinite(Number(n.offsetY)) ? Number(n.offsetY) : undefined,
+        w: Number.isFinite(Number(n.w)) ? Number(n.w) : undefined,
+        h: Number.isFinite(Number(n.h)) ? Number(n.h) : undefined,
+        fontSize: sanitizeChunkNoteFontSize(n.fontSize)
+      });
+    }
+
+    function normalizeImportedChunkNoteRecord(n) {
+      if (!n || typeof n !== 'object') return null;
+      var chunkRef = String(n.chunkRef || '');
+      var startGlobal = Number(n.startGlobal);
+      var endGlobal = Number(n.endGlobal);
+      var note = String(n.note || '').trim();
+      var selectedText = String(n.selectedText || '').trim();
+      if (!chunkRef || !Number.isFinite(startGlobal) || !Number.isFinite(endGlobal) || !note) return null;
+      var id = String(n.id || makeBaseId(chunkRef, startGlobal, endGlobal));
+      return {
+        id: id,
+        chunkRef: chunkRef,
+        chunkIdx: Number.isFinite(Number(n.chunkIdx)) ? Number(n.chunkIdx) : -1,
+        startGlobal: startGlobal,
+        endGlobal: endGlobal,
+        selectedText: selectedText,
+        note: note,
+        coordSpace: typeof n.coordSpace === 'string' ? n.coordSpace : undefined,
+        x: Number.isFinite(Number(n.x)) ? Number(n.x) : undefined,
+        y: Number.isFinite(Number(n.y)) ? Number(n.y) : undefined,
+        offsetX: Number.isFinite(Number(n.offsetX)) ? Number(n.offsetX) : undefined,
+        offsetY: Number.isFinite(Number(n.offsetY)) ? Number(n.offsetY) : undefined,
+        w: Number.isFinite(Number(n.w)) ? Number(n.w) : undefined,
+        h: Number.isFinite(Number(n.h)) ? Number(n.h) : undefined,
+        autoSize: n.autoSize !== false,
+        fontSize: sanitizeChunkNoteFontSize(n.fontSize),
+        color: (typeof n.color === 'string' && n.color.trim()) ? n.color.trim() : undefined,
+        updatedAt: Number.isFinite(Number(n.updatedAt)) ? Number(n.updatedAt) : now()
+      };
+    }
+
+    function applyImportedChunkNotes(data) {
+      var arr = Array.isArray(data) ? data : (data && Array.isArray(data.notes) ? data.notes : null);
+      if (!arr) throw new Error('invalid chunk notes json');
+      var next = {};
+      arr.forEach(function (n) {
+        var normalized = normalizeImportedChunkNoteRecord(n);
+        if (normalized) next[normalized.id] = normalized;
+      });
+      replaceChunkNotesMap(next);
+      return next;
+    }
+
+    function upsertChunkNote(ctx, noteText, layoutContext) {
+      if (!ctx || typeof ctx !== 'object') return '';
+      var text = String(noteText || '').trim();
+      var noteId = String(ctx.noteId || makeNoteId(ctx.chunkRef, ctx.startGlobal, ctx.endGlobal));
+      if (!text) {
+        deleteChunkNote(noteId);
+        return '';
+      }
+      var existing = getChunkNote(noteId);
+      var next = {
+        id: noteId,
+        chunkRef: ctx.chunkRef,
+        chunkIdx: ctx.chunkIdx,
+        startGlobal: ctx.startGlobal,
+        endGlobal: ctx.endGlobal,
+        selectedText: ctx.selectedText || '',
+        note: text,
+        autoSize: existing ? existing.autoSize !== false : true,
+        updatedAt: now()
+      };
+      if (existing) {
+        next.coordSpace = existing.coordSpace === 'main' ? 'main' : existing.coordSpace;
+        if (Number.isFinite(Number(existing.x))) next.x = Number(existing.x);
+        if (Number.isFinite(Number(existing.y))) next.y = Number(existing.y);
+        if (Number.isFinite(Number(existing.offsetX))) next.offsetX = Number(existing.offsetX);
+        if (Number.isFinite(Number(existing.offsetY))) next.offsetY = Number(existing.offsetY);
+        if (Number.isFinite(Number(existing.w))) next.w = Number(existing.w);
+        if (Number.isFinite(Number(existing.h))) next.h = Number(existing.h);
+        if (Number.isFinite(Number(existing.fontSize))) next.fontSize = Number(existing.fontSize);
+        if (typeof existing.color === 'string' && existing.color) next.color = existing.color;
+      } else if (layoutContext && layoutContext.anchorRect) {
+        var minW = Number.isFinite(Number(layoutContext.minW)) ? Number(layoutContext.minW) : 40;
+        var minH = Number.isFinite(Number(layoutContext.minH)) ? Number(layoutContext.minH) : 18;
+        var margin = Number.isFinite(Number(layoutContext.margin)) ? Number(layoutContext.margin) : 12;
+        var areaW = Number.isFinite(Number(layoutContext.areaW)) ? Number(layoutContext.areaW) : (typeof window !== 'undefined' ? window.innerWidth : minW + margin * 2);
+        var areaH = Number.isFinite(Number(layoutContext.areaH)) ? Number(layoutContext.areaH) : (typeof window !== 'undefined' ? window.innerHeight : minH + margin * 2);
+        var anchorRect = layoutContext.anchorRect;
+        next.x = Math.min(areaW - minW - margin, Math.max(margin, Number(anchorRect.right) + 24));
+        next.y = Math.min(areaH - minH - margin, Math.max(margin, Number(anchorRect.top) - 6));
+        next.offsetX = next.x - Number(anchorRect.left);
+        next.offsetY = next.y - Number(anchorRect.top);
+        next.coordSpace = 'main';
+      }
+      var autoSize = layoutContext && typeof layoutContext.autoSize === 'function'
+        ? layoutContext.autoSize
+        : deps.applyChunkNoteAutoSize;
+      if (typeof autoSize === 'function') autoSize(next);
+      getChunkNotesMap()[noteId] = next;
+      return noteId;
+    }
+
+    function getChunkNotesFileState() {
+      var source = typeof deps.getChunkNotesFileState === 'function' ? deps.getChunkNotesFileState() : fallbackFileState;
+      source = source && typeof source === 'object' ? source : {};
+      return {
+        handle: source.handle || source.chunkNotesFileHandle || null,
+        audioKey: String(source.audioKey || source.chunkNotesFileHandleAudioKey || ''),
+        fileName: String(source.fileName || source.chunkNotesFileName || '')
+      };
+    }
+
+    function setChunkNotesFileState(next) {
+      var current = getChunkNotesFileState();
+      var merged = {
+        handle: Object.prototype.hasOwnProperty.call(next || {}, 'handle') ? next.handle : current.handle,
+        audioKey: Object.prototype.hasOwnProperty.call(next || {}, 'audioKey') ? String(next.audioKey || '') : current.audioKey,
+        fileName: Object.prototype.hasOwnProperty.call(next || {}, 'fileName') ? String(next.fileName || '') : current.fileName
+      };
+      if (typeof deps.setChunkNotesFileState === 'function') deps.setChunkNotesFileState(merged);
+      else fallbackFileState = merged;
+      return merged;
+    }
+
+    function clearChunkNotesFileState() {
+      return setChunkNotesFileState({ handle: null, audioKey: '', fileName: '' });
+    }
 
     function buildChunkNotesSnapshot() {
       return {
         version: 1,
         audioKey: deps.currentAudioKeyGetter ? deps.currentAudioKeyGetter() : 'default-audio',
         updatedAt: Date.now(),
-        notes: Object.values(ns.chunkNotesMap).sort(function (a, b) {
-          return (a.chunkIdx - b.chunkIdx) || (a.startGlobal - b.startGlobal);
-        })
+        notes: listChunkNotes()
       };
     }
 
@@ -32,27 +218,25 @@
       }, 180);
     }
 
+    function saveChunkNotesNow() {
+      if (ns.chunkNoteSaveTimer) {
+        clearTimeout(ns.chunkNoteSaveTimer);
+        ns.chunkNoteSaveTimer = null;
+      }
+      return saveToDB(getChunkNotesStorageKey(), buildChunkNotesSnapshot());
+    }
+
     async function loadChunkNotesForCurrentAudio() {
       var data = await loadFromDB(getChunkNotesStorageKey());
       if (data && Array.isArray(data.notes)) {
         var next = {};
         data.notes.forEach(function (n) {
-          if (!n || typeof n !== 'object') return;
-          if (!n.id || !n.chunkRef) return;
-          next[n.id] = Object.assign({}, n, {
-            coordSpace: typeof n.coordSpace === 'string' ? n.coordSpace : undefined,
-            x: Number.isFinite(Number(n.x)) ? Number(n.x) : undefined,
-            y: Number.isFinite(Number(n.y)) ? Number(n.y) : undefined,
-            offsetX: Number.isFinite(Number(n.offsetX)) ? Number(n.offsetX) : undefined,
-            offsetY: Number.isFinite(Number(n.offsetY)) ? Number(n.offsetY) : undefined,
-            w: Number.isFinite(Number(n.w)) ? Number(n.w) : undefined,
-            h: Number.isFinite(Number(n.h)) ? Number(n.h) : undefined,
-            fontSize: sanitizeChunkNoteFontSize(n.fontSize)
-          });
+          var normalized = normalizeLoadedChunkNoteRecord(n);
+          if (normalized) next[normalized.id] = normalized;
         });
-        ns.chunkNotesMap = next;
+        replaceChunkNotesMap(next);
       } else {
-        ns.chunkNotesMap = {};
+        replaceChunkNotesMap({});
       }
     }
 
@@ -185,8 +369,20 @@
     }
 
     return {
+      getChunkNotesMap: getChunkNotesMap,
+      replaceChunkNotesMap: replaceChunkNotesMap,
+      listChunkNotes: listChunkNotes,
+      getChunkNote: getChunkNote,
+      getChunkNotesForRef: getChunkNotesForRef,
+      deleteChunkNote: deleteChunkNote,
+      upsertChunkNote: upsertChunkNote,
+      applyImportedChunkNotes: applyImportedChunkNotes,
+      getChunkNotesFileState: getChunkNotesFileState,
+      setChunkNotesFileState: setChunkNotesFileState,
+      clearChunkNotesFileState: clearChunkNotesFileState,
       buildChunkNotesSnapshot: buildChunkNotesSnapshot,
       saveChunkNotesDebounced: saveChunkNotesDebounced,
+      saveChunkNotesNow: saveChunkNotesNow,
       loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
       setChunkNoteVisible: setChunkNoteVisible,
       getChunkBlockByRef: getChunkBlockByRef,
