@@ -1464,6 +1464,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // [MIGRATED] playback navigation → src/composables/playback-module.js
     window.__playbackModule.init({
+        state: window.__state,
         audioPlayer: audioPlayer,
         getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
         getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
@@ -1737,6 +1738,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // [MIGRATED] controls + rAF loop → src/composables/controls-module.js
     window.__controlsModule.init({
+        state: window.__state,
         audioPlayer: audioPlayer,
         bsFindActiveHelper: bsFindActiveHelper,
         findChunkIndexByTime: findChunkIndexByTime,

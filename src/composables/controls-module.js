@@ -5,6 +5,7 @@
     var getCurrentSegmentIndexHelper = deps.getCurrentSegmentIndexHelper;
     var toggleFollowBtn = deps.toggleFollowBtn;
     var mainAppArea = deps.mainAppArea;
+    var state = deps.state;
 
     // === Speed button ===
     function changeSpeed(r) {
@@ -19,7 +20,7 @@
     // === Follow toggle ===
     if (toggleFollowBtn) {
       toggleFollowBtn.onclick = function () {
-        var st = window.__state;
+        var st = state;
         st.autoFollow = !st.autoFollow;
         toggleFollowBtn.classList.toggle('on', st.autoFollow);
         toggleFollowBtn.innerText = st.autoFollow ? '跟随:开' : '跟随:关';
@@ -29,7 +30,7 @@
     // === rAF audio sync loop ===
     (function audioSyncLoop() {
       function loop() {
-        var st = window.__state;
+        var st = state;
         if (!audioPlayer.paused) {
           var currentTime = audioPlayer.currentTime;
           var idx = bsFindActiveHelper(st.wordStarts, st.words, currentTime);
@@ -51,7 +52,7 @@
 
       if (mainAppArea) {
         mainAppArea.addEventListener('wheel', function () {
-          var st = window.__state;
+          var st = state;
           st.userScrollSuppress = true;
           if (st.suppressTimer) clearTimeout(st.suppressTimer);
           st.suppressTimer = setTimeout(function () { st.userScrollSuppress = false; }, 3000);

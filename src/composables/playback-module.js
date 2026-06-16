@@ -9,10 +9,11 @@
     var getAnnotationBubble = deps.getAnnotationBubble;
     var jumpPrevSentence = deps.jumpPrevSentence;
     var jumpNextSentence = deps.jumpNextSentence;
+    var state = deps.state;
 
     function syncPlaybackStores(activeWordIdx, activeSegIdx, activeChunkIdx) {
       var ps = window.__piniaStores;
-      var st = window.__state;
+      var st = state;
       if (!ps) return;
       if (ps.transcript) {
         ps.transcript.currentWordIndex = st.currentWordIndex;
@@ -26,7 +27,7 @@
     }
 
     function getChunkIndexAt(time) {
-      var st = window.__state;
+      var st = state;
       var idx = findChunkIndexByTime(time);
       if (idx !== -1) return idx;
       if (!st.chunkItems || st.chunkItems.length === 0) return -1;
@@ -34,7 +35,7 @@
     }
 
     function mainUpdateHighlight(wordIndex, currentTime) {
-      var st = window.__state;
+      var st = state;
       if (currentTime === undefined) currentTime = audioPlayer.currentTime;
 
       if (st.isChunkMode) {
@@ -107,7 +108,7 @@
     }
 
     function bsFindActive(time) {
-      var st = window.__state;
+      var st = state;
       return bsFindActiveHelper(st.wordStarts, st.words, time);
     }
 
@@ -118,17 +119,17 @@
 
     function getCurrentSegmentIndex(time) {
       if (time === undefined) time = audioPlayer.currentTime;
-      var st = window.__state;
+      var st = state;
       return getCurrentSegmentIndexHelper(st.segments, st.words, st.wordStarts, time);
     }
 
     function getSegmentCheckpoints(segIndex) {
-      var st = window.__state;
+      var st = state;
       return getSegmentCheckpointsHelper(st.segments, segIndex);
     }
 
     function smartBackward() {
-      var st = window.__state;
+      var st = state;
       var cur = audioPlayer.currentTime;
       var sIdx = getCurrentSegmentIndex(cur);
       if (sIdx === -1) { audioPlayer.currentTime = 0; forceUpdateUI(0); return; }
@@ -156,7 +157,7 @@
     }
 
     function smartForward() {
-      var st = window.__state;
+      var st = state;
       var cur = audioPlayer.currentTime;
       var sIdx = getCurrentSegmentIndex(cur);
       var nextSeg = (sIdx >= 0 && sIdx < st.segments.length - 1) ? st.segments[sIdx + 1] : null;
@@ -168,13 +169,13 @@
 
     function getActiveAiChunkIndex(time) {
       if (time === undefined) time = audioPlayer.currentTime;
-      var st = window.__state;
+      var st = state;
       if (!st.chunkItems || st.chunkItems.length === 0 || !st.hasAiChunkData) return -1;
       return getChunkIndexAt(time);
     }
 
     function isAiChunkNavMode() {
-      var st = window.__state;
+      var st = state;
       return st.isChunkMode && st.hasAiChunkData && Array.isArray(st.chunkItems) && st.chunkItems.length > 0;
     }
 
@@ -188,7 +189,7 @@
     }
 
     function aiChunkBackward() {
-      var st = window.__state;
+      var st = state;
       var idx = getActiveAiChunkIndex();
       if (idx === -1) return;
       var now = Date.now();
@@ -201,7 +202,7 @@
     }
 
     function aiChunkForward() {
-      var st = window.__state;
+      var st = state;
       var idx = getActiveAiChunkIndex();
       if (idx === -1) return;
       var targetIdx = Math.min(st.chunkItems.length - 1, idx + 1);
@@ -212,13 +213,13 @@
     }
 
     function handleBackwardClickNormalMode() {
-      var st = window.__state;
+      var st = state;
       if (st.highlightMode === 2 && !st.isChunkMode) jumpPrevSentence();
       else smartBackward();
     }
 
     function handleForwardClickNormalMode() {
-      var st = window.__state;
+      var st = state;
       if (st.highlightMode === 2 && !st.isChunkMode) jumpNextSentence();
       else smartForward();
     }

@@ -165,6 +165,7 @@ npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
+npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check

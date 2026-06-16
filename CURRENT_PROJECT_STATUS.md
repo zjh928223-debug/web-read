@@ -265,6 +265,7 @@ npm run verify:state-facades
 npm run verify:bridge-startup
 npm run verify:file-input-bindings
 npm run verify:inline-handler-bindings
+npm run verify:control-playback-state-deps
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -311,6 +312,7 @@ scripts/state-facade-owner-check.cjs
 scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
 scripts/inline-handler-bindings-check.cjs
+scripts/control-playback-state-deps-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -349,6 +351,7 @@ Current checks cover:
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
 - removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
+- removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

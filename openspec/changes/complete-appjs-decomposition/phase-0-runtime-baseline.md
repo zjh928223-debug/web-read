@@ -137,11 +137,14 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `lastSentencePrevTapAt` | removed from `window.__state` in 4.8; owner is `window.__playbackState.lastSentencePrevTapAt` | no direct external field access found | playback runtime adapter |
 | `chunkPointerDown` | `chunkPointerDown` | no direct external field access found | chunk interaction runtime |
 
-Observed direct application module users:
+Observed application module users:
 
-- `src/composables/playback-module.js`: playback state, active DOM element refs, transcript/chunk data.
-- `src/composables/controls-module.js`: playback loop signature and auto-follow suppression.
-- `src/composables/session-init.js`: startup restore, annotation scope, marks, chunk/session cleanup, hotkey restore.
+- `src/composables/playback-module.js`: playback state, active DOM element refs, transcript/chunk data through explicit `deps.state` from task 7.3 prep.
+- `src/composables/controls-module.js`: playback loop signature and auto-follow suppression through explicit `deps.state` from task 7.3 prep.
+- `src/composables/import-module.js`: transcript/chunk/cloze import state through explicit `deps.state`.
+- `src/composables/session-init.js`: direct startup restore, annotation scope, marks, chunk/session cleanup, hotkey restore dependency.
+
+Task 7.3 prep removed direct `window.__state` reads from playback and controls modules, but the task remains pending until `session-init.js`, `import-module.js`, and verification scripts no longer depend on this facade as a real state source.
 
 Observed direct verification users:
 
