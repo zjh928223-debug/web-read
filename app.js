@@ -204,13 +204,7 @@
         }
     }
 
-    function isInputLikeTarget(target) {
-        const tagName = target && target.tagName ? target.tagName : '';
-        if (tagName === 'TEXTAREA') return true;
-        if (tagName !== 'INPUT') return false;
-        const inputType = String(target.type || '').toLowerCase();
-        return !['file', 'color', 'button', 'checkbox', 'radio', 'range'].includes(inputType);
-    }
+    const isInputLikeTarget = window.__keyboardModule.isInputLikeTarget;
 
     function restoreReaderFocus() {
         const focusTarget = mainAppArea || document.body;
@@ -1587,7 +1581,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({
         audioPlayer: audioPlayer,
-        isInputLikeTarget: isInputLikeTarget,
         isChunkMode: function () { return isChunkMode; },
         chunkCnHoldMode: function () { return chunkCnHoldMode; },
         chunkNoteVisible: function () { return _ns.chunkNoteVisible; },

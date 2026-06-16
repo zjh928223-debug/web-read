@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1721 lines
+app.js                             legacy central runtime, about 1714 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -105,10 +105,10 @@ Current composables:
 session-init.js                   about 1437 lines
 import-module.js                  about 468 lines
 notes-module.js                   about 2297 lines
-keyboard-module.js                about 373 lines
+keyboard-module.js                about 359 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
-app-handlers.js                   about 170 lines
+app-handlers.js                   about 88 lines
 chunk-note-layout.js              about 152 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
@@ -278,6 +278,7 @@ Current checks cover:
 - chunk note state normalization/upsert/delete/import/file-handle behavior through `verify:chunk-notes-state`
 - sentence note selection/draft/persistence/import/export behavior through `verify:sentence-notes-state`
 - annotation lightweight DOM glue through `verify:annotation-lightweight-module`
+- keyboard boundary helper ownership through `verify:keyboard-boundary`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

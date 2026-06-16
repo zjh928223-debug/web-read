@@ -57,6 +57,7 @@ npm run verify:vocab-matching # Focused vocab matching helper check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:sentence-notes-state # Focused sentence note state helper check
 npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
+npm run verify:keyboard-boundary # Focused keyboard boundary helper check
 npm test             # Same as verify:vite
 ```
 

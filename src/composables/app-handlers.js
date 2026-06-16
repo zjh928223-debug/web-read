@@ -1,89 +1,3 @@
-  // === Keyboard handler init ===
-  function initKeyboard(config) {
-    var audioPlayer = config.audioPlayer;
-    var isInputLikeTarget = config.isInputLikeTarget;
-    var markKey = config.markKey, notesKey = config.notesKey;
-    var annotationBubbleKey = config.annotationBubbleKey;
-    var chunkCnKey = config.chunkCnKey, chunkShadowKey = config.chunkShadowKey;
-    var chunkNoteKey = config.chunkNoteKey, backwardKey = config.backwardKey;
-    var forwardKey = config.forwardKey;
-    var toggleMarkCurrent = config.toggleMarkCurrent;
-    var toggleCurrentNote = config.toggleCurrentNote;
-    var toggleAnnotationBubble = config.toggleAnnotationBubble;
-    var isChunkMode = config.isChunkMode;
-    var handleBackwardClick = config.handleBackwardClick;
-    var handleForwardClick = config.handleForwardClick;
-    var toggleChunkCn = config.toggleChunkCn;
-    var toggleChunkShadow = config.toggleChunkShadow;
-    var chunkCNHoldMode = config.chunkCNHoldMode;
-    var beginHoldChunkCn = config.beginHoldChunkCn;
-    var endHoldChunkCn = config.endHoldChunkCn;
-    var chunkNoteVisible = config.chunkNoteVisible;
-    var setChunkNoteVisible = config.setChunkNoteVisible;
-
-    document.addEventListener('keydown', function (e) {
-      if (isInputLikeTarget(e.target)) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      var key = e.key;
-      var lowerKey = key.toLowerCase();
-
-      if (key === ' ') {
-        e.preventDefault();
-        audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
-      }
-      else if (lowerKey === markKey) {
-        e.preventDefault();
-        toggleMarkCurrent();
-      }
-      else if (lowerKey === notesKey) {
-        e.preventDefault();
-        if (typeof toggleCurrentNote === 'function') toggleCurrentNote();
-      }
-      else if (lowerKey === annotationBubbleKey) {
-        e.preventDefault();
-        toggleAnnotationBubble();
-      }
-      else if (lowerKey === chunkCnKey && isChunkMode()) {
-        e.preventDefault();
-        if (typeof chunkCNHoldMode === 'function' && chunkCNHoldMode() && typeof beginHoldChunkCn === 'function') {
-          if (!e.repeat) beginHoldChunkCn();
-        } else {
-          toggleChunkCn();
-        }
-      }
-      else if (lowerKey === chunkShadowKey && isChunkMode()) {
-        e.preventDefault();
-        toggleChunkShadow();
-      }
-      else if (lowerKey === chunkNoteKey && isChunkMode()) {
-        e.preventDefault();
-        setChunkNoteVisible(!chunkNoteVisible, true);
-      }
-      else if (key === backwardKey) {
-        e.preventDefault();
-        handleBackwardClick();
-      }
-      else if (key === forwardKey) {
-        e.preventDefault();
-        handleForwardClick();
-      }
-    });
-
-    addEventListener('keyup', function (e) {
-      if (isInputLikeTarget(e.target)) return;
-      if (!isChunkMode()) return;
-      var key = e.key;
-      var lowerKey = key.toLowerCase();
-      if (lowerKey === chunkCnKey && (typeof chunkCNHoldMode === 'function' && chunkCNHoldMode())) {
-        if (typeof endHoldChunkCn === 'function') endHoldChunkCn();
-      }
-    });
-
-    window.addEventListener('blur', function () {
-      if ((typeof chunkCNHoldMode === 'function' && chunkCNHoldMode()) && typeof endHoldChunkCn === 'function') endHoldChunkCn();
-    });
-  }
-
   // === Export handlers ===
   function initExports(config) {
     var exportJsonBtn = config.exportJsonBtn;
@@ -174,7 +88,6 @@
   }
 
   window.__appHandlers = {
-    initKeyboard: initKeyboard,
     initExports: initExports,
     initMarksImport: initMarksImport
   };

@@ -1,6 +1,14 @@
+  function isInputLikeTarget(target) {
+    var tagName = target && target.tagName ? target.tagName : '';
+    if (tagName === 'TEXTAREA') return true;
+    if (tagName !== 'INPUT') return false;
+    var inputType = String(target.type || '').toLowerCase();
+    return !['file', 'color', 'button', 'checkbox', 'radio', 'range'].includes(inputType);
+  }
+
   function init(deps) {
     var audioPlayer = deps.audioPlayer;
-    var isInputLikeTarget = deps.isInputLikeTarget;
+    var isInputLikeTargetFn = typeof deps.isInputLikeTarget === 'function' ? deps.isInputLikeTarget : isInputLikeTarget;
     var isChunkMode = deps.isChunkMode;
     var chunkCnHoldMode = deps.chunkCnHoldMode;
     var chunkNoteVisible = deps.chunkNoteVisible;
@@ -52,7 +60,7 @@
 
     // === Main keyboard handler ===
     document.addEventListener('keydown', function (e) {
-      if (isInputLikeTarget(e.target)) return;
+      if (isInputLikeTargetFn(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       var key = e.key;
       var lowerKey = key.toLowerCase();
@@ -101,7 +109,7 @@
 
     // === Keyup (chunk hold mode) ===
     addEventListener('keyup', function (e) {
-      if (isInputLikeTarget(e.target)) return;
+      if (isInputLikeTargetFn(e.target)) return;
       if (!isChunkMode()) return;
       var key = e.key;
       var lowerKey = key.toLowerCase();
@@ -143,7 +151,7 @@
         setSelectedChunkNote('');
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedChunkNoteId()) {
         var tgt = e.target;
-        if (isInputLikeTarget(tgt) || (tgt && tgt.isContentEditable)) return;
+        if (isInputLikeTargetFn(tgt) || (tgt && tgt.isContentEditable)) return;
         e.preventDefault();
         openChunkNoteDeleteDialog(selectedChunkNoteId());
       }
@@ -370,4 +378,7 @@
     });
   }
 
-  window.__keyboardModule = { init: init };
+  window.__keyboardModule = {
+    init: init,
+    isInputLikeTarget: isInputLikeTarget
+  };
