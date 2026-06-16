@@ -33,7 +33,7 @@
 
 ## 4. Phase 3 - State Ownership Migration
 
-- [ ] 4.1 Pick one state domain and document its new owner before migrating it: transcript, chunk, cloze, playback, chunk note, or sentence note.
+- [x] 4.1 Pick one state domain and document its new owner before migrating it: transcript, chunk, cloze, playback, chunk note, or sentence note.
 - [ ] 4.2 Migrate transcript state ownership from `app.js` local variables to the real Pinia transcript store or a clearly owned runtime module.
 - [ ] 4.3 Migrate chunk state ownership from `app.js` local variables to the real Pinia chunk store or chunk runtime module.
 - [ ] 4.4 Migrate cloze state ownership from `app.js` local variables to the real Pinia cloze store or cloze runtime module.
