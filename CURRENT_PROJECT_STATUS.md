@@ -40,11 +40,11 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1817 lines
+app.js                             legacy central runtime, about 1814 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
-src/main.js                        Vue mount, Pinia setup, side-effect imports, about 146 lines
+src/main.js                        Vue mount, Pinia setup, side-effect imports, about 147 lines
 src/App.vue                        root Vue component
 src/composables/session-init.js    startup restore and annotation/session glue
 ```
@@ -83,7 +83,7 @@ src/
   composables/                    20 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
-  utils/                          10 utility modules
+  utils/                          11 utility modules
   services/annotation/            14 annotation pipeline modules
 ```
 
@@ -273,6 +273,7 @@ npm run verify:cloze-interactions
 npm run verify:render-facades
 npm run verify:script-order
 npm run verify:chunk-note-layout-helpers
+npm run verify:chunk-note-layout-core
 npm test
 ```
 
@@ -313,6 +314,7 @@ scripts/cloze-interactions-check.cjs
 scripts/render-facades-check.cjs
 scripts/script-order-guard-check.cjs
 scripts/chunk-note-layout-helpers-module-check.cjs
+scripts/chunk-note-layout-core-module-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -346,6 +348,7 @@ Current checks cover:
 - guarded current `index.html` script order through `verify:script-order`
 - Phase 4 DOM/event ownership checkpoint passed through `npm test`, standalone `npm run verify:playback`, standalone `npm run verify:interactions`, and `npm run build`
 - migrated `chunk-note-layout-helpers.js` logic into `src/utils/chunk-note-layout-helpers.js` through `verify:chunk-note-layout-helpers`
+- migrated `chunk-note-layout-core.js` logic into `src/utils/chunk-note-layout-core.js` through `verify:chunk-note-layout-core`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

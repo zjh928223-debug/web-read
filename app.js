@@ -9,6 +9,7 @@
     import './src/utils/chunk-matching.js';
     import './src/utils/vocab-matching.js';
     import './src/utils/chunk-note-layout-helpers.js';
+    import './src/utils/chunk-note-layout-core.js';
     import './src/composables/transcript-state.js';
     import './src/composables/chunk-state.js';
     import './src/composables/cloze-state.js';
@@ -101,10 +102,6 @@
         createInitialClozeAnswerState,
         buildClozeQuizViewModel
     } = window.ClozeViewModelHelpers;
-    const {
-        buildEmptyChunkNoteLayoutResult,
-        buildChunkNoteLayoutResult
-    } = window.ChunkNoteLayoutCore;
     const {
         findChunkIndexByTime: findChunkIndexByTimeHelper,
         bsFindActive: bsFindActiveHelper,

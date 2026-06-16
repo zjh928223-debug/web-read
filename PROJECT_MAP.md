@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1817 lines
+├── app.js                             # Legacy central bus, about 1814 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -103,7 +103,8 @@ src/
 │   ├── playback-index.js
 │   ├── chunk-matching.js
 │   ├── vocab-matching.js
-│   └── chunk-note-layout-helpers.js
+│   ├── chunk-note-layout-helpers.js
+│   └── chunk-note-layout-core.js
 └── services/annotation/
     ├── controller.js
     ├── api-client.js
@@ -167,6 +168,7 @@ npm run verify:cloze-interactions # Focused cloze answer interaction check
 npm run verify:render-facades # Focused legacy render facade removal check
 npm run verify:script-order # Focused index.html script order guard
 npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper module check
+npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm test             # Alias for verify:vite
 ```
 

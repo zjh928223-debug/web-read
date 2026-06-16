@@ -71,6 +71,7 @@ npm run verify:cloze-interactions # Focused cloze answer interaction check
 npm run verify:render-facades # Focused legacy render facade removal check
 npm run verify:script-order # Focused index.html script order guard
 npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper module check
+npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm test             # Same as verify:vite
 ```
 
@@ -108,7 +109,7 @@ src/
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
 ├── composables/               # 20 moduleized legacy behavior chunks
-├── utils/                     # 10 utility ES modules
+├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
 

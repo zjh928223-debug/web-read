@@ -290,7 +290,7 @@ These absent/legacy IDs are risk signals, not automatic deletion candidates.
 | Script | Global exposed | Current consumers | Target owner |
 | --- | --- | --- | --- |
 | `chunk-note-layout-helpers.js` | root regular script plus `src/utils/chunk-note-layout-helpers.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-helpers.js` ES module | root script tag removed in task 6.5 |
-| `chunk-note-layout-core.js` | `global.ChunkNoteLayoutCore` | `app.js`, `src/composables/chunk-note-layout.js` | `src/utils/` or `src/composables/chunk-note-layout.js` ES module |
+| `chunk-note-layout-core.js` | root regular script plus `src/utils/chunk-note-layout-core.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-core.js` ES module | root script tag removed in task 6.5 |
 | `annotation-bubble.js` | `global.AnnotationBubble` | `app.js`, Vue components through `window.notifyAnnotationBubbleWordClick` path, interaction verification | annotation bubble component/module |
 | `annotation-api-settings-ui.js` | `global.AnnotationApiSettingsUI` | `src/composables/session-init.js` through `initAnnotationApiSettingsUi()` | annotation settings component/module |
 

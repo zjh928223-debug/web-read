@@ -1,4 +1,5 @@
 import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.js';
+import { buildEmptyChunkNoteLayoutResult, buildChunkNoteLayoutResult } from '../utils/chunk-note-layout-core.js';
 
   // === Pure utility functions (no app.js state dependency) ===
 
@@ -94,7 +95,6 @@ import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.j
     var preferredFs = sanitizeChunkNoteFontSize(note && note.fontSize);
     var minFs = Math.min(getChunkNoteMinReadableFontSize(), preferredFs);
     var ctx = getChunkNoteLayoutContext();
-    var ChunkLC = window.ChunkNoteLayoutCore;
 
     function makeLayout(fontSize) {
       var fs = Math.max(1, Math.floor(fontSize));
@@ -106,7 +106,7 @@ import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.j
     }
 
     if (!text) {
-      return ChunkLC ? ChunkLC.buildEmptyChunkNoteLayoutResult(preferredFs, { padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH }) : { fontSize: preferredFs, lineHeight: Math.round(preferredFs * 1.24), lines: [''], fits: true, valid: true, padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH };
+      return buildEmptyChunkNoteLayoutResult(preferredFs, { padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH });
     }
 
     var best = makeLayout(preferredFs);
@@ -120,7 +120,7 @@ import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.j
       }
       best = lastFit || makeLayout(minFs);
     }
-    return ChunkLC ? ChunkLC.buildChunkNoteLayoutResult(best, { padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH }) : { fontSize: best.fontSize, lineHeight: best.lineHeight, lines: best.lines, fits: best.fits, valid: best.fits, padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH };
+    return buildChunkNoteLayoutResult(best, { padX: padX, padY: padY, maxTextW: maxTextW, maxTextH: maxTextH });
   }
 
   function canChunkNoteTextFitMinReadable(note, width, height) {
