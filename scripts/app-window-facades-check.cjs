@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
+const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 [
   'handleBackwardClick',
@@ -14,6 +15,7 @@ const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 's
   'forceUpdateUI',
   'mainUpdateHighlight',
   'changeSpeed',
+  'toggleChunkBtn',
   'openChunkStyleModal',
   'closeChunkStyleModal',
   'updateChunkStyle'
@@ -35,6 +37,7 @@ const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 's
 });
 
 assert.ok(controlsSource.includes('window.changeSpeed = changeSpeed;'), 'controls-module should own window.changeSpeed');
+assert.equal(sessionInitSource.includes('window.toggleChunkBtn'), false, 'session-init should not read window.toggleChunkBtn');
 
 [
   'openChunkStyleModal',

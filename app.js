@@ -1784,7 +1784,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
     window.toggleChunkShadowManual = toggleChunkShadowManual;
     window.updateChunkNoteStyle = updateChunkNoteStyle;
-    window.toggleChunkBtn = toggleChunkBtn;
     window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;
     window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
     window.showToast = showToast; window.showError = showError;

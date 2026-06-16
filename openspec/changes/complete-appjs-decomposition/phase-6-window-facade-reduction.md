@@ -16,12 +16,14 @@ It removes duplicate `app.js` ownership for window facades that already have mod
 - `window.openChunkStyleModal`
 - `window.closeChunkStyleModal`
 - `window.updateChunkStyle`
+- `window.toggleChunkBtn`
 
 The window functions still exist for compatibility, but their owners are now:
 
 - `src/composables/playback-module.js`
 - `src/composables/controls-module.js`
 - `src/composables/style-editor.js`
+- direct DOM lookup inside `src/composables/session-init.js` for the one startup cleanup button reset
 
 ## Guard
 

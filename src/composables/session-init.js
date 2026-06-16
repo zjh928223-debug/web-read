@@ -1497,7 +1497,8 @@ import { getSessionState } from './session-state-provider.js';
         } catch (e) {}
         await deleteFromDB('chunkData');
         await deleteFromDB('marks');
-        window.toggleChunkBtn.innerText = 'AI切分';
+        const toggleChunkBtn = document.getElementById('toggle-chunk-btn');
+        if (toggleChunkBtn) toggleChunkBtn.innerText = 'AI切分';
         if (st.isChunkMode) {
             st.isChunkMode= false;
         }
