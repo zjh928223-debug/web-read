@@ -14,6 +14,7 @@ import './utils/playback-index.js'
 import './utils/chunk-matching.js'
 import './utils/vocab-matching.js'
 import './composables/transcript-state.js'
+import './composables/chunk-state.js'
 import './services/annotation/target-source.js'
 import './services/annotation/diagnostics.js'
 import './services/annotation/diagnostics-records.js'
@@ -128,6 +129,9 @@ if (window.__bridge && window.__bridge.chunkItems) {
   chunkStore.chunkCNHoldMode = window.__bridge.chunkCNHoldMode !== false
   chunkStore.chunkFocusMode = window.__bridge.chunkFocusMode !== false
   chunkStore.chunkShadowVisible = window.__bridge.chunkShadowVisible !== false
+}
+if (window.__chunkState && typeof window.__chunkState.bindPiniaStore === 'function') {
+  window.__chunkState.bindPiniaStore(chunkStore, { preferStore: true })
 }
 if (window.__bridge && window.__bridge.clozeItems) {
   clozeStore.items = window.__bridge.clozeItems || []

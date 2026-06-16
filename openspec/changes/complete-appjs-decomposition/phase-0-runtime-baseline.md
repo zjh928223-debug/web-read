@@ -83,7 +83,7 @@ Additional globals assigned by composables/services are outside `app.js` final e
 
 ## 2. window.__state Map
 
-`window.__state` currently proxies `app.js` local variables. The backing variable remains the real source until a later phase explicitly moves it.
+`window.__state` started as a proxy over `app.js` local variables. Migrated fields now proxy their runtime adapter or Pinia owner while the field name remains as a compatibility facade.
 
 | Field | Backing variable | Current readers/writers outside app.js | Target owner |
 | --- | --- | --- | --- |
@@ -91,17 +91,17 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `segments` | `segments` | `playback-module.js`, `controls-module.js`, `session-init.js` | transcript store/runtime |
 | `words` | `words` | `playback-module.js`, `controls-module.js`, `session-init.js` | transcript store/runtime |
 | `wordStarts` | `wordStarts` | `playback-module.js`, `controls-module.js` | transcript/playback index helper owner |
-| `chunkItems` | `chunkItems` | `playback-module.js`, `session-init.js` | chunk store/runtime |
-| `hasAiChunkData` | `hasAiChunkData` | `playback-module.js`, `session-init.js` | chunk store/runtime |
+| `chunkItems` | `window.__chunkState.chunkItems` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
+| `hasAiChunkData` | `window.__chunkState.hasAiChunkData` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `hasClozeData` | `hasClozeData` | verification scripts directly set/read | cloze store |
 | `clozeItems` | `clozeItems` | verification scripts directly set | cloze store |
 | `clozeAnswerState` | `clozeAnswerState` | verification scripts directly set | cloze store |
-| `manualChunkStates` | `manualChunkStates` | `session-init.js` | chunk store/runtime |
+| `manualChunkStates` | `window.__chunkState.manualChunkStates` | `session-init.js` | chunk store/runtime adapter |
 | `currentAudioMeta` | `currentAudioMeta` | `session-init.js` | audio/session identity owner |
 | `chunkNotesFileHandle` | `chunkNotesFileHandle` | no direct external field access found | chunk note subsystem |
 | `chunkNotesFileHandleAudioKey` | `chunkNotesFileHandleAudioKey` | no direct external field access found | chunk note subsystem |
 | `chunkNotesFileName` | `chunkNotesFileName` | no direct external field access found | chunk note subsystem |
-| `isChunkMode` | `isChunkMode` | `playback-module.js`, `controls-module.js`, `session-init.js`, verification scripts | chunk store/runtime |
+| `isChunkMode` | `window.__chunkState.isChunkMode` | `playback-module.js`, `controls-module.js`, `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `currentAudioKey` | `__cak` / `currentAudioKey` accessor | `session-init.js` | audio/session identity owner |
 | `currentWordIndex` | `currentWordIndex` | `playback-module.js` | playback runtime or transcript store |
 | `autoFollow` | `autoFollow` | `controls-module.js`, verification scripts | playback runtime/UI store |
@@ -124,16 +124,16 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `markedMap` | `markedMap` | `session-init.js`, verification scripts | marks store |
 | `globalVocab` | `globalVocab` | no direct external field access found | annotation/marks matching owner |
 | `vocabMatchMap` | `vocabMatchMap` | verification scripts directly mutate | annotation/marks matching owner |
-| `chunkCnVisible` | `chunkCnVisible` | `session-init.js`, verification scripts | chunk store |
-| `chunkCnHoldMode` | `chunkCnHoldMode` | `session-init.js`, verification scripts | chunk store |
-| `isHoldingChunkCn` | `isHoldingChunkCn` | no direct external field access found | chunk controls runtime |
-| `holdPrevChunkCnVisible` | `holdPrevChunkCnVisible` | no direct external field access found | chunk controls runtime |
+| `chunkCnVisible` | `window.__chunkState.chunkCnVisible` | `session-init.js`, verification scripts | chunk store/runtime adapter |
+| `chunkCnHoldMode` | `window.__chunkState.chunkCnHoldMode` | `session-init.js`, verification scripts | chunk store/runtime adapter |
+| `isHoldingChunkCn` | `window.__chunkState.isHoldingChunkCn` | no direct external field access found | chunk controls runtime adapter |
+| `holdPrevChunkCnVisible` | `window.__chunkState.holdPrevChunkCnVisible` | no direct external field access found | chunk controls runtime adapter |
 | `holdPrevHadFocusClass` | `holdPrevHadFocusClass` | no direct external field access found | chunk controls runtime |
-| `isChunkShadowOn` | `isChunkShadowOn` | `session-init.js` | chunk store |
-| `chunkCnMode` | `chunkCnMode` | `session-init.js`, verification scripts | chunk store |
-| `lastActiveChunkIndex` | `lastActiveChunkIndex` | `playback-module.js`, `session-init.js` | playback/chunk runtime |
-| `lastAiPrevTapChunkIndex` | `lastAiPrevTapChunkIndex` | `playback-module.js`, `session-init.js` | playback/chunk runtime |
-| `lastAiPrevTapAt` | `lastAiPrevTapAt` | `playback-module.js`, `session-init.js` | playback/chunk runtime |
+| `isChunkShadowOn` | `window.__chunkState.isChunkShadowOn` | `session-init.js` | chunk store/runtime adapter |
+| `chunkCnMode` | `window.__chunkState.chunkCnMode` | `session-init.js`, verification scripts | chunk store/runtime adapter |
+| `lastActiveChunkIndex` | `window.__chunkState.lastActiveChunkIndex` -> `chunk.activeChunkIdx` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
+| `lastAiPrevTapChunkIndex` | `window.__chunkState.lastAiPrevTapChunkIndex` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
+| `lastAiPrevTapAt` | `window.__chunkState.lastAiPrevTapAt` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `lastSentencePrevTapSegIndex` | `lastSentencePrevTapSegIndex` | no direct external field access found | playback runtime |
 | `lastSentencePrevTapAt` | `lastSentencePrevTapAt` | no direct external field access found | playback runtime |
 | `chunkPointerDown` | `chunkPointerDown` | no direct external field access found | chunk interaction runtime |
@@ -159,13 +159,13 @@ Observed direct verification users:
 | `transcript.words` | `words` | `transcriptStore.words` / `ps.transcript.words` | `bridgeToPinia()` | transcript store |
 | `transcript.wordStarts` | `wordStarts` | `transcriptStore.wordStarts` / `ps.transcript.wordStarts` | `bridgeToPinia()` | transcript/playback index owner |
 | `transcript.highlightMode` | `highlightMode` | `transcriptStore.highlightMode` / `ps.transcript.highlightMode` | `bridgeToPinia()` | transcript/playback store |
-| `chunkItems` | `chunkItems` | `chunkStore.chunkItems` / `ps.chunk.chunkItems` | `bridgeToPinia()` | chunk store |
-| `isChunkMode` | `isChunkMode` | `chunkStore.isChunkMode` / `ps.chunk.isChunkMode` | `bridgeToPinia()` | chunk store |
-| `hasAiChunkData` | `hasAiChunkData` | `chunkStore.hasAiChunkData` / `ps.chunk.hasAiChunkData` | `bridgeToPinia()` | chunk store |
-| `chunkCNVisible` | `chunkCnVisible` | `chunkStore.chunkCNVisible` / `ps.chunk.chunkCNVisible` | `bridgeToPinia()` | chunk store |
-| `chunkCNHoldMode` | `chunkCnHoldMode` | `chunkStore.chunkCNHoldMode` / `ps.chunk.chunkCNHoldMode` | `bridgeToPinia()` | chunk store |
-| `chunkFocusMode` | `chunkCnMode === 'focus'` | `chunkStore.chunkFocusMode` / `ps.chunk.chunkFocusMode` | `bridgeToPinia()` | chunk store |
-| `chunkShadowVisible` | `isChunkShadowOn` | `chunkStore.chunkShadowVisible` / `ps.chunk.chunkShadowVisible` | `bridgeToPinia()` | chunk store |
+| `chunkItems` | `window.__chunkState.chunkItems` | `chunkStore.chunkItems` / `ps.chunk.chunkItems` | `bridgeToPinia()` | chunk store |
+| `isChunkMode` | `window.__chunkState.isChunkMode` | `chunkStore.isChunkMode` / `ps.chunk.isChunkMode` | `bridgeToPinia()` | chunk store |
+| `hasAiChunkData` | `window.__chunkState.hasAiChunkData` | `chunkStore.hasAiChunkData` / `ps.chunk.hasAiChunkData` | `bridgeToPinia()` | chunk store |
+| `chunkCNVisible` | `window.__chunkState.chunkCnVisible` | `chunkStore.chunkCNVisible` / `ps.chunk.chunkCNVisible` | `bridgeToPinia()` | chunk store |
+| `chunkCNHoldMode` | `window.__chunkState.chunkCnHoldMode` | `chunkStore.chunkCNHoldMode` / `ps.chunk.chunkCNHoldMode` | `bridgeToPinia()` | chunk store |
+| `chunkFocusMode` | `window.__chunkState.chunkCnMode === 'focus'` | `chunkStore.chunkFocusMode` / `ps.chunk.chunkFocusMode` | `bridgeToPinia()` | chunk store |
+| `chunkShadowVisible` | `window.__chunkState.isChunkShadowOn` | `chunkStore.chunkShadowVisible` / `ps.chunk.chunkShadowVisible` | `bridgeToPinia()` | chunk store |
 | `chunkNoteVisible` | `_ns.chunkNoteVisible` | `ps.chunk.chunkNoteVisible` runtime only | `bridgeToPinia()` | chunk note/chunk store boundary |
 | `clozeItems` | `clozeItems` | `clozeStore.items` / `ps.cloze.items` | `bridgeToPinia()` | cloze store |
 | `hasClozeData` | `hasClozeData` | `clozeStore.hasData` / `ps.cloze.hasData` | `bridgeToPinia()` | cloze store |
@@ -218,6 +218,8 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.8 src/composables/playback-module.js
    4.9 src/composables/controls-module.js
    4.10 src/composables/annotation-lightweight-module.js
+   4.11 src/composables/transcript-state.js
+   4.12 src/composables/chunk-state.js
 5. app.js
 6. src/composables/session-init.js
 7. /src/main.js

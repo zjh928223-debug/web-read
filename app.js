@@ -9,6 +9,7 @@
     import './src/utils/chunk-matching.js';
     import './src/utils/vocab-matching.js';
     import './src/composables/transcript-state.js';
+    import './src/composables/chunk-state.js';
     import './src/composables/annotation-lightweight-module.js';
 
     // === Read-order map ===
@@ -22,18 +23,20 @@
     // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
     window.__USE_VUE_RENDERING = true;
     const _tr = window.__transcriptState;
+    const _ch = window.__chunkState;
 
     // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
     window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
     function bridgeToPinia() {
         var ps = window.__piniaStores;
         var b = window.__bridge;
+        var chunkSnapshot = _ch.getSnapshot();
         // Always write to bridge (for main.js init consumption)
         if (b) {
             b.transcript = { segments: _tr.segments, words: _tr.words, wordStarts: _tr.wordStarts, highlightMode: _tr.highlightMode };
-            b.chunkItems = chunkItems; b.isChunkMode = isChunkMode; b.hasAiChunkData = hasAiChunkData;
-            b.chunkCNVisible = chunkCnVisible; b.chunkCNHoldMode = chunkCnHoldMode;
-            b.chunkFocusMode = chunkCnMode === 'focus'; b.chunkShadowVisible = isChunkShadowOn;
+            b.chunkItems = chunkSnapshot.chunkItems; b.isChunkMode = chunkSnapshot.isChunkMode; b.hasAiChunkData = chunkSnapshot.hasAiChunkData;
+            b.chunkCNVisible = chunkSnapshot.chunkCnVisible; b.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
+            b.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; b.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
             b.clozeItems = clozeItems; b.hasClozeData = hasClozeData; b.clozeAnswerState = clozeAnswerState;
         }
         // If Pinia already exists, write directly for reactive updates
@@ -43,9 +46,9 @@
                 ps.transcript.wordStarts = _tr.wordStarts; ps.transcript.highlightMode = _tr.highlightMode;
             }
             if (ps.chunk) {
-                ps.chunk.chunkItems = chunkItems; ps.chunk.isChunkMode = isChunkMode; ps.chunk.hasAiChunkData = hasAiChunkData;
-                ps.chunk.chunkCNVisible = chunkCnVisible; ps.chunk.chunkCNHoldMode = chunkCnHoldMode;
-                ps.chunk.chunkFocusMode = chunkCnMode === 'focus'; ps.chunk.chunkShadowVisible = isChunkShadowOn;
+                ps.chunk.chunkItems = chunkSnapshot.chunkItems; ps.chunk.isChunkMode = chunkSnapshot.isChunkMode; ps.chunk.hasAiChunkData = chunkSnapshot.hasAiChunkData;
+                ps.chunk.chunkCNVisible = chunkSnapshot.chunkCnVisible; ps.chunk.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
+                ps.chunk.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; ps.chunk.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
                 ps.chunk.chunkNoteVisible = !!(_ns && _ns.chunkNoteVisible);
             }
             if (ps.cloze) { ps.cloze.items = clozeItems; ps.cloze.hasData = hasClozeData; ps.cloze.answerState = clozeAnswerState; }
@@ -614,22 +617,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let vocabMatchMap = new Map();
 
     // === AI Chunk Mode State ===
-    let isChunkMode = false;
-    let chunkItems = [];
-    let chunkCnVisible = false; // hidden by default; hold key reveals focused Chinese
-    let chunkCnHoldMode = true; // true = show Chinese only while holding shortcut
-    let isHoldingChunkCn = false;
-    let holdPrevChunkCnVisible = null;
+    // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.
     let holdPrevHadFocusClass = null;
-    let isChunkShadowOn = true; 
-    let chunkCnMode = 'focus'; // 'global' or 'focus'
-    let manualChunkStates = {};
-    let lastActiveChunkIndex = -1;
-    let lastAiPrevTapChunkIndex = -1;
-    let lastAiPrevTapAt = 0;
     let lastSentencePrevTapSegIndex = -1;
     let lastSentencePrevTapAt = 0;
-    let hasAiChunkData = false;
     let clozeItems = [];
     let hasClozeData = false;
     let clozeAnswerState = [];
@@ -656,9 +647,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getChunkNotesStorageKey: getChunkNotesStorageKey,
         getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
-        getIsChunkMode: function () { return isChunkMode; },
+        getIsChunkMode: function () { return _ch.isChunkMode; },
         currentAudioKeyGetter: function () { return currentAudioKey; },
-        getHasAiChunkData: function () { return hasAiChunkData; },
+        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
         mainAppArea: mainAppArea,
         chunkNoteSvgLayer: chunkNoteSvgLayer,
         chunkNoteLayer: chunkNoteLayer,
@@ -696,8 +687,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getLegacySentenceNotesStorageKey: getLegacySentenceNotesStorageKey,
         buildCurrentSentenceDocId: buildCurrentSentenceDocId,
         isPlainObjectRecord: isPlainObjectRecord,
-        getIsChunkMode: function () { return isChunkMode; },
-        getHasAiChunkData: function () { return hasAiChunkData; },
+        getIsChunkMode: function () { return _ch.isChunkMode; },
+        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
         notePreviewSidebar: notePreviewSidebar,
         notePreviewEmpty: notePreviewEmpty,
         notePreviewList: notePreviewList,
@@ -780,18 +771,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'segments', { get: function() { return _tr.segments; }, set: function(v) { _tr.segments = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'words', { get: function() { return _tr.words; }, set: function(v) { _tr.words = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'wordStarts', { get: function() { return _tr.wordStarts; }, set: function(v) { _tr.wordStarts = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkItems', { get: function() { return chunkItems; }, set: function(v) { chunkItems = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'hasAiChunkData', { get: function() { return hasAiChunkData; }, set: function(v) { hasAiChunkData = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkItems', { get: function() { return _ch.chunkItems; }, set: function(v) { _ch.chunkItems = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'hasAiChunkData', { get: function() { return _ch.hasAiChunkData; }, set: function(v) { _ch.hasAiChunkData = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'hasClozeData', { get: function() { return hasClozeData; }, set: function(v) { hasClozeData = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'clozeItems', { get: function() { return clozeItems; }, set: function(v) { clozeItems = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'clozeAnswerState', { get: function() { return clozeAnswerState; }, set: function(v) { clozeAnswerState = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'manualChunkStates', { get: function() { return manualChunkStates; }, set: function(v) { manualChunkStates = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'manualChunkStates', { get: function() { return _ch.manualChunkStates; }, set: function(v) { _ch.manualChunkStates = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return _cnApi.getChunkNotesFileState().handle; }, set: function(v) { _cnApi.setChunkNotesFileState({ handle: v }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileHandleAudioKey', { get: function() { return _cnApi.getChunkNotesFileState().audioKey; }, set: function(v) { _cnApi.setChunkNotesFileState({ audioKey: v }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileName', { get: function() { return _cnApi.getChunkNotesFileState().fileName; }, set: function(v) { _cnApi.setChunkNotesFileState({ fileName: v }); }, enumerable: true, configurable: true });
     var __cak = 'default-audio';
-    Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return isChunkMode; }, set: function(v) { isChunkMode = !!v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return _ch.isChunkMode; }, set: function(v) { _ch.isChunkMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentWordIndex', { get: function() { return _tr.currentWordIndex; }, set: function(v) { _tr.currentWordIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'autoFollow', { get: function() { return autoFollow; }, set: function(v) { autoFollow = v; }, enumerable: true, configurable: true });
@@ -814,23 +805,23 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'markedMap', { get: function() { return markedMap; }, set: function(v) { markedMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { markedMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'globalVocab', { get: function() { return globalVocab; }, set: function(v) { globalVocab = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'vocabMatchMap', { get: function() { return vocabMatchMap; }, set: function(v) { vocabMatchMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { vocabMatchMap.set(key, value); }); }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkCnVisible', { get: function() { return chunkCnVisible; }, set: function(v) { chunkCnVisible = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkCnHoldMode', { get: function() { return chunkCnHoldMode; }, set: function(v) { chunkCnHoldMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'isHoldingChunkCn', { get: function() { return isHoldingChunkCn; }, set: function(v) { isHoldingChunkCn = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'holdPrevChunkCnVisible', { get: function() { return holdPrevChunkCnVisible; }, set: function(v) { holdPrevChunkCnVisible = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkCnVisible', { get: function() { return _ch.chunkCnVisible; }, set: function(v) { _ch.chunkCnVisible = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkCnHoldMode', { get: function() { return _ch.chunkCnHoldMode; }, set: function(v) { _ch.chunkCnHoldMode = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'isHoldingChunkCn', { get: function() { return _ch.isHoldingChunkCn; }, set: function(v) { _ch.isHoldingChunkCn = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'holdPrevChunkCnVisible', { get: function() { return _ch.holdPrevChunkCnVisible; }, set: function(v) { _ch.holdPrevChunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'holdPrevHadFocusClass', { get: function() { return holdPrevHadFocusClass; }, set: function(v) { holdPrevHadFocusClass = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'isChunkShadowOn', { get: function() { return isChunkShadowOn; }, set: function(v) { isChunkShadowOn = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'chunkCnMode', { get: function() { return chunkCnMode; }, set: function(v) { chunkCnMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastActiveChunkIndex', { get: function() { return lastActiveChunkIndex; }, set: function(v) { lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastAiPrevTapChunkIndex', { get: function() { return lastAiPrevTapChunkIndex; }, set: function(v) { lastAiPrevTapChunkIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastAiPrevTapAt', { get: function() { return lastAiPrevTapAt; }, set: function(v) { lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'isChunkShadowOn', { get: function() { return _ch.isChunkShadowOn; }, set: function(v) { _ch.isChunkShadowOn = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'chunkCnMode', { get: function() { return _ch.chunkCnMode; }, set: function(v) { _ch.chunkCnMode = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastActiveChunkIndex', { get: function() { return _ch.lastActiveChunkIndex; }, set: function(v) { _ch.lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastAiPrevTapChunkIndex', { get: function() { return _ch.lastAiPrevTapChunkIndex; }, set: function(v) { _ch.lastAiPrevTapChunkIndex = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastAiPrevTapAt', { get: function() { return _ch.lastAiPrevTapAt; }, set: function(v) { _ch.lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastSentencePrevTapSegIndex', { get: function() { return lastSentencePrevTapSegIndex; }, set: function(v) { lastSentencePrevTapSegIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastSentencePrevTapAt', { get: function() { return lastSentencePrevTapAt; }, set: function(v) { lastSentencePrevTapAt = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkPointerDown', { get: function() { return chunkPointerDown; }, set: function(v) { chunkPointerDown = v; }, enumerable: true, configurable: true });
 
     var _cpApi = window.__importModule.initChunkPipeline({
         state: window.__state,
-        getIsChunkMode: function() { return isChunkMode; },
+        getIsChunkMode: function() { return _ch.isChunkMode; },
         renderChunkMode: renderChunkMode,
         bridgeToPinia: bridgeToPinia,
         toggleChunkBtn: toggleChunkBtn,
@@ -914,7 +905,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         adjustChunkNoteArrowSizeByGap: adjustChunkNoteArrowSizeByGap,
         renderAllChunkNoteTags: renderAllChunkNoteTags,
         scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
-        getIsChunkMode: function () { return isChunkMode; },
+        getIsChunkMode: function () { return _ch.isChunkMode; },
         closeChunkNotePopover: closeChunkNotePopover,
         updateShadowBtnText: updateShadowBtnText
     });
@@ -1167,10 +1158,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (!span || !transcriptContainer.contains(span)) return;
         const start = Number(span.dataset.wordStart);
         if (!Number.isFinite(start)) return;
-        if (isChunkMode && hasActiveTextSelectionWithinChunk()) return;
+        if (_ch.isChunkMode && hasActiveTextSelectionWithinChunk()) return;
         audioPlayer.currentTime = start;
         forceUpdateUI(start);
-        if (isChunkMode) {
+        if (_ch.isChunkMode) {
             try { selectSentenceFromChunkTarget(span); } catch (err) {}
         }
         notifyAnnotationBubbleWordClick(span);
@@ -1271,19 +1262,19 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function toggleChunkMode(forceState = null) {
-        if (!chunkItems || chunkItems.length === 0 || !hasAiChunkData) {
+        if (!_ch.chunkItems || _ch.chunkItems.length === 0 || !_ch.hasAiChunkData) {
             chunkFileInput.click(); 
             return;
         }
 
-        const newState = forceState !== null ? forceState : !isChunkMode;
-        if (newState === isChunkMode) return;
+        const newState = forceState !== null ? forceState : !_ch.isChunkMode;
+        if (newState === _ch.isChunkMode) return;
         
         // Scroll Anchoring
         let anchorRatio = 0;
         const container = document.getElementById('main-app-area');
         let anchorEl = null;
-        if (isChunkMode) {
+        if (_ch.isChunkMode) {
              anchorEl = document.querySelector('.chunk-active') || document.querySelector('.chunk-block');
         } else {
              anchorEl = document.querySelector('.sentence-active') || document.querySelector('.transcript-line');
@@ -1295,18 +1286,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             anchorRatio = (rect.top - containerRect.top);
         }
 
-        isChunkMode = newState;
-        if (!isChunkMode) {
-            lastAiPrevTapChunkIndex = -1;
-            lastAiPrevTapAt = 0;
+        _ch.isChunkMode = newState;
+        if (!_ch.isChunkMode) {
+            _ch.lastAiPrevTapChunkIndex = -1;
+            _ch.lastAiPrevTapAt = 0;
         }
-        localStorage.setItem('isChunkMode', isChunkMode);
-        toggleChunkBtn.classList.toggle('active', isChunkMode);
+        localStorage.setItem('isChunkMode', _ch.isChunkMode);
+        toggleChunkBtn.classList.toggle('active', _ch.isChunkMode);
         updateHighlightModeUI();
         closeChunkNoteContextMenu();
         closeChunkNotePopover();
         
-        if (isChunkMode) {
+        if (_ch.isChunkMode) {
             renderChunkMode();
         } else {
             renderTranscript();
@@ -1320,7 +1311,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             forceUpdateUI(audioPlayer.currentTime);
             
             let newAnchor = null;
-             if (isChunkMode) {
+             if (_ch.isChunkMode) {
                  newAnchor = document.querySelector('.chunk-active');
             } else {
                  newAnchor = document.querySelector('.sentence-active');
@@ -1335,57 +1326,57 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function setChunkCnVisible(value, persist=true) {
-        if (!isChunkMode) return;
-        chunkCnVisible = !!value;
-        if (persist) localStorage.setItem('st.chunkCnVisible', String(chunkCnVisible));
+        if (!_ch.isChunkMode) return;
+        _ch.chunkCnVisible = !!value;
+        if (persist) localStorage.setItem('st.chunkCnVisible', String(_ch.chunkCnVisible));
         const els = document.querySelectorAll('.chunk-cn');
         els.forEach(el => {
-            if (chunkCnVisible) el.classList.remove('hidden-cn');
+            if (_ch.chunkCnVisible) el.classList.remove('hidden-cn');
             else el.classList.add('hidden-cn');
         });
         bridgeToPinia();
     }
 
     function toggleChunkCn() {
-        if (!isChunkMode) return;
-        setChunkCnVisible(!chunkCnVisible, true);
+        if (!_ch.isChunkMode) return;
+        setChunkCnVisible(!_ch.chunkCnVisible, true);
     }
 
     function updateChunkCnHoldBtn() {
         const btn = document.getElementById('btn-chunk-cn-hold');
         if (!btn) return;
-        btn.classList.toggle('active', chunkCnHoldMode);
-        btn.innerText = chunkCnHoldMode ? '按住' : '持续';
+        btn.classList.toggle('active', _ch.chunkCnHoldMode);
+        btn.innerText = _ch.chunkCnHoldMode ? '按住' : '持续';
         bridgeToPinia();
     }
 
     function toggleChunkCnHoldMode() {
-        chunkCnHoldMode = !chunkCnHoldMode;
-        localStorage.setItem('st.chunkCnHoldMode', String(chunkCnHoldMode));
+        _ch.chunkCnHoldMode = !_ch.chunkCnHoldMode;
+        localStorage.setItem('st.chunkCnHoldMode', String(_ch.chunkCnHoldMode));
         updateChunkCnHoldBtn();
     }
 
     function beginHoldChunkCn() {
-        if (!isChunkMode) return;
-        if (isHoldingChunkCn) return;
-        isHoldingChunkCn = true;
-        holdPrevChunkCnVisible = chunkCnVisible;
+        if (!_ch.isChunkMode) return;
+        if (_ch.isHoldingChunkCn) return;
+        _ch.isHoldingChunkCn = true;
+        _ch.holdPrevChunkCnVisible = _ch.chunkCnVisible;
         const container = document.getElementById('transcript-container');
         holdPrevHadFocusClass = container.classList.contains('cn-mode-focus');
         // 涓存椂寮哄埗鑱氱劍锛屽彧鏄剧ず褰撳墠鍙ュ潡鐨勪腑鏂?
         if (!holdPrevHadFocusClass) container.classList.add('cn-mode-focus');
         // 涓存椂鏄剧ず涓枃锛堜笉鍐欏叆鏈湴瀛樺偍锛?
-        if (!chunkCnVisible) setChunkCnVisible(true, false);
+        if (!_ch.chunkCnVisible) setChunkCnVisible(true, false);
     }
 
     function endHoldChunkCn() {
-        if (!isChunkMode) return;
-        if (!isHoldingChunkCn) return;
-        isHoldingChunkCn = false;
+        if (!_ch.isChunkMode) return;
+        if (!_ch.isHoldingChunkCn) return;
+        _ch.isHoldingChunkCn = false;
         const container = document.getElementById('transcript-container');
         if (holdPrevHadFocusClass === false) container.classList.remove('cn-mode-focus');
-        if (holdPrevChunkCnVisible === false) setChunkCnVisible(false, false);
-        holdPrevChunkCnVisible = null;
+        if (_ch.holdPrevChunkCnVisible === false) setChunkCnVisible(false, false);
+        _ch.holdPrevChunkCnVisible = null;
         holdPrevHadFocusClass = null;
         bridgeToPinia();
     }
@@ -1396,7 +1387,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         const btn = document.getElementById('btn-chunk-focus');
         const legacyContainer = document.getElementById('transcript-container');
         const vueContainer = document.getElementById('chunk-vue-container');
-        const isFocus = chunkCnMode === 'focus';
+        const isFocus = _ch.chunkCnMode === 'focus';
         if (btn) {
             btn.innerText = isFocus ? '聚焦' : '全局';
             btn.classList.toggle('active', isFocus);
@@ -1407,18 +1398,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function toggleChunkFocusMode() {
-        if (!isChunkMode) return;
-        chunkCnMode = chunkCnMode === 'global' ? 'focus' : 'global';
-        localStorage.setItem('st.chunkCnMode', chunkCnMode);
+        if (!_ch.isChunkMode) return;
+        _ch.chunkCnMode = _ch.chunkCnMode === 'global' ? 'focus' : 'global';
+        localStorage.setItem('st.chunkCnMode', _ch.chunkCnMode);
         updateChunkFocusModeUI();
     }
 
     // Shadow Toggle Logic
     function toggleChunkShadow() {
-        isChunkShadowOn = !isChunkShadowOn;
-        localStorage.setItem('isChunkShadowOn', isChunkShadowOn);
+        _ch.isChunkShadowOn = !_ch.isChunkShadowOn;
+        localStorage.setItem('isChunkShadowOn', _ch.isChunkShadowOn);
         
-        if (isChunkShadowOn) {
+        if (_ch.isChunkShadowOn) {
             document.body.classList.remove('hide-chunk-shadow');
         } else {
             document.body.classList.add('hide-chunk-shadow');
@@ -1428,7 +1419,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     
     function updateShadowBtnText() {
         const btn = document.getElementById('btn-toggle-shadow-manual');
-        if(btn) btn.innerText = isChunkShadowOn ? "开关 S" : "开关 S";
+        if(btn) btn.innerText = _ch.isChunkShadowOn ? "开关 S" : "开关 S";
     }
     
     function toggleChunkShadowManual() {
@@ -1518,12 +1509,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (!highlightModeBtn) return;
         highlightModeBtn.textContent = txt;
         highlightModeBtn.classList.toggle('active', _tr.highlightMode !== 0);
-        document.body.classList.toggle('highlight-sentence-mode', _tr.highlightMode === 2 && !isChunkMode);
+        document.body.classList.toggle('highlight-sentence-mode', _tr.highlightMode === 2 && !_ch.isChunkMode);
     }
     updateHighlightModeUI();
 
     function findChunkIndexByTime(t) {
-        return findChunkIndexByTimeHelper(chunkItems, t);
+        return findChunkIndexByTimeHelper(_ch.chunkItems, t);
     }
 
     function swapActiveClass(nextEl, prevEl, className) {
@@ -1578,8 +1569,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({
         audioPlayer: audioPlayer,
-        isChunkMode: function () { return isChunkMode; },
-        chunkCnHoldMode: function () { return chunkCnHoldMode; },
+        isChunkMode: function () { return _ch.isChunkMode; },
+        chunkCnHoldMode: function () { return _ch.chunkCnHoldMode; },
         chunkNoteVisible: function () { return _ns.chunkNoteVisible; },
         markKey: markKey, notesKey: notesKey, annotationBubbleKey: annotationBubbleKey,
         chunkCnKey: chunkCnKey, chunkShadowKey: chunkShadowKey, chunkNoteKey: chunkNoteKey,
@@ -1628,7 +1619,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // Functions called by keyboard-module (defined here to avoid circular deps)
     function toggleCurrentNote() {
-        if (isChunkMode) return;
+        if (_ch.isChunkMode) return;
         var targetIdx = -1;
         if (_tr.currentWordIndex !== -1) {
             var w = _tr.words[_tr.currentWordIndex];
@@ -1696,8 +1687,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                     const data = JSON.parse(rawText);
                     applyImportedChunkNotes(data);
                     saveChunkNotesNow();
-                    if (hasAiChunkData) {
-                        if (!isChunkMode) toggleChunkMode(true);
+                    if (_ch.hasAiChunkData) {
+                        if (!_ch.isChunkMode) toggleChunkMode(true);
                         setChunkNoteVisible(true, true);
                         renderChunkMode();
                     }
@@ -1754,7 +1745,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         importInput: importAnnotationLightweightInput,
         getFirstFileFromEvent,
         refreshAfterImport: function () {
-            if (isChunkMode) renderChunkMode(); else renderTranscript();
+            if (_ch.isChunkMode) renderChunkMode(); else renderTranscript();
             forceUpdateUI(audioPlayer.currentTime);
         },
         showToast,
@@ -1779,7 +1770,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                     }
                 });
                 saveToDB('marks', Array.from(markedMap.values())); 
-                if(isChunkMode) renderChunkMode(); else renderTranscript();
+                if(_ch.isChunkMode) renderChunkMode(); else renderTranscript();
                 forceUpdateUI(audioPlayer.currentTime);
                 syncAnnotationGenerationEntryStatus();
                 showToast('Marks imported', 'success');
@@ -1801,7 +1792,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         validateMarksArray: validateMarksArray,
         getWords: function () { return _tr.words; }, markedMap: markedMap,
         saveToDB: saveToDB,
-        isChunkModeFn: function () { return isChunkMode; },
+        isChunkModeFn: function () { return _ch.isChunkMode; },
         renderTranscript: renderTranscript, renderChunkMode: renderChunkMode,
         forceUpdateUI: forceUpdateUI, audioPlayer: audioPlayer,
         syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,

@@ -1,4 +1,4 @@
-  // Placeholder — extracted in Phase 4
-  window.__chunkStore = {
-    // chunkItems, chunk state managed by app.js until Phase 4
-  };
+window.__chunkStore = {
+  // Compatibility placeholder. Real chunk state is owned by
+  // window.__chunkState and src/pinia-stores/chunk.js.
+};

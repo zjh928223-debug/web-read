@@ -11,7 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `app.js` - legacy central bus, still owns most runtime state and many UI handlers.
+- `app.js` - legacy central bus, still owns remaining runtime state and many UI handlers.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, and bridge from legacy globals into Pinia.
 
@@ -74,7 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1711 lines. High risk. Central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1880 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -125,6 +125,7 @@ npm run verify:sentence-notes-state  # Focused sentence note state helper check
 npm run verify:annotation-lightweight-module  # Focused annotation lightweight glue check
 npm run verify:keyboard-boundary  # Focused keyboard boundary helper check
 npm run verify:transcript-state  # Focused transcript state adapter check
+npm run verify:chunk-state  # Focused chunk state adapter check
 npm test             # Same as verify:vite
 ```
 

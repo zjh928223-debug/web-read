@@ -495,7 +495,7 @@
             text: getAnnotationGenerationBlockText(seg),
             words: Array.isArray(seg.words) ? seg.words : []
         })).filter(block => block.text);
-        const chunkBlocks = (st.hasAiChunkData && Array.isArray(chunkItems))
+        const chunkBlocks = (st.hasAiChunkData && Array.isArray(st.chunkItems))
             ? st.chunkItems.map((item, index) => ({
                 type: 'chunk',
                 index,

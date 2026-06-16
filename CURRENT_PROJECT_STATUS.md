@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1711 lines
+app.js                             legacy central runtime, about 1880 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    12 compatibility/runtime modules
+  composables/                    13 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -102,7 +102,7 @@ ToastMessage.vue                  toast UI, about 23 lines
 Current composables:
 
 ```text
-session-init.js                   about 1437 lines
+session-init.js                   about 1587 lines
 import-module.js                  about 468 lines
 notes-module.js                   about 2297 lines
 keyboard-module.js                about 359 lines
@@ -111,6 +111,7 @@ style-editor.js                   about 186 lines
 app-handlers.js                   about 88 lines
 chunk-note-layout.js              about 152 lines
 transcript-state.js               about 103 lines
+chunk-state.js                    about 161 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
 annotation-lightweight-module.js  about 76 lines
@@ -142,7 +143,7 @@ The app is still centered on `app.js`.
 Current state flow:
 
 ```text
-app.js local variables
+app.js remaining local variables and runtime state adapters
   <-> window.__state getter/setter proxy
   <-> window.__bridge snapshot sync
   <-> src/pinia-stores/*.js real Pinia stores
@@ -173,7 +174,7 @@ window.__USE_VUE_RENDERING = true
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
 
-Transcript state has started moving out of `app.js`: `src/composables/transcript-state.js` provides a startup-safe adapter, and `src/main.js` binds it to the real Pinia transcript store after bridge hydration. `window.__state` transcript fields remain as compatibility facades.
+Transcript and chunk state have started moving out of `app.js`: `src/composables/transcript-state.js` and `src/composables/chunk-state.js` provide startup-safe adapters, and `src/main.js` binds them to the real Pinia stores after bridge hydration. `window.__state` transcript and chunk fields remain as compatibility facades.
 
 ## 7. Important Runtime Behaviors
 
@@ -196,6 +197,7 @@ Transcript state has started moving out of `app.js`: `src/composables/transcript
 - Chunk data is loaded through `#chunk-file`.
 - `processChunkData(...)` is the central chunk ingestion entry.
 - `ChunkModeView.vue` renders chunk blocks.
+- Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to `src/pinia-stores/chunk.js`.
 - Chunk mode defaults are currently focus-oriented:
   - sentence highlighting by default
   - Chinese hidden unless held, depending on current state
@@ -238,6 +240,7 @@ npm run verify:playback
 npm run verify:interactions
 npm run verify:vocab-matching
 npm run verify:chunk-notes-state
+npm run verify:chunk-state
 npm test
 ```
 
@@ -266,6 +269,7 @@ scripts/chunk-notes-state-check.cjs
 scripts/sentence-notes-state-check.cjs
 scripts/annotation-lightweight-module-check.cjs
 scripts/transcript-state-check.cjs
+scripts/chunk-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -284,6 +288,7 @@ Current checks cover:
 - annotation lightweight DOM glue through `verify:annotation-lightweight-module`
 - keyboard boundary helper ownership through `verify:keyboard-boundary`
 - transcript state adapter ownership through `verify:transcript-state`
+- chunk state adapter ownership through `verify:chunk-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
@@ -335,7 +340,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns central runtime state and many global exports.
+- `app.js` still owns remaining central runtime state and many global exports.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
