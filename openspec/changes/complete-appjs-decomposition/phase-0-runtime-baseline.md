@@ -292,7 +292,7 @@ These absent/legacy IDs are risk signals, not automatic deletion candidates.
 | `chunk-note-layout-helpers.js` | root regular script plus `src/utils/chunk-note-layout-helpers.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-helpers.js` ES module | root script tag removed in task 6.5 |
 | `chunk-note-layout-core.js` | root regular script plus `src/utils/chunk-note-layout-core.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-core.js` ES module | root script tag removed in task 6.5 |
 | `annotation-bubble.js` | root regular script plus `src/composables/annotation-bubble.js` compatibility global | root script tag remains until task 6.5; `app.js` now imports the module API | `src/composables/annotation-bubble.js` ES module | root script tag removed in task 6.5 |
-| `annotation-api-settings-ui.js` | `global.AnnotationApiSettingsUI` | `src/composables/session-init.js` through `initAnnotationApiSettingsUi()` | annotation settings component/module |
+| `annotation-api-settings-ui.js` | root regular script plus `src/composables/annotation-api-settings-ui.js` compatibility global | root script tag remains until task 6.5; `session-init.js` now imports the module API | `src/composables/annotation-api-settings-ui.js` ES module | root script tag removed in task 6.5 |
 
 Build implication:
 

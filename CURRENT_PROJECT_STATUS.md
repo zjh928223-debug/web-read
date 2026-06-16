@@ -44,7 +44,7 @@ app.js                             legacy central runtime, about 1815 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
-src/main.js                        Vue mount, Pinia setup, side-effect imports, about 148 lines
+src/main.js                        Vue mount, Pinia setup, side-effect imports, about 149 lines
 src/App.vue                        root Vue component
 src/composables/session-init.js    startup restore and annotation/session glue
 ```
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    21 compatibility/runtime modules
+  composables/                    22 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -102,7 +102,7 @@ ToastMessage.vue                  toast UI, about 27 lines
 Current composables:
 
 ```text
-session-init.js                   about 1589 lines
+session-init.js                   about 1590 lines
 import-module.js                  about 544 lines
 notes-module.js                   about 2485 lines
 keyboard-module.js                about 384 lines
@@ -122,6 +122,7 @@ chunk-interactions.js             about 136 lines
 cloze-interactions.js             about 93 lines
 render-runtime.js                 about 21 lines
 annotation-bubble.js              about 369 lines
+annotation-api-settings-ui.js     about 432 lines
 annotation-lightweight-module.js  about 82 lines
 ```
 
@@ -250,7 +251,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
   - `#btn-import-annotation-lightweight`
   - `#import-annotation-lightweight-file`
 - Lightweight annotation import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
-- API settings remain through `annotation-api-settings-ui.js` and `#annotation-api-settings-panel`.
+- API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; the root script tag remains until the Phase 5 root-tag removal task.
 
 ## 8. Current Commands
 
@@ -276,6 +277,7 @@ npm run verify:script-order
 npm run verify:chunk-note-layout-helpers
 npm run verify:chunk-note-layout-core
 npm run verify:annotation-bubble
+npm run verify:annotation-api-settings-ui
 npm test
 ```
 
@@ -318,6 +320,7 @@ scripts/script-order-guard-check.cjs
 scripts/chunk-note-layout-helpers-module-check.cjs
 scripts/chunk-note-layout-core-module-check.cjs
 scripts/annotation-bubble-module-check.cjs
+scripts/annotation-api-settings-ui-module-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -353,6 +356,7 @@ Current checks cover:
 - migrated `chunk-note-layout-helpers.js` logic into `src/utils/chunk-note-layout-helpers.js` through `verify:chunk-note-layout-helpers`
 - migrated `chunk-note-layout-core.js` logic into `src/utils/chunk-note-layout-core.js` through `verify:chunk-note-layout-core`
 - migrated `annotation-bubble.js` logic into `src/composables/annotation-bubble.js` through `verify:annotation-bubble`
+- migrated `annotation-api-settings-ui.js` logic into `src/composables/annotation-api-settings-ui.js` through `verify:annotation-api-settings-ui`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

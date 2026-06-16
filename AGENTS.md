@@ -35,7 +35,7 @@ index.html
 └── /src/main.js as type="module" for Vue + Pinia
 ```
 
-`src/main.js` also imports the 11 `src/utils/*.js` modules, `src/composables/annotation-bubble.js`, and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
+`src/main.js` also imports the 11 `src/utils/*.js` modules, `src/composables/annotation-bubble.js`, `src/composables/annotation-api-settings-ui.js`, and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
 
 ## Runtime Architecture
 
@@ -135,6 +135,7 @@ npm run verify:script-order  # Focused index.html script order guard
 npm run verify:chunk-note-layout-helpers  # Focused chunk note layout helper module check
 npm run verify:chunk-note-layout-core  # Focused chunk note layout core module check
 npm run verify:annotation-bubble  # Focused annotation bubble module check
+npm run verify:annotation-api-settings-ui  # Focused annotation API settings UI module check
 npm test             # Same as verify:vite
 ```
 

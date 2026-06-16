@@ -1,4 +1,5 @@
 import { renderTranscript, renderChunkMode } from './render-runtime.js';
+import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';
 
   var st = window.__state;
   var _ns = window._ns || {};
@@ -1470,7 +1471,7 @@ import { renderTranscript, renderChunkMode } from './render-runtime.js';
             configHelper.restore();
         }
 
-        const settingsUi = window.AnnotationApiSettingsUI || null;
+        const settingsUi = getAnnotationApiSettingsUiApi();
         if (!settingsUi || typeof settingsUi.init !== 'function') return;
         settingsUi.init({
             buttonEl: annotationApiSettingsBtn,

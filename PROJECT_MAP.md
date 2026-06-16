@@ -93,6 +93,7 @@ src/
 │   ├── cloze-interactions.js     # cloze answer/card interaction binding
 │   ├── render-runtime.js         # temporary render facade runtime
 │   ├── annotation-bubble.js       # annotation bubble DOM API module
+│   ├── annotation-api-settings-ui.js # annotation API settings panel module
 │   └── annotation-lightweight-module.js
 ├── utils/
 │   ├── data-utils.js
@@ -171,6 +172,7 @@ npm run verify:script-order # Focused index.html script order guard
 npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper module check
 npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm run verify:annotation-bubble # Focused annotation bubble module check
+npm run verify:annotation-api-settings-ui # Focused annotation API settings UI module check
 npm test             # Alias for verify:vite
 ```
 
