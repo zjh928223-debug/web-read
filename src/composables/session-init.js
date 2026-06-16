@@ -1,3 +1,5 @@
+import { renderTranscript, renderChunkMode } from './render-runtime.js';
+
   var st = window.__state;
   var _ns = window._ns || {};
   var annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
@@ -134,7 +136,7 @@
                 const normalizedMark = normalizeAnnotationMark(mark);
                 if (normalizedMark) st.markedMap.set(normalizedMark.globalIndex, normalizedMark);
             });
-           if (!st.isChunkMode) window.renderTranscript();
+           if (!st.isChunkMode) renderTranscript();
            syncAnnotationGenerationEntryStatus();
            bridgeToPinia();
         }
@@ -328,7 +330,7 @@
         st.markedMap.clear();
         nextMap.forEach((value, key) => st.markedMap.set(key, value));
         saveToDB('marks', Array.from(st.markedMap.values()));
-        if (st.isChunkMode) window.renderChunkMode(); else window.renderTranscript();
+        if (st.isChunkMode) renderChunkMode(); else renderTranscript();
         forceUpdateUI(audioPlayer.currentTime);
         syncAnnotationGenerationEntryStatus();
         return { addedCount, totalCount: st.markedMap.size };

@@ -26,6 +26,7 @@
     "verify:transcript-interactions": "node scripts/transcript-interactions-check.cjs",
     "verify:chunk-interactions": "node scripts/chunk-interactions-check.cjs",
     "verify:cloze-interactions": "node scripts/cloze-interactions-check.cjs",
+    "verify:render-facades": "node scripts/render-facades-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"

@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1654 lines
+├── app.js                             # Legacy central bus, about 1838 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -91,6 +91,7 @@ src/
 │   ├── transcript-interactions.js # normal transcript word interaction binding
 │   ├── chunk-interactions.js     # AI chunk word/chunk interaction binding
 │   ├── cloze-interactions.js     # cloze answer/card interaction binding
+│   ├── render-runtime.js         # temporary render facade runtime
 │   └── annotation-lightweight-module.js
 ├── utils/
 │   ├── data-utils.js
@@ -162,6 +163,7 @@ npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
+npm run verify:render-facades # Focused legacy render facade removal check
 npm test             # Alias for verify:vite
 ```
 

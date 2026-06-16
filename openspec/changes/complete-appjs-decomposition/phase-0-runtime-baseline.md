@@ -55,8 +55,8 @@ These are the current `app.js` exports at the bottom of the file. Some names are
 | `initDB` / `saveToDB` / `loadFromDB` / `deleteFromDB` / `clearDBStore` | `window.__audioStore` wrappers in `app.js`, bridged to Pinia by `src/main.js` | `session-init.js`, `import-module.js`, `notes-module.js`, marks/app handlers | `src/pinia-stores/audio.js` or explicit storage adapter | all consumers receive storage adapter by import/injection |
 | `showToast` / `showError` | `window.__uiStore` wrappers in `app.js`, bridged to Pinia by `src/main.js` | import/app handlers, session-init, UI store compatibility | `src/pinia-stores/ui.js` | all consumers import/inject UI store or notification adapter |
 | `bridgeToPinia` | `app.js` | `import-module.js`, `session-init.js`, verification scripts | direct store updates or state owner methods | `window.__bridge` no longer needed for startup/runtime sync |
-| `renderTranscript` | `app.js` facade; Vue renders when enabled | `import-module.js`, `session-init.js`, app handlers | `TranscriptContainer.vue` plus transcript store | legacy render callers removed |
-| `renderChunkMode` | `app.js` facade; Vue renders when enabled | `import-module.js`, `session-init.js`, app handlers | `ChunkModeView.vue` plus chunk store | legacy render callers removed |
+| `renderTranscript` | `app.js` local function; `window.renderTranscript` removed in task 5.6 | `import-module.js` and `app-handlers.js` through explicit injection; `session-init.js` through `render-runtime.js` | `TranscriptContainer.vue` plus transcript store | injected render callers removed |
+| `renderChunkMode` | `app.js` local function; `window.renderChunkMode` removed in task 5.6 | `import-module.js` and `app-handlers.js` through explicit injection; `session-init.js` through `render-runtime.js` | `ChunkModeView.vue` plus chunk store | injected render callers removed |
 | `processTranscript` | `app.js` delegates to import module wrapper and updates local state | file import, session restore, verification scripts | transcript ingestion module plus transcript store | import/restore/tests no longer call `window.processTranscript` |
 | `processChunkData` | `app.js` delegates to import module wrapper and updates local chunk state | file import, session restore, verification scripts | chunk ingestion module plus chunk store | import/restore/tests no longer call `window.processChunkData` |
 | `selectSentenceFromChunkTarget` | `src/composables/notes-module.js`, re-exported by `app.js` | `chunk-interactions.js` | chunk/sentence selection module | component receives injected handler or emits event |
@@ -173,7 +173,7 @@ Task 4.9 removed active `window.__bridge` startup snapshots. `src/main.js` now s
 
 Known `bridgeToPinia()` callers:
 
-- `app.js` render facades and chunk CN toggles.
+- `app.js` local render functions and chunk CN toggles.
 - `src/composables/import-module.js` after transcript/chunk/cloze imports.
 - `src/composables/session-init.js` during startup restore.
 - verification scripts.
@@ -269,7 +269,7 @@ btn-annotation-api-settings, annotation-api-settings-panel, modal-backdrop,
 btn-load-cloze, btn-chunk-focus, chunk-vue-container
 ```
 
-Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Task 5.5 moved Vue cloze draft/check interaction out of `window.__clozeCheck` and DOM input queries into `src/composables/cloze-interactions.js`; `window.__clozeCheck` and `window.__buildClozeQuizMarkup` remain for the later legacy render facade cleanup. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
+Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Task 5.5 moved Vue cloze draft/check interaction out of `window.__clozeCheck` and DOM input queries into `src/composables/cloze-interactions.js`. Task 5.6 removed `window.renderTranscript` and `window.renderChunkMode` after `session-init.js` moved to `src/composables/render-runtime.js`; `window.__clozeCheck` and `window.__buildClozeQuizMarkup` remain for the later cloze fallback cleanup. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
 
 Legacy or absent IDs still referenced by runtime code and needing audit before deletion:
 
@@ -308,6 +308,7 @@ Build implication:
 | AI chunk mode / chunk Chinese / focus | `npm run verify:playback`, `npm run verify:interactions`, `npm test` | Required when changing chunk state, chunk rendering, or `toggleChunkMode`. |
 | Chunk note interactions | `npm run verify:interactions`, browser smoke check | Covers right-click, save, underline, connectors, delete prompt. Manual browser check recommended after subsystem moves. |
 | Cloze rendering/checking | `npm run verify:cloze-interactions`, `npm run verify:interactions`, `npm test` | Required when changing cloze state, view model, or answer interaction. |
+| Legacy render facades | `npm run verify:render-facades`, `npm test`, `npm run build` | Required when removing render globals or changing temporary render runtime wiring. |
 | Hotkeys / keyboard handling | `npm run verify:keyboard-boundary`, `npm run verify:interactions`, `npm run verify:playback` if navigation affected | Required for `keyboard-module.js` or key state ownership changes. |
 | Session restore / persisted cleanup | `npm test`, targeted browser smoke check | Existing automated coverage is partial; document manual checks if session code changes. |
 | Annotation lightweight import/export | `npm run verify:annotation-lightweight-module`, `npm run verify:interactions`, `npm test` | Required when changing import/export glue or annotation session scope. |

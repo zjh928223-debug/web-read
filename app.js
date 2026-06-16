@@ -15,6 +15,7 @@
     import './src/composables/annotation-lightweight-module.js';
     import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
     import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
+    import { configureRenderRuntime } from './src/composables/render-runtime.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -947,6 +948,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         tryRestoreChunkNoteDraft();
     }
 
+    configureRenderRuntime({
+        renderTranscript: renderTranscript,
+        renderChunkMode: renderChunkMode
+    });
+
     function getChunkNotesForRef(chunkRef) {
         return _cnApi.getChunkNotesForRef(chunkRef);
     }
@@ -1809,7 +1815,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
     window.showToast = showToast; window.showError = showError;
     window.bridgeToPinia = bridgeToPinia;
-    window.renderTranscript = renderTranscript; window.renderChunkMode = renderChunkMode;
     window.processTranscript = processTranscript;
     window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
     window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
