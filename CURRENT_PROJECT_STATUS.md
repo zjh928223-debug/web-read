@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1826 lines
+app.js                             legacy central runtime, about 1823 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    15 compatibility/runtime modules
+  composables/                    17 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -91,7 +91,7 @@ Current Vue components:
 
 ```text
 ChunkModeView.vue                 AI chunk rendering, about 158 lines
-TranscriptContainer.vue           normal transcript rendering, about 97 lines
+TranscriptContainer.vue           normal transcript rendering, about 89 lines
 ClozeCard.vue                     cloze card UI, about 74 lines
 ClozeQuizView.vue                 cloze quiz list, about 45 lines
 ToastMessage.vue                  toast UI, about 23 lines
@@ -116,6 +116,8 @@ cloze-state.js                    about 109 lines
 playback-state.js                 about 85 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
+file-input-bindings.js            about 22 lines
+transcript-interactions.js        about 111 lines
 annotation-lightweight-module.js  about 76 lines
 ```
 
@@ -186,6 +188,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Transcript JSON is loaded through `#transcript-file`.
 - `processTranscript(...)` remains a central entry for transcript ingestion.
 - Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
+- Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `app.js` only configures temporary runtime dependencies.
 
 ### Playback Highlighting and Follow
 
@@ -257,6 +260,7 @@ npm run verify:playback-state
 npm run verify:state-facades
 npm run verify:bridge-startup
 npm run verify:file-input-bindings
+npm run verify:transcript-interactions
 npm test
 ```
 
@@ -291,6 +295,7 @@ scripts/playback-state-check.cjs
 scripts/state-facade-owner-check.cjs
 scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
+scripts/transcript-interactions-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -317,6 +322,7 @@ Current checks cover:
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
+- migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

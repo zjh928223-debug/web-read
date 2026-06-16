@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1826 lines
+├── app.js                             # Legacy central bus, about 1823 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -88,6 +88,7 @@ src/
 │   ├── glass-effects.js
 │   ├── controls-module.js
 │   ├── file-input-bindings.js   # file picker DOM binding
+│   ├── transcript-interactions.js # normal transcript word interaction binding
 │   └── annotation-lightweight-module.js
 ├── utils/
 │   ├── data-utils.js
@@ -156,6 +157,7 @@ npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
+npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm test             # Alias for verify:vite
 ```
 

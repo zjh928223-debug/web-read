@@ -32,6 +32,7 @@
 import { computed } from 'vue'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
+import { handleTranscriptWordClick, handleTranscriptWordContextMenu } from '../composables/transcript-interactions.js'
 
 export default {
   name: 'TranscriptContainer',
@@ -71,30 +72,11 @@ export default {
     }
 
     function onWordClick(word, event) {
-      // Keep legacy current-word behavior available for marking shortcuts.
-      if (word.globalIndex != null) {
-        ts.currentWordIndex = word.globalIndex
-      }
-      var start = Number(word && word.start)
-      if (Number.isFinite(start)) {
-        var audio = document.getElementById('audio-player')
-        if (audio) audio.currentTime = start
-        if (typeof window.forceUpdateUI === 'function') {
-          window.forceUpdateUI(start)
-        }
-      }
-      if (event && event.currentTarget && typeof window.notifyAnnotationBubbleWordClick === 'function') {
-        window.notifyAnnotationBubbleWordClick(event.currentTarget)
-      }
+      handleTranscriptWordClick({ word: word, event: event, transcriptStore: ts })
     }
 
     function onWordContextMenu(word, event) {
-      if (!event || !event.currentTarget || typeof window.notifyAnnotationBubbleWordClick !== 'function') return
-      var opened = window.notifyAnnotationBubbleWordClick(event.currentTarget, { forceShow: true })
-      if (opened) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
+      handleTranscriptWordContextMenu({ word: word, event: event })
     }
 
     const chunkModeActive = computed(function () {

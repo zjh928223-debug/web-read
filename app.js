@@ -13,6 +13,7 @@
     import './src/composables/cloze-state.js';
     import './src/composables/playback-state.js';
     import './src/composables/annotation-lightweight-module.js';
+    import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -1099,20 +1100,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return false;
     }
 
-    transcriptContainer.addEventListener('click', (event) => {
-        const span = event.target && event.target.closest ? event.target.closest('span[data-word-start]') : null;
-        if (!span || !transcriptContainer.contains(span)) return;
-        const start = Number(span.dataset.wordStart);
-        if (!Number.isFinite(start)) return;
-        if (_ch.isChunkMode && hasActiveTextSelectionWithinChunk()) return;
-        audioPlayer.currentTime = start;
-        forceUpdateUI(start);
-        if (_ch.isChunkMode) {
-            try { selectSentenceFromChunkTarget(span); } catch (err) {}
-        }
-        notifyAnnotationBubbleWordClick(span);
-    }, true);
-
     function selectSentenceFromChunkTarget(target) {
         return _snApi.selectSentenceFromChunkTarget(target);
     }
@@ -1511,6 +1498,16 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     var toggleAnnotationBubble = window.toggleAnnotationBubble;
     var handleBackwardClick = window.handleBackwardClick;
     var handleForwardClick = window.handleForwardClick;
+
+    configureTranscriptInteractions({
+        getAudioPlayer: function () { return audioPlayer; },
+        forceUpdateUI: forceUpdateUI,
+        notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
+        isChunkMode: function () { return _ch.isChunkMode; },
+        hasActiveTextSelectionWithinChunk: hasActiveTextSelectionWithinChunk,
+        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        legacyTranscriptContainer: transcriptContainer
+    });
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({

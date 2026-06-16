@@ -65,6 +65,7 @@ npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
+npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm test             # Same as verify:vite
 ```
 
@@ -101,7 +102,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 16 moduleized legacy behavior chunks
+├── composables/               # 17 moduleized legacy behavior chunks
 ├── utils/                     # 9 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```

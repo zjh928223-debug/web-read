@@ -48,7 +48,7 @@
 
 - [x] 5.1 Move one inline handler at a time from `index.html` to Vue component events or a centralized DOM bindings module.
 - [x] 5.2 Replace legacy `getElementById` wiring in `app.js` with explicit module or component ownership for the same controls.
-- [ ] 5.3 Move normal transcript interaction ownership into `TranscriptContainer.vue` and its store/module dependencies.
+- [x] 5.3 Move normal transcript interaction ownership into `TranscriptContainer.vue` and its store/module dependencies.
 - [ ] 5.4 Move AI chunk interaction ownership into `ChunkModeView.vue` and its store/module dependencies.
 - [ ] 5.5 Move cloze interaction ownership into `ClozeQuizView.vue` / `ClozeCard.vue` and cloze store/module dependencies.
 - [ ] 5.6 Remove legacy render facades only after no caller depends on them.
