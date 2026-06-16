@@ -36,8 +36,8 @@ These are the current `app.js` exports at the bottom of the file. Some names are
 
 | Export | Current owner | Known consumers | Target owner | Removal condition |
 | --- | --- | --- | --- | --- |
-| `handleBackwardClick` | `src/composables/playback-module.js`, re-exported by `app.js` | `index.html`, `keyboard-module.js`, `app-handlers.js`, playback verification | `playback-module.js` or Vue control binding | `index.html` and tests stop calling `window.handleBackwardClick` directly |
-| `handleForwardClick` | `src/composables/playback-module.js`, re-exported by `app.js` | `index.html`, `keyboard-module.js`, `app-handlers.js`, playback verification | `playback-module.js` or Vue control binding | direct `window` and inline callers removed |
+| `handleBackwardClick` | `src/composables/playback-module.js`, re-exported by `app.js` | `index.html`, `keyboard-module.js`, playback verification | `playback-module.js` or Vue control binding | `index.html` and tests stop calling `window.handleBackwardClick` directly |
+| `handleForwardClick` | `src/composables/playback-module.js`, re-exported by `app.js` | `index.html`, `keyboard-module.js`, playback verification | `playback-module.js` or Vue control binding | direct `window` and inline callers removed |
 | `changeSpeed` | `src/composables/controls-module.js`, re-exported by `app.js` | `index.html` speed buttons | Vue/audio controls module | speed buttons no longer use inline `onclick` |
 | `cycleHighlightMode` | `app.js` | `index.html`, interaction verification | transcript/playback state owner plus Vue control binding | highlight control no longer calls `window.cycleHighlightMode` |
 | `toggleChunkMode` | `app.js` | `index.html`, `session-init.js`, verification scripts | chunk store/runtime module | chunk mode control and restore path use explicit module API |
@@ -59,18 +59,18 @@ These are the current `app.js` exports at the bottom of the file. Some names are
 | `renderChunkMode` | `app.js` facade; Vue renders when enabled | `import-module.js`, `session-init.js`, app handlers | `ChunkModeView.vue` plus chunk store | legacy render callers removed |
 | `processTranscript` | `app.js` delegates to import module wrapper and updates local state | file import, session restore, verification scripts | transcript ingestion module plus transcript store | import/restore/tests no longer call `window.processTranscript` |
 | `processChunkData` | `app.js` delegates to import module wrapper and updates local chunk state | file import, session restore, verification scripts | chunk ingestion module plus chunk store | import/restore/tests no longer call `window.processChunkData` |
-| `selectSentenceFromChunkTarget` | `app.js` | `ChunkModeView.vue` | chunk/sentence selection module | component receives injected handler or emits event |
-| `openChunkNoteContextFromEvent` | `app.js` | `ChunkModeView.vue` | chunk note subsystem | component no longer calls `window.openChunkNoteContextFromEvent` |
+| `selectSentenceFromChunkTarget` | `src/composables/notes-module.js`, re-exported by `app.js` | `ChunkModeView.vue` | chunk/sentence selection module | component receives injected handler or emits event |
+| `openChunkNoteContextFromEvent` | `src/composables/notes-module.js`, re-exported by `app.js` | `ChunkModeView.vue` | chunk note subsystem | component no longer calls `window.openChunkNoteContextFromEvent` |
 | `notifyAnnotationBubbleWordClick` | `app.js` | `TranscriptContainer.vue`, `ChunkModeView.vue`, interaction verification | annotation bubble/click resolver module | components no longer call `window.notifyAnnotationBubbleWordClick` |
-| `isInputLikeTarget` | `app.js` | `keyboard-module.js`, `app-handlers.js` | shared DOM/event utility | modules import utility directly |
+| `isInputLikeTarget` | `src/composables/keyboard-module.js`, re-exported by `app.js` | legacy `window.isInputLikeTarget` compatibility only | keyboard module utility | no callers use `window.isInputLikeTarget` |
 | `adjustChunkNoteArrowSizeByGap` | `app.js` | `style-editor.js`, `session-init.js` | chunk note style/layout subsystem | callers use chunk note style API |
 | `getAnnotationGenerationScope` | `app.js` facade over session-init hook | `import-module.js`, `session-init.js` | annotation/session scope module | import/session code uses module API directly |
 | `buildCurrentSentenceDocId` | `app.js` wrapper over `IdentityStorageKeys` | `import-module.js`, `notes-module.js`, `session-init.js` | identity/storage key utility | consumers import/inject utility directly |
 | `clearGeneratedAnnotationIndex` | `app.js` facade over session-init hook | `import-module.js`, `session-init.js` | annotation session module | import/session code uses module API directly |
-| `loadChunkNotesForCurrentAudio` | `app.js` wrapper over `notes-module.js` API | `import-module.js`, `session-init.js` | chunk note subsystem | consumers import/inject chunk note API |
-| `setChunkNoteVisible` | `app.js` wrapper over `notes-module.js` API | `app-handlers.js`, `keyboard-module.js`, `session-init.js` | chunk note subsystem/store | controls and keyboard receive subsystem API |
-| `loadSentenceNotesForCurrentAudio` | `app.js` wrapper over `notes-module.js` API | `session-init.js` | sentence note subsystem | session restore uses subsystem API directly |
-| `switchSentenceNotesDoc` | `app.js` wrapper over `notes-module.js` API | `import-module.js`, `session-init.js` | sentence note subsystem | transcript import/restore use subsystem API directly |
+| `loadChunkNotesForCurrentAudio` | `src/composables/notes-module.js`, re-exported by `app.js` | `import-module.js`, `session-init.js` | chunk note subsystem | consumers import/inject chunk note API |
+| `setChunkNoteVisible` | `src/composables/notes-module.js`, re-exported by `app.js` | `keyboard-module.js`, `session-init.js` | chunk note subsystem/store | controls and keyboard receive subsystem API |
+| `loadSentenceNotesForCurrentAudio` | `src/composables/notes-module.js`, re-exported by `app.js` | `session-init.js` | sentence note subsystem | session restore uses subsystem API directly |
+| `switchSentenceNotesDoc` | `src/composables/notes-module.js`, re-exported by `app.js` | `import-module.js`, `session-init.js` | sentence note subsystem | transcript import/restore use subsystem API directly |
 | `applyCurrentAudioMeta` | `app.js` | `import-module.js`, `session-init.js` | audio/session identity module or audio store | audio import/restore update canonical owner directly |
 | `clearPersistedChunkSession` | `app.js` facade over session-init hook | `import-module.js`, `session-init.js` | session cleanup module | import/session code uses module API directly |
 | `emitAnnotationDiagnostics` | `app.js` facade over session-init hook | `import-module.js`, `session-init.js` | annotation diagnostics module | callers use diagnostics API directly |
@@ -79,7 +79,7 @@ These are the current `app.js` exports at the bottom of the file. Some names are
 | `initAnnotationApiSettingsUi` | `app.js` facade over session-init hook | session-init startup path | annotation API settings UI module | startup initializes module directly |
 | `updateChunkCnHoldBtn` | `app.js` | `session-init.js` | chunk controls module or Vue button state | button label state owned outside `app.js` |
 
-Additional globals assigned by composables/services are outside `app.js` final export block but remain part of the compatibility surface, for example `window.__keyboardModule`, `window.__importModule`, `window.PlaybackIndexHelpers`, `window.ChunkMatchingHelpers`, `window.VocabMatchingHelpers`, `window.AnnotationGenerationController`, and annotation service globals.
+Additional globals assigned by composables/services are outside `app.js` final export block but remain part of the compatibility surface, for example `window.__keyboardModule`, `window.__importModule`, `window.__annotationLightweightModule`, `window.PlaybackIndexHelpers`, `window.ChunkMatchingHelpers`, `window.VocabMatchingHelpers`, `window.AnnotationGenerationController`, and annotation service globals.
 
 ## 2. window.__state Map
 
@@ -217,6 +217,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.7 src/composables/keyboard-module.js
    4.8 src/composables/playback-module.js
    4.9 src/composables/controls-module.js
+   4.10 src/composables/annotation-lightweight-module.js
 5. app.js
 6. src/composables/session-init.js
 7. /src/main.js
@@ -301,9 +302,9 @@ Build implication:
 | AI chunk mode / chunk Chinese / focus | `npm run verify:playback`, `npm run verify:interactions`, `npm test` | Required when changing chunk state, chunk rendering, or `toggleChunkMode`. |
 | Chunk note interactions | `npm run verify:interactions`, browser smoke check | Covers right-click, save, underline, connectors, delete prompt. Manual browser check recommended after subsystem moves. |
 | Cloze rendering/checking | `npm run verify:interactions`, `npm test` | Required when changing cloze state or view model. |
-| Hotkeys / keyboard handling | `npm run verify:interactions`, `npm run verify:playback` if navigation affected | Required for `keyboard-module.js` or key state ownership changes. |
+| Hotkeys / keyboard handling | `npm run verify:keyboard-boundary`, `npm run verify:interactions`, `npm run verify:playback` if navigation affected | Required for `keyboard-module.js` or key state ownership changes. |
 | Session restore / persisted cleanup | `npm test`, targeted browser smoke check | Existing automated coverage is partial; document manual checks if session code changes. |
-| Annotation lightweight import/export | `npm run verify:interactions`, `npm test` | Required when changing import/export glue or annotation session scope. |
+| Annotation lightweight import/export | `npm run verify:annotation-lightweight-module`, `npm run verify:interactions`, `npm test` | Required when changing import/export glue or annotation session scope. |
 | Root regular scripts / production build | `npm run build`, `npm test`, production preview/load check | Required before deleting script tags or `vite.config.js` copy logic. |
 | Documentation-only Phase 0 updates | `npm test`, `npm run build` baseline | Establishes current clean baseline before behavioral migration. |
 
