@@ -269,7 +269,7 @@ btn-annotation-api-settings, annotation-api-settings-panel, modal-backdrop,
 btn-load-cloze, btn-chunk-focus, chunk-vue-container
 ```
 
-Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
+Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Task 5.5 moved Vue cloze draft/check interaction out of `window.__clozeCheck` and DOM input queries into `src/composables/cloze-interactions.js`; `window.__clozeCheck` and `window.__buildClozeQuizMarkup` remain for the later legacy render facade cleanup. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
 
 Legacy or absent IDs still referenced by runtime code and needing audit before deletion:
 
@@ -307,7 +307,7 @@ Build implication:
 | Playback highlight / seek / follow | `npm run verify:playback`, `npm test` | Also run when changing `forceUpdateUI`, `mainUpdateHighlight`, index helpers, or follow suppression. |
 | AI chunk mode / chunk Chinese / focus | `npm run verify:playback`, `npm run verify:interactions`, `npm test` | Required when changing chunk state, chunk rendering, or `toggleChunkMode`. |
 | Chunk note interactions | `npm run verify:interactions`, browser smoke check | Covers right-click, save, underline, connectors, delete prompt. Manual browser check recommended after subsystem moves. |
-| Cloze rendering/checking | `npm run verify:interactions`, `npm test` | Required when changing cloze state or view model. |
+| Cloze rendering/checking | `npm run verify:cloze-interactions`, `npm run verify:interactions`, `npm test` | Required when changing cloze state, view model, or answer interaction. |
 | Hotkeys / keyboard handling | `npm run verify:keyboard-boundary`, `npm run verify:interactions`, `npm run verify:playback` if navigation affected | Required for `keyboard-module.js` or key state ownership changes. |
 | Session restore / persisted cleanup | `npm test`, targeted browser smoke check | Existing automated coverage is partial; document manual checks if session code changes. |
 | Annotation lightweight import/export | `npm run verify:annotation-lightweight-module`, `npm run verify:interactions`, `npm test` | Required when changing import/export glue or annotation session scope. |

@@ -40,11 +40,11 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1833 lines
+app.js                             legacy central runtime, about 1654 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
-src/main.js                        Vue mount, Pinia setup, side-effect imports, about 145 lines
+src/main.js                        Vue mount, Pinia setup, side-effect imports, about 131 lines
 src/App.vue                        root Vue component
 src/composables/session-init.js    startup restore and annotation/session glue
 ```
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    18 compatibility/runtime modules
+  composables/                    19 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -90,10 +90,10 @@ src/
 Current Vue components:
 
 ```text
-ChunkModeView.vue                 AI chunk rendering, about 126 lines
-TranscriptContainer.vue           normal transcript rendering, about 89 lines
-ClozeCard.vue                     cloze card UI, about 74 lines
-ClozeQuizView.vue                 cloze quiz list, about 45 lines
+ChunkModeView.vue                 AI chunk rendering, about 113 lines
+TranscriptContainer.vue           normal transcript rendering, about 79 lines
+ClozeCard.vue                     cloze card UI, about 61 lines
+ClozeQuizView.vue                 cloze quiz list, about 41 lines
 ToastMessage.vue                  toast UI, about 23 lines
 ```
 
@@ -102,23 +102,24 @@ ToastMessage.vue                  toast UI, about 23 lines
 Current composables:
 
 ```text
-session-init.js                   about 1587 lines
-import-module.js                  about 540 lines
-notes-module.js                   about 2485 lines
+session-init.js                   about 1437 lines
+import-module.js                  about 477 lines
+notes-module.js                   about 2344 lines
 keyboard-module.js                about 359 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
-app-handlers.js                   about 88 lines
+app-handlers.js                   about 94 lines
 chunk-note-layout.js              about 152 lines
 transcript-state.js               about 103 lines
-chunk-state.js                    about 161 lines
-cloze-state.js                    about 109 lines
-playback-state.js                 about 85 lines
+chunk-state.js                    about 146 lines
+cloze-state.js                    about 95 lines
+playback-state.js                 about 77 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
-file-input-bindings.js            about 22 lines
-transcript-interactions.js        about 111 lines
-chunk-interactions.js             about 136 lines
+file-input-bindings.js            about 19 lines
+transcript-interactions.js        about 100 lines
+chunk-interactions.js             about 115 lines
+cloze-interactions.js             about 78 lines
 annotation-lightweight-module.js  about 76 lines
 ```
 
@@ -215,8 +216,10 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Cloze data is loaded through `#cloze-file`.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to `src/pinia-stores/cloze.js`.
-- `src/composables/import-module.js` still owns cloze import/check orchestration through the `window.__state` compatibility facade.
-- `ClozeQuizView.vue` and `ClozeCard.vue` render and edit cloze state from Pinia.
+- `src/composables/import-module.js` still owns cloze import and legacy render/check facades through the `window.__state` compatibility facade.
+- `ClozeQuizView.vue` builds cards and checks answers through `src/composables/cloze-interactions.js` against the cloze Pinia store.
+- `ClozeCard.vue` updates draft answers through `src/composables/cloze-interactions.js` and no longer queries DOM input state on check.
+- The legacy `window.__clozeCheck` facade remains for the non-Vue fallback path, but its answer-state check now reuses the same cloze interaction helper.
 
 ### Chunk Notes
 
@@ -264,6 +267,7 @@ npm run verify:bridge-startup
 npm run verify:file-input-bindings
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
+npm run verify:cloze-interactions
 npm test
 ```
 
@@ -300,6 +304,7 @@ scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
+scripts/cloze-interactions-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -328,6 +333,7 @@ Current checks cover:
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
+- migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

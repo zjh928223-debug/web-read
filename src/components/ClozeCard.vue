@@ -34,6 +34,7 @@
 <script>
 import { computed } from 'vue'
 import { useClozeStore } from '../pinia-stores/cloze.js'
+import { updateClozeDraftAnswer } from '../composables/cloze-interactions.js'
 
 export default {
   name: 'ClozeCard',
@@ -55,24 +56,10 @@ export default {
     }
 
     function onInput(e) {
-      var state = cloze.answerState || []
-      if (!state[props.index]) {
-        state[props.index] = { checked: false, correct: false, userAnswer: '' }
-      }
-      state[props.index].userAnswer = e.target.value
-      cloze.answerState = state.slice()
+      updateClozeDraftAnswer(cloze, props.index, e.target.value)
     }
 
     function onCheck() {
-      var input = document.querySelector('[data-cloze-input="' + props.index + '"]')
-      if (input) {
-        var state = cloze.answerState || []
-        if (!state[props.index]) {
-          state[props.index] = { checked: false, correct: false, userAnswer: '' }
-        }
-        state[props.index].userAnswer = input.value
-        cloze.answerState = state.slice()
-      }
       emit('check', props.index)
     }
 

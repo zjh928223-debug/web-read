@@ -1,3 +1,5 @@
+import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interactions.js';
+
   // === M5: AI chunk alignment/matching pipeline ===
   function initChunkPipeline(deps) {
     var state = deps.state;
@@ -451,7 +453,7 @@
     function setClozeData(items) {
         state.clozeItems = Array.isArray(items) ? items : [];
         state.hasClozeData = state.clozeItems.length > 0;
-        state.clozeAnswerState = window.createInitialClozeAnswerState(state.clozeItems);
+        state.clozeAnswerState = createClozeAnswerState(state.clozeItems);
         window.__clozeItems = state.clozeItems;
         window.__clozeAnswerState = state.clozeAnswerState;
         window.__hasClozeData = state.hasClozeData;
@@ -483,12 +485,14 @@
         if (!item) return;
         var input = document.querySelector('[data-cloze-input="' + index + '"]');
         var userAnswer = input ? input.value : '';
-        var correct = window.normalizeClozeAnswer(userAnswer) === window.normalizeClozeAnswer(item.targetWord);
-        state.clozeAnswerState[index] = {
-            checked: true,
-            correct: correct,
+        var result = checkClozeAnswerState({
+            items: state.clozeItems,
+            answerState: state.clozeAnswerState,
+            index: index,
             userAnswer: userAnswer
-        };
+        });
+        if (!result) return;
+        state.clozeAnswerState = result.answerState;
         window.__clozeAnswerState = state.clozeAnswerState;
         bridgeToPinia();
         if (!window.__USE_VUE_RENDERING) {

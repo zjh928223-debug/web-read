@@ -20,6 +20,7 @@
 import { computed } from 'vue'
 import { useClozeStore } from '../pinia-stores/cloze.js'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
+import { buildClozeCards, checkClozeStoreAnswer } from '../composables/cloze-interactions.js'
 import ClozeCard from './ClozeCard.vue'
 
 export default {
@@ -32,16 +33,11 @@ export default {
     const cardList = computed(function () {
       var items = cloze.items
       var state = cloze.answerState
-      if (!items || !items.length) return []
-      if (window.ClozeViewModelHelpers && window.ClozeViewModelHelpers.buildClozeQuizViewModel) {
-        var vm = window.ClozeViewModelHelpers.buildClozeQuizViewModel(items, state)
-        return vm.cards || []
-      }
-      return []
+      return buildClozeCards(items, state)
     })
 
     function onCheck(index) {
-      if (window.__clozeCheck) window.__clozeCheck(index)
+      checkClozeStoreAnswer(cloze, index)
     }
 
     return { cloze, ts, cardList, onCheck }
