@@ -313,6 +313,7 @@ Current checks cover:
 - migrated `window.__state` owner facades through `verify:state-facades`
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
+- Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
