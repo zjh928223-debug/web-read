@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    23 compatibility/runtime modules
+  composables/                    24 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,6 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
+session-state-provider.js         about 15 lines
 import-module.js                  about 544 lines
 notes-module.js                   about 2485 lines
 keyboard-module.js                about 384 lines
@@ -178,7 +179,7 @@ window.__USE_VUE_RENDERING = true
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
 
-Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades.
+Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades, but controls/playback/session-init now receive state through explicit deps/provider instead of direct global reads.
 
 ## 7. Important Runtime Behaviors
 
@@ -190,6 +191,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
 - Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `app.js` only configures temporary runtime dependencies.
 - `window.renderTranscript` and `window.renderChunkMode` have been removed. `session-init.js` now reaches the temporary render boundary through `src/composables/render-runtime.js`.
+- `session-init.js` now reaches the temporary state boundary through `src/composables/session-state-provider.js`.
 
 ### Playback Highlighting and Follow
 
@@ -215,7 +217,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Cloze data is loaded through `#cloze-file`.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to `src/pinia-stores/cloze.js`.
-- `src/composables/import-module.js` still owns cloze import and legacy render/check facades through the `window.__state` compatibility facade.
+- `src/composables/import-module.js` still owns cloze import and legacy render/check facades through the app-injected state compatibility facade.
 - `ClozeQuizView.vue` builds cards and checks answers through `src/composables/cloze-interactions.js` against the cloze Pinia store.
 - `ClozeCard.vue` updates draft answers through `src/composables/cloze-interactions.js` and no longer queries DOM input state on check.
 - The legacy `window.__clozeCheck` facade remains for the non-Vue fallback path, but its answer-state check now reuses the same cloze interaction helper.
@@ -266,6 +268,7 @@ npm run verify:bridge-startup
 npm run verify:file-input-bindings
 npm run verify:inline-handler-bindings
 npm run verify:control-playback-state-deps
+npm run verify:session-state-provider
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -313,6 +316,7 @@ scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
 scripts/inline-handler-bindings-check.cjs
 scripts/control-playback-state-deps-check.cjs
+scripts/session-state-provider-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -352,6 +356,7 @@ Current checks cover:
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
 - removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
 - removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
+- removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

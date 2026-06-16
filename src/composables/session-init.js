@@ -1,7 +1,8 @@
 import { renderTranscript, renderChunkMode } from './render-runtime.js';
 import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';
+import { getSessionState } from './session-state-provider.js';
 
-  var st = window.__state;
+  var st = getSessionState();
   var _ns = window._ns || {};
   var annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
   var annotationApiSettingsPanel = document.getElementById('annotation-api-settings-panel');

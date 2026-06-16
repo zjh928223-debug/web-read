@@ -19,6 +19,7 @@
     import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
     import { configureRenderRuntime } from './src/composables/render-runtime.js';
     import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';
+    import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -701,6 +702,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
     }
     window.__state = {};
+    configureSessionStateProvider(window.__state);
     // chunkNoteModalEl: use independent storage to avoid let TDZ
     var __chunkNoteModalEl = null;
     Object.defineProperty(window.__state, 'chunkNoteModalEl', { get: function() { return __chunkNoteModalEl; }, set: function(v) { __chunkNoteModalEl = v; }, enumerable: true, configurable: true });
