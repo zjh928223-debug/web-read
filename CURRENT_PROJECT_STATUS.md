@@ -1,0 +1,345 @@
+# Read-Web Current Project Status
+
+Last scanned: 2026-06-15
+
+This document records the current state of the `E:\read-web` project from the actual file tree and entry files. It should be treated as the primary current-status document when it conflicts with older migration notes.
+
+## 1. What This Project Is
+
+Read-Web is a browser-based language reading tool currently hosted by Vite. It is a migration from a legacy single-page HTML/JavaScript reader into a Vue 3 + Pinia structure.
+
+The project is not a clean Vue-only app yet. It is a working hybrid:
+
+```text
+index.html legacy DOM shell
+  -> root regular scripts
+  -> compatibility ES modules under src/stores and src/composables
+  -> app.js legacy central runtime
+  -> session-init.js startup and annotation glue
+  -> src/main.js Vue + Pinia mount
+```
+
+Current user-facing features include:
+
+- audio file loading and playback
+- synchronized transcript reading
+- sentence and word highlighting
+- page-style auto-follow during playback
+- custom hotkeys
+- mark import/export
+- AI chunk reading mode
+- chunk Chinese display modes
+- chunk note bubbles with selection annotations and connector lines
+- cloze quiz rendering
+- lightweight annotation template export/import
+- annotation API settings UI
+
+## 2. Current Entry Points
+
+Top-level runtime files:
+
+```text
+index.html                         browser entry and legacy DOM shell
+app.js                             legacy central runtime, about 3175 lines
+styles.css                         global styles, about 2322 lines
+vite.config.js                     Vite + Vue config, copies root legacy scripts
+package.json                       scripts and dependencies
+src/main.js                        Vue mount, Pinia setup, side-effect imports
+src/App.vue                        root Vue component
+src/composables/session-init.js    startup restore and annotation/session glue
+```
+
+There is no `read-26.html` in the current project root. Any reference to `read-26.html` is legacy context from the source project, not the current web app entry.
+
+## 3. Browser Load Order
+
+`index.html` currently loads these scripts in this order:
+
+```text
+1. External Google CSE script
+2. 4 root regular scripts
+   - chunk-note-layout-helpers.js
+   - chunk-note-layout-core.js
+   - annotation-bubble.js
+   - annotation-api-settings-ui.js
+3. 9 compatibility store modules under src/stores/
+4. 9 compatibility behavior modules under src/composables/
+5. app.js as an ES module
+6. src/composables/session-init.js as an ES module
+7. /src/main.js as the Vue + Pinia entry
+```
+
+Do not casually reorder these scripts. The app still depends on global side effects and `window.*` exports.
+
+## 4. Current Source Layout
+
+Actual `src/` counts from the current file tree:
+
+```text
+src/
+  App.vue                         1 root Vue component
+  main.js                         1 Vue/Pinia bootstrap module
+  components/                     5 Vue components
+  composables/                    10 compatibility/runtime modules
+  pinia-stores/                   9 real Pinia stores
+  stores/                         9 compatibility window stores
+  utils/                          8 utility modules
+  services/annotation/            14 annotation pipeline modules
+```
+
+Current Vue components:
+
+```text
+ChunkModeView.vue                 AI chunk rendering, about 158 lines
+TranscriptContainer.vue           normal transcript rendering, about 97 lines
+ClozeCard.vue                     cloze card UI, about 74 lines
+ClozeQuizView.vue                 cloze quiz list, about 45 lines
+ToastMessage.vue                  toast UI, about 23 lines
+```
+
+`SentenceNoteSidebar.vue` has been removed from the current tree.
+
+Current composables:
+
+```text
+session-init.js                   about 1437 lines
+import-module.js                  about 468 lines
+notes-module.js                   about 375 lines
+keyboard-module.js                about 346 lines
+playback-module.js                about 224 lines
+style-editor.js                   about 186 lines
+app-handlers.js                   about 170 lines
+chunk-note-layout.js              about 152 lines
+glass-effects.js                  about 85 lines
+controls-module.js                about 58 lines
+```
+
+Current annotation service modules:
+
+```text
+controller.js                     about 1500 lines
+api-client.js                     about 732 lines
+api-config.js                     about 483 lines
+target-source.js                  about 350 lines
+run-diagnostics.js                about 306 lines
+block-planner.js                  about 289 lines
+storage.js                        about 238 lines
+click-resolver.js                 about 190 lines
+result-store.js                   about 191 lines
+diagnostics-records.js            about 151 lines
+diagnostics.js                    about 145 lines
+prompt-builder.js                 about 147 lines
+progress-store.js                 about 109 lines
+diff.js                           about 38 lines
+```
+
+## 5. Runtime Architecture
+
+The app is still centered on `app.js`.
+
+Current state flow:
+
+```text
+app.js local variables
+  <-> window.__state getter/setter proxy
+  <-> window.__bridge snapshot sync
+  <-> src/pinia-stores/*.js real Pinia stores
+  <-> Vue components
+```
+
+There are two store layers:
+
+- `src/pinia-stores/`: real Pinia stores used by Vue components.
+- `src/stores/`: compatibility modules that attach objects such as `window.__themeStore`, `window.__audioStore`, `window.__uiStore`, and similar globals.
+
+`src/main.js` imports utilities and annotation services for side effects, creates the Pinia app, then replaces selected compatibility store methods with Pinia-backed methods.
+
+## 6. Rendering State
+
+`app.js` initializes:
+
+```js
+window.__USE_VUE_RENDERING = true
+```
+
+`src/main.js` then mirrors the render flag into the transcript Pinia store and applies the legacy/Vue container display mode. The Vue components are active, but many interactions still rely on:
+
+- inline handlers in `index.html`
+- `window.xxx` functions exported by `app.js` and composables
+- direct DOM reads/writes
+- legacy CSS classes
+
+The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
+
+## 7. Important Runtime Behaviors
+
+### Audio and Transcript
+
+- Audio is loaded through `#audio-file`.
+- Transcript JSON is loaded through `#transcript-file`.
+- `processTranscript(...)` remains a central entry for transcript ingestion.
+- Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
+
+### Playback Highlighting and Follow
+
+- `src/composables/playback-module.js` owns the migrated playback update functions.
+- `app.js` still provides dependencies such as `followPlaybackTarget`.
+- Auto-follow now behaves like page turning: when the active sentence reaches the lower trigger area, it scrolls the active sentence near the top of the viewport instead of centering it.
+- The follow threshold is based on the current scroll container height, so resizing or zooming recalculates the visible zone dynamically.
+
+### AI Chunk Mode
+
+- Chunk data is loaded through `#chunk-file`.
+- `processChunkData(...)` is the central chunk ingestion entry.
+- `ChunkModeView.vue` renders chunk blocks.
+- Chunk mode defaults are currently focus-oriented:
+  - sentence highlighting by default
+  - Chinese hidden unless held, depending on current state
+  - focus mode available through `#btn-chunk-focus`
+
+### Chunk Notes
+
+- Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
+- Right-click or selected text can create chunk note bubbles.
+- Saved notes add underline markers to selected words.
+- Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
+- Delete key on selected note tags should open a delete confirmation.
+
+### Annotation Tools
+
+- Full generated-annotation prompt UI was removed from the main toolbar.
+- Lightweight annotation export/import remains:
+  - `#btn-export-annotation-lightweight`
+  - `#btn-import-annotation-lightweight`
+  - `#import-annotation-lightweight-file`
+- API settings remain through `annotation-api-settings-ui.js` and `#annotation-api-settings-panel`.
+
+## 8. Current Commands
+
+```bash
+npm run dev
+npm run build
+npm run verify:vite
+npm run verify:playback
+npm run verify:interactions
+npm test
+```
+
+Ports:
+
+```text
+dev server:          http://127.0.0.1:5173/
+verification server: http://127.0.0.1:4173/
+```
+
+`npm test` runs `npm run verify:vite`, which starts the Vite verification flow and runs the Playwright checks.
+
+## 9. Verification Coverage
+
+Current verification scripts:
+
+```text
+scripts/vite-verify.js
+scripts/vite-verify.cjs
+scripts/read26-load-check.js
+scripts/read26-load-check.cjs
+scripts/read-web-playback-check.cjs
+scripts/read-web-interactions-check.cjs
+```
+
+Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
+
+Current checks cover:
+
+- app load on Vite
+- transcript/audio playback behavior
+- highlighting and active sentence/word behavior
+- hotkey customization
+- AI chunk auto-entry
+- chunk Chinese focus/hold behavior
+- chunk note right-click, save, underline, connector, and delete prompt
+- annotation lightweight export/import UI presence
+- page-style follow positioning at different viewport heights
+
+## 10. Build Behavior
+
+`vite.config.js` uses the Vue plugin and a custom `copy-legacy-root-scripts` plugin.
+
+The build copies these required root scripts into `dist/`:
+
+```text
+chunk-note-layout-helpers.js
+chunk-note-layout-core.js
+annotation-bubble.js
+annotation-api-settings-ui.js
+```
+
+These scripts are not bundled because they are still regular root scripts loaded by `index.html`.
+
+## 11. Storage Constraints
+
+IndexedDB schema:
+
+```text
+DB name: SeekPlayerDB
+Version: 1
+Object store: files
+Key path: id
+```
+
+Do not change this schema without an explicit migration plan.
+
+Local/session storage is also used for UI state, hotkeys, chunk mode settings, and annotation-related state.
+
+## 12. Current High-Risk Areas
+
+Treat these as sensitive when editing:
+
+```text
+app.js
+src/composables/session-init.js
+src/composables/keyboard-module.js
+src/composables/notes-module.js
+src/components/ChunkModeView.vue
+src/components/TranscriptContainer.vue
+src/services/annotation/controller.js
+styles.css
+index.html script order
+```
+
+Main risks:
+
+- `app.js` still owns central runtime state and many global exports.
+- `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
+- Vue and legacy DOM both render or influence reading state.
+- `src/stores/` and `src/pinia-stores/` can be confused.
+- Some modules depend on import-time side effects.
+- The annotation pipeline is large and split across many ES modules.
+- Root regular scripts are still required in production builds.
+
+## 13. Documentation Status
+
+Current useful docs:
+
+```text
+CURRENT_PROJECT_STATUS.md         this file; current detailed status
+README.md                         short project overview and commands
+PROJECT_MAP.md                    compact file map, but verify against current tree before trusting details
+AGENTS.md                         operating notes for coding agents
+ES_MODULE_PLAN.md                 historical migration planning context
+```
+
+When documents conflict, prefer this file, then verify against the actual file tree.
+
+## 14. Maintenance Rules
+
+- Prefer small, behavior-preserving changes.
+- Do not move script order unless the full app is verified afterward.
+- Do not add new feature logic to `app.js` unless there is no safer place.
+- Prefer modules, Pinia stores, and Vue components for new work.
+- Keep compatibility globals in place until the caller paths are migrated.
+- Do not use `file:///E:/read-web/index.html` as the normal launch path; use Vite.
+- Do not treat `read-26.html` as the current project entry.
+- Run `npm test` for behavior changes.
+- Run `npm run build` when changing entry files, scripts, Vite config, or root regular scripts.
+

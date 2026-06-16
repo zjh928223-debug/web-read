@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 3330 lines
+├── app.js                             # Legacy central bus, about 3175 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -40,8 +40,7 @@ src/
 │   ├── ClozeQuizView.vue
 │   ├── ClozeCard.vue
 │   ├── TranscriptContainer.vue
-│   ├── ChunkModeView.vue
-│   └── SentenceNoteSidebar.vue
+│   └── ChunkModeView.vue
 ├── pinia-stores/
 │   ├── theme.js
 │   ├── ui.js
@@ -123,7 +122,6 @@ ChunkModeView.vue         # AI chunk rendering
 ClozeQuizView.vue         # quiz list
 ClozeCard.vue             # quiz card
 ToastMessage.vue          # reactive toast
-SentenceNoteSidebar.vue   # still mostly placeholder
 ```
 
 Legacy DOM and handlers still exist and must remain compatible until the migration is completed.

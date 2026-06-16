@@ -4,6 +4,8 @@ Vite + Vue 3 + Pinia migration of a legacy browser-based language reading tool.
 
 The app provides audio playback, synchronized transcript reading, AI chunk mode, cloze quizzes, notes, and generated annotation workflows.
 
+For the detailed current architecture and migration status, see `CURRENT_PROJECT_STATUS.md`.
+
 ## Current Status
 
 This is a working hybrid app, not a clean Vue-only rewrite.
@@ -75,10 +77,10 @@ annotation-api-settings-ui.js
 src/
 ├── main.js                    # Vue mount + Pinia bridge
 ├── App.vue                    # Root component
-├── components/                # 6 Vue components
+├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 9 moduleized legacy behavior chunks
+├── composables/               # 10 moduleized legacy behavior chunks
 ├── utils/                     # 8 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```

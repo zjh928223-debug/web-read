@@ -14,3 +14,4 @@ output/playwright/*.png
 output/playwright/*.json
 dist/
 vite-*.txt
+.vite-dev.*.log
