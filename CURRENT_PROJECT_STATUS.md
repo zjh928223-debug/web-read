@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1828 lines
+app.js                             legacy central runtime, about 1826 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -316,7 +316,7 @@ Current checks cover:
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
-- migrated chunk/cloze file picker inline handlers through `verify:file-input-bindings`
+- migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

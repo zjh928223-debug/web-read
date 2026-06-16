@@ -269,6 +269,8 @@ btn-annotation-api-settings, annotation-api-settings-panel, modal-backdrop,
 btn-load-cloze, btn-chunk-focus, chunk-vue-container
 ```
 
+Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
+
 Legacy or absent IDs still referenced by runtime code and needing audit before deletion:
 
 ```text

@@ -327,7 +327,7 @@
 
     var audioPlayer = deps.audioPlayer;
     var transcriptContainer = deps.transcriptContainer;
-    var loadClozeBtn = deps.loadClozeBtn;
+    var loadClozeBtn = deps.loadClozeBtn || (typeof document !== 'undefined' ? document.getElementById('btn-load-cloze') : null);
     var markedMap = deps.markedMap;
 
     // Audio

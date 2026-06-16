@@ -584,7 +584,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
     const annotationApiSettingsPanel = document.getElementById('annotation-api-settings-panel');
     const modalBackdrop = document.getElementById('modal-backdrop');
-    const loadClozeBtn = document.getElementById('btn-load-cloze');
 
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.
@@ -819,7 +818,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         processChunkData: _cpApi.processChunkData,
         audioPlayer: audioPlayer,
         transcriptContainer: transcriptContainer,
-        loadClozeBtn: loadClozeBtn,
         _ns: _ns,
         markedMap: markedMap
     });
