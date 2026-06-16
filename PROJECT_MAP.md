@@ -152,6 +152,7 @@ npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
+npm run verify:state-facades # Focused window.__state owner facade check
 npm test             # Alias for verify:vite
 ```
 

@@ -254,6 +254,7 @@ npm run verify:chunk-notes-state
 npm run verify:chunk-state
 npm run verify:cloze-state
 npm run verify:playback-state
+npm run verify:state-facades
 npm test
 ```
 
@@ -285,6 +286,7 @@ scripts/transcript-state-check.cjs
 scripts/chunk-state-check.cjs
 scripts/cloze-state-check.cjs
 scripts/playback-state-check.cjs
+scripts/state-facade-owner-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -306,6 +308,7 @@ Current checks cover:
 - chunk state adapter ownership through `verify:chunk-state`
 - cloze state adapter ownership through `verify:cloze-state`
 - playback transient state adapter ownership through `verify:playback-state`
+- migrated `window.__state` owner facades through `verify:state-facades`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
