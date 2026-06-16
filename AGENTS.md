@@ -42,7 +42,7 @@ index.html
 The current state flow is:
 
 ```text
-app.js let variables
+app.js remaining let variables and runtime state adapters
   ↕
 window.__state getter/setter proxy
   ↕
@@ -74,7 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1881 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1874 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia bridge.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -127,6 +127,7 @@ npm run verify:keyboard-boundary  # Focused keyboard boundary helper check
 npm run verify:transcript-state  # Focused transcript state adapter check
 npm run verify:chunk-state  # Focused chunk state adapter check
 npm run verify:cloze-state  # Focused cloze state adapter check
+npm run verify:playback-state  # Focused playback state adapter check
 npm test             # Same as verify:vite
 ```
 

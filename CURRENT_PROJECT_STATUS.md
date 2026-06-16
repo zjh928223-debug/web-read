@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1881 lines
+app.js                             legacy central runtime, about 1874 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    14 compatibility/runtime modules
+  composables/                    15 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -113,6 +113,7 @@ chunk-note-layout.js              about 152 lines
 transcript-state.js               about 103 lines
 chunk-state.js                    about 161 lines
 cloze-state.js                    about 109 lines
+playback-state.js                 about 85 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
 annotation-lightweight-module.js  about 76 lines
@@ -175,7 +176,7 @@ window.__USE_VUE_RENDERING = true
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
 
-Transcript, chunk, and cloze state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, and `src/composables/cloze-state.js` provide startup-safe adapters, and `src/main.js` binds them to the real Pinia stores after bridge hydration. `window.__state` transcript, chunk, and cloze fields remain as compatibility facades.
+Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind to the real Pinia stores after bridge hydration; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades.
 
 ## 7. Important Runtime Behaviors
 
@@ -189,6 +190,7 @@ Transcript, chunk, and cloze state have started moving out of `app.js`: `src/com
 ### Playback Highlighting and Follow
 
 - `src/composables/playback-module.js` owns the migrated playback update functions.
+- `src/composables/playback-state.js` owns playback transient state such as auto-follow, scroll suppression, active highlight element refs, playback loop signature, and sentence previous-tap navigation state.
 - `app.js` still provides dependencies such as `followPlaybackTarget`.
 - Auto-follow now behaves like page turning: when the active sentence reaches the lower trigger area, it scrolls the active sentence near the top of the viewport instead of centering it.
 - The follow threshold is based on the current scroll container height, so resizing or zooming recalculates the visible zone dynamically.
@@ -250,6 +252,7 @@ npm run verify:vocab-matching
 npm run verify:chunk-notes-state
 npm run verify:chunk-state
 npm run verify:cloze-state
+npm run verify:playback-state
 npm test
 ```
 
@@ -280,6 +283,7 @@ scripts/annotation-lightweight-module-check.cjs
 scripts/transcript-state-check.cjs
 scripts/chunk-state-check.cjs
 scripts/cloze-state-check.cjs
+scripts/playback-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -300,6 +304,7 @@ Current checks cover:
 - transcript state adapter ownership through `verify:transcript-state`
 - chunk state adapter ownership through `verify:chunk-state`
 - cloze state adapter ownership through `verify:cloze-state`
+- playback transient state adapter ownership through `verify:playback-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
@@ -351,7 +356,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns remaining central runtime state and many global exports.
+- `app.js` still owns some remaining central runtime state and many global exports, while transcript, chunk, cloze, and playback transient state now delegate through focused adapters.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

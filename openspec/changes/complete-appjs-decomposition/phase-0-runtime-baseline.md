@@ -104,15 +104,15 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `isChunkMode` | `window.__chunkState.isChunkMode` | `playback-module.js`, `controls-module.js`, `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `currentAudioKey` | `__cak` / `currentAudioKey` accessor | `session-init.js` | audio/session identity owner |
 | `currentWordIndex` | `currentWordIndex` | `playback-module.js` | playback runtime or transcript store |
-| `autoFollow` | `autoFollow` | `controls-module.js`, verification scripts | playback runtime/UI store |
-| `userScrollSuppress` | `userScrollSuppress` | `controls-module.js`, verification scripts | playback runtime |
-| `suppressTimer` | `suppressTimer` | `controls-module.js` | playback runtime |
+| `autoFollow` | `window.__playbackState.autoFollow` | `controls-module.js`, verification scripts | playback runtime adapter |
+| `userScrollSuppress` | `window.__playbackState.userScrollSuppress` | `controls-module.js`, verification scripts | playback runtime adapter |
+| `suppressTimer` | `window.__playbackState.suppressTimer` | `controls-module.js` | playback runtime adapter |
 | `highlightMode` | `highlightMode` | `playback-module.js`, `controls-module.js`, verification scripts | transcript/playback store |
-| `lastActiveSegIndex` | `lastActiveSegIndex` | `playback-module.js`, verification scripts | playback runtime |
-| `activeWordHighlightEl` | `activeWordHighlightEl` | `playback-module.js` | playback DOM binding/runtime |
-| `activeSentenceEl` | `activeSentenceEl` | `playback-module.js` | playback DOM binding/runtime |
-| `activeChunkEl` | `activeChunkEl` | `playback-module.js` | playback/chunk DOM binding runtime |
-| `playbackUiSignature` | `playbackUiSignature` | `controls-module.js` | playback loop runtime |
+| `lastActiveSegIndex` | `window.__playbackState.lastActiveSegIndex` | `playback-module.js`, verification scripts | playback runtime adapter |
+| `activeWordHighlightEl` | `window.__playbackState.activeWordHighlightEl` | `playback-module.js` | playback runtime adapter |
+| `activeSentenceEl` | `window.__playbackState.activeSentenceEl` | `playback-module.js` | playback runtime adapter |
+| `activeChunkEl` | `window.__playbackState.activeChunkEl` | `playback-module.js` | playback runtime adapter |
+| `playbackUiSignature` | `window.__playbackState.playbackUiSignature` | `controls-module.js` | playback runtime adapter |
 | `markKey` | `markKey` | `session-init.js` | keyboard settings store |
 | `notesKey` | `notesKey` | `session-init.js` | keyboard settings store |
 | `annotationBubbleKey` | `annotationBubbleKey` | `session-init.js` | keyboard settings store |
@@ -134,8 +134,8 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `lastActiveChunkIndex` | `window.__chunkState.lastActiveChunkIndex` -> `chunk.activeChunkIdx` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `lastAiPrevTapChunkIndex` | `window.__chunkState.lastAiPrevTapChunkIndex` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `lastAiPrevTapAt` | `window.__chunkState.lastAiPrevTapAt` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
-| `lastSentencePrevTapSegIndex` | `lastSentencePrevTapSegIndex` | no direct external field access found | playback runtime |
-| `lastSentencePrevTapAt` | `lastSentencePrevTapAt` | no direct external field access found | playback runtime |
+| `lastSentencePrevTapSegIndex` | `window.__playbackState.lastSentencePrevTapSegIndex` | no direct external field access found | playback runtime adapter |
+| `lastSentencePrevTapAt` | `window.__playbackState.lastSentencePrevTapAt` | no direct external field access found | playback runtime adapter |
 | `chunkPointerDown` | `chunkPointerDown` | no direct external field access found | chunk interaction runtime |
 
 Observed direct application module users:
@@ -221,6 +221,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.11 src/composables/transcript-state.js
    4.12 src/composables/chunk-state.js
    4.13 src/composables/cloze-state.js
+   4.14 src/composables/playback-state.js
 5. app.js
 6. src/composables/session-init.js
 7. /src/main.js

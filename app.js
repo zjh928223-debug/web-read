@@ -11,6 +11,7 @@
     import './src/composables/transcript-state.js';
     import './src/composables/chunk-state.js';
     import './src/composables/cloze-state.js';
+    import './src/composables/playback-state.js';
     import './src/composables/annotation-lightweight-module.js';
 
     // === Read-order map ===
@@ -26,6 +27,7 @@
     const _tr = window.__transcriptState;
     const _ch = window.__chunkState;
     const _clz = window.__clozeState;
+    const _pb = window.__playbackState;
 
     // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
     window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
@@ -595,15 +597,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const loadClozeBtn = document.getElementById('btn-load-cloze');
 
     // === Runtime state ===
-    let autoFollow = true;
-    let userScrollSuppress = false;
-    let suppressTimer = null;
-    
-    let lastActiveSegIndex = -1;
-    let activeWordHighlightEl = null;
-    let activeSentenceEl = null;
-    let activeChunkEl = null;
-    let playbackUiSignature = '';
+    // Playback transient state is owned by src/composables/playback-state.js.
 
     let markKey = 'm';
     let notesKey = 'n';
@@ -622,8 +616,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // === AI Chunk Mode State ===
     // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.
     let holdPrevHadFocusClass = null;
-    let lastSentencePrevTapSegIndex = -1;
-    let lastSentencePrevTapAt = 0;
+    // Sentence prev-tap state is part of playback transient state.
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
     var _ns = {
@@ -786,15 +779,15 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return _ch.isChunkMode; }, set: function(v) { _ch.isChunkMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentWordIndex', { get: function() { return _tr.currentWordIndex; }, set: function(v) { _tr.currentWordIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'autoFollow', { get: function() { return autoFollow; }, set: function(v) { autoFollow = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'userScrollSuppress', { get: function() { return userScrollSuppress; }, set: function(v) { userScrollSuppress = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'suppressTimer', { get: function() { return suppressTimer; }, set: function(v) { suppressTimer = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'autoFollow', { get: function() { return _pb.autoFollow; }, set: function(v) { _pb.autoFollow = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'userScrollSuppress', { get: function() { return _pb.userScrollSuppress; }, set: function(v) { _pb.userScrollSuppress = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'suppressTimer', { get: function() { return _pb.suppressTimer; }, set: function(v) { _pb.suppressTimer = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'highlightMode', { get: function() { return _tr.highlightMode; }, set: function(v) { _tr.highlightMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastActiveSegIndex', { get: function() { return lastActiveSegIndex; }, set: function(v) { lastActiveSegIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'activeWordHighlightEl', { get: function() { return activeWordHighlightEl; }, set: function(v) { activeWordHighlightEl = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'activeSentenceEl', { get: function() { return activeSentenceEl; }, set: function(v) { activeSentenceEl = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'activeChunkEl', { get: function() { return activeChunkEl; }, set: function(v) { activeChunkEl = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'playbackUiSignature', { get: function() { return playbackUiSignature; }, set: function(v) { playbackUiSignature = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastActiveSegIndex', { get: function() { return _pb.lastActiveSegIndex; }, set: function(v) { _pb.lastActiveSegIndex = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'activeWordHighlightEl', { get: function() { return _pb.activeWordHighlightEl; }, set: function(v) { _pb.activeWordHighlightEl = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'activeSentenceEl', { get: function() { return _pb.activeSentenceEl; }, set: function(v) { _pb.activeSentenceEl = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'activeChunkEl', { get: function() { return _pb.activeChunkEl; }, set: function(v) { _pb.activeChunkEl = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'playbackUiSignature', { get: function() { return _pb.playbackUiSignature; }, set: function(v) { _pb.playbackUiSignature = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'markKey', { get: function() { return markKey; }, set: function(v) { markKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'notesKey', { get: function() { return notesKey; }, set: function(v) { notesKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'annotationBubbleKey', { get: function() { return annotationBubbleKey; }, set: function(v) { annotationBubbleKey = v; }, enumerable: true, configurable: true });
@@ -816,8 +809,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'lastActiveChunkIndex', { get: function() { return _ch.lastActiveChunkIndex; }, set: function(v) { _ch.lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastAiPrevTapChunkIndex', { get: function() { return _ch.lastAiPrevTapChunkIndex; }, set: function(v) { _ch.lastAiPrevTapChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastAiPrevTapAt', { get: function() { return _ch.lastAiPrevTapAt; }, set: function(v) { _ch.lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastSentencePrevTapSegIndex', { get: function() { return lastSentencePrevTapSegIndex; }, set: function(v) { lastSentencePrevTapSegIndex = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'lastSentencePrevTapAt', { get: function() { return lastSentencePrevTapAt; }, set: function(v) { lastSentencePrevTapAt = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastSentencePrevTapSegIndex', { get: function() { return _pb.lastSentencePrevTapSegIndex; }, set: function(v) { _pb.lastSentencePrevTapSegIndex = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'lastSentencePrevTapAt', { get: function() { return _pb.lastSentencePrevTapAt; }, set: function(v) { _pb.lastSentencePrevTapAt = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkPointerDown', { get: function() { return chunkPointerDown; }, set: function(v) { chunkPointerDown = v; }, enumerable: true, configurable: true });
 
     var _cpApi = window.__importModule.initChunkPipeline({
@@ -1500,7 +1493,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function cycleHighlightMode() {
         _tr.highlightMode = (_tr.highlightMode + 1) % 3;
-        lastActiveSegIndex = -1; 
+        _pb.lastActiveSegIndex = -1;
         updateHighlightModeUI();
         forceUpdateUI(audioPlayer.currentTime);
     }
@@ -1525,7 +1518,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function followPlaybackTarget(el) {
-        if (!el || !autoFollow || userScrollSuppress) return;
+        if (!el || !_pb.autoFollow || _pb.userScrollSuppress) return;
         const container = mainAppArea || transcriptContainer;
         if (!container || typeof container.getBoundingClientRect !== 'function') {
             el.scrollIntoView({ behavior: 'auto', block: 'nearest' });
@@ -1625,8 +1618,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (_tr.currentWordIndex !== -1) {
             var w = _tr.words[_tr.currentWordIndex];
             if (w) targetIdx = w.segIndex;
-        } else if (lastActiveSegIndex !== -1) {
-            targetIdx = lastActiveSegIndex;
+        } else if (_pb.lastActiveSegIndex !== -1) {
+            targetIdx = _pb.lastActiveSegIndex;
         }
         if (targetIdx !== -1) {
             var noteEl = document.getElementById('note-' + targetIdx);
@@ -1640,14 +1633,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         var targetTime = 0;
         if (sIdx !== -1) {
             var now = Date.now();
-            if (lastSentencePrevTapSegIndex === sIdx && (now - lastSentencePrevTapAt) <= 600) {
+            if (_pb.lastSentencePrevTapSegIndex === sIdx && (now - _pb.lastSentencePrevTapAt) <= 600) {
                 targetTime = sIdx > 0 ? _tr.segments[sIdx - 1].start : _tr.segments[sIdx].start;
-                lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
+                _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0;
             } else {
                 targetTime = _tr.segments[sIdx].start;
-                lastSentencePrevTapSegIndex = sIdx; lastSentencePrevTapAt = now;
+                _pb.lastSentencePrevTapSegIndex = sIdx; _pb.lastSentencePrevTapAt = now;
             }
-        } else { lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0; }
+        } else { _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0; }
         audioPlayer.currentTime = targetTime;
         forceUpdateUI(targetTime);
     }
@@ -1656,7 +1649,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         var cur = audioPlayer.currentTime;
         var sIdx = getCurrentSegmentIndexHelper(_tr.segments, _tr.words, _tr.wordStarts, cur);
         var next = (sIdx >= 0 && sIdx < _tr.segments.length - 1) ? _tr.segments[sIdx + 1] : null;
-        lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
+        _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0;
         if (next && Number.isFinite(next.start)) {
             audioPlayer.currentTime = next.start;
             forceUpdateUI(next.start);

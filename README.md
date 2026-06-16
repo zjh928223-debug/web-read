@@ -61,6 +61,7 @@ npm run verify:keyboard-boundary # Focused keyboard boundary helper check
 npm run verify:transcript-state # Focused transcript state adapter check
 npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
+npm run verify:playback-state # Focused playback state adapter check
 npm test             # Same as verify:vite
 ```
 
@@ -97,7 +98,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 14 moduleized legacy behavior chunks
+├── composables/               # 15 moduleized legacy behavior chunks
 ├── utils/                     # 9 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -117,10 +118,11 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, and cloze state now go through focused adapters.
+- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, and playback transient state now go through focused adapters.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds to the real Pinia transcript store after startup bridge hydration.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to the real Pinia chunk store after startup bridge hydration.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to the real Pinia cloze store after startup bridge hydration.
+- Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
 - Chunk note and sentence note subsystem runtime now live behind `src/composables/notes-module.js`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.

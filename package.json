@@ -19,6 +19,7 @@
     "verify:transcript-state": "node scripts/transcript-state-check.cjs",
     "verify:chunk-state": "node scripts/chunk-state-check.cjs",
     "verify:cloze-state": "node scripts/cloze-state-check.cjs",
+    "verify:playback-state": "node scripts/playback-state-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"
