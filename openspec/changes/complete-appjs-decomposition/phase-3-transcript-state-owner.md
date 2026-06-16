@@ -85,7 +85,7 @@ Transcript compatibility facades may only be removed after:
 
 - `import-module.js`, `session-init.js`, `playback-module.js`, and `controls-module.js` stop depending on `window.__state` as their real transcript source
 - verification scripts no longer require transcript fields on `window.__state`
-- `window.__bridge.transcript` no longer participates in startup sync
+- former `window.__bridge.transcript` startup sync remains removed
 - `npm test`, playback verification, and interaction verification pass
 
 ## Required Verification for 4.2

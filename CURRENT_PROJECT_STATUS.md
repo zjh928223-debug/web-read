@@ -40,11 +40,11 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1838 lines
+app.js                             legacy central runtime, about 1828 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
-src/main.js                        Vue mount, Pinia setup, side-effect imports
+src/main.js                        Vue mount, Pinia setup, side-effect imports, about 144 lines
 src/App.vue                        root Vue component
 src/composables/session-init.js    startup restore and annotation/session glue
 ```
@@ -147,7 +147,7 @@ Current state flow:
 ```text
 app.js remaining local variables and runtime state adapters
   <-> window.__state getter/setter proxy
-  <-> window.__bridge snapshot sync
+  <-> direct adapter-to-Pinia binding and runtime bridgeToPinia compatibility
   <-> src/pinia-stores/*.js real Pinia stores
   <-> Vue components
 ```
@@ -176,7 +176,7 @@ window.__USE_VUE_RENDERING = true
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
 
-Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind to the real Pinia stores after bridge hydration; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades.
+Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades.
 
 ## 7. Important Runtime Behaviors
 
@@ -255,6 +255,7 @@ npm run verify:chunk-state
 npm run verify:cloze-state
 npm run verify:playback-state
 npm run verify:state-facades
+npm run verify:bridge-startup
 npm test
 ```
 
@@ -287,6 +288,7 @@ scripts/chunk-state-check.cjs
 scripts/cloze-state-check.cjs
 scripts/playback-state-check.cjs
 scripts/state-facade-owner-check.cjs
+scripts/bridge-startup-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -310,6 +312,7 @@ Current checks cover:
 - playback transient state adapter ownership through `verify:playback-state`
 - migrated `window.__state` owner facades through `verify:state-facades`
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
+- removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
@@ -391,7 +394,7 @@ When documents conflict, prefer this file, then verify against the actual file t
 - Do not add new feature logic to `app.js` unless there is no safer place.
 - Prefer modules, Pinia stores, and Vue components for new work.
 - Keep compatibility globals in place until the caller paths are migrated.
-- Treat `window.__state`, `window.__bridge`, and `window.*` exports as compatibility surfaces to retire, not as places to add new architecture.
+- Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire, not as places to add new architecture.
 - Keep each cleanup step stage-gated: update the runtime map, migrate one boundary, then run the required verification before starting the next boundary.
 - Do not use `file:///E:/read-web/index.html` as the normal launch path; use Vite.
 - Do not treat `read-26.html` as the current project entry.

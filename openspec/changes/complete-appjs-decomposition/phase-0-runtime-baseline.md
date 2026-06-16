@@ -23,7 +23,7 @@ Current state spine:
 ```text
 app.js local variables
   -> window.__state getter/setter proxy
-  -> window.__bridge startup/runtime snapshot
+  -> direct adapter-to-Pinia binding plus runtime bridgeToPinia compatibility
   -> src/pinia-stores/*.js
   -> Vue components
 ```
@@ -151,25 +151,25 @@ Observed direct verification users:
 
 ## 3. window.__bridge Map
 
-`app.js` initializes `window.__bridge` and updates it through `bridgeToPinia()`. `src/main.js` reads it once after Pinia creation to seed stores, and later `bridgeToPinia()` writes directly into `window.__piniaStores`.
+Task 4.9 removed active `window.__bridge` startup snapshots. `src/main.js` now seeds Pinia directly from the transcript/chunk/cloze state adapters by calling `bindPiniaStore(...)` without `preferStore`. `bridgeToPinia()` remains as a runtime compatibility function, but it writes directly to `window.__piniaStores` and no longer creates or updates `window.__bridge`.
 
-| Bridge field | Source in app.js | Pinia target in src/main.js / bridgeToPinia | Current writers | Target state owner |
+| Former bridge field | Current source | Pinia runtime target | Current writers | Target state owner |
 | --- | --- | --- | --- | --- |
-| `transcript.segments` | `segments` | `transcriptStore.segments` / `ps.transcript.segments` | `bridgeToPinia()` | transcript store |
-| `transcript.words` | `words` | `transcriptStore.words` / `ps.transcript.words` | `bridgeToPinia()` | transcript store |
-| `transcript.wordStarts` | `wordStarts` | `transcriptStore.wordStarts` / `ps.transcript.wordStarts` | `bridgeToPinia()` | transcript/playback index owner |
-| `transcript.highlightMode` | `highlightMode` | `transcriptStore.highlightMode` / `ps.transcript.highlightMode` | `bridgeToPinia()` | transcript/playback store |
-| `chunkItems` | `window.__chunkState.chunkItems` | `chunkStore.chunkItems` / `ps.chunk.chunkItems` | `bridgeToPinia()` | chunk store |
-| `isChunkMode` | `window.__chunkState.isChunkMode` | `chunkStore.isChunkMode` / `ps.chunk.isChunkMode` | `bridgeToPinia()` | chunk store |
-| `hasAiChunkData` | `window.__chunkState.hasAiChunkData` | `chunkStore.hasAiChunkData` / `ps.chunk.hasAiChunkData` | `bridgeToPinia()` | chunk store |
-| `chunkCNVisible` | `window.__chunkState.chunkCnVisible` | `chunkStore.chunkCNVisible` / `ps.chunk.chunkCNVisible` | `bridgeToPinia()` | chunk store |
-| `chunkCNHoldMode` | `window.__chunkState.chunkCnHoldMode` | `chunkStore.chunkCNHoldMode` / `ps.chunk.chunkCNHoldMode` | `bridgeToPinia()` | chunk store |
-| `chunkFocusMode` | `window.__chunkState.chunkCnMode === 'focus'` | `chunkStore.chunkFocusMode` / `ps.chunk.chunkFocusMode` | `bridgeToPinia()` | chunk store |
-| `chunkShadowVisible` | `window.__chunkState.isChunkShadowOn` | `chunkStore.chunkShadowVisible` / `ps.chunk.chunkShadowVisible` | `bridgeToPinia()` | chunk store |
+| `transcript.segments` | `window.__transcriptState.segments` | `transcriptStore.segments` / `ps.transcript.segments` | state adapter bind, `bridgeToPinia()` runtime | transcript store |
+| `transcript.words` | `window.__transcriptState.words` | `transcriptStore.words` / `ps.transcript.words` | state adapter bind, `bridgeToPinia()` runtime | transcript store |
+| `transcript.wordStarts` | `window.__transcriptState.wordStarts` | `transcriptStore.wordStarts` / `ps.transcript.wordStarts` | state adapter bind, `bridgeToPinia()` runtime | transcript/playback index owner |
+| `transcript.highlightMode` | `window.__transcriptState.highlightMode` | `transcriptStore.highlightMode` / `ps.transcript.highlightMode` | state adapter bind, `bridgeToPinia()` runtime | transcript/playback store |
+| `chunkItems` | `window.__chunkState.chunkItems` | `chunkStore.chunkItems` / `ps.chunk.chunkItems` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `isChunkMode` | `window.__chunkState.isChunkMode` | `chunkStore.isChunkMode` / `ps.chunk.isChunkMode` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `hasAiChunkData` | `window.__chunkState.hasAiChunkData` | `chunkStore.hasAiChunkData` / `ps.chunk.hasAiChunkData` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `chunkCNVisible` | `window.__chunkState.chunkCnVisible` | `chunkStore.chunkCNVisible` / `ps.chunk.chunkCNVisible` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `chunkCNHoldMode` | `window.__chunkState.chunkCnHoldMode` | `chunkStore.chunkCNHoldMode` / `ps.chunk.chunkCNHoldMode` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `chunkFocusMode` | `window.__chunkState.chunkCnMode === 'focus'` | `chunkStore.chunkFocusMode` / `ps.chunk.chunkFocusMode` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
+| `chunkShadowVisible` | `window.__chunkState.isChunkShadowOn` | `chunkStore.chunkShadowVisible` / `ps.chunk.chunkShadowVisible` | state adapter bind, `bridgeToPinia()` runtime | chunk store |
 | `chunkNoteVisible` | `_ns.chunkNoteVisible` | `ps.chunk.chunkNoteVisible` runtime only | `bridgeToPinia()` | chunk note/chunk store boundary |
-| `clozeItems` | `window.__clozeState.clozeItems` | `clozeStore.items` / `ps.cloze.items` | `bridgeToPinia()` | cloze store |
-| `hasClozeData` | `window.__clozeState.hasClozeData` | `clozeStore.hasData` / `ps.cloze.hasData` | `bridgeToPinia()` | cloze store |
-| `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | `clozeStore.answerState` / `ps.cloze.answerState` | `bridgeToPinia()` | cloze store |
+| `clozeItems` | `window.__clozeState.clozeItems` | `clozeStore.items` / `ps.cloze.items` | state adapter bind, `bridgeToPinia()` runtime | cloze store |
+| `hasClozeData` | `window.__clozeState.hasClozeData` | `clozeStore.hasData` / `ps.cloze.hasData` | state adapter bind, `bridgeToPinia()` runtime | cloze store |
+| `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | `clozeStore.answerState` / `ps.cloze.answerState` | state adapter bind, `bridgeToPinia()` runtime | cloze store |
 
 Known `bridgeToPinia()` callers:
 
@@ -180,7 +180,7 @@ Known `bridgeToPinia()` callers:
 
 Removal condition:
 
-- `src/main.js` no longer reads `window.__bridge`.
+- `src/main.js` no longer reads `window.__bridge` (done in task 4.9).
 - import/session code updates Pinia/runtime owners directly.
 - verification scripts no longer need `window.bridgeToPinia()`.
 

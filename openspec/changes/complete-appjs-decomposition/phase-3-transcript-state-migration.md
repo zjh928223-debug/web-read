@@ -25,10 +25,9 @@ Startup flow:
 
 1. `app.js` imports `transcript-state.js` and reads/writes `window.__transcriptState`.
 2. Before Pinia exists, the adapter uses an internal fallback object.
-3. `bridgeToPinia()` writes the current adapter snapshot into `window.__bridge.transcript` for the existing startup path.
-4. `src/main.js` hydrates `transcriptStore` from `window.__bridge.transcript`.
-5. `src/main.js` calls `window.__transcriptState.bindPiniaStore(transcriptStore, { preferStore: true })`.
-6. After binding, adapter reads/writes delegate to `src/pinia-stores/transcript.js`.
+3. Since task 4.9, `src/main.js` calls `window.__transcriptState.bindPiniaStore(transcriptStore)` directly and seeds Pinia from the adapter fallback.
+4. After binding, adapter reads/writes delegate to `src/pinia-stores/transcript.js`.
+5. `bridgeToPinia()` remains only as a runtime compatibility function and writes directly to `window.__piniaStores` when Pinia exists.
 
 ## app.js Changes
 
@@ -56,11 +55,11 @@ These properties remain compatibility facades and are not removed in this task.
 
 `src/composables/app-handlers.js` now accepts `getSegments()` and `getWords()` callbacks so export/import handlers read the current transcript owner instead of a startup snapshot.
 
-`src/main.js` imports the transcript adapter and binds it to the Pinia transcript store after bridge hydration.
+`src/main.js` imports the transcript adapter and binds it directly to the Pinia transcript store after Pinia creation.
 
 ## Preserved Compatibility
 
-- `window.__bridge.transcript` remains in place for startup sync. Reducing it is task 4.9.
+- Startup `window.__bridge.transcript` was removed in task 4.9; adapter binding now seeds Pinia directly.
 - `window.__state` transcript properties remain available for legacy modules and verification scripts.
 - `processTranscript()` and import/session restore behavior are unchanged at the public API level.
 - Vue components continue reading transcript state from Pinia.

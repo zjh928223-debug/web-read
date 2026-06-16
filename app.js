@@ -29,21 +29,11 @@
     const _clz = window.__clozeState;
     const _pb = window.__playbackState;
 
-    // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
-    window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
+    // Phase 8: Bridge — runtime adapter data → Pinia stores when Pinia exists.
     function bridgeToPinia() {
         var ps = window.__piniaStores;
-        var b = window.__bridge;
         var chunkSnapshot = _ch.getSnapshot();
         var clozeSnapshot = _clz.getSnapshot();
-        // Always write to bridge (for main.js init consumption)
-        if (b) {
-            b.transcript = { segments: _tr.segments, words: _tr.words, wordStarts: _tr.wordStarts, highlightMode: _tr.highlightMode };
-            b.chunkItems = chunkSnapshot.chunkItems; b.isChunkMode = chunkSnapshot.isChunkMode; b.hasAiChunkData = chunkSnapshot.hasAiChunkData;
-            b.chunkCNVisible = chunkSnapshot.chunkCnVisible; b.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
-            b.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; b.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
-            b.clozeItems = clozeSnapshot.clozeItems; b.hasClozeData = clozeSnapshot.hasClozeData; b.clozeAnswerState = clozeSnapshot.clozeAnswerState;
-        }
         // If Pinia already exists, write directly for reactive updates
         if (ps) {
             if (ps.transcript) {

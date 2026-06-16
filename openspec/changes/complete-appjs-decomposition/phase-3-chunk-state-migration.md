@@ -74,13 +74,13 @@ Removed these `app.js` local variables as chunk state sources:
 - `lastAiPrevTapChunkIndex`
 - `lastAiPrevTapAt`
 
-`src/main.js` imports the chunk adapter and binds it to the Pinia chunk store after bridge hydration.
+`src/main.js` imports the chunk adapter and, since task 4.9, binds it directly to the Pinia chunk store after Pinia creation.
 
 `src/composables/session-init.js` now reads chunk items through `st.chunkItems` in the annotation-generation document context instead of an undeclared `chunkItems` reference.
 
 ## Preserved Compatibility
 
-- `window.__bridge` chunk fields remain in place for startup sync. Reducing them is task 4.9.
+- Startup `window.__bridge` chunk fields were removed in task 4.9; adapter binding now seeds Pinia directly.
 - Remaining `window.__state` chunk properties stay available for `session-init.js`, `playback-module.js`, `controls-module.js`, and verification scripts.
 - `toggleChunkMode()`, chunk Chinese hold/focus behavior, chunk shadow toggles, chunk playback navigation, and import/session restore paths retain their public entrypoints.
 - No IndexedDB schema changes.

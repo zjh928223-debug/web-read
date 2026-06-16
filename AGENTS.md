@@ -13,7 +13,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 - `index.html` - browser entry and legacy DOM shell.
 - `app.js` - legacy central bus, still owns remaining runtime state and many UI handlers.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
-- `src/main.js` - Vue mount, Pinia setup, and bridge from legacy globals into Pinia.
+- `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
 There is no `read-26.html` in the current root. Any script or doc that refers to it is legacy context.
 
@@ -43,14 +43,10 @@ The current state flow is:
 
 ```text
 app.js remaining let variables and runtime state adapters/modules
-  ↕
-window.__state getter/setter proxy
-  ↕
-window.__bridge initial/runtime sync
-  ↕
-src/pinia-stores/*.js real Pinia stores
-  ↕
-Vue components
+  -> window.__state getter/setter proxy
+  -> direct adapter-to-Pinia binding plus runtime bridgeToPinia compatibility
+  -> src/pinia-stores/*.js real Pinia stores
+  -> Vue components
 ```
 
 There is also a compatibility layer:
@@ -74,9 +70,9 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1838 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1828 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
-- `src/main.js` - Vue/Pinia bridge.
+- `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 9 real Pinia stores.
 - `src/stores/` - 9 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
@@ -89,7 +85,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 The current priority is to finish `complete-appjs-decomposition` before adding new user-facing features. Use `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md` as the current cleanup baseline.
 
-Do not add feature logic to `app.js`. Treat `window.__state`, `window.__bridge`, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
+Do not add feature logic to `app.js`. Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
 
 ### IndexedDB Schema
 
@@ -108,7 +104,7 @@ Do not reorder `index.html` scripts casually. The app still uses globals and sid
 
 ### app.js
 
-Do not add new feature logic to `app.js`. Prefer focused modules, Pinia stores, or Vue components, but respect the existing bridge while migrating existing callers away.
+Do not add new feature logic to `app.js`. Prefer focused modules, Pinia stores, or Vue components, but respect existing runtime compatibility callers while migrating those callers away.
 
 ### session-init.js
 
@@ -129,6 +125,7 @@ npm run verify:chunk-state  # Focused chunk state adapter check
 npm run verify:cloze-state  # Focused cloze state adapter check
 npm run verify:playback-state  # Focused playback state adapter check
 npm run verify:state-facades  # Focused window.__state owner facade check
+npm run verify:bridge-startup  # Focused adapter-to-Pinia startup check
 npm test             # Same as verify:vite
 ```
 

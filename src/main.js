@@ -111,40 +111,18 @@ window.__piniaStores = {
   notes: notesStore, annotation: annotationStore
 }
 
-// Phase 8: Read from __bridge (app.js writes data here before main.js runs)
-// This syncs the initial data loaded during startup restore
-if (window.__bridge && window.__bridge.transcript) {
-  var t = window.__bridge.transcript
-  transcriptStore.segments = t.segments || []
-  transcriptStore.words = t.words || []
-  transcriptStore.wordStarts = t.wordStarts || []
-  transcriptStore.highlightMode = t.highlightMode == null ? 2 : t.highlightMode
-}
+// Phase 8: adapters loaded before Pinia keep startup data until stores exist.
 if (window.__transcriptState && typeof window.__transcriptState.bindPiniaStore === 'function') {
-  window.__transcriptState.bindPiniaStore(transcriptStore, { preferStore: true })
-}
-if (window.__bridge && window.__bridge.chunkItems) {
-  chunkStore.chunkItems = window.__bridge.chunkItems || []
-  chunkStore.isChunkMode = window.__bridge.isChunkMode || false
-  chunkStore.hasAiChunkData = window.__bridge.hasAiChunkData || false
-  chunkStore.chunkCNVisible = window.__bridge.chunkCNVisible === true
-  chunkStore.chunkCNHoldMode = window.__bridge.chunkCNHoldMode !== false
-  chunkStore.chunkFocusMode = window.__bridge.chunkFocusMode !== false
-  chunkStore.chunkShadowVisible = window.__bridge.chunkShadowVisible !== false
+  window.__transcriptState.bindPiniaStore(transcriptStore)
 }
 if (window.__chunkState && typeof window.__chunkState.bindPiniaStore === 'function') {
-  window.__chunkState.bindPiniaStore(chunkStore, { preferStore: true })
-}
-if (window.__bridge && window.__bridge.clozeItems) {
-  clozeStore.items = window.__bridge.clozeItems || []
-  clozeStore.hasData = window.__bridge.hasClozeData || false
-  clozeStore.answerState = window.__bridge.clozeAnswerState || []
+  window.__chunkState.bindPiniaStore(chunkStore)
 }
 if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'function') {
-  window.__clozeState.bindPiniaStore(clozeStore, { preferStore: true })
+  window.__clozeState.bindPiniaStore(clozeStore)
 }
 
-console.log('[vue] Phase 8 — bridge data synced to Pinia')
+console.log('[vue] Phase 8 adapter data synced to Pinia')
 
 // Sync reactive rendering flag — Pinia ref drives window.__USE_VUE_RENDERING
 // Also show/hide old vs Vue containers

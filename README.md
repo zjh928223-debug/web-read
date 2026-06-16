@@ -15,7 +15,7 @@ legacy DOM + inline handlers
         ↓
 app.js central state and compatibility exports
         ↓
-window.__state / window.__bridge / state adapters
+window.__state / state adapters / runtime bridgeToPinia compatibility
         ↓
 Pinia stores in src/pinia-stores
         ↓
@@ -31,7 +31,7 @@ The current project priority is to decompose and remove `app.js` before adding n
 - Do not add feature logic to `app.js`.
 - Do not change the IndexedDB schema without a separate migration.
 - Do not reorder `index.html` scripts unless that change is isolated and fully verified.
-- Treat `window.__state`, `window.__bridge`, and `window.*` exports as temporary compatibility surfaces.
+- Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as temporary compatibility surfaces.
 
 ## Quick Start
 
@@ -63,6 +63,7 @@ npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
+npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm test             # Same as verify:vite
 ```
 
@@ -120,9 +121,9 @@ Do not change this schema without an explicit migration plan.
 ## Current High-Risk Areas
 
 - `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, playback transient, and note state now go through focused adapters/modules. No-consumer `window.__state` facades are being removed behind `verify:state-facades`.
-- Transcript state now goes through `src/composables/transcript-state.js`, which binds to the real Pinia transcript store after startup bridge hydration.
-- Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to the real Pinia chunk store after startup bridge hydration.
-- Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to the real Pinia cloze store after startup bridge hydration.
+- Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
+- Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
+- Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
 - Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.

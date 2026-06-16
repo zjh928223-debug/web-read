@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1838 lines
+├── app.js                             # Legacy central bus, about 1828 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -122,7 +122,7 @@ Current state ownership is transitional:
 ```text
 app.js remaining let state + runtime state adapters
   ↕ window.__state proxy
-  ↕ window.__bridge
+  ↕ direct adapter-to-Pinia binding + bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components
 ```
@@ -153,6 +153,7 @@ npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
+npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm test             # Alias for verify:vite
 ```
 

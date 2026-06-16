@@ -42,13 +42,13 @@ These properties remain compatibility facades and are not removed in this task.
 
 ## Related Module Changes
 
-`src/main.js` imports the cloze adapter and binds it to the Pinia cloze store after bridge hydration.
+`src/main.js` imports the cloze adapter and, since task 4.9, binds it directly to the Pinia cloze store after Pinia creation.
 
 `src/composables/import-module.js` remains the current cloze import/check orchestration owner. It still reads/writes the injected `state` object, so it now updates the cloze adapter through `window.__state`.
 
 ## Preserved Compatibility
 
-- `window.__bridge` cloze fields remain in place for startup sync. Reducing them is task 4.9.
+- Startup `window.__bridge` cloze fields were removed in task 4.9; adapter binding now seeds Pinia directly.
 - `window.__state` cloze properties remain available for `import-module.js` and verification scripts.
 - `window.__clozeCheck`, `window.__buildClozeQuizMarkup`, `window.__clozeItems`, `window.__clozeAnswerState`, and `window.__hasClozeData` remain as existing compatibility globals.
 - No IndexedDB schema changes.
