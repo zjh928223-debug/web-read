@@ -28,8 +28,8 @@ assert.ok(
 });
 
 assert.ok(
-  indexSource.includes('<script src="annotation-bubble.js"></script>'),
-  'root annotation bubble script tag stays until Phase 5 removes all root script tags together'
+  !indexSource.includes('<script src="annotation-bubble.js"></script>'),
+  'root annotation bubble script tag should stay removed after Phase 5 tag cleanup'
 );
 
 console.log('annotation bubble module check passed');

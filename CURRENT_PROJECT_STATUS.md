@@ -12,7 +12,6 @@ The project is not a clean Vue-only app yet. It is a working hybrid:
 
 ```text
 index.html legacy DOM shell
-  -> root regular scripts
   -> compatibility ES modules under src/stores and src/composables
   -> app.js legacy central runtime
   -> session-init.js startup and annotation glue
@@ -57,16 +56,11 @@ There is no `read-26.html` in the current project root. Any reference to `read-2
 
 ```text
 1. External Google CSE script
-2. 4 root regular scripts
-   - chunk-note-layout-helpers.js
-   - chunk-note-layout-core.js
-   - annotation-bubble.js
-   - annotation-api-settings-ui.js
-3. 9 compatibility store modules under src/stores/
-4. 9 compatibility behavior modules under src/composables/
-5. app.js as an ES module
-6. src/composables/session-init.js as an ES module
-7. /src/main.js as the Vue + Pinia entry
+2. 9 compatibility store modules under src/stores/
+3. 14 compatibility/runtime modules under src/composables/
+4. app.js as an ES module
+5. src/composables/session-init.js as an ES module
+6. /src/main.js as the Vue + Pinia entry
 ```
 
 Do not casually reorder these scripts. The app still depends on global side effects and `window.*` exports.
@@ -227,7 +221,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 ### Chunk Notes
 
-- Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
+- Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and compatibility globals.
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
 - `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
 - `app.js` still keeps compatibility wrappers for existing global and inline callers, but the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
@@ -251,7 +245,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
   - `#btn-import-annotation-lightweight`
   - `#import-annotation-lightweight-file`
 - Lightweight annotation import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
-- API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; the root script tag remains until the Phase 5 root-tag removal task.
+- API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `index.html` no longer loads the root regular script.
 
 ## 8. Current Commands
 
@@ -357,14 +351,15 @@ Current checks cover:
 - migrated `chunk-note-layout-core.js` logic into `src/utils/chunk-note-layout-core.js` through `verify:chunk-note-layout-core`
 - migrated `annotation-bubble.js` logic into `src/composables/annotation-bubble.js` through `verify:annotation-bubble`
 - migrated `annotation-api-settings-ui.js` logic into `src/composables/annotation-api-settings-ui.js` through `verify:annotation-api-settings-ui`
+- removed the four root regular script tags from `index.html` and updated `verify:script-order`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
 ## 10. Build Behavior
 
-`vite.config.js` uses the Vue plugin and a custom `copy-legacy-root-scripts` plugin.
+`vite.config.js` still uses the Vue plugin and a custom `copy-legacy-root-scripts` plugin.
 
-The build copies these required root scripts into `dist/`:
+The build still copies these legacy root files into `dist/`, but `index.html` no longer loads them:
 
 ```text
 chunk-note-layout-helpers.js
@@ -373,7 +368,7 @@ annotation-bubble.js
 annotation-api-settings-ui.js
 ```
 
-These scripts are not bundled because they are still regular root scripts loaded by `index.html`.
+This copy logic is now stale and should be removed in task 6.6 after production load verification.
 
 ## 11. Storage Constraints
 
@@ -414,7 +409,7 @@ Main risks:
 - `src/stores/` and `src/pinia-stores/` can be confused.
 - Some modules depend on import-time side effects.
 - The annotation pipeline is large and split across many ES modules.
-- Root regular scripts are still required in production builds.
+- Root regular script files still exist, but `index.html` no longer loads them; stale production copy logic remains pending task 6.6.
 
 ## 13. Documentation Status
 

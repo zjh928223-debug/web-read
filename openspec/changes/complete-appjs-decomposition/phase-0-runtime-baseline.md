@@ -10,7 +10,6 @@ Current entry:
 
 ```text
 index.html
-  -> root regular scripts
   -> src/stores/*.js compatibility stores
   -> src/composables/*.js compatibility modules
   -> app.js
@@ -192,12 +191,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
 
 ```text
 1. External Google CSE script
-2. root regular scripts
-   2.1 chunk-note-layout-helpers.js
-   2.2 chunk-note-layout-core.js
-   2.3 annotation-bubble.js
-   2.4 annotation-api-settings-ui.js
-3. compatibility stores
+2. compatibility stores
    3.1 src/stores/theme.js
    3.2 src/stores/ui.js
    3.3 src/stores/audio.js
@@ -207,7 +201,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    3.7 src/stores/chunk.js
    3.8 src/stores/notes.js
    3.9 src/stores/annotation.js
-4. compatibility/runtime composables
+3. compatibility/runtime composables
    4.1 src/composables/glass-effects.js
    4.2 src/composables/chunk-note-layout.js
    4.3 src/composables/app-handlers.js
@@ -222,9 +216,9 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.12 src/composables/chunk-state.js
    4.13 src/composables/cloze-state.js
    4.14 src/composables/playback-state.js
-5. app.js
-6. src/composables/session-init.js
-7. /src/main.js
+4. app.js
+5. src/composables/session-init.js
+6. /src/main.js
 ```
 
 ### Inline Handlers
@@ -289,15 +283,15 @@ These absent/legacy IDs are risk signals, not automatic deletion candidates.
 
 | Script | Global exposed | Current consumers | Target owner |
 | --- | --- | --- | --- |
-| `chunk-note-layout-helpers.js` | root regular script plus `src/utils/chunk-note-layout-helpers.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-helpers.js` ES module | root script tag removed in task 6.5 |
-| `chunk-note-layout-core.js` | root regular script plus `src/utils/chunk-note-layout-core.js` compatibility global | root script tag remains until task 6.5; direct consumers now import/load the module replacement | `src/utils/chunk-note-layout-core.js` ES module | root script tag removed in task 6.5 |
-| `annotation-bubble.js` | root regular script plus `src/composables/annotation-bubble.js` compatibility global | root script tag remains until task 6.5; `app.js` now imports the module API | `src/composables/annotation-bubble.js` ES module | root script tag removed in task 6.5 |
-| `annotation-api-settings-ui.js` | root regular script plus `src/composables/annotation-api-settings-ui.js` compatibility global | root script tag remains until task 6.5; `session-init.js` now imports the module API | `src/composables/annotation-api-settings-ui.js` ES module | root script tag removed in task 6.5 |
+| `chunk-note-layout-helpers.js` | `src/utils/chunk-note-layout-helpers.js` compatibility global | root script tag removed in task 6.5; direct consumers import/load the module replacement | `src/utils/chunk-note-layout-helpers.js` ES module | done |
+| `chunk-note-layout-core.js` | `src/utils/chunk-note-layout-core.js` compatibility global | root script tag removed in task 6.5; direct consumers import/load the module replacement | `src/utils/chunk-note-layout-core.js` ES module | done |
+| `annotation-bubble.js` | `src/composables/annotation-bubble.js` compatibility global | root script tag removed in task 6.5; `app.js` imports the module API | `src/composables/annotation-bubble.js` ES module | done |
+| `annotation-api-settings-ui.js` | `src/composables/annotation-api-settings-ui.js` compatibility global | root script tag removed in task 6.5; `session-init.js` imports the module API | `src/composables/annotation-api-settings-ui.js` ES module | done |
 
 Build implication:
 
 - `vite.config.js` copies all four root scripts into `dist/`.
-- Copy logic can be removed only after `index.html` no longer loads these files as root regular scripts.
+- Copy logic can be removed in task 6.6 because `index.html` no longer loads these files as root regular scripts.
 
 ## 6. Verification Matrix
 
@@ -358,8 +352,8 @@ Record results after running:
   - read-web load check passed
   - read-web playback check passed
   - read-web interaction check passed
-2026-06-16 npm run build: passed
+2026-06-16 npm run build: passed after task 6.5
   - Vite production build completed
-  - Expected warnings remain for 4 root regular scripts without type="module"
-  - legacy copy plugin still required for current build output
+  - root regular script warnings are gone after removing the four root script tags from index.html
+  - stale legacy copy plugin cleanup remains pending task 6.6
 ```

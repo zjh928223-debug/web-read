@@ -32,8 +32,8 @@ assert.ok(
 });
 
 assert.ok(
-  indexSource.includes('<script src="annotation-api-settings-ui.js"></script>'),
-  'root annotation API settings script tag stays until Phase 5 removes all root script tags together'
+  !indexSource.includes('<script src="annotation-api-settings-ui.js"></script>'),
+  'root annotation API settings script tag should stay removed after Phase 5 tag cleanup'
 );
 
 console.log('annotation API settings UI module check passed');

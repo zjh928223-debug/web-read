@@ -9,17 +9,16 @@ read-web/
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
-├── chunk-note-layout-helpers.js       # Remaining regular script
-├── chunk-note-layout-core.js          # Remaining regular script
-├── annotation-bubble.js               # Remaining regular script
-└── annotation-api-settings-ui.js      # Remaining regular script
+├── chunk-note-layout-helpers.js       # Legacy root file, no longer loaded by index.html
+├── chunk-note-layout-core.js          # Legacy root file, no longer loaded by index.html
+├── annotation-bubble.js               # Legacy root file, no longer loaded by index.html
+└── annotation-api-settings-ui.js      # Legacy root file, no longer loaded by index.html
 ```
 
 ## Browser Execution Order
 
 ```text
 index.html
-├── root regular scripts
 ├── src/stores/*.js compatibility modules
 ├── src/composables/*.js compatibility modules
 ├── app.js
@@ -155,7 +154,7 @@ Legacy DOM and handlers still exist and must remain compatible until the migrati
 ## Verification
 
 ```text
-npm run build        # Vite build and legacy script copy
+npm run build        # Vite build; stale legacy script copy cleanup pending
 npm run verify:vite  # Vite dev server + Playwright load check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check

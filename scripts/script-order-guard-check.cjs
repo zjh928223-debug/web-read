@@ -8,10 +8,6 @@ const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 const scriptSrcs = Array.from(indexSource.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)).map((match) => match[1]);
 const expectedScriptSrcs = [
   'https://cse.google.com/cse.js?cx=048d09e2e2f764b7b',
-  'chunk-note-layout-helpers.js',
-  'chunk-note-layout-core.js',
-  'annotation-bubble.js',
-  'annotation-api-settings-ui.js',
   'src/stores/theme.js',
   'src/stores/ui.js',
   'src/stores/audio.js',
@@ -35,7 +31,7 @@ const expectedScriptSrcs = [
   '/src/main.js'
 ];
 
-assert.deepEqual(scriptSrcs, expectedScriptSrcs, 'index.html script order should match the current Phase 4 guardrail');
+assert.deepEqual(scriptSrcs, expectedScriptSrcs, 'index.html script order should match the current Phase 5 guardrail');
 
 [
   'chunk-note-layout-helpers.js',
@@ -44,7 +40,7 @@ assert.deepEqual(scriptSrcs, expectedScriptSrcs, 'index.html script order should
   'annotation-api-settings-ui.js'
 ].forEach((scriptName) => {
   const pattern = new RegExp(`<script src="${scriptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"></script>`);
-  assert.ok(pattern.test(indexSource), `${scriptName} should remain a root regular script until Phase 5 migration`);
+  assert.equal(pattern.test(indexSource), false, `${scriptName} should not be loaded as a root regular script`);
 });
 
 console.log('script order guard check passed');

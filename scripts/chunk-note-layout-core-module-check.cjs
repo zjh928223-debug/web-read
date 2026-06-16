@@ -30,8 +30,8 @@ assert.equal(layoutSource.includes('window.ChunkNoteLayoutCore'), false, 'chunk-
 });
 
 assert.ok(
-  indexSource.includes('<script src="chunk-note-layout-core.js"></script>'),
-  'root core script tag stays until Phase 5 removes all root script tags together'
+  !indexSource.includes('<script src="chunk-note-layout-core.js"></script>'),
+  'root core script tag should stay removed after Phase 5 tag cleanup'
 );
 
 console.log('chunk note layout core module check passed');

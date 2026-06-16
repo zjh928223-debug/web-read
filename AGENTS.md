@@ -23,13 +23,8 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 4 root regular scripts
-│   ├── chunk-note-layout-helpers.js
-│   ├── chunk-note-layout-core.js
-│   ├── annotation-bubble.js
-│   └── annotation-api-settings-ui.js
 ├── 9 src/stores/*.js module compatibility stores
-├── 9 src/composables/*.js module compatibility modules
+├── 14 src/composables/*.js module compatibility/runtime modules
 ├── app.js as type="module"
 ├── src/composables/session-init.js as type="module"
 └── /src/main.js as type="module" for Vue + Pinia
@@ -76,7 +71,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 - `src/pinia-stores/` - 9 real Pinia stores.
 - `src/stores/` - 9 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
-- Root `annotation-*.js` and `chunk-note-layout-*.js` - 4 remaining regular scripts still required by `index.html`.
+- Root `annotation-*.js` and `chunk-note-layout-*.js` - legacy root files no longer loaded by `index.html`; stale Vite copy cleanup remains pending.
 - `styles.css` - global CSS loaded directly by `index.html`.
 
 ## Hard Constraints
@@ -114,7 +109,7 @@ Treat `src/composables/session-init.js` as high-risk. It is not just startup cod
 
 ```bash
 npm run dev          # Vite dev server, port 5173
-npm run build        # Production build, copies 4 legacy root scripts into dist
+npm run build        # Production build; stale legacy root script copy cleanup is pending
 npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
 npm run verify:chunk-notes-state  # Focused chunk note state helper check
 npm run verify:sentence-notes-state  # Focused sentence note state helper check

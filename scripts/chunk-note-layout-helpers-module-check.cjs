@@ -31,8 +31,8 @@ assert.equal(layoutSource.includes('window.ChunkNoteLayoutHelpers'), false, 'chu
 });
 
 assert.ok(
-  indexSource.includes('<script src="chunk-note-layout-helpers.js"></script>'),
-  'root helper script tag stays until Phase 5 removes all root script tags together'
+  !indexSource.includes('<script src="chunk-note-layout-helpers.js"></script>'),
+  'root helper script tag should stay removed after Phase 5 tag cleanup'
 );
 
 console.log('chunk note layout helpers module check passed');

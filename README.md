@@ -51,7 +51,7 @@ Useful URLs:
 
 ```bash
 npm run dev          # Vite dev server
-npm run build        # Build and copy required root legacy scripts into dist
+npm run build        # Build; legacy root script copy cleanup is pending
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
@@ -84,15 +84,14 @@ npm test             # Same as verify:vite
 `index.html` currently loads:
 
 ```text
-4 root regular scripts
 9 src/stores/*.js module compatibility stores
-9 src/composables/*.js module compatibility modules
+14 src/composables/*.js module compatibility/runtime modules
 app.js module
 src/composables/session-init.js module
 /src/main.js Vue + Pinia module
 ```
 
-The 4 remaining root regular scripts are:
+The former root regular scripts now load through Vite module replacements and are no longer referenced by `index.html`:
 
 ```text
 chunk-note-layout-helpers.js
@@ -139,8 +138,8 @@ Do not change this schema without an explicit migration plan.
 - Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
-- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; `app.js` reaches it through a module API while the root script tag remains until Phase 5 tag removal.
-- Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `session-init.js` reaches it through a module API while the root script tag remains until Phase 5 tag removal.
+- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; `app.js` reaches it through a module API.
+- Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `session-init.js` reaches it through a module API.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
-- Root regular scripts are still required at runtime and must be copied for production builds.
+- Former root regular scripts are no longer loaded by `index.html`; stale production copy logic remains pending cleanup.
