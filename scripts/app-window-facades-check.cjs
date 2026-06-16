@@ -9,6 +9,52 @@ const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
+const allowedAppWindowAssignments = new Set([
+  '__USE_VUE_RENDERING',
+  '__state',
+  'cycleHighlightMode',
+  'toggleChunkMode',
+  'toggleChunkFocusMode',
+  'openChunkNoteStyleModal',
+  'closeChunkNoteStyleModal',
+  'toggleChunkShadowManual',
+  'updateChunkNoteStyle',
+  'initDB',
+  'saveToDB',
+  'loadFromDB',
+  'deleteFromDB',
+  'clearDBStore',
+  'showToast',
+  'showError',
+  'bridgeToPinia',
+  'processTranscript',
+  'selectSentenceFromChunkTarget',
+  'openChunkNoteContextFromEvent',
+  'notifyAnnotationBubbleWordClick',
+  'isInputLikeTarget',
+  'adjustChunkNoteArrowSizeByGap',
+  'getAnnotationGenerationScope',
+  'buildCurrentSentenceDocId',
+  'clearGeneratedAnnotationIndex',
+  'loadChunkNotesForCurrentAudio',
+  'setChunkNoteVisible',
+  'loadSentenceNotesForCurrentAudio',
+  'switchSentenceNotesDoc',
+  'applyCurrentAudioMeta',
+  'clearPersistedChunkSession',
+  'emitAnnotationDiagnostics',
+  'scheduleGeneratedAnnotationIndexRefresh',
+  'syncAnnotationGenerationEntryStatus',
+  'initAnnotationApiSettingsUi',
+  'processChunkData',
+  'updateChunkCnHoldBtn'
+]);
+
+const appWindowAssignments = Array.from(appSource.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=(?!=)/g), (match) => match[1]);
+appWindowAssignments.forEach((name) => {
+  assert.ok(allowedAppWindowAssignments.has(name), `app.js should not assign unexpected window.${name}`);
+});
+
 [
   'handleBackwardClick',
   'handleForwardClick',

@@ -71,7 +71,7 @@
 - [x] 7.2 Confirm no inline handler calls an `app.js` export.
 - [x] 7.3 Confirm no runtime module depends on `window.__state` as a real state source.
 - [x] 7.4 Confirm `window.__bridge` no longer participates in Vue/Pinia startup sync.
-- [ ] 7.5 Delete unused `window.*` compatibility facades.
+- [x] 7.5 Delete unused `window.*` compatibility facades.
 - [ ] 7.6 Delete `app.js`.
 - [ ] 7.7 Remove stale documentation that describes `app.js` as the runtime center.
 - [ ] 7.8 Run `npm test`, `npm run verify:playback`, `npm run verify:interactions`, `npm run build`, and a browser smoke test against `http://127.0.0.1:5173/`.

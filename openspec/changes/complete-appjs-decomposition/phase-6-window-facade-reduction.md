@@ -29,13 +29,13 @@ The window functions still exist for compatibility, but their owners are now:
 
 Added `npm run verify:app-window-facades`, backed by `scripts/app-window-facades-check.cjs`.
 
-The check guards that `app.js` does not re-export these facades and that the module owners still export them.
+The check guards that `app.js` does not re-export these facades, that the module owners still export them, and that remaining app-level window assignments stay within an explicit allowlist.
 
 ## Remaining Work
 
-Task 7.5 is not complete yet.
+Task 7.5 is complete.
 
-Remaining compatibility exports still need consumer-by-consumer migration before removal.
+Remaining app-level compatibility exports have known consumers and still need consumer-by-consumer migration before `app.js` can be removed.
 
 ## Verification Results
 
