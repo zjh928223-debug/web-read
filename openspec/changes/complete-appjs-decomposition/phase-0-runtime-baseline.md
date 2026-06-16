@@ -304,6 +304,7 @@ Build implication:
 | Area | Required verification | Notes |
 | --- | --- | --- |
 | Load path / script order / entry files | `npm test`, `npm run build` | `npm test` runs the Vite load check; build verifies legacy copy behavior. |
+| Script order guard | `npm run verify:script-order`, `npm test`, `npm run build` | Required before and after any intentional `index.html` script order change. |
 | Playback highlight / seek / follow | `npm run verify:playback`, `npm test` | Also run when changing `forceUpdateUI`, `mainUpdateHighlight`, index helpers, or follow suppression. |
 | AI chunk mode / chunk Chinese / focus | `npm run verify:playback`, `npm run verify:interactions`, `npm test` | Required when changing chunk state, chunk rendering, or `toggleChunkMode`. |
 | Chunk note interactions | `npm run verify:interactions`, browser smoke check | Covers right-click, save, underline, connectors, delete prompt. Manual browser check recommended after subsystem moves. |

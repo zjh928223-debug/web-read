@@ -69,6 +69,7 @@ npm run verify:transcript-interactions # Focused normal transcript interaction c
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
 npm run verify:render-facades # Focused legacy render facade removal check
+npm run verify:script-order # Focused index.html script order guard
 npm test             # Same as verify:vite
 ```
 

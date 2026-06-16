@@ -271,6 +271,7 @@ npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
 npm run verify:render-facades
+npm run verify:script-order
 npm test
 ```
 
@@ -309,6 +310,7 @@ scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
 scripts/render-facades-check.cjs
+scripts/script-order-guard-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -339,6 +341,7 @@ Current checks cover:
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
 - removed global render facades through `verify:render-facades`
+- guarded current `index.html` script order through `verify:script-order`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
