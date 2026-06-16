@@ -273,6 +273,7 @@ npm run verify:chunk-note-layout-core
 npm run verify:annotation-bubble
 npm run verify:annotation-api-settings-ui
 npm run verify:legacy-root-copy
+npm run verify:production-preview
 npm test
 ```
 
@@ -317,6 +318,7 @@ scripts/chunk-note-layout-core-module-check.cjs
 scripts/annotation-bubble-module-check.cjs
 scripts/annotation-api-settings-ui-module-check.cjs
 scripts/legacy-root-copy-check.cjs
+scripts/production-preview-load-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -355,6 +357,7 @@ Current checks cover:
 - migrated `annotation-api-settings-ui.js` logic into `src/composables/annotation-api-settings-ui.js` through `verify:annotation-api-settings-ui`
 - removed the four root regular script tags from `index.html` and updated `verify:script-order`
 - removed stale `vite.config.js` root script copy logic through `verify:legacy-root-copy`
+- Phase 5 root script and entry cleanup checkpoint passed through `npm run build`, `npm test`, and `npm run verify:production-preview`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

@@ -33,6 +33,7 @@
     "verify:annotation-bubble": "node scripts/annotation-bubble-module-check.cjs",
     "verify:annotation-api-settings-ui": "node scripts/annotation-api-settings-ui-module-check.cjs",
     "verify:legacy-root-copy": "node scripts/legacy-root-copy-check.cjs",
+    "verify:production-preview": "node scripts/production-preview-load-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"

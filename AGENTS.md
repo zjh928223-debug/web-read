@@ -132,6 +132,7 @@ npm run verify:chunk-note-layout-core  # Focused chunk note layout core module c
 npm run verify:annotation-bubble  # Focused annotation bubble module check
 npm run verify:annotation-api-settings-ui  # Focused annotation API settings UI module check
 npm run verify:legacy-root-copy  # Focused legacy root copy removal check
+npm run verify:production-preview  # Production preview load check against dist
 npm test             # Same as verify:vite
 ```
 

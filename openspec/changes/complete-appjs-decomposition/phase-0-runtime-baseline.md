@@ -307,7 +307,7 @@ Build implication:
 | Hotkeys / keyboard handling | `npm run verify:keyboard-boundary`, `npm run verify:interactions`, `npm run verify:playback` if navigation affected | Required for `keyboard-module.js` or key state ownership changes. |
 | Session restore / persisted cleanup | `npm test`, targeted browser smoke check | Existing automated coverage is partial; document manual checks if session code changes. |
 | Annotation lightweight import/export | `npm run verify:annotation-lightweight-module`, `npm run verify:interactions`, `npm test` | Required when changing import/export glue or annotation session scope. |
-| Root regular scripts / production build | `npm run build`, `npm test`, production preview/load check | Required before deleting script tags or `vite.config.js` copy logic. |
+| Root regular scripts / production build | `npm run build`, `npm test`, `npm run verify:production-preview` | Required before deleting script tags or `vite.config.js` copy logic. |
 | Documentation-only Phase 0 updates | `npm test`, `npm run build` baseline | Establishes current clean baseline before behavioral migration. |
 
 ## 7. Cleanup Guardrails

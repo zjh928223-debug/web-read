@@ -63,7 +63,7 @@
 - [x] 6.4 Audit consumers of `annotation-api-settings-ui.js` and migrate it into the Vite module graph if no regular script semantics remain necessary.
 - [x] 6.5 Remove root script tags from `index.html` only after their module replacements are loaded by Vite.
 - [x] 6.6 Remove `vite.config.js` legacy root script copy logic only after production build no longer needs those files copied.
-- [ ] 6.7 Run `npm run build`, `npm test`, and production preview/load verification.
+- [x] 6.7 Run `npm run build`, `npm test`, and production preview/load verification.
 
 ## 7. Phase 6 - Remove app.js
 
