@@ -290,14 +290,14 @@ These absent/legacy IDs are risk signals, not automatic deletion candidates.
 
 Build implication:
 
-- `vite.config.js` copies all four root scripts into `dist/`.
-- Copy logic can be removed in task 6.6 because `index.html` no longer loads these files as root regular scripts.
+- `vite.config.js` no longer copies root scripts into `dist/`.
+- The former root scripts are loaded through Vite module replacements.
 
 ## 6. Verification Matrix
 
 | Area | Required verification | Notes |
 | --- | --- | --- |
-| Load path / script order / entry files | `npm test`, `npm run build` | `npm test` runs the Vite load check; build verifies legacy copy behavior. |
+| Load path / script order / entry files | `npm test`, `npm run build` | `npm test` runs the Vite load check; build verifies standard Vite output. |
 | Script order guard | `npm run verify:script-order`, `npm test`, `npm run build` | Required before and after any intentional `index.html` script order change. |
 | Playback highlight / seek / follow | `npm run verify:playback`, `npm test` | Also run when changing `forceUpdateUI`, `mainUpdateHighlight`, index helpers, or follow suppression. |
 | AI chunk mode / chunk Chinese / focus | `npm run verify:playback`, `npm run verify:interactions`, `npm test` | Required when changing chunk state, chunk rendering, or `toggleChunkMode`. |
@@ -352,8 +352,8 @@ Record results after running:
   - read-web load check passed
   - read-web playback check passed
   - read-web interaction check passed
-2026-06-16 npm run build: passed after task 6.5
+2026-06-16 npm run build: passed after task 6.6
   - Vite production build completed
   - root regular script warnings are gone after removing the four root script tags from index.html
-  - stale legacy copy plugin cleanup remains pending task 6.6
+  - stale legacy copy plugin has been removed from vite.config.js
 ```

@@ -51,7 +51,7 @@ Useful URLs:
 
 ```bash
 npm run dev          # Vite dev server
-npm run build        # Build; legacy root script copy cleanup is pending
+npm run build        # Vite production build
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
@@ -74,6 +74,7 @@ npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper modu
 npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm run verify:annotation-bubble # Focused annotation bubble module check
 npm run verify:annotation-api-settings-ui # Focused annotation API settings UI module check
+npm run verify:legacy-root-copy # Focused legacy root copy removal check
 npm test             # Same as verify:vite
 ```
 
@@ -142,4 +143,4 @@ Do not change this schema without an explicit migration plan.
 - Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `session-init.js` reaches it through a module API.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
-- Former root regular scripts are no longer loaded by `index.html`; stale production copy logic remains pending cleanup.
+- Former root regular scripts are no longer loaded by `index.html` and are no longer copied by Vite.

@@ -71,7 +71,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 - `src/pinia-stores/` - 9 real Pinia stores.
 - `src/stores/` - 9 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
-- Root `annotation-*.js` and `chunk-note-layout-*.js` - legacy root files no longer loaded by `index.html`; stale Vite copy cleanup remains pending.
+- Root `annotation-*.js` and `chunk-note-layout-*.js` - legacy root files no longer loaded by `index.html` or copied by Vite.
 - `styles.css` - global CSS loaded directly by `index.html`.
 
 ## Hard Constraints
@@ -109,7 +109,7 @@ Treat `src/composables/session-init.js` as high-risk. It is not just startup cod
 
 ```bash
 npm run dev          # Vite dev server, port 5173
-npm run build        # Production build; stale legacy root script copy cleanup is pending
+npm run build        # Production build
 npm run verify:vite  # Starts Vite on 127.0.0.1:4173 and runs Playwright load check
 npm run verify:chunk-notes-state  # Focused chunk note state helper check
 npm run verify:sentence-notes-state  # Focused sentence note state helper check
@@ -131,6 +131,7 @@ npm run verify:chunk-note-layout-helpers  # Focused chunk note layout helper mod
 npm run verify:chunk-note-layout-core  # Focused chunk note layout core module check
 npm run verify:annotation-bubble  # Focused annotation bubble module check
 npm run verify:annotation-api-settings-ui  # Focused annotation API settings UI module check
+npm run verify:legacy-root-copy  # Focused legacy root copy removal check
 npm test             # Same as verify:vite
 ```
 

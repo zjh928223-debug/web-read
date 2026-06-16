@@ -7,7 +7,7 @@ read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
 ├── app.js                             # Legacy central bus, about 1815 lines
 ├── styles.css                         # Global CSS linked by index.html
-├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
+├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
 ├── chunk-note-layout-helpers.js       # Legacy root file, no longer loaded by index.html
 ├── chunk-note-layout-core.js          # Legacy root file, no longer loaded by index.html
@@ -154,7 +154,7 @@ Legacy DOM and handlers still exist and must remain compatible until the migrati
 ## Verification
 
 ```text
-npm run build        # Vite build; stale legacy script copy cleanup pending
+npm run build        # Vite production build
 npm run verify:vite  # Vite dev server + Playwright load check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check
@@ -172,6 +172,7 @@ npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper modu
 npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm run verify:annotation-bubble # Focused annotation bubble module check
 npm run verify:annotation-api-settings-ui # Focused annotation API settings UI module check
+npm run verify:legacy-root-copy # Focused legacy root copy removal check
 npm test             # Alias for verify:vite
 ```
 

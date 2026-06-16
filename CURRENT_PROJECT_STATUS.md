@@ -41,7 +41,7 @@ Top-level runtime files:
 index.html                         browser entry and legacy DOM shell
 app.js                             legacy central runtime, about 1815 lines
 styles.css                         global styles, about 2322 lines
-vite.config.js                     Vite + Vue config, copies root legacy scripts
+vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
 src/main.js                        Vue mount, Pinia setup, side-effect imports, about 149 lines
 src/App.vue                        root Vue component
@@ -272,6 +272,7 @@ npm run verify:chunk-note-layout-helpers
 npm run verify:chunk-note-layout-core
 npm run verify:annotation-bubble
 npm run verify:annotation-api-settings-ui
+npm run verify:legacy-root-copy
 npm test
 ```
 
@@ -315,6 +316,7 @@ scripts/chunk-note-layout-helpers-module-check.cjs
 scripts/chunk-note-layout-core-module-check.cjs
 scripts/annotation-bubble-module-check.cjs
 scripts/annotation-api-settings-ui-module-check.cjs
+scripts/legacy-root-copy-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -352,14 +354,15 @@ Current checks cover:
 - migrated `annotation-bubble.js` logic into `src/composables/annotation-bubble.js` through `verify:annotation-bubble`
 - migrated `annotation-api-settings-ui.js` logic into `src/composables/annotation-api-settings-ui.js` through `verify:annotation-api-settings-ui`
 - removed the four root regular script tags from `index.html` and updated `verify:script-order`
+- removed stale `vite.config.js` root script copy logic through `verify:legacy-root-copy`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
 ## 10. Build Behavior
 
-`vite.config.js` still uses the Vue plugin and a custom `copy-legacy-root-scripts` plugin.
+`vite.config.js` uses the Vue plugin without legacy root script copy logic.
 
-The build still copies these legacy root files into `dist/`, but `index.html` no longer loads them:
+These legacy root files still exist in the repository, but `index.html` no longer loads them and production build no longer copies them as root assets:
 
 ```text
 chunk-note-layout-helpers.js
@@ -368,7 +371,7 @@ annotation-bubble.js
 annotation-api-settings-ui.js
 ```
 
-This copy logic is now stale and should be removed in task 6.6 after production load verification.
+Their module replacements are loaded through Vite.
 
 ## 11. Storage Constraints
 
@@ -409,7 +412,7 @@ Main risks:
 - `src/stores/` and `src/pinia-stores/` can be confused.
 - Some modules depend on import-time side effects.
 - The annotation pipeline is large and split across many ES modules.
-- Root regular script files still exist, but `index.html` no longer loads them; stale production copy logic remains pending task 6.6.
+- Root regular script files still exist, but `index.html` no longer loads them and Vite no longer copies them as root assets.
 
 ## 13. Documentation Status
 
