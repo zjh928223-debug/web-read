@@ -7,6 +7,7 @@
     var sanitizeChunkNoteFontSize = deps.sanitizeChunkNoteFontSize;
     var getIsChunkMode = deps.getIsChunkMode;
     var chunkNoteCtxMenuEl = deps.chunkNoteCtxMenuEl;
+    var getChunkNoteDraftStorageKey = deps.getChunkNoteDraftStorageKey;
     var closeChunkNotePopover = deps.closeChunkNotePopover;
     var clearChunkNoteConnectors = deps.clearChunkNoteConnectors;
     var ensureChunkNoteOverlayLayers = deps.ensureChunkNoteOverlayLayers;
@@ -17,6 +18,7 @@
     var makeSelectionNoteId = deps.makeSelectionNoteId;
     var now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
     var fallbackFileState = { handle: null, audioKey: '', fileName: '' };
+    var chunkNoteDraftSaveTimer = null;
 
     function getChunkNotesMap() {
       if (!ns.chunkNotesMap || typeof ns.chunkNotesMap !== 'object') ns.chunkNotesMap = {};
@@ -43,6 +45,37 @@
       return Object.values(getChunkNotesMap())
         .filter(function (n) { return n && String(n.chunkRef || '') === ref; })
         .sort(function (a, b) { return (Number(a.startGlobal) - Number(b.startGlobal)) || (Number(a.endGlobal) - Number(b.endGlobal)); });
+    }
+
+    function getChunkNotesForBlockRefs(refs) {
+      var refSet = new Set((refs || []).map(function (ref) { return String(ref || ''); }).filter(Boolean));
+      if (!refSet.size) return [];
+      return Object.values(getChunkNotesMap())
+        .filter(function (note) { return note && refSet.has(String(note.chunkRef || '')); })
+        .sort(function (a, b) { return (Number(a.startGlobal) - Number(b.startGlobal)) || (Number(a.endGlobal) - Number(b.endGlobal)); });
+    }
+
+    function getChunkNoteTagById(noteId) {
+      return document.getElementById('chunk-note-tag-' + String(noteId || ''));
+    }
+
+    function setSelectedChunkNote(noteId) {
+      ns.selectedChunkNoteId = String(noteId || '');
+      document.querySelectorAll('.chunk-note-tag.selected').forEach(function (el) {
+        el.classList.remove('selected');
+      });
+      if (!ns.selectedChunkNoteId) return '';
+      var tag = getChunkNoteTagById(ns.selectedChunkNoteId);
+      if (tag) tag.classList.add('selected');
+      return ns.selectedChunkNoteId;
+    }
+
+    function getSelectedChunkNoteId() {
+      return String(ns.selectedChunkNoteId || '');
+    }
+
+    function getActiveChunkNoteId() {
+      return String(ns.activeChunkNoteId || '');
     }
 
     function deleteChunkNote(noteId) {
@@ -202,6 +235,81 @@
       return setChunkNotesFileState({ handle: null, audioKey: '', fileName: '' });
     }
 
+    function getDraftStorageKey() {
+      return typeof getChunkNoteDraftStorageKey === 'function' ? getChunkNoteDraftStorageKey() : 'chunkNoteDraft';
+    }
+
+    function clearChunkNoteDraft() {
+      try {
+        localStorage.removeItem(getDraftStorageKey());
+      } catch (err) {}
+    }
+
+    function buildChunkNoteDraftPayload(ctx, text, modalRect) {
+      return {
+        version: 1,
+        audioKey: deps.currentAudioKeyGetter ? deps.currentAudioKeyGetter() : 'default-audio',
+        updatedAt: now(),
+        ctx: {
+          noteId: String(ctx && ctx.noteId || ''),
+          chunkRef: String(ctx && ctx.chunkRef || ''),
+          chunkIdx: Number(ctx && ctx.chunkIdx || -1),
+          startGlobal: Number(ctx && ctx.startGlobal),
+          endGlobal: Number(ctx && ctx.endGlobal),
+          selectedText: String(ctx && ctx.selectedText || '')
+        },
+        text: String(text || ''),
+        modal: modalRect ? {
+          left: Number(modalRect.left),
+          top: Number(modalRect.top),
+          width: Number(modalRect.width),
+          height: Number(modalRect.height)
+        } : null
+      };
+    }
+
+    function persistChunkNoteDraft(ctx, text, modalRect, immediate) {
+      var body = String(text || '');
+      if (!body.trim()) {
+        clearChunkNoteDraft();
+        return;
+      }
+      var payload = buildChunkNoteDraftPayload(ctx, body, modalRect);
+      function write() {
+        try {
+          localStorage.setItem(getDraftStorageKey(), JSON.stringify(payload));
+        } catch (err) {}
+      }
+      if (immediate) write();
+      else {
+        if (chunkNoteDraftSaveTimer) clearTimeout(chunkNoteDraftSaveTimer);
+        chunkNoteDraftSaveTimer = setTimeout(write, 120);
+      }
+    }
+
+    function cancelChunkNoteDraftSaveTimer() {
+      if (chunkNoteDraftSaveTimer) {
+        clearTimeout(chunkNoteDraftSaveTimer);
+        chunkNoteDraftSaveTimer = null;
+      }
+    }
+
+    function readChunkNoteDraft() {
+      var raw = null;
+      try {
+        raw = localStorage.getItem(getDraftStorageKey());
+      } catch (err) {}
+      if (!raw) return null;
+      try {
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        return parsed;
+      } catch (err) {
+        clearChunkNoteDraft();
+        return null;
+      }
+    }
+
     function buildChunkNotesSnapshot() {
       return {
         version: 1,
@@ -270,6 +378,16 @@
     function closeChunkNoteContextMenu() {
       if (chunkNoteCtxMenuEl) chunkNoteCtxMenuEl.style.display = 'none';
       ns.pendingChunkSelectionCtx = null;
+    }
+
+    function getPendingChunkSelectionCtx() {
+      return ns.pendingChunkSelectionCtx || null;
+    }
+
+    function consumePendingChunkSelectionCtx() {
+      var ctx = ns.pendingChunkSelectionCtx || null;
+      ns.pendingChunkSelectionCtx = null;
+      return ctx;
     }
 
     function openChunkNoteContextMenu(clientX, clientY, ctx) {
@@ -374,12 +492,21 @@
       listChunkNotes: listChunkNotes,
       getChunkNote: getChunkNote,
       getChunkNotesForRef: getChunkNotesForRef,
+      getChunkNotesForBlockRefs: getChunkNotesForBlockRefs,
+      getChunkNoteTagById: getChunkNoteTagById,
+      setSelectedChunkNote: setSelectedChunkNote,
+      getSelectedChunkNoteId: getSelectedChunkNoteId,
+      getActiveChunkNoteId: getActiveChunkNoteId,
       deleteChunkNote: deleteChunkNote,
       upsertChunkNote: upsertChunkNote,
       applyImportedChunkNotes: applyImportedChunkNotes,
       getChunkNotesFileState: getChunkNotesFileState,
       setChunkNotesFileState: setChunkNotesFileState,
       clearChunkNotesFileState: clearChunkNotesFileState,
+      clearChunkNoteDraft: clearChunkNoteDraft,
+      persistChunkNoteDraft: persistChunkNoteDraft,
+      readChunkNoteDraft: readChunkNoteDraft,
+      cancelChunkNoteDraftSaveTimer: cancelChunkNoteDraftSaveTimer,
       buildChunkNotesSnapshot: buildChunkNotesSnapshot,
       saveChunkNotesDebounced: saveChunkNotesDebounced,
       saveChunkNotesNow: saveChunkNotesNow,
@@ -387,6 +514,8 @@
       setChunkNoteVisible: setChunkNoteVisible,
       getChunkBlockByRef: getChunkBlockByRef,
       closeChunkNoteContextMenu: closeChunkNoteContextMenu,
+      getPendingChunkSelectionCtx: getPendingChunkSelectionCtx,
+      consumePendingChunkSelectionCtx: consumePendingChunkSelectionCtx,
       openChunkNoteContextMenu: openChunkNoteContextMenu,
       getChunkNoteAccent: getChunkNoteAccent,
       clearChunkWordAnnotations: clearChunkWordAnnotations,

@@ -200,7 +200,7 @@ The current migration goal should be to keep behavior stable while gradually mov
 ### Chunk Notes
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
-- Chunk note record CRUD, import normalization, snapshot saving, and export file handle state now delegate through `src/composables/notes-module.js`.
+- Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, and pending context access now delegate through `src/composables/notes-module.js`.
 - Chunk note overlay/tag rendering, popover DOM, drag/resize/edit behavior, style modal, and right-click context resolution still remain in `app.js`.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.

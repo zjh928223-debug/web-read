@@ -226,12 +226,7 @@
     const readFileAsText = window.ImportExportSharedHelpers.readFileAsText;
 
     function setSelectedChunkNote(noteId) {
-        selectedChunkNoteId = String(noteId || '');
-        _ns.selectedChunkNoteId = selectedChunkNoteId;
-        document.querySelectorAll('.chunk-note-tag.selected').forEach(el => el.classList.remove('selected'));
-        if (!selectedChunkNoteId) return;
-        const tag = getChunkNoteTagById(selectedChunkNoteId);
-        if (tag) tag.classList.add('selected');
+        return _cnApi.setSelectedChunkNote(noteId);
     }
 
     function closeChunkNoteDeleteDialog() {
@@ -406,7 +401,7 @@
     }
 
     function getChunkNoteTagById(noteId) {
-        return document.getElementById(`chunk-note-tag-${noteId}`);
+        return _cnApi.getChunkNoteTagById(noteId);
     }
 
     function ensureChunkNoteOverlayLayers() {
@@ -471,50 +466,13 @@
     }
 
     function clearChunkNoteDraft() {
-        try {
-            localStorage.removeItem(getChunkNoteDraftStorageKey());
-        } catch (err) {}
+        return _cnApi.clearChunkNoteDraft();
     }
 
     function persistChunkNoteDraft(immediate = false) {
         if (!notePopoverCtx || !chunkNoteModalInputEl) return;
-        const text = String(chunkNoteModalInputEl.value || '');
-        const trimmed = text.trim();
-        if (!trimmed) {
-            clearChunkNoteDraft();
-            return;
-        }
         const modalRect = chunkNoteModalEl ? chunkNoteModalEl.getBoundingClientRect() : null;
-        const payload = {
-            version: 1,
-            audioKey: currentAudioKey || 'default-audio',
-            updatedAt: Date.now(),
-            ctx: {
-                noteId: String(notePopoverCtx.noteId || ''),
-                chunkRef: String(notePopoverCtx.chunkRef || ''),
-                chunkIdx: Number(notePopoverCtx.chunkIdx || -1),
-                startGlobal: Number(notePopoverCtx.startGlobal),
-                endGlobal: Number(notePopoverCtx.endGlobal),
-                selectedText: String(notePopoverCtx.selectedText || '')
-            },
-            text,
-            modal: modalRect ? {
-                left: Number(modalRect.left),
-                top: Number(modalRect.top),
-                width: Number(modalRect.width),
-                height: Number(modalRect.height)
-            } : null
-        };
-        const write = () => {
-            try {
-                localStorage.setItem(getChunkNoteDraftStorageKey(), JSON.stringify(payload));
-            } catch (err) {}
-        };
-        if (immediate) write();
-        else {
-            if (chunkNoteDraftSaveTimer) clearTimeout(chunkNoteDraftSaveTimer);
-            chunkNoteDraftSaveTimer = setTimeout(write, 120);
-        }
+        return _cnApi.persistChunkNoteDraft(notePopoverCtx, chunkNoteModalInputEl.value || '', modalRect, immediate);
     }
 
     function getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal) {
@@ -538,18 +496,7 @@
         if (chunkNoteDraftRestoreDone) return;
         if (!isChunkMode || !hasAiChunkData) return;
         chunkNoteDraftRestoreDone = true;
-        let raw = null;
-        try {
-            raw = localStorage.getItem(getChunkNoteDraftStorageKey());
-        } catch (err) {}
-        if (!raw) return;
-        let parsed = null;
-        try {
-            parsed = JSON.parse(raw);
-        } catch (err) {
-            clearChunkNoteDraft();
-            return;
-        }
+        const parsed = _cnApi.readChunkNoteDraft();
         if (!parsed || typeof parsed !== 'object' || !parsed.ctx) return;
         const ctxRaw = parsed.ctx || {};
         const chunkRef = String(ctxRaw.chunkRef || '');
@@ -695,7 +642,7 @@
         if (!isChunkMode || !_ns.chunkNoteVisible) return;
         ensureChunkNoteOverlayLayers();
         syncChunkNoteOverlaySize();
-        Object.values(_ns.chunkNotesMap).forEach(note => {
+        _cnApi.listChunkNotes().forEach(note => {
             if (!note || !note.id) return;
             const tag = getChunkNoteTagById(note.id);
             if (!tag) return;
@@ -1097,7 +1044,7 @@
         closeChunkNoteDeleteDialog();
         document.querySelectorAll('.chunk-note-tag').forEach(el => el.remove());
         if (!isChunkMode || !_ns.chunkNoteVisible) return;
-        Object.values(_ns.chunkNotesMap)
+        _cnApi.listChunkNotes()
             .filter(n => n && n.note && String(n.note).trim())
             .sort((a, b) => (a.chunkIdx - b.chunkIdx) || (a.startGlobal - b.startGlobal))
             .forEach(spawnChunkNoteTag);
@@ -1106,7 +1053,8 @@
 
     function drawChunkNoteConnector(note) {
         if (!chunkNoteSvgLayer || !note || !note.id || !note.chunkRef) return;
-        if (!_ns.activeChunkNoteId || _ns.activeChunkNoteId !== note.id) return;
+        const activeChunkNoteId = _cnApi.getActiveChunkNoteId();
+        if (!activeChunkNoteId || activeChunkNoteId !== note.id) return;
         const source = getChunkWordSpan(note);
         const tag = getChunkNoteTagById(note.id);
         if (!source || !tag) return;
@@ -1131,7 +1079,7 @@
         if (!isChunkMode || !_ns.chunkNoteVisible) return;
         ensureChunkNoteOverlayLayers();
         syncChunkNoteOverlaySize();
-        Object.values(_ns.chunkNotesMap).forEach(drawChunkNoteConnector);
+        _cnApi.listChunkNotes().forEach(drawChunkNoteConnector);
     }
 
     function scheduleChunkNoteConnectorRedraw() {
@@ -1148,10 +1096,7 @@
             chunkNoteModalEl = null;
             chunkNoteModalInputEl = null;
         }
-        if (chunkNoteDraftSaveTimer) {
-            clearTimeout(chunkNoteDraftSaveTimer);
-            chunkNoteDraftSaveTimer = null;
-        }
+        _cnApi.cancelChunkNoteDraftSaveTimer();
         chunkNoteModalDragging = false;
         chunkNoteModalResizing = false;
         notePopoverCtx = null;
@@ -1578,6 +1523,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         loadFromDB: loadFromDB,
         saveToDB: saveToDB,
         getChunkNotesStorageKey: getChunkNotesStorageKey,
+        getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
         getIsChunkMode: function () { return isChunkMode; },
         currentAudioKeyGetter: function () { return currentAudioKey; },
@@ -1818,7 +1764,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return _importApi.processChunkData(data);
     }
 
-    let chunkNoteDraftSaveTimer = null;
     let notePopoverCtx = null;
     let chunkNoteModalEl = null;
     let chunkNoteModalInputEl = null;
@@ -1827,7 +1772,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let chunkNoteConnectorRaf = 0;
     let chunkNoteLayoutRaf = 0;
     let chunkNoteDraftRestoreDone = false;
-    let selectedChunkNoteId = '';
     let chunkNoteDeleteDialogEl = null;
     let chunkNoteExportDialogEl = null;
     let chunkNoteExportDialogKeydownHandler = null;
@@ -1947,9 +1891,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function getChunkNotesForRef(chunkRef) {
-        return Object.values(_ns.chunkNotesMap)
-            .filter(n => n && n.chunkRef === chunkRef)
-            .sort((a, b) => (a.startGlobal - b.startGlobal) || (a.endGlobal - b.endGlobal));
+        return _cnApi.getChunkNotesForRef(chunkRef);
     }
 
     function getChunkBlocksMatchingRef(chunkRef) {
@@ -1961,13 +1903,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function getChunkNotesForBlock(block) {
         if (!block) return [];
-        const refs = new Set([
+        const refs = [
             String(block.dataset.chunkRef || ''),
             String(block.dataset.legacyChunkRef || '')
-        ].filter(Boolean));
-        return Object.values(_ns.chunkNotesMap)
-            .filter(note => note && refs.has(String(note.chunkRef || '')))
-            .sort((a, b) => (a.startGlobal - b.startGlobal) || (a.endGlobal - b.endGlobal));
+        ].filter(Boolean);
+        return _cnApi.getChunkNotesForBlockRefs(refs);
     }
 
     function refreshAllChunkNoteVisuals() {
@@ -2981,10 +2921,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         setSelectedChunkNote: setSelectedChunkNote,
         openChunkNoteDeleteDialog: openChunkNoteDeleteDialog,
-        selectedChunkNoteId: function () { return selectedChunkNoteId || ''; },
+        selectedChunkNoteId: function () { return _cnApi.getSelectedChunkNoteId(); },
         handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
         chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
-        pendingChunkSelectionCtx: function () { return _ns.pendingChunkSelectionCtx; },
+        pendingChunkSelectionCtx: function () { return _cnApi.getPendingChunkSelectionCtx(); },
+        consumePendingChunkSelectionCtx: function () { return _cnApi.consumePendingChunkSelectionCtx(); },
         openChunkNotePopover: openChunkNotePopover,
         hotkeyInput: hotkeyInput, hotkeyNotesInput: hotkeyNotesInput,
         hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
@@ -3226,7 +3167,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] glass effects → src/composables/glass-effects.js
     (function () {
       function lockChunkNoteDimensions() {
-        Object.values(_ns.chunkNotesMap).forEach(function (note) {
+        _cnApi.listChunkNotes().forEach(function (note) {
           if (!note || !note.id) return;
           var tag = getChunkNoteTagById(note.id);
           if (tag) {

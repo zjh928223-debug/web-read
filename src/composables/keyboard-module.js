@@ -33,6 +33,7 @@
     var handleChunkSelectionContextMenu = deps.handleChunkSelectionContextMenu;
     var chunkNoteCtxAddBtn = deps.chunkNoteCtxAddBtn;
     var pendingChunkSelectionCtx = deps.pendingChunkSelectionCtx;
+    var consumePendingChunkSelectionCtx = deps.consumePendingChunkSelectionCtx || pendingChunkSelectionCtx;
     var openChunkNotePopover = deps.openChunkNotePopover;
     var hotkeyInput = deps.hotkeyInput;
     var hotkeyNotesInput = deps.hotkeyNotesInput;
@@ -118,8 +119,8 @@
       chunkNoteCtxAddBtn.addEventListener('mousedown', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        if (!pendingChunkSelectionCtx()) return;
-        var ctx = pendingChunkSelectionCtx();
+        var ctx = consumePendingChunkSelectionCtx();
+        if (!ctx) return;
         closeChunkNoteContextMenu();
         openChunkNotePopover(ctx);
         var sel = window.getSelection();

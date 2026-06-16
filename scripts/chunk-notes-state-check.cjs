@@ -8,7 +8,32 @@ const sourcePath = path.join(repoRoot, 'src', 'composables', 'notes-module.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 const sandbox = {
-  window: {},
+  window: { innerWidth: 1024, innerHeight: 768 },
+  localStorage: {
+    getItem(key) {
+      return Object.prototype.hasOwnProperty.call(sandbox.__localStorage, key)
+        ? sandbox.__localStorage[key]
+        : null;
+    },
+    setItem(key, value) {
+      sandbox.__localStorage[key] = String(value);
+    },
+    removeItem(key) {
+      delete sandbox.__localStorage[key];
+    },
+  },
+  document: {
+    querySelectorAll(selector) {
+      if (selector !== '.chunk-note-tag.selected') return [];
+      return sandbox.__selectedEls;
+    },
+    getElementById(id) {
+      return sandbox.__elementsById[id] || null;
+    },
+  },
+  __selectedEls: [],
+  __elementsById: {},
+  __localStorage: {},
   console,
   setTimeout,
   clearTimeout,
@@ -45,6 +70,7 @@ const api = notesModule.initChunkNotes({
   loadFromDB: async () => null,
   saveToDB: () => {},
   getChunkNotesStorageKey: () => 'chunkNotes::audio',
+  getChunkNoteDraftStorageKey: () => 'chunkNoteDraft::audio',
   sanitizeChunkNoteFontSize: (value) => {
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : 16;
@@ -58,6 +84,10 @@ const api = notesModule.initChunkNotes({
   setChunkNotesFileState: (next) => {
     fileState = { ...fileState, ...next };
   },
+  chunkNoteCtxMenuEl: {
+    style: {},
+    getBoundingClientRect: () => ({ width: 120, height: 48 }),
+  },
 });
 
 [
@@ -65,15 +95,31 @@ const api = notesModule.initChunkNotes({
   'replaceChunkNotesMap',
   'getChunkNote',
   'getChunkNotesForRef',
+  'getChunkNotesForBlockRefs',
+  'setSelectedChunkNote',
+  'getSelectedChunkNoteId',
+  'getChunkNoteTagById',
+  'getActiveChunkNoteId',
+  'getPendingChunkSelectionCtx',
+  'consumePendingChunkSelectionCtx',
   'upsertChunkNote',
   'deleteChunkNote',
   'applyImportedChunkNotes',
   'getChunkNotesFileState',
   'setChunkNotesFileState',
   'clearChunkNotesFileState',
+  'clearChunkNoteDraft',
+  'persistChunkNoteDraft',
+  'readChunkNoteDraft',
+  'cancelChunkNoteDraftSaveTimer',
 ].forEach((name) => {
   assert.equal(typeof api[name], 'function', `${name} should be exposed`);
 });
+
+api.openChunkNoteContextMenu(100, 120, { chunkRef: 'chunk-a', startGlobal: 10, endGlobal: 11 });
+assert.equal(api.getPendingChunkSelectionCtx().chunkRef, 'chunk-a');
+assert.equal(api.consumePendingChunkSelectionCtx().chunkRef, 'chunk-a');
+assert.equal(api.getPendingChunkSelectionCtx(), null);
 
 api.applyImportedChunkNotes({
   notes: [
@@ -108,6 +154,7 @@ assert.equal(state.chunkNotesMap['note-a'].endGlobal, 11);
 assert.equal(state.chunkNotesMap['note-a'].autoSize, false);
 assert.equal(state.chunkNotesMap['note-a'].fontSize, 13);
 assert.equal(state.chunkNotesMap['note-a'].color, '#123456');
+assert.equal(api.getChunkNotesForBlockRefs(['missing', 'chunk-a']).length, 1);
 
 const insertedId = api.upsertChunkNote({
   noteId: 'note-b',
@@ -160,6 +207,35 @@ assert.equal(state.chunkNotesMap['note-b'].w, 66);
 assert.equal(state.chunkNotesMap['note-b'].fontSize, 12);
 
 assert.equal(api.getChunkNotesForRef('chunk-b').length, 1);
+assert.equal(api.getChunkNotesForBlockRefs(['chunk-a', 'chunk-b']).length, 2);
+
+const staleSelectedEl = {
+  removed: [],
+  classList: {
+    remove(name) {
+      staleSelectedEl.removed.push(name);
+    },
+  },
+};
+const targetSelectedEl = {
+  added: [],
+  classList: {
+    add(name) {
+      targetSelectedEl.added.push(name);
+    },
+  },
+};
+sandbox.__selectedEls = [staleSelectedEl];
+sandbox.__elementsById['chunk-note-tag-note-b'] = targetSelectedEl;
+api.setSelectedChunkNote('note-b');
+assert.equal(api.getSelectedChunkNoteId(), 'note-b');
+assert.deepEqual(staleSelectedEl.removed, ['selected']);
+assert.deepEqual(targetSelectedEl.added, ['selected']);
+assert.equal(api.getChunkNoteTagById('note-b'), targetSelectedEl);
+
+state.activeChunkNoteId = 'note-b';
+assert.equal(api.getActiveChunkNoteId(), 'note-b');
+
 assert.equal(api.deleteChunkNote('note-b').id, 'note-b');
 assert.equal(api.getChunkNote('note-b'), null);
 
@@ -173,5 +249,28 @@ currentFileState = api.getChunkNotesFileState();
 assert.equal(currentFileState.handle, null);
 assert.equal(currentFileState.audioKey, '');
 assert.equal(currentFileState.fileName, '');
+
+sandbox.__localStorage['chunkNoteDraft::audio'] = 'not json';
+assert.equal(api.readChunkNoteDraft(), null);
+assert.equal(sandbox.__localStorage['chunkNoteDraft::audio'], undefined);
+
+api.persistChunkNoteDraft({
+  noteId: 'note-draft',
+  chunkRef: 'chunk-a',
+  chunkIdx: 2,
+  startGlobal: 10,
+  endGlobal: 11,
+  selectedText: 'selected',
+}, 'draft text', { left: 1, top: 2, width: 140, height: 44 }, true);
+
+const draftPayload = api.readChunkNoteDraft();
+assert.equal(draftPayload.version, 1);
+assert.equal(draftPayload.audioKey, 'audio-key');
+assert.equal(draftPayload.ctx.noteId, 'note-draft');
+assert.equal(draftPayload.text, 'draft text');
+assert.equal(draftPayload.modal.width, 140);
+
+api.persistChunkNoteDraft({ chunkRef: 'chunk-a' }, '   ', null, true);
+assert.equal(sandbox.__localStorage['chunkNoteDraft::audio'], undefined);
 
 console.log('chunk notes state check passed');
