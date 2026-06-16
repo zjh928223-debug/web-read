@@ -42,6 +42,12 @@
 <script>
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
+import {
+  handleChunkClick,
+  handleChunkContextMenu,
+  handleChunkWordClick,
+  handleChunkWordContextMenu
+} from '../composables/chunk-interactions.js'
 
 export default {
   name: 'ChunkModeView',
@@ -99,76 +105,19 @@ export default {
     }
 
     function onWordClick(word, event) {
-      var selection = window.getSelection && window.getSelection()
-      if (selection && !selection.isCollapsed) return
-
-      var idx = word && word.globalIndex
-      if (idx != null) {
-        ts.currentWordIndex = idx
-      }
-
-      var start = Number(word && word.start)
-      if (Number.isFinite(start)) {
-        var audio = document.getElementById('audio-player')
-        if (audio) audio.currentTime = start
-        if (typeof window.forceUpdateUI === 'function') {
-          window.forceUpdateUI(start)
-        }
-      }
-
-      if (event && event.currentTarget && typeof window.selectSentenceFromChunkTarget === 'function') {
-        window.selectSentenceFromChunkTarget(event.currentTarget)
-      }
-      if (event && event.currentTarget && typeof window.notifyAnnotationBubbleWordClick === 'function') {
-        window.notifyAnnotationBubbleWordClick(event.currentTarget)
-      }
+      handleChunkWordClick({ word: word, event: event, transcriptStore: ts })
     }
 
     function onWordContextMenu(word, event) {
-      if (!event) return
-      if (typeof window.openChunkNoteContextFromEvent === 'function') {
-        var noteOpened = window.openChunkNoteContextFromEvent(event)
-        if (noteOpened) {
-          event.preventDefault()
-          event.stopPropagation()
-          return
-        }
-      }
-      if (!event.currentTarget || typeof window.notifyAnnotationBubbleWordClick !== 'function') return
-      var opened = window.notifyAnnotationBubbleWordClick(event.currentTarget, { forceShow: true })
-      if (opened) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
+      handleChunkWordContextMenu({ word: word, event: event })
     }
 
     function onChunkContextMenu(event) {
-      if (!event || typeof window.openChunkNoteContextFromEvent !== 'function') return
-      var opened = window.openChunkNoteContextFromEvent(event)
-      if (opened) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
+      handleChunkContextMenu({ event: event })
     }
 
     function onChunkClick(chunk, idx, event) {
-      if (event && event.target && event.target.closest('.chunk-note-tag')) return
-      var selection = window.getSelection && window.getSelection()
-      if (selection && !selection.isCollapsed) return
-
-      var start = Number(chunk && chunk.start)
-      if (!Number.isFinite(start)) return
-
-      var audio = document.getElementById('audio-player')
-      if (audio) audio.currentTime = start
-      chunkState.activeChunkIdx = idx
-
-      if (typeof window.forceUpdateUI === 'function') {
-        window.forceUpdateUI(start)
-      }
-      if (event && event.currentTarget && typeof window.selectSentenceFromChunkTarget === 'function') {
-        window.selectSentenceFromChunkTarget(event.currentTarget)
-      }
+      handleChunkClick({ chunk: chunk, index: idx, event: event, chunkStore: chunkState })
     }
 
     return { ts, chunkState, chunkRef, chunkClasses, cnClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu, onChunkContextMenu, onChunkClick }

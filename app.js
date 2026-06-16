@@ -14,6 +14,7 @@
     import './src/composables/playback-state.js';
     import './src/composables/annotation-lightweight-module.js';
     import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
+    import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -1507,6 +1508,15 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         hasActiveTextSelectionWithinChunk: hasActiveTextSelectionWithinChunk,
         selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
         legacyTranscriptContainer: transcriptContainer
+    });
+
+    configureChunkInteractions({
+        getAudioPlayer: function () { return audioPlayer; },
+        getSelection: function () { return window.getSelection && window.getSelection(); },
+        forceUpdateUI: forceUpdateUI,
+        notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
+        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        openChunkNoteContextFromEvent: openChunkNoteContextFromEvent
     });
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js

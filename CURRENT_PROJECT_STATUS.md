@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1823 lines
+app.js                             legacy central runtime, about 1833 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    17 compatibility/runtime modules
+  composables/                    18 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -90,7 +90,7 @@ src/
 Current Vue components:
 
 ```text
-ChunkModeView.vue                 AI chunk rendering, about 158 lines
+ChunkModeView.vue                 AI chunk rendering, about 126 lines
 TranscriptContainer.vue           normal transcript rendering, about 89 lines
 ClozeCard.vue                     cloze card UI, about 74 lines
 ClozeQuizView.vue                 cloze quiz list, about 45 lines
@@ -118,6 +118,7 @@ glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
 file-input-bindings.js            about 22 lines
 transcript-interactions.js        about 111 lines
+chunk-interactions.js             about 136 lines
 annotation-lightweight-module.js  about 76 lines
 ```
 
@@ -203,6 +204,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Chunk data is loaded through `#chunk-file`.
 - `processChunkData(...)` is the central chunk ingestion entry.
 - `ChunkModeView.vue` renders chunk blocks.
+- AI chunk word/chunk click and contextmenu interaction is owned by `ChunkModeView.vue` plus `src/composables/chunk-interactions.js`; `app.js` only configures temporary runtime dependencies.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to `src/pinia-stores/chunk.js`.
 - Chunk mode defaults are currently focus-oriented:
   - sentence highlighting by default
@@ -231,7 +233,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
 - `app.js` still keeps thin compatibility wrappers for existing global, inline, startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
-- `window.selectSentenceFromChunkTarget` remains because `ChunkModeView.vue` still calls it.
+- `window.selectSentenceFromChunkTarget` remains as a compatibility export, but `ChunkModeView.vue` now reaches it through `src/composables/chunk-interactions.js` runtime configuration instead of a direct component call.
 - `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
 
 ### Annotation Tools
@@ -261,6 +263,7 @@ npm run verify:state-facades
 npm run verify:bridge-startup
 npm run verify:file-input-bindings
 npm run verify:transcript-interactions
+npm run verify:chunk-interactions
 npm test
 ```
 
@@ -296,6 +299,7 @@ scripts/state-facade-owner-check.cjs
 scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
 scripts/transcript-interactions-check.cjs
+scripts/chunk-interactions-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -323,6 +327,7 @@ Current checks cover:
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
+- migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
