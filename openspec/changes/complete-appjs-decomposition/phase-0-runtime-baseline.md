@@ -144,7 +144,7 @@ Observed application module users:
 - `src/composables/import-module.js`: transcript/chunk/cloze import state through explicit `deps.state`.
 - `src/composables/session-init.js`: startup restore, annotation scope, marks, chunk/session cleanup, and hotkey restore state through `src/composables/session-state-provider.js`.
 
-Task 7.3 prep removed direct `window.__state` reads from playback, controls, and session-init modules, but the task remains pending until `import-module.js` and verification scripts no longer depend on this facade as a real state source.
+Task 7.3 removed direct `window.__state` reads from `src/composables/` runtime modules. `app.js` now owns a local `runtimeState` object, injects that object into runtime modules/providers, and exposes it as `window.__state` only as a temporary compatibility facade. Verification scripts still read/write `window.__state` until later facade cleanup.
 
 Observed direct verification users:
 

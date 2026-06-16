@@ -23,13 +23,13 @@ const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 });
 
 assert.ok(
-  /window\.__playbackModule\.init\(\{\s*state:\s*window\.__state,/m.test(appSource),
-  'app.js should pass explicit state into playback-module'
+  /window\.__playbackModule\.init\(\{\s*state:\s*runtimeState,/m.test(appSource),
+  'app.js should pass explicit runtimeState into playback-module'
 );
 
 assert.ok(
-  /window\.__controlsModule\.init\(\{\s*state:\s*window\.__state,/m.test(appSource),
-  'app.js should pass explicit state into controls-module'
+  /window\.__controlsModule\.init\(\{\s*state:\s*runtimeState,/m.test(appSource),
+  'app.js should pass explicit runtimeState into controls-module'
 );
 
 console.log('control/playback state dependency check passed');

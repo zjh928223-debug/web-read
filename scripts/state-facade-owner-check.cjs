@@ -10,13 +10,13 @@ const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const appLines = appSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
-  const needle = `Object.defineProperty(window.__state, '${field}'`;
+  const needle = `Object.defineProperty(runtimeState, '${field}'`;
   return appLines.find((line) => line.includes(needle)) || '';
 }
 
 function assertFacade(field, fragments) {
   const line = findStatePropertyLine(field);
-  assert.ok(line, `${field} should be exposed on window.__state`);
+  assert.ok(line, `${field} should be exposed on runtimeState`);
   fragments.forEach((fragment) => {
     assert.ok(
       line.includes(fragment),
@@ -104,6 +104,8 @@ assert.ok(appSource.includes('const _tr = window.__transcriptState;'));
 assert.ok(appSource.includes('const _ch = window.__chunkState;'));
 assert.ok(appSource.includes('const _clz = window.__clozeState;'));
 assert.ok(appSource.includes('const _pb = window.__playbackState;'));
+assert.ok(appSource.includes('const runtimeState = {};'));
+assert.ok(appSource.includes('window.__state = runtimeState;'));
 assert.ok(appSource.includes('var _ns = window.__notesModule.getNotesState();'));
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandleAudioKey'), false);

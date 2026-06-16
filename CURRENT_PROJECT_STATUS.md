@@ -269,6 +269,7 @@ npm run verify:file-input-bindings
 npm run verify:inline-handler-bindings
 npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
+npm run verify:runtime-state-source
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -317,6 +318,7 @@ scripts/file-input-bindings-check.cjs
 scripts/inline-handler-bindings-check.cjs
 scripts/control-playback-state-deps-check.cjs
 scripts/session-state-provider-check.cjs
+scripts/runtime-state-source-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -357,6 +359,7 @@ Current checks cover:
 - removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
 - removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
+- guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

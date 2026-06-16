@@ -30,8 +30,18 @@ assert.ok(
 );
 
 assert.ok(
-  appSource.includes('configureSessionStateProvider(window.__state);'),
-  'app.js should configure the session state provider after creating the compatibility facade'
+  appSource.includes('const runtimeState = {};'),
+  'app.js should create a local runtimeState owner before exposing the compatibility facade'
+);
+
+assert.ok(
+  appSource.includes('window.__state = runtimeState;'),
+  'app.js should expose runtimeState through the temporary window.__state compatibility facade'
+);
+
+assert.ok(
+  appSource.includes('configureSessionStateProvider(runtimeState);'),
+  'app.js should configure the session state provider with runtimeState'
 );
 
 console.log('session state provider check passed');

@@ -68,6 +68,7 @@ npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
+npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
@@ -143,6 +144,7 @@ Do not change this schema without an explicit migration plan.
 - Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
+- `app.js` now owns a local `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; `app.js` reaches it through a module API.
