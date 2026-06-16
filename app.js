@@ -704,8 +704,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getLegacySentenceNotesStorageKey: getLegacySentenceNotesStorageKey,
         buildCurrentSentenceDocId: buildCurrentSentenceDocId,
         isPlainObjectRecord: isPlainObjectRecord,
-        persistSelectedSentenceNote: persistSelectedSentenceNote,
-        renderNotePreviewSidebar: renderNotePreviewSidebar
+        getIsChunkMode: function () { return isChunkMode; },
+        getHasAiChunkData: function () { return hasAiChunkData; },
+        notePreviewSidebar: notePreviewSidebar,
+        notePreviewEmpty: notePreviewEmpty,
+        notePreviewList: notePreviewList,
+        toggleNotePreviewBtn: toggleNotePreviewBtn,
+        notePreviewResizeHandle: notePreviewResizeHandle,
+        notePreviewResizeHandleY: notePreviewResizeHandleY,
+        initialNotePreviewVisible: true,
+        initialNotePreviewWidth: 340,
+        initialNotePreviewHeight: 640
     });
 
     // === Import module delegation (M4+M5 extracted → src/composables/import-module.js) ===
@@ -916,13 +925,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let chunkNotesFileName = '';
     let currentAudioMeta = null;
     let currentAudioKey = 'default-audio';
-    let notePreviewVisible = true;
-    let notePreviewWidth = 340;
-    let notePreviewHeight = 640;
-    let notePreviewResizeRaf = 0;
-    let notePreviewSavedHintTimer = 0;
-    let notePreviewPendingScrollItemId = '';
-    let notePreviewListScrollTop = 0;
     let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
@@ -1195,33 +1197,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }, true);
 
     function selectSentenceFromChunkTarget(target) {
-        if (!isChunkMode || !hasAiChunkData) return false;
-        const chunkBlock = target && target.closest ? target.closest('.chunk-block') : null;
-        if (!chunkBlock) return false;
-        const chunkRef = String(chunkBlock.dataset.chunkRef || '');
-        const idx = Number(chunkBlock.dataset.chunkIdx || '-1');
-        if (!chunkRef || idx < 0) return false;
-        const enDiv = chunkBlock.querySelector('.chunk-en');
-        const text = ((enDiv && enDiv.textContent) || '').replace(/\s+/g, ' ').trim();
-        setSelectedSentence({
-            index: idx,
-            sentenceId: chunkRef,
-            chunkRef,
-            text
-        });
-        return true;
+        return _snApi.selectSentenceFromChunkTarget(target);
     }
 
     function hasActiveTextSelectionWithinChunk() {
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
-        const text = selection.toString().replace(/\s+/g, ' ').trim();
-        if (!text) return false;
-        const range = selection.getRangeAt(0);
-        const element = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
-            ? range.commonAncestorContainer
-            : range.commonAncestorContainer.parentElement;
-        return !!(element && element.closest && element.closest('.chunk-en'));
+        return _snApi.hasActiveTextSelectionWithinChunk();
     }
 
     // === UI toggles + sentence notebook view layer ===
@@ -1234,396 +1214,80 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function applyNotePreviewWidth() {
-        document.documentElement.style.setProperty('--note-preview-width', `${notePreviewWidth}px`);
-        document.documentElement.style.setProperty('--note-preview-height', `${notePreviewHeight}px`);
+        return _snApi.applyNotePreviewSize();
     }
 
     // Sentence notebook: item metadata + save feedback
     function formatSentenceNoteItemMeta(item, itemId, isEditing = false) {
-        if (isEditing) return 'Editing note...';
-        if (_ns.notePreviewSavedItemId && _ns.notePreviewSavedItemId === itemId) return 'Saved just now';
-        if (item && item.updatedAt) return `Last saved ${new Date(item.updatedAt).toLocaleString()}`;
-        return 'Draft item';
+        return _snApi.formatSentenceNoteItemMeta(item, itemId, isEditing);
     }
 
     function triggerSentenceNoteSavedFeedback(itemId = '') {
-        _ns.notePreviewSavedItemId = String(itemId || '');
-        if (notePreviewSavedHintTimer) clearTimeout(notePreviewSavedHintTimer);
-        notePreviewSavedHintTimer = setTimeout(() => {
-            _ns.notePreviewSavedItemId = '';
-            renderNotePreviewSidebar();
-        }, 1400);
+        return _snApi.triggerSentenceNoteSavedFeedback(itemId);
     }
 
     // Sentence notebook: draft/commit/persist core
     function findSentenceNoteItem(sentenceId, itemId) {
-        const record = getSentenceNoteRecord(sentenceId);
-        if (!record) return { record: null, item: null, index: -1 };
-        const index = record.items.findIndex(item => String(item.itemId || '') === String(itemId || ''));
-        return {
-            record,
-            item: index >= 0 ? record.items[index] : null,
-            index
-        };
+        return _snApi.findSentenceNoteItem(sentenceId, itemId);
     }
 
     function discardSentenceNoteDraft(shouldRender = true) {
-        if (!_ns.sentenceNoteDraft) return;
-        if (_ns.notePreviewEditingItemId === _ns.sentenceNoteDraft.itemId) _ns.notePreviewEditingItemId = '';
-        _ns.sentenceNoteDraft = null;
-        if (shouldRender) renderNotePreviewSidebar();
+        return _snApi.discardSentenceNoteDraft(shouldRender);
     }
 
     function commitSentenceNoteDraft(shouldRender = true) {
-        if (!_ns.sentenceNoteDraft) return false;
-        const noteBody = String(_ns.sentenceNoteDraft.noteBody || '');
-        if (!noteBody.trim()) {
-            discardSentenceNoteDraft(shouldRender);
-            return false;
-        }
-        const sentenceId = String(_ns.sentenceNoteDraft.sentenceId || '');
-        const record = getSentenceNoteRecord(sentenceId);
-        if (!record) {
-            discardSentenceNoteDraft(shouldRender);
-            return false;
-        }
-        const now = Date.now();
-        const committed = normalizeSentenceNoteItem(sentenceId, {
-            itemId: _ns.sentenceNoteDraft.itemId,
-            selectedText: _ns.sentenceNoteDraft.selectedText,
-            noteBody,
-            createdAt: _ns.sentenceNoteDraft.createdAt || now,
-            updatedAt: now
-        }, _ns.sentenceNoteDraft.itemId);
-        record.items.push(committed);
-        _ns.sentenceNotesMap[sentenceId] = record;
-        const committedItemId = committed.itemId;
-        _ns.sentenceNoteDraft = null;
-        _ns.notePreviewEditingItemId = '';
-        saveSentenceNotesDebounced();
-        triggerSentenceNoteSavedFeedback(committedItemId);
-        if (shouldRender) renderNotePreviewSidebar();
-        return true;
+        return _snApi.commitSentenceNoteDraft(shouldRender);
     }
 
     function persistSentenceNoteItem(sentenceId, itemId, shouldRender = true) {
-        const { record, item, index } = findSentenceNoteItem(sentenceId, itemId);
-        if (!record || !item || index < 0) return false;
-        const nextBody = String(item.noteBody || '');
-        if (!nextBody.trim()) {
-            if (notePreviewList) notePreviewListScrollTop = notePreviewList.scrollTop;
-            record.items.splice(index, 1);
-            if (!record.items.length) delete _ns.sentenceNotesMap[sentenceId];
-            else _ns.sentenceNotesMap[sentenceId] = record;
-            _ns.notePreviewEditingItemId = '';
-            saveSentenceNotesDebounced();
-            if (shouldRender) renderNotePreviewSidebar();
-            return false;
-        }
-        item.updatedAt = Date.now();
-        _ns.sentenceNotesMap[sentenceId] = record;
-        _ns.notePreviewEditingItemId = '';
-        saveSentenceNotesDebounced();
-        triggerSentenceNoteSavedFeedback(itemId);
-        if (shouldRender) renderNotePreviewSidebar();
-        return true;
+        return _snApi.persistSentenceNoteItem(sentenceId, itemId, shouldRender);
     }
 
     function persistSelectedSentenceNote() {
-        if (!_ns.selectedSentence) return;
-        if (_ns.sentenceNoteDraft && _ns.sentenceNoteDraft.sentenceId === _ns.selectedSentence.sentenceId) {
-            commitSentenceNoteDraft(false);
-        }
-        if (_ns.notePreviewEditingItemId) {
-            persistSentenceNoteItem(String(_ns.selectedSentence.sentenceId || ''), _ns.notePreviewEditingItemId, false);
-        }
-        persistSentenceNotesForCurrentDoc();
-        renderNotePreviewSidebar();
+        return _snApi.persistSelectedSentenceNote();
     }
 
     // Sentence notebook: rendering + interaction wiring
     function buildSentenceNoteItemElement(sentenceId, item, { isDraft = false } = {}) {
-        const wrapper = document.createElement('article');
-        wrapper.className = 'sentence-note-item';
-        wrapper.dataset.itemId = String(item.itemId || '');
-        if (isDraft) wrapper.classList.add('is-draft');
-        if (_ns.notePreviewEditingItemId && _ns.notePreviewEditingItemId === item.itemId) wrapper.classList.add('is-editing');
-
-        const selectedTextEl = document.createElement('p');
-        selectedTextEl.className = 'sentence-note-item-text';
-        selectedTextEl.textContent = String(item.selectedText || '').trim() || 'Selected text';
-        wrapper.appendChild(selectedTextEl);
-
-        const textarea = document.createElement('textarea');
-        textarea.className = 'sentence-note-item-body';
-        textarea.placeholder = 'Write note for this selected text...';
-        textarea.value = String(item.noteBody || '');
-        textarea.dataset.itemId = String(item.itemId || '');
-        textarea.dataset.sentenceId = String(sentenceId || '');
-        textarea.dataset.isDraft = isDraft ? 'true' : 'false';
-        wrapper.appendChild(textarea);
-
-        const meta = document.createElement('div');
-        meta.className = 'sentence-note-item-meta';
-        if (_ns.notePreviewEditingItemId && _ns.notePreviewEditingItemId === item.itemId) meta.classList.add('is-editing');
-        if (_ns.notePreviewSavedItemId && _ns.notePreviewSavedItemId === item.itemId) meta.classList.add('is-saved');
-        meta.textContent = formatSentenceNoteItemMeta(item, item.itemId, _ns.notePreviewEditingItemId === item.itemId);
-        wrapper.appendChild(meta);
-
-        textarea.addEventListener('focus', () => {
-            _ns.notePreviewSavedItemId = '';
-            _ns.notePreviewEditingItemId = String(item.itemId || '');
-            if (notePreviewSidebar) notePreviewSidebar.classList.add('note-editing');
-            wrapper.classList.add('is-editing');
-            meta.classList.remove('is-saved');
-            meta.classList.add('is-editing');
-            meta.textContent = 'Editing note...';
-            textarea.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-        });
-        textarea.addEventListener('input', (e) => {
-            const value = String(e.target.value || '');
-            _ns.notePreviewSavedItemId = '';
-            _ns.notePreviewEditingItemId = String(item.itemId || '');
-            if (isDraft && _ns.sentenceNoteDraft && _ns.sentenceNoteDraft.itemId === item.itemId) {
-                _ns.sentenceNoteDraft.noteBody = value;
-                _ns.sentenceNoteDraft.updatedAt = Date.now();
-            } else {
-                const found = findSentenceNoteItem(sentenceId, item.itemId);
-                if (found.item) {
-                    found.item.noteBody = value;
-                    _ns.sentenceNotesMap[String(sentenceId || '')] = found.record;
-                }
-            }
-            wrapper.classList.add('is-editing');
-            meta.classList.remove('is-saved');
-            meta.classList.add('is-editing');
-            meta.textContent = 'Editing note...';
-        });
-        textarea.addEventListener('blur', () => {
-            if (isDraft) commitSentenceNoteDraft();
-            else persistSentenceNoteItem(String(sentenceId || ''), String(item.itemId || ''));
-        });
-        return wrapper;
+        return _snApi.buildSentenceNoteItemElement(sentenceId, item, { isDraft });
     }
 
     function renderNotePreviewSidebar() {
-        if (!notePreviewSidebar || !notePreviewEmpty || !notePreviewList) return;
-        const previousScrollTop = notePreviewList.scrollTop;
-        applyNotePreviewWidth();
-        document.body.classList.toggle('note-preview-open', !!notePreviewVisible);
-        if (toggleNotePreviewBtn) toggleNotePreviewBtn.classList.toggle('active', !!notePreviewVisible);
-        notePreviewSidebar.classList.toggle('note-editing', !!_ns.notePreviewEditingItemId);
-        notePreviewSidebar.classList.toggle('note-has-selection', !!_ns.selectedSentence);
-        if (!_ns.selectedSentence) {
-            showNotePreviewEmptyState('No sentence selected\nClick a sentence to view its note here.');
-            return;
-        }
-        const sentenceId = String(_ns.selectedSentence.sentenceId || '');
-        const items = getSortedSentenceNoteItems(sentenceId);
-        const hasDraft = !!(_ns.sentenceNoteDraft && _ns.sentenceNoteDraft.sentenceId === sentenceId);
-        const renderItems = hasDraft ? [...items, _ns.sentenceNoteDraft] : items;
-        if (!renderItems.length) {
-            showNotePreviewEmptyState('No note items yet.\nSelect a word or phrase in this sentence to start a note.');
-            return;
-        }
-        notePreviewEmpty.hidden = true;
-        notePreviewList.hidden = false;
-        notePreviewList.innerHTML = '';
-        const frag = document.createDocumentFragment();
-        renderItems.forEach(item => {
-            frag.appendChild(buildSentenceNoteItemElement(sentenceId, item, {
-                isDraft: !!(_ns.sentenceNoteDraft && _ns.sentenceNoteDraft.itemId === item.itemId)
-            }));
-        });
-        notePreviewList.appendChild(frag);
-        if (notePreviewPendingScrollItemId) {
-            const target = notePreviewList.querySelector(`.sentence-note-item[data-item-id="${CSS.escape(notePreviewPendingScrollItemId)}"]`);
-            if (target) {
-                requestAnimationFrame(() => {
-                    target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-                });
-            }
-            notePreviewPendingScrollItemId = '';
-            notePreviewListScrollTop = notePreviewList.scrollTop;
-            return;
-        }
-        notePreviewList.scrollTop = Number.isFinite(notePreviewListScrollTop) ? notePreviewListScrollTop : previousScrollTop;
-        notePreviewListScrollTop = notePreviewList.scrollTop;
+        return _snApi.renderNotePreviewSidebar();
     }
 
     function showNotePreviewEmptyState(message) {
-        notePreviewEmpty.hidden = false;
-        notePreviewEmpty.textContent = message;
-        notePreviewList.hidden = true;
-        notePreviewList.innerHTML = '';
-        notePreviewListScrollTop = 0;
+        return _snApi.showNotePreviewEmptyState(message);
     }
 
     // Sentence notebook: panel visibility + sentence selection
     function toggleNotePreviewSidebar(forceState = null) {
-        notePreviewVisible = forceState === null ? !notePreviewVisible : !!forceState;
-        try { localStorage.setItem('notePreviewVisible', notePreviewVisible ? 'true' : 'false'); } catch (err) {}
-        renderNotePreviewSidebar();
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+        return _snApi.toggleNotePreviewSidebar(forceState);
     }
 
     function setSelectedSentence(nextSentence) {
-        persistSelectedSentenceNote();
-        _ns.notePreviewSavedItemId = '';
-        _ns.notePreviewEditingItemId = '';
-        _ns.selectedSentence = nextSentence ? { ...nextSentence } : null;
-        renderNotePreviewSidebar();
+        return _snApi.setSelectedSentence(nextSentence);
     }
 
     function updateSentenceFocusPhrase(sentence, focusPhrase) {
-        if (!sentence) return;
-        const sentenceId = String(sentence.sentenceId || '');
-        const nextSelectedText = String(focusPhrase || '').replace(/\s+/g, ' ').trim();
-        if (!sentenceId || !nextSelectedText) return;
-        persistSelectedSentenceNote();
-        _ns.notePreviewSavedItemId = '';
-        _ns.notePreviewEditingItemId = '';
-        _ns.selectedSentence = { ...sentence };
-        _ns.sentenceNoteDraft = {
-            sentenceId,
-            itemId: makeSentenceNoteItemId(sentenceId),
-            selectedText: nextSelectedText,
-            noteBody: '',
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
-        _ns.notePreviewEditingItemId = _ns.sentenceNoteDraft.itemId;
-        notePreviewPendingScrollItemId = _ns.sentenceNoteDraft.itemId;
-        renderNotePreviewSidebar();
+        return _snApi.updateSentenceFocusPhrase(sentence, focusPhrase);
     }
 
     // Sentence notebook: selection capture + import/export integration
     function getSelectionChunkSentence() {
-        if (!isChunkMode || !hasAiChunkData) return null;
-        const selection = window.getSelection();
-        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
-        const selectedText = selection.toString().replace(/\s+/g, ' ').trim();
-        if (!selectedText) return null;
-        const range = selection.getRangeAt(0);
-        const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
-            ? range.startContainer
-            : range.startContainer.parentElement;
-        const endElement = range.endContainer.nodeType === Node.ELEMENT_NODE
-            ? range.endContainer
-            : range.endContainer.parentElement;
-        const startBlock = startElement && startElement.closest ? startElement.closest('.chunk-block') : null;
-        const endBlock = endElement && endElement.closest ? endElement.closest('.chunk-block') : null;
-        if (!startBlock || !endBlock || startBlock !== endBlock) return null;
-        const enDiv = startBlock.querySelector('.chunk-en');
-        if (!enDiv || !enDiv.contains(range.commonAncestorContainer)) return null;
-        const sentenceId = String(startBlock.dataset.chunkRef || '');
-        const index = Number(startBlock.dataset.chunkIdx || '-1');
-        const text = (enDiv.textContent || '').replace(/\s+/g, ' ').trim();
-        if (!sentenceId || index < 0) return null;
-        return {
-            sentenceId,
-            chunkRef: sentenceId,
-            index,
-            text,
-            focusPhrase: selectedText
-        };
+        return _snApi.getSelectionChunkSentence();
     }
 
     function maybeCaptureSentenceFocusPhrase() {
-        const selected = getSelectionChunkSentence();
-        if (!selected) return false;
-        updateSentenceFocusPhrase(selected, selected.focusPhrase);
-        return true;
+        return _snApi.maybeCaptureSentenceFocusPhrase();
     }
 
     function applyImportedSentenceNotesSnapshot(data) {
-        if (!isPlainObjectRecord(data)) {
-            throw new Error('invalid sentence notebook json');
-        }
-        const importDocId = String(data.docId || '');
-        if (!importDocId) {
-            throw new Error('missing docId');
-        }
-        if (importDocId !== _ns.currentDocId) {
-            throw new Error('docId mismatch');
-        }
-        if (!isPlainObjectRecord(data.notes)) {
-            throw new Error('missing notes payload');
-        }
-        _ns.sentenceNotesMap = normalizeSentenceNotesScope(data.notes);
-        _ns.allSentenceNotesByDoc[_ns.currentDocId] = normalizeSentenceNotesScope(_ns.sentenceNotesMap);
-        _ns.sentenceNoteDraft = null;
-        _ns.notePreviewEditingItemId = '';
-        _ns.notePreviewSavedItemId = '';
-        saveToDB(getSentenceNotesStorageKey(), _ns.allSentenceNotesByDoc);
-        renderNotePreviewSidebar();
+        return _snApi.applyImportedSentenceNotesSnapshot(data);
     }
 
     function initNotePreviewResize() {
-        if (notePreviewResizeHandle && notePreviewSidebar) {
-            notePreviewResizeHandle.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const startX = e.clientX;
-                const startWidth = notePreviewWidth;
-                const move = (ev) => {
-                    const delta = startX - ev.clientX;
-                    notePreviewWidth = Math.max(280, Math.min(520, startWidth + delta));
-                    if (!notePreviewResizeRaf) {
-                        notePreviewResizeRaf = requestAnimationFrame(() => {
-                            notePreviewResizeRaf = 0;
-                            applyNotePreviewWidth();
-                        });
-                    }
-                };
-                const up = () => {
-                    document.removeEventListener('mousemove', move);
-                    document.removeEventListener('mouseup', up);
-                    document.body.classList.remove('note-preview-resizing');
-                    if (notePreviewResizeRaf) {
-                        cancelAnimationFrame(notePreviewResizeRaf);
-                        notePreviewResizeRaf = 0;
-                    }
-                    applyNotePreviewWidth();
-                    try { localStorage.setItem('notePreviewWidth', String(notePreviewWidth)); } catch (err) {}
-                };
-                document.body.classList.add('note-preview-resizing');
-                document.addEventListener('mousemove', move);
-                document.addEventListener('mouseup', up);
-            });
-        }
-        if (notePreviewResizeHandleY && notePreviewSidebar) {
-            notePreviewResizeHandleY.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const startY = e.clientY;
-                const startHeight = notePreviewHeight;
-                const move = (ev) => {
-                    const delta = ev.clientY - startY;
-                    notePreviewHeight = Math.max(420, Math.min(window.innerHeight - 28, startHeight + delta));
-                    if (!notePreviewResizeRaf) {
-                        notePreviewResizeRaf = requestAnimationFrame(() => {
-                            notePreviewResizeRaf = 0;
-                            applyNotePreviewWidth();
-                        });
-                    }
-                };
-                const up = () => {
-                    document.removeEventListener('mousemove', move);
-                    document.removeEventListener('mouseup', up);
-                    document.body.classList.remove('note-preview-resizing-y');
-                    if (notePreviewResizeRaf) {
-                        cancelAnimationFrame(notePreviewResizeRaf);
-                        notePreviewResizeRaf = 0;
-                    }
-                    applyNotePreviewWidth();
-                    try { localStorage.setItem('notePreviewHeight', String(notePreviewHeight)); } catch (err) {}
-                };
-                document.body.classList.add('note-preview-resizing-y');
-                document.addEventListener('mousemove', move);
-                document.addEventListener('mouseup', up);
-            });
-        }
+        return _snApi.initNotePreviewResize();
     }
 
     function toggleChunkMode(forceState = null) {

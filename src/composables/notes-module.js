@@ -1762,8 +1762,21 @@
     var getLegacySentenceNotesStorageKey = deps.getLegacySentenceNotesStorageKey;
     var buildCurrentSentenceDocId = deps.buildCurrentSentenceDocId;
     var isPlainObjectRecord = deps.isPlainObjectRecord;
-    var persistSelectedSentenceNote = deps.persistSelectedSentenceNote;
-    var renderNotePreviewSidebar = deps.renderNotePreviewSidebar;
+    var getIsChunkMode = typeof deps.getIsChunkMode === 'function' ? deps.getIsChunkMode : function () { return false; };
+    var getHasAiChunkData = typeof deps.getHasAiChunkData === 'function' ? deps.getHasAiChunkData : function () { return false; };
+    var notePreviewSidebar = deps.notePreviewSidebar || null;
+    var notePreviewEmpty = deps.notePreviewEmpty || null;
+    var notePreviewList = deps.notePreviewList || null;
+    var toggleNotePreviewBtn = deps.toggleNotePreviewBtn || null;
+    var notePreviewResizeHandle = deps.notePreviewResizeHandle || null;
+    var notePreviewResizeHandleY = deps.notePreviewResizeHandleY || null;
+    var notePreviewVisible = deps.initialNotePreviewVisible !== undefined ? !!deps.initialNotePreviewVisible : true;
+    var notePreviewWidth = Number.isFinite(Number(deps.initialNotePreviewWidth)) ? Number(deps.initialNotePreviewWidth) : 340;
+    var notePreviewHeight = Number.isFinite(Number(deps.initialNotePreviewHeight)) ? Number(deps.initialNotePreviewHeight) : 640;
+    var notePreviewResizeRaf = 0;
+    var notePreviewSavedHintTimer = 0;
+    var notePreviewPendingScrollItemId = '';
+    var notePreviewListScrollTop = 0;
 
     // Sentence notebook: data normalization + doc-scoped persistence
 
@@ -1845,6 +1858,442 @@
       return record
         ? record.items.slice().sort(function (a, b) { return (a.createdAt - b.createdAt) || (a.updatedAt - b.updatedAt) || String(a.itemId).localeCompare(String(b.itemId)); })
         : [];
+    }
+
+    function applyNotePreviewSize() {
+      document.documentElement.style.setProperty('--note-preview-width', notePreviewWidth + 'px');
+      document.documentElement.style.setProperty('--note-preview-height', notePreviewHeight + 'px');
+    }
+
+    function formatSentenceNoteItemMeta(item, itemId, isEditing) {
+      if (isEditing) return 'Editing note...';
+      if (ns.notePreviewSavedItemId && ns.notePreviewSavedItemId === itemId) return 'Saved just now';
+      if (item && item.updatedAt) return 'Last saved ' + new Date(item.updatedAt).toLocaleString();
+      return 'Draft item';
+    }
+
+    function triggerSentenceNoteSavedFeedback(itemId) {
+      ns.notePreviewSavedItemId = String(itemId || '');
+      if (notePreviewSavedHintTimer) clearTimeout(notePreviewSavedHintTimer);
+      notePreviewSavedHintTimer = setTimeout(function () {
+        ns.notePreviewSavedItemId = '';
+        renderNotePreviewSidebar();
+      }, 1400);
+    }
+
+    function findSentenceNoteItem(sentenceId, itemId) {
+      var record = getSentenceNoteRecord(sentenceId);
+      if (!record) return { record: null, item: null, index: -1 };
+      var index = record.items.findIndex(function (item) {
+        return String(item.itemId || '') === String(itemId || '');
+      });
+      return {
+        record: record,
+        item: index >= 0 ? record.items[index] : null,
+        index: index
+      };
+    }
+
+    function discardSentenceNoteDraft(shouldRender) {
+      if (shouldRender === undefined) shouldRender = true;
+      if (!ns.sentenceNoteDraft) return;
+      if (ns.notePreviewEditingItemId === ns.sentenceNoteDraft.itemId) ns.notePreviewEditingItemId = '';
+      ns.sentenceNoteDraft = null;
+      if (shouldRender) renderNotePreviewSidebar();
+    }
+
+    function commitSentenceNoteDraft(shouldRender) {
+      if (shouldRender === undefined) shouldRender = true;
+      if (!ns.sentenceNoteDraft) return false;
+      var noteBody = String(ns.sentenceNoteDraft.noteBody || '');
+      if (!noteBody.trim()) {
+        discardSentenceNoteDraft(shouldRender);
+        return false;
+      }
+      var sentenceId = String(ns.sentenceNoteDraft.sentenceId || '');
+      var record = getSentenceNoteRecord(sentenceId);
+      if (!record) {
+        discardSentenceNoteDraft(shouldRender);
+        return false;
+      }
+      var timestamp = Date.now();
+      var committed = normalizeSentenceNoteItem(sentenceId, {
+        itemId: ns.sentenceNoteDraft.itemId,
+        selectedText: ns.sentenceNoteDraft.selectedText,
+        noteBody: noteBody,
+        createdAt: ns.sentenceNoteDraft.createdAt || timestamp,
+        updatedAt: timestamp
+      }, ns.sentenceNoteDraft.itemId);
+      record.items.push(committed);
+      ns.sentenceNotesMap[sentenceId] = record;
+      var committedItemId = committed.itemId;
+      ns.sentenceNoteDraft = null;
+      ns.notePreviewEditingItemId = '';
+      saveSentenceNotesDebounced();
+      triggerSentenceNoteSavedFeedback(committedItemId);
+      if (shouldRender) renderNotePreviewSidebar();
+      return true;
+    }
+
+    function persistSentenceNoteItem(sentenceId, itemId, shouldRender) {
+      if (shouldRender === undefined) shouldRender = true;
+      var found = findSentenceNoteItem(sentenceId, itemId);
+      var record = found.record;
+      var item = found.item;
+      var index = found.index;
+      if (!record || !item || index < 0) return false;
+      var nextBody = String(item.noteBody || '');
+      if (!nextBody.trim()) {
+        if (notePreviewList) notePreviewListScrollTop = notePreviewList.scrollTop;
+        record.items.splice(index, 1);
+        if (!record.items.length) delete ns.sentenceNotesMap[sentenceId];
+        else ns.sentenceNotesMap[sentenceId] = record;
+        ns.notePreviewEditingItemId = '';
+        saveSentenceNotesDebounced();
+        if (shouldRender) renderNotePreviewSidebar();
+        return false;
+      }
+      item.updatedAt = Date.now();
+      ns.sentenceNotesMap[sentenceId] = record;
+      ns.notePreviewEditingItemId = '';
+      saveSentenceNotesDebounced();
+      triggerSentenceNoteSavedFeedback(itemId);
+      if (shouldRender) renderNotePreviewSidebar();
+      return true;
+    }
+
+    function persistSelectedSentenceNote() {
+      if (!ns.selectedSentence) return;
+      if (ns.sentenceNoteDraft && ns.sentenceNoteDraft.sentenceId === ns.selectedSentence.sentenceId) {
+        commitSentenceNoteDraft(false);
+      }
+      if (ns.notePreviewEditingItemId) {
+        persistSentenceNoteItem(String(ns.selectedSentence.sentenceId || ''), ns.notePreviewEditingItemId, false);
+      }
+      persistSentenceNotesForCurrentDoc();
+      renderNotePreviewSidebar();
+    }
+
+    function buildSentenceNoteItemElement(sentenceId, item, options) {
+      options = options || {};
+      var isDraft = !!options.isDraft;
+      var wrapper = document.createElement('article');
+      wrapper.className = 'sentence-note-item';
+      wrapper.dataset.itemId = String(item.itemId || '');
+      if (isDraft) wrapper.classList.add('is-draft');
+      if (ns.notePreviewEditingItemId && ns.notePreviewEditingItemId === item.itemId) wrapper.classList.add('is-editing');
+
+      var selectedTextEl = document.createElement('p');
+      selectedTextEl.className = 'sentence-note-item-text';
+      selectedTextEl.textContent = String(item.selectedText || '').trim() || 'Selected text';
+      wrapper.appendChild(selectedTextEl);
+
+      var textarea = document.createElement('textarea');
+      textarea.className = 'sentence-note-item-body';
+      textarea.placeholder = 'Write note for this selected text...';
+      textarea.value = String(item.noteBody || '');
+      textarea.dataset.itemId = String(item.itemId || '');
+      textarea.dataset.sentenceId = String(sentenceId || '');
+      textarea.dataset.isDraft = isDraft ? 'true' : 'false';
+      wrapper.appendChild(textarea);
+
+      var meta = document.createElement('div');
+      meta.className = 'sentence-note-item-meta';
+      if (ns.notePreviewEditingItemId && ns.notePreviewEditingItemId === item.itemId) meta.classList.add('is-editing');
+      if (ns.notePreviewSavedItemId && ns.notePreviewSavedItemId === item.itemId) meta.classList.add('is-saved');
+      meta.textContent = formatSentenceNoteItemMeta(item, item.itemId, ns.notePreviewEditingItemId === item.itemId);
+      wrapper.appendChild(meta);
+
+      textarea.addEventListener('focus', function () {
+        ns.notePreviewSavedItemId = '';
+        ns.notePreviewEditingItemId = String(item.itemId || '');
+        if (notePreviewSidebar) notePreviewSidebar.classList.add('note-editing');
+        wrapper.classList.add('is-editing');
+        meta.classList.remove('is-saved');
+        meta.classList.add('is-editing');
+        meta.textContent = 'Editing note...';
+        textarea.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+      textarea.addEventListener('input', function (event) {
+        var value = String(event.target.value || '');
+        ns.notePreviewSavedItemId = '';
+        ns.notePreviewEditingItemId = String(item.itemId || '');
+        if (isDraft && ns.sentenceNoteDraft && ns.sentenceNoteDraft.itemId === item.itemId) {
+          ns.sentenceNoteDraft.noteBody = value;
+          ns.sentenceNoteDraft.updatedAt = Date.now();
+        } else {
+          var found = findSentenceNoteItem(sentenceId, item.itemId);
+          if (found.item) {
+            found.item.noteBody = value;
+            ns.sentenceNotesMap[String(sentenceId || '')] = found.record;
+          }
+        }
+        wrapper.classList.add('is-editing');
+        meta.classList.remove('is-saved');
+        meta.classList.add('is-editing');
+        meta.textContent = 'Editing note...';
+      });
+      textarea.addEventListener('blur', function () {
+        if (isDraft) commitSentenceNoteDraft();
+        else persistSentenceNoteItem(String(sentenceId || ''), String(item.itemId || ''));
+      });
+      return wrapper;
+    }
+
+    function renderNotePreviewSidebar() {
+      if (!notePreviewSidebar || !notePreviewEmpty || !notePreviewList) return;
+      var previousScrollTop = notePreviewList.scrollTop;
+      applyNotePreviewSize();
+      document.body.classList.toggle('note-preview-open', !!notePreviewVisible);
+      if (toggleNotePreviewBtn) toggleNotePreviewBtn.classList.toggle('active', !!notePreviewVisible);
+      notePreviewSidebar.classList.toggle('note-editing', !!ns.notePreviewEditingItemId);
+      notePreviewSidebar.classList.toggle('note-has-selection', !!ns.selectedSentence);
+      if (!ns.selectedSentence) {
+        showNotePreviewEmptyState('No sentence selected\nClick a sentence to view its note here.');
+        return;
+      }
+      var sentenceId = String(ns.selectedSentence.sentenceId || '');
+      var items = getSortedSentenceNoteItems(sentenceId);
+      var hasDraft = !!(ns.sentenceNoteDraft && ns.sentenceNoteDraft.sentenceId === sentenceId);
+      var renderItems = hasDraft ? items.concat([ns.sentenceNoteDraft]) : items;
+      if (!renderItems.length) {
+        showNotePreviewEmptyState('No note items yet.\nSelect a word or phrase in this sentence to start a note.');
+        return;
+      }
+      notePreviewEmpty.hidden = true;
+      notePreviewList.hidden = false;
+      notePreviewList.innerHTML = '';
+      var frag = document.createDocumentFragment();
+      renderItems.forEach(function (item) {
+        frag.appendChild(buildSentenceNoteItemElement(sentenceId, item, {
+          isDraft: !!(ns.sentenceNoteDraft && ns.sentenceNoteDraft.itemId === item.itemId)
+        }));
+      });
+      notePreviewList.appendChild(frag);
+      if (notePreviewPendingScrollItemId) {
+        var escaped = window.CSS && typeof window.CSS.escape === 'function'
+          ? window.CSS.escape(notePreviewPendingScrollItemId)
+          : String(notePreviewPendingScrollItemId).replace(/"/g, '\\"');
+        var target = notePreviewList.querySelector('.sentence-note-item[data-item-id="' + escaped + '"]');
+        if (target) {
+          requestAnimationFrame(function () {
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          });
+        }
+        notePreviewPendingScrollItemId = '';
+        notePreviewListScrollTop = notePreviewList.scrollTop;
+        return;
+      }
+      notePreviewList.scrollTop = Number.isFinite(notePreviewListScrollTop) ? notePreviewListScrollTop : previousScrollTop;
+      notePreviewListScrollTop = notePreviewList.scrollTop;
+    }
+
+    function showNotePreviewEmptyState(message) {
+      if (!notePreviewEmpty || !notePreviewList) return;
+      notePreviewEmpty.hidden = false;
+      notePreviewEmpty.textContent = message;
+      notePreviewList.hidden = true;
+      notePreviewList.innerHTML = '';
+      notePreviewListScrollTop = 0;
+    }
+
+    function toggleNotePreviewSidebar(forceState) {
+      notePreviewVisible = forceState === null || forceState === undefined ? !notePreviewVisible : !!forceState;
+      try { localStorage.setItem('notePreviewVisible', notePreviewVisible ? 'true' : 'false'); } catch (err) {}
+      renderNotePreviewSidebar();
+      setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 50);
+    }
+
+    function setSelectedSentence(nextSentence) {
+      persistSelectedSentenceNote();
+      ns.notePreviewSavedItemId = '';
+      ns.notePreviewEditingItemId = '';
+      ns.selectedSentence = nextSentence ? Object.assign({}, nextSentence) : null;
+      renderNotePreviewSidebar();
+    }
+
+    function getSelectedSentence() {
+      return ns.selectedSentence ? Object.assign({}, ns.selectedSentence) : null;
+    }
+
+    function updateSentenceFocusPhrase(sentence, focusPhrase) {
+      if (!sentence) return;
+      var sentenceId = String(sentence.sentenceId || '');
+      var nextSelectedText = String(focusPhrase || '').replace(/\s+/g, ' ').trim();
+      if (!sentenceId || !nextSelectedText) return;
+      persistSelectedSentenceNote();
+      ns.notePreviewSavedItemId = '';
+      ns.notePreviewEditingItemId = '';
+      ns.selectedSentence = Object.assign({}, sentence);
+      ns.sentenceNoteDraft = {
+        sentenceId: sentenceId,
+        itemId: makeSentenceNoteItemId(sentenceId),
+        selectedText: nextSelectedText,
+        noteBody: '',
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      ns.notePreviewEditingItemId = ns.sentenceNoteDraft.itemId;
+      notePreviewPendingScrollItemId = ns.sentenceNoteDraft.itemId;
+      renderNotePreviewSidebar();
+    }
+
+    function selectSentenceFromChunkTarget(target) {
+      if (!getIsChunkMode() || !getHasAiChunkData()) return false;
+      var chunkBlock = target && target.closest ? target.closest('.chunk-block') : null;
+      if (!chunkBlock) return false;
+      var chunkRef = String(chunkBlock.dataset.chunkRef || '');
+      var idx = Number(chunkBlock.dataset.chunkIdx || '-1');
+      if (!chunkRef || idx < 0) return false;
+      var enDiv = chunkBlock.querySelector('.chunk-en');
+      var text = ((enDiv && enDiv.textContent) || '').replace(/\s+/g, ' ').trim();
+      setSelectedSentence({
+        index: idx,
+        sentenceId: chunkRef,
+        chunkRef: chunkRef,
+        text: text
+      });
+      return true;
+    }
+
+    function hasActiveTextSelectionWithinChunk() {
+      var selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+      var text = selection.toString().replace(/\s+/g, ' ').trim();
+      if (!text) return false;
+      var range = selection.getRangeAt(0);
+      var element = range.commonAncestorContainer.nodeType === Node.ELEMENT_NODE
+        ? range.commonAncestorContainer
+        : range.commonAncestorContainer.parentElement;
+      return !!(element && element.closest && element.closest('.chunk-en'));
+    }
+
+    function getSelectionChunkSentence() {
+      if (!getIsChunkMode() || !getHasAiChunkData()) return null;
+      var selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+      var selectedText = selection.toString().replace(/\s+/g, ' ').trim();
+      if (!selectedText) return null;
+      var range = selection.getRangeAt(0);
+      var startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? range.startContainer
+        : range.startContainer.parentElement;
+      var endElement = range.endContainer.nodeType === Node.ELEMENT_NODE
+        ? range.endContainer
+        : range.endContainer.parentElement;
+      var startBlock = startElement && startElement.closest ? startElement.closest('.chunk-block') : null;
+      var endBlock = endElement && endElement.closest ? endElement.closest('.chunk-block') : null;
+      if (!startBlock || !endBlock || startBlock !== endBlock) return null;
+      var enDiv = startBlock.querySelector('.chunk-en');
+      if (!enDiv || !enDiv.contains(range.commonAncestorContainer)) return null;
+      var sentenceId = String(startBlock.dataset.chunkRef || '');
+      var index = Number(startBlock.dataset.chunkIdx || '-1');
+      var fullText = (enDiv.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!sentenceId || index < 0) return null;
+      return {
+        sentenceId: sentenceId,
+        chunkRef: sentenceId,
+        index: index,
+        text: fullText,
+        focusPhrase: selectedText
+      };
+    }
+
+    function maybeCaptureSentenceFocusPhrase() {
+      var selected = getSelectionChunkSentence();
+      if (!selected) return false;
+      updateSentenceFocusPhrase(selected, selected.focusPhrase);
+      return true;
+    }
+
+    function applyImportedSentenceNotesSnapshot(data) {
+      if (!isPlainObjectRecord(data)) {
+        throw new Error('invalid sentence notebook json');
+      }
+      var importDocId = String(data.docId || '');
+      if (!importDocId) {
+        throw new Error('missing docId');
+      }
+      if (importDocId !== ns.currentDocId) {
+        throw new Error('docId mismatch');
+      }
+      if (!isPlainObjectRecord(data.notes)) {
+        throw new Error('missing notes payload');
+      }
+      ns.sentenceNotesMap = normalizeSentenceNotesScope(data.notes);
+      ns.allSentenceNotesByDoc[ns.currentDocId] = normalizeSentenceNotesScope(ns.sentenceNotesMap);
+      ns.sentenceNoteDraft = null;
+      ns.notePreviewEditingItemId = '';
+      ns.notePreviewSavedItemId = '';
+      saveToDB(getSentenceNotesStorageKey(), ns.allSentenceNotesByDoc);
+      renderNotePreviewSidebar();
+    }
+
+    function initNotePreviewResize() {
+      if (notePreviewResizeHandle && notePreviewSidebar) {
+        notePreviewResizeHandle.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var startX = e.clientX;
+          var startWidth = notePreviewWidth;
+          var move = function (ev) {
+            var delta = startX - ev.clientX;
+            notePreviewWidth = Math.max(280, Math.min(520, startWidth + delta));
+            if (!notePreviewResizeRaf) {
+              notePreviewResizeRaf = requestAnimationFrame(function () {
+                notePreviewResizeRaf = 0;
+                applyNotePreviewSize();
+              });
+            }
+          };
+          var up = function () {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            document.body.classList.remove('note-preview-resizing');
+            if (notePreviewResizeRaf) {
+              cancelAnimationFrame(notePreviewResizeRaf);
+              notePreviewResizeRaf = 0;
+            }
+            applyNotePreviewSize();
+            try { localStorage.setItem('notePreviewWidth', String(notePreviewWidth)); } catch (err) {}
+          };
+          document.body.classList.add('note-preview-resizing');
+          document.addEventListener('mousemove', move);
+          document.addEventListener('mouseup', up);
+        });
+      }
+      if (notePreviewResizeHandleY && notePreviewSidebar) {
+        notePreviewResizeHandleY.addEventListener('mousedown', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var startY = e.clientY;
+          var startHeight = notePreviewHeight;
+          var move = function (ev) {
+            var delta = ev.clientY - startY;
+            notePreviewHeight = Math.max(420, Math.min(window.innerHeight - 28, startHeight + delta));
+            if (!notePreviewResizeRaf) {
+              notePreviewResizeRaf = requestAnimationFrame(function () {
+                notePreviewResizeRaf = 0;
+                applyNotePreviewSize();
+              });
+            }
+          };
+          var up = function () {
+            document.removeEventListener('mousemove', move);
+            document.removeEventListener('mouseup', up);
+            document.body.classList.remove('note-preview-resizing-y');
+            if (notePreviewResizeRaf) {
+              cancelAnimationFrame(notePreviewResizeRaf);
+              notePreviewResizeRaf = 0;
+            }
+            applyNotePreviewSize();
+            try { localStorage.setItem('notePreviewHeight', String(notePreviewHeight)); } catch (err) {}
+          };
+          document.body.classList.add('note-preview-resizing-y');
+          document.addEventListener('mousemove', move);
+          document.addEventListener('mouseup', up);
+        });
+      }
     }
 
     var ensureLegacySentenceNotesForDoc = function (docId) {
@@ -1947,6 +2396,27 @@
       switchSentenceNotesDoc: switchSentenceNotesDoc,
       getSentenceNoteRecord: getSentenceNoteRecord,
       getSortedSentenceNoteItems: getSortedSentenceNoteItems,
+      applyNotePreviewSize: applyNotePreviewSize,
+      formatSentenceNoteItemMeta: formatSentenceNoteItemMeta,
+      triggerSentenceNoteSavedFeedback: triggerSentenceNoteSavedFeedback,
+      findSentenceNoteItem: findSentenceNoteItem,
+      discardSentenceNoteDraft: discardSentenceNoteDraft,
+      commitSentenceNoteDraft: commitSentenceNoteDraft,
+      persistSentenceNoteItem: persistSentenceNoteItem,
+      persistSelectedSentenceNote: persistSelectedSentenceNote,
+      buildSentenceNoteItemElement: buildSentenceNoteItemElement,
+      renderNotePreviewSidebar: renderNotePreviewSidebar,
+      showNotePreviewEmptyState: showNotePreviewEmptyState,
+      toggleNotePreviewSidebar: toggleNotePreviewSidebar,
+      setSelectedSentence: setSelectedSentence,
+      getSelectedSentence: getSelectedSentence,
+      updateSentenceFocusPhrase: updateSentenceFocusPhrase,
+      selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+      hasActiveTextSelectionWithinChunk: hasActiveTextSelectionWithinChunk,
+      getSelectionChunkSentence: getSelectionChunkSentence,
+      maybeCaptureSentenceFocusPhrase: maybeCaptureSentenceFocusPhrase,
+      applyImportedSentenceNotesSnapshot: applyImportedSentenceNotesSnapshot,
+      initNotePreviewResize: initNotePreviewResize,
       normalizeSentenceNotesScope: normalizeSentenceNotesScope,
       normalizeSentenceNoteRecord: normalizeSentenceNoteRecord,
       buildSentenceNotesExportSnapshot: buildSentenceNotesExportSnapshot,

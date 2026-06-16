@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 2269 lines
+app.js                             legacy central runtime, about 1754 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -104,7 +104,7 @@ Current composables:
 ```text
 session-init.js                   about 1437 lines
 import-module.js                  about 468 lines
-notes-module.js                   about 1962 lines
+notes-module.js                   about 2297 lines
 keyboard-module.js                about 373 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
@@ -207,6 +207,13 @@ The current migration goal should be to keep behavior stable while gradually mov
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
 - Delete key on selected note tags should open a delete confirmation.
 
+### Sentence Notes
+
+- Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
+- `app.js` still keeps thin compatibility wrappers for existing global, inline, startup, import, and Vue callers.
+- `window.selectSentenceFromChunkTarget` remains because `ChunkModeView.vue` still calls it.
+- `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
+
 ### Annotation Tools
 
 - Full generated-annotation prompt UI was removed from the main toolbar.
@@ -251,6 +258,7 @@ scripts/read-web-playback-check.cjs
 scripts/read-web-interactions-check.cjs
 scripts/vocab-matching-helper-check.cjs
 scripts/chunk-notes-state-check.cjs
+scripts/sentence-notes-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -265,6 +273,7 @@ Current checks cover:
 - chunk Chinese focus/hold behavior
 - chunk note right-click, save, underline, connector, and delete prompt
 - chunk note state normalization/upsert/delete/import/file-handle behavior through `verify:chunk-notes-state`
+- sentence note selection/draft/persistence/import/export behavior through `verify:sentence-notes-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

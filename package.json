@@ -13,6 +13,7 @@
     "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",
     "verify:chunk-notes-state": "node scripts/chunk-notes-state-check.cjs",
+    "verify:sentence-notes-state": "node scripts/sentence-notes-state-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"
