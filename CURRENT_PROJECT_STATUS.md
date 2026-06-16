@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1880 lines
+app.js                             legacy central runtime, about 1881 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    13 compatibility/runtime modules
+  composables/                    14 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -112,6 +112,7 @@ app-handlers.js                   about 88 lines
 chunk-note-layout.js              about 152 lines
 transcript-state.js               about 103 lines
 chunk-state.js                    about 161 lines
+cloze-state.js                    about 109 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
 annotation-lightweight-module.js  about 76 lines
@@ -174,7 +175,7 @@ window.__USE_VUE_RENDERING = true
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
 
-Transcript and chunk state have started moving out of `app.js`: `src/composables/transcript-state.js` and `src/composables/chunk-state.js` provide startup-safe adapters, and `src/main.js` binds them to the real Pinia stores after bridge hydration. `window.__state` transcript and chunk fields remain as compatibility facades.
+Transcript, chunk, and cloze state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, and `src/composables/cloze-state.js` provide startup-safe adapters, and `src/main.js` binds them to the real Pinia stores after bridge hydration. `window.__state` transcript, chunk, and cloze fields remain as compatibility facades.
 
 ## 7. Important Runtime Behaviors
 
@@ -202,6 +203,13 @@ Transcript and chunk state have started moving out of `app.js`: `src/composables
   - sentence highlighting by default
   - Chinese hidden unless held, depending on current state
   - focus mode available through `#btn-chunk-focus`
+
+### Cloze Quiz
+
+- Cloze data is loaded through `#cloze-file`.
+- Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to `src/pinia-stores/cloze.js`.
+- `src/composables/import-module.js` still owns cloze import/check orchestration through the `window.__state` compatibility facade.
+- `ClozeQuizView.vue` and `ClozeCard.vue` render and edit cloze state from Pinia.
 
 ### Chunk Notes
 
@@ -241,6 +249,7 @@ npm run verify:interactions
 npm run verify:vocab-matching
 npm run verify:chunk-notes-state
 npm run verify:chunk-state
+npm run verify:cloze-state
 npm test
 ```
 
@@ -270,6 +279,7 @@ scripts/sentence-notes-state-check.cjs
 scripts/annotation-lightweight-module-check.cjs
 scripts/transcript-state-check.cjs
 scripts/chunk-state-check.cjs
+scripts/cloze-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -289,6 +299,7 @@ Current checks cover:
 - keyboard boundary helper ownership through `verify:keyboard-boundary`
 - transcript state adapter ownership through `verify:transcript-state`
 - chunk state adapter ownership through `verify:chunk-state`
+- cloze state adapter ownership through `verify:cloze-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

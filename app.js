@@ -10,6 +10,7 @@
     import './src/utils/vocab-matching.js';
     import './src/composables/transcript-state.js';
     import './src/composables/chunk-state.js';
+    import './src/composables/cloze-state.js';
     import './src/composables/annotation-lightweight-module.js';
 
     // === Read-order map ===
@@ -24,6 +25,7 @@
     window.__USE_VUE_RENDERING = true;
     const _tr = window.__transcriptState;
     const _ch = window.__chunkState;
+    const _clz = window.__clozeState;
 
     // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
     window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
@@ -31,13 +33,14 @@
         var ps = window.__piniaStores;
         var b = window.__bridge;
         var chunkSnapshot = _ch.getSnapshot();
+        var clozeSnapshot = _clz.getSnapshot();
         // Always write to bridge (for main.js init consumption)
         if (b) {
             b.transcript = { segments: _tr.segments, words: _tr.words, wordStarts: _tr.wordStarts, highlightMode: _tr.highlightMode };
             b.chunkItems = chunkSnapshot.chunkItems; b.isChunkMode = chunkSnapshot.isChunkMode; b.hasAiChunkData = chunkSnapshot.hasAiChunkData;
             b.chunkCNVisible = chunkSnapshot.chunkCnVisible; b.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
             b.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; b.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
-            b.clozeItems = clozeItems; b.hasClozeData = hasClozeData; b.clozeAnswerState = clozeAnswerState;
+            b.clozeItems = clozeSnapshot.clozeItems; b.hasClozeData = clozeSnapshot.hasClozeData; b.clozeAnswerState = clozeSnapshot.clozeAnswerState;
         }
         // If Pinia already exists, write directly for reactive updates
         if (ps) {
@@ -51,7 +54,7 @@
                 ps.chunk.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; ps.chunk.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
                 ps.chunk.chunkNoteVisible = !!(_ns && _ns.chunkNoteVisible);
             }
-            if (ps.cloze) { ps.cloze.items = clozeItems; ps.cloze.hasData = hasClozeData; ps.cloze.answerState = clozeAnswerState; }
+            if (ps.cloze) { ps.cloze.items = clozeSnapshot.clozeItems; ps.cloze.hasData = clozeSnapshot.hasClozeData; ps.cloze.answerState = clozeSnapshot.clozeAnswerState; }
         }
     }
 
@@ -621,9 +624,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let holdPrevHadFocusClass = null;
     let lastSentencePrevTapSegIndex = -1;
     let lastSentencePrevTapAt = 0;
-    let clozeItems = [];
-    let hasClozeData = false;
-    let clozeAnswerState = [];
+    // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
     var _ns = {
         chunkNotesMap: {},
@@ -773,9 +774,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(window.__state, 'wordStarts', { get: function() { return _tr.wordStarts; }, set: function(v) { _tr.wordStarts = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkItems', { get: function() { return _ch.chunkItems; }, set: function(v) { _ch.chunkItems = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'hasAiChunkData', { get: function() { return _ch.hasAiChunkData; }, set: function(v) { _ch.hasAiChunkData = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'hasClozeData', { get: function() { return hasClozeData; }, set: function(v) { hasClozeData = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'clozeItems', { get: function() { return clozeItems; }, set: function(v) { clozeItems = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'clozeAnswerState', { get: function() { return clozeAnswerState; }, set: function(v) { clozeAnswerState = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'hasClozeData', { get: function() { return _clz.hasClozeData; }, set: function(v) { _clz.hasClozeData = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'clozeItems', { get: function() { return _clz.clozeItems; }, set: function(v) { _clz.clozeItems = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'clozeAnswerState', { get: function() { return _clz.clozeAnswerState; }, set: function(v) { _clz.clozeAnswerState = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'manualChunkStates', { get: function() { return _ch.manualChunkStates; }, set: function(v) { _ch.manualChunkStates = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkNotesFileHandle', { get: function() { return _cnApi.getChunkNotesFileState().handle; }, set: function(v) { _cnApi.setChunkNotesFileState({ handle: v }); }, enumerable: true, configurable: true });

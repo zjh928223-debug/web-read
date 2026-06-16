@@ -93,9 +93,9 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `wordStarts` | `wordStarts` | `playback-module.js`, `controls-module.js` | transcript/playback index helper owner |
 | `chunkItems` | `window.__chunkState.chunkItems` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
 | `hasAiChunkData` | `window.__chunkState.hasAiChunkData` | `playback-module.js`, `session-init.js` | chunk store/runtime adapter |
-| `hasClozeData` | `hasClozeData` | verification scripts directly set/read | cloze store |
-| `clozeItems` | `clozeItems` | verification scripts directly set | cloze store |
-| `clozeAnswerState` | `clozeAnswerState` | verification scripts directly set | cloze store |
+| `hasClozeData` | `window.__clozeState.hasClozeData` | verification scripts directly set/read | cloze store/runtime adapter |
+| `clozeItems` | `window.__clozeState.clozeItems` | verification scripts directly set | cloze store/runtime adapter |
+| `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | verification scripts directly set | cloze store/runtime adapter |
 | `manualChunkStates` | `window.__chunkState.manualChunkStates` | `session-init.js` | chunk store/runtime adapter |
 | `currentAudioMeta` | `currentAudioMeta` | `session-init.js` | audio/session identity owner |
 | `chunkNotesFileHandle` | `chunkNotesFileHandle` | no direct external field access found | chunk note subsystem |
@@ -167,9 +167,9 @@ Observed direct verification users:
 | `chunkFocusMode` | `window.__chunkState.chunkCnMode === 'focus'` | `chunkStore.chunkFocusMode` / `ps.chunk.chunkFocusMode` | `bridgeToPinia()` | chunk store |
 | `chunkShadowVisible` | `window.__chunkState.isChunkShadowOn` | `chunkStore.chunkShadowVisible` / `ps.chunk.chunkShadowVisible` | `bridgeToPinia()` | chunk store |
 | `chunkNoteVisible` | `_ns.chunkNoteVisible` | `ps.chunk.chunkNoteVisible` runtime only | `bridgeToPinia()` | chunk note/chunk store boundary |
-| `clozeItems` | `clozeItems` | `clozeStore.items` / `ps.cloze.items` | `bridgeToPinia()` | cloze store |
-| `hasClozeData` | `hasClozeData` | `clozeStore.hasData` / `ps.cloze.hasData` | `bridgeToPinia()` | cloze store |
-| `clozeAnswerState` | `clozeAnswerState` | `clozeStore.answerState` / `ps.cloze.answerState` | `bridgeToPinia()` | cloze store |
+| `clozeItems` | `window.__clozeState.clozeItems` | `clozeStore.items` / `ps.cloze.items` | `bridgeToPinia()` | cloze store |
+| `hasClozeData` | `window.__clozeState.hasClozeData` | `clozeStore.hasData` / `ps.cloze.hasData` | `bridgeToPinia()` | cloze store |
+| `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | `clozeStore.answerState` / `ps.cloze.answerState` | `bridgeToPinia()` | cloze store |
 
 Known `bridgeToPinia()` callers:
 
@@ -220,6 +220,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.10 src/composables/annotation-lightweight-module.js
    4.11 src/composables/transcript-state.js
    4.12 src/composables/chunk-state.js
+   4.13 src/composables/cloze-state.js
 5. app.js
 6. src/composables/session-init.js
 7. /src/main.js

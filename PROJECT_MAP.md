@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1880 lines
+├── app.js                             # Legacy central bus, about 1881 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -83,6 +83,7 @@ src/
 │   ├── chunk-note-layout.js
 │   ├── transcript-state.js
 │   ├── chunk-state.js
+│   ├── cloze-state.js
 │   ├── glass-effects.js
 │   ├── controls-module.js
 │   └── annotation-lightweight-module.js
@@ -148,6 +149,7 @@ npm run build        # Vite build and legacy script copy
 npm run verify:vite  # Vite dev server + Playwright load check
 npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check
+npm run verify:cloze-state # Focused cloze state adapter check
 npm test             # Alias for verify:vite
 ```
 

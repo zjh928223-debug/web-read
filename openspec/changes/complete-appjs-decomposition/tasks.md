@@ -36,7 +36,7 @@
 - [x] 4.1 Pick one state domain and document its new owner before migrating it: transcript, chunk, cloze, playback, chunk note, or sentence note.
 - [x] 4.2 Migrate transcript state ownership from `app.js` local variables to the real Pinia transcript store or a clearly owned runtime module.
 - [x] 4.3 Migrate chunk state ownership from `app.js` local variables to the real Pinia chunk store or chunk runtime module.
-- [ ] 4.4 Migrate cloze state ownership from `app.js` local variables to the real Pinia cloze store or cloze runtime module.
+- [x] 4.4 Migrate cloze state ownership from `app.js` local variables to the real Pinia cloze store or cloze runtime module.
 - [ ] 4.5 Migrate playback transient state ownership out of `app.js`, preserving highlight, seek, backward/forward, and page-style follow behavior.
 - [ ] 4.6 Migrate chunk note and sentence note state ownership out of `app.js`, preserving persisted session behavior.
 - [ ] 4.7 Convert affected `window.__state` properties into compatibility facades over the new owner.

@@ -15,6 +15,7 @@ import './utils/chunk-matching.js'
 import './utils/vocab-matching.js'
 import './composables/transcript-state.js'
 import './composables/chunk-state.js'
+import './composables/cloze-state.js'
 import './services/annotation/target-source.js'
 import './services/annotation/diagnostics.js'
 import './services/annotation/diagnostics-records.js'
@@ -137,6 +138,9 @@ if (window.__bridge && window.__bridge.clozeItems) {
   clozeStore.items = window.__bridge.clozeItems || []
   clozeStore.hasData = window.__bridge.hasClozeData || false
   clozeStore.answerState = window.__bridge.clozeAnswerState || []
+}
+if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'function') {
+  window.__clozeState.bindPiniaStore(clozeStore, { preferStore: true })
 }
 
 console.log('[vue] Phase 8 — bridge data synced to Pinia')
