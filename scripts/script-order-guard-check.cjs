@@ -26,6 +26,7 @@ const expectedScriptSrcs = [
   'src/composables/keyboard-module.js',
   'src/composables/playback-module.js',
   'src/composables/controls-module.js',
+  'src/composables/legacy-control-bindings.js',
   'app.js',
   'src/composables/session-init.js',
   '/src/main.js'

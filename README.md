@@ -11,7 +11,7 @@ For the detailed current architecture and migration status, see `CURRENT_PROJECT
 This is a working hybrid app, not a clean Vue-only rewrite.
 
 ```text
-legacy DOM + inline handlers
+legacy DOM shell + module-bound controls
         ↓
 app.js central state and compatibility exports
         ↓
@@ -22,7 +22,7 @@ Pinia stores in src/pinia-stores
 Vue components
 ```
 
-Vue rendering is currently enabled by default through `window.__USE_VUE_RENDERING = true`, but many actions still go through legacy `window.xxx` functions and DOM event wiring.
+Vue rendering is currently enabled by default through `window.__USE_VUE_RENDERING = true`, but many actions still go through legacy `window.xxx` functions and module-bound DOM event wiring.
 
 ## Cleanup Mode
 
@@ -65,6 +65,7 @@ npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
+npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
@@ -87,7 +88,7 @@ npm test             # Same as verify:vite
 
 ```text
 9 src/stores/*.js module compatibility stores
-14 src/composables/*.js module compatibility/runtime modules
+10 src/composables/*.js module compatibility/runtime modules
 app.js module
 src/composables/session-init.js module
 /src/main.js Vue + Pinia module
@@ -111,7 +112,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 22 moduleized legacy behavior chunks
+├── composables/               # 23 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -137,6 +138,7 @@ Do not change this schema without an explicit migration plan.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
 - Cloze answer draft/check interaction now goes through `src/composables/cloze-interactions.js`; the old cloze render/check facades remain only for legacy fallback cleanup.
 - `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js` while remaining render dependencies are explicit injections.
+- Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.

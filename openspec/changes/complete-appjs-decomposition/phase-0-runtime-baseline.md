@@ -211,11 +211,7 @@ Keep this order until a migration phase explicitly changes it and runs full veri
    4.7 src/composables/keyboard-module.js
    4.8 src/composables/playback-module.js
    4.9 src/composables/controls-module.js
-   4.10 src/composables/annotation-lightweight-module.js
-   4.11 src/composables/transcript-state.js
-   4.12 src/composables/chunk-state.js
-   4.13 src/composables/cloze-state.js
-   4.14 src/composables/playback-state.js
+   4.10 src/composables/legacy-control-bindings.js
 4. app.js
 5. src/composables/session-init.js
 6. /src/main.js
@@ -225,21 +221,21 @@ Keep this order until a migration phase explicitly changes it and runs full veri
 
 | Element / control | Handler | Target owner |
 | --- | --- | --- |
-| Previous sentence button | `handleBackwardClick()` | playback controls component/module |
-| Next sentence button | `handleForwardClick()` | playback controls component/module |
-| Speed buttons | `changeSpeed(rate)` | audio controls component/module |
-| Highlight button | `cycleHighlightMode()` | transcript/playback controls |
-| AI chunk button | `toggleChunkMode()` | chunk controls |
+| Previous sentence button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | playback controls component/module |
+| Next sentence button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | playback controls component/module |
+| Speed buttons | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | audio controls component/module |
+| Highlight button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | transcript/playback controls |
+| AI chunk button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk controls |
 | Load chunk button | migrated from inline handler to `src/composables/file-input-bindings.js` in task 5.1 | file import controls |
 | Load cloze button | migrated from inline handler to `src/composables/file-input-bindings.js` in task 5.1 | file import controls |
-| Chunk style button | `openChunkStyleModal()` | style editor component/module |
-| Chunk focus button | `toggleChunkFocusMode()` | chunk controls |
-| Chunk note style button | `openChunkNoteStyleModal()` | chunk note style module/component |
-| Chunk style close | `closeChunkStyleModal()` | style editor component/module |
-| Chunk style inputs | `updateChunkStyle()` | style editor component/module |
-| Chunk shadow toggle | `toggleChunkShadowManual()` | chunk controls |
-| Chunk note style close | `closeChunkNoteStyleModal()` | chunk note style module/component |
-| Chunk note style inputs | `updateChunkNoteStyle()` | chunk note style module/component |
+| Chunk style button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | style editor component/module |
+| Chunk focus button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk controls |
+| Chunk note style button | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk note style module/component |
+| Chunk style close | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | style editor component/module |
+| Chunk style inputs | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | style editor component/module |
+| Chunk shadow toggle | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk controls |
+| Chunk note style close | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk note style module/component |
+| Chunk note style inputs | migrated from inline handler to `src/composables/legacy-control-bindings.js` in task 7.2 | chunk note style module/component |
 
 ### DOM IDs with Runtime Reads
 
@@ -263,7 +259,7 @@ btn-annotation-api-settings, annotation-api-settings-panel, modal-backdrop,
 btn-load-cloze, btn-chunk-focus, chunk-vue-container
 ```
 
-Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Task 5.5 moved Vue cloze draft/check interaction out of `window.__clozeCheck` and DOM input queries into `src/composables/cloze-interactions.js`. Task 5.6 removed `window.renderTranscript` and `window.renderChunkMode` after `session-init.js` moved to `src/composables/render-runtime.js`; `window.__clozeCheck` and `window.__buildClozeQuizMarkup` remain for the later cloze fallback cleanup. Other `app.js` DOM lookups remain pending for later Phase 4 control/component migrations.
+Task 5.2 moved `btn-load-cloze` active-state DOM lookup out of `app.js` and into `src/composables/import-module.js`, matching the file picker control boundary started in task 5.1. Task 5.5 moved Vue cloze draft/check interaction out of `window.__clozeCheck` and DOM input queries into `src/composables/cloze-interactions.js`. Task 5.6 removed `window.renderTranscript` and `window.renderChunkMode` after `session-init.js` moved to `src/composables/render-runtime.js`; `window.__clozeCheck` and `window.__buildClozeQuizMarkup` remain for the later cloze fallback cleanup. Task 7.2 removed remaining inline handlers from `index.html` and bound them through `src/composables/legacy-control-bindings.js`.
 
 Legacy or absent IDs still referenced by runtime code and needing audit before deletion:
 

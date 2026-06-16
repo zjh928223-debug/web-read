@@ -57,7 +57,7 @@ There is no `read-26.html` in the current project root. Any reference to `read-2
 ```text
 1. External Google CSE script
 2. 9 compatibility store modules under src/stores/
-3. 14 compatibility/runtime modules under src/composables/
+3. 10 compatibility/runtime modules under src/composables/
 4. app.js as an ES module
 5. src/composables/session-init.js as an ES module
 6. /src/main.js as the Vue + Pinia entry
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    22 compatibility/runtime modules
+  composables/                    23 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -111,6 +111,7 @@ playback-state.js                 about 85 lines
 glass-effects.js                  about 95 lines
 controls-module.js                about 63 lines
 file-input-bindings.js            about 22 lines
+legacy-control-bindings.js        about 73 lines
 transcript-interactions.js        about 111 lines
 chunk-interactions.js             about 136 lines
 cloze-interactions.js             about 93 lines
@@ -170,7 +171,7 @@ window.__USE_VUE_RENDERING = true
 
 `src/main.js` then mirrors the render flag into the transcript Pinia store and applies the legacy/Vue container display mode. The Vue components are active, but many interactions still rely on:
 
-- inline handlers in `index.html`
+- module-bound legacy controls from `src/composables/legacy-control-bindings.js`
 - `window.xxx` functions exported by `app.js` and composables
 - direct DOM reads/writes
 - legacy CSS classes
@@ -224,7 +225,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and compatibility globals.
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
 - `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
-- `app.js` still keeps compatibility wrappers for existing global and inline callers, but the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
+- `app.js` still keeps compatibility wrappers for existing global callers, but `index.html` no longer uses inline handlers and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
@@ -263,6 +264,7 @@ npm run verify:playback-state
 npm run verify:state-facades
 npm run verify:bridge-startup
 npm run verify:file-input-bindings
+npm run verify:inline-handler-bindings
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -308,6 +310,7 @@ scripts/playback-state-check.cjs
 scripts/state-facade-owner-check.cjs
 scripts/bridge-startup-check.cjs
 scripts/file-input-bindings-check.cjs
+scripts/inline-handler-bindings-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -345,6 +348,7 @@ Current checks cover:
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`
+- removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

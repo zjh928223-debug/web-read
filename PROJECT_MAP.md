@@ -26,7 +26,7 @@ index.html
 └── src/main.js
 ```
 
-The page still contains inline `onclick` and `oninput` handlers. `app.js` and some composables therefore export functions onto `window`.
+The page no longer contains inline DOM event handlers. Remaining legacy controls are bound by `src/composables/legacy-control-bindings.js`, while `app.js` and some composables still export compatibility functions onto `window`.
 
 ## Cleanup Baseline
 
@@ -87,6 +87,7 @@ src/
 │   ├── glass-effects.js
 │   ├── controls-module.js
 │   ├── file-input-bindings.js   # file picker DOM binding
+│   ├── legacy-control-bindings.js # remaining legacy control DOM binding
 │   ├── transcript-interactions.js # normal transcript word interaction binding
 │   ├── chunk-interactions.js     # AI chunk word/chunk interaction binding
 │   ├── cloze-interactions.js     # cloze answer/card interaction binding
@@ -149,7 +150,7 @@ ClozeCard.vue             # quiz card
 ToastMessage.vue          # reactive toast
 ```
 
-Legacy DOM and handlers still exist and must remain compatible until the migration is completed.
+Legacy DOM and module-bound compatibility handlers still exist and must remain compatible until the migration is completed.
 
 ## Verification
 
@@ -163,6 +164,7 @@ npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
+npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check

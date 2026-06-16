@@ -11,7 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `app.js` - legacy central bus, still owns remaining runtime state and many UI handlers.
+- `app.js` - legacy central bus, still owns remaining runtime state and compatibility facades.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -24,7 +24,7 @@ Keep this order unless you are deliberately changing the architecture and have v
 ```text
 index.html
 ├── 9 src/stores/*.js module compatibility stores
-├── 14 src/composables/*.js module compatibility/runtime modules
+├── 10 src/composables/*.js module compatibility/runtime modules
 ├── app.js as type="module"
 ├── src/composables/session-init.js as type="module"
 └── /src/main.js as type="module" for Vue + Pinia
@@ -61,7 +61,7 @@ Vue rendering is enabled by default:
 window.__USE_VUE_RENDERING = true
 ```
 
-The Vue components are active but thin. A lot of interaction still relies on `app.js`, `window.xxx` exports, inline `onclick`/`oninput` handlers in `index.html`, and legacy DOM behavior.
+The Vue components are active but thin. A lot of interaction still relies on `app.js`, `window.xxx` exports, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
 
 ## Important Files
 
@@ -122,6 +122,7 @@ npm run verify:playback-state  # Focused playback state adapter check
 npm run verify:state-facades  # Focused window.__state owner facade check
 npm run verify:bridge-startup  # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings  # Focused file picker DOM binding check
+npm run verify:inline-handler-bindings  # Focused remaining inline handler migration check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check
 npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check

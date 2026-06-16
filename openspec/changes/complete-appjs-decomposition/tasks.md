@@ -68,7 +68,7 @@
 ## 7. Phase 6 - Remove app.js
 
 - [ ] 7.1 Confirm `index.html` no longer loads `app.js`.
-- [ ] 7.2 Confirm no inline handler calls an `app.js` export.
+- [x] 7.2 Confirm no inline handler calls an `app.js` export.
 - [ ] 7.3 Confirm no runtime module depends on `window.__state` as a real state source.
 - [ ] 7.4 Confirm `window.__bridge` no longer participates in Vue/Pinia startup sync.
 - [ ] 7.5 Delete unused `window.*` compatibility facades.

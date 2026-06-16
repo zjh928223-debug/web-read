@@ -23,6 +23,7 @@
     "verify:state-facades": "node scripts/state-facade-owner-check.cjs",
     "verify:bridge-startup": "node scripts/bridge-startup-check.cjs",
     "verify:file-input-bindings": "node scripts/file-input-bindings-check.cjs",
+    "verify:inline-handler-bindings": "node scripts/inline-handler-bindings-check.cjs",
     "verify:transcript-interactions": "node scripts/transcript-interactions-check.cjs",
     "verify:chunk-interactions": "node scripts/chunk-interactions-check.cjs",
     "verify:cloze-interactions": "node scripts/cloze-interactions-check.cjs",

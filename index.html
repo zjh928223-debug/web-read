@@ -57,15 +57,15 @@
 
       <div class="extra-controls">
         <div class="control-group seek-controls">
-          <button onclick="handleBackwardClick()">上一句</button>
+          <button id="btn-prev-sentence">上一句</button>
           <input id="hotkey-backward-input" class="hotkey-input-wide" type="text" value="ArrowLeft" title="设置后退快捷键" />
-          <button onclick="handleForwardClick()">下一句</button>
+          <button id="btn-next-sentence">下一句</button>
           <input id="hotkey-forward-input" class="hotkey-input-wide" type="text" value="ArrowRight" title="设置前进快捷键" />
         </div>
         <div class="control-group speed-controls">
-          <button class="speed-btn" data-speed="0.85" onclick="changeSpeed(0.85)">0.85x</button>
-          <button class="speed-btn speed-button-active" data-speed="1.0" onclick="changeSpeed(1.0)">1.0x</button>
-          <button class="speed-btn" data-speed="1.25" onclick="changeSpeed(1.25)">1.25x</button>
+          <button class="speed-btn" data-speed="0.85">0.85x</button>
+          <button class="speed-btn speed-button-active" data-speed="1.0">1.0x</button>
+          <button class="speed-btn" data-speed="1.25">1.25x</button>
         </div>
       </div>
 
@@ -85,7 +85,7 @@
             泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" type="text" maxlength="1" value="b" />
           </span>
           
-          <button id="highlight-mode-btn" onclick="cycleHighlightMode()">高亮:句</button>
+          <button id="highlight-mode-btn">高亮:句</button>
           
           <span class="hotkey-box" title="句子高亮底色">
             句<input type="color" id="sentence-color-input" class="color-input" value="#e5e7eb">
@@ -106,17 +106,17 @@
 
           <input type="file" id="chunk-file" accept=".json" style="display: none;">
           <input type="file" id="cloze-file" accept=".json" style="display: none;">
-          <button id="toggle-chunk-btn" onclick="toggleChunkMode()">AI切分</button>
+          <button id="toggle-chunk-btn">AI切分</button>
           <button id="btn-load-chunk" class="small-btn" type="button">导切分</button>
           <button id="btn-load-cloze" class="small-btn" type="button">导填空</button>
-          <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;" onclick="openChunkStyleModal()">T</button>
+          <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">T</button>
           
           <span class="hotkey-box">
             中<input id="hotkey-chunk-cn-input" class="hotkey-input" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
             <button id="btn-chunk-cn-hold" class="mini-toggle active" title="切换：按住快捷键才显示中文">按住</button>
           </span>
 
-          <button id="btn-chunk-focus" class="small-btn active" onclick="toggleChunkFocusMode()" title="切换中文显示模式：全局/聚焦" style="padding: 3px 10px; min-width:30px;">聚焦</button>
+          <button id="btn-chunk-focus" class="small-btn active" title="切换中文显示模式：全局/聚焦" style="padding: 3px 10px; min-width:30px;">聚焦</button>
           
           <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
             影<input id="hotkey-chunk-shadow-input" class="hotkey-input" type="text" maxlength="1" value="s" />
@@ -131,7 +131,7 @@
               <input type="file" id="import-chunk-notes-file" accept=".json" style="display:none;">
               <button id="btn-import-chunk-notes" class="small-btn" title="导入备注 JSON">导注</button>
               <button id="btn-export-chunk-notes" class="small-btn" title="导出备注 JSON">存注</button>
-              <button id="btn-chunk-note-style" title="调整备注样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;" onclick="openChunkNoteStyleModal()">N</button>
+              <button id="btn-chunk-note-style" title="调整备注样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">N</button>
             </span>
           </details>
         </div>
@@ -149,18 +149,18 @@
   <div id="chunk-style-modal">
       <div class="modal-header">
           <span class="modal-title">AI切分模式样式</span>
-          <span class="close-modal" onclick="closeChunkStyleModal()">脳</span>
+          <span id="btn-close-chunk-style-modal" class="close-modal">脳</span>
       </div>
       
       <div class="style-section">
           <h4>字体大小</h4>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px;">英文</span>
-              <input type="number" id="chunk-en-size-input" class="style-input-num" value="20" oninput="updateChunkStyle()"> px
+              <input type="number" id="chunk-en-size-input" class="style-input-num" value="20"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px;">中文</span>
-              <input type="number" id="chunk-cn-size-input" class="style-input-num" value="16" oninput="updateChunkStyle()"> px
+              <input type="number" id="chunk-cn-size-input" class="style-input-num" value="16"> px
           </div>
       </div>
 
@@ -168,16 +168,16 @@
           <h4>布局与颜色</h4>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">块间距</span>
-              <input type="number" id="chunk-gap-input" class="style-input-num" value="20" step="1" oninput="updateChunkStyle()"> px
+              <input type="number" id="chunk-gap-input" class="style-input-num" value="20" step="1"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">中文字色</span>
-              <input type="color" id="chunk-cn-color-input" class="color-input" value="#4b5563" oninput="updateChunkStyle()">
+              <input type="color" id="chunk-cn-color-input" class="color-input" value="#4b5563">
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">高亮背景</span>
-              <input type="color" id="chunk-bg-color-input" class="color-input" value="#e5e7eb" oninput="updateChunkStyle()">
-              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" onclick="toggleChunkShadowManual()" style="margin-left:5px; font-size:10px;">开关 S</button>
+              <input type="color" id="chunk-bg-color-input" class="color-input" value="#e5e7eb">
+              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" style="margin-left:5px; font-size:10px;">开关 S</button>
           </div>
       </div>
   </div>
@@ -185,29 +185,29 @@
   <div id="chunk-note-style-modal">
       <div class="modal-header">
           <span class="modal-title">备注样式</span>
-          <span class="close-modal" onclick="closeChunkNoteStyleModal()">脳</span>
+          <span id="btn-close-chunk-note-style-modal" class="close-modal">脳</span>
       </div>
       <div class="style-section">
           <h4>备注样式</h4>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">字号</span>
-              <input type="number" id="chunk-note-size-input" class="style-input-num" value="14" min="10" max="36" step="1" oninput="updateChunkNoteStyle()"> px
+              <input type="number" id="chunk-note-size-input" class="style-input-num" value="14" min="10" max="36" step="1"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">颜色</span>
-              <input type="color" id="chunk-note-color-input" class="color-input" value="#4b5563" oninput="updateChunkNoteStyle()">
+              <input type="color" id="chunk-note-color-input" class="color-input" value="#4b5563">
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">宽度</span>
-              <input type="number" id="chunk-note-width-input" class="style-input-num" value="260" min="140" max="1200" step="10" oninput="updateChunkNoteStyle()"> px
+              <input type="number" id="chunk-note-width-input" class="style-input-num" value="260" min="140" max="1200" step="10"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">高度</span>
-              <input type="number" id="chunk-note-min-height-input" class="style-input-num" value="18" min="18" max="360" step="2" oninput="updateChunkNoteStyle()"> px
+              <input type="number" id="chunk-note-min-height-input" class="style-input-num" value="18" min="18" max="360" step="2"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">箭头</span>
-              <input type="number" id="chunk-note-arrow-size-input" class="style-input-num" value="12" min="6" max="28" step="1" oninput="updateChunkNoteStyle()"> px
+              <input type="number" id="chunk-note-arrow-size-input" class="style-input-num" value="12" min="6" max="28" step="1"> px
           </div>
       </div>
   </div>
@@ -232,6 +232,7 @@
   <script type="module" src="src/composables/keyboard-module.js"></script>
   <script type="module" src="src/composables/playback-module.js"></script>
   <script type="module" src="src/composables/controls-module.js"></script>
+  <script type="module" src="src/composables/legacy-control-bindings.js"></script>
   <script type="module" src="app.js"></script>
   <script type="module" src="src/composables/session-init.js"></script>
 
