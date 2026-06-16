@@ -198,7 +198,9 @@
         const nextAudioState = window.ImportExportSharedHelpers.buildCurrentAudioMetaState(meta, buildAudioKey);
         currentAudioMeta = nextAudioState.currentAudioMeta;
         currentAudioKey = nextAudioState.currentAudioKey;
-        chunkNoteDraftRestoreDone = nextAudioState.chunkNoteDraftRestoreDone;
+        if (_cnApi && typeof _cnApi.setChunkNoteDraftRestoreDone === 'function') {
+            _cnApi.setChunkNoteDraftRestoreDone(nextAudioState.chunkNoteDraftRestoreDone);
+        }
     }
 
     function isInputLikeTarget(target) {
@@ -230,62 +232,11 @@
     }
 
     function closeChunkNoteDeleteDialog() {
-        if (chunkNoteDeleteDialogEl) {
-            chunkNoteDeleteDialogEl.remove();
-            chunkNoteDeleteDialogEl = null;
-        }
+        return _cnApi.closeChunkNoteDeleteDialog();
     }
 
     function openChunkNoteDeleteDialog(noteId) {
-        const note = _cnApi.getChunkNote(noteId);
-        const tag = getChunkNoteTagById(String(noteId || ''));
-        if (!note || !tag) return;
-        closeChunkNoteDeleteDialog();
-        const dialog = document.createElement('div');
-        dialog.className = 'chunk-note-delete-dialog';
-        dialog.innerHTML = `
-          <div class="chunk-note-delete-title">确认删除这个备注？</div>
-          <div class="chunk-note-delete-actions">
-            <button type="button" class="chunk-note-delete-btn danger">删除</button>
-            <button type="button" class="chunk-note-delete-btn">取消</button>
-          </div>
-        `;
-        document.body.appendChild(dialog);
-        chunkNoteDeleteDialogEl = dialog;
-        const rect = tag.getBoundingClientRect();
-        dialog.style.left = `${Math.max(12, Math.min(window.innerWidth - 240, rect.left))}px`;
-        dialog.style.top = `${Math.max(12, rect.bottom + 10)}px`;
-        const title = dialog.querySelector('.chunk-note-delete-title');
-        if (title) {
-            title.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                const sx = e.clientX;
-                const sy = e.clientY;
-                const dl = parseFloat(dialog.style.left) || 0;
-                const dt = parseFloat(dialog.style.top) || 0;
-                const move = (ev) => {
-                    dialog.style.left = `${dl + ev.clientX - sx}px`;
-                    dialog.style.top = `${dt + ev.clientY - sy}px`;
-                };
-                const up = () => {
-                    document.removeEventListener('mousemove', move);
-                    document.removeEventListener('mouseup', up);
-                };
-                document.addEventListener('mousemove', move);
-                document.addEventListener('mouseup', up);
-            });
-        }
-        const [delBtn, cancelBtn] = dialog.querySelectorAll('.chunk-note-delete-btn');
-        if (delBtn) delBtn.addEventListener('click', () => {
-            _cnApi.deleteChunkNote(note.id);
-            closeChunkNoteDeleteDialog();
-            setSelectedChunkNote('');
-            saveChunkNotesDebounced();
-            refreshChunkNoteForChunkRef(note.chunkRef);
-        });
-        if (cancelBtn) cancelBtn.addEventListener('click', () => {
-            closeChunkNoteDeleteDialog();
-        });
+        return _cnApi.openChunkNoteDeleteDialog(noteId);
     }
 
     function closeChunkNoteExportDialog() {
@@ -386,18 +337,11 @@
     }
 
     function clearChunkNoteConnectors() {
-        if (chunkNoteSvgLayer) chunkNoteSvgLayer.innerHTML = '';
+        return _cnApi.clearChunkNoteConnectors();
     }
 
     function getChunkWordSpan(note) {
-        if (!note || !note.chunkRef || !Number.isFinite(Number(note.startGlobal))) return null;
-        const direct = document.getElementById(`word-${Number(note.startGlobal)}`);
-        if (direct && direct.closest && direct.closest('.chunk-block')) return direct;
-        const block = getChunkBlockByRef(note.chunkRef);
-        if (!block) return null;
-        const enDiv = block.querySelector('.chunk-en');
-        if (!enDiv) return null;
-        return enDiv.querySelector(`#word-${Number(note.startGlobal)}`);
+        return _cnApi.getChunkWordSpan(note);
     }
 
     function getChunkNoteTagById(noteId) {
@@ -405,64 +349,19 @@
     }
 
     function ensureChunkNoteOverlayLayers() {
-        if (!mainAppArea) return;
-        if (chunkNoteSvgLayer && chunkNoteSvgLayer.parentElement !== mainAppArea) {
-            mainAppArea.appendChild(chunkNoteSvgLayer);
-        }
-        if (!chunkNoteLayer) {
-            chunkNoteLayer = document.createElement('div');
-            chunkNoteLayer.id = 'chunk-note-layer';
-        }
-        if (chunkNoteLayer.parentElement !== mainAppArea) {
-            mainAppArea.appendChild(chunkNoteLayer);
-        }
-        if (chunkNoteSvgLayer && chunkNoteLayer && chunkNoteSvgLayer.nextSibling !== chunkNoteLayer) {
-            mainAppArea.insertBefore(chunkNoteSvgLayer, chunkNoteLayer);
-        }
-        syncChunkNoteOverlaySize();
+        return _cnApi.ensureChunkNoteOverlayLayers();
     }
 
     function rectToMainAreaSpace(rect) {
-        if (!mainAppArea) {
-            return {
-                left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
-                width: rect.width, height: rect.height
-            };
-        }
-        const mainRect = mainAppArea.getBoundingClientRect();
-        return {
-            left: rect.left - mainRect.left + mainAppArea.scrollLeft,
-            top: rect.top - mainRect.top + mainAppArea.scrollTop,
-            right: rect.right - mainRect.left + mainAppArea.scrollLeft,
-            bottom: rect.bottom - mainRect.top + mainAppArea.scrollTop,
-            width: rect.width,
-            height: rect.height
-        };
+        return _cnApi.rectToMainAreaSpace(rect);
     }
 
     function pointToMainAreaSpace(clientX, clientY) {
-        if (!mainAppArea) return { x: clientX, y: clientY };
-        const mainRect = mainAppArea.getBoundingClientRect();
-        return {
-            x: clientX - mainRect.left + mainAppArea.scrollLeft,
-            y: clientY - mainRect.top + mainAppArea.scrollTop
-        };
+        return _cnApi.pointToMainAreaSpace(clientX, clientY);
     }
 
     function syncChunkNoteOverlaySize() {
-        if (!mainAppArea) return;
-        const w = Math.max(mainAppArea.clientWidth, mainAppArea.scrollWidth);
-        const h = Math.max(mainAppArea.clientHeight, mainAppArea.scrollHeight);
-        if (chunkNoteLayer) {
-            chunkNoteLayer.style.width = `${w}px`;
-            chunkNoteLayer.style.height = `${h}px`;
-        }
-        if (chunkNoteSvgLayer) {
-            chunkNoteSvgLayer.style.width = `${w}px`;
-            chunkNoteSvgLayer.style.height = `${h}px`;
-            chunkNoteSvgLayer.setAttribute('width', String(w));
-            chunkNoteSvgLayer.setAttribute('height', String(h));
-        }
+        return _cnApi.syncChunkNoteOverlaySize();
     }
 
     function clearChunkNoteDraft() {
@@ -470,208 +369,43 @@
     }
 
     function persistChunkNoteDraft(immediate = false) {
-        if (!notePopoverCtx || !chunkNoteModalInputEl) return;
-        const modalRect = chunkNoteModalEl ? chunkNoteModalEl.getBoundingClientRect() : null;
-        return _cnApi.persistChunkNoteDraft(notePopoverCtx, chunkNoteModalInputEl.value || '', modalRect, immediate);
+        return _cnApi.persistCurrentChunkNoteDraft(immediate);
     }
 
     function getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal) {
-        const startSpan = document.getElementById(`word-${startGlobal}`);
-        const endSpan = document.getElementById(`word-${endGlobal}`);
-        if (!startSpan || !endSpan) return null;
-        const a = startSpan.getBoundingClientRect();
-        const b = endSpan.getBoundingClientRect();
-        const left = Math.min(a.left, b.left);
-        const top = Math.min(a.top, b.top);
-        const right = Math.max(a.right, b.right);
-        const bottom = Math.max(a.bottom, b.bottom);
-        return {
-            left, top, right, bottom,
-            width: Math.max(0, right - left),
-            height: Math.max(0, bottom - top)
-        };
+        return _cnApi.getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal);
     }
 
     function tryRestoreChunkNoteDraft() {
-        if (chunkNoteDraftRestoreDone) return;
-        if (!isChunkMode || !hasAiChunkData) return;
-        chunkNoteDraftRestoreDone = true;
-        const parsed = _cnApi.readChunkNoteDraft();
-        if (!parsed || typeof parsed !== 'object' || !parsed.ctx) return;
-        const ctxRaw = parsed.ctx || {};
-        const chunkRef = String(ctxRaw.chunkRef || '');
-        let noteId = String(ctxRaw.noteId || '');
-        const startGlobal = Number(ctxRaw.startGlobal);
-        const endGlobal = Number(ctxRaw.endGlobal);
-        if (!chunkRef || !Number.isFinite(startGlobal) || !Number.isFinite(endGlobal)) {
-            clearChunkNoteDraft();
-            return;
-        }
-        const anchorRect = getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal);
-        if (!anchorRect) return;
-        if (!noteId) noteId = makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal);
-        const existing = _cnApi.getChunkNote(noteId);
-        const block = getChunkBlockByRef(chunkRef);
-        const enDiv = block ? block.querySelector('.chunk-en') : null;
-        let selectedText = String(ctxRaw.selectedText || '');
-        if (!selectedText && enDiv) {
-            const arr = [];
-            for (let i = startGlobal; i <= endGlobal; i++) {
-                const span = enDiv.querySelector(`#word-${i}`);
-                if (span && span.textContent) arr.push(span.textContent.trim());
-            }
-            selectedText = arr.join(' ').replace(/\s+/g, ' ').trim();
-        }
-        const ctx = {
-            chunkRef,
-            noteId,
-            chunkIdx: Number(block ? (block.dataset.chunkIdx || -1) : (ctxRaw.chunkIdx || -1)),
-            startGlobal,
-            endGlobal,
-            selectedText,
-            initialNote: String(parsed.text || existing?.note || ''),
-            noteExists: !!existing,
-            anchorRect
-        };
-        openChunkNotePopover(ctx);
-        if (chunkNoteModalInputEl) {
-            chunkNoteModalInputEl.value = String(parsed.text || '');
-            chunkNoteModalInputEl.focus();
-            chunkNoteModalInputEl.setSelectionRange(chunkNoteModalInputEl.value.length, chunkNoteModalInputEl.value.length);
-        }
-        if (chunkNoteModalEl && parsed.modal && typeof parsed.modal === 'object') {
-            const left = Number(parsed.modal.left);
-            const top = Number(parsed.modal.top);
-            const width = Number(parsed.modal.width);
-            const height = Number(parsed.modal.height);
-            if (Number.isFinite(left) && Number.isFinite(top)) {
-                chunkNoteModalEl.style.left = `${left}px`;
-                chunkNoteModalEl.style.top = `${top}px`;
-            }
-            if (Number.isFinite(width) && width >= 120) chunkNoteModalEl.style.width = `${width}px`;
-            if (Number.isFinite(height) && height >= 40) chunkNoteModalEl.style.height = `${height}px`;
-        }
+        return _cnApi.tryRestoreChunkNoteDraft();
     }
 
     function getChunkNoteLayoutBase() {
-        const minW = 40;
-        const preferredW = Math.max(minW, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-width')) || 260);
-        const minH = Math.max(18, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-min-height')) || 18);
-        const margin = 12;
-        return { minW, preferredW, minH, margin };
+        return _cnApi.getChunkNoteLayoutBase();
     }
 
     function getChunkNoteContentBoxSize(tag) {
-        if (!tag) return null;
-        const styles = getComputedStyle(tag);
-        const width = parseFloat(styles.width);
-        const height = parseFloat(styles.height);
-        if (Number.isFinite(width) && Number.isFinite(height)) {
-            return { width, height };
-        }
-        const rect = tag.getBoundingClientRect();
-        const paddingX = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
-        const paddingY = (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
-        const borderX = (parseFloat(styles.borderLeftWidth) || 0) + (parseFloat(styles.borderRightWidth) || 0);
-        const borderY = (parseFloat(styles.borderTopWidth) || 0) + (parseFloat(styles.borderBottomWidth) || 0);
-        return {
-            width: Math.max(0, rect.width - paddingX - borderX),
-            height: Math.max(0, rect.height - paddingY - borderY)
-        };
+        return _cnApi.getChunkNoteContentBoxSize(tag);
     }
 
     function ensureChunkNoteLayout(note, sourceRect, tagRect = null) {
-        const { minW, preferredW, minH, margin } = getChunkNoteLayoutBase();
-        const areaW = mainAppArea ? Math.max(mainAppArea.clientWidth, mainAppArea.scrollWidth) : window.innerWidth;
-        const areaH = mainAppArea ? Math.max(mainAppArea.clientHeight, mainAppArea.scrollHeight) : window.innerHeight;
-        if (Number.isFinite(Number(note.w)) && Number(note.w) < minW) note.w = minW;
-        if (Number.isFinite(Number(note.h)) && (Math.abs(Number(note.h) - 44) < 0.1 || Math.abs(Number(note.h) - 40) < 0.1 || Math.abs(Number(note.h) - 36) < 0.1)) {
-            note.h = minH;
-        }
-        if (Number.isFinite(Number(note.h)) && Number(note.h) < minH) note.h = minH;
-
-        const currentW = tagRect && Number.isFinite(tagRect.width) && tagRect.width > 0
-            ? tagRect.width
-            : (Number.isFinite(Number(note.w)) ? Number(note.w) : Math.min(preferredW, areaW - margin * 2));
-        const currentH = tagRect && Number.isFinite(tagRect.height) && tagRect.height > 0
-            ? tagRect.height
-            : (Number.isFinite(Number(note.h)) ? Number(note.h) : minH);
-        if (!Number.isFinite(Number(note.w))) note.w = currentW;
-        if (!Number.isFinite(Number(note.h))) note.h = currentH;
-        const defaultX = Math.min(areaW - currentW - margin, Math.max(margin, sourceRect.right + 20));
-        const defaultY = Math.min(areaH - currentH - margin, Math.max(margin, sourceRect.top - 4));
-
-        if (!Number.isFinite(Number(note.offsetX)) || !Number.isFinite(Number(note.offsetY))) {
-            if (Number.isFinite(Number(note.x)) && Number.isFinite(Number(note.y))) {
-                if (note.coordSpace !== 'main') {
-                    const legacyPos = pointToMainAreaSpace(Number(note.x), Number(note.y));
-                    note.x = legacyPos.x;
-                    note.y = legacyPos.y;
-                }
-                note.offsetX = Number(note.x) - sourceRect.left;
-                note.offsetY = Number(note.y) - sourceRect.top;
-            } else {
-                note.offsetX = defaultX - sourceRect.left;
-                note.offsetY = defaultY - sourceRect.top;
-            }
-        }
-
-        const rawX = sourceRect.left + Number(note.offsetX);
-        const rawY = sourceRect.top + Number(note.offsetY);
-        const nextX = Math.max(margin, Math.min(rawX, areaW - currentW - margin));
-        const nextY = Math.max(margin, Math.min(rawY, areaH - currentH - margin));
-        note.x = nextX;
-        note.y = nextY;
-        note.offsetX = nextX - sourceRect.left;
-        note.offsetY = nextY - sourceRect.top;
-        note.coordSpace = 'main';
+        return _cnApi.ensureChunkNoteLayout(note, sourceRect, tagRect);
     }
 
     function syncChunkNoteTagToAnchor(note, tag) {
-        if (!note || !tag) return;
-        const source = getChunkWordSpan(note);
-        if (!source) return;
-        const sourceRect = rectToMainAreaSpace(source.getBoundingClientRect());
-        const tagRect = rectToMainAreaSpace(tag.getBoundingClientRect());
-        ensureChunkNoteLayout(note, sourceRect, tagRect);
-        tag.style.left = `${note.x}px`;
-        tag.style.top = `${note.y}px`;
+        return _cnApi.syncChunkNoteTagToAnchor(note, tag);
     }
 
     function refreshChunkNoteTagPositions() {
-        if (!isChunkMode || !_ns.chunkNoteVisible) return;
-        ensureChunkNoteOverlayLayers();
-        syncChunkNoteOverlaySize();
-        _cnApi.listChunkNotes().forEach(note => {
-            if (!note || !note.id) return;
-            const tag = getChunkNoteTagById(note.id);
-            if (!tag) return;
-            syncChunkNoteTagToAnchor(note, tag);
-        });
+        return _cnApi.refreshChunkNoteTagPositions();
     }
 
     function scheduleChunkNoteLayoutRefresh() {
-        if (chunkNoteLayoutRaf) return;
-        chunkNoteLayoutRaf = requestAnimationFrame(() => {
-            chunkNoteLayoutRaf = 0;
-            refreshChunkNoteTagPositions();
-            redrawAllChunkNoteConnectors();
-        });
+        return _cnApi.scheduleChunkNoteLayoutRefresh();
     }
 
     function applyChunkNoteTextStyle(textEl, note, options = {}) {
-        if (!textEl) return;
-        const tag = textEl.closest('.chunk-note-tag');
-        const color = (note && note.color) || getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-color').trim() || '#4b5563';
-        textEl.style.color = color;
-        if (!tag) return;
-        const layout = buildChunkNoteLayout(
-            note || { note: textEl.textContent || '' },
-            tag.offsetWidth || parseFloat(tag.style.width) || 0,
-            tag.offsetHeight || parseFloat(tag.style.height) || 0
-        );
-        textEl.style.fontSize = `${layout.fontSize}px`;
-        textEl.style.lineHeight = `${layout.lineHeight}px`;
+        return _cnApi.applyChunkNoteTextStyle(textEl, note, options);
     }
 
     function getChunkNoteWrapTokens(text) {
@@ -691,686 +425,91 @@
     }
 
     function renderChunkNoteImage(tag, note) {
-        if (!tag) return;
-        const imgEl = tag.querySelector('.chunk-note-image');
-        const textEl = tag.querySelector('.chunk-note-text');
-        if (!imgEl || !textEl) return;
-        if (tag.classList.contains('editing')) {
-            tag.classList.remove('image-mode');
-            imgEl.removeAttribute('src');
-            return;
-        }
-        const w = Math.max(1, Math.round(tag.clientWidth || parseFloat(tag.style.width) || 1));
-        const h = Math.max(1, Math.round(tag.clientHeight || parseFloat(tag.style.height) || 1));
-        const text = String((note && note.note) || textEl.textContent || '').trim();
-        if (!text) {
-            imgEl.removeAttribute('src');
-            tag.classList.remove('image-mode');
-            return;
-        }
-
-        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(w * dpr));
-        canvas.height = Math.max(1, Math.round(h * dpr));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.scale(dpr, dpr);
-        ctx.clearRect(0, 0, w, h);
-
-        const color = (note && note.color) || getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-color').trim() || '#4b5563';
-        const layout = buildChunkNoteLayout(note || { note: text }, w, h);
-
-        ctx.fillStyle = color;
-        ctx.textBaseline = 'top';
-        ctx.font = `500 ${layout.fontSize}px ${getChunkNoteMeasureFont()}`;
-        const maxLines = Math.max(1, Math.floor(layout.maxTextH / layout.lineHeight));
-        const drawLines = layout.lines.slice(0, maxLines);
-        const hasMore = layout.lines.length > maxLines;
-        if (hasMore && drawLines.length > 0) {
-            drawLines[drawLines.length - 1] = truncateCanvasLine(ctx, drawLines[drawLines.length - 1], layout.maxTextW);
-        }
-        const usedH = drawLines.length * layout.lineHeight;
-        const startY = Math.max(layout.padY, Math.floor((h - usedH) / 2));
-        drawLines.forEach((ln, idx) => {
-            ctx.fillText(ln, layout.padX, startY + idx * layout.lineHeight, layout.maxTextW);
-        });
-        imgEl.src = canvas.toDataURL('image/png');
-        tag.classList.add('image-mode');
+        return _cnApi.renderChunkNoteImage(tag, note);
     }
 
     function updateChunkNoteTagCompactState(tag) {
-        if (!tag) return;
-        const w = tag.offsetWidth || parseFloat(tag.style.width) || 0;
-        const h = tag.offsetHeight || parseFloat(tag.style.height) || 0;
-        tag.classList.toggle('compact', w < 82 || h < 32);
+        return _cnApi.updateChunkNoteTagCompactState(tag);
     }
 
     function makeChunkNoteTagDraggable(tag, note) {
-        if (!tag) return;
-        tag.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.chunk-note-resize-handle')) return;
-            if (tag.classList.contains('editing') && !e.target.closest('.chunk-note-drag-handle')) return;
-            const sx = e.clientX;
-            const sy = e.clientY;
-            const sl = parseFloat(tag.style.left) || 0;
-            const st = parseFloat(tag.style.top) || 0;
-            let dragging = false;
-            let lastDx = 0;
-            let lastDy = 0;
-            let rafId = 0;
-            const paintDrag = () => {
-                rafId = 0;
-                tag.style.transform = `translate3d(${lastDx}px, ${lastDy}px, 0)`;
-                scheduleChunkNoteConnectorRedraw();
-            };
-            const move = (ev) => {
-                const dx = ev.clientX - sx;
-                const dy = ev.clientY - sy;
-                if (!dragging && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-                dragging = true;
-                document.body.style.userSelect = 'none';
-                tag.classList.add('dragging');
-                lastDx = dx;
-                lastDy = dy;
-                if (!rafId) rafId = requestAnimationFrame(paintDrag);
-            };
-            const up = () => {
-                document.body.style.userSelect = '';
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = 0;
-                }
-                if (dragging) {
-                    const nx = sl + lastDx;
-                    const ny = st + lastDy;
-                    tag.style.transform = '';
-                    tag.style.left = `${nx}px`;
-                    tag.style.top = `${ny}px`;
-                    tag.classList.remove('dragging');
-                    updateChunkNoteTagCompactState(tag);
-                    note.x = nx;
-                    note.y = ny;
-                    note.coordSpace = 'main';
-                    const source = getChunkWordSpan(note);
-                    if (source) {
-                        const sr = rectToMainAreaSpace(source.getBoundingClientRect());
-                        note.offsetX = nx - sr.left;
-                        note.offsetY = ny - sr.top;
-                    }
-                    scheduleChunkNoteConnectorRedraw();
-                    saveChunkNotesDebounced();
-                } else {
-                    tag.classList.remove('dragging');
-                }
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-        });
+        return _cnApi.makeChunkNoteTagDraggable(tag, note);
     }
 
     function makeChunkNoteTagResizable(tag, note) {
-        if (!tag) return;
-        const handle = tag.querySelector('.chunk-note-resize-handle');
-        if (!handle) return;
-        handle.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            document.body.style.userSelect = 'none';
-            const sx = e.clientX;
-            const sy = e.clientY;
-            const rect = tag.getBoundingClientRect();
-            const sw = rect.width;
-            const sh = rect.height;
-            const baseLayout = getChunkNoteLayoutBase();
-            const baseMinW = Math.max(44, baseLayout.minW || 40);
-            const baseMinH = Math.max(20, baseLayout.minH || 18);
-            let lastValidW = sw;
-            let lastValidH = sh;
-            let pendingW = sw;
-            let pendingH = sh;
-            let rafId = 0;
-            const wasImageMode = tag.classList.contains('image-mode');
-            if (wasImageMode) tag.classList.remove('image-mode');
-            const paintResize = () => {
-                rafId = 0;
-                const candidateW = Math.max(baseMinW, pendingW);
-                const candidateH = Math.max(baseMinH, pendingH);
-                const fits = canChunkNoteTextFitMinReadable(note, candidateW, candidateH);
-                if (fits) {
-                    lastValidW = candidateW;
-                    lastValidH = candidateH;
-                }
-                tag.style.width = `${lastValidW}px`;
-                tag.style.height = `${lastValidH}px`;
-                updateChunkNoteTagCompactState(tag);
-                const textEl = tag.querySelector('.chunk-note-text');
-                if (textEl && !tag.classList.contains('editing')) {
-                    applyChunkNoteTextStyle(textEl, note, { forceFit: true, fastFit: true });
-                }
-                scheduleChunkNoteConnectorRedraw();
-            };
-            const move = (ev) => {
-                pendingW = Math.max(baseMinW, sw + ev.clientX - sx);
-                pendingH = Math.max(baseMinH, sh + ev.clientY - sy);
-                if (!rafId) rafId = requestAnimationFrame(paintResize);
-            };
-            const up = () => {
-                document.body.style.userSelect = '';
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-                if (rafId) {
-                    cancelAnimationFrame(rafId);
-                    rafId = 0;
-                }
-                note.w = Math.max(baseMinW, lastValidW);
-                note.h = Math.max(baseMinH, lastValidH);
-                note.autoSize = false;
-                tag.style.width = `${note.w}px`;
-                tag.style.height = `${note.h}px`;
-                const textEl = tag.querySelector('.chunk-note-text');
-                if (textEl && !tag.classList.contains('editing')) applyChunkNoteTextStyle(textEl, note, { forceFit: true });
-                if (!tag.classList.contains('editing')) {
-                    if (wasImageMode) tag.classList.add('image-mode');
-                    renderChunkNoteImage(tag, note);
-                }
-                scheduleChunkNoteConnectorRedraw();
-                saveChunkNotesDebounced();
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-        });
+        return _cnApi.makeChunkNoteTagResizable(tag, note);
     }
 
     function enableChunkNoteInlineEdit(tag, note) {
-        if (!tag) return;
-        const textEl = tag.querySelector('.chunk-note-text');
-        const dragHandle = tag.querySelector('.chunk-note-drag-handle');
-        if (!textEl) return;
-        tag.addEventListener('dblclick', (e) => {
-            if (e.target.closest('.chunk-note-resize-handle')) return;
-            const originalText = String(note.note || '').trim();
-            // Preserve the current visual size; editing should not force a larger box.
-            const rect = tag.getBoundingClientRect();
-            if (!Number.isFinite(Number(note.w))) note.w = Math.max(40, Math.round(rect.width));
-            if (!Number.isFinite(Number(note.h))) note.h = Math.max(18, Math.round(rect.height));
-            const savedW = Math.max(40, Number(note.w) || Math.round(rect.width));
-            const savedH = Math.max(18, Number(note.h) || Math.round(rect.height));
-            const editW = savedW;
-            const editH = savedH;
-            tag.style.width = `${editW}px`;
-            tag.style.height = `${editH}px`;
-            updateChunkNoteTagCompactState(tag);
-            tag.classList.add('editing');
-            tag.classList.remove('image-mode');
-            textEl.contentEditable = 'true';
-            applyChunkNoteTextStyle(textEl, note, { forceFit: true, fastFit: true });
-            textEl.focus();
-            const range = document.createRange();
-            range.selectNodeContents(textEl);
-            const sel = window.getSelection();
-            if (sel) {
-                sel.removeAllRanges();
-                sel.addRange(range);
-            }
-            const finish = (cancel = false) => {
-                if (!tag.classList.contains('editing')) return;
-                if (cancel) textEl.textContent = note.note || '';
-                else {
-                    const nextText = (textEl.textContent || '').trim();
-                    if (!nextText) {
-                        _cnApi.deleteChunkNote(note.id);
-                        saveChunkNotesDebounced();
-                        refreshChunkNoteForChunkRef(note.chunkRef);
-                        textEl.contentEditable = 'false';
-                        tag.classList.remove('editing');
-                        textEl.removeEventListener('input', onInput);
-                        textEl.removeEventListener('blur', onBlur);
-                        textEl.removeEventListener('keydown', onKeydown);
-                        return;
-                    }
-                    const textChanged = nextText !== originalText;
-                    if (textChanged) {
-                        note.note = nextText;
-                        if (note.autoSize !== false) applyChunkNoteAutoSize(note);
-                    }
-                }
-                textEl.contentEditable = 'false';
-                tag.classList.remove('editing');
-                tag.classList.add('image-mode');
-                tag.style.width = `${Math.max(40, Number(note.w) || savedW)}px`;
-                tag.style.height = `${Math.max(18, Number(note.h) || savedH)}px`;
-                updateChunkNoteTagCompactState(tag);
-                textEl.scrollTop = 0;
-                applyChunkNoteTextStyle(textEl, note, { forceFit: true, fastFit: true });
-                renderChunkNoteImage(tag, note);
-                saveChunkNotesDebounced();
-                scheduleChunkNoteConnectorRedraw();
-                textEl.removeEventListener('input', onInput);
-                textEl.removeEventListener('blur', onBlur);
-                textEl.removeEventListener('keydown', onKeydown);
-                tag.__finishChunkNoteEdit = null;
-            };
-            const onInput = () => {
-                if (!tag.classList.contains('editing')) return;
-                const nextText = (textEl.textContent || '').trim();
-                if (note.autoSize !== false) {
-                    const { minW, minH } = getChunkNoteLayoutBase();
-                    const maxW = Math.max(minW, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chunk-note-width')) || 260);
-                    const box = measureChunkNoteTextBox(nextText, minW, minH, maxW);
-                    tag.style.width = `${box.width}px`;
-                    tag.style.height = `${box.height}px`;
-                    updateChunkNoteTagCompactState(tag);
-                }
-                applyChunkNoteTextStyle(textEl, { ...note, note: nextText || note.note });
-                scheduleChunkNoteConnectorRedraw();
-            };
-            const onBlur = () => finish(false);
-            const onKeydown = (ev) => {
-                if (ev.key === 'Enter' && !ev.shiftKey) {
-                    ev.preventDefault();
-                    textEl.blur();
-                } else if (ev.key === 'Escape') {
-                    ev.preventDefault();
-                    finish(true);
-                }
-            };
-            textEl.addEventListener('input', onInput);
-            textEl.addEventListener('blur', onBlur);
-            textEl.addEventListener('keydown', onKeydown);
-            tag.__finishChunkNoteEdit = finish;
-        });
-        if (dragHandle) {
-            dragHandle.title = '鎷栨嫿';
-        }
+        return _cnApi.enableChunkNoteInlineEdit(tag, note);
     }
 
     function spawnChunkNoteTag(note) {
-        if (!note || !note.id || !note.note) return;
-        ensureChunkNoteOverlayLayers();
-        const source = getChunkWordSpan(note);
-        const sourceRect = source ? rectToMainAreaSpace(source.getBoundingClientRect()) : {
-            left: 12, top: 12, right: 12, bottom: 12, width: 0, height: 0
-        };
-        if (note.autoSize !== false) applyChunkNoteAutoSize(note);
-        ensureChunkNoteLayout(note, sourceRect);
-
-        const tag = document.createElement('div');
-        tag.className = 'chunk-note-tag';
-        tag.id = `chunk-note-tag-${note.id}`;
-        tag.dataset.noteId = note.id;
-        tag.style.setProperty('--note-accent', getChunkNoteAccent(note));
-        tag.style.left = `${note.x}px`;
-        tag.style.top = `${note.y}px`;
-        const { minW, minH } = getChunkNoteLayoutBase();
-        tag.style.width = `${Math.max(minW, Number(note.w) || minW)}px`;
-        tag.style.height = `${Math.max(minH, Number(note.h) || minH)}px`;
-        updateChunkNoteTagCompactState(tag);
-        tag.innerHTML = `
-          <img class="chunk-note-image" alt="" aria-hidden="true" />
-          <span class="chunk-note-drag-handle">&#x283F;</span>
-          <span class="chunk-note-text"></span>
-          <div class="chunk-note-resize-handle"></div>
-        `;
-        const textEl = tag.querySelector('.chunk-note-text');
-        if (textEl) textEl.textContent = note.note || '';
-        makeChunkNoteTagDraggable(tag, note);
-        makeChunkNoteTagResizable(tag, note);
-        enableChunkNoteInlineEdit(tag, note);
-        tag.addEventListener('mousedown', (e) => {
-            if (e.target.closest('.chunk-note-resize-handle')) return;
-            setSelectedChunkNote(note.id);
-            closeChunkNoteDeleteDialog();
-        });
-        tag.addEventListener('mouseenter', () => {
-            setChunkNoteHoverTarget(note.id);
-            scheduleChunkNoteConnectorRedraw();
-        });
-        tag.addEventListener('mouseleave', () => {
-            setChunkNoteHoverTarget('');
-            scheduleChunkNoteConnectorRedraw();
-        });
-        (chunkNoteLayer || mainAppArea || document.body).appendChild(tag);
-        if (source) syncChunkNoteTagToAnchor(note, tag);
-        if (textEl) applyChunkNoteTextStyle(textEl, note, { forceFit: true });
-        renderChunkNoteImage(tag, note);
+        return _cnApi.spawnChunkNoteTag(note);
     }
 
     function renderAllChunkNoteTags() {
-        setChunkNoteHoverTarget('');
-        setSelectedChunkNote('');
-        closeChunkNoteDeleteDialog();
-        document.querySelectorAll('.chunk-note-tag').forEach(el => el.remove());
-        if (!isChunkMode || !_ns.chunkNoteVisible) return;
-        _cnApi.listChunkNotes()
-            .filter(n => n && n.note && String(n.note).trim())
-            .sort((a, b) => (a.chunkIdx - b.chunkIdx) || (a.startGlobal - b.startGlobal))
-            .forEach(spawnChunkNoteTag);
-        scheduleChunkNoteLayoutRefresh();
+        return _cnApi.renderAllChunkNoteTags();
     }
 
     function drawChunkNoteConnector(note) {
-        if (!chunkNoteSvgLayer || !note || !note.id || !note.chunkRef) return;
-        const activeChunkNoteId = _cnApi.getActiveChunkNoteId();
-        if (!activeChunkNoteId || activeChunkNoteId !== note.id) return;
-        const source = getChunkWordSpan(note);
-        const tag = getChunkNoteTagById(note.id);
-        if (!source || !tag) return;
-        const s = rectToMainAreaSpace(source.getBoundingClientRect());
-        const t = rectToMainAreaSpace(tag.getBoundingClientRect());
-        if (s.width <= 0 || t.width <= 0) return;
-
-        const x1 = s.left + (s.width / 2);
-        const y1 = s.bottom;
-        const x2 = t.left + (t.width / 2);
-        const y2 = t.top;
-        const midY = (y1 + y2) / 2;
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('class', 'chunk-note-connector');
-        path.style.opacity = '1';
-        path.setAttribute('d', `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`);
-        chunkNoteSvgLayer.appendChild(path);
+        return _cnApi.drawChunkNoteConnector(note);
     }
 
     function redrawAllChunkNoteConnectors() {
-        clearChunkNoteConnectors();
-        if (!isChunkMode || !_ns.chunkNoteVisible) return;
-        ensureChunkNoteOverlayLayers();
-        syncChunkNoteOverlaySize();
-        _cnApi.listChunkNotes().forEach(drawChunkNoteConnector);
+        return _cnApi.redrawAllChunkNoteConnectors();
     }
 
     function scheduleChunkNoteConnectorRedraw() {
-        if (chunkNoteConnectorRaf) return;
-        chunkNoteConnectorRaf = requestAnimationFrame(() => {
-            chunkNoteConnectorRaf = 0;
-            redrawAllChunkNoteConnectors();
-        });
+        return _cnApi.scheduleChunkNoteConnectorRedraw();
     }
 
     function closeChunkNotePopover() {
-        if (chunkNoteModalEl) {
-            chunkNoteModalEl.remove();
-            chunkNoteModalEl = null;
-            chunkNoteModalInputEl = null;
-        }
-        _cnApi.cancelChunkNoteDraftSaveTimer();
-        chunkNoteModalDragging = false;
-        chunkNoteModalResizing = false;
-        notePopoverCtx = null;
-        closeChunkNoteContextMenu();
+        return _cnApi.closeChunkNotePopover();
     }
 
     function getChunkNoteModalPosition(anchorRect, modalEl) {
-        const gap = 12;
-        const margin = 8;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const rect = modalEl.getBoundingClientRect();
-        let left = anchorRect.left;
-        let top = anchorRect.bottom + gap;
-        if (left + rect.width > vw - margin) left = vw - rect.width - margin;
-        if (left < margin) left = margin;
-        if (top + rect.height > vh - margin) top = anchorRect.top - rect.height - gap;
-        if (top < margin) top = margin;
-        return { left, top };
+        return _cnApi.getChunkNoteModalPosition(anchorRect, modalEl);
     }
 
     function applyTempAnnotationByCtx(ctx) {
-        if (!ctx || !ctx.chunkRef) return;
-        const block = Number.isFinite(Number(ctx.chunkIdx))
-            ? document.querySelector(`.chunk-block[data-chunk-idx="${Number(ctx.chunkIdx)}"]`)
-            : getChunkBlockByRef(ctx.chunkRef);
-        if (!block) return;
-        const enDiv = block.querySelector('.chunk-en');
-        if (!enDiv) return;
-        const start = Number(ctx.startGlobal);
-        const end = Number(ctx.endGlobal);
-        if (!Number.isFinite(start) || !Number.isFinite(end)) return;
-        const accent = getChunkNoteAccent({ id: `${ctx.chunkRef}:${start}-${end}` });
-        for (let i = start; i <= end; i++) {
-            const span = enDiv.querySelector(`#word-${i}`);
-            if (!span) continue;
-            span.classList.add('annotated');
-            span.style.setProperty('--annot-accent', accent);
-            if (start === end) span.classList.add('annotated-single');
-            else if (i === start) span.classList.add('annotated-start');
-            else if (i === end) span.classList.add('annotated-end');
-            else span.classList.add('annotated-mid');
-        }
+        return _cnApi.applyTempAnnotationByCtx(ctx);
     }
 
     function saveChunkNoteFromModal() {
-        if (!notePopoverCtx || !chunkNoteModalInputEl) {
-            closeChunkNotePopover();
-            return;
-        }
-        const noteText = (chunkNoteModalInputEl.value || '').trim();
-        const ctx = notePopoverCtx;
-        if (noteText) {
-            const savedNoteId = upsertChunkNote(ctx, noteText);
-            saveChunkNotesDebounced();
-            clearChunkNoteDraft();
-            if (!_ns.chunkNoteVisible) setChunkNoteVisible(true, true);
-            refreshChunkNoteForChunkRef(ctx.chunkRef);
-            setSelectedChunkNote(savedNoteId);
-        } else {
-            if (ctx.noteId) _cnApi.deleteChunkNote(ctx.noteId);
-            refreshChunkNoteForChunkRef(ctx.chunkRef);
-            saveChunkNotesDebounced();
-            clearChunkNoteDraft();
-        }
-        closeChunkNotePopover();
+        return _cnApi.saveChunkNoteFromModal();
     }
 
     function cancelChunkNoteModal() {
-        clearChunkNoteDraft();
-        if (notePopoverCtx && notePopoverCtx.noteId && !notePopoverCtx.noteExists) {
-            _cnApi.deleteChunkNote(notePopoverCtx.noteId);
-            refreshChunkNoteForChunkRef(notePopoverCtx.chunkRef);
-        }
-        closeChunkNotePopover();
+        return _cnApi.cancelChunkNoteModal();
     }
 
     function openChunkNotePopover(ctx) {
-        closeChunkNoteContextMenu();
-        closeChunkNotePopover();
-        notePopoverCtx = ctx;
-        if (!_ns.chunkNoteVisible) setChunkNoteVisible(true, true);
-        applyTempAnnotationByCtx(ctx);
-
-        const modal = document.createElement('div');
-        modal.className = 'chunk-note-modal-wrap';
-        modal.innerHTML = `
-          <span class="chunk-note-modal-handle">&#x283F;</span>
-          <textarea class="chunk-note-modal-input" rows="1"></textarea>
-          <div class="chunk-note-modal-resize"></div>
-        `;
-        document.body.appendChild(modal);
-        chunkNoteModalEl = modal;
-        chunkNoteModalInputEl = modal.querySelector('.chunk-note-modal-input');
-        chunkNoteModalInputEl.value = ctx.initialNote || '';
-
-        modal.style.left = '16px';
-        modal.style.top = '16px';
-        const pos = getChunkNoteModalPosition(ctx.anchorRect, modal);
-        modal.style.left = `${pos.left}px`;
-        modal.style.top = `${pos.top}px`;
-
-        const dragHandle = modal.querySelector('.chunk-note-modal-handle');
-        const resizeHandle = modal.querySelector('.chunk-note-modal-resize');
-        if (dragHandle) {
-            dragHandle.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                chunkNoteModalDragging = true;
-                const sx = e.clientX;
-                const sy = e.clientY;
-                const sl = parseFloat(modal.style.left) || 0;
-                const st = parseFloat(modal.style.top) || 0;
-                const move = (ev) => {
-                    document.body.style.userSelect = 'none';
-                    modal.style.left = `${sl + ev.clientX - sx}px`;
-                    modal.style.top = `${st + ev.clientY - sy}px`;
-                };
-                const up = () => {
-                    document.body.style.userSelect = '';
-                    chunkNoteModalDragging = false;
-                    document.removeEventListener('mousemove', move);
-                    document.removeEventListener('mouseup', up);
-                };
-                document.addEventListener('mousemove', move);
-                document.addEventListener('mouseup', up);
-            });
-        }
-        if (resizeHandle) {
-            resizeHandle.addEventListener('mousedown', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                chunkNoteModalResizing = true;
-                const sx = e.clientX;
-                const sy = e.clientY;
-                const r = modal.getBoundingClientRect();
-                const sw = r.width;
-                const sh = r.height;
-                const move = (ev) => {
-                    const nw = Math.max(140, sw + ev.clientX - sx);
-                    const nh = Math.max(44, sh + ev.clientY - sy);
-                    modal.style.width = `${nw}px`;
-                    modal.style.height = `${nh}px`;
-                };
-                const up = () => {
-                    chunkNoteModalResizing = false;
-                    document.removeEventListener('mousemove', move);
-                    document.removeEventListener('mouseup', up);
-                };
-                document.addEventListener('mousemove', move);
-                document.addEventListener('mouseup', up);
-            });
-        }
-
-        chunkNoteModalInputEl.addEventListener('blur', () => {
-            setTimeout(() => {
-                if (!chunkNoteModalEl) return;
-                if (chunkNoteModalDragging || chunkNoteModalResizing) return;
-                saveChunkNoteFromModal();
-            }, 0);
-        });
-        chunkNoteModalInputEl.addEventListener('input', () => {
-            persistChunkNoteDraft(false);
-        });
-        chunkNoteModalInputEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                saveChunkNoteFromModal();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelChunkNoteModal();
-            }
-        });
-
-        chunkNoteModalInputEl.focus();
-        chunkNoteModalInputEl.setSelectionRange(chunkNoteModalInputEl.value.length, chunkNoteModalInputEl.value.length);
-        setTimeout(() => {
-            if (!chunkNoteModalInputEl) return;
-            chunkNoteModalInputEl.focus();
-            chunkNoteModalInputEl.setSelectionRange(chunkNoteModalInputEl.value.length, chunkNoteModalInputEl.value.length);
-        }, 0);
-        persistChunkNoteDraft(true);
+        return _cnApi.openChunkNotePopover(ctx);
     }
 
     function upsertChunkNote(ctx, noteText) {
-        let layoutContext = null;
-        if (ctx && ctx.anchorRect) {
-            const { minW, minH, margin } = getChunkNoteLayoutBase();
-            const anchorRect = rectToMainAreaSpace(ctx.anchorRect);
-            const areaW = mainAppArea ? Math.max(mainAppArea.clientWidth, mainAppArea.scrollWidth) : window.innerWidth;
-            const areaH = mainAppArea ? Math.max(mainAppArea.clientHeight, mainAppArea.scrollHeight) : window.innerHeight;
-            layoutContext = {
-                minW,
-                minH,
-                margin,
-                areaW,
-                areaH,
-                anchorRect,
-                autoSize: applyChunkNoteAutoSize
-            };
-        }
-        return _cnApi.upsertChunkNote(ctx, noteText, layoutContext);
+        return _cnApi.upsertChunkNoteFromModal(ctx, noteText);
     }
 
     function refreshChunkNoteForChunkRef(chunkRef) {
-        const blocks = getChunkBlocksMatchingRef(chunkRef);
-        if (!blocks.length) {
-            renderAllChunkNoteTags();
-            scheduleChunkNoteConnectorRedraw();
-            return;
-        }
-        blocks.forEach((block) => {
-            const enDiv = block.querySelector('.chunk-en');
-            if (!enDiv) return;
-            const notes = getChunkNotesForBlock(block);
-            if (!notes.length) clearChunkWordAnnotations(enDiv);
-            else markChunkWordsByNotes(enDiv, notes);
-        });
-        renderAllChunkNoteTags();
-        scheduleChunkNoteConnectorRedraw();
+        return _cnApi.refreshChunkNoteForChunkRef(chunkRef);
     }
 
     function openChunkNoteStyleModal() {
-        document.getElementById('modal-backdrop').style.display = 'block';
-        document.getElementById('chunk-note-style-modal').style.display = 'block';
-        const styles = getComputedStyle(document.documentElement);
-        const sz = (styles.getPropertyValue('--chunk-note-size').trim() || '16px').replace('px', '');
-        const width = (styles.getPropertyValue('--chunk-note-width').trim() || '260px').replace('px', '');
-        const minH = (styles.getPropertyValue('--chunk-note-min-height').trim() || '18px').replace('px', '');
-        const arrow = (styles.getPropertyValue('--chunk-note-arrow-size').trim() || '12px').replace('px', '');
-        let color = localStorage.getItem('chunkNoteColor') || styles.getPropertyValue('--chunk-note-color').trim();
-        if (!color.startsWith('#') || color.length !== 7) color = '#4b5563';
-        document.getElementById('chunk-note-size-input').value = parseInt(sz, 10) || 14;
-        document.getElementById('chunk-note-color-input').value = color;
-        document.getElementById('chunk-note-width-input').value = parseInt(width, 10) || 260;
-        document.getElementById('chunk-note-min-height-input').value = parseInt(minH, 10) || 18;
-        document.getElementById('chunk-note-arrow-size-input').value = parseInt(arrow, 10) || 12;
+        return _cnApi.openChunkNoteStyleModal();
     }
 
     function closeChunkNoteStyleModal() {
-        const el = document.getElementById('chunk-note-style-modal');
-        if (el) el.style.display = 'none';
+        return _cnApi.closeChunkNoteStyleModal();
     }
 
     function updateChunkNoteStyle() {
-        const size = document.getElementById('chunk-note-size-input').value;
-        const color = document.getElementById('chunk-note-color-input').value;
-        const width = document.getElementById('chunk-note-width-input').value;
-        const minH = document.getElementById('chunk-note-min-height-input').value;
-        const arrow = document.getElementById('chunk-note-arrow-size-input').value;
-        document.documentElement.style.setProperty('--chunk-note-size', `${size}px`);
-        document.documentElement.style.setProperty('--chunk-note-color', color);
-        document.documentElement.style.setProperty('--chunk-note-width', `${width}px`);
-        document.documentElement.style.setProperty('--chunk-note-min-height', `${minH}px`);
-        document.documentElement.style.setProperty('--chunk-note-arrow-size', `${arrow}px`);
-        localStorage.setItem('chunkNoteSize', `${size}px`);
-        localStorage.setItem('chunkNoteColor', color);
-        localStorage.setItem('chunkNoteWidth', `${width}px`);
-        localStorage.setItem('chunkNoteMinHeight', `${minH}px`);
-        localStorage.setItem('chunkNoteArrowSize', `${arrow}px`);
-        adjustChunkNoteArrowSizeByGap();
-        if (isChunkMode) {
-            renderAllChunkNoteTags();
-        }
-        scheduleChunkNoteConnectorRedraw();
+        return _cnApi.updateChunkNoteStyle();
     }
 
     function adjustChunkNoteArrowSizeByGap() {
-        const styles = getComputedStyle(document.documentElement);
-        const gap = parseFloat(styles.getPropertyValue('--chunk-gap')) || 20;
-        const desired = parseFloat(styles.getPropertyValue('--chunk-note-arrow-size')) || 12;
-        const safeMax = Math.max(6, Math.floor(gap * 0.45));
-        const effective = Math.max(6, Math.min(desired, safeMax));
-        document.documentElement.style.setProperty('--chunk-note-arrow-size-effective', `${effective}px`);
+        return _cnApi.adjustChunkNoteArrowSizeByGap();
     }
 
     // === UI layer entrypoint: DOM bindings ===
@@ -1527,9 +666,21 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
         getIsChunkMode: function () { return isChunkMode; },
         currentAudioKeyGetter: function () { return currentAudioKey; },
+        getHasAiChunkData: function () { return hasAiChunkData; },
+        mainAppArea: mainAppArea,
+        chunkNoteSvgLayer: chunkNoteSvgLayer,
+        chunkNoteLayer: chunkNoteLayer,
+        getChunkNoteMeasureFont: getChunkNoteMeasureFont,
+        measureChunkNoteTextBox: measureChunkNoteTextBox,
+        applyChunkNoteAutoSize: applyChunkNoteAutoSize,
+        buildChunkNoteLayout: buildChunkNoteLayout,
+        canChunkNoteTextFitMinReadable: canChunkNoteTextFitMinReadable,
         makeSelectionNoteBaseId: makeSelectionNoteBaseId,
         makeSelectionNoteId: makeSelectionNoteId,
-        applyChunkNoteAutoSize: applyChunkNoteAutoSize,
+        findNearestChunkWord: findNearestChunkWord,
+        saveOpenChunkNotePopover: function () {
+            if (_cnApi.getChunkNoteModalEl()) saveChunkNoteFromModal();
+        },
         getChunkNotesFileState: function () {
             return {
                 handle: chunkNotesFileHandle,
@@ -1543,13 +694,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             if (Object.prototype.hasOwnProperty.call(next, 'audioKey')) chunkNotesFileHandleAudioKey = String(next.audioKey || '');
             if (Object.prototype.hasOwnProperty.call(next, 'fileName')) chunkNotesFileName = String(next.fileName || '');
         },
-        chunkNoteCtxMenuEl: chunkNoteCtxMenu,
-        closeChunkNotePopover: closeChunkNotePopover,
-        clearChunkNoteConnectors: clearChunkNoteConnectors,
-        ensureChunkNoteOverlayLayers: ensureChunkNoteOverlayLayers,
-        renderAllChunkNoteTags: renderAllChunkNoteTags,
-        scheduleChunkNoteLayoutRefresh: scheduleChunkNoteLayoutRefresh,
-        scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw
+        chunkNoteCtxMenuEl: chunkNoteCtxMenu
     });
     var _snApi = window.__notesModule.initSentenceNotes({
         state: _ns,
@@ -1764,15 +909,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return _importApi.processChunkData(data);
     }
 
-    let notePopoverCtx = null;
-    let chunkNoteModalEl = null;
-    let chunkNoteModalInputEl = null;
-    let chunkNoteModalDragging = false;
-    let chunkNoteModalResizing = false;
-    let chunkNoteConnectorRaf = 0;
-    let chunkNoteLayoutRaf = 0;
-    let chunkNoteDraftRestoreDone = false;
-    let chunkNoteDeleteDialogEl = null;
     let chunkNoteExportDialogEl = null;
     let chunkNoteExportDialogKeydownHandler = null;
     let chunkNotesFileHandle = null;
@@ -1895,121 +1031,19 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function getChunkBlocksMatchingRef(chunkRef) {
-        const ref = String(chunkRef || '');
-        return Array.from(document.querySelectorAll('.chunk-block')).filter(block => {
-            return String(block.dataset.chunkRef || '') === ref || String(block.dataset.legacyChunkRef || '') === ref;
-        });
+        return _cnApi.getChunkBlocksMatchingRef(chunkRef);
     }
 
     function getChunkNotesForBlock(block) {
-        if (!block) return [];
-        const refs = [
-            String(block.dataset.chunkRef || ''),
-            String(block.dataset.legacyChunkRef || '')
-        ].filter(Boolean);
-        return _cnApi.getChunkNotesForBlockRefs(refs);
+        return _cnApi.getChunkNotesForBlock(block);
     }
 
     function refreshAllChunkNoteVisuals() {
-        if (!isChunkMode || !hasAiChunkData) return;
-        document.querySelectorAll('.chunk-block').forEach(block => {
-            const enDiv = block.querySelector('.chunk-en');
-            if (!enDiv) return;
-            const notes = getChunkNotesForBlock(block);
-            if (notes.length > 0) markChunkWordsByNotes(enDiv, notes);
-            else clearChunkWordAnnotations(enDiv);
-        });
-        renderAllChunkNoteTags();
-        scheduleChunkNoteConnectorRedraw();
-    }
-
-    function findNearestChunkBlock(clientX, clientY) {
-        const blocks = Array.from(document.querySelectorAll('.chunk-block'));
-        if (!blocks.length) return null;
-        let best = null;
-        let bestScore = Infinity;
-        blocks.forEach((block) => {
-            const rect = block.getBoundingClientRect();
-            const dx = clientX < rect.left ? rect.left - clientX : (clientX > rect.right ? clientX - rect.right : 0);
-            const dy = clientY < rect.top ? rect.top - clientY : (clientY > rect.bottom ? clientY - rect.bottom : 0);
-            const score = (dy * dy) + (dx * dx * 0.2);
-            if (score < bestScore) {
-                bestScore = score;
-                best = block;
-            }
-        });
-        return best;
+        return _cnApi.refreshAllChunkNoteVisuals();
     }
 
     function handleChunkSelectionContextMenu(e) {
-        if (!isChunkMode || !hasAiChunkData) return false;
-        if (chunkNoteModalEl) saveChunkNoteFromModal();
-        let chunkBlock = e.target && e.target.closest ? e.target.closest('.chunk-block') : null;
-        if (!chunkBlock && e.target && e.target.closest && (e.target.closest('#chunk-vue-container') || e.target.closest('#transcript-container'))) {
-            chunkBlock = findNearestChunkBlock(e.clientX, e.clientY);
-        }
-        if (!chunkBlock) {
-            closeChunkNoteContextMenu();
-            return false;
-        }
-        const enDiv = chunkBlock.querySelector('.chunk-en');
-        if (!enDiv) {
-            closeChunkNoteContextMenu();
-            return false;
-        }
-        const selection = window.getSelection();
-        let startGlobal = NaN;
-        let endGlobal = NaN;
-        let selectedText = '';
-        let anchorRect = null;
-        if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
-            const range = selection.getRangeAt(0);
-            if (enDiv.contains(range.commonAncestorContainer)) {
-                const selectedSpans = Array.from(enDiv.querySelectorAll('span[id^="word-"]')).filter(span => {
-                    try { return range.intersectsNode(span); } catch (err) { return false; }
-                });
-                if (selectedSpans.length) {
-                    const indices = selectedSpans.map(span => parseInt(span.id.replace('word-', ''), 10)).filter(Number.isFinite);
-                    if (indices.length) {
-                        startGlobal = Math.min(...indices);
-                        endGlobal = Math.max(...indices);
-                        selectedText = selectedSpans.map(s => s.textContent.trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-                        anchorRect = range.getBoundingClientRect();
-                    }
-                }
-            }
-        }
-        if (!Number.isFinite(startGlobal) || !Number.isFinite(endGlobal)) {
-            const nearest = findNearestChunkWord(enDiv, e.clientX, e.clientY);
-            if (!nearest) {
-                closeChunkNoteContextMenu();
-                return false;
-            }
-            const idx = parseInt(String(nearest.id || '').replace('word-', ''), 10);
-            if (!Number.isFinite(idx)) {
-                closeChunkNoteContextMenu();
-                return false;
-            }
-            startGlobal = idx;
-            endGlobal = idx;
-            selectedText = (nearest.textContent || '').trim();
-            anchorRect = nearest.getBoundingClientRect();
-        }
-        e.preventDefault();
-        const chunkRef = chunkBlock.dataset.chunkRef || '';
-        const chunkIdx = Number(chunkBlock.dataset.chunkIdx || -1);
-        openChunkNoteContextMenu(e.clientX, e.clientY, {
-            noteId: makeSelectionNoteId(chunkRef, startGlobal, endGlobal),
-            chunkRef,
-            chunkIdx,
-            startGlobal,
-            endGlobal,
-            selectedText,
-            initialNote: '',
-            noteExists: false,
-            anchorRect
-        });
-        return true;
+        return _cnApi.handleChunkSelectionContextMenu(e);
     }
 
     function openChunkNoteContextFromEvent(event) {
@@ -2921,6 +1955,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         setSelectedChunkNote: setSelectedChunkNote,
         openChunkNoteDeleteDialog: openChunkNoteDeleteDialog,
+        getChunkNoteDeleteDialogEl: function () { return _cnApi.getChunkNoteDeleteDialogEl(); },
         selectedChunkNoteId: function () { return _cnApi.getSelectedChunkNoteId(); },
         handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
         chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
@@ -2943,9 +1978,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         setBackwardKey: function (v) { backwardKey = v; },
         setForwardKey: function (v) { forwardKey = v; },
         chunkNoteCtxMenu: chunkNoteCtxMenu,
-        chunkNoteDeleteDialogEl: chunkNoteDeleteDialogEl,
         chunkNoteExportDialogEl: chunkNoteExportDialogEl,
-        chunkNoteModalEl: chunkNoteModalEl,
+        getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
         saveChunkNoteFromModal: saveChunkNoteFromModal
     });
 

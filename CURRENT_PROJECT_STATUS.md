@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 3294 lines
+app.js                             legacy central runtime, about 2269 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -104,8 +104,8 @@ Current composables:
 ```text
 session-init.js                   about 1437 lines
 import-module.js                  about 468 lines
-notes-module.js                   about 604 lines
-keyboard-module.js                about 346 lines
+notes-module.js                   about 1962 lines
+keyboard-module.js                about 373 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
 app-handlers.js                   about 170 lines
@@ -200,8 +200,8 @@ The current migration goal should be to keep behavior stable while gradually mov
 ### Chunk Notes
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
-- Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, and pending context access now delegate through `src/composables/notes-module.js`.
-- Chunk note overlay/tag rendering, popover DOM, drag/resize/edit behavior, style modal, and right-click context resolution still remain in `app.js`.
+- Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
+- `app.js` still keeps compatibility wrappers for existing global and inline callers, but the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.

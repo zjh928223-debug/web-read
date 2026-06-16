@@ -23,7 +23,7 @@
 
 - [x] 3.1 Define the public API and deletion conditions for the chunk note subsystem before moving additional chunk note logic.
 - [x] 3.2 Move chunk note non-rendering state/persistence orchestration out of `app.js` while keeping legacy `window.*` facade behavior stable.
-- [ ] 3.3 Move chunk note overlay/tag interaction logic behind a subsystem API, preserving right-click note creation, underline markers, connectors, drag/resize/edit, and delete prompt behavior.
+- [x] 3.3 Move chunk note overlay/tag interaction logic behind a subsystem API, preserving right-click note creation, underline markers, connectors, drag/resize/edit, and delete prompt behavior.
 - [ ] 3.4 Define the public API and deletion conditions for the sentence note / note preview subsystem.
 - [ ] 3.5 Move sentence note draft, persistence, selection, and sidebar rendering orchestration out of `app.js` or into Vue/runtime modules, preserving existing import/export behavior.
 - [ ] 3.6 Move annotation lightweight import/export glue out of `app.js` into a focused module, preserving existing `session-init.js` integration points.

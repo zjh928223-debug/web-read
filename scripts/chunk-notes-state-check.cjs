@@ -8,7 +8,13 @@ const sourcePath = path.join(repoRoot, 'src', 'composables', 'notes-module.js');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 const sandbox = {
-  window: { innerWidth: 1024, innerHeight: 768 },
+  window: {
+    innerWidth: 1024,
+    innerHeight: 768,
+    getSelection() {
+      return null;
+    },
+  },
   localStorage: {
     getItem(key) {
       return Object.prototype.hasOwnProperty.call(sandbox.__localStorage, key)
@@ -24,6 +30,7 @@ const sandbox = {
   },
   document: {
     querySelectorAll(selector) {
+      if (selector === '.chunk-block') return sandbox.__chunkBlocks;
       if (selector !== '.chunk-note-tag.selected') return [];
       return sandbox.__selectedEls;
     },
@@ -32,6 +39,7 @@ const sandbox = {
     },
   },
   __selectedEls: [],
+  __chunkBlocks: [],
   __elementsById: {},
   __localStorage: {},
   console,
@@ -64,6 +72,8 @@ let fileState = {
   audioKey: '',
   fileName: '',
 };
+let isChunkMode = false;
+let hasAiChunkData = true;
 
 const api = notesModule.initChunkNotes({
   state,
@@ -75,10 +85,16 @@ const api = notesModule.initChunkNotes({
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? n : 16;
   },
-  getIsChunkMode: () => false,
+  getIsChunkMode: () => isChunkMode,
+  getHasAiChunkData: () => hasAiChunkData,
   currentAudioKeyGetter: () => 'audio-key',
   makeSelectionNoteBaseId: (chunkRef, startGlobal, endGlobal) => `${chunkRef}::${startGlobal}-${endGlobal}`,
   makeSelectionNoteId: (chunkRef, startGlobal, endGlobal) => `${chunkRef}::${startGlobal}-${endGlobal}::new`,
+  findNearestChunkWord: () => ({
+    id: 'word-12',
+    textContent: 'Nearest',
+    getBoundingClientRect: () => ({ left: 20, top: 30, right: 62, bottom: 46, width: 42, height: 16 }),
+  }),
   now: () => 123456,
   getChunkNotesFileState: () => fileState,
   setChunkNotesFileState: (next) => {
@@ -100,8 +116,16 @@ const api = notesModule.initChunkNotes({
   'getSelectedChunkNoteId',
   'getChunkNoteTagById',
   'getActiveChunkNoteId',
+  'closeChunkNoteDeleteDialog',
+  'getChunkNoteDeleteDialogEl',
+  'openChunkNoteDeleteDialog',
   'getPendingChunkSelectionCtx',
   'consumePendingChunkSelectionCtx',
+  'handleChunkSelectionContextMenu',
+  'openChunkNoteStyleModal',
+  'closeChunkNoteStyleModal',
+  'updateChunkNoteStyle',
+  'adjustChunkNoteArrowSizeByGap',
   'upsertChunkNote',
   'deleteChunkNote',
   'applyImportedChunkNotes',
@@ -112,6 +136,43 @@ const api = notesModule.initChunkNotes({
   'persistChunkNoteDraft',
   'readChunkNoteDraft',
   'cancelChunkNoteDraftSaveTimer',
+  'clearChunkNoteConnectors',
+  'getChunkWordSpan',
+  'ensureChunkNoteOverlayLayers',
+  'rectToMainAreaSpace',
+  'pointToMainAreaSpace',
+  'syncChunkNoteOverlaySize',
+  'persistCurrentChunkNoteDraft',
+  'getRangeAnchorRectByGlobals',
+  'setChunkNoteDraftRestoreDone',
+  'tryRestoreChunkNoteDraft',
+  'getChunkNoteLayoutBase',
+  'getChunkNoteContentBoxSize',
+  'ensureChunkNoteLayout',
+  'syncChunkNoteTagToAnchor',
+  'refreshChunkNoteTagPositions',
+  'scheduleChunkNoteLayoutRefresh',
+  'applyChunkNoteTextStyle',
+  'renderChunkNoteImage',
+  'updateChunkNoteTagCompactState',
+  'makeChunkNoteTagDraggable',
+  'makeChunkNoteTagResizable',
+  'enableChunkNoteInlineEdit',
+  'spawnChunkNoteTag',
+  'renderAllChunkNoteTags',
+  'drawChunkNoteConnector',
+  'redrawAllChunkNoteConnectors',
+  'scheduleChunkNoteConnectorRedraw',
+  'closeChunkNotePopover',
+  'getChunkNoteModalEl',
+  'saveChunkNoteFromModal',
+  'cancelChunkNoteModal',
+  'openChunkNotePopover',
+  'upsertChunkNoteFromModal',
+  'getChunkBlocksMatchingRef',
+  'getChunkNotesForBlock',
+  'refreshChunkNoteForChunkRef',
+  'refreshAllChunkNoteVisuals',
 ].forEach((name) => {
   assert.equal(typeof api[name], 'function', `${name} should be exposed`);
 });
@@ -120,6 +181,39 @@ api.openChunkNoteContextMenu(100, 120, { chunkRef: 'chunk-a', startGlobal: 10, e
 assert.equal(api.getPendingChunkSelectionCtx().chunkRef, 'chunk-a');
 assert.equal(api.consumePendingChunkSelectionCtx().chunkRef, 'chunk-a');
 assert.equal(api.getPendingChunkSelectionCtx(), null);
+
+const fakeEnDiv = {
+  querySelectorAll: () => [],
+  contains: () => true,
+};
+const fakeBlock = {
+  dataset: { chunkRef: 'chunk-a', chunkIdx: '2' },
+  querySelector(selector) {
+    return selector === '.chunk-en' ? fakeEnDiv : null;
+  },
+  getBoundingClientRect: () => ({ left: 0, top: 0, right: 300, bottom: 100, width: 300, height: 100 }),
+};
+const fakeTarget = {
+  closest(selector) {
+    return selector === '.chunk-block' ? fakeBlock : null;
+  },
+};
+let preventedContextMenu = false;
+isChunkMode = true;
+hasAiChunkData = true;
+assert.equal(api.handleChunkSelectionContextMenu({
+  target: fakeTarget,
+  clientX: 48,
+  clientY: 36,
+  preventDefault() {
+    preventedContextMenu = true;
+  },
+}), true);
+const handledContext = api.consumePendingChunkSelectionCtx();
+assert.equal(preventedContextMenu, true);
+assert.equal(handledContext.noteId, 'chunk-a::12-12::new');
+assert.equal(handledContext.chunkIdx, 2);
+assert.equal(handledContext.selectedText, 'Nearest');
 
 api.applyImportedChunkNotes({
   notes: [

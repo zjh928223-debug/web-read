@@ -10,12 +10,12 @@ Chunk notes are currently split across several compatibility layers:
 
 | Area | Current owner | Notes |
 | --- | --- | --- |
-| Persisted note map | `src/composables/notes-module.js` through `_cnApi` | Task 3.2 moved CRUD, import normalization, snapshot saving, and export file handle state. `app.js` still reads the map for overlay/tag rendering until 3.3. |
+| Persisted note map | `src/composables/notes-module.js` through `_cnApi` | Task 3.2 moved CRUD, import normalization, snapshot saving, and export file handle state. |
 | Visibility | `notes-module.js` via `setChunkNoteVisible()` wrapper in `app.js` | Uses `localStorage.chunkNoteVisible`, `body.hide-chunk-note`, overlay refresh, and connector redraw. |
-| Draft note modal state | `app.js` | Uses `chunkNoteDraft::*` localStorage keys plus DOM-derived modal position. |
-| Context menu | `notes-module.js` plus `keyboard-module.js` and `app.js` | `notes-module.js` positions the menu; `keyboard-module.js` binds the add button; `app.js` builds the context from selection/right-click. |
-| Tag rendering and overlay | `app.js` | Creates `.chunk-note-tag`, image text rendering, drag/resize/edit behavior, selection state, and connector SVG paths. |
-| Style modal | `app.js` inline-handler globals | `index.html` calls `openChunkNoteStyleModal()`, `closeChunkNoteStyleModal()`, and `updateChunkNoteStyle()`. |
+| Draft note modal state | `notes-module.js` via `_cnApi` | Uses `chunkNoteDraft::*` localStorage keys plus DOM-derived modal position. `app.js` wrapper only delegates. |
+| Context menu | `notes-module.js` plus `keyboard-module.js` and `app.js` wrappers | `notes-module.js` positions the menu and resolves selection/right-click context; `keyboard-module.js` binds the add button. |
+| Tag rendering and overlay | `notes-module.js` via `_cnApi` | Creates `.chunk-note-tag`, image text rendering, drag/resize/edit behavior, selection state, and connector SVG paths. |
+| Style modal | `notes-module.js` via `_cnApi` with inline-handler compatibility wrappers | `index.html` still calls global wrappers for `openChunkNoteStyleModal()`, `closeChunkNoteStyleModal()`, and `updateChunkNoteStyle()`. |
 | Import/export | `notes-module.js` plus `app.js` button/dialog wiring | JSON normalization and file handle state moved in 3.2; button bindings, File System Access overwrite dialog, and download trigger still remain in `app.js`. |
 | Layout helpers | `src/composables/chunk-note-layout.js` plus root scripts | `chunk-note-layout-helpers.js` and `chunk-note-layout-core.js` still expose globals; root script migration is Phase 5, not Phase 2. |
 
@@ -256,6 +256,8 @@ Move after 3.2 is verified:
 - style modal runtime
 
 Keep compatibility globals until component/inline handler work happens in later phases.
+
+Status: complete as of 2026-06-16. `app.js` keeps compatibility wrappers, but the implementation now lives behind `_cnApi` in `src/composables/notes-module.js`.
 
 ## Verification Requirements
 

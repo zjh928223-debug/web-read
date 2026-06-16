@@ -29,12 +29,14 @@
     var closeChunkNoteExportDialog = deps.closeChunkNoteExportDialog;
     var setSelectedChunkNote = deps.setSelectedChunkNote;
     var openChunkNoteDeleteDialog = deps.openChunkNoteDeleteDialog;
+    var getChunkNoteDeleteDialogEl = deps.getChunkNoteDeleteDialogEl || function () { return deps.chunkNoteDeleteDialogEl; };
     var selectedChunkNoteId = deps.selectedChunkNoteId;
     var handleChunkSelectionContextMenu = deps.handleChunkSelectionContextMenu;
     var chunkNoteCtxAddBtn = deps.chunkNoteCtxAddBtn;
     var pendingChunkSelectionCtx = deps.pendingChunkSelectionCtx;
     var consumePendingChunkSelectionCtx = deps.consumePendingChunkSelectionCtx || pendingChunkSelectionCtx;
     var openChunkNotePopover = deps.openChunkNotePopover;
+    var getChunkNoteModalEl = deps.getChunkNoteModalEl || function () { return deps.chunkNoteModalEl; };
     var hotkeyInput = deps.hotkeyInput;
     var hotkeyNotesInput = deps.hotkeyNotesInput;
     var hotkeyAnnotationBubbleInput = deps.hotkeyAnnotationBubbleInput;
@@ -163,7 +165,7 @@
       if (ctxMenu && ctxMenu.style.display === 'block') {
         if (!ctxMenu.contains(e.target)) closeChunkNoteContextMenu();
       }
-      var deleteDlg = deps.chunkNoteDeleteDialogEl;
+      var deleteDlg = getChunkNoteDeleteDialogEl();
       if (deleteDlg && !deleteDlg.contains(e.target) && !e.target.closest('.chunk-note-tag')) {
         closeChunkNoteDeleteDialog();
         setSelectedChunkNote('');
@@ -172,7 +174,7 @@
       if (exportDlg && !exportDlg.contains(e.target)) {
         closeChunkNoteExportDialog();
       }
-      var modalEl = deps.chunkNoteModalEl;
+      var modalEl = getChunkNoteModalEl();
       if (!modalEl) return;
       if (modalEl.contains(e.target)) return;
       deps.saveChunkNoteFromModal();
