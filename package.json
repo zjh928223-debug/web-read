@@ -30,6 +30,7 @@
     "verify:script-order": "node scripts/script-order-guard-check.cjs",
     "verify:chunk-note-layout-helpers": "node scripts/chunk-note-layout-helpers-module-check.cjs",
     "verify:chunk-note-layout-core": "node scripts/chunk-note-layout-core-module-check.cjs",
+    "verify:annotation-bubble": "node scripts/annotation-bubble-module-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"

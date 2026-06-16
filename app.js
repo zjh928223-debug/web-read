@@ -18,6 +18,7 @@
     import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
     import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
     import { configureRenderRuntime } from './src/composables/render-runtime.js';
+    import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -954,7 +955,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function getAnnotationBubble() {
-        const bubble = window.AnnotationBubble || null;
+        const bubble = getAnnotationBubbleApi();
         if (!bubble) return null;
         if (typeof bubble.init === 'function') {
             try {

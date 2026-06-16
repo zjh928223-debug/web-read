@@ -72,6 +72,7 @@ npm run verify:render-facades # Focused legacy render facade removal check
 npm run verify:script-order # Focused index.html script order guard
 npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper module check
 npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
+npm run verify:annotation-bubble # Focused annotation bubble module check
 npm test             # Same as verify:vite
 ```
 
@@ -108,7 +109,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 20 moduleized legacy behavior chunks
+├── composables/               # 21 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -137,6 +138,7 @@ Do not change this schema without an explicit migration plan.
 - Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
+- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; `app.js` reaches it through a module API while the root script tag remains until Phase 5 tag removal.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
 - Root regular scripts are still required at runtime and must be copied for production builds.
