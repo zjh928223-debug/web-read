@@ -1776,23 +1776,15 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // Init hold button label
     setTimeout(()=>{ try{updateChunkCnHoldBtn();}catch(e){} }, 0);
 
-    // === ES Module exports for HTML onclick + cross-module access ===
-    window.handleBackwardClick = handleBackwardClick;
-    window.handleForwardClick = handleForwardClick;
-    window.changeSpeed = changeSpeed;
+    // === Temporary compatibility exports for cross-module access ===
     window.cycleHighlightMode = cycleHighlightMode;
     window.toggleChunkMode = toggleChunkMode;
     window.toggleChunkFocusMode = toggleChunkFocusMode;
-    window.openChunkStyleModal = openChunkStyleModal;
-    window.closeChunkStyleModal = closeChunkStyleModal;
     window.openChunkNoteStyleModal = openChunkNoteStyleModal;
     window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
     window.toggleChunkShadowManual = toggleChunkShadowManual;
-    window.updateChunkStyle = updateChunkStyle;
     window.updateChunkNoteStyle = updateChunkNoteStyle;
     window.toggleChunkBtn = toggleChunkBtn;
-    window.forceUpdateUI = forceUpdateUI;
-    window.mainUpdateHighlight = mainUpdateHighlight;
     window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;
     window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
     window.showToast = showToast; window.showError = showError;

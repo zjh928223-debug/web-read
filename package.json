@@ -27,6 +27,7 @@
     "verify:control-playback-state-deps": "node scripts/control-playback-state-deps-check.cjs",
     "verify:session-state-provider": "node scripts/session-state-provider-check.cjs",
     "verify:runtime-state-source": "node scripts/runtime-state-source-check.cjs",
+    "verify:app-window-facades": "node scripts/app-window-facades-check.cjs",
     "verify:transcript-interactions": "node scripts/transcript-interactions-check.cjs",
     "verify:chunk-interactions": "node scripts/chunk-interactions-check.cjs",
     "verify:cloze-interactions": "node scripts/cloze-interactions-check.cjs",
