@@ -53,7 +53,7 @@
 - [x] 5.5 Move cloze interaction ownership into `ClozeQuizView.vue` / `ClozeCard.vue` and cloze store/module dependencies.
 - [x] 5.6 Remove legacy render facades only after no caller depends on them.
 - [x] 5.7 Treat any `index.html` script order change as a standalone task and run full verification immediately after.
-- [ ] 5.8 Run `npm test`, `npm run verify:playback`, `npm run verify:interactions`, and `npm run build`.
+- [x] 5.8 Run `npm test`, `npm run verify:playback`, `npm run verify:interactions`, and `npm run build`.
 
 ## 6. Phase 5 - Root Script and Entry Cleanup
 

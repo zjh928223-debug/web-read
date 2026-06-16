@@ -342,6 +342,7 @@ Current checks cover:
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
 - removed global render facades through `verify:render-facades`
 - guarded current `index.html` script order through `verify:script-order`
+- Phase 4 DOM/event ownership checkpoint passed through `npm test`, standalone `npm run verify:playback`, standalone `npm run verify:interactions`, and `npm run build`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 
