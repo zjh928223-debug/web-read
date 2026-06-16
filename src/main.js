@@ -13,6 +13,7 @@ import './utils/cloze-view-model.js'
 import './utils/playback-index.js'
 import './utils/chunk-matching.js'
 import './utils/vocab-matching.js'
+import './composables/transcript-state.js'
 import './services/annotation/target-source.js'
 import './services/annotation/diagnostics.js'
 import './services/annotation/diagnostics-records.js'
@@ -115,6 +116,9 @@ if (window.__bridge && window.__bridge.transcript) {
   transcriptStore.words = t.words || []
   transcriptStore.wordStarts = t.wordStarts || []
   transcriptStore.highlightMode = t.highlightMode == null ? 2 : t.highlightMode
+}
+if (window.__transcriptState && typeof window.__transcriptState.bindPiniaStore === 'function') {
+  window.__transcriptState.bindPiniaStore(transcriptStore, { preferStore: true })
 }
 if (window.__bridge && window.__bridge.chunkItems) {
   chunkStore.chunkItems = window.__bridge.chunkItems || []

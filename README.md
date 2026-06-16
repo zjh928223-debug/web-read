@@ -58,6 +58,7 @@ npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:sentence-notes-state # Focused sentence note state helper check
 npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
 npm run verify:keyboard-boundary # Focused keyboard boundary helper check
+npm run verify:transcript-state # Focused transcript state adapter check
 npm test             # Same as verify:vite
 ```
 
@@ -94,7 +95,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 11 moduleized legacy behavior chunks
+├── composables/               # 12 moduleized legacy behavior chunks
 ├── utils/                     # 9 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -115,6 +116,7 @@ Do not change this schema without an explicit migration plan.
 ## Current High-Risk Areas
 
 - `app.js` still owns central runtime state and compatibility facades, but chunk note, sentence note, and annotation lightweight glue have started moving into focused modules.
+- Transcript state now goes through `src/composables/transcript-state.js`, which binds to the real Pinia transcript store after startup bridge hydration.
 - Chunk note and sentence note subsystem runtime now live behind `src/composables/notes-module.js`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.

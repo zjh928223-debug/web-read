@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1714 lines
+app.js                             legacy central runtime, about 1711 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -80,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    11 compatibility/runtime modules
+  composables/                    12 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          9 utility modules
@@ -110,6 +110,7 @@ playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
 app-handlers.js                   about 88 lines
 chunk-note-layout.js              about 152 lines
+transcript-state.js               about 103 lines
 glass-effects.js                  about 85 lines
 controls-module.js                about 58 lines
 annotation-lightweight-module.js  about 76 lines
@@ -171,6 +172,8 @@ window.__USE_VUE_RENDERING = true
 - legacy CSS classes
 
 The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
+
+Transcript state has started moving out of `app.js`: `src/composables/transcript-state.js` provides a startup-safe adapter, and `src/main.js` binds it to the real Pinia transcript store after bridge hydration. `window.__state` transcript fields remain as compatibility facades.
 
 ## 7. Important Runtime Behaviors
 
@@ -262,6 +265,7 @@ scripts/vocab-matching-helper-check.cjs
 scripts/chunk-notes-state-check.cjs
 scripts/sentence-notes-state-check.cjs
 scripts/annotation-lightweight-module-check.cjs
+scripts/transcript-state-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -279,6 +283,7 @@ Current checks cover:
 - sentence note selection/draft/persistence/import/export behavior through `verify:sentence-notes-state`
 - annotation lightweight DOM glue through `verify:annotation-lightweight-module`
 - keyboard boundary helper ownership through `verify:keyboard-boundary`
+- transcript state adapter ownership through `verify:transcript-state`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

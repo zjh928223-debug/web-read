@@ -8,6 +8,7 @@
     import './src/utils/playback-index.js';
     import './src/utils/chunk-matching.js';
     import './src/utils/vocab-matching.js';
+    import './src/composables/transcript-state.js';
     import './src/composables/annotation-lightweight-module.js';
 
     // === Read-order map ===
@@ -20,6 +21,7 @@
 
     // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
     window.__USE_VUE_RENDERING = true;
+    const _tr = window.__transcriptState;
 
     // Phase 8: Bridge — app.js data → Pinia stores (init: write __bridge; runtime: write Pinia directly)
     window.__bridge = { transcript: null, chunkItems: null, clozeItems: null };
@@ -28,7 +30,7 @@
         var b = window.__bridge;
         // Always write to bridge (for main.js init consumption)
         if (b) {
-            b.transcript = { segments: segments, words: words, wordStarts: wordStarts, highlightMode: highlightMode };
+            b.transcript = { segments: _tr.segments, words: _tr.words, wordStarts: _tr.wordStarts, highlightMode: _tr.highlightMode };
             b.chunkItems = chunkItems; b.isChunkMode = isChunkMode; b.hasAiChunkData = hasAiChunkData;
             b.chunkCNVisible = chunkCnVisible; b.chunkCNHoldMode = chunkCnHoldMode;
             b.chunkFocusMode = chunkCnMode === 'focus'; b.chunkShadowVisible = isChunkShadowOn;
@@ -37,8 +39,8 @@
         // If Pinia already exists, write directly for reactive updates
         if (ps) {
             if (ps.transcript) {
-                ps.transcript.segments = segments; ps.transcript.words = words;
-                ps.transcript.wordStarts = wordStarts; ps.transcript.highlightMode = highlightMode;
+                ps.transcript.segments = _tr.segments; ps.transcript.words = _tr.words;
+                ps.transcript.wordStarts = _tr.wordStarts; ps.transcript.highlightMode = _tr.highlightMode;
             }
             if (ps.chunk) {
                 ps.chunk.chunkItems = chunkItems; ps.chunk.isChunkMode = isChunkMode; ps.chunk.hasAiChunkData = hasAiChunkData;
@@ -87,7 +89,7 @@
         validateChunkData,
         validateMarksArray
     } = window.DataUtils;
-    const validateTranscriptData = (json) => window.DataUtils.validateTranscriptData(json, segments);
+    const validateTranscriptData = (json) => window.DataUtils.validateTranscriptData(json, _tr.segments);
     const {
         validateClozeData,
         normalizeClozeAnswer,
@@ -135,12 +137,12 @@
 
     // === Identity/storage key helpers (extracted to identity-and-storage-keys.js) ===
     const buildAudioKey = window.IdentityStorageKeys.buildAudioKey;
-    const buildTranscriptKey = (data) => window.IdentityStorageKeys.buildTranscriptKey(data, segments);
+    const buildTranscriptKey = (data) => window.IdentityStorageKeys.buildTranscriptKey(data, _tr.segments);
     const getChunkNotesStorageKey = () => window.IdentityStorageKeys.getChunkNotesStorageKey(currentAudioKey);
     const getChunkNoteDraftStorageKey = () => window.IdentityStorageKeys.getChunkNoteDraftStorageKey(currentAudioKey);
     const getSentenceNotesStorageKey = window.IdentityStorageKeys.getSentenceNotesStorageKey;
     const getLegacySentenceNotesStorageKey = (audioKey = currentAudioKey) => window.IdentityStorageKeys.getLegacySentenceNotesStorageKey(audioKey);
-    const buildCurrentSentenceDocId = (transcriptSource = null) => window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey, segments);
+    const buildCurrentSentenceDocId = (transcriptSource = null) => window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey, _tr.segments);
 
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
     const findNearestChunkWord = (enDiv, clientX, clientY) => window.__chunkNoteLayout.findNearestChunkWord(enDiv, clientX, clientY);
@@ -587,14 +589,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const loadClozeBtn = document.getElementById('btn-load-cloze');
 
     // === Runtime state ===
-    let words = [];
-    let segments = [];
-    let currentWordIndex = -1;
     let autoFollow = true;
     let userScrollSuppress = false;
     let suppressTimer = null;
     
-    let highlightMode = 2;
     let lastActiveSegIndex = -1;
     let activeWordHighlightEl = null;
     let activeSentenceEl = null;
@@ -612,7 +610,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let forwardKey = 'ArrowRight';
     const markedMap = new Map();
 
-    let wordStarts = [];
     let globalVocab = []; 
     let vocabMatchMap = new Map();
 
@@ -780,9 +777,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // chunkNoteModalEl: use independent storage to avoid let TDZ
     var __chunkNoteModalEl = null;
     Object.defineProperty(window.__state, 'chunkNoteModalEl', { get: function() { return __chunkNoteModalEl; }, set: function(v) { __chunkNoteModalEl = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'segments', { get: function() { return segments; }, set: function(v) { segments = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'words', { get: function() { return words; }, set: function(v) { words = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'wordStarts', { get: function() { return wordStarts; }, set: function(v) { wordStarts = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'segments', { get: function() { return _tr.segments; }, set: function(v) { _tr.segments = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'words', { get: function() { return _tr.words; }, set: function(v) { _tr.words = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'wordStarts', { get: function() { return _tr.wordStarts; }, set: function(v) { _tr.wordStarts = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'chunkItems', { get: function() { return chunkItems; }, set: function(v) { chunkItems = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'hasAiChunkData', { get: function() { return hasAiChunkData; }, set: function(v) { hasAiChunkData = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'hasClozeData', { get: function() { return hasClozeData; }, set: function(v) { hasClozeData = v; }, enumerable: true, configurable: true });
@@ -796,11 +793,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     var __cak = 'default-audio';
     Object.defineProperty(window.__state, 'isChunkMode', { get: function() { return isChunkMode; }, set: function(v) { isChunkMode = !!v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'currentWordIndex', { get: function() { return currentWordIndex; }, set: function(v) { currentWordIndex = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'currentWordIndex', { get: function() { return _tr.currentWordIndex; }, set: function(v) { _tr.currentWordIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'autoFollow', { get: function() { return autoFollow; }, set: function(v) { autoFollow = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'userScrollSuppress', { get: function() { return userScrollSuppress; }, set: function(v) { userScrollSuppress = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'suppressTimer', { get: function() { return suppressTimer; }, set: function(v) { suppressTimer = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(window.__state, 'highlightMode', { get: function() { return highlightMode; }, set: function(v) { highlightMode = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(window.__state, 'highlightMode', { get: function() { return _tr.highlightMode; }, set: function(v) { _tr.highlightMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'lastActiveSegIndex', { get: function() { return lastActiveSegIndex; }, set: function(v) { lastActiveSegIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'activeWordHighlightEl', { get: function() { return activeWordHighlightEl; }, set: function(v) { activeWordHighlightEl = v; }, enumerable: true, configurable: true });
     Object.defineProperty(window.__state, 'activeSentenceEl', { get: function() { return activeSentenceEl; }, set: function(v) { activeSentenceEl = v; }, enumerable: true, configurable: true });
@@ -977,8 +974,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // === Transcript/chunk context matching logic ===
     function rebuildVocabMatching() {
         vocabMatchMap.clear();
-        if (!segments.length || !globalVocab.length) return;
-        const nextMap = buildVocabMatchMapHelper(words, globalVocab);
+        if (!_tr.segments.length || !globalVocab.length) return;
+        const nextMap = buildVocabMatchMapHelper(_tr.words, globalVocab);
         nextMap.forEach((value, key) => vocabMatchMap.set(key, value));
     }
 
@@ -1058,7 +1055,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function normalizeAnnotationBubbleHit(match, wordIndex, span) {
         const data = match && match.data ? match.data : match;
         if (!data || typeof data !== 'object') return null;
-        const word = Number.isFinite(wordIndex) ? words[wordIndex] : null;
+        const word = Number.isFinite(wordIndex) ? _tr.words[wordIndex] : null;
         const clickedText = ((span && span.textContent) || (word && (word.word || word.text)) || '').trim();
         return {
             markedText: pickAnnotationValue(data, ['markedText', 'marked_text', 'word', 'text']) || clickedText,
@@ -1093,7 +1090,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         const result = resolver.resolveClick({
             span,
             wordIndex,
-            words,
+            words: _tr.words,
             generatedStore: store
         });
         emitAnnotationDebug('app.generated_click_resolve', {
@@ -1510,18 +1507,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function cycleHighlightMode() {
-        highlightMode = (highlightMode + 1) % 3;
+        _tr.highlightMode = (_tr.highlightMode + 1) % 3;
         lastActiveSegIndex = -1; 
         updateHighlightModeUI();
         forceUpdateUI(audioPlayer.currentTime);
     }
 
     function updateHighlightModeUI() {
-        const txt = ['高亮:关', '高亮:词', '高亮:句'][highlightMode];
+        const txt = ['高亮:关', '高亮:词', '高亮:句'][_tr.highlightMode];
         if (!highlightModeBtn) return;
         highlightModeBtn.textContent = txt;
-        highlightModeBtn.classList.toggle('active', highlightMode !== 0);
-        document.body.classList.toggle('highlight-sentence-mode', highlightMode === 2 && !isChunkMode);
+        highlightModeBtn.classList.toggle('active', _tr.highlightMode !== 0);
+        document.body.classList.toggle('highlight-sentence-mode', _tr.highlightMode === 2 && !isChunkMode);
     }
     updateHighlightModeUI();
 
@@ -1633,8 +1630,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     function toggleCurrentNote() {
         if (isChunkMode) return;
         var targetIdx = -1;
-        if (currentWordIndex !== -1) {
-            var w = words[currentWordIndex];
+        if (_tr.currentWordIndex !== -1) {
+            var w = _tr.words[_tr.currentWordIndex];
             if (w) targetIdx = w.segIndex;
         } else if (lastActiveSegIndex !== -1) {
             targetIdx = lastActiveSegIndex;
@@ -1647,15 +1644,15 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function jumpPrevSentence() {
         var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndexHelper(segments, words, wordStarts, cur);
+        var sIdx = getCurrentSegmentIndexHelper(_tr.segments, _tr.words, _tr.wordStarts, cur);
         var targetTime = 0;
         if (sIdx !== -1) {
             var now = Date.now();
             if (lastSentencePrevTapSegIndex === sIdx && (now - lastSentencePrevTapAt) <= 600) {
-                targetTime = sIdx > 0 ? segments[sIdx - 1].start : segments[sIdx].start;
+                targetTime = sIdx > 0 ? _tr.segments[sIdx - 1].start : _tr.segments[sIdx].start;
                 lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
             } else {
-                targetTime = segments[sIdx].start;
+                targetTime = _tr.segments[sIdx].start;
                 lastSentencePrevTapSegIndex = sIdx; lastSentencePrevTapAt = now;
             }
         } else { lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0; }
@@ -1665,8 +1662,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function jumpNextSentence() {
         var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndexHelper(segments, words, wordStarts, cur);
-        var next = (sIdx >= 0 && sIdx < segments.length - 1) ? segments[sIdx + 1] : null;
+        var sIdx = getCurrentSegmentIndexHelper(_tr.segments, _tr.words, _tr.wordStarts, cur);
+        var next = (sIdx >= 0 && sIdx < _tr.segments.length - 1) ? _tr.segments[sIdx + 1] : null;
         lastSentencePrevTapSegIndex = -1; lastSentencePrevTapAt = 0;
         if (next && Number.isFinite(next.start)) {
             audioPlayer.currentTime = next.start;
@@ -1680,7 +1677,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     function toggleMarkCurrent() {
-        window.__marksStore.toggleMark(markedMap, currentWordIndex, words, saveToDB, syncAnnotationGenerationEntryStatus);
+        window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
     }
 
     // Highlight colors + hotkey bindings → keyboard-module
@@ -1771,10 +1768,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if(!f) return;
         readFileAsText(f, (rawText) => {
             try {
-                const arr = validateMarksArray(JSON.parse(rawText), words.length);
+                const arr = validateMarksArray(JSON.parse(rawText), _tr.words.length);
                 markedMap.clear();
                 arr.forEach(mark => {
-                    if (mark.globalIndex < words.length) {
+                    if (mark.globalIndex < _tr.words.length) {
                         markedMap.set(mark.globalIndex, {
                             ...mark,
                             sourceType: String(mark.sourceType || mark.source || 'marks-json')
@@ -1793,7 +1790,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] exports → src/composables/app-handlers.js
     window.__appHandlers.initExports({
         exportJsonBtn: exportJsonBtn, exportMdAllBtn: exportMdAllBtn,
-        markedMap: markedMap, segments: segments,
+        markedMap: markedMap, getSegments: function () { return _tr.segments; },
         showError: showError, showToast: showToast
     });
 
@@ -1802,7 +1799,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
         validateMarksArray: validateMarksArray,
-        words: words, markedMap: markedMap,
+        getWords: function () { return _tr.words; }, markedMap: markedMap,
         saveToDB: saveToDB,
         isChunkModeFn: function () { return isChunkMode; },
         renderTranscript: renderTranscript, renderChunkMode: renderChunkMode,

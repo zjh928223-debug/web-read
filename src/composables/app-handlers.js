@@ -3,7 +3,9 @@
     var exportJsonBtn = config.exportJsonBtn;
     var exportMdAllBtn = config.exportMdAllBtn;
     var markedMap = config.markedMap;
-    var segments = config.segments;
+    var getSegments = typeof config.getSegments === 'function'
+      ? config.getSegments
+      : function () { return config.segments || []; };
     var showError = config.showError;
     var showToast = config.showToast;
 
@@ -21,6 +23,7 @@
 
     if (exportMdAllBtn) {
       exportMdAllBtn.addEventListener('click', function () {
+        var segments = getSegments();
         if (!segments.length) { showError('TRANSCRIPT_EMPTY', 'No transcript to export'); return; }
         var lines = segments.map(function (seg) {
           if (!seg.words) return '';
@@ -45,7 +48,9 @@
     var getFirstFileFromEvent = config.getFirstFileFromEvent;
     var readFileAsText = config.readFileAsText;
     var validateMarksArray = config.validateMarksArray;
-    var words = config.words;
+    var getWords = typeof config.getWords === 'function'
+      ? config.getWords
+      : function () { return config.words || []; };
     var markedMap = config.markedMap;
     var saveToDB = config.saveToDB;
     var isChunkModeFn = config.isChunkModeFn;
@@ -64,6 +69,7 @@
         if (!f) return;
         readFileAsText(f, function (rawText) {
           try {
+            var words = getWords();
             var arr = validateMarksArray(JSON.parse(rawText), words.length);
             markedMap.clear();
             arr.forEach(function (mark) {

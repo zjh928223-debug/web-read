@@ -16,6 +16,7 @@
     "verify:sentence-notes-state": "node scripts/sentence-notes-state-check.cjs",
     "verify:annotation-lightweight-module": "node scripts/annotation-lightweight-module-check.cjs",
     "verify:keyboard-boundary": "node scripts/keyboard-module-boundary-check.cjs",
+    "verify:transcript-state": "node scripts/transcript-state-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"
