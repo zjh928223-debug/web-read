@@ -64,6 +64,7 @@ npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
+npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm test             # Same as verify:vite
 ```
 
@@ -95,12 +96,12 @@ annotation-api-settings-ui.js
 
 ```text
 src/
-├── main.js                    # Vue mount + Pinia bridge
+├── main.js                    # Vue mount + Pinia adapter binding
 ├── App.vue                    # Root component
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 15 moduleized legacy behavior chunks
+├── composables/               # 16 moduleized legacy behavior chunks
 ├── utils/                     # 9 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```

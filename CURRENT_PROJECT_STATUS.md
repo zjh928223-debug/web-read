@@ -44,7 +44,7 @@ app.js                             legacy central runtime, about 1828 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
-src/main.js                        Vue mount, Pinia setup, side-effect imports, about 144 lines
+src/main.js                        Vue mount, Pinia setup, side-effect imports, about 145 lines
 src/App.vue                        root Vue component
 src/composables/session-init.js    startup restore and annotation/session glue
 ```
@@ -256,6 +256,7 @@ npm run verify:cloze-state
 npm run verify:playback-state
 npm run verify:state-facades
 npm run verify:bridge-startup
+npm run verify:file-input-bindings
 npm test
 ```
 
@@ -289,6 +290,7 @@ scripts/cloze-state-check.cjs
 scripts/playback-state-check.cjs
 scripts/state-facade-owner-check.cjs
 scripts/bridge-startup-check.cjs
+scripts/file-input-bindings-check.cjs
 ```
 
 Despite the `read26` script names, verification targets the current Vite root page, not a `read-26.html` file.
@@ -314,6 +316,7 @@ Current checks cover:
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
+- migrated chunk/cloze file picker inline handlers through `verify:file-input-bindings`
 - annotation lightweight export/import UI presence
 - page-style follow positioning at different viewport heights
 

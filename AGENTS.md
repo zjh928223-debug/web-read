@@ -126,6 +126,7 @@ npm run verify:cloze-state  # Focused cloze state adapter check
 npm run verify:playback-state  # Focused playback state adapter check
 npm run verify:state-facades  # Focused window.__state owner facade check
 npm run verify:bridge-startup  # Focused adapter-to-Pinia startup check
+npm run verify:file-input-bindings  # Focused file picker DOM binding check
 npm test             # Same as verify:vite
 ```
 

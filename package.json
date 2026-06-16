@@ -22,6 +22,7 @@
     "verify:playback-state": "node scripts/playback-state-check.cjs",
     "verify:state-facades": "node scripts/state-facade-owner-check.cjs",
     "verify:bridge-startup": "node scripts/bridge-startup-check.cjs",
+    "verify:file-input-bindings": "node scripts/file-input-bindings-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
     "test": "npm run verify:vite"

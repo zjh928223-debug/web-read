@@ -236,8 +236,8 @@ Keep this order until a migration phase explicitly changes it and runs full veri
 | Speed buttons | `changeSpeed(rate)` | audio controls component/module |
 | Highlight button | `cycleHighlightMode()` | transcript/playback controls |
 | AI chunk button | `toggleChunkMode()` | chunk controls |
-| Load chunk button | `document.getElementById('chunk-file').click()` | file import controls |
-| Load cloze button | `document.getElementById('cloze-file').click()` | file import controls |
+| Load chunk button | migrated from inline handler to `src/composables/file-input-bindings.js` in task 5.1 | file import controls |
+| Load cloze button | migrated from inline handler to `src/composables/file-input-bindings.js` in task 5.1 | file import controls |
 | Chunk style button | `openChunkStyleModal()` | style editor component/module |
 | Chunk focus button | `toggleChunkFocusMode()` | chunk controls |
 | Chunk note style button | `openChunkNoteStyleModal()` | chunk note style module/component |
