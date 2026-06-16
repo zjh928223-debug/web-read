@@ -40,7 +40,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             legacy central runtime, about 1874 lines
+app.js                             legacy central runtime, about 1844 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config, copies root legacy scripts
 package.json                       scripts and dependencies
@@ -104,7 +104,7 @@ Current composables:
 ```text
 session-init.js                   about 1587 lines
 import-module.js                  about 468 lines
-notes-module.js                   about 2297 lines
+notes-module.js                   about 2485 lines
 keyboard-module.js                about 359 lines
 playback-module.js                about 224 lines
 style-editor.js                   about 186 lines
@@ -217,6 +217,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and root regular scripts.
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
+- `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
 - `app.js` still keeps compatibility wrappers for existing global and inline callers, but the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
@@ -226,7 +227,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 ### Sentence Notes
 
 - Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
-- `app.js` still keeps thin compatibility wrappers for existing global, inline, startup, import, and Vue callers.
+- `app.js` still keeps thin compatibility wrappers for existing global, inline, startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
 - `window.selectSentenceFromChunkTarget` remains because `ChunkModeView.vue` still calls it.
 - `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
 
@@ -356,7 +357,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and many global exports, while transcript, chunk, cloze, and playback transient state now delegate through focused adapters.
+- `app.js` still owns some remaining central runtime state and many global exports, while transcript, chunk, cloze, playback transient, and note state now delegate through focused adapters/modules.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

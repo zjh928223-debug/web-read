@@ -619,21 +619,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // Sentence prev-tap state is part of playback transient state.
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
-    var _ns = {
-        chunkNotesMap: {},
-        chunkNoteVisible: false,
-        chunkNoteSaveTimer: null,
-        activeChunkNoteId: '',
-        selectedChunkNoteId: '',
-        pendingChunkSelectionCtx: null,
-        sentenceNotesMap: {},
-        allSentenceNotesByDoc: {},
-        currentDocId: 'default-audio::0__0__0.000__0.000__0',
-        sentenceNoteDraft: null,
-        notePreviewEditingItemId: '',
-        notePreviewSavedItemId: '',
-        selectedSentence: null
-    };
+    var _ns = window.__notesModule.getNotesState();
     var _cnApi = window.__notesModule.initChunkNotes({
         state: _ns,
         loadFromDB: loadFromDB,
@@ -657,19 +643,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         findNearestChunkWord: findNearestChunkWord,
         saveOpenChunkNotePopover: function () {
             if (_cnApi.getChunkNoteModalEl()) saveChunkNoteFromModal();
-        },
-        getChunkNotesFileState: function () {
-            return {
-                handle: chunkNotesFileHandle,
-                audioKey: chunkNotesFileHandleAudioKey,
-                fileName: chunkNotesFileName
-            };
-        },
-        setChunkNotesFileState: function (next) {
-            next = next || {};
-            if (Object.prototype.hasOwnProperty.call(next, 'handle')) chunkNotesFileHandle = next.handle || null;
-            if (Object.prototype.hasOwnProperty.call(next, 'audioKey')) chunkNotesFileHandleAudioKey = String(next.audioKey || '');
-            if (Object.prototype.hasOwnProperty.call(next, 'fileName')) chunkNotesFileName = String(next.fileName || '');
         },
         chunkNoteCtxMenuEl: chunkNoteCtxMenu
     });
@@ -885,9 +858,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     let chunkNoteExportDialogEl = null;
     let chunkNoteExportDialogKeydownHandler = null;
-    let chunkNotesFileHandle = null;
-    let chunkNotesFileHandleAudioKey = '';
-    let chunkNotesFileName = '';
     let currentAudioMeta = null;
     let currentAudioKey = 'default-audio';
     let chunkPointerDown = null;

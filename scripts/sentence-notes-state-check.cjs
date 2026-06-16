@@ -231,6 +231,10 @@ vm.runInNewContext(source, sandbox, { filename: sourcePath });
 
 const notesModule = sandbox.window.__notesModule;
 assert.ok(notesModule, 'notes module should attach to window');
+assert.equal(typeof notesModule.createNotesState, 'function');
+assert.equal(typeof notesModule.getNotesState, 'function');
+assert.equal(notesModule.getNotesState(), sandbox.window.__notesState);
+assert.equal(sandbox.window._ns, sandbox.window.__notesState);
 assert.equal(typeof notesModule.initSentenceNotes, 'function');
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -244,15 +248,9 @@ const saveCalls = [];
 let isChunkMode = true;
 let hasAiChunkData = true;
 
-const state = {
-  sentenceNotesMap: {},
-  allSentenceNotesByDoc: {},
-  currentDocId: docId,
-  sentenceNoteDraft: null,
-  notePreviewEditingItemId: '',
-  notePreviewSavedItemId: '',
-  selectedSentence: null,
-};
+const state = notesModule.createNotesState({ currentDocId: docId });
+assert.equal(state.currentDocId, docId);
+assert.equal(state.chunkNoteVisible, false);
 
 const api = notesModule.initSentenceNotes({
   state,

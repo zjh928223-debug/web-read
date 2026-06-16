@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Legacy central bus, about 1874 lines
+├── app.js                             # Legacy central bus, about 1844 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config, copies remaining root scripts on build
 ├── package.json                       # Current commands and dependencies
@@ -75,7 +75,7 @@ src/
 ├── composables/
 │   ├── session-init.js
 │   ├── import-module.js
-│   ├── notes-module.js          # chunk note + sentence note subsystem runtime
+│   ├── notes-module.js          # chunk note + sentence note subsystem runtime/state
 │   ├── keyboard-module.js
 │   ├── style-editor.js
 │   ├── playback-module.js

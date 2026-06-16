@@ -1,6 +1,52 @@
+  var DEFAULT_SENTENCE_DOC_ID = 'default-audio::0__0__0.000__0.000__0';
+
+  function isPlainObject(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  function createNotesState(initial) {
+    var source = isPlainObject(initial) ? initial : {};
+    return {
+      chunkNotesMap: isPlainObject(source.chunkNotesMap) ? source.chunkNotesMap : {},
+      chunkNoteVisible: !!source.chunkNoteVisible,
+      chunkNoteSaveTimer: source.chunkNoteSaveTimer || null,
+      activeChunkNoteId: String(source.activeChunkNoteId || ''),
+      selectedChunkNoteId: String(source.selectedChunkNoteId || ''),
+      pendingChunkSelectionCtx: source.pendingChunkSelectionCtx || null,
+      chunkNotesFileHandle: source.chunkNotesFileHandle || source.handle || null,
+      chunkNotesFileHandleAudioKey: String(source.chunkNotesFileHandleAudioKey || source.audioKey || ''),
+      chunkNotesFileName: String(source.chunkNotesFileName || source.fileName || ''),
+      sentenceNotesMap: isPlainObject(source.sentenceNotesMap) ? source.sentenceNotesMap : {},
+      allSentenceNotesByDoc: isPlainObject(source.allSentenceNotesByDoc) ? source.allSentenceNotesByDoc : {},
+      currentDocId: String(source.currentDocId || DEFAULT_SENTENCE_DOC_ID),
+      sentenceNoteDraft: source.sentenceNoteDraft || null,
+      notePreviewEditingItemId: String(source.notePreviewEditingItemId || ''),
+      notePreviewSavedItemId: String(source.notePreviewSavedItemId || ''),
+      selectedSentence: source.selectedSentence || null
+    };
+  }
+
+  function ensureNotesState(state) {
+    if (!isPlainObject(state)) return createNotesState();
+    var normalized = createNotesState(state);
+    Object.keys(normalized).forEach(function (key) {
+      state[key] = normalized[key];
+    });
+    return state;
+  }
+
+  var sharedNotesState = ensureNotesState(window.__notesState || window._ns || null);
+  window.__notesState = sharedNotesState;
+  window._ns = sharedNotesState;
+
+  function getNotesState() {
+    return sharedNotesState;
+  }
+
   // === Chunk-note persistence lifecycle ===
   function initChunkNotes(deps) {
-    var ns = deps.state;          // { chunkNotesMap, chunkNoteVisible, activeChunkNoteId, chunkNoteSaveTimer, pendingChunkSelectionCtx }
+    deps = deps || {};
+    var ns = ensureNotesState(deps.state || getNotesState());          // shared chunk/sentence note runtime state
     var loadFromDB = deps.loadFromDB;
     var saveToDB = deps.saveToDB;
     var getChunkNotesStorageKey = deps.getChunkNotesStorageKey;
@@ -32,7 +78,6 @@
     var saveOpenChunkNotePopover = typeof deps.saveOpenChunkNotePopover === 'function' ? deps.saveOpenChunkNotePopover : function () {};
     var findNearestChunkWord = typeof deps.findNearestChunkWord === 'function' ? deps.findNearestChunkWord : function () { return null; };
     var now = typeof deps.now === 'function' ? deps.now : function () { return Date.now(); };
-    var fallbackFileState = { handle: null, audioKey: '', fileName: '' };
     var chunkNoteDraftSaveTimer = null;
     var chunkNoteDeleteDialogEl = null;
     var notePopoverCtx = null;
@@ -299,7 +344,7 @@
     }
 
     function getChunkNotesFileState() {
-      var source = typeof deps.getChunkNotesFileState === 'function' ? deps.getChunkNotesFileState() : fallbackFileState;
+      var source = typeof deps.getChunkNotesFileState === 'function' ? deps.getChunkNotesFileState() : ns;
       source = source && typeof source === 'object' ? source : {};
       return {
         handle: source.handle || source.chunkNotesFileHandle || null,
@@ -316,7 +361,11 @@
         fileName: Object.prototype.hasOwnProperty.call(next || {}, 'fileName') ? String(next.fileName || '') : current.fileName
       };
       if (typeof deps.setChunkNotesFileState === 'function') deps.setChunkNotesFileState(merged);
-      else fallbackFileState = merged;
+      else {
+        ns.chunkNotesFileHandle = merged.handle || null;
+        ns.chunkNotesFileHandleAudioKey = merged.audioKey;
+        ns.chunkNotesFileName = merged.fileName;
+      }
       return merged;
     }
 
@@ -1755,7 +1804,8 @@
 
   // === Sentence notebook persistence lifecycle ===
   function initSentenceNotes(deps) {
-    var ns = deps.state;          // { sentenceNotesMap, allSentenceNotesByDoc, currentDocId, sentenceNoteDraft, notePreviewEditingItemId, notePreviewSavedItemId, selectedSentence }
+    deps = deps || {};
+    var ns = ensureNotesState(deps.state || getNotesState());          // shared chunk/sentence note runtime state
     var loadFromDB = deps.loadFromDB;
     var saveToDB = deps.saveToDB;
     var getSentenceNotesStorageKey = deps.getSentenceNotesStorageKey;
@@ -2427,6 +2477,9 @@
   }
 
   window.__notesModule = {
+    createNotesState: createNotesState,
+    ensureNotesState: ensureNotesState,
+    getNotesState: getNotesState,
     initChunkNotes: initChunkNotes,
     initSentenceNotes: initSentenceNotes
   };

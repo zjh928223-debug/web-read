@@ -57,21 +57,15 @@ vm.runInNewContext(source, sandbox, { filename: sourcePath });
 
 const notesModule = sandbox.window.__notesModule;
 assert.ok(notesModule, 'notes module should attach to window');
+assert.equal(typeof notesModule.createNotesState, 'function');
+assert.equal(typeof notesModule.getNotesState, 'function');
+assert.equal(notesModule.getNotesState(), sandbox.window.__notesState);
+assert.equal(sandbox.window._ns, sandbox.window.__notesState);
 
-const state = {
-  chunkNotesMap: {},
-  chunkNoteVisible: false,
-  chunkNoteSaveTimer: null,
-  activeChunkNoteId: '',
-  selectedChunkNoteId: '',
-  pendingChunkSelectionCtx: null,
-};
+const state = notesModule.createNotesState();
+assert.equal(state.chunkNoteVisible, false);
+assert.equal(state.currentDocId, 'default-audio::0__0__0.000__0.000__0');
 
-let fileState = {
-  handle: null,
-  audioKey: '',
-  fileName: '',
-};
 let isChunkMode = false;
 let hasAiChunkData = true;
 
@@ -96,10 +90,6 @@ const api = notesModule.initChunkNotes({
     getBoundingClientRect: () => ({ left: 20, top: 30, right: 62, bottom: 46, width: 42, height: 16 }),
   }),
   now: () => 123456,
-  getChunkNotesFileState: () => fileState,
-  setChunkNotesFileState: (next) => {
-    fileState = { ...fileState, ...next };
-  },
   chunkNoteCtxMenuEl: {
     style: {},
     getBoundingClientRect: () => ({ width: 120, height: 48 }),
@@ -338,11 +328,17 @@ let currentFileState = api.getChunkNotesFileState();
 assert.equal(currentFileState.handle, 'handle-1');
 assert.equal(currentFileState.audioKey, 'audio-key');
 assert.equal(currentFileState.fileName, 'notes.json');
+assert.equal(state.chunkNotesFileHandle, 'handle-1');
+assert.equal(state.chunkNotesFileHandleAudioKey, 'audio-key');
+assert.equal(state.chunkNotesFileName, 'notes.json');
 api.clearChunkNotesFileState();
 currentFileState = api.getChunkNotesFileState();
 assert.equal(currentFileState.handle, null);
 assert.equal(currentFileState.audioKey, '');
 assert.equal(currentFileState.fileName, '');
+assert.equal(state.chunkNotesFileHandle, null);
+assert.equal(state.chunkNotesFileHandleAudioKey, '');
+assert.equal(state.chunkNotesFileName, '');
 
 sandbox.__localStorage['chunkNoteDraft::audio'] = 'not json';
 assert.equal(api.readChunkNoteDraft(), null);

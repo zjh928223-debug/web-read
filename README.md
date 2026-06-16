@@ -118,12 +118,12 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, and playback transient state now go through focused adapters.
+- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, playback transient, and note state now go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds to the real Pinia transcript store after startup bridge hydration.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to the real Pinia chunk store after startup bridge hydration.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds to the real Pinia cloze store after startup bridge hydration.
 - Playback transient state now goes through `src/composables/playback-state.js`; `window.__state` remains the compatibility facade for playback and controls modules.
-- Chunk note and sentence note subsystem runtime now live behind `src/composables/notes-module.js`.
+- Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.

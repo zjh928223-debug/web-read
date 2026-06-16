@@ -98,9 +98,9 @@ Additional globals assigned by composables/services are outside `app.js` final e
 | `clozeAnswerState` | `window.__clozeState.clozeAnswerState` | verification scripts directly set | cloze store/runtime adapter |
 | `manualChunkStates` | `window.__chunkState.manualChunkStates` | `session-init.js` | chunk store/runtime adapter |
 | `currentAudioMeta` | `currentAudioMeta` | `session-init.js` | audio/session identity owner |
-| `chunkNotesFileHandle` | `chunkNotesFileHandle` | no direct external field access found | chunk note subsystem |
-| `chunkNotesFileHandleAudioKey` | `chunkNotesFileHandleAudioKey` | no direct external field access found | chunk note subsystem |
-| `chunkNotesFileName` | `chunkNotesFileName` | no direct external field access found | chunk note subsystem |
+| `chunkNotesFileHandle` | `window.__notesState.chunkNotesFileHandle` | no direct external field access found | notes runtime adapter |
+| `chunkNotesFileHandleAudioKey` | `window.__notesState.chunkNotesFileHandleAudioKey` | no direct external field access found | notes runtime adapter |
+| `chunkNotesFileName` | `window.__notesState.chunkNotesFileName` | no direct external field access found | notes runtime adapter |
 | `isChunkMode` | `window.__chunkState.isChunkMode` | `playback-module.js`, `controls-module.js`, `session-init.js`, verification scripts | chunk store/runtime adapter |
 | `currentAudioKey` | `__cak` / `currentAudioKey` accessor | `session-init.js` | audio/session identity owner |
 | `currentWordIndex` | `currentWordIndex` | `playback-module.js` | playback runtime or transcript store |

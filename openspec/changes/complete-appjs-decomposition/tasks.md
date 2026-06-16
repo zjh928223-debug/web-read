@@ -38,7 +38,7 @@
 - [x] 4.3 Migrate chunk state ownership from `app.js` local variables to the real Pinia chunk store or chunk runtime module.
 - [x] 4.4 Migrate cloze state ownership from `app.js` local variables to the real Pinia cloze store or cloze runtime module.
 - [x] 4.5 Migrate playback transient state ownership out of `app.js`, preserving highlight, seek, backward/forward, and page-style follow behavior.
-- [ ] 4.6 Migrate chunk note and sentence note state ownership out of `app.js`, preserving persisted session behavior.
+- [x] 4.6 Migrate chunk note and sentence note state ownership out of `app.js`, preserving persisted session behavior.
 - [ ] 4.7 Convert affected `window.__state` properties into compatibility facades over the new owner.
 - [ ] 4.8 Remove `window.__state` properties only after the runtime map shows no remaining direct consumers.
 - [ ] 4.9 Reduce `window.__bridge` usage after Vue/Pinia startup no longer depends on bridged snapshots.
