@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Remaining legacy runtime shell, about 1655 lines
+├── app.js                             # Remaining legacy runtime shell, about 1646 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -88,6 +88,7 @@ src/
 │   ├── glass-effects.js
 │   ├── controls-module.js
 │   ├── chunk-controls-module.js  # AI chunk mode controls + temporary window facades
+│   ├── highlight-controls-module.js # highlight controls + temporary facade
 │   ├── file-input-bindings.js   # file picker DOM binding
 │   ├── legacy-control-bindings.js # remaining legacy control DOM binding
 │   ├── transcript-interactions.js # normal transcript word interaction binding
@@ -172,6 +173,7 @@ npm run verify:session-state-provider # Focused session-init state provider chec
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
 npm run verify:chunk-controls-module # Focused AI chunk controls module check
+npm run verify:highlight-controls-module # Focused highlight controls module check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check

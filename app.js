@@ -21,6 +21,7 @@
     import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';
     import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
     import { initChunkControls } from './src/composables/chunk-controls-module.js';
+    import { initHighlightControls } from './src/composables/highlight-controls-module.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -825,13 +826,22 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
+    var highlightControlsApi = initHighlightControls({
+        transcriptState: _tr,
+        chunkState: _ch,
+        playbackState: _pb,
+        highlightModeBtn: highlightModeBtn,
+        audioPlayer: audioPlayer,
+        getForceUpdateUI: function () { return forceUpdateUI; }
+    });
+
     chunkControlsApi = initChunkControls({
         state: _ch,
         chunkFileInput: chunkFileInput,
         toggleChunkBtn: toggleChunkBtn,
         chunkCnHoldBtn: chunkCnHoldBtn,
         audioPlayer: audioPlayer,
-        updateHighlightModeUI: updateHighlightModeUI,
+        updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI,
         closeChunkNoteContextMenu: closeChunkNoteContextMenu,
         closeChunkNotePopover: closeChunkNotePopover,
         renderChunkMode: renderChunkMode,
@@ -1265,22 +1275,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         }
     }
 
-    function cycleHighlightMode() {
-        _tr.highlightMode = (_tr.highlightMode + 1) % 3;
-        _pb.lastActiveSegIndex = -1;
-        updateHighlightModeUI();
-        forceUpdateUI(audioPlayer.currentTime);
-    }
-
-    function updateHighlightModeUI() {
-        const txt = ['高亮:关', '高亮:词', '高亮:句'][_tr.highlightMode];
-        if (!highlightModeBtn) return;
-        highlightModeBtn.textContent = txt;
-        highlightModeBtn.classList.toggle('active', _tr.highlightMode !== 0);
-        document.body.classList.toggle('highlight-sentence-mode', _tr.highlightMode === 2 && !_ch.isChunkMode);
-    }
-    updateHighlightModeUI();
-
     function findChunkIndexByTime(t) {
         return findChunkIndexByTimeHelper(_ch.chunkItems, t);
     }
@@ -1623,7 +1617,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
 
     // === Temporary compatibility exports for cross-module access ===
-    window.cycleHighlightMode = cycleHighlightMode;
     window.openChunkNoteStyleModal = openChunkNoteStyleModal;
     window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
     window.updateChunkNoteStyle = updateChunkNoteStyle;

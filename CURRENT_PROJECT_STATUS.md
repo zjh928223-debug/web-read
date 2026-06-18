@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining legacy runtime shell, about 1655 lines
+app.js                             remaining legacy runtime shell, about 1646 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    25 compatibility/runtime modules
+  composables/                    26 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -112,6 +112,7 @@ playback-state.js                 about 85 lines
 glass-effects.js                  about 95 lines
 controls-module.js                about 63 lines
 chunk-controls-module.js          about 218 lines
+highlight-controls-module.js      about 42 lines
 file-input-bindings.js            about 22 lines
 legacy-control-bindings.js        about 73 lines
 transcript-interactions.js        about 111 lines
@@ -209,6 +210,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - `ChunkModeView.vue` renders chunk blocks.
 - AI chunk word/chunk click and contextmenu interaction is owned by `ChunkModeView.vue` plus `src/composables/chunk-interactions.js`; `app.js` only configures temporary runtime dependencies.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to `src/pinia-stores/chunk.js`.
+- Highlight mode cycling and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`; `app.js` only initializes the module.
 - AI chunk mode toggle, Chinese visible/hold behavior, focus mode UI, shadow toggle, and the temporary `window.toggleChunkMode` / `window.toggleChunkFocusMode` / `window.toggleChunkShadowManual` / `window.updateChunkCnHoldBtn` facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk mode defaults are currently focus-oriented:
   - sentence highlighting by default
@@ -274,6 +276,7 @@ npm run verify:session-state-provider
 npm run verify:runtime-state-source
 npm run verify:app-window-facades
 npm run verify:chunk-controls-module
+npm run verify:highlight-controls-module
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -325,6 +328,7 @@ scripts/session-state-provider-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/app-window-facades-check.cjs
 scripts/chunk-controls-module-check.cjs
+scripts/highlight-controls-module-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -369,6 +373,7 @@ Current checks cover:
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - removed duplicate app-level playback/speed/style window facade ownership through `verify:app-window-facades`
 - migrated AI chunk mode controls and their temporary window facades into `src/composables/chunk-controls-module.js` through `verify:chunk-controls-module`
+- migrated highlight mode controls and the temporary `window.cycleHighlightMode` facade into `src/composables/highlight-controls-module.js` through `verify:highlight-controls-module`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
@@ -433,7 +438,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

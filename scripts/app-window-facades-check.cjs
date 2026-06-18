@@ -7,13 +7,13 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
+const highlightControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'highlight-controls-module.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 const allowedAppWindowAssignments = new Set([
   '__USE_VUE_RENDERING',
   '__state',
-  'cycleHighlightMode',
   'openChunkNoteStyleModal',
   'closeChunkNoteStyleModal',
   'updateChunkNoteStyle',
@@ -63,6 +63,7 @@ appWindowAssignments.forEach((name) => {
   'toggleChunkFocusMode',
   'toggleChunkShadowManual',
   'updateChunkCnHoldBtn',
+  'cycleHighlightMode',
   'openChunkStyleModal',
   'closeChunkStyleModal',
   'updateChunkStyle'
@@ -85,6 +86,10 @@ appWindowAssignments.forEach((name) => {
 
 assert.ok(controlsSource.includes('window.changeSpeed = changeSpeed;'), 'controls-module should own window.changeSpeed');
 assert.equal(sessionInitSource.includes('window.toggleChunkBtn'), false, 'session-init should not read window.toggleChunkBtn');
+assert.ok(
+  highlightControlsSource.includes('window.cycleHighlightMode = cycleHighlightMode;'),
+  'highlight-controls-module should own window.cycleHighlightMode'
+);
 
 [
   'toggleChunkMode',

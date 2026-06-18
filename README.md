@@ -71,6 +71,7 @@ npm run verify:session-state-provider # Focused session-init state provider chec
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
 npm run verify:chunk-controls-module # Focused AI chunk controls module check
+npm run verify:highlight-controls-module # Focused highlight controls module check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
@@ -117,7 +118,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 25 moduleized legacy behavior chunks
+├── composables/               # 26 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -148,6 +149,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `app.js` now owns a local `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
+- Highlight mode controls and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`.
 - AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
