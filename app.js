@@ -20,6 +20,7 @@
     import { configureRenderRuntime } from './src/composables/render-runtime.js';
     import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';
     import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
+    import { initChunkControls } from './src/composables/chunk-controls-module.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -506,9 +507,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
     const toggleChunkBtn = document.getElementById('toggle-chunk-btn'); 
     const chunkCnHoldBtn = document.getElementById('btn-chunk-cn-hold');
-    if (chunkCnHoldBtn) {
-        chunkCnHoldBtn.addEventListener('click', (e)=>{ e.preventDefault(); e.stopPropagation(); toggleChunkCnHoldMode(); });
-    }
     
     // Inputs & Labels
     const audioFileInput = document.getElementById('audio-file');
@@ -586,7 +584,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // === AI Chunk Mode State ===
     // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.
-    let holdPrevHadFocusClass = null;
     // Sentence prev-tap state is part of playback transient state.
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
@@ -743,7 +740,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return vocabMatchMap; }, set: function(v) { vocabMatchMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { vocabMatchMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnVisible', { get: function() { return _ch.chunkCnVisible; }, set: function(v) { _ch.chunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnHoldMode', { get: function() { return _ch.chunkCnHoldMode; }, set: function(v) { _ch.chunkCnHoldMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'holdPrevHadFocusClass', { get: function() { return holdPrevHadFocusClass; }, set: function(v) { holdPrevHadFocusClass = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'isChunkShadowOn', { get: function() { return _ch.isChunkShadowOn; }, set: function(v) { _ch.isChunkShadowOn = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnMode', { get: function() { return _ch.chunkCnMode; }, set: function(v) { _ch.chunkCnMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'lastActiveChunkIndex', { get: function() { return _ch.lastActiveChunkIndex; }, set: function(v) { _ch.lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
@@ -751,13 +747,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'lastAiPrevTapAt', { get: function() { return _ch.lastAiPrevTapAt; }, set: function(v) { _ch.lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkPointerDown', { get: function() { return chunkPointerDown; }, set: function(v) { chunkPointerDown = v; }, enumerable: true, configurable: true });
 
+    var chunkControlsApi = null;
     var _cpApi = window.__importModule.initChunkPipeline({
         state: runtimeState,
         getIsChunkMode: function() { return _ch.isChunkMode; },
         renderChunkMode: renderChunkMode,
         bridgeToPinia: bridgeToPinia,
         toggleChunkBtn: toggleChunkBtn,
-        enterChunkMode: function () { toggleChunkMode(true); },
+        enterChunkMode: function () { if (chunkControlsApi) chunkControlsApi.toggleChunkMode(true); },
         cleanTextHelper: cleanTextHelper,
         tokenizeTextHelper: tokenizeTextHelper,
         findExactMatchRangeHelper: findExactMatchRangeHelper
@@ -828,6 +825,22 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
+    chunkControlsApi = initChunkControls({
+        state: _ch,
+        chunkFileInput: chunkFileInput,
+        toggleChunkBtn: toggleChunkBtn,
+        chunkCnHoldBtn: chunkCnHoldBtn,
+        audioPlayer: audioPlayer,
+        updateHighlightModeUI: updateHighlightModeUI,
+        closeChunkNoteContextMenu: closeChunkNoteContextMenu,
+        closeChunkNotePopover: closeChunkNotePopover,
+        renderChunkMode: renderChunkMode,
+        renderTranscript: renderTranscript,
+        clearChunkNoteConnectors: clearChunkNoteConnectors,
+        getForceUpdateUI: function () { return forceUpdateUI; },
+        bridgeToPinia: bridgeToPinia
+    });
+
     // [MIGRATED] style editor → src/composables/style-editor.js
     window.__styleEditor.init({
         safeParseLocalJSON: safeParseLocalJSON,
@@ -836,7 +849,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
         getIsChunkMode: function () { return _ch.isChunkMode; },
         closeChunkNotePopover: closeChunkNotePopover,
-        updateShadowBtnText: updateShadowBtnText
+        updateShadowBtnText: chunkControlsApi.updateShadowBtnText
     });
 
     // [MIGRATED] session init → src/composables/session-init.js
@@ -1181,171 +1194,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return _snApi.initNotePreviewResize();
     }
 
-    function toggleChunkMode(forceState = null) {
-        if (!_ch.chunkItems || _ch.chunkItems.length === 0 || !_ch.hasAiChunkData) {
-            chunkFileInput.click(); 
-            return;
-        }
-
-        const newState = forceState !== null ? forceState : !_ch.isChunkMode;
-        if (newState === _ch.isChunkMode) return;
-        
-        // Scroll Anchoring
-        let anchorRatio = 0;
-        const container = document.getElementById('main-app-area');
-        let anchorEl = null;
-        if (_ch.isChunkMode) {
-             anchorEl = document.querySelector('.chunk-active') || document.querySelector('.chunk-block');
-        } else {
-             anchorEl = document.querySelector('.sentence-active') || document.querySelector('.transcript-line');
-        }
-
-        if (anchorEl) {
-            const rect = anchorEl.getBoundingClientRect();
-            const containerRect = container.getBoundingClientRect();
-            anchorRatio = (rect.top - containerRect.top);
-        }
-
-        _ch.isChunkMode = newState;
-        if (!_ch.isChunkMode) {
-            _ch.lastAiPrevTapChunkIndex = -1;
-            _ch.lastAiPrevTapAt = 0;
-        }
-        localStorage.setItem('isChunkMode', _ch.isChunkMode);
-        toggleChunkBtn.classList.toggle('active', _ch.isChunkMode);
-        updateHighlightModeUI();
-        closeChunkNoteContextMenu();
-        closeChunkNotePopover();
-        
-        if (_ch.isChunkMode) {
-            renderChunkMode();
-        } else {
-            renderTranscript();
-            document.querySelectorAll('.chunk-note-tag').forEach(el => el.remove());
-            clearChunkNoteConnectors();
-        }
-        updateChunkFocusModeUI();
-        
-        requestAnimationFrame(() => {
-            updateChunkFocusModeUI();
-            forceUpdateUI(audioPlayer.currentTime);
-            
-            let newAnchor = null;
-             if (_ch.isChunkMode) {
-                 newAnchor = document.querySelector('.chunk-active');
-            } else {
-                 newAnchor = document.querySelector('.sentence-active');
-            }
-            
-            if (newAnchor) {
-                 const rect = newAnchor.getBoundingClientRect();
-                 const currentTop = rect.top - container.getBoundingClientRect().top;
-                 container.scrollTop += (currentTop - anchorRatio);
-            }
-        });
-    }
-
-    function setChunkCnVisible(value, persist=true) {
-        if (!_ch.isChunkMode) return;
-        _ch.chunkCnVisible = !!value;
-        if (persist) localStorage.setItem('st.chunkCnVisible', String(_ch.chunkCnVisible));
-        const els = document.querySelectorAll('.chunk-cn');
-        els.forEach(el => {
-            if (_ch.chunkCnVisible) el.classList.remove('hidden-cn');
-            else el.classList.add('hidden-cn');
-        });
-        bridgeToPinia();
-    }
-
-    function toggleChunkCn() {
-        if (!_ch.isChunkMode) return;
-        setChunkCnVisible(!_ch.chunkCnVisible, true);
-    }
-
-    function updateChunkCnHoldBtn() {
-        const btn = document.getElementById('btn-chunk-cn-hold');
-        if (!btn) return;
-        btn.classList.toggle('active', _ch.chunkCnHoldMode);
-        btn.innerText = _ch.chunkCnHoldMode ? '按住' : '持续';
-        bridgeToPinia();
-    }
-
-    function toggleChunkCnHoldMode() {
-        _ch.chunkCnHoldMode = !_ch.chunkCnHoldMode;
-        localStorage.setItem('st.chunkCnHoldMode', String(_ch.chunkCnHoldMode));
-        updateChunkCnHoldBtn();
-    }
-
-    function beginHoldChunkCn() {
-        if (!_ch.isChunkMode) return;
-        if (_ch.isHoldingChunkCn) return;
-        _ch.isHoldingChunkCn = true;
-        _ch.holdPrevChunkCnVisible = _ch.chunkCnVisible;
-        const container = document.getElementById('transcript-container');
-        holdPrevHadFocusClass = container.classList.contains('cn-mode-focus');
-        // 涓存椂寮哄埗鑱氱劍锛屽彧鏄剧ず褰撳墠鍙ュ潡鐨勪腑鏂?
-        if (!holdPrevHadFocusClass) container.classList.add('cn-mode-focus');
-        // 涓存椂鏄剧ず涓枃锛堜笉鍐欏叆鏈湴瀛樺偍锛?
-        if (!_ch.chunkCnVisible) setChunkCnVisible(true, false);
-    }
-
-    function endHoldChunkCn() {
-        if (!_ch.isChunkMode) return;
-        if (!_ch.isHoldingChunkCn) return;
-        _ch.isHoldingChunkCn = false;
-        const container = document.getElementById('transcript-container');
-        if (holdPrevHadFocusClass === false) container.classList.remove('cn-mode-focus');
-        if (_ch.holdPrevChunkCnVisible === false) setChunkCnVisible(false, false);
-        _ch.holdPrevChunkCnVisible = null;
-        holdPrevHadFocusClass = null;
-        bridgeToPinia();
-    }
-
-    // Toggle Focus Mode
-
-    function updateChunkFocusModeUI() {
-        const btn = document.getElementById('btn-chunk-focus');
-        const legacyContainer = document.getElementById('transcript-container');
-        const vueContainer = document.getElementById('chunk-vue-container');
-        const isFocus = _ch.chunkCnMode === 'focus';
-        if (btn) {
-            btn.innerText = isFocus ? '聚焦' : '全局';
-            btn.classList.toggle('active', isFocus);
-        }
-        if (legacyContainer) legacyContainer.classList.toggle('cn-mode-focus', isFocus);
-        if (vueContainer) vueContainer.classList.toggle('cn-mode-focus', isFocus);
-        bridgeToPinia();
-    }
-
-    function toggleChunkFocusMode() {
-        if (!_ch.isChunkMode) return;
-        _ch.chunkCnMode = _ch.chunkCnMode === 'global' ? 'focus' : 'global';
-        localStorage.setItem('st.chunkCnMode', _ch.chunkCnMode);
-        updateChunkFocusModeUI();
-    }
-
-    // Shadow Toggle Logic
-    function toggleChunkShadow() {
-        _ch.isChunkShadowOn = !_ch.isChunkShadowOn;
-        localStorage.setItem('isChunkShadowOn', _ch.isChunkShadowOn);
-        
-        if (_ch.isChunkShadowOn) {
-            document.body.classList.remove('hide-chunk-shadow');
-        } else {
-            document.body.classList.add('hide-chunk-shadow');
-        }
-        updateShadowBtnText();
-    }
-    
-    function updateShadowBtnText() {
-        const btn = document.getElementById('btn-toggle-shadow-manual');
-        if(btn) btn.innerText = _ch.isChunkShadowOn ? "开关 S" : "开关 S";
-    }
-    
-    function toggleChunkShadowManual() {
-        toggleChunkShadow();
-    }
-
     function updateVisualHelper(target) {
         if (!target) return;
 
@@ -1518,8 +1366,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         toggleMarkCurrent: toggleMarkCurrent,
         toggleCurrentNote: toggleCurrentNote,
         toggleAnnotationBubble: toggleAnnotationBubble,
-        beginHoldChunkCn: beginHoldChunkCn, endHoldChunkCn: endHoldChunkCn,
-        toggleChunkCn: toggleChunkCn, toggleChunkShadow: toggleChunkShadow,
+        beginHoldChunkCn: chunkControlsApi.beginHoldChunkCn, endHoldChunkCn: chunkControlsApi.endHoldChunkCn,
+        toggleChunkCn: chunkControlsApi.toggleChunkCn, toggleChunkShadow: chunkControlsApi.toggleChunkShadow,
         setChunkNoteVisible: setChunkNoteVisible,
         handleBackwardClick: handleBackwardClick, handleForwardClick: handleForwardClick,
         closeCustomThemePanel: function () { window.__themeStore.closeCustomThemePanel(); },
@@ -1628,7 +1476,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                     applyImportedChunkNotes(data);
                     saveChunkNotesNow();
                     if (_ch.hasAiChunkData) {
-                        if (!_ch.isChunkMode) toggleChunkMode(true);
+                        if (!_ch.isChunkMode) chunkControlsApi.toggleChunkMode(true);
                         setChunkNoteVisible(true, true);
                         renderChunkMode();
                     }
@@ -1772,17 +1620,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     })();
   
     // Init hold button label
-  
-    // Init hold button label
-    setTimeout(()=>{ try{updateChunkCnHoldBtn();}catch(e){} }, 0);
+    setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
 
     // === Temporary compatibility exports for cross-module access ===
     window.cycleHighlightMode = cycleHighlightMode;
-    window.toggleChunkMode = toggleChunkMode;
-    window.toggleChunkFocusMode = toggleChunkFocusMode;
     window.openChunkNoteStyleModal = openChunkNoteStyleModal;
     window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
-    window.toggleChunkShadowManual = toggleChunkShadowManual;
     window.updateChunkNoteStyle = updateChunkNoteStyle;
     window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;
     window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
@@ -1808,4 +1651,3 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
     window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
     window.processChunkData = processChunkData;
-    window.updateChunkCnHoldBtn = updateChunkCnHoldBtn;

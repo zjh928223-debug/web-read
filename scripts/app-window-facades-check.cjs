@@ -6,6 +6,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
+const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 const styleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -13,11 +14,8 @@ const allowedAppWindowAssignments = new Set([
   '__USE_VUE_RENDERING',
   '__state',
   'cycleHighlightMode',
-  'toggleChunkMode',
-  'toggleChunkFocusMode',
   'openChunkNoteStyleModal',
   'closeChunkNoteStyleModal',
-  'toggleChunkShadowManual',
   'updateChunkNoteStyle',
   'initDB',
   'saveToDB',
@@ -46,8 +44,7 @@ const allowedAppWindowAssignments = new Set([
   'scheduleGeneratedAnnotationIndexRefresh',
   'syncAnnotationGenerationEntryStatus',
   'initAnnotationApiSettingsUi',
-  'processChunkData',
-  'updateChunkCnHoldBtn'
+  'processChunkData'
 ]);
 
 const appWindowAssignments = Array.from(appSource.matchAll(/window\.([A-Za-z_$][\w$]*)\s*=(?!=)/g), (match) => match[1]);
@@ -62,6 +59,10 @@ appWindowAssignments.forEach((name) => {
   'mainUpdateHighlight',
   'changeSpeed',
   'toggleChunkBtn',
+  'toggleChunkMode',
+  'toggleChunkFocusMode',
+  'toggleChunkShadowManual',
+  'updateChunkCnHoldBtn',
   'openChunkStyleModal',
   'closeChunkStyleModal',
   'updateChunkStyle'
@@ -84,6 +85,15 @@ appWindowAssignments.forEach((name) => {
 
 assert.ok(controlsSource.includes('window.changeSpeed = changeSpeed;'), 'controls-module should own window.changeSpeed');
 assert.equal(sessionInitSource.includes('window.toggleChunkBtn'), false, 'session-init should not read window.toggleChunkBtn');
+
+[
+  'toggleChunkMode',
+  'toggleChunkFocusMode',
+  'toggleChunkShadowManual',
+  'updateChunkCnHoldBtn'
+].forEach((name) => {
+  assert.ok(chunkControlsSource.includes(`window.${name} = ${name};`), `chunk-controls-module should own window.${name}`);
+});
 
 [
   'openChunkStyleModal',

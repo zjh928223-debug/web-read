@@ -11,7 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `app.js` - legacy central bus, still owns remaining runtime state and compatibility facades.
+- `app.js` - remaining legacy runtime shell, still owns some runtime state and compatibility facades.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -37,7 +37,7 @@ index.html
 The current state flow is:
 
 ```text
-app.js remaining let variables and runtime state adapters/modules
+app.js remaining let variables and runtime shell adapters/modules
   -> window.__state getter/setter proxy
   -> direct adapter-to-Pinia binding plus runtime bridgeToPinia compatibility
   -> src/pinia-stores/*.js real Pinia stores
@@ -65,7 +65,8 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1815 lines. High risk. Remaining central state, playback wiring, compatibility facades, and legacy exports.
+- `app.js` - about 1655 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
+- `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -127,6 +128,7 @@ npm run verify:control-playback-state-deps  # Focused controls/playback state de
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:app-window-facades  # Focused app.js duplicate window facade guard
+npm run verify:chunk-controls-module  # Focused AI chunk controls module check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check
 npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check
