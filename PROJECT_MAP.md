@@ -30,7 +30,7 @@ The page no longer contains inline DOM event handlers. Remaining legacy controls
 
 ## Cleanup Baseline
 
-Current cleanup work follows `openspec/changes/complete-appjs-decomposition/`. The Phase 0 runtime map is `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md`.
+`complete-appjs-decomposition` has been completed and archived under `openspec/changes/archive/2026-06-18-complete-appjs-decomposition/`. Current cleanup context comes from `CURRENT_PROJECT_STATUS.md` and the active spec at `openspec/specs/legacy-runtime-decomposition/spec.md`.
 
 Cleanup rules:
 
