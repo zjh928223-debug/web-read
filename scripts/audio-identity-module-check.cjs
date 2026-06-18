@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
+  const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
@@ -17,11 +18,11 @@ async function main() {
     'reader-runtime should initialize audio identity through the module'
   );
   assert.ok(
-    runtimeSource.includes("Object.defineProperty(runtimeState, 'currentAudioMeta', { get: function() { return audioIdentityApi.currentAudioMeta; }"),
+    bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'currentAudioMeta', () => audioIdentityApi.currentAudioMeta"),
     'runtimeState.currentAudioMeta should read from audio identity module'
   );
   assert.ok(
-    runtimeSource.includes("Object.defineProperty(runtimeState, 'currentAudioKey', { get: function() { return audioIdentityApi.currentAudioKey; }"),
+    bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'currentAudioKey', () => audioIdentityApi.currentAudioKey"),
     'runtimeState.currentAudioKey should read from audio identity module'
   );
   assert.ok(

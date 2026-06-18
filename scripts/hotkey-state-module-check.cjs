@@ -7,6 +7,7 @@ async function main() {
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'hotkey-state-module.js'), 'utf8');
+  const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
@@ -29,7 +30,7 @@ async function main() {
     ['forwardKey', 'setForwardKey']
   ].forEach(([field, setter]) => {
     assert.ok(
-      runtimeSource.includes(`Object.defineProperty(runtimeState, '${field}', { get: function() { return hotkeyStateApi.${field}; }, set: function(v) { hotkeyStateApi.${setter}(v); }`),
+      bindingsSource.includes(`defineRuntimeStateBinding(runtimeState, '${field}', () => hotkeyStateApi.${field}, (value) => { hotkeyStateApi.${setter}(value); })`),
       `runtimeState.${field} should read/write hotkey module state`
     );
     assert.ok(

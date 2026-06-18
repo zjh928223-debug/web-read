@@ -6,14 +6,16 @@ const repoRoot = path.resolve(__dirname, '..');
 const appPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime.js');
 const importModulePath = path.join(repoRoot, 'src', 'composables', 'import-module.js');
 const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js');
+const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
-const appLines = appSource.split(/\r?\n/);
+const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'utf8');
+const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
-  const needle = `Object.defineProperty(runtimeState, '${field}'`;
-  return appLines.find((line) => line.includes(needle)) || '';
+  const needle = `defineRuntimeStateBinding(runtimeState, '${field}'`;
+  return runtimeStateBindingsLines.find((line) => line.includes(needle)) || '';
 }
 
 function assertFacade(field, fragments) {
@@ -36,36 +38,36 @@ function assertNoStateProperty(field) {
 }
 
 [
-  ['segments', ['_tr.segments']],
-  ['words', ['_tr.words']],
-  ['wordStarts', ['_tr.wordStarts']],
-  ['currentWordIndex', ['_tr.currentWordIndex']],
-  ['highlightMode', ['_tr.highlightMode']],
+  ['segments', ['transcriptState.segments']],
+  ['words', ['transcriptState.words']],
+  ['wordStarts', ['transcriptState.wordStarts']],
+  ['currentWordIndex', ['transcriptState.currentWordIndex']],
+  ['highlightMode', ['transcriptState.highlightMode']],
 
-  ['chunkItems', ['_ch.chunkItems']],
-  ['hasAiChunkData', ['_ch.hasAiChunkData']],
-  ['manualChunkStates', ['_ch.manualChunkStates']],
-  ['isChunkMode', ['_ch.isChunkMode']],
-  ['chunkCnVisible', ['_ch.chunkCnVisible']],
-  ['chunkCnHoldMode', ['_ch.chunkCnHoldMode']],
-  ['isChunkShadowOn', ['_ch.isChunkShadowOn']],
-  ['chunkCnMode', ['_ch.chunkCnMode']],
-  ['lastActiveChunkIndex', ['_ch.lastActiveChunkIndex']],
-  ['lastAiPrevTapChunkIndex', ['_ch.lastAiPrevTapChunkIndex']],
-  ['lastAiPrevTapAt', ['_ch.lastAiPrevTapAt']],
+  ['chunkItems', ['chunkState.chunkItems']],
+  ['hasAiChunkData', ['chunkState.hasAiChunkData']],
+  ['manualChunkStates', ['chunkState.manualChunkStates']],
+  ['isChunkMode', ['chunkState.isChunkMode']],
+  ['chunkCnVisible', ['chunkState.chunkCnVisible']],
+  ['chunkCnHoldMode', ['chunkState.chunkCnHoldMode']],
+  ['isChunkShadowOn', ['chunkState.isChunkShadowOn']],
+  ['chunkCnMode', ['chunkState.chunkCnMode']],
+  ['lastActiveChunkIndex', ['chunkState.lastActiveChunkIndex']],
+  ['lastAiPrevTapChunkIndex', ['chunkState.lastAiPrevTapChunkIndex']],
+  ['lastAiPrevTapAt', ['chunkState.lastAiPrevTapAt']],
 
-  ['hasClozeData', ['_clz.hasClozeData']],
-  ['clozeItems', ['_clz.clozeItems']],
-  ['clozeAnswerState', ['_clz.clozeAnswerState']],
+  ['hasClozeData', ['clozeState.hasClozeData']],
+  ['clozeItems', ['clozeState.clozeItems']],
+  ['clozeAnswerState', ['clozeState.clozeAnswerState']],
 
-  ['autoFollow', ['_pb.autoFollow']],
-  ['userScrollSuppress', ['_pb.userScrollSuppress']],
-  ['suppressTimer', ['_pb.suppressTimer']],
-  ['lastActiveSegIndex', ['_pb.lastActiveSegIndex']],
-  ['activeWordHighlightEl', ['_pb.activeWordHighlightEl']],
-  ['activeSentenceEl', ['_pb.activeSentenceEl']],
-  ['activeChunkEl', ['_pb.activeChunkEl']],
-  ['playbackUiSignature', ['_pb.playbackUiSignature']],
+  ['autoFollow', ['playbackState.autoFollow']],
+  ['userScrollSuppress', ['playbackState.userScrollSuppress']],
+  ['suppressTimer', ['playbackState.suppressTimer']],
+  ['lastActiveSegIndex', ['playbackState.lastActiveSegIndex']],
+  ['activeWordHighlightEl', ['playbackState.activeWordHighlightEl']],
+  ['activeSentenceEl', ['playbackState.activeSentenceEl']],
+  ['activeChunkEl', ['playbackState.activeChunkEl']],
+  ['playbackUiSignature', ['playbackState.playbackUiSignature']],
 ].forEach(([field, fragments]) => assertFacade(field, fragments));
 
 [
@@ -111,8 +113,13 @@ assert.ok(appSource.includes('const _ch = window.__chunkState;'));
 assert.ok(appSource.includes('const _clz = window.__clozeState;'));
 assert.ok(appSource.includes('const _pb = window.__playbackState;'));
 assert.ok(appSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
+assert.ok(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"));
+assert.ok(appSource.includes('configureRuntimeStateBindings({'));
+assert.equal(appSource.includes('Object.defineProperty(runtimeState,'), false);
 assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
+assert.ok(runtimeStateBindingsSource.includes('export function configureRuntimeStateBindings'));
+assert.ok(runtimeStateBindingsSource.includes('Object.defineProperty(runtimeState, field, {'));
 assert.ok(appSource.includes('var _ns = window.__notesModule.getNotesState();'));
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandleAudioKey'), false);

@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const visualSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'visual-vocab-module.js'), 'utf8');
+  const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
@@ -17,11 +18,11 @@ async function main() {
     'reader-runtime should initialize visual vocab through the module'
   );
   assert.ok(
-    runtimeSource.includes("Object.defineProperty(runtimeState, 'globalVocab', { get: function() { return visualVocabApi.globalVocab; }"),
+    bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'globalVocab', () => visualVocabApi.globalVocab"),
     'reader-runtime should expose globalVocab through the module facade'
   );
   assert.ok(
-    runtimeSource.includes("Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return visualVocabApi.vocabMatchMap; }"),
+    bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'vocabMatchMap', () => visualVocabApi.vocabMatchMap"),
     'reader-runtime should expose vocabMatchMap through the module facade'
   );
   assert.ok(

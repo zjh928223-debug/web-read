@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'marks-state-module.js'), 'utf8');
+  const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
@@ -17,7 +18,7 @@ async function main() {
     'reader-runtime should initialize marks state through the module'
   );
   assert.ok(
-    runtimeSource.includes("Object.defineProperty(runtimeState, 'markedMap', { get: function() { return marksStateApi.markedMap; }, set: function(v) { marksStateApi.setMarkedMap(v); }"),
+    bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'markedMap', () => marksStateApi.markedMap, (value) => { marksStateApi.setMarkedMap(value); })"),
     'runtimeState.markedMap should read/write marks state module'
   );
   assert.equal(

@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 761 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 733 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -75,6 +75,7 @@ src/
 │   ├── reader-runtime.js        # remaining runtime assembly shell
 │   ├── session-init.js
 │   ├── session-state-provider.js # temporary session-init state provider
+│   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
 │   ├── import-module.js
 │   ├── notes-module.js          # chunk note + sentence note subsystem runtime/state
 │   ├── keyboard-module.js
