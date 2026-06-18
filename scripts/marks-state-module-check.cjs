@@ -29,7 +29,7 @@ async function main() {
 
   [
     'markedMap: marksStateApi.markedMap',
-    'initAnnotationBubbleResolver({',
+    'var playbackRuntime = initReaderPlaybackRuntime({',
     'window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);',
     'window.__appHandlers.initExports({',
     'window.__appHandlers.initMarksImport({'

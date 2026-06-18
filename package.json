@@ -31,6 +31,7 @@
     "verify:runtime-state-facade": "node scripts/runtime-state-facade-check.cjs",
     "verify:reader-runtime-deps": "node scripts/reader-runtime-deps-check.cjs",
     "verify:reader-notes-runtime": "node scripts/reader-notes-runtime-check.cjs",
+    "verify:reader-playback-runtime": "node scripts/reader-playback-runtime-check.cjs",
     "verify:reader-runtime-helpers": "node scripts/reader-runtime-helpers-check.cjs",
     "verify:reader-dom-refs": "node scripts/reader-dom-refs-check.cjs",
     "verify:app-window-facades": "node scripts/app-window-facades-check.cjs",

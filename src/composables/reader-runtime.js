@@ -18,14 +18,12 @@
     import './render-mode.js';
     import './annotation-lightweight-module.js';
     import { initGlassEffects } from './glass-effects.js';
-    import { configureTranscriptInteractions } from './transcript-interactions.js';
-    import { configureChunkInteractions } from './chunk-interactions.js';
     import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';
-    import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
+    import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
@@ -34,7 +32,6 @@
     import { initAudioIdentity } from './audio-identity-module.js';
     import { initHotkeyState } from './hotkey-state-module.js';
     import { initMarksState } from './marks-state-module.js';
-    import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js';
     import {
         createReaderFocusRestorer,
         createCurrentNoteToggler,
@@ -369,65 +366,32 @@
         tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft
     });
 
-    var annotationBubbleResolverApi = initAnnotationBubbleResolver({
-        getWords: function () { return _tr.words; },
-        markedMap: marksStateApi.markedMap,
-        vocabMatchMap: visualVocabApi.vocabMatchMap
-    });
-    var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
-    var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({
-        chunkState: _ch,
+    var playbackRuntime = initReaderPlaybackRuntime({
+        runtimeState: runtimeState,
         transcriptState: _tr,
+        chunkState: _ch,
         playbackState: _pb,
         audioPlayer: audioPlayer,
         mainAppArea: mainAppArea,
         transcriptContainer: transcriptContainer,
         findChunkIndexByTimeHelper: findChunkIndexByTimeHelper,
         getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
-        getForceUpdateUI: function () { return forceUpdateUI; },
-        getWindow: function () { return window; }
-    });
-
-    // [MIGRATED] playback navigation → src/composables/playback-module.js
-    window.__playbackModule.init({
-        state: runtimeState,
-        audioPlayer: audioPlayer,
-        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
         getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
         bsFindActiveHelper: bsFindActiveHelper,
-        findChunkIndexByTime: playbackRuntimeHelpersApi.findChunkIndexByTime,
-        swapActiveClass: playbackRuntimeHelpersApi.swapActiveClass,
-        followPlaybackTarget: playbackRuntimeHelpersApi.followPlaybackTarget,
-        getAnnotationBubble: annotationBubbleResolverApi.getAnnotationBubble,
-        jumpPrevSentence: playbackRuntimeHelpersApi.jumpPrevSentence,
-        jumpNextSentence: playbackRuntimeHelpersApi.jumpNextSentence
-    });
-
-    // Re-bind local references to functions now in playback-module
-    var forceUpdateUI = window.forceUpdateUI;
-    var mainUpdateHighlight = window.mainUpdateHighlight;
-    var toggleAnnotationBubble = window.toggleAnnotationBubble;
-    var handleBackwardClick = window.handleBackwardClick;
-    var handleForwardClick = window.handleForwardClick;
-
-    configureTranscriptInteractions({
-        getAudioPlayer: function () { return audioPlayer; },
-        forceUpdateUI: forceUpdateUI,
-        notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
-        isChunkMode: function () { return _ch.isChunkMode; },
+        markedMap: marksStateApi.markedMap,
+        vocabMatchMap: visualVocabApi.vocabMatchMap,
         hasActiveTextSelectionWithinChunk: _snApi.hasActiveTextSelectionWithinChunk,
         selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        legacyTranscriptContainer: transcriptContainer
-    });
-
-    configureChunkInteractions({
-        getAudioPlayer: function () { return audioPlayer; },
+        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); },
         getSelection: function () { return window.getSelection && window.getSelection(); },
-        forceUpdateUI: forceUpdateUI,
-        notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
-        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); }
+        playbackModule: window.__playbackModule,
+        getWindow: function () { return window; }
     });
+    var playbackRuntimeHelpersApi = playbackRuntime.playbackRuntimeHelpersApi;
+    var forceUpdateUI = playbackRuntime.forceUpdateUI;
+    var toggleAnnotationBubble = playbackRuntime.toggleAnnotationBubble;
+    var handleBackwardClick = playbackRuntime.handleBackwardClick;
+    var handleForwardClick = playbackRuntime.handleForwardClick;
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
     window.__keyboardModule.init({

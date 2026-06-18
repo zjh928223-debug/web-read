@@ -5,16 +5,17 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const readerPlaybackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js';"),
-    'reader-runtime should import playback runtime helpers'
+    runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
+    'reader-runtime should initialize playback helpers through reader playback runtime'
   );
   assert.ok(
-    runtimeSource.includes('var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({'),
-    'reader-runtime should initialize playback runtime helpers through the module'
+    runtimeSource.includes('var playbackRuntimeHelpersApi = playbackRuntime.playbackRuntimeHelpersApi;'),
+    'reader-runtime should receive playback runtime helpers through the module'
   );
   [
     'function findChunkIndexByTime(t)',
@@ -37,10 +38,13 @@ async function main() {
     'jumpNextSentence: playbackRuntimeHelpersApi.jumpNextSentence'
   ].forEach((pattern) => {
     assert.ok(
-      runtimeSource.includes(pattern),
-      `reader-runtime should inject playback helper API: ${pattern}`
+      readerPlaybackSource.includes(pattern),
+      `reader-playback-runtime should inject playback helper API: ${pattern}`
     );
   });
+  assert.equal(runtimeSource.includes('initPlaybackRuntimeHelpers({'), false);
+  assert.ok(readerPlaybackSource.includes("import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'"));
+  assert.ok(readerPlaybackSource.includes('var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({'));
   [
     'followPlaybackTarget',
     'swapActiveClass',
