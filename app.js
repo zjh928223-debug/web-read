@@ -784,22 +784,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markedMap: markedMap
     });
 
-    var _importApi = {
-        processTranscript: _ihApi.processTranscript,
-        processChunkData: _cpApi.processChunkData,
-        setClozeData: _ihApi.setClozeData,
-        resetClozeState: _ihApi.resetClozeState,
-        buildClozeQuizMarkup: _ihApi.buildClozeQuizMarkup,
-        handleClozeCheck: _ihApi.handleClozeCheck
-    };
-
-    function processTranscript(json) {
-        return _importApi.processTranscript(json);
-    }
-    function processChunkData(data) {
-        return _importApi.processChunkData(data);
-    }
-
     let chunkNoteExportDialogEl = null;
     let chunkNoteExportDialogKeydownHandler = null;
     let currentAudioMeta = null;
@@ -1600,7 +1584,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // === Temporary compatibility exports for cross-module access ===
     window.showToast = showToast; window.showError = showError;
     window.bridgeToPinia = bridgeToPinia;
-    window.processTranscript = processTranscript;
     window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
     window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
     window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;
@@ -1617,4 +1600,3 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
     window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
     window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
-    window.processChunkData = processChunkData;

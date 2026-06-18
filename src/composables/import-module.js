@@ -274,6 +274,8 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
         bridgeToPinia();
     }
 
+    window.processChunkData = processChunkData;
+
     return {
         processChunkData: processChunkData
     };
@@ -528,6 +530,8 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
             });
         });
     }
+
+    window.processTranscript = processTranscript;
 
     return {
         processTranscript: processTranscript,
