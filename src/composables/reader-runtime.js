@@ -180,18 +180,6 @@
 
     const readFileAsText = window.ImportExportSharedHelpers.readFileAsText;
 
-    function setSelectedChunkNote(noteId) {
-        return _cnApi.setSelectedChunkNote(noteId);
-    }
-
-    function closeChunkNoteDeleteDialog() {
-        return _cnApi.closeChunkNoteDeleteDialog();
-    }
-
-    function openChunkNoteDeleteDialog(noteId) {
-        return _cnApi.openChunkNoteDeleteDialog(noteId);
-    }
-
     var chunkNoteTransferApi = null;
 
     function closeChunkNoteExportDialog() {
@@ -318,18 +306,6 @@
         return _cnApi.closeChunkNotePopover();
     }
 
-    function saveChunkNoteFromModal() {
-        return _cnApi.saveChunkNoteFromModal();
-    }
-
-    function cancelChunkNoteModal() {
-        return _cnApi.cancelChunkNoteModal();
-    }
-
-    function openChunkNotePopover(ctx) {
-        return _cnApi.openChunkNotePopover(ctx);
-    }
-
     function upsertChunkNote(ctx, noteText) {
         return _cnApi.upsertChunkNoteFromModal(ctx, noteText);
     }
@@ -449,7 +425,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         makeSelectionNoteId: makeSelectionNoteId,
         findNearestChunkWord: findNearestChunkWord,
         saveOpenChunkNotePopover: function () {
-            if (_cnApi.getChunkNoteModalEl()) saveChunkNoteFromModal();
+            if (_cnApi.getChunkNoteModalEl()) _cnApi.saveChunkNoteFromModal();
         },
         chunkNoteCtxMenuEl: chunkNoteCtxMenu
     });
@@ -791,19 +767,19 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         setChunkNoteVisible: setChunkNoteVisible,
         handleBackwardClick: handleBackwardClick, handleForwardClick: handleForwardClick,
         closeCustomThemePanel: function () { window.__themeStore.closeCustomThemePanel(); },
-        cancelChunkNoteModal: cancelChunkNoteModal,
+        cancelChunkNoteModal: _cnApi.cancelChunkNoteModal,
         closeChunkNoteContextMenu: typeof closeChunkNoteContextMenuRN !== 'undefined' ? closeChunkNoteContextMenuRN : closeChunkNoteContextMenu,
-        closeChunkNoteDeleteDialog: closeChunkNoteDeleteDialog,
+        closeChunkNoteDeleteDialog: _cnApi.closeChunkNoteDeleteDialog,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
-        setSelectedChunkNote: setSelectedChunkNote,
-        openChunkNoteDeleteDialog: openChunkNoteDeleteDialog,
+        setSelectedChunkNote: _cnApi.setSelectedChunkNote,
+        openChunkNoteDeleteDialog: _cnApi.openChunkNoteDeleteDialog,
         getChunkNoteDeleteDialogEl: function () { return _cnApi.getChunkNoteDeleteDialogEl(); },
         selectedChunkNoteId: function () { return _cnApi.getSelectedChunkNoteId(); },
         handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
         chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
         pendingChunkSelectionCtx: function () { return _cnApi.getPendingChunkSelectionCtx(); },
         consumePendingChunkSelectionCtx: function () { return _cnApi.consumePendingChunkSelectionCtx(); },
-        openChunkNotePopover: openChunkNotePopover,
+        openChunkNotePopover: _cnApi.openChunkNotePopover,
         hotkeyInput: hotkeyInput, hotkeyNotesInput: hotkeyNotesInput,
         hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
         hotkeyBackwardInput: hotkeyBackwardInput, hotkeyForwardInput: hotkeyForwardInput,
@@ -822,7 +798,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         chunkNoteCtxMenu: chunkNoteCtxMenu,
         getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
         getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
-        saveChunkNoteFromModal: saveChunkNoteFromModal
+        saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal
     });
 
     // Functions called by keyboard-module (defined here to avoid circular deps)

@@ -17,16 +17,36 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'setChunkNoteHoverTarget',
   'persistChunkNoteDraft',
   'getChunkNoteModalPosition',
-  'applyTempAnnotationByCtx'
+  'applyTempAnnotationByCtx',
+  'setSelectedChunkNote',
+  'closeChunkNoteDeleteDialog',
+  'openChunkNoteDeleteDialog',
+  'saveChunkNoteFromModal',
+  'cancelChunkNoteModal',
+  'openChunkNotePopover'
 ].forEach((name) => {
   assert.equal(
     new RegExp(`function\\s+${name}\\s*\\(`).test(runtimeSource),
     false,
-    `reader-runtime should not keep unused ${name} wrapper`
+    `reader-runtime should not keep unused/thin ${name} wrapper`
   );
   assert.ok(
     new RegExp(`function\\s+${name}\\s*\\(`).test(notesSource),
     `notes-module should own ${name}`
+  );
+});
+
+[
+  'cancelChunkNoteModal: _cnApi.cancelChunkNoteModal',
+  'closeChunkNoteDeleteDialog: _cnApi.closeChunkNoteDeleteDialog',
+  'setSelectedChunkNote: _cnApi.setSelectedChunkNote',
+  'openChunkNoteDeleteDialog: _cnApi.openChunkNoteDeleteDialog',
+  'openChunkNotePopover: _cnApi.openChunkNotePopover',
+  'saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal'
+].forEach((pattern) => {
+  assert.ok(
+    runtimeSource.includes(pattern),
+    `reader-runtime should inject chunk note API directly: ${pattern}`
   );
 });
 
