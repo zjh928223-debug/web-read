@@ -4,12 +4,26 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'highlight-controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 
 assert.ok(
+  appSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
+  'app.js should import the reader controls runtime module'
+);
+assert.equal(
   appSource.includes("import { initHighlightControls } from './highlight-controls-module.js';"),
-  'app.js should import the highlight controls module'
+  false,
+  'app.js should not import the highlight controls module directly'
+);
+assert.ok(
+  controlsRuntimeSource.includes("import { initHighlightControls } from './highlight-controls-module.js'"),
+  'reader-controls-runtime should import the highlight controls module'
+);
+assert.ok(
+  controlsRuntimeSource.includes('var highlightControlsApi = initHighlightControls({'),
+  'reader-controls-runtime should initialize highlight controls through the module'
 );
 assert.ok(
   moduleSource.includes('export function initHighlightControls'),
@@ -37,8 +51,8 @@ assert.ok(
   'highlight controls module should own window.cycleHighlightMode'
 );
 assert.ok(
-  appSource.includes('updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI'),
-  'app.js should pass highlight control API to chunk controls'
+  controlsRuntimeSource.includes('updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI'),
+  'reader-controls-runtime should pass highlight control API to chunk controls'
 );
 assert.ok(
   chunkControlsSource.includes('deps.updateHighlightModeUI'),

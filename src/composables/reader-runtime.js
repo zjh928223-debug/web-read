@@ -24,9 +24,7 @@
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
     import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
-    import { initChunkControls } from './chunk-controls-module.js';
-    import { initHighlightControls } from './highlight-controls-module.js';
-    import { initThemeControls } from './theme-controls-module.js';
+    import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
     import { initVisualVocab } from './visual-vocab-module.js';
     import { initAudioIdentity } from './audio-identity-module.js';
@@ -300,44 +298,26 @@
 
     _cnApi.ensureChunkNoteOverlayLayers();
 
-    var highlightControlsApi = initHighlightControls({
+    var controlsRuntime = initReaderControlsRuntime({
         transcriptState: _tr,
         chunkState: _ch,
         playbackState: _pb,
         highlightModeBtn: highlightModeBtn,
-        audioPlayer: audioPlayer,
-        getForceUpdateUI: function () { return forceUpdateUI; }
-    });
-
-    chunkControlsApi = initChunkControls({
-        state: _ch,
         chunkFileInput: chunkFileInput,
         toggleChunkBtn: toggleChunkBtn,
         chunkCnHoldBtn: chunkCnHoldBtn,
         audioPlayer: audioPlayer,
-        updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI,
         closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu,
         closeChunkNotePopover: _cnApi.closeChunkNotePopover,
         renderChunkMode: renderChunkMode,
         renderTranscript: renderTranscript,
         clearChunkNoteConnectors: _cnApi.clearChunkNoteConnectors,
         getForceUpdateUI: function () { return forceUpdateUI; },
-        bridgeToPinia: bridgeToPinia
-    });
-
-    // [MIGRATED] style editor → src/composables/style-editor.js
-    window.__styleEditor.init({
+        bridgeToPinia: bridgeToPinia,
+        styleEditor: window.__styleEditor,
         adjustChunkNoteArrowSizeByGap: _cnApi.adjustChunkNoteArrowSizeByGap,
         renderAllChunkNoteTags: _cnApi.renderAllChunkNoteTags,
         scheduleChunkNoteConnectorRedraw: _cnApi.scheduleChunkNoteConnectorRedraw,
-        getIsChunkMode: function () { return _ch.isChunkMode; },
-        closeChunkNotePopover: _cnApi.closeChunkNotePopover,
-        updateShadowBtnText: chunkControlsApi.updateShadowBtnText
-    });
-
-    // [MIGRATED] session init → src/composables/session-init.js
-    // [MIGRATED] theme control bindings → src/composables/theme-controls-module.js
-    initThemeControls({
         themeStore: window.__themeStore,
         themeToggleBtn: themeToggleBtn,
         themeCustomBgInput: themeCustomBgInput,
@@ -347,9 +327,10 @@
         themeCustomButtonInput: themeCustomButtonInput,
         themeCustomResetBtn: themeCustomResetBtn,
         refreshAllChunkNoteVisuals: _cnApi.refreshAllChunkNoteVisuals,
-        getLockChunkNoteDimensionsForTheme: function () { return window.__lockChunkNoteDimensionsForTheme; }
+        getLockChunkNoteDimensionsForTheme: function () { return window.__lockChunkNoteDimensionsForTheme; },
+        initAnnotationApiSettingsUi: initAnnotationApiSettingsUi
     });
-    initAnnotationApiSettingsUi();
+    chunkControlsApi = controlsRuntime.chunkControlsApi;
 
     // M4+M5 delegated → src/composables/import-module.js
 

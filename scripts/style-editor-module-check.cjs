@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const styleEditorSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -17,6 +18,17 @@ assert.equal(
   runtimeSource.includes('safeParseLocalJSON:'),
   false,
   'reader-runtime should not inject safeParseLocalJSON into style-editor'
+);
+
+assert.equal(
+  runtimeSource.includes('window.__styleEditor.init({'),
+  false,
+  'reader-runtime should not initialize style-editor directly'
+);
+
+assert.ok(
+  controlsRuntimeSource.includes('deps.styleEditor.init({'),
+  'reader-controls-runtime should initialize style-editor through injected deps'
 );
 
 assert.ok(

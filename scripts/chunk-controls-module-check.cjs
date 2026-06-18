@@ -4,11 +4,25 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 
 assert.ok(
+  appSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
+  'app.js should import the reader controls runtime module'
+);
+assert.equal(
   appSource.includes("import { initChunkControls } from './chunk-controls-module.js';"),
-  'app.js should import the chunk controls module'
+  false,
+  'app.js should not import the chunk controls module directly'
+);
+assert.ok(
+  controlsRuntimeSource.includes("import { initChunkControls } from './chunk-controls-module.js'"),
+  'reader-controls-runtime should import the chunk controls module'
+);
+assert.ok(
+  controlsRuntimeSource.includes('var chunkControlsApi = initChunkControls({'),
+  'reader-controls-runtime should initialize chunk controls through the module'
 );
 
 assert.ok(

@@ -4,17 +4,29 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const themeControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'theme-controls-module.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 assert.ok(
+  runtimeSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
+  'reader-runtime should import the reader controls runtime module'
+);
+
+assert.equal(
   runtimeSource.includes("import { initThemeControls } from './theme-controls-module.js';"),
-  'reader-runtime should import the theme controls module'
+  false,
+  'reader-runtime should not import the theme controls module directly'
 );
 
 assert.ok(
-  runtimeSource.includes('initThemeControls({'),
-  'reader-runtime should initialize theme controls through the module'
+  controlsRuntimeSource.includes("import { initThemeControls } from './theme-controls-module.js'"),
+  'reader-controls-runtime should import the theme controls module'
+);
+
+assert.ok(
+  controlsRuntimeSource.includes('initThemeControls({'),
+  'reader-controls-runtime should initialize theme controls through the module'
 );
 
 [
