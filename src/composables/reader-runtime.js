@@ -26,6 +26,7 @@
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
+    import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -205,101 +206,18 @@
         return _cnApi.openChunkNoteDeleteDialog(noteId);
     }
 
+    var chunkNoteTransferApi = null;
+
     function closeChunkNoteExportDialog() {
-        if (chunkNoteExportDialogKeydownHandler) {
-            document.removeEventListener('keydown', chunkNoteExportDialogKeydownHandler, true);
-            chunkNoteExportDialogKeydownHandler = null;
-        }
-        if (chunkNoteExportDialogEl) {
-            chunkNoteExportDialogEl.remove();
-            chunkNoteExportDialogEl = null;
+        if (chunkNoteTransferApi && typeof chunkNoteTransferApi.closeExportDialog === 'function') {
+            return chunkNoteTransferApi.closeExportDialog();
         }
     }
 
-    function supportsChunkNotesDirectOverwrite() {
-        return typeof window.showSaveFilePicker === 'function';
-    }
-
-    function triggerChunkNotesDownload(snapshot, filename) {
-        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-    }
-
-    async function writeChunkNotesToHandle(handle, snapshot) {
-        const writable = await handle.createWritable();
-        await writable.write(JSON.stringify(snapshot, null, 2));
-        await writable.close();
-    }
-
-    async function saveChunkNotesAs(snapshot, suggestedName) {
-        if (!supportsChunkNotesDirectOverwrite()) {
-            triggerChunkNotesDownload(snapshot, suggestedName);
-            _cnApi.setChunkNotesFileState({ handle: null, audioKey: '', fileName: suggestedName });
-            return;
-        }
-        const handle = await window.showSaveFilePicker({
-            suggestedName,
-            types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
-        });
-        await writeChunkNotesToHandle(handle, snapshot);
-        _cnApi.setChunkNotesFileState({
-            handle,
-            audioKey: currentAudioKey || 'default-audio',
-            fileName: handle.name || suggestedName
-        });
-    }
-
-    function openChunkNotesExportConfirmDialog(fileName, onSaveAs, onOverwrite) {
-        closeChunkNoteExportDialog();
-        const dialog = document.createElement('div');
-        dialog.className = 'chunk-note-delete-dialog';
-        dialog.innerHTML = `
-          <div class="chunk-note-delete-title">检测到已保存文件，是否覆盖？</div>
-          <div class="chunk-note-export-hint">${fileName || 'chunk_notes.json'}</div>
-          <div class="chunk-note-delete-actions">
-            <button type="button" class="chunk-note-delete-btn">另存为</button>
-            <button type="button" class="chunk-note-delete-btn primary">确认覆盖</button>
-          </div>
-        `;
-        document.body.appendChild(dialog);
-        chunkNoteExportDialogEl = dialog;
-
-        const left = Math.max(12, Math.min(window.innerWidth - 280, (window.innerWidth - 280) / 2));
-        const top = Math.max(12, Math.min(window.innerHeight - 140, (window.innerHeight - 140) / 2));
-        dialog.style.left = `${left}px`;
-        dialog.style.top = `${top}px`;
-
-        const [saveAsBtn, overwriteBtn] = dialog.querySelectorAll('.chunk-note-delete-btn');
-        if (saveAsBtn) {
-            saveAsBtn.addEventListener('click', async () => {
-                closeChunkNoteExportDialog();
-                await onSaveAs();
-            });
-        }
-        if (overwriteBtn) {
-            overwriteBtn.addEventListener('click', async () => {
-                closeChunkNoteExportDialog();
-                await onOverwrite();
-            });
-            overwriteBtn.focus();
-        }
-
-        chunkNoteExportDialogKeydownHandler = (e) => {
-            if (!chunkNoteExportDialogEl) return;
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                if (overwriteBtn) overwriteBtn.click();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closeChunkNoteExportDialog();
-            }
-        };
-        document.addEventListener('keydown', chunkNoteExportDialogKeydownHandler, true);
+    function getChunkNoteExportDialogEl() {
+        return chunkNoteTransferApi && typeof chunkNoteTransferApi.getExportDialogEl === 'function'
+            ? chunkNoteTransferApi.getExportDialogEl()
+            : null;
     }
 
     function clearChunkNoteConnectors() {
@@ -703,8 +621,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markedMap: markedMap
     });
 
-    let chunkNoteExportDialogEl = null;
-    let chunkNoteExportDialogKeydownHandler = null;
     let currentAudioMeta = null;
     let currentAudioKey = 'default-audio';
     let chunkPointerDown = null;
@@ -1122,7 +1038,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         setBackwardKey: function (v) { backwardKey = v; },
         setForwardKey: function (v) { forwardKey = v; },
         chunkNoteCtxMenu: chunkNoteCtxMenu,
-        chunkNoteExportDialogEl: chunkNoteExportDialogEl,
+        getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
         getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
         saveChunkNoteFromModal: saveChunkNoteFromModal
     });
@@ -1174,69 +1090,27 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // Highlight colors + hotkey bindings → keyboard-module
 
-    function applyImportedChunkNotes(data) {
-        return _cnApi.applyImportedChunkNotes(data);
-    }
-
-    if (importChunkNotesBtn && importChunkNotesInput) {
-        importChunkNotesBtn.addEventListener('click', () => importChunkNotesInput.click());
-        importChunkNotesInput.addEventListener('change', e => {
-            const f = getFirstFileFromEvent(e);
-            if (!f) return;
-            readFileAsText(f, (rawText) => {
-                try {
-                    const data = JSON.parse(rawText);
-                    applyImportedChunkNotes(data);
-                    saveChunkNotesNow();
-                    if (_ch.hasAiChunkData) {
-                        if (!_ch.isChunkMode) chunkControlsApi.toggleChunkMode(true);
-                        setChunkNoteVisible(true, true);
-                        renderChunkMode();
-                    }
-                    showToast('Chunk notes imported', 'success');
-                } catch (err) {
-                    showError('CHUNK_NOTE_IMPORT', err && err.message ? err.message : 'Invalid notes json');
-                }
-            });
-            e.target.value = '';
-        });
-    }
-
-    if (exportChunkNotesBtn) {
-        exportChunkNotesBtn.addEventListener('click', async () => {
-            const snapshot = buildChunkNotesSnapshot();
-            const filenameBase = getCurrentAudioFilenameBase('audio');
-            const suggestedName = `${filenameBase}_chunk_notes.json`;
-            const fileState = _cnApi.getChunkNotesFileState();
-            const sameAudioHandle = !!fileState.handle && (fileState.audioKey === (currentAudioKey || 'default-audio'));
-            try {
-                if (!sameAudioHandle) {
-                    await saveChunkNotesAs(snapshot, suggestedName);
-                    showToast('Chunk notes saved', 'success');
-                    return;
-                }
-                openChunkNotesExportConfirmDialog(
-                    fileState.fileName || suggestedName,
-                    async () => {
-                        await saveChunkNotesAs(snapshot, suggestedName);
-                        showToast('Chunk notes saved as new file', 'success');
-                    },
-                    async () => {
-                        const currentFileState = _cnApi.getChunkNotesFileState();
-                        if (!currentFileState.handle) {
-                            await saveChunkNotesAs(snapshot, suggestedName);
-                        } else {
-                            await writeChunkNotesToHandle(currentFileState.handle, snapshot);
-                        }
-                        showToast('Chunk notes overwritten', 'success');
-                    }
-                );
-            } catch (err) {
-                if (err && err.name === 'AbortError') return;
-                showError('CHUNK_NOTE_EXPORT', err && err.message ? err.message : 'Export failed');
-            }
-        });
-    }
+    chunkNoteTransferApi = initChunkNoteTransfer({
+        importButton: importChunkNotesBtn,
+        importInput: importChunkNotesInput,
+        exportButton: exportChunkNotesBtn,
+        getFirstFileFromEvent: getFirstFileFromEvent,
+        readFileAsText: readFileAsText,
+        applyImportedChunkNotes: function (data) { return _cnApi.applyImportedChunkNotes(data); },
+        saveChunkNotesNow: saveChunkNotesNow,
+        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
+        getIsChunkMode: function () { return _ch.isChunkMode; },
+        enterChunkMode: function () { return chunkControlsApi.toggleChunkMode(true); },
+        setChunkNoteVisible: setChunkNoteVisible,
+        renderChunkMode: renderChunkMode,
+        buildChunkNotesSnapshot: buildChunkNotesSnapshot,
+        getCurrentAudioFilenameBase: getCurrentAudioFilenameBase,
+        getChunkNotesFileState: function () { return _cnApi.getChunkNotesFileState(); },
+        setChunkNotesFileState: function (fileState) { return _cnApi.setChunkNotesFileState(fileState); },
+        getCurrentAudioKey: function () { return currentAudioKey; },
+        showToast: showToast,
+        showError: showError
+    });
 
     window.__annotationLightweightModule.initManualLightweightAnnotationControls({
         exportButton: exportAnnotationLightweightBtn,

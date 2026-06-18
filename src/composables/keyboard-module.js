@@ -38,6 +38,7 @@
     var setSelectedChunkNote = deps.setSelectedChunkNote;
     var openChunkNoteDeleteDialog = deps.openChunkNoteDeleteDialog;
     var getChunkNoteDeleteDialogEl = deps.getChunkNoteDeleteDialogEl || function () { return deps.chunkNoteDeleteDialogEl; };
+    var getChunkNoteExportDialogEl = deps.getChunkNoteExportDialogEl || function () { return deps.chunkNoteExportDialogEl; };
     var selectedChunkNoteId = deps.selectedChunkNoteId;
     var handleChunkSelectionContextMenu = deps.handleChunkSelectionContextMenu;
     var chunkNoteCtxAddBtn = deps.chunkNoteCtxAddBtn;
@@ -178,7 +179,7 @@
         closeChunkNoteDeleteDialog();
         setSelectedChunkNote('');
       }
-      var exportDlg = deps.chunkNoteExportDialogEl;
+      var exportDlg = getChunkNoteExportDialogEl();
       if (exportDlg && !exportDlg.contains(e.target)) {
         closeChunkNoteExportDialog();
       }
