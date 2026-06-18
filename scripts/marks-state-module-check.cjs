@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'marks-state-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
@@ -30,13 +31,22 @@ async function main() {
 
   [
     'markedMap: marksStateApi.markedMap',
-    'var playbackRuntime = initReaderPlaybackRuntime({',
-    'window.__appHandlers.initExports({',
-    'window.__appHandlers.initMarksImport({'
+    'var playbackRuntime = initReaderPlaybackRuntime({'
   ].forEach((pattern) => {
     assert.ok(
       runtimeSource.includes(pattern),
       `reader-runtime should pass marks state through explicit deps: ${pattern}`
+    );
+  });
+
+  [
+    'markedMap: deps.marksStateApi.markedMap',
+    'deps.appHandlers.initExports({',
+    'deps.appHandlers.initMarksImport({'
+  ].forEach((pattern) => {
+    assert.ok(
+      appRuntimeSource.includes(pattern),
+      `reader-app-runtime should pass marks state through explicit deps: ${pattern}`
     );
   });
 

@@ -17,7 +17,6 @@
     import { runtimeState } from './runtime-state-facade.js';
     import './render-mode.js';
     import './annotation-lightweight-module.js';
-    import { initGlassEffects } from './glass-effects.js';
     import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
@@ -26,7 +25,7 @@
     import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
-    import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
+    import { initReaderAppRuntime } from './reader-app-runtime.js';
     import { initVisualVocab } from './visual-vocab-module.js';
     import { initAudioIdentity } from './audio-identity-module.js';
     import { initHotkeyState } from './hotkey-state-module.js';
@@ -37,7 +36,6 @@
         createChunkNoteTransferDialogAccess
     } from './reader-runtime-helpers.js';
     import { configureRuntimeStateBindings } from './runtime-state-bindings.js';
-    import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
     import {
         configureSessionFacades,
@@ -413,89 +411,49 @@
         chunkNoteCtxMenu: chunkNoteCtxMenu
     });
 
-    // Highlight colors + hotkey bindings → keyboard-module
-
-    chunkNoteTransferApi = initChunkNoteTransfer({
-        importButton: importChunkNotesBtn,
-        importInput: importChunkNotesInput,
-        exportButton: exportChunkNotesBtn,
-        getFirstFileFromEvent: getFirstFileFromEvent,
-        readFileAsText: readFileAsText,
-        applyImportedChunkNotes: function (data) { return _cnApi.applyImportedChunkNotes(data); },
-        saveChunkNotesNow: _cnApi.saveChunkNotesNow,
-        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
-        getIsChunkMode: function () { return _ch.isChunkMode; },
-        enterChunkMode: function () { return chunkControlsApi.toggleChunkMode(true); },
-        setChunkNoteVisible: setChunkNoteVisible,
-        renderChunkMode: renderChunkMode,
-        buildChunkNotesSnapshot: _cnApi.buildChunkNotesSnapshot,
-        getCurrentAudioFilenameBase: audioIdentityApi.getCurrentAudioFilenameBase,
-        getChunkNotesFileState: function () { return _cnApi.getChunkNotesFileState(); },
-        setChunkNotesFileState: function (fileState) { return _cnApi.setChunkNotesFileState(fileState); },
-        getCurrentAudioKey: function () { return audioIdentityApi.currentAudioKey; },
-        showToast: showToast,
-        showError: showError
-    });
-
-    window.__annotationLightweightModule.initManualLightweightAnnotationControls({
-        exportButton: exportAnnotationLightweightBtn,
-        importButton: importAnnotationLightweightBtn,
-        importInput: importAnnotationLightweightInput,
-        getFirstFileFromEvent,
-        refreshAfterImport: function () {
-            if (_ch.isChunkMode) renderChunkMode(); else renderTranscript();
-            forceUpdateUI(audioPlayer.currentTime);
-        },
-        showToast,
-        showError
-    });
-
-    // [MIGRATED] exports → src/composables/app-handlers.js
-    window.__appHandlers.initExports({
-        exportJsonBtn: exportJsonBtn, exportMdAllBtn: exportMdAllBtn,
-        markedMap: marksStateApi.markedMap, getSegments: function () { return _tr.segments; },
-        showError: showError, showToast: showToast
-    });
-
-    window.__appHandlers.initMarksImport({
-        importMarksBtn: importMarksBtn, importMarksInput: importMarksInput,
+    // Remaining app/runtime setup is delegated to focused modules.
+    var appRuntime = initReaderAppRuntime({
+        annotationLightweightModule: window.__annotationLightweightModule,
+        appHandlers: window.__appHandlers,
+        controlsModule: window.__controlsModule,
+        runtimeState: runtimeState,
+        transcriptState: _tr,
+        chunkState: _ch,
+        marksStateApi: marksStateApi,
+        chunkControlsApi: chunkControlsApi,
+        chunkNotesApi: _cnApi,
+        sentenceNotesApi: _snApi,
+        audioIdentityApi: audioIdentityApi,
+        playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
+        audioPlayer: audioPlayer,
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
         validateMarksArray: validateMarksArray,
-        getWords: function () { return _tr.words; }, markedMap: marksStateApi.markedMap,
         saveToDB: saveToDB,
-        isChunkModeFn: function () { return _ch.isChunkMode; },
-        renderTranscript: renderTranscript, renderChunkMode: renderChunkMode,
-        forceUpdateUI: forceUpdateUI, audioPlayer: audioPlayer,
-        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
-        showToast: showToast, showError: showError
-    });
-
-    // [MIGRATED] controls + rAF loop → src/composables/controls-module.js
-    window.__controlsModule.init({
-        state: runtimeState,
-        audioPlayer: audioPlayer,
-        bsFindActiveHelper: bsFindActiveHelper,
-        findChunkIndexByTime: playbackRuntimeHelpersApi.findChunkIndexByTime,
-        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
-        toggleFollowBtn: toggleFollowBtn,
-        mainAppArea: mainAppArea
-    });
-
-    initGlassEffects({
-        listChunkNotes: function () { return _cnApi.listChunkNotes(); },
-        getChunkNoteTagById: _cnApi.getChunkNoteTagById,
-        getChunkNoteContentBoxSize: _cnApi.getChunkNoteContentBoxSize
-    });
-  
-    // === Temporary compatibility exports for cross-module access ===
-    configureReaderPublicFacades({
-        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
-        loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
         setChunkNoteVisible: setChunkNoteVisible,
+        loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
         loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,
         switchSentenceNotesDoc: switchSentenceNotesDoc,
         applyCurrentAudioMeta: applyCurrentAudioMeta,
-        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); }
+        renderTranscript: renderTranscript,
+        renderChunkMode: renderChunkMode,
+        forceUpdateUI: forceUpdateUI,
+        bsFindActiveHelper: bsFindActiveHelper,
+        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        toggleFollowBtn: toggleFollowBtn,
+        mainAppArea: mainAppArea,
+        importChunkNotesBtn: importChunkNotesBtn,
+        importChunkNotesInput: importChunkNotesInput,
+        exportChunkNotesBtn: exportChunkNotesBtn,
+        exportAnnotationLightweightBtn: exportAnnotationLightweightBtn,
+        importAnnotationLightweightBtn: importAnnotationLightweightBtn,
+        importAnnotationLightweightInput: importAnnotationLightweightInput,
+        exportJsonBtn: exportJsonBtn,
+        exportMdAllBtn: exportMdAllBtn,
+        importMarksBtn: importMarksBtn,
+        importMarksInput: importMarksInput,
+        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
+        showToast: showToast,
+        showError: showError
     });
+    chunkNoteTransferApi = appRuntime.chunkNoteTransferApi;

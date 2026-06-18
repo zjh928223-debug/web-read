@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 471 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 435 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    49 compatibility/runtime modules
+  composables/                    50 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 471 lines
+reader-runtime.js                 about 435 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines
@@ -106,6 +106,7 @@ reader-notes-runtime.js           about 68 lines
 reader-playback-runtime.js        about 69 lines
 reader-controls-runtime.js        about 53 lines
 reader-keyboard-runtime.js        about 80 lines
+reader-app-runtime.js             about 90 lines
 reader-runtime-helpers.js         about 61 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -201,6 +202,7 @@ window.__USE_VUE_RENDERING = true
 - module-bound legacy controls from `src/composables/legacy-control-bindings.js`
 - control setup delegated through `src/composables/reader-controls-runtime.js`
 - keyboard setup delegated through `src/composables/reader-keyboard-runtime.js`
+- app/runtime setup delegated through `src/composables/reader-app-runtime.js`
 - `window.xxx` compatibility functions owned by focused composables
 - direct DOM reads/writes
 - legacy CSS classes
@@ -311,6 +313,7 @@ npm run verify:reader-notes-runtime
 npm run verify:reader-playback-runtime
 npm run verify:reader-controls-runtime
 npm run verify:reader-keyboard-runtime
+npm run verify:reader-app-runtime
 npm run verify:reader-runtime-helpers
 npm run verify:reader-dom-refs
 npm run verify:app-window-facades
@@ -385,6 +388,7 @@ scripts/session-state-provider-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/reader-controls-runtime-check.cjs
 scripts/reader-keyboard-runtime-check.cjs
+scripts/reader-app-runtime-check.cjs
 scripts/app-window-facades-check.cjs
 scripts/pinia-bridge-module-check.cjs
 scripts/audio-store-facades-check.cjs
@@ -456,6 +460,7 @@ Current checks cover:
 - moved annotation bubble resolver setup, playback helper setup, playback module init, and transcript/chunk interaction configuration out of `reader-runtime.js` into `src/composables/reader-playback-runtime.js` while keeping playback/interaction/session contracts unchanged through `verify:reader-playback-runtime`
 - moved highlight/chunk/theme control initialization, style editor initialization, and annotation settings UI initialization out of `reader-runtime.js` into `src/composables/reader-controls-runtime.js` while keeping control/session contracts unchanged through `verify:reader-controls-runtime`
 - moved keyboard event/module initialization out of `reader-runtime.js` into `src/composables/reader-keyboard-runtime.js` while keeping hotkey, mark toggle, and session restore contracts unchanged through `verify:reader-keyboard-runtime`
+- moved chunk note transfer, annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade initialization out of `reader-runtime.js` into `src/composables/reader-app-runtime.js` while keeping session/import/public contracts unchanged through `verify:reader-app-runtime`
 - moved reader focus restore, current-note toggling, and chunk-note export dialog access helpers out of `reader-runtime.js` into `src/composables/reader-runtime-helpers.js` while keeping import/keyboard/session contracts unchanged through `verify:reader-runtime-helpers`
 - removed local audio identity and chunk note layout API aliases from `reader-runtime.js`, injecting module APIs directly while preserving `session-init.js` public facade calls through `verify:audio-identity-module` and `verify:chunk-note-layout-helpers`
 - moved the `renderTranscript` / `renderChunkMode` implementation body out of `reader-runtime.js` and into `src/composables/render-runtime.js`, while preserving the unchanged `session-init.js` render imports through `verify:render-facades`
@@ -548,7 +553,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader runtime dependency collection, reader notes runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader runtime dependency collection, reader notes runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

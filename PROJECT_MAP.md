@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 471 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 435 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -82,6 +82,7 @@ src/
 │   ├── reader-playback-runtime.js # playback setup + transcript/chunk interactions
 │   ├── reader-controls-runtime.js # highlight/chunk/theme/style/settings setup
 │   ├── reader-keyboard-runtime.js # keyboard module setup + injected handlers
+│   ├── reader-app-runtime.js      # transfer/app handlers/controls/glass/public facades setup
 │   ├── reader-runtime-helpers.js # focus/current-note/export-dialog helper runtime
 │   ├── import-module.js
 │   ├── notes-module.js          # chunk note + sentence note subsystem runtime/state
@@ -195,6 +196,7 @@ npm run verify:reader-notes-runtime # Focused reader notes runtime setup check
 npm run verify:reader-playback-runtime # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime # Focused reader controls runtime setup check
 npm run verify:reader-keyboard-runtime # Focused reader keyboard runtime setup check
+npm run verify:reader-app-runtime # Focused reader app runtime setup check
 npm run verify:reader-runtime-helpers # Focused reader runtime helper extraction check
 npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard

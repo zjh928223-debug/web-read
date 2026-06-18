@@ -65,7 +65,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 471 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 435 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
@@ -74,6 +74,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/reader-playback-runtime.js` - annotation bubble resolver, playback helper, playback module, and transcript/chunk interaction setup.
 - `src/composables/reader-controls-runtime.js` - highlight/chunk/theme control setup, style editor init, and annotation settings UI init.
 - `src/composables/reader-keyboard-runtime.js` - keyboard module setup with hotkey, mark, chunk-note, and panel-close injected handlers.
+- `src/composables/reader-app-runtime.js` - chunk note transfer, annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade setup.
 - `src/composables/reader-runtime-helpers.js` - focus restore, current-note toggle, and chunk-note export dialog helper runtime.
 - `src/composables/session-facades.js` - public session/annotation facade stubs.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
@@ -159,6 +160,7 @@ npm run verify:reader-notes-runtime  # Focused reader notes runtime setup check
 npm run verify:reader-playback-runtime  # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime  # Focused reader controls runtime setup check
 npm run verify:reader-keyboard-runtime  # Focused reader keyboard runtime setup check
+npm run verify:reader-app-runtime  # Focused reader app runtime setup check
 npm run verify:reader-runtime-helpers  # Focused reader runtime helper extraction check
 npm run verify:reader-dom-refs  # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades  # Focused app.js duplicate window facade guard

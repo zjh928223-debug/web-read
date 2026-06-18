@@ -5,12 +5,24 @@ const vm = require('node:vm');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const appHandlersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'app-handlers.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 assert.ok(
+  runtimeSource.includes('appHandlers: window.__appHandlers'),
+  'reader-runtime should inject app-handlers into reader-app-runtime'
+);
+
+assert.equal(
   runtimeSource.includes('window.__appHandlers.initMarksImport({'),
-  'reader-runtime should initialize marks import through app-handlers'
+  false,
+  'reader-runtime should not initialize marks import directly'
+);
+
+assert.ok(
+  appRuntimeSource.includes('deps.appHandlers.initMarksImport({'),
+  'reader-app-runtime should initialize marks import through app-handlers'
 );
 
 [

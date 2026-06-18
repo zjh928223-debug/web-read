@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const readerPlaybackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
@@ -29,8 +29,8 @@ assert.ok(
 );
 
 assert.ok(
-  /window\.__controlsModule\.init\(\{\s*state:\s*runtimeState,/m.test(appSource),
-  'app.js should pass explicit runtimeState into controls-module'
+  /deps\.controlsModule\.init\(\{\s*state:\s*deps\.runtimeState,/m.test(appRuntimeSource),
+  'reader-app-runtime should pass explicit runtimeState into controls-module'
 );
 
 console.log('control/playback state dependency check passed');
