@@ -5,16 +5,21 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-    'reader-runtime should import reader feature runtime'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should import reader runtime shell'
   );
   assert.ok(
-    runtimeSource.includes('initReaderFeatureRuntime({'),
-    'reader-runtime should delegate feature runtime setup'
+    shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime-shell should import reader feature runtime'
+  );
+  assert.ok(
+    shellSource.includes('initReaderFeatureRuntime({'),
+    'reader-runtime-shell should delegate feature runtime setup'
   );
   [
     'validateMarksArray: validateMarksArray',
@@ -25,7 +30,7 @@ async function main() {
     'findExactMatchRangeHelper: findExactMatchRangeHelper',
     'buildVocabMatchMap: buildVocabMatchMapHelper'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should pass required feature helper: ${pattern}`);
+    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should pass required feature helper: ${pattern}`);
   });
   [
     "import { initReaderImportRuntime } from './reader-import-runtime.js';",

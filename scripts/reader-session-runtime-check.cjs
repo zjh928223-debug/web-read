@@ -5,17 +5,22 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime should initialize session lifecycle wrappers through reader notes/session runtime'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should delegate session lifecycle wrappers through reader-runtime-shell'
   );
   assert.ok(
-    runtimeSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
-    'reader-runtime should initialize session lifecycle wrappers through the notes/session module'
+    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime-shell should initialize session lifecycle wrappers through reader notes/session runtime'
+  );
+  assert.ok(
+    shellSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    'reader-runtime-shell should initialize session lifecycle wrappers through the notes/session module'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
@@ -42,7 +47,7 @@ async function main() {
     'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
     'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should keep local injection binding: ${pattern}`);
+    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should keep local injection binding: ${pattern}`);
   });
 
   [

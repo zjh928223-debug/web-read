@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
@@ -16,7 +17,8 @@ assert.equal(appSource.includes('function bridgeToPinia()'), false, 'app.js shou
 assert.equal(appSource.includes('window.bridgeToPinia ='), false, 'app.js should not own window.bridgeToPinia');
 assert.equal(appSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js';"), false);
 assert.equal(appSource.includes('var bridgeToPinia = initPiniaBridge({'), false, 'reader-runtime should not initialize the bridge module directly');
-assert.ok(appSource.includes('var bridgeToPinia = notesRuntime.bridgeToPinia;'), 'reader-runtime should receive the bridge for injected callers');
+assert.ok(appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"), 'reader-runtime should delegate bridge startup through reader-runtime-shell');
+assert.ok(shellSource.includes('var bridgeToPinia = notesSessionRuntime.bridgeToPinia;'), 'reader-runtime-shell should receive the bridge for injected callers');
 assert.ok(notesRuntimeSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"));
 assert.ok(notesRuntimeSource.includes('var bridgeToPinia = initPiniaBridge({'), 'reader-notes-runtime should initialize the bridge module');
 assert.ok(bridgeSource.includes('function bridgeToPinia()'), 'bridge module should own bridgeToPinia implementation');

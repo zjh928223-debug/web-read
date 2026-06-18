@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const helperSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -21,16 +22,20 @@ async function main() {
     assert.ok(contextSource.includes(pattern), `reader-runtime-context should configure ${pattern}`);
   });
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime should use reader-runtime-context'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should delegate reader-runtime-context through reader-runtime-shell'
   );
   assert.ok(
-    runtimeSource.includes('const restoreReaderFocus = runtimeContext.restoreReaderFocus;'),
-    'reader-runtime should receive restoreReaderFocus from context'
+    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    'reader-runtime-shell should use reader-runtime-context'
   );
   assert.ok(
-    runtimeSource.includes('const toggleCurrentNote = runtimeContext.toggleCurrentNote;'),
-    'reader-runtime should receive toggleCurrentNote from context'
+    shellSource.includes('restoreReaderFocus: runtimeContext.restoreReaderFocus,'),
+    'reader-runtime-shell should receive restoreReaderFocus from context'
+  );
+  assert.ok(
+    shellSource.includes('toggleCurrentNote: runtimeContext.toggleCurrentNote,'),
+    'reader-runtime-shell should receive toggleCurrentNote from context'
   );
 
   [

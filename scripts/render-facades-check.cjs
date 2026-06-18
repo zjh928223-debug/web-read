@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
@@ -12,12 +13,16 @@ const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composabl
 const appHandlersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'app-handlers.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"),
-  'reader-runtime.js should keep direct render function imports for existing runtime injections'
+  shellSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"),
+  'reader-runtime-shell should keep direct render function imports for existing runtime injections'
 );
 assert.ok(
-  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-  'reader-runtime.js should configure render runtime through reader-feature-runtime'
+  appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+  'reader-runtime.js should delegate render runtime assembly through reader-runtime-shell'
+);
+assert.ok(
+  shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'reader-runtime-shell should configure render runtime through reader-feature-runtime'
 );
 assert.ok(
   featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),

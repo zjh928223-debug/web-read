@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
 const resolverSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble-resolver.js'), 'utf8');
@@ -29,8 +30,12 @@ assert.ok(
   'annotation-bubble-resolver should own window.notifyAnnotationBubbleWordClick'
 );
 assert.ok(
-  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-  'reader-runtime should initialize annotation bubble resolver through reader-feature-runtime'
+  appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+  'reader-runtime should delegate annotation bubble resolver through reader-runtime-shell'
+);
+assert.ok(
+  shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'reader-runtime-shell should initialize annotation bubble resolver through reader-feature-runtime'
 );
 assert.ok(
   featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),

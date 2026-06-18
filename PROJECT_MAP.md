@@ -5,7 +5,8 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 225 lines
+├── src/composables/reader-runtime.js  # Thin runtime entry, about 28 lines
+├── src/composables/reader-runtime-shell.js # Remaining runtime assembly shell, about 232 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -34,7 +35,7 @@ The page no longer contains inline DOM event handlers. Remaining legacy controls
 
 Cleanup rules:
 
-- Do not add user-facing feature logic to `src/composables/reader-runtime.js`.
+- Do not add user-facing feature logic to `src/composables/reader-runtime.js` or `src/composables/reader-runtime-shell.js`.
 - Migrate one boundary at a time and keep compatibility globals only until callers are moved.
 - Do not change IndexedDB schema or `index.html` script order without an explicit migration and full verification.
 - Treat `src/stores/` as compatibility only; long-term ownership belongs in `src/pinia-stores/`, focused runtime modules, or Vue components.
@@ -72,7 +73,8 @@ src/
 │   ├── notes.js
 │   └── annotation.js
 ├── composables/
-│   ├── reader-runtime.js        # remaining runtime assembly shell
+│   ├── reader-runtime.js        # thin runtime entry
+│   ├── reader-runtime-shell.js  # remaining runtime assembly shell
 │   ├── session-init.js
 │   ├── session-state-provider.js # temporary session-init state provider
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
@@ -159,7 +161,8 @@ Current state ownership is transitional:
 ```text
 src/composables/runtime-state-facade.js runtimeState
   ↕ temporary window.__state alias
-src/composables/reader-runtime.js remaining runtime assembly
+src/composables/reader-runtime.js thin runtime entry
+  → src/composables/reader-runtime-shell.js remaining runtime assembly
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components
@@ -198,6 +201,7 @@ npm run verify:inline-handler-bindings # Focused remaining inline handler migrat
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
+npm run verify:reader-runtime-shell # Focused reader runtime shell assembly check
 npm run verify:reader-runtime-context # Focused reader startup context composition check
 npm run verify:reader-feature-runtime # Focused reader feature runtime composition check
 npm run verify:reader-bootstrap-runtime # Focused reader bootstrap runtime setup check

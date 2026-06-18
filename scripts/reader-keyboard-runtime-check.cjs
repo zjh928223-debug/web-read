@@ -5,13 +5,18 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-    'reader-runtime should delegate keyboard setup through reader-feature-runtime'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should delegate keyboard setup through reader-runtime-shell'
+  );
+  assert.ok(
+    shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime-shell should delegate keyboard setup through reader-feature-runtime'
   );
   assert.ok(
     featureSource.includes("import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';"),

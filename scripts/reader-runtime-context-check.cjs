@@ -5,16 +5,21 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime should import the runtime context module'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should import the runtime shell module'
   );
   assert.ok(
-    runtimeSource.includes('var runtimeContext = initReaderRuntimeContext({'),
-    'reader-runtime should initialize through the runtime context module'
+    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    'reader-runtime-shell should import the runtime context module'
+  );
+  assert.ok(
+    shellSource.includes('var runtimeContext = initReaderRuntimeContext({'),
+    'reader-runtime-shell should initialize through the runtime context module'
   );
   [
     "import { collectReaderDomRefs } from './reader-dom-refs.js';",
@@ -35,13 +40,13 @@ async function main() {
   [
     'var bootstrapRuntime = runtimeContext.bootstrapRuntime;',
     '} = runtimeContext.domRefs;',
-    'const restoreReaderFocus = runtimeContext.restoreReaderFocus;',
-    'const toggleCurrentNote = runtimeContext.toggleCurrentNote;',
-    'const closeChunkNoteExportDialog = runtimeContext.closeChunkNoteExportDialog;',
-    'const getChunkNoteExportDialogEl = runtimeContext.getChunkNoteExportDialogEl;',
-    'runtimeContext.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);'
+    'restoreReaderFocus: runtimeContext.restoreReaderFocus,',
+    'toggleCurrentNote: runtimeContext.toggleCurrentNote,',
+    'closeChunkNoteExportDialog: runtimeContext.closeChunkNoteExportDialog,',
+    'getChunkNoteExportDialogEl: runtimeContext.getChunkNoteExportDialogEl,',
+    'setChunkNoteTransferApi: runtimeContext.setChunkNoteTransferApi'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should consume context output: ${pattern}`);
+    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should consume context output: ${pattern}`);
   });
 
   [

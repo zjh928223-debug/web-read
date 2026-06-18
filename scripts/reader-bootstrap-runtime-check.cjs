@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -18,12 +19,16 @@ async function main() {
     'reader-runtime-context should initialize bootstrap state through the module'
   );
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime should use reader-runtime-context'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should use reader-runtime-shell'
   );
   assert.ok(
-    runtimeSource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'),
-    'reader-runtime should bind bootstrap state from runtime context'
+    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    'reader-runtime-shell should use reader-runtime-context'
+  );
+  assert.ok(
+    shellSource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'),
+    'reader-runtime-shell should bind bootstrap state from runtime context'
   );
   [
     "import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';",
@@ -49,10 +54,10 @@ async function main() {
     );
   });
   [
-    'const _tr = bootstrapRuntime.transcriptState;',
-    'const _ch = bootstrapRuntime.chunkState;',
-    'const _clz = bootstrapRuntime.clozeState;',
-    'const _pb = bootstrapRuntime.playbackState;',
+    'const transcriptState = bootstrapRuntime.transcriptState;',
+    'const chunkState = bootstrapRuntime.chunkState;',
+    'const clozeState = bootstrapRuntime.clozeState;',
+    'const playbackState = bootstrapRuntime.playbackState;',
     'var saveToDB = bootstrapRuntime.saveToDB;',
     'var loadFromDB = bootstrapRuntime.loadFromDB;',
     '} = bootstrapRuntime.runtimeDeps;',
@@ -60,7 +65,7 @@ async function main() {
     'var hotkeyStateApi = bootstrapRuntime.hotkeyStateApi;',
     'var marksStateApi = bootstrapRuntime.marksStateApi;'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should bind bootstrap result: ${pattern}`);
+    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should bind bootstrap result: ${pattern}`);
   });
 
   [

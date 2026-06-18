@@ -5,16 +5,21 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime should import reader notes/session runtime'
+    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
+    'reader-runtime should delegate notes/session through reader runtime shell'
   );
   assert.ok(
-    runtimeSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
-    'reader-runtime should initialize notes/session through the combined module'
+    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime-shell should import reader notes/session runtime'
+  );
+  assert.ok(
+    shellSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    'reader-runtime-shell should initialize notes/session through the combined module'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
@@ -30,17 +35,17 @@ async function main() {
   assert.equal(runtimeSource.includes('var sessionRuntime = initReaderSessionRuntime({'), false);
 
   [
-    'var _ns = notesSessionRuntime.notesState;',
+    'var notesState = notesSessionRuntime.notesState;',
     'var bridgeToPinia = notesSessionRuntime.bridgeToPinia;',
-    'var _cnApi = notesSessionRuntime.chunkNotesApi;',
-    'var _snApi = notesSessionRuntime.sentenceNotesApi;',
+    'var chunkNotesApi = notesSessionRuntime.chunkNotesApi;',
+    'var sentenceNotesApi = notesSessionRuntime.sentenceNotesApi;',
     'var loadChunkNotesForCurrentAudio = notesSessionRuntime.loadChunkNotesForCurrentAudio;',
     'var setChunkNoteVisible = notesSessionRuntime.setChunkNoteVisible;',
     'var loadSentenceNotesForCurrentAudio = notesSessionRuntime.loadSentenceNotesForCurrentAudio;',
     'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
     'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should bind notes/session result: ${pattern}`);
+    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should bind notes/session result: ${pattern}`);
   });
 
   [
