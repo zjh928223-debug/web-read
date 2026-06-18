@@ -7,10 +7,12 @@ const appPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime.js');
 const importModulePath = path.join(repoRoot, 'src', 'composables', 'import-module.js');
 const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js');
 const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js');
+const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
 const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'utf8');
+const notesRuntimeSource = fs.readFileSync(notesRuntimePath, 'utf8');
 const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -120,7 +122,9 @@ assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
 assert.ok(runtimeStateBindingsSource.includes('export function configureRuntimeStateBindings'));
 assert.ok(runtimeStateBindingsSource.includes('Object.defineProperty(runtimeState, field, {'));
-assert.ok(appSource.includes('var _ns = window.__notesModule.getNotesState();'));
+assert.ok(appSource.includes('var _ns = notesRuntime.notesState;'));
+assert.equal(appSource.includes('var _ns = window.__notesModule.getNotesState();'), false);
+assert.ok(notesRuntimeSource.includes('var notesState = notesModule.getNotesState()'));
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandleAudioKey'), false);
 assert.equal(importModuleSource.includes('state.chunkNotesFileName'), false);

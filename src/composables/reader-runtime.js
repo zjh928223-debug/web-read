@@ -25,6 +25,7 @@
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
+    import { initReaderNotesRuntime } from './reader-notes-runtime.js';
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
@@ -40,7 +41,6 @@
         createChunkNoteTransferDialogAccess
     } from './reader-runtime-helpers.js';
     import { configureRuntimeStateBindings } from './runtime-state-bindings.js';
-    import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
     import {
@@ -187,59 +187,31 @@
     // Sentence prev-tap state is part of playback transient state.
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
-    var _ns = window.__notesModule.getNotesState();
-    var bridgeToPinia = initPiniaBridge({
+    var notesRuntime = initReaderNotesRuntime({
+        notesModule: window.__notesModule,
+        chunkNoteLayout: window.__chunkNoteLayout,
         transcriptState: _tr,
         chunkState: _ch,
         clozeState: _clz,
-        getNotesState: function () { return _ns; }
-    });
-    var _cnApi = window.__notesModule.initChunkNotes({
-        state: _ns,
         loadFromDB: loadFromDB,
         saveToDB: saveToDB,
-        getChunkNotesStorageKey: audioIdentityApi.getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey: audioIdentityApi.getChunkNoteDraftStorageKey,
-        sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
-        getIsChunkMode: function () { return _ch.isChunkMode; },
-        currentAudioKeyGetter: function () { return audioIdentityApi.currentAudioKey; },
-        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
+        audioIdentityApi: audioIdentityApi,
+        isPlainObjectRecord: isPlainObjectRecord,
         mainAppArea: mainAppArea,
         chunkNoteSvgLayer: chunkNoteSvgLayer,
         chunkNoteLayer: chunkNoteLayer,
-        getChunkNoteMeasureFont: window.__chunkNoteLayout.getChunkNoteMeasureFont,
-        measureChunkNoteTextBox: window.__chunkNoteLayout.measureChunkNoteTextBox,
-        applyChunkNoteAutoSize: window.__chunkNoteLayout.applyChunkNoteAutoSize,
-        buildChunkNoteLayout: window.__chunkNoteLayout.buildChunkNoteLayout,
-        canChunkNoteTextFitMinReadable: window.__chunkNoteLayout.canChunkNoteTextFitMinReadable,
-        makeSelectionNoteBaseId: window.__chunkNoteLayout.makeSelectionNoteBaseId,
-        makeSelectionNoteId: window.__chunkNoteLayout.makeSelectionNoteId,
-        findNearestChunkWord: window.__chunkNoteLayout.findNearestChunkWord,
-        saveOpenChunkNotePopover: function () {
-            if (_cnApi.getChunkNoteModalEl()) _cnApi.saveChunkNoteFromModal();
-        },
-        chunkNoteCtxMenuEl: chunkNoteCtxMenu
-    });
-    var _snApi = window.__notesModule.initSentenceNotes({
-        state: _ns,
-        loadFromDB: loadFromDB,
-        saveToDB: saveToDB,
-        getSentenceNotesStorageKey: audioIdentityApi.getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey: audioIdentityApi.getLegacySentenceNotesStorageKey,
-        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
-        isPlainObjectRecord: isPlainObjectRecord,
-        getIsChunkMode: function () { return _ch.isChunkMode; },
-        getHasAiChunkData: function () { return _ch.hasAiChunkData; },
+        chunkNoteCtxMenu: chunkNoteCtxMenu,
         notePreviewSidebar: notePreviewSidebar,
         notePreviewEmpty: notePreviewEmpty,
         notePreviewList: notePreviewList,
         toggleNotePreviewBtn: toggleNotePreviewBtn,
         notePreviewResizeHandle: notePreviewResizeHandle,
-        notePreviewResizeHandleY: notePreviewResizeHandleY,
-        initialNotePreviewVisible: true,
-        initialNotePreviewWidth: 340,
-        initialNotePreviewHeight: 640
+        notePreviewResizeHandleY: notePreviewResizeHandleY
     });
+    var _ns = notesRuntime.notesState;
+    var bridgeToPinia = notesRuntime.bridgeToPinia;
+    var _cnApi = notesRuntime.chunkNotesApi;
+    var _snApi = notesRuntime.sentenceNotesApi;
 
     // === Import module delegation (M4+M5 extracted → src/composables/import-module.js) ===
     configureSessionFacades({

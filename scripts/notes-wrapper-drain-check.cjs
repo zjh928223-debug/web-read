@@ -93,7 +93,7 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'buildChunkNotesSnapshot: _cnApi.buildChunkNotesSnapshot',
   'closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu',
   '_cnApi.ensureChunkNoteOverlayLayers();',
-  '_cnApi.tryRestoreChunkNoteDraft();'
+  'tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft'
 ].forEach((pattern) => {
   assert.ok(
     runtimeSource.includes(pattern),

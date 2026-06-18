@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
 const layoutSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-note-layout.js'), 'utf8');
 const helperModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'utils', 'chunk-note-layout-helpers.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
@@ -31,19 +32,24 @@ assert.equal(appSource.includes('window.ChunkNoteLayoutHelpers'), false, 'app.js
   );
 });
 
+assert.ok(
+  appSource.includes('chunkNoteLayout: window.__chunkNoteLayout'),
+  'reader-runtime should inject the chunk note layout module into notes runtime'
+);
+
 [
-  'getChunkNoteMeasureFont: window.__chunkNoteLayout.getChunkNoteMeasureFont',
-  'measureChunkNoteTextBox: window.__chunkNoteLayout.measureChunkNoteTextBox',
-  'applyChunkNoteAutoSize: window.__chunkNoteLayout.applyChunkNoteAutoSize',
-  'buildChunkNoteLayout: window.__chunkNoteLayout.buildChunkNoteLayout',
-  'canChunkNoteTextFitMinReadable: window.__chunkNoteLayout.canChunkNoteTextFitMinReadable',
-  'makeSelectionNoteBaseId: window.__chunkNoteLayout.makeSelectionNoteBaseId',
-  'makeSelectionNoteId: window.__chunkNoteLayout.makeSelectionNoteId',
-  'findNearestChunkWord: window.__chunkNoteLayout.findNearestChunkWord'
+  'getChunkNoteMeasureFont: chunkNoteLayout.getChunkNoteMeasureFont',
+  'measureChunkNoteTextBox: chunkNoteLayout.measureChunkNoteTextBox',
+  'applyChunkNoteAutoSize: chunkNoteLayout.applyChunkNoteAutoSize',
+  'buildChunkNoteLayout: chunkNoteLayout.buildChunkNoteLayout',
+  'canChunkNoteTextFitMinReadable: chunkNoteLayout.canChunkNoteTextFitMinReadable',
+  'makeSelectionNoteBaseId: chunkNoteLayout.makeSelectionNoteBaseId',
+  'makeSelectionNoteId: chunkNoteLayout.makeSelectionNoteId',
+  'findNearestChunkWord: chunkNoteLayout.findNearestChunkWord'
 ].forEach((pattern) => {
   assert.ok(
-    appSource.includes(pattern),
-    `reader-runtime should inject chunk note layout API directly: ${pattern}`
+    notesRuntimeSource.includes(pattern),
+    `reader-notes-runtime should inject chunk note layout API directly: ${pattern}`
   );
 });
 
