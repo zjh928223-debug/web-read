@@ -187,7 +187,7 @@ Do not change this schema without an explicit migration plan.
 - Hotkey runtime state now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores persisted hotkeys through the unchanged `st.*Key` state fields.
 - No-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades have been removed and are guarded by `verify:state-facades`.
 - Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
-- Unused sentence note runtime wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js` while session restore entry points are kept.
+- Unused sentence note runtime wrappers and thin sentence interaction wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js` while session restore entry points are kept.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.

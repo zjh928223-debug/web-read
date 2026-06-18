@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 937 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 929 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 937 lines
+reader-runtime.js                 about 929 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -262,7 +262,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 
 - Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
 - `reader-runtime.js` still configures thin compatibility dependencies for existing startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
-- `window.selectSentenceFromChunkTarget` remains as a compatibility export, but `ChunkModeView.vue` now reaches it through `src/composables/chunk-interactions.js` runtime configuration instead of a direct component call.
+- `window.selectSentenceFromChunkTarget` remains as a compatibility export, but `reader-runtime.js` now injects `src/composables/notes-module.js` sentence APIs directly into public facades and transcript/chunk interactions instead of keeping local thin wrappers.
 - `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
 
 ### Annotation Tools
@@ -452,7 +452,7 @@ Current checks cover:
 - removed unused chunk note runtime wrappers, including draft/modal/temp-annotation proxies, while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
 - removed absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path from `reader-runtime.js` through `verify:legacy-dom-drain`
-- removed unused sentence note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner and preserving `session-init.js` restore entry points through `verify:sentence-wrapper-drain`
+- removed unused sentence note runtime wrappers and thin sentence interaction wrappers while keeping `src/composables/notes-module.js` as behavior owner and preserving `session-init.js` restore entry points through `verify:sentence-wrapper-drain`
 - migrated audio identity state and derived storage/doc-id helpers into `src/composables/audio-identity-module.js` while keeping `session-init.js` audio restore calls unchanged through `verify:audio-identity-module`
 - migrated hotkey runtime state into `src/composables/hotkey-state-module.js` while keeping `session-init.js` hotkey restore writes unchanged through `verify:hotkey-state-module`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`

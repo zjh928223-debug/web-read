@@ -723,14 +723,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getWindow: function () { return window; }
     });
 
-    function selectSentenceFromChunkTarget(target) {
-        return _snApi.selectSentenceFromChunkTarget(target);
-    }
-
-    function hasActiveTextSelectionWithinChunk() {
-        return _snApi.hasActiveTextSelectionWithinChunk();
-    }
-
     // [MIGRATED] playback navigation → src/composables/playback-module.js
     window.__playbackModule.init({
         state: runtimeState,
@@ -758,8 +750,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         forceUpdateUI: forceUpdateUI,
         notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
         isChunkMode: function () { return _ch.isChunkMode; },
-        hasActiveTextSelectionWithinChunk: hasActiveTextSelectionWithinChunk,
-        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        hasActiveTextSelectionWithinChunk: _snApi.hasActiveTextSelectionWithinChunk,
+        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
         legacyTranscriptContainer: transcriptContainer
     });
 
@@ -768,7 +760,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getSelection: function () { return window.getSelection && window.getSelection(); },
         forceUpdateUI: forceUpdateUI,
         notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
-        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
         openChunkNoteContextFromEvent: openChunkNoteContextFromEvent
     });
 
@@ -926,7 +918,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
   
     // === Temporary compatibility exports for cross-module access ===
     configureReaderPublicFacades({
-        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
         openChunkNoteContextFromEvent: openChunkNoteContextFromEvent,
         buildCurrentSentenceDocId: buildCurrentSentenceDocId,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,

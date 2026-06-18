@@ -107,13 +107,32 @@ removedRuntimeWrappers.forEach((name) => {
 
 [
   'async function loadSentenceNotesForCurrentAudio()',
-  'async function switchSentenceNotesDoc(transcriptSource)',
-  'function selectSentenceFromChunkTarget(target)',
-  'function hasActiveTextSelectionWithinChunk()'
+  'async function switchSentenceNotesDoc(transcriptSource)'
 ].forEach((pattern) => {
   assert.ok(
     runtimeSource.includes(pattern),
     `reader-runtime should keep externally consumed sentence note boundary: ${pattern}`
+  );
+});
+
+[
+  'function selectSentenceFromChunkTarget(target)',
+  'function hasActiveTextSelectionWithinChunk()'
+].forEach((pattern) => {
+  assert.equal(
+    runtimeSource.includes(pattern),
+    false,
+    `reader-runtime should not keep thin sentence interaction wrapper: ${pattern}`
+  );
+});
+
+[
+  'hasActiveTextSelectionWithinChunk: _snApi.hasActiveTextSelectionWithinChunk',
+  'selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget'
+].forEach((pattern) => {
+  assert.ok(
+    runtimeSource.includes(pattern),
+    `reader-runtime should inject sentence note API directly: ${pattern}`
   );
 });
 
