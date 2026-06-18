@@ -18,6 +18,9 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'persistChunkNoteDraft',
   'getChunkNoteModalPosition',
   'applyTempAnnotationByCtx',
+  'buildChunkNotesSnapshot',
+  'saveChunkNotesNow',
+  'closeChunkNoteContextMenu',
   'setSelectedChunkNote',
   'closeChunkNoteDeleteDialog',
   'openChunkNoteDeleteDialog',
@@ -86,6 +89,9 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'handleChunkSelectionContextMenu: _cnApi.handleChunkSelectionContextMenu',
   'getChunkNoteTagById: _cnApi.getChunkNoteTagById',
   'getChunkNoteContentBoxSize: _cnApi.getChunkNoteContentBoxSize',
+  'saveChunkNotesNow: _cnApi.saveChunkNotesNow',
+  'buildChunkNotesSnapshot: _cnApi.buildChunkNotesSnapshot',
+  'closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu',
   '_cnApi.ensureChunkNoteOverlayLayers();',
   '_cnApi.tryRestoreChunkNoteDraft();'
 ].forEach((pattern) => {

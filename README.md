@@ -185,7 +185,7 @@ Do not change this schema without an explicit migration plan.
 - Marks import button binding now lives in `src/composables/app-handlers.js`; marks toggle behavior remains owned by `src/stores/marks.js`.
 - Marks runtime state now lives in `src/composables/marks-state-module.js`; `session-init.js` still restores and rebuilds marks through the unchanged `st.markedMap` state field.
 - Chunk note import/export button binding, download/write handling, and export overwrite dialog now live in `src/composables/chunk-note-transfer-module.js`.
-- Unused chunk note runtime wrappers and thin keyboard/modal/layout/visual chunk note wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
+- Unused chunk note runtime wrappers and thin keyboard/modal/layout/visual/save/snapshot/context-menu chunk note wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
 - Audio identity state and derived storage/doc-id helpers now live in `src/composables/audio-identity-module.js`; `session-init.js` still calls `applyCurrentAudioMeta(...)` and reads `st.currentAudioKey/currentAudioMeta`.
 - Hotkey runtime state now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores persisted hotkeys through the unchanged `st.*Key` state fields.

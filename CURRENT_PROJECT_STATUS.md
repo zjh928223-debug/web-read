@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 670 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 667 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 670 lines
+reader-runtime.js                 about 667 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines
@@ -455,7 +455,7 @@ Current checks cover:
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
 - migrated marks runtime state into `src/composables/marks-state-module.js` while keeping `session-init.js` marks restore/rebuild writes on `st.markedMap` through `verify:marks-state-module`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
-- removed unused chunk note runtime wrappers plus thin keyboard/modal/layout/visual chunk note wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
+- removed unused chunk note runtime wrappers plus thin keyboard/modal/layout/visual/save/snapshot/context-menu chunk note wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
 - removed absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path from `reader-runtime.js` through `verify:legacy-dom-drain`
 - removed unused sentence note runtime wrappers and thin sentence interaction wrappers while keeping `src/composables/notes-module.js` as behavior owner and preserving `session-init.js` restore entry points through `verify:sentence-wrapper-drain`

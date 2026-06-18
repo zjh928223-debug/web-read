@@ -129,12 +129,9 @@
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
     // State bridge (var _ns, _cnApi, _snApi) + API init happens in startup block
 
-    function buildChunkNotesSnapshot() { return _cnApi.buildChunkNotesSnapshot(); }
     // === Chunk-note persistence lifecycle ===
     async function loadChunkNotesForCurrentAudio() { return _cnApi.loadChunkNotesForCurrentAudio(); }
-    function saveChunkNotesNow() { return _cnApi.saveChunkNotesNow(); }
     function setChunkNoteVisible(next, persist) { return _cnApi.setChunkNoteVisible(next, persist); }
-    function closeChunkNoteContextMenu() { return _cnApi.closeChunkNoteContextMenu(); }
 
     // === Sentence notebook persistence lifecycle ===
     async function loadSentenceNotesForCurrentAudio() { return _snApi.loadSentenceNotesForCurrentAudio(); }
@@ -374,7 +371,7 @@
         chunkCnHoldBtn: chunkCnHoldBtn,
         audioPlayer: audioPlayer,
         updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI,
-        closeChunkNoteContextMenu: closeChunkNoteContextMenu,
+        closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu,
         closeChunkNotePopover: _cnApi.closeChunkNotePopover,
         renderChunkMode: renderChunkMode,
         renderTranscript: renderTranscript,
@@ -533,7 +530,7 @@
         handleBackwardClick: handleBackwardClick, handleForwardClick: handleForwardClick,
         closeCustomThemePanel: function () { window.__themeStore.closeCustomThemePanel(); },
         cancelChunkNoteModal: _cnApi.cancelChunkNoteModal,
-        closeChunkNoteContextMenu: typeof closeChunkNoteContextMenuRN !== 'undefined' ? closeChunkNoteContextMenuRN : closeChunkNoteContextMenu,
+        closeChunkNoteContextMenu: typeof closeChunkNoteContextMenuRN !== 'undefined' ? closeChunkNoteContextMenuRN : _cnApi.closeChunkNoteContextMenu,
         closeChunkNoteDeleteDialog: _cnApi.closeChunkNoteDeleteDialog,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         setSelectedChunkNote: _cnApi.setSelectedChunkNote,
@@ -591,13 +588,13 @@
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
         applyImportedChunkNotes: function (data) { return _cnApi.applyImportedChunkNotes(data); },
-        saveChunkNotesNow: saveChunkNotesNow,
+        saveChunkNotesNow: _cnApi.saveChunkNotesNow,
         getHasAiChunkData: function () { return _ch.hasAiChunkData; },
         getIsChunkMode: function () { return _ch.isChunkMode; },
         enterChunkMode: function () { return chunkControlsApi.toggleChunkMode(true); },
         setChunkNoteVisible: setChunkNoteVisible,
         renderChunkMode: renderChunkMode,
-        buildChunkNotesSnapshot: buildChunkNotesSnapshot,
+        buildChunkNotesSnapshot: _cnApi.buildChunkNotesSnapshot,
         getCurrentAudioFilenameBase: audioIdentityApi.getCurrentAudioFilenameBase,
         getChunkNotesFileState: function () { return _cnApi.getChunkNotesFileState(); },
         setChunkNotesFileState: function (fileState) { return _cnApi.setChunkNotesFileState(fileState); },
