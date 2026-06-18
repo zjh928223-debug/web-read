@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 667 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 665 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 667 lines
+reader-runtime.js                 about 665 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines

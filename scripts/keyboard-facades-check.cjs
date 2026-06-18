@@ -23,9 +23,10 @@ assert.ok(
   keyboardSource.includes('isInputLikeTarget: isInputLikeTarget'),
   'keyboard module API should still expose isInputLikeTarget'
 );
-assert.ok(
+assert.equal(
   appSource.includes('const isInputLikeTarget = window.__keyboardModule.isInputLikeTarget;'),
-  'app.js should use the keyboard module API for local dependency injection'
+  false,
+  'app.js should not keep unused local isInputLikeTarget alias'
 );
 
 console.log('keyboard facades check passed');

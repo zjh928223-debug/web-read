@@ -149,8 +149,6 @@
         return nextAudioState;
     }
 
-    const isInputLikeTarget = window.__keyboardModule.isInputLikeTarget;
-
     function restoreReaderFocus() {
         const focusTarget = mainAppArea || document.body;
         if (document.activeElement && typeof document.activeElement.blur === 'function') {
