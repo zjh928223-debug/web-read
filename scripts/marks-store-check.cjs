@@ -26,7 +26,7 @@ assert.equal(
 );
 
 assert.ok(
-  runtimeSource.includes('window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);'),
+  runtimeSource.includes('window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);'),
   'reader-runtime should inject keyboard mark toggle through the marks store'
 );
 

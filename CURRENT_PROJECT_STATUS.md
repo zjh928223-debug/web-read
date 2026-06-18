@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 989 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 990 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    39 compatibility/runtime modules
+  composables/                    40 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -96,8 +96,8 @@ ToastMessage.vue                  toast UI, about 27 lines
 Current composables:
 
 ```text
-session-init.js                   about 1590 lines
-reader-runtime.js                 about 989 lines
+session-init.js                   about 1592 lines
+reader-runtime.js                 about 990 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -109,6 +109,7 @@ chunk-note-transfer-module.js     about 195 lines
 visual-vocab-module.js            about 112 lines
 audio-identity-module.js          about 86 lines
 hotkey-state-module.js            about 35 lines
+marks-state-module.js             about 20 lines
 chunk-note-layout.js              about 169 lines
 transcript-state.js               about 112 lines
 chunk-state.js                    about 161 lines
@@ -204,6 +205,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 - Audio is loaded through `#audio-file`.
 - Audio identity state (`currentAudioMeta`, `currentAudioKey`, storage-key helpers, and current sentence doc id derivation) now lives in `src/composables/audio-identity-module.js`; `session-init.js` still reaches it through the unchanged `applyCurrentAudioMeta(...)` and `st.currentAudioKey/currentAudioMeta` contract.
 - Hotkey state (`markKey`, `notesKey`, annotation bubble key, AI chunk keys, and seek keys) now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores hotkeys through the unchanged `st.*Key` runtime state contract.
+- Marks runtime state (`markedMap`) now lives in `src/composables/marks-state-module.js`; `session-init.js` still restores and rebuilds marks through the unchanged `st.markedMap` runtime state contract.
 - Transcript JSON is loaded through `#transcript-file`.
 - `processTranscript(...)` remains a central transcript ingestion entry; its compatibility window facade is owned by `src/composables/import-module.js`.
 - Visual/vocab matching state (`globalVocab`, `vocabMatchMap`, and `window.processVisual`) now lives in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)` through the unchanged compatibility contract.
@@ -305,6 +307,7 @@ npm run verify:glass-effects
 npm run verify:style-editor-module
 npm run verify:app-handlers
 npm run verify:marks-store
+npm run verify:marks-state-module
 npm run verify:chunk-note-transfer
 npm run verify:notes-wrapper-drain
 npm run verify:visual-vocab-module
@@ -374,6 +377,7 @@ scripts/glass-effects-check.cjs
 scripts/style-editor-module-check.cjs
 scripts/app-handlers-check.cjs
 scripts/marks-store-check.cjs
+scripts/marks-state-module-check.cjs
 scripts/chunk-note-transfer-check.cjs
 scripts/notes-wrapper-drain-check.cjs
 scripts/visual-vocab-module-check.cjs
@@ -439,6 +443,7 @@ Current checks cover:
 - migrated initial chunk CN hold button label update into `src/composables/chunk-controls-module.js` through `verify:chunk-controls-module`
 - migrated marks import button binding into `src/composables/app-handlers.js` through `verify:app-handlers`
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
+- migrated marks runtime state into `src/composables/marks-state-module.js` while keeping `session-init.js` marks restore/rebuild writes on `st.markedMap` through `verify:marks-state-module`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
 - removed unused chunk note runtime wrappers, including draft/modal/temp-annotation proxies, while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
@@ -510,7 +515,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

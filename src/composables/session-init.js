@@ -297,7 +297,7 @@ import { getSessionState } from './session-state-provider.js';
         const sourceType = String(options.sourceType || 'annotation-import');
         const replaceExisting = options.replaceExisting !== false;
         const targetLookup = options.targetLookup instanceof Map ? options.targetLookup : buildAnnotationTargetCollection().byId;
-        const nextMap = replaceExisting ? new Map() : new Map(markedMap);
+        const nextMap = replaceExisting ? new Map() : new Map(st.markedMap);
         let addedCount = 0;
 
         annotationItems.forEach((item) => {

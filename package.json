@@ -38,6 +38,7 @@
     "verify:style-editor-module": "node scripts/style-editor-module-check.cjs",
     "verify:app-handlers": "node scripts/app-handlers-check.cjs",
     "verify:marks-store": "node scripts/marks-store-check.cjs",
+    "verify:marks-state-module": "node scripts/marks-state-module-check.cjs",
     "verify:chunk-note-transfer": "node scripts/chunk-note-transfer-check.cjs",
     "verify:notes-wrapper-drain": "node scripts/notes-wrapper-drain-check.cjs",
     "verify:visual-vocab-module": "node scripts/visual-vocab-module-check.cjs",

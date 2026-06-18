@@ -82,6 +82,7 @@ npm run verify:glass-effects # Focused glass effects module check
 npm run verify:style-editor-module # Focused style editor module check
 npm run verify:app-handlers # Focused app handlers module check
 npm run verify:marks-store # Focused marks store ownership check
+npm run verify:marks-state-module # Focused marks runtime state module check
 npm run verify:chunk-note-transfer # Focused chunk note import/export transfer check
 npm run verify:notes-wrapper-drain # Focused unused notes runtime wrapper check
 npm run verify:visual-vocab-module # Focused visual vocab state module check
@@ -135,7 +136,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 39 moduleized legacy behavior chunks
+├── composables/               # 40 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -155,7 +156,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, and hotkey runtime state go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, and marks runtime state go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -176,6 +177,7 @@ Do not change this schema without an explicit migration plan.
 - AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `reader-runtime.js` only initializes the module and passes its API to keyboard/import callers.
 - Theme control DOM bindings now live in `src/composables/theme-controls-module.js`; glass sizing setup and style editor parsing helpers are owned by `src/composables/glass-effects.js` and `src/composables/style-editor.js`.
 - Marks import button binding now lives in `src/composables/app-handlers.js`; marks toggle behavior remains owned by `src/stores/marks.js`.
+- Marks runtime state now lives in `src/composables/marks-state-module.js`; `session-init.js` still restores and rebuilds marks through the unchanged `st.markedMap` state field.
 - Chunk note import/export button binding, download/write handling, and export overwrite dialog now live in `src/composables/chunk-note-transfer-module.js`.
 - Unused chunk note runtime wrappers, including draft/modal/temp-annotation proxies, have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.

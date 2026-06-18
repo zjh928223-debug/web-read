@@ -30,6 +30,7 @@
     import { initVisualVocab } from './visual-vocab-module.js';
     import { initAudioIdentity } from './audio-identity-module.js';
     import { initHotkeyState } from './hotkey-state-module.js';
+    import { initMarksState } from './marks-state-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -411,7 +412,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // Playback transient state is owned by src/composables/playback-state.js.
 
     var hotkeyStateApi = initHotkeyState();
-    const markedMap = new Map();
+    var marksStateApi = initMarksState();
 
     // === AI Chunk Mode State ===
     // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.
@@ -526,7 +527,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'chunkNoteKey', { get: function() { return hotkeyStateApi.chunkNoteKey; }, set: function(v) { hotkeyStateApi.setChunkNoteKey(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'backwardKey', { get: function() { return hotkeyStateApi.backwardKey; }, set: function(v) { hotkeyStateApi.setBackwardKey(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'forwardKey', { get: function() { return hotkeyStateApi.forwardKey; }, set: function(v) { hotkeyStateApi.setForwardKey(v); }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'markedMap', { get: function() { return markedMap; }, set: function(v) { markedMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { markedMap.set(key, value); }); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'markedMap', { get: function() { return marksStateApi.markedMap; }, set: function(v) { marksStateApi.setMarkedMap(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'globalVocab', { get: function() { return visualVocabApi.globalVocab; }, set: function(v) { visualVocabApi.setGlobalVocab(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return visualVocabApi.vocabMatchMap; }, set: function(v) { visualVocabApi.setVocabMatchMap(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnVisible', { get: function() { return _ch.chunkCnVisible; }, set: function(v) { _ch.chunkCnVisible = v; }, enumerable: true, configurable: true });
@@ -590,7 +591,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         audioPlayer: audioPlayer,
         transcriptContainer: transcriptContainer,
         _ns: _ns,
-        markedMap: markedMap
+        markedMap: marksStateApi.markedMap
     });
 
     let chunkPointerDown = null;
@@ -709,7 +710,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     var annotationBubbleResolverApi = initAnnotationBubbleResolver({
         getWords: function () { return _tr.words; },
-        markedMap: markedMap,
+        markedMap: marksStateApi.markedMap,
         vocabMatchMap: visualVocabApi.vocabMatchMap
     });
     var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
@@ -813,7 +814,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getBackwardKey: function () { return hotkeyStateApi.backwardKey; },
         getForwardKey: function () { return hotkeyStateApi.forwardKey; },
         toggleMarkCurrent: function () {
-            window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
+            window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
         },
         toggleCurrentNote: toggleCurrentNote,
         toggleAnnotationBubble: toggleAnnotationBubble,
@@ -941,7 +942,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] exports → src/composables/app-handlers.js
     window.__appHandlers.initExports({
         exportJsonBtn: exportJsonBtn, exportMdAllBtn: exportMdAllBtn,
-        markedMap: markedMap, getSegments: function () { return _tr.segments; },
+        markedMap: marksStateApi.markedMap, getSegments: function () { return _tr.segments; },
         showError: showError, showToast: showToast
     });
 
@@ -950,7 +951,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
         validateMarksArray: validateMarksArray,
-        getWords: function () { return _tr.words; }, markedMap: markedMap,
+        getWords: function () { return _tr.words; }, markedMap: marksStateApi.markedMap,
         saveToDB: saveToDB,
         isChunkModeFn: function () { return _ch.isChunkMode; },
         renderTranscript: renderTranscript, renderChunkMode: renderChunkMode,
