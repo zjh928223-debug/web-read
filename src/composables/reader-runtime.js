@@ -129,18 +129,11 @@
     // State bridge (var _ns, _cnApi, _snApi) + API init happens in startup block
 
     function buildChunkNotesSnapshot() { return _cnApi.buildChunkNotesSnapshot(); }
-    function saveChunkNotesDebounced() { return _cnApi.saveChunkNotesDebounced(); }
     // === Chunk-note persistence lifecycle ===
     async function loadChunkNotesForCurrentAudio() { return _cnApi.loadChunkNotesForCurrentAudio(); }
     function saveChunkNotesNow() { return _cnApi.saveChunkNotesNow(); }
     function setChunkNoteVisible(next, persist) { return _cnApi.setChunkNoteVisible(next, persist); }
-    function getChunkBlockByRef(chunkRef) { return _cnApi.getChunkBlockByRef(chunkRef); }
     function closeChunkNoteContextMenu() { return _cnApi.closeChunkNoteContextMenu(); }
-    function openChunkNoteContextMenu(clientX, clientY, ctx) { return _cnApi.openChunkNoteContextMenu(clientX, clientY, ctx); }
-    function getChunkNoteAccent(note, indexHint) { return _cnApi.getChunkNoteAccent(note, indexHint); }
-    function clearChunkWordAnnotations(enDiv) { return _cnApi.clearChunkWordAnnotations(enDiv); }
-    function markChunkWordsByNotes(enDiv, notes) { return _cnApi.markChunkWordsByNotes(enDiv, notes); }
-    function setChunkNoteHoverTarget(noteId) { return _cnApi.setChunkNoteHoverTarget(noteId); }
 
     // === Sentence notebook persistence lifecycle ===
     async function loadSentenceNotesForCurrentAudio() { return _snApi.loadSentenceNotesForCurrentAudio(); }
