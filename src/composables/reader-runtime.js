@@ -1083,7 +1083,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markKey: markKey, notesKey: notesKey, annotationBubbleKey: annotationBubbleKey,
         chunkCnKey: chunkCnKey, chunkShadowKey: chunkShadowKey, chunkNoteKey: chunkNoteKey,
         backwardKey: backwardKey, forwardKey: forwardKey,
-        toggleMarkCurrent: toggleMarkCurrent,
+        toggleMarkCurrent: function () {
+            window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
+        },
         toggleCurrentNote: toggleCurrentNote,
         toggleAnnotationBubble: toggleAnnotationBubble,
         beginHoldChunkCn: chunkControlsApi.beginHoldChunkCn, endHoldChunkCn: chunkControlsApi.endHoldChunkCn,
@@ -1168,15 +1170,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
             audioPlayer.currentTime = next.start;
             forceUpdateUI(next.start);
         }
-    }
-
-    // [MIGRATED] mark ops → window.__marksStore
-    function syncMarkedWordVisual(globalIndex, isMarked) {
-        window.__marksStore.syncMarkedWordVisual(globalIndex, isMarked);
-    }
-
-    function toggleMarkCurrent() {
-        window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
     }
 
     // Highlight colors + hotkey bindings → keyboard-module
