@@ -138,25 +138,9 @@
 
     // === Sentence notebook persistence lifecycle ===
     async function loadSentenceNotesForCurrentAudio() { return _snApi.loadSentenceNotesForCurrentAudio(); }
-    function saveSentenceNotesDebounced() { return _snApi.saveSentenceNotesDebounced(); }
-    // Sentence notebook: data normalization + doc-scoped persistence
-    function normalizeSentenceNoteRecord(sentenceId, note) { return _snApi.normalizeSentenceNoteRecord(sentenceId, note); }
-    function normalizeSentenceNotesScope(scope) { return _snApi.normalizeSentenceNotesScope(scope); }
-    function getSentenceNoteRecord(sentenceId) { return _snApi.getSentenceNoteRecord(sentenceId); }
-    function getSortedSentenceNoteItems(sentenceId) { return _snApi.getSortedSentenceNoteItems(sentenceId); }
-    function ensureLegacySentenceNotesForDoc(docId) { return _snApi.ensureLegacySentenceNotesForDoc(docId); }
-    function persistSentenceNotebookNow() { return _snApi.persistSentenceNotebookNow(); }
-    function persistSentenceNotesForCurrentDoc() { return _snApi.persistSentenceNotesForCurrentDoc(); }
     async function switchSentenceNotesDoc(transcriptSource) { return _snApi.switchSentenceNotesDoc(transcriptSource); }
-    function getCurrentSentenceDocIdForExport() { return _snApi.getCurrentSentenceDocIdForExport(); }
-    function buildSentenceNotesExportSnapshot() { return _snApi.buildSentenceNotesExportSnapshot(); }
-    function triggerSentenceNotesDownload(snapshot, filename) { return _snApi.triggerSentenceNotesDownload(snapshot, filename); }
 
     // === Import / export / restore shared helpers ===
-    function persistSentenceNotebookBeforeContentSwitch() {
-        persistSentenceNotebookNow();
-    }
-
     const getFirstFileFromEvent = window.ImportExportSharedHelpers.getFirstFileFromEvent;
     const getCurrentAudioFilenameBase = (fallback = 'audio') => window.ImportExportSharedHelpers.getCurrentAudioFilenameBase(currentAudioMeta, fallback);
     const markFileLoaded = window.ImportExportSharedHelpers.markFileLoaded;
@@ -180,10 +164,6 @@
         if (focusTarget && typeof focusTarget.focus === 'function') {
             try { focusTarget.focus({ preventScroll: true }); } catch (err) {}
         }
-    }
-
-    function scheduleSentenceFocusCapture() {
-        setTimeout(() => { maybeCaptureSentenceFocusPhrase(); }, 0);
     }
 
     const readFileAsText = window.ImportExportSharedHelpers.readFileAsText;
@@ -752,84 +732,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function hasActiveTextSelectionWithinChunk() {
         return _snApi.hasActiveTextSelectionWithinChunk();
-    }
-
-    // === UI toggles + sentence notebook view layer ===
-    function applyNotePreviewWidth() {
-        return _snApi.applyNotePreviewSize();
-    }
-
-    // Sentence notebook: item metadata + save feedback
-    function formatSentenceNoteItemMeta(item, itemId, isEditing = false) {
-        return _snApi.formatSentenceNoteItemMeta(item, itemId, isEditing);
-    }
-
-    function triggerSentenceNoteSavedFeedback(itemId = '') {
-        return _snApi.triggerSentenceNoteSavedFeedback(itemId);
-    }
-
-    // Sentence notebook: draft/commit/persist core
-    function findSentenceNoteItem(sentenceId, itemId) {
-        return _snApi.findSentenceNoteItem(sentenceId, itemId);
-    }
-
-    function discardSentenceNoteDraft(shouldRender = true) {
-        return _snApi.discardSentenceNoteDraft(shouldRender);
-    }
-
-    function commitSentenceNoteDraft(shouldRender = true) {
-        return _snApi.commitSentenceNoteDraft(shouldRender);
-    }
-
-    function persistSentenceNoteItem(sentenceId, itemId, shouldRender = true) {
-        return _snApi.persistSentenceNoteItem(sentenceId, itemId, shouldRender);
-    }
-
-    function persistSelectedSentenceNote() {
-        return _snApi.persistSelectedSentenceNote();
-    }
-
-    // Sentence notebook: rendering + interaction wiring
-    function buildSentenceNoteItemElement(sentenceId, item, { isDraft = false } = {}) {
-        return _snApi.buildSentenceNoteItemElement(sentenceId, item, { isDraft });
-    }
-
-    function renderNotePreviewSidebar() {
-        return _snApi.renderNotePreviewSidebar();
-    }
-
-    function showNotePreviewEmptyState(message) {
-        return _snApi.showNotePreviewEmptyState(message);
-    }
-
-    // Sentence notebook: panel visibility + sentence selection
-    function toggleNotePreviewSidebar(forceState = null) {
-        return _snApi.toggleNotePreviewSidebar(forceState);
-    }
-
-    function setSelectedSentence(nextSentence) {
-        return _snApi.setSelectedSentence(nextSentence);
-    }
-
-    function updateSentenceFocusPhrase(sentence, focusPhrase) {
-        return _snApi.updateSentenceFocusPhrase(sentence, focusPhrase);
-    }
-
-    // Sentence notebook: selection capture + import/export integration
-    function getSelectionChunkSentence() {
-        return _snApi.getSelectionChunkSentence();
-    }
-
-    function maybeCaptureSentenceFocusPhrase() {
-        return _snApi.maybeCaptureSentenceFocusPhrase();
-    }
-
-    function applyImportedSentenceNotesSnapshot(data) {
-        return _snApi.applyImportedSentenceNotesSnapshot(data);
-    }
-
-    function initNotePreviewResize() {
-        return _snApi.initNotePreviewResize();
     }
 
     function findChunkIndexByTime(t) {
