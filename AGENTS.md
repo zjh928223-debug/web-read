@@ -154,6 +154,7 @@ npm run verify:style-editor-module  # Focused style editor module check
 npm run verify:app-handlers  # Focused app handlers module check
 npm run verify:marks-store  # Focused marks store ownership check
 npm run verify:chunk-note-transfer  # Focused chunk note import/export transfer check
+npm run verify:notes-wrapper-drain  # Focused unused notes runtime wrapper check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check
 npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check

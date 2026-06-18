@@ -300,6 +300,7 @@ npm run verify:style-editor-module
 npm run verify:app-handlers
 npm run verify:marks-store
 npm run verify:chunk-note-transfer
+npm run verify:notes-wrapper-drain
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -363,6 +364,7 @@ scripts/style-editor-module-check.cjs
 scripts/app-handlers-check.cjs
 scripts/marks-store-check.cjs
 scripts/chunk-note-transfer-check.cjs
+scripts/notes-wrapper-drain-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -422,6 +424,7 @@ Current checks cover:
 - migrated marks import button binding into `src/composables/app-handlers.js` through `verify:app-handlers`
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
+- removed unused chunk note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
