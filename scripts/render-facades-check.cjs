@@ -10,12 +10,14 @@ const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composabl
 const appHandlersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'app-handlers.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { configureRenderRuntime } from './render-runtime.js';"),
-  'app.js should configure the render runtime module'
+  appSource.includes("import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';"),
+  'reader-runtime.js should configure the render runtime module'
 );
 assert.ok(appSource.includes('configureRenderRuntime({'));
-assert.equal(appSource.includes('window.renderTranscript = renderTranscript'), false, 'app.js should not export window.renderTranscript');
-assert.equal(appSource.includes('window.renderChunkMode = renderChunkMode'), false, 'app.js should not export window.renderChunkMode');
+assert.equal(appSource.includes('function renderTranscript()'), false, 'reader-runtime.js should not own renderTranscript implementation');
+assert.equal(appSource.includes('function renderChunkMode()'), false, 'reader-runtime.js should not own renderChunkMode implementation');
+assert.equal(appSource.includes('window.renderTranscript = renderTranscript'), false, 'reader-runtime.js should not export window.renderTranscript');
+assert.equal(appSource.includes('window.renderChunkMode = renderChunkMode'), false, 'reader-runtime.js should not export window.renderChunkMode');
 
 assert.ok(sessionSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"));
 assert.equal(sessionSource.includes('window.renderTranscript'), false, 'session-init.js should not call window.renderTranscript');
@@ -24,6 +26,9 @@ assert.equal(sessionSource.includes('window.renderChunkMode'), false, 'session-i
 assert.ok(runtimeSource.includes('export function configureRenderRuntime'));
 assert.ok(runtimeSource.includes('export function renderTranscript'));
 assert.ok(runtimeSource.includes('export function renderChunkMode'));
+assert.ok(runtimeSource.includes('runtime.bridgeToPinia'), 'render runtime should own the bridge render call');
+assert.ok(runtimeSource.includes('bindClozeQuiz(transcriptContainer)'), 'render runtime should own cloze quiz binding');
+assert.ok(runtimeSource.includes('runtime.tryRestoreChunkNoteDraft'), 'render runtime should own chunk note draft restore hook');
 assert.equal(runtimeSource.includes('window.'), false, 'render runtime should not read or write window globals');
 assert.equal(runtimeSource.includes('document.'), false, 'render runtime should not read DOM globals');
 

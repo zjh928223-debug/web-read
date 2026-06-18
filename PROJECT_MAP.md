@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 665 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 601 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -105,7 +105,7 @@ src/
 │   ├── transcript-interactions.js # normal transcript word interaction binding
 │   ├── chunk-interactions.js     # AI chunk word/chunk interaction binding
 │   ├── cloze-interactions.js     # cloze answer/card interaction binding
-│   ├── render-runtime.js         # temporary render facade runtime
+│   ├── render-runtime.js         # render facade runtime + legacy cloze fallback binding
 │   ├── annotation-bubble.js       # annotation bubble DOM API module
 │   ├── annotation-api-settings-ui.js # annotation API settings panel module
 │   └── annotation-lightweight-module.js

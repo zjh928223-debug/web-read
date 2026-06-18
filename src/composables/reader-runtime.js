@@ -20,7 +20,7 @@
     import { initGlassEffects } from './glass-effects.js';
     import { configureTranscriptInteractions } from './transcript-interactions.js';
     import { configureChunkInteractions } from './chunk-interactions.js';
-    import { configureRenderRuntime } from './render-runtime.js';
+    import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';
     import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
@@ -406,38 +406,17 @@
 
     // M4+M5 delegated → src/composables/import-module.js
 
-    // === Main transcript/chunk rendering ===
-    // [PHASE 9] Body replaced — Vue renders. Old logic preserved in git history.
-    
-    // 1. Normal Mode Render (gutted — Vue handles rendering)
-    function renderTranscript() {
-        bridgeToPinia();
-    }
-
-    // 2. AI Chunk Mode Render (gutted — Vue handles rendering)
-    function renderChunkMode() {
-        bridgeToPinia();
-        const clozeMarkup = window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
-        if (clozeMarkup) {
-            transcriptContainer.insertAdjacentHTML('beforeend', clozeMarkup);
-            transcriptContainer.querySelectorAll('[data-cloze-check]').forEach((btn) => {
-                btn.addEventListener('click', () => window.__clozeCheck(Number(btn.dataset.clozeCheck)));
-            });
-            transcriptContainer.querySelectorAll('[data-cloze-input]').forEach((input) => {
-                input.addEventListener('keydown', (event) => {
-                    if (event.key === 'Enter') {
-                        event.preventDefault();
-                        window.__clozeCheck(Number(input.dataset.clozeInput));
-                    }
-                });
-            });
-        }
-        _cnApi.tryRestoreChunkNoteDraft();
-    }
-
     configureRenderRuntime({
-        renderTranscript: renderTranscript,
-        renderChunkMode: renderChunkMode
+        bridgeToPinia: bridgeToPinia,
+        getTranscriptContainer: function () { return transcriptContainer; },
+        getClozeMarkup: function () {
+            return window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
+        },
+        checkCloze: function (index) {
+            if (window.__clozeCheck) return window.__clozeCheck(index);
+            return undefined;
+        },
+        tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft
     });
 
     var annotationBubbleResolverApi = initAnnotationBubbleResolver({

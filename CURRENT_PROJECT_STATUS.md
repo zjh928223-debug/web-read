@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 665 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 601 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 665 lines
+reader-runtime.js                 about 601 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines
@@ -135,7 +135,7 @@ legacy-control-bindings.js        about 73 lines
 transcript-interactions.js        about 111 lines
 chunk-interactions.js             about 136 lines
 cloze-interactions.js             about 93 lines
-render-runtime.js                 about 21 lines
+render-runtime.js                 about 61 lines
 annotation-bubble.js              about 369 lines
 annotation-api-settings-ui.js     about 432 lines
 annotation-lightweight-module.js  about 82 lines
@@ -214,7 +214,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 - Visual/vocab matching state (`globalVocab`, `vocabMatchMap`, and `window.processVisual`) now lives in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)` through the unchanged compatibility contract.
 - Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
 - Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `reader-runtime.js` only configures temporary runtime dependencies.
-- `window.renderTranscript` and `window.renderChunkMode` have been removed. `session-init.js` now reaches the temporary render boundary through `src/composables/render-runtime.js`.
+- `window.renderTranscript` and `window.renderChunkMode` have been removed. `session-init.js` now reaches the temporary render boundary through `src/composables/render-runtime.js`, which owns the current Vue bridge render calls plus the legacy cloze fallback binding.
 - `session-init.js` now reaches the temporary state boundary through `src/composables/session-state-provider.js`.
 
 ### Playback Highlighting and Follow
@@ -436,6 +436,7 @@ Current checks cover:
 - migrated runtimeState getter/setter bindings for `st.*` compatibility into `src/composables/runtime-state-bindings.js` while keeping `session-init.js` state provider calls unchanged through `verify:state-facades`
 - migrated static DOM ref collection out of `reader-runtime.js` into `src/composables/reader-dom-refs.js` and removed no-consumer runtime DOM lookups while keeping `session-init.js` annotation settings DOM ownership unchanged through `verify:reader-dom-refs`
 - removed local audio identity and chunk note layout API aliases from `reader-runtime.js`, injecting module APIs directly while preserving `session-init.js` public facade calls through `verify:audio-identity-module` and `verify:chunk-note-layout-helpers`
+- moved the `renderTranscript` / `renderChunkMode` implementation body out of `reader-runtime.js` and into `src/composables/render-runtime.js`, while preserving the unchanged `session-init.js` render imports through `verify:render-facades`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - migrated `window.bridgeToPinia` and the Pinia sync implementation into `src/composables/pinia-bridge-module.js` through `verify:pinia-bridge-module`

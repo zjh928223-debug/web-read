@@ -158,12 +158,12 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, and marks runtime state go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
 - Cloze answer draft/check interaction now goes through `src/composables/cloze-interactions.js`; the old cloze render/check facades remain only for legacy fallback cleanup.
-- `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js` while remaining render dependencies are explicit injections.
+- `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js`, which owns the current Vue bridge render calls plus the legacy cloze fallback binding through explicit injections.
 - Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - Playback helper behavior now goes through `src/composables/playback-runtime-helpers.js`; `reader-runtime.js` only injects its API into playback and controls modules, including sentence-mode previous/next jumps.
