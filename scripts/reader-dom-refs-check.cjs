@@ -4,16 +4,26 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
 const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-dom-refs.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 assert.ok(
-  runtimeSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
-  'reader-runtime should import reader DOM refs collector'
+  contextSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
+  'reader-runtime-context should import reader DOM refs collector'
 );
 assert.ok(
-  runtimeSource.includes('} = collectReaderDomRefs();'),
-  'reader-runtime should collect DOM refs through reader-dom-refs'
+  contextSource.includes('var domRefs = collectReaderDomRefs(getDocument());'),
+  'reader-runtime-context should collect DOM refs through reader-dom-refs'
+);
+assert.ok(
+  runtimeSource.includes('} = runtimeContext.domRefs;'),
+  'reader-runtime should receive DOM refs from reader-runtime-context'
+);
+assert.equal(
+  runtimeSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
+  false,
+  'reader-runtime should not import reader DOM refs collector directly'
 );
 
 [

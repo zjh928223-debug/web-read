@@ -5,18 +5,28 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"),
-    'reader-runtime should import reader bootstrap runtime'
+    contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"),
+    'reader-runtime-context should import reader bootstrap runtime'
   );
   assert.ok(
-    runtimeSource.includes('var bootstrapRuntime = initReaderBootstrapRuntime({'),
-    'reader-runtime should initialize bootstrap state through the module'
+    contextSource.includes('var bootstrapRuntime = initReaderBootstrapRuntime({'),
+    'reader-runtime-context should initialize bootstrap state through the module'
+  );
+  assert.ok(
+    runtimeSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    'reader-runtime should use reader-runtime-context'
+  );
+  assert.ok(
+    runtimeSource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'),
+    'reader-runtime should bind bootstrap state from runtime context'
   );
   [
+    "import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';",
     "import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';",
     "import { initAudioIdentity } from './audio-identity-module.js';",
     "import { initHotkeyState } from './hotkey-state-module.js';",

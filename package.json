@@ -29,6 +29,7 @@
     "verify:session-state-provider": "node scripts/session-state-provider-check.cjs",
     "verify:runtime-state-source": "node scripts/runtime-state-source-check.cjs",
     "verify:runtime-state-facade": "node scripts/runtime-state-facade-check.cjs",
+    "verify:reader-runtime-context": "node scripts/reader-runtime-context-check.cjs",
     "verify:reader-bootstrap-runtime": "node scripts/reader-bootstrap-runtime-check.cjs",
     "verify:reader-runtime-deps": "node scripts/reader-runtime-deps-check.cjs",
     "verify:reader-notes-session-runtime": "node scripts/reader-notes-session-runtime-check.cjs",

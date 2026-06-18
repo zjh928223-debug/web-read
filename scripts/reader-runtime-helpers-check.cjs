@@ -5,22 +5,39 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const helperSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("} from './reader-runtime-helpers.js';"),
-    'reader-runtime should import reader runtime helpers'
+    contextSource.includes("} from './reader-runtime-helpers.js';"),
+    'reader-runtime-context should import reader runtime helpers'
   );
   [
     'createReaderFocusRestorer({',
     'createCurrentNoteToggler({',
     'createChunkNoteTransferDialogAccess({'
   ].forEach((pattern) => {
-    assert.ok(runtimeSource.includes(pattern), `reader-runtime should configure ${pattern}`);
+    assert.ok(contextSource.includes(pattern), `reader-runtime-context should configure ${pattern}`);
   });
+  assert.ok(
+    runtimeSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    'reader-runtime should use reader-runtime-context'
+  );
+  assert.ok(
+    runtimeSource.includes('const restoreReaderFocus = runtimeContext.restoreReaderFocus;'),
+    'reader-runtime should receive restoreReaderFocus from context'
+  );
+  assert.ok(
+    runtimeSource.includes('const toggleCurrentNote = runtimeContext.toggleCurrentNote;'),
+    'reader-runtime should receive toggleCurrentNote from context'
+  );
 
   [
+    "} from './reader-runtime-helpers.js';",
+    'createReaderFocusRestorer({',
+    'createCurrentNoteToggler({',
+    'createChunkNoteTransferDialogAccess({',
     'function restoreReaderFocus()',
     'function toggleCurrentNote()',
     'function closeChunkNoteExportDialog()',

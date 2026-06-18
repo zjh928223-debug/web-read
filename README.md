@@ -12,13 +12,13 @@ This is a working hybrid app, not a clean Vue-only rewrite.
 
 ```text
 legacy DOM shell + module-bound controls
-        ↓
+        ->
 src/composables/reader-runtime.js remaining runtime assembly shell
-        ↓
+        ->
 window.__state / state adapters / Pinia bridge module compatibility
-        ↓
+        ->
 Pinia stores in src/pinia-stores
-        ↓
+        ->
 Vue components
 ```
 
@@ -70,6 +70,7 @@ npm run verify:inline-handler-bindings # Focused remaining inline handler migrat
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
+npm run verify:reader-runtime-context # Focused reader startup context composition check
 npm run verify:reader-bootstrap-runtime # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
 npm run verify:reader-notes-session-runtime # Focused reader notes/session runtime setup check
@@ -145,14 +146,14 @@ annotation-api-settings-ui.js
 
 ```text
 src/
-├── main.js                    # Vue mount + Pinia adapter binding
-├── App.vue                    # Root component
-├── components/                # 5 Vue components
-├── pinia-stores/              # 9 real Pinia stores
-├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 55 moduleized legacy behavior chunks
-├── utils/                     # 11 utility ES modules
-└── services/annotation/       # 14 annotation pipeline ES modules
+|-- main.js                    # Vue mount + Pinia adapter binding
+|-- App.vue                    # Root component
+|-- components/                # 5 Vue components
+|-- pinia-stores/              # 9 real Pinia stores
+|-- stores/                    # 9 legacy window compatibility stores
+|-- composables/               # 56 moduleized legacy behavior chunks
+|-- utils/                     # 11 utility ES modules
+`-- services/annotation/       # 14 annotation pipeline ES modules
 ```
 
 ## Data Storage
@@ -170,7 +171,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader bootstrap runtime, reader runtime dependency collection, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader startup context, reader bootstrap runtime, reader runtime dependency collection, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -182,6 +183,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - `src/composables/runtime-state-bindings.js` now owns the `runtimeState` getter/setter bindings that preserve current `st.*` compatibility for startup/session code.
+- `src/composables/reader-runtime-context.js` owns startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
 - `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; `session-init.js` still owns its annotation settings DOM setup.
 - `src/composables/reader-bootstrap-runtime.js` owns initial state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization for the runtime shell.
 - `src/composables/reader-runtime-deps.js` owns runtime utility/global helper dependency collection for validation, import helpers, identity keys, playback indexes, chunk matching, and vocab matching.

@@ -9,12 +9,14 @@ const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtim
 const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js');
 const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
 const importRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js');
+const contextPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
 const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'utf8');
 const notesRuntimeSource = fs.readFileSync(notesRuntimePath, 'utf8');
 const importRuntimeSource = fs.readFileSync(importRuntimePath, 'utf8');
+const contextSource = fs.readFileSync(contextPath, 'utf8');
 const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -112,7 +114,9 @@ function assertNoStateProperty(field) {
   assert.equal(pattern.test(appSource), false, `app.js should not contain ${pattern}`);
 });
 
-assert.ok(appSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
+assert.ok(appSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"));
+assert.ok(appSource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'));
+assert.ok(contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
 assert.ok(appSource.includes('const _tr = bootstrapRuntime.transcriptState;'));
 assert.ok(appSource.includes('const _ch = bootstrapRuntime.chunkState;'));
 assert.ok(appSource.includes('const _clz = bootstrapRuntime.clozeState;'));

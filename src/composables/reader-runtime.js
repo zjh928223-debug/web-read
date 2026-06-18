@@ -18,19 +18,13 @@
     import './render-mode.js';
     import './annotation-lightweight-module.js';
     import { renderTranscript, renderChunkMode } from './render-runtime.js';
-    import { collectReaderDomRefs } from './reader-dom-refs.js';
-    import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';
+    import { initReaderRuntimeContext } from './reader-runtime-context.js';
     import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';
     import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
     import { initReaderAppRuntime } from './reader-app-runtime.js';
     import { initReaderImportRuntime } from './reader-import-runtime.js';
-    import {
-        createReaderFocusRestorer,
-        createCurrentNoteToggler,
-        createChunkNoteTransferDialogAccess
-    } from './reader-runtime-helpers.js';
     import { showToast, showError } from './ui-facades.js';
     import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';
 
@@ -43,9 +37,11 @@
     // [MIGRATED] DB schema constants → window.__audioStore
 
     // Phase 4: Vue rendering default lives in src/composables/render-mode.js.
-    var bootstrapRuntime = initReaderBootstrapRuntime({
-        getWindow: function () { return window; }
+    var runtimeContext = initReaderRuntimeContext({
+        getWindow: function () { return window; },
+        getDocument: function () { return document; }
     });
+    var bootstrapRuntime = runtimeContext.bootstrapRuntime;
     const _tr = bootstrapRuntime.transcriptState;
     const _ch = bootstrapRuntime.chunkState;
     const _clz = bootstrapRuntime.clozeState;
@@ -80,8 +76,6 @@
 
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
 
-    var chunkNoteTransferApi = null;
-
     // === UI layer entrypoint: DOM bindings ===
     const {
         audioPlayer, transcriptContainer, toggleFollowBtn, highlightModeBtn,
@@ -103,22 +97,11 @@
         importMarksBtn, importMarksInput, exportJsonBtn, exportMdAllBtn,
         exportAnnotationLightweightBtn, importAnnotationLightweightInput,
         importAnnotationLightweightBtn
-    } = collectReaderDomRefs();
-    const restoreReaderFocus = createReaderFocusRestorer({
-        getDocument: function () { return document; },
-        getFocusTarget: function () { return mainAppArea; }
-    });
-    const toggleCurrentNote = createCurrentNoteToggler({
-        chunkState: _ch,
-        transcriptState: _tr,
-        playbackState: _pb,
-        getDocument: function () { return document; }
-    });
-    const chunkNoteTransferDialogAccess = createChunkNoteTransferDialogAccess({
-        getTransferApi: function () { return chunkNoteTransferApi; }
-    });
-    const closeChunkNoteExportDialog = chunkNoteTransferDialogAccess.closeChunkNoteExportDialog;
-    const getChunkNoteExportDialogEl = chunkNoteTransferDialogAccess.getChunkNoteExportDialogEl;
+    } = runtimeContext.domRefs;
+    const restoreReaderFocus = runtimeContext.restoreReaderFocus;
+    const toggleCurrentNote = runtimeContext.toggleCurrentNote;
+    const closeChunkNoteExportDialog = runtimeContext.closeChunkNoteExportDialog;
+    const getChunkNoteExportDialogEl = runtimeContext.getChunkNoteExportDialogEl;
 
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.
@@ -371,4 +354,4 @@
         showToast: showToast,
         showError: showError
     });
-    chunkNoteTransferApi = appRuntime.chunkNoteTransferApi;
+    runtimeContext.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);
