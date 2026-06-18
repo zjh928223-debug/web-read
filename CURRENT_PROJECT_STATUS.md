@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 384 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 362 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    53 compatibility/runtime modules
+  composables/                    54 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,10 +97,11 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 384 lines
+reader-runtime.js                 about 362 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines
+reader-bootstrap-runtime.js       about 45 lines
 reader-runtime-deps.js            about 41 lines
 reader-notes-runtime.js           about 68 lines
 reader-session-runtime.js         about 31 lines
@@ -203,6 +204,7 @@ window.__USE_VUE_RENDERING = true
 `src/main.js` then mirrors the render flag into the transcript Pinia store and applies the legacy/Vue container display mode. The Vue components are active, but many interactions still rely on:
 
 - module-bound legacy controls from `src/composables/legacy-control-bindings.js`
+- bootstrap state/helper setup delegated through `src/composables/reader-bootstrap-runtime.js`
 - session lifecycle wrappers delegated through `src/composables/reader-session-runtime.js`
 - render/playback setup delegated through `src/composables/reader-interaction-runtime.js`
 - control setup delegated through `src/composables/reader-controls-runtime.js`
@@ -314,6 +316,7 @@ npm run verify:inline-handler-bindings
 npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
 npm run verify:runtime-state-source
+npm run verify:reader-bootstrap-runtime
 npm run verify:reader-runtime-deps
 npm run verify:reader-notes-runtime
 npm run verify:reader-session-runtime
@@ -465,6 +468,7 @@ Current checks cover:
 - migrated `runtimeState` and the temporary `window.__state` alias into `src/composables/runtime-state-facade.js` through `verify:runtime-state-facade`
 - migrated runtimeState getter/setter bindings for `st.*` compatibility into `src/composables/runtime-state-bindings.js` while keeping `session-init.js` state provider calls unchanged through `verify:state-facades`
 - migrated static DOM ref collection out of `reader-runtime.js` into `src/composables/reader-dom-refs.js` and removed no-consumer runtime DOM lookups while keeping `session-init.js` annotation settings DOM ownership unchanged through `verify:reader-dom-refs`
+- moved bootstrap state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization out of `reader-runtime.js` into `src/composables/reader-bootstrap-runtime.js` while keeping `session-init.js` state/audio/hotkey/marks contracts unchanged through `verify:reader-bootstrap-runtime`
 - moved reader runtime utility/global helper dependency collection out of `reader-runtime.js` into `src/composables/reader-runtime-deps.js` while keeping import/chunk/cloze/playback/session contracts unchanged through `verify:reader-runtime-deps`
 - moved shared notes state, chunk/sentence notes API initialization, and Pinia bridge initialization out of `reader-runtime.js` into `src/composables/reader-notes-runtime.js` while keeping `session-init.js` notes restore/public facade calls unchanged through `verify:reader-notes-runtime`
 - moved session-facing chunk/sentence note lifecycle wrappers and the `applyCurrentAudioMeta(...)` side-effect wrapper out of `reader-runtime.js` into `src/composables/reader-session-runtime.js` while keeping `session-init.js` restore/public facade contracts unchanged through `verify:reader-session-runtime`
@@ -566,7 +570,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader runtime dependency collection, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader bootstrap runtime, reader runtime dependency collection, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

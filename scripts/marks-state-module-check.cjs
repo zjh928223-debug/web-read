@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'marks-state-module.js'), 'utf8');
@@ -12,12 +13,30 @@ async function main() {
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initMarksState } from './marks-state-module.js';"),
-    'reader-runtime should import marks state module'
+    runtimeSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"),
+    'reader-runtime should initialize marks state through reader bootstrap runtime'
   );
   assert.ok(
+    runtimeSource.includes('var marksStateApi = bootstrapRuntime.marksStateApi;'),
+    'reader-runtime should receive marks state through the bootstrap module'
+  );
+  assert.equal(
+    runtimeSource.includes("import { initMarksState } from './marks-state-module.js';"),
+    false,
+    'reader-runtime should not import marks state module directly'
+  );
+  assert.equal(
     runtimeSource.includes('var marksStateApi = initMarksState();'),
-    'reader-runtime should initialize marks state through the module'
+    false,
+    'reader-runtime should not initialize marks state directly'
+  );
+  assert.ok(
+    bootstrapSource.includes("import { initMarksState } from './marks-state-module.js';"),
+    'reader-bootstrap-runtime should import marks state module'
+  );
+  assert.ok(
+    bootstrapSource.includes('marksStateApi: initMarksState()'),
+    'reader-bootstrap-runtime should initialize marks state through the module'
   );
   assert.ok(
     bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'markedMap', () => marksStateApi.markedMap, (value) => { marksStateApi.setMarkedMap(value); })"),

@@ -65,10 +65,11 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 384 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 362 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
+- `src/composables/reader-bootstrap-runtime.js` - state adapter references, DB compatibility wrappers, runtime helper collection, audio identity, hotkey state, and marks state bootstrap.
 - `src/composables/reader-runtime-deps.js` - runtime utility/global helper dependency collection.
 - `src/composables/reader-notes-runtime.js` - shared notes state, chunk/sentence notes API setup, and Pinia bridge runtime.
 - `src/composables/reader-session-runtime.js` - session-facing chunk/sentence note lifecycle wrappers and `applyCurrentAudioMeta(...)` side-effect wrapper.
@@ -158,6 +159,7 @@ npm run verify:inline-handler-bindings  # Focused remaining inline handler migra
 npm run verify:control-playback-state-deps  # Focused controls/playback state dependency check
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:runtime-state-source  # Focused runtime state source guard
+npm run verify:reader-bootstrap-runtime  # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps  # Focused reader runtime dependency collection check
 npm run verify:reader-notes-runtime  # Focused reader notes runtime setup check
 npm run verify:reader-session-runtime  # Focused reader session runtime setup check

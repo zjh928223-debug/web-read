@@ -112,10 +112,11 @@ function assertNoStateProperty(field) {
   assert.equal(pattern.test(appSource), false, `app.js should not contain ${pattern}`);
 });
 
-assert.ok(appSource.includes('const _tr = window.__transcriptState;'));
-assert.ok(appSource.includes('const _ch = window.__chunkState;'));
-assert.ok(appSource.includes('const _clz = window.__clozeState;'));
-assert.ok(appSource.includes('const _pb = window.__playbackState;'));
+assert.ok(appSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
+assert.ok(appSource.includes('const _tr = bootstrapRuntime.transcriptState;'));
+assert.ok(appSource.includes('const _ch = bootstrapRuntime.chunkState;'));
+assert.ok(appSource.includes('const _clz = bootstrapRuntime.clozeState;'));
+assert.ok(appSource.includes('const _pb = bootstrapRuntime.playbackState;'));
 assert.ok(appSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
 assert.ok(appSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
 assert.equal(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"), false);

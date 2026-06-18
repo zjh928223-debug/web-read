@@ -19,7 +19,7 @@
     import './annotation-lightweight-module.js';
     import { renderTranscript, renderChunkMode } from './render-runtime.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
-    import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
+    import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
     import { initReaderSessionRuntime } from './reader-session-runtime.js';
     import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
@@ -27,9 +27,6 @@
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
     import { initReaderAppRuntime } from './reader-app-runtime.js';
     import { initReaderImportRuntime } from './reader-import-runtime.js';
-    import { initAudioIdentity } from './audio-identity-module.js';
-    import { initHotkeyState } from './hotkey-state-module.js';
-    import { initMarksState } from './marks-state-module.js';
     import {
         createReaderFocusRestorer,
         createCurrentNoteToggler,
@@ -47,13 +44,15 @@
     // [MIGRATED] DB schema constants → window.__audioStore
 
     // Phase 4: Vue rendering default lives in src/composables/render-mode.js.
-    const _tr = window.__transcriptState;
-    const _ch = window.__chunkState;
-    const _clz = window.__clozeState;
-    const _pb = window.__playbackState;
-    // [MIGRATED] DB operations → window.__audioStore
-    var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
-    var loadFromDB = function (id) { return window.__audioStore.loadFromDB(id); };
+    var bootstrapRuntime = initReaderBootstrapRuntime({
+        getWindow: function () { return window; }
+    });
+    const _tr = bootstrapRuntime.transcriptState;
+    const _ch = bootstrapRuntime.chunkState;
+    const _clz = bootstrapRuntime.clozeState;
+    const _pb = bootstrapRuntime.playbackState;
+    var saveToDB = bootstrapRuntime.saveToDB;
+    var loadFromDB = bootstrapRuntime.loadFromDB;
 
     // === Validation/parsing utilities (extracted to data-utils.js) ===
     const {
@@ -71,34 +70,13 @@
         tokenizeTextHelper,
         findExactMatchRangeHelper,
         buildVocabMatchMapHelper,
-        buildAudioKey,
-        buildCurrentAudioMetaState,
-        getCurrentAudioFilenameBase,
-        getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey,
-        getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey,
-        buildCurrentSentenceDocId,
         getFirstFileFromEvent,
         markFileLoaded,
         readFileAsText
-    } = collectReaderRuntimeDeps({
-        transcriptState: _tr,
-        getWindow: function () { return window; }
-    });
+    } = bootstrapRuntime.runtimeDeps;
 
     // === Identity/storage key helpers (extracted to identity-and-storage-keys.js) ===
-    var audioIdentityApi = initAudioIdentity({
-        buildAudioKey: buildAudioKey,
-        buildCurrentAudioMetaState: buildCurrentAudioMetaState,
-        getCurrentAudioFilenameBase: getCurrentAudioFilenameBase,
-        getChunkNotesStorageKey: getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
-        getSentenceNotesStorageKey: getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey: getLegacySentenceNotesStorageKey,
-        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
-        getSegments: function () { return _tr.segments; }
-    });
+    var audioIdentityApi = bootstrapRuntime.audioIdentityApi;
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
 
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
@@ -146,8 +124,8 @@
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.
 
-    var hotkeyStateApi = initHotkeyState();
-    var marksStateApi = initMarksState();
+    var hotkeyStateApi = bootstrapRuntime.hotkeyStateApi;
+    var marksStateApi = bootstrapRuntime.marksStateApi;
 
     // === AI Chunk Mode State ===
     // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.

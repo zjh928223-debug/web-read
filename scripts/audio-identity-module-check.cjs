@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
   const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
@@ -12,12 +13,30 @@ async function main() {
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initAudioIdentity } from './audio-identity-module.js';"),
-    'reader-runtime should import audio identity module'
+    runtimeSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"),
+    'reader-runtime should initialize audio identity through reader bootstrap runtime'
   );
   assert.ok(
+    runtimeSource.includes('var audioIdentityApi = bootstrapRuntime.audioIdentityApi;'),
+    'reader-runtime should receive audio identity API from bootstrap runtime'
+  );
+  assert.equal(
+    runtimeSource.includes("import { initAudioIdentity } from './audio-identity-module.js';"),
+    false,
+    'reader-runtime should not import audio identity module directly'
+  );
+  assert.equal(
     runtimeSource.includes('var audioIdentityApi = initAudioIdentity({'),
-    'reader-runtime should initialize audio identity through the module'
+    false,
+    'reader-runtime should not initialize audio identity directly'
+  );
+  assert.ok(
+    bootstrapSource.includes("import { initAudioIdentity } from './audio-identity-module.js';"),
+    'reader-bootstrap-runtime should import audio identity module'
+  );
+  assert.ok(
+    bootstrapSource.includes('var audioIdentityApi = initAudioIdentity({'),
+    'reader-bootstrap-runtime should initialize audio identity through the module'
   );
   assert.ok(
     bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'currentAudioMeta', () => audioIdentityApi.currentAudioMeta"),
