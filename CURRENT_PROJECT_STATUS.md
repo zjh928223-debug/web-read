@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 990 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 985 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 990 lines
+reader-runtime.js                 about 985 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -419,6 +419,7 @@ Current checks cover:
 - playback transient state adapter ownership through `verify:playback-state`
 - migrated `window.__state` owner facades through `verify:state-facades`
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
+- removed no-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades through `verify:state-facades`
 - removed `window.__bridge` startup dependency through `verify:bridge-startup`
 - Phase 3 state ownership stage gate passed through `npm test`, `npm run verify:playback`, and `npm run verify:interactions`
 - migrated chunk/cloze file picker inline handlers and cloze button DOM ownership through `verify:file-input-bindings`

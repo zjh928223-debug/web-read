@@ -494,9 +494,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         restoreReaderFocus: restoreReaderFocus,
         bridgeToPinia: bridgeToPinia
     });
-    // chunkNoteModalEl: use independent storage to avoid let TDZ
-    var __chunkNoteModalEl = null;
-    Object.defineProperty(runtimeState, 'chunkNoteModalEl', { get: function() { return __chunkNoteModalEl; }, set: function(v) { __chunkNoteModalEl = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'segments', { get: function() { return _tr.segments; }, set: function(v) { _tr.segments = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'words', { get: function() { return _tr.words; }, set: function(v) { _tr.words = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'wordStarts', { get: function() { return _tr.wordStarts; }, set: function(v) { _tr.wordStarts = v; }, enumerable: true, configurable: true });
@@ -537,7 +534,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'lastActiveChunkIndex', { get: function() { return _ch.lastActiveChunkIndex; }, set: function(v) { _ch.lastActiveChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'lastAiPrevTapChunkIndex', { get: function() { return _ch.lastAiPrevTapChunkIndex; }, set: function(v) { _ch.lastAiPrevTapChunkIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'lastAiPrevTapAt', { get: function() { return _ch.lastAiPrevTapAt; }, set: function(v) { _ch.lastAiPrevTapAt = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'chunkPointerDown', { get: function() { return chunkPointerDown; }, set: function(v) { chunkPointerDown = v; }, enumerable: true, configurable: true });
 
     var chunkControlsApi = null;
     var _cpApi = window.__importModule.initChunkPipeline({
@@ -594,7 +590,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markedMap: marksStateApi.markedMap
     });
 
-    let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
     var highlightControlsApi = initHighlightControls({

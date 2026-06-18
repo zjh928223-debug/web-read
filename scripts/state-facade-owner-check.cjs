@@ -76,6 +76,8 @@ function assertNoStateProperty(field) {
   'holdPrevChunkCnVisible',
   'lastSentencePrevTapSegIndex',
   'lastSentencePrevTapAt',
+  'chunkNoteModalEl',
+  'chunkPointerDown',
 ].forEach(assertNoStateProperty);
 
 [
@@ -98,6 +100,8 @@ function assertNoStateProperty(field) {
   /\blet\s+chunkNotesFileHandle\b/,
   /\blet\s+chunkNotesFileHandleAudioKey\b/,
   /\blet\s+chunkNotesFileName\b/,
+  /\blet\s+chunkPointerDown\b/,
+  /\bvar\s+__chunkNoteModalEl\b/,
 ].forEach((pattern) => {
   assert.equal(pattern.test(appSource), false, `app.js should not contain ${pattern}`);
 });

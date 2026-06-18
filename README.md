@@ -183,6 +183,7 @@ Do not change this schema without an explicit migration plan.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
 - Audio identity state and derived storage/doc-id helpers now live in `src/composables/audio-identity-module.js`; `session-init.js` still calls `applyCurrentAudioMeta(...)` and reads `st.currentAudioKey/currentAudioMeta`.
 - Hotkey runtime state now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores persisted hotkeys through the unchanged `st.*Key` state fields.
+- No-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades have been removed and are guarded by `verify:state-facades`.
 - Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
 - Unused sentence note runtime wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js` while session restore entry points are kept.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
