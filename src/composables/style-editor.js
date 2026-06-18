@@ -1,5 +1,15 @@
+  function safeParseLocalJSON(key, fallbackValue) {
+    try {
+      var raw = localStorage.getItem(key);
+      if (!raw) return fallbackValue;
+      var parsed = JSON.parse(raw);
+      return parsed == null ? fallbackValue : parsed;
+    } catch (e) {
+      return fallbackValue;
+    }
+  }
+
   function init(deps) {
-    var safeParseLocalJSON = deps.safeParseLocalJSON;
     var adjustChunkNoteArrowSizeByGap = deps.adjustChunkNoteArrowSizeByGap;
     var renderAllChunkNoteTags = deps.renderAllChunkNoteTags;
     var scheduleChunkNoteConnectorRedraw = deps.scheduleChunkNoteConnectorRedraw;

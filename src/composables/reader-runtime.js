@@ -57,17 +57,6 @@
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
     var loadFromDB = function (id) { return window.__audioStore.loadFromDB(id); };
 
-    function safeParseLocalJSON(key, fallbackValue) {
-        try {
-            const raw = localStorage.getItem(key);
-            if (!raw) return fallbackValue;
-            const parsed = JSON.parse(raw);
-            return parsed ?? fallbackValue;
-        } catch (e) {
-            return fallbackValue;
-        }
-    }
-
     // === Validation/parsing utilities (extracted to data-utils.js) ===
     const {
         isPlainObjectRecord,
@@ -748,7 +737,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // [MIGRATED] style editor → src/composables/style-editor.js
     window.__styleEditor.init({
-        safeParseLocalJSON: safeParseLocalJSON,
         adjustChunkNoteArrowSizeByGap: _cnApi.adjustChunkNoteArrowSizeByGap,
         renderAllChunkNoteTags: renderAllChunkNoteTags,
         scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
