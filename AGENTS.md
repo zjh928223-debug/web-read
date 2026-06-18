@@ -65,7 +65,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 1104 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 1091 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/session-facades.js` - public session/annotation facade stubs.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
@@ -157,6 +157,7 @@ npm run verify:marks-store  # Focused marks store ownership check
 npm run verify:chunk-note-transfer  # Focused chunk note import/export transfer check
 npm run verify:notes-wrapper-drain  # Focused unused notes runtime wrapper check
 npm run verify:visual-vocab-module  # Focused visual vocab state module check
+npm run verify:legacy-dom-drain  # Focused removed legacy DOM lookup check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check
 npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check

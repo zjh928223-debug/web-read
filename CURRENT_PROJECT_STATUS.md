@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 1104 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 1091 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
-reader-runtime.js                 about 1104 lines
+reader-runtime.js                 about 1091 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -304,6 +304,7 @@ npm run verify:marks-store
 npm run verify:chunk-note-transfer
 npm run verify:notes-wrapper-drain
 npm run verify:visual-vocab-module
+npm run verify:legacy-dom-drain
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -369,6 +370,7 @@ scripts/marks-store-check.cjs
 scripts/chunk-note-transfer-check.cjs
 scripts/notes-wrapper-drain-check.cjs
 scripts/visual-vocab-module-check.cjs
+scripts/legacy-dom-drain-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -430,6 +432,7 @@ Current checks cover:
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
 - removed unused chunk note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
+- removed absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path from `reader-runtime.js` through `verify:legacy-dom-drain`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

@@ -41,6 +41,7 @@
     "verify:chunk-note-transfer": "node scripts/chunk-note-transfer-check.cjs",
     "verify:notes-wrapper-drain": "node scripts/notes-wrapper-drain-check.cjs",
     "verify:visual-vocab-module": "node scripts/visual-vocab-module-check.cjs",
+    "verify:legacy-dom-drain": "node scripts/legacy-dom-drain-check.cjs",
     "verify:audio-store-facades": "node scripts/audio-store-facades-check.cjs",
     "verify:chunk-note-style-facades": "node scripts/chunk-note-style-facades-check.cjs",
     "verify:keyboard-facades": "node scripts/keyboard-facades-check.cjs",

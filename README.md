@@ -85,6 +85,7 @@ npm run verify:marks-store # Focused marks store ownership check
 npm run verify:chunk-note-transfer # Focused chunk note import/export transfer check
 npm run verify:notes-wrapper-drain # Focused unused notes runtime wrapper check
 npm run verify:visual-vocab-module # Focused visual vocab state module check
+npm run verify:legacy-dom-drain # Focused removed legacy DOM lookup check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
 npm run verify:cloze-interactions # Focused cloze answer interaction check
@@ -175,6 +176,7 @@ Do not change this schema without an explicit migration plan.
 - Chunk note import/export button binding, download/write handling, and export overwrite dialog now live in `src/composables/chunk-note-transfer-module.js`.
 - Unused chunk note runtime wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
+- Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.

@@ -372,21 +372,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const themeCustomBorderInput = document.getElementById('theme-custom-border');
     const themeCustomButtonInput = document.getElementById('theme-custom-button');
     const themeCustomResetBtn = document.getElementById('theme-custom-reset');
-    const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
     const toggleChunkBtn = document.getElementById('toggle-chunk-btn'); 
     const chunkCnHoldBtn = document.getElementById('btn-chunk-cn-hold');
     
     // Inputs & Labels
     const audioFileInput = document.getElementById('audio-file');
     const transcriptFileInput = document.getElementById('transcript-file');
-    const notesFileInput = document.getElementById('notes-file');
     const visualFileInput = document.getElementById('visual-file');
     const chunkFileInput = document.getElementById('chunk-file'); 
     const clozeFileInput = document.getElementById('cloze-file');
     
     const lblAudio = document.getElementById('lbl-audio');
     const lblTranscript = document.getElementById('lbl-transcript');
-    const lblNotes = document.getElementById('lbl-notes');
     const lblVisual = document.getElementById('lbl-visual');
 
     const highlightColorInput = document.getElementById('highlight-color-input');
@@ -397,7 +394,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     const hotkeyAnnotationBubbleInput = document.getElementById('hotkey-annotation-bubble-input');
     const hotkeyBackwardInput = document.getElementById('hotkey-backward-input');
     const hotkeyForwardInput = document.getElementById('hotkey-forward-input');
-    const hotkeySidebarInput = document.getElementById('hotkey-sidebar-input');
     const hotkeyChunkCnInput = document.getElementById('hotkey-chunk-cn-input'); 
     const hotkeyChunkShadowInput = document.getElementById('hotkey-chunk-shadow-input');
     const hotkeyChunkNoteInput = document.getElementById('hotkey-chunk-note-input');
@@ -439,7 +435,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let markKey = 'm';
     let notesKey = 'n';
     let annotationBubbleKey = 'b';
-    let sidebarKey = 'v';
     let chunkCnKey = 'c'; 
     let chunkShadowKey = 's'; 
     let chunkNoteKey = 'x';
@@ -760,14 +755,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     }
 
     // === UI toggles + sentence notebook view layer ===
-    function toggleSidebar() {
-        document.body.classList.toggle('sidebar-open');
-        if (toggleSidebarBtn) {
-            toggleSidebarBtn.classList.toggle('active', document.body.classList.contains('sidebar-open'));
-        }
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
-    }
-
     function applyNotePreviewWidth() {
         return _snApi.applyNotePreviewSize();
     }
