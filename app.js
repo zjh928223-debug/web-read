@@ -1604,7 +1604,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
     window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
     window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;
-    window.isInputLikeTarget = isInputLikeTarget;
     window.getAnnotationGenerationScope = getAnnotationGenerationScope;
     window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
     window.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;

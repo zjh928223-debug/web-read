@@ -382,3 +382,4 @@
     init: init,
     isInputLikeTarget: isInputLikeTarget
   };
+  window.isInputLikeTarget = isInputLikeTarget;

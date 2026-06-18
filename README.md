@@ -72,6 +72,7 @@ npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
 npm run verify:audio-store-facades # Focused DB compatibility facade check
 npm run verify:chunk-note-style-facades # Focused chunk note style facade check
+npm run verify:keyboard-facades # Focused keyboard helper facade check
 npm run verify:chunk-controls-module # Focused AI chunk controls module check
 npm run verify:highlight-controls-module # Focused highlight controls module check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
@@ -153,6 +154,7 @@ Do not change this schema without an explicit migration plan.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
 - DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
 - Chunk note style compatibility facades now live in `src/composables/notes-module.js`.
+- `window.isInputLikeTarget` now lives in `src/composables/keyboard-module.js`.
 - Highlight mode controls and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`.
 - AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
