@@ -74,6 +74,7 @@ npm run verify:reader-runtime-deps # Focused reader runtime dependency collectio
 npm run verify:reader-notes-runtime # Focused reader notes runtime setup check
 npm run verify:reader-playback-runtime # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime # Focused reader controls runtime setup check
+npm run verify:reader-keyboard-runtime # Focused reader keyboard runtime setup check
 npm run verify:reader-runtime-helpers # Focused reader runtime helper extraction check
 npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
@@ -143,7 +144,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 48 moduleized legacy behavior chunks
+├── composables/               # 49 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -163,7 +164,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader runtime dependency collection, reader notes runtime, reader playback runtime, reader controls runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader runtime dependency collection, reader notes runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -180,6 +181,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/reader-notes-runtime.js` owns shared notes state, chunk/sentence notes API initialization, and Pinia bridge initialization for the runtime shell.
 - `src/composables/reader-playback-runtime.js` owns annotation bubble resolver setup, playback helper setup, playback module initialization, and transcript/chunk interaction configuration.
 - `src/composables/reader-controls-runtime.js` owns highlight/chunk/theme control initialization, style editor initialization, and annotation settings UI initialization for the runtime shell.
+- `src/composables/reader-keyboard-runtime.js` owns keyboard module initialization and injects hotkey, mark, chunk-note, and panel-close dependencies.
 - `src/composables/reader-runtime-helpers.js` owns reader focus restore, current-note toggling, and chunk-note export dialog access helpers used by import/keyboard callers.
 - Local audio identity and chunk note layout API aliases have been removed from `reader-runtime.js`; runtime assembly now injects those module APIs directly.
 - `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.

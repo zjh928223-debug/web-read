@@ -5,6 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
+const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 
 assert.ok(
@@ -74,7 +75,7 @@ assert.equal(/\blet\s+holdPrevHadFocusClass\b/.test(appSource), false);
   'chunkControlsApi.toggleChunkCn',
   'chunkControlsApi.toggleChunkShadow'
 ].forEach((fragment) => {
-  assert.ok(appSource.includes(fragment), `app.js should delegate through ${fragment}`);
+  assert.ok(keyboardRuntimeSource.includes(fragment.replace('chunkControlsApi.', 'deps.chunkControlsApi.')), `reader-keyboard-runtime should delegate through ${fragment}`);
 });
 
 assert.equal(

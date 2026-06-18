@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'hotkey-state-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
@@ -34,11 +35,11 @@ async function main() {
       `runtimeState.${field} should read/write hotkey module state`
     );
     assert.ok(
-      runtimeSource.includes(`get${setter.slice(3)}: function () { return hotkeyStateApi.${field}; }`),
+      keyboardRuntimeSource.includes(`get${setter.slice(3)}: function () { return deps.hotkeyStateApi.${field} }`),
       `keyboard init should pass dynamic getter for ${field}`
     );
     assert.ok(
-      runtimeSource.includes(`${setter}: hotkeyStateApi.${setter}`),
+      keyboardRuntimeSource.includes(`${setter}: deps.hotkeyStateApi.${setter}`),
       `keyboard init should pass module setter for ${field}`
     );
     assert.equal(

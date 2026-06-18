@@ -5,6 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'marks-state-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -30,7 +31,6 @@ async function main() {
   [
     'markedMap: marksStateApi.markedMap',
     'var playbackRuntime = initReaderPlaybackRuntime({',
-    'window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);',
     'window.__appHandlers.initExports({',
     'window.__appHandlers.initMarksImport({'
   ].forEach((pattern) => {
@@ -39,6 +39,15 @@ async function main() {
       `reader-runtime should pass marks state through explicit deps: ${pattern}`
     );
   });
+
+  assert.ok(
+    keyboardRuntimeSource.includes('deps.marksStore.toggleMark('),
+    'reader-keyboard-runtime should inject keyboard mark toggle through the marks store'
+  );
+  assert.ok(
+    keyboardRuntimeSource.includes('deps.marksStateApi.markedMap'),
+    'reader-keyboard-runtime should pass marks state into the mark toggle'
+  );
 
   assert.equal(
     sessionInitSource.includes('new Map(markedMap)'),

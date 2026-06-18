@@ -25,6 +25,7 @@
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
     import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
+    import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
     import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
     import { initVisualVocab } from './visual-vocab-module.js';
     import { initAudioIdentity } from './audio-identity-module.js';
@@ -374,65 +375,42 @@
     var handleBackwardClick = playbackRuntime.handleBackwardClick;
     var handleForwardClick = playbackRuntime.handleForwardClick;
 
-    // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
-    window.__keyboardModule.init({
+    initReaderKeyboardRuntime({
+        keyboardModule: window.__keyboardModule,
+        marksStore: window.__marksStore,
+        themeStore: window.__themeStore,
         audioPlayer: audioPlayer,
-        isChunkMode: function () { return _ch.isChunkMode; },
-        chunkCnHoldMode: function () { return _ch.chunkCnHoldMode; },
-        chunkNoteVisible: function () { return _ns.chunkNoteVisible; },
-        markKey: hotkeyStateApi.markKey, notesKey: hotkeyStateApi.notesKey, annotationBubbleKey: hotkeyStateApi.annotationBubbleKey,
-        chunkCnKey: hotkeyStateApi.chunkCnKey, chunkShadowKey: hotkeyStateApi.chunkShadowKey, chunkNoteKey: hotkeyStateApi.chunkNoteKey,
-        backwardKey: hotkeyStateApi.backwardKey, forwardKey: hotkeyStateApi.forwardKey,
-        getMarkKey: function () { return hotkeyStateApi.markKey; },
-        getNotesKey: function () { return hotkeyStateApi.notesKey; },
-        getAnnotationBubbleKey: function () { return hotkeyStateApi.annotationBubbleKey; },
-        getChunkCnKey: function () { return hotkeyStateApi.chunkCnKey; },
-        getChunkShadowKey: function () { return hotkeyStateApi.chunkShadowKey; },
-        getChunkNoteKey: function () { return hotkeyStateApi.chunkNoteKey; },
-        getBackwardKey: function () { return hotkeyStateApi.backwardKey; },
-        getForwardKey: function () { return hotkeyStateApi.forwardKey; },
-        toggleMarkCurrent: function () {
-            window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
-        },
+        transcriptState: _tr,
+        chunkState: _ch,
+        notesState: _ns,
+        hotkeyStateApi: hotkeyStateApi,
+        marksStateApi: marksStateApi,
+        chunkControlsApi: chunkControlsApi,
+        chunkNotesApi: _cnApi,
+        saveToDB: saveToDB,
+        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
         toggleCurrentNote: toggleCurrentNote,
         toggleAnnotationBubble: toggleAnnotationBubble,
-        beginHoldChunkCn: chunkControlsApi.beginHoldChunkCn, endHoldChunkCn: chunkControlsApi.endHoldChunkCn,
-        toggleChunkCn: chunkControlsApi.toggleChunkCn, toggleChunkShadow: chunkControlsApi.toggleChunkShadow,
         setChunkNoteVisible: setChunkNoteVisible,
-        handleBackwardClick: handleBackwardClick, handleForwardClick: handleForwardClick,
-        closeCustomThemePanel: function () { window.__themeStore.closeCustomThemePanel(); },
-        cancelChunkNoteModal: _cnApi.cancelChunkNoteModal,
-        closeChunkNoteContextMenu: typeof closeChunkNoteContextMenuRN !== 'undefined' ? closeChunkNoteContextMenuRN : _cnApi.closeChunkNoteContextMenu,
-        closeChunkNoteDeleteDialog: _cnApi.closeChunkNoteDeleteDialog,
+        handleBackwardClick: handleBackwardClick,
+        handleForwardClick: handleForwardClick,
+        closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
-        setSelectedChunkNote: _cnApi.setSelectedChunkNote,
-        openChunkNoteDeleteDialog: _cnApi.openChunkNoteDeleteDialog,
-        getChunkNoteDeleteDialogEl: function () { return _cnApi.getChunkNoteDeleteDialogEl(); },
-        selectedChunkNoteId: function () { return _cnApi.getSelectedChunkNoteId(); },
-        handleChunkSelectionContextMenu: _cnApi.handleChunkSelectionContextMenu,
-        chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
-        pendingChunkSelectionCtx: function () { return _cnApi.getPendingChunkSelectionCtx(); },
-        consumePendingChunkSelectionCtx: function () { return _cnApi.consumePendingChunkSelectionCtx(); },
-        openChunkNotePopover: _cnApi.openChunkNotePopover,
-        hotkeyInput: hotkeyInput, hotkeyNotesInput: hotkeyNotesInput,
-        hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
-        hotkeyBackwardInput: hotkeyBackwardInput, hotkeyForwardInput: hotkeyForwardInput,
-        hotkeyChunkCnInput: hotkeyChunkCnInput, hotkeyChunkShadowInput: hotkeyChunkShadowInput,
-        hotkeyChunkNoteInput: hotkeyChunkNoteInput,
-        highlightColorInput: highlightColorInput, sentenceColorInput: sentenceColorInput,
-        themeCustomPanel: themeCustomPanel, themeControlsEl: themeControlsEl,
-        setMarkKey: hotkeyStateApi.setMarkKey,
-        setNotesKey: hotkeyStateApi.setNotesKey,
-        setAnnotationBubbleKey: hotkeyStateApi.setAnnotationBubbleKey,
-        setChunkCnKey: hotkeyStateApi.setChunkCnKey,
-        setChunkShadowKey: hotkeyStateApi.setChunkShadowKey,
-        setChunkNoteKey: hotkeyStateApi.setChunkNoteKey,
-        setBackwardKey: hotkeyStateApi.setBackwardKey,
-        setForwardKey: hotkeyStateApi.setForwardKey,
-        chunkNoteCtxMenu: chunkNoteCtxMenu,
         getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
-        getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
-        saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal
+        chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
+        hotkeyInput: hotkeyInput,
+        hotkeyNotesInput: hotkeyNotesInput,
+        hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
+        hotkeyBackwardInput: hotkeyBackwardInput,
+        hotkeyForwardInput: hotkeyForwardInput,
+        hotkeyChunkCnInput: hotkeyChunkCnInput,
+        hotkeyChunkShadowInput: hotkeyChunkShadowInput,
+        hotkeyChunkNoteInput: hotkeyChunkNoteInput,
+        highlightColorInput: highlightColorInput,
+        sentenceColorInput: sentenceColorInput,
+        themeCustomPanel: themeCustomPanel,
+        themeControlsEl: themeControlsEl,
+        chunkNoteCtxMenu: chunkNoteCtxMenu
     });
 
     // Highlight colors + hotkey bindings → keyboard-module

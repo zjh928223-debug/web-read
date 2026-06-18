@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
 const marksStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'marks.js'), 'utf8');
 const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -26,8 +27,13 @@ assert.equal(
 );
 
 assert.ok(
-  runtimeSource.includes('window.__marksStore.toggleMark(marksStateApi.markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);'),
-  'reader-runtime should inject keyboard mark toggle through the marks store'
+  runtimeSource.includes('marksStore: window.__marksStore'),
+  'reader-runtime should inject the marks store into keyboard runtime'
+);
+
+assert.ok(
+  keyboardRuntimeSource.includes('deps.marksStore.toggleMark('),
+  'reader-keyboard-runtime should inject keyboard mark toggle through the marks store'
 );
 
 assert.ok(
