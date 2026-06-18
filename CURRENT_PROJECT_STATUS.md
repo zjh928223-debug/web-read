@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 1180 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 1104 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    36 compatibility/runtime modules
+  composables/                    37 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
-reader-runtime.js                 about 1180 lines
+reader-runtime.js                 about 1104 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -106,6 +106,7 @@ playback-module.js                about 253 lines
 style-editor.js                   about 211 lines
 app-handlers.js                   about 97 lines
 chunk-note-transfer-module.js     about 195 lines
+visual-vocab-module.js            about 112 lines
 chunk-note-layout.js              about 169 lines
 transcript-state.js               about 112 lines
 chunk-state.js                    about 161 lines
@@ -201,6 +202,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 - Audio is loaded through `#audio-file`.
 - Transcript JSON is loaded through `#transcript-file`.
 - `processTranscript(...)` remains a central transcript ingestion entry; its compatibility window facade is owned by `src/composables/import-module.js`.
+- Visual/vocab matching state (`globalVocab`, `vocabMatchMap`, and `window.processVisual`) now lives in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)` through the unchanged compatibility contract.
 - Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
 - Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `reader-runtime.js` only configures temporary runtime dependencies.
 - `window.renderTranscript` and `window.renderChunkMode` have been removed. `session-init.js` now reaches the temporary render boundary through `src/composables/render-runtime.js`.
@@ -301,6 +303,7 @@ npm run verify:app-handlers
 npm run verify:marks-store
 npm run verify:chunk-note-transfer
 npm run verify:notes-wrapper-drain
+npm run verify:visual-vocab-module
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -365,6 +368,7 @@ scripts/app-handlers-check.cjs
 scripts/marks-store-check.cjs
 scripts/chunk-note-transfer-check.cjs
 scripts/notes-wrapper-drain-check.cjs
+scripts/visual-vocab-module-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -425,6 +429,7 @@ Current checks cover:
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
 - removed unused chunk note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
+- migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`
@@ -489,7 +494,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

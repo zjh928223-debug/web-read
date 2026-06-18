@@ -27,6 +27,7 @@
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
     import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
+    import { initVisualVocab } from './visual-vocab-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -446,9 +447,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     let forwardKey = 'ArrowRight';
     const markedMap = new Map();
 
-    let globalVocab = []; 
-    let vocabMatchMap = new Map();
-
     // === AI Chunk Mode State ===
     // Owned by src/composables/chunk-state.js + src/pinia-stores/chunk.js.
     // Sentence prev-tap state is part of playback transient state.
@@ -513,6 +511,22 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getRuntimeState: function () { return runtimeState; }
     });
     configureSessionStateProvider(runtimeState);
+    var visualVocabApi = initVisualVocab({
+        visualFileInput: visualFileInput,
+        validateVisualData: validateVisualData,
+        buildVocabMatchMap: buildVocabMatchMapHelper,
+        hasTranscriptData: function () { return _tr.segments.length > 0; },
+        getWords: function () { return _tr.words; },
+        saveToDB: saveToDB,
+        getFirstFileFromEvent: getFirstFileFromEvent,
+        readFileAsText: readFileAsText,
+        markFileLoaded: markFileLoaded,
+        lblVisual: lblVisual,
+        showToast: showToast,
+        showError: showError,
+        restoreReaderFocus: restoreReaderFocus,
+        bridgeToPinia: bridgeToPinia
+    });
     // chunkNoteModalEl: use independent storage to avoid let TDZ
     var __chunkNoteModalEl = null;
     Object.defineProperty(runtimeState, 'chunkNoteModalEl', { get: function() { return __chunkNoteModalEl; }, set: function(v) { __chunkNoteModalEl = v; }, enumerable: true, configurable: true });
@@ -548,8 +562,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'backwardKey', { get: function() { return backwardKey; }, set: function(v) { backwardKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'forwardKey', { get: function() { return forwardKey; }, set: function(v) { forwardKey = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'markedMap', { get: function() { return markedMap; }, set: function(v) { markedMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { markedMap.set(key, value); }); }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'globalVocab', { get: function() { return globalVocab; }, set: function(v) { globalVocab = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return vocabMatchMap; }, set: function(v) { vocabMatchMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { vocabMatchMap.set(key, value); }); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'globalVocab', { get: function() { return visualVocabApi.globalVocab; }, set: function(v) { visualVocabApi.setGlobalVocab(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return visualVocabApi.vocabMatchMap; }, set: function(v) { visualVocabApi.setVocabMatchMap(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnVisible', { get: function() { return _ch.chunkCnVisible; }, set: function(v) { _ch.chunkCnVisible = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'chunkCnHoldMode', { get: function() { return _ch.chunkCnHoldMode; }, set: function(v) { _ch.chunkCnHoldMode = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'isChunkShadowOn', { get: function() { return _ch.isChunkShadowOn; }, set: function(v) { _ch.isChunkShadowOn = v; }, enumerable: true, configurable: true });
@@ -603,7 +617,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         forceUpdateUI: forceUpdateUI,
         syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
         bridgeToPinia: bridgeToPinia,
-        rebuildVocabMatching: rebuildVocabMatching,
+        rebuildVocabMatching: visualVocabApi.rebuildVocabMatching,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
         clearChunkNotesFileState: function () { return _cnApi.clearChunkNotesFileState(); },
@@ -672,14 +686,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // M4+M5 delegated → src/composables/import-module.js
 
-    // === Transcript/chunk context matching logic ===
-    function rebuildVocabMatching() {
-        vocabMatchMap.clear();
-        if (!_tr.segments.length || !globalVocab.length) return;
-        const nextMap = buildVocabMatchMapHelper(_tr.words, globalVocab);
-        nextMap.forEach((value, key) => vocabMatchMap.set(key, value));
-    }
-
     // === Main transcript/chunk rendering ===
     // [PHASE 9] Body replaced — Vue renders. Old logic preserved in git history.
     
@@ -741,7 +747,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     var annotationBubbleResolverApi = initAnnotationBubbleResolver({
         getWords: function () { return _tr.words; },
         markedMap: markedMap,
-        vocabMatchMap: vocabMatchMap
+        vocabMatchMap: visualVocabApi.vocabMatchMap
     });
     var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
 
@@ -837,77 +843,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     function initNotePreviewResize() {
         return _snApi.initNotePreviewResize();
-    }
-
-    function updateVisualHelper(target) {
-        if (!target) return;
-
-        document.getElementById('placeholder').style.display = 'none';
-        document.getElementById('info-card').style.display = 'flex'; 
-
-        const wordEl = document.getElementById('show-word');
-        const ctxEl  = document.getElementById('show-context');
-        const wordTxt = (target.word || '').trim();
-        const ctxTxt  = (target.match_context || '').trim();
-        wordEl.innerText = wordTxt;
-        if (!ctxTxt || ctxTxt === wordTxt) {
-            ctxEl.innerText = '';
-            ctxEl.hidden = true;
-        } else {
-            ctxEl.innerText = ctxTxt;
-            ctxEl.hidden = false;
-        }
-        document.getElementById('show-meaning').innerText = target.meaning;
-        document.getElementById('show-not').innerText = target.not_meaning || ""; 
-
-        const sceneList = document.getElementById('scene-list');
-        sceneList.innerHTML = ''; 
-
-        if (target.visual_scenes && target.visual_scenes.length > 0) {
-            target.visual_scenes.forEach((scene, index) => {
-                const btn = document.createElement('div');
-                btn.className = 'scene-btn';
-                btn.innerText = scene.desc; 
-                
-                btn.onclick = function() {
-                    document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    activateSearch(target.word, index, scene.query);
-                };
-                sceneList.appendChild(btn);
-            });
-            sceneList.firstChild.click();
-        }
-    }
-
-    function activateSearch(word, sceneIndex, query) {
-        const safeKey = word.replace(/[^a-zA-Z0-9]/g, '_') + '_' + sceneIndex;
-        const pool = document.getElementById('search-pool');
-        Array.from(pool.children).forEach(child => child.style.display = 'none');
-
-        let targetDiv = document.getElementById('wrapper_' + safeKey);
-
-        if (targetDiv) {
-            targetDiv.style.display = 'block';
-        } else {
-            targetDiv = document.createElement('div');
-            targetDiv.id = 'wrapper_' + safeKey;
-            targetDiv.className = 'search-instance';
-            targetDiv.style.display = 'block';
-            pool.appendChild(targetDiv);
-
-            if (window.google && google.search && google.search.cse && google.search.cse.element) {
-                google.search.cse.element.render({
-                    div: targetDiv.id,
-                    tag: 'searchresults-only',
-                    gname: safeKey, 
-                    attributes: { defaultToImageSearch: "true", disableWebSearch: "true" }
-                });
-                
-                var element = google.search.cse.element.getElement(safeKey);
-                if (element) element.execute(query);
-            }
-        }
     }
 
     function findChunkIndexByTime(t) {
