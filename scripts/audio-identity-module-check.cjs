@@ -40,6 +40,12 @@ async function main() {
     'var __cak',
     'const buildAudioKey',
     'const buildTranscriptKey',
+    'const getChunkNotesStorageKey = audioIdentityApi.getChunkNotesStorageKey',
+    'const getChunkNoteDraftStorageKey = audioIdentityApi.getChunkNoteDraftStorageKey',
+    'const getSentenceNotesStorageKey = audioIdentityApi.getSentenceNotesStorageKey',
+    'const getLegacySentenceNotesStorageKey = audioIdentityApi.getLegacySentenceNotesStorageKey',
+    'const buildCurrentSentenceDocId = audioIdentityApi.buildCurrentSentenceDocId',
+    'const getCurrentAudioFilenameBase = audioIdentityApi.getCurrentAudioFilenameBase',
     'window.IdentityStorageKeys.getChunkNotesStorageKey(currentAudioKey)',
     'window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey'
   ].forEach((pattern) => {
@@ -47,6 +53,20 @@ async function main() {
       runtimeSource.includes(pattern),
       false,
       `reader-runtime should not own audio identity state/helper: ${pattern}`
+    );
+  });
+
+  [
+    'getChunkNotesStorageKey: audioIdentityApi.getChunkNotesStorageKey',
+    'getChunkNoteDraftStorageKey: audioIdentityApi.getChunkNoteDraftStorageKey',
+    'getSentenceNotesStorageKey: audioIdentityApi.getSentenceNotesStorageKey',
+    'getLegacySentenceNotesStorageKey: audioIdentityApi.getLegacySentenceNotesStorageKey',
+    'buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId',
+    'getCurrentAudioFilenameBase: audioIdentityApi.getCurrentAudioFilenameBase'
+  ].forEach((pattern) => {
+    assert.ok(
+      runtimeSource.includes(pattern),
+      `reader-runtime should inject audio identity API directly: ${pattern}`
     );
   });
 

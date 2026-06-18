@@ -124,22 +124,7 @@
         buildCurrentSentenceDocId: window.IdentityStorageKeys.buildCurrentSentenceDocId,
         getSegments: function () { return _tr.segments; }
     });
-    const getChunkNotesStorageKey = audioIdentityApi.getChunkNotesStorageKey;
-    const getChunkNoteDraftStorageKey = audioIdentityApi.getChunkNoteDraftStorageKey;
-    const getSentenceNotesStorageKey = audioIdentityApi.getSentenceNotesStorageKey;
-    const getLegacySentenceNotesStorageKey = audioIdentityApi.getLegacySentenceNotesStorageKey;
-    const buildCurrentSentenceDocId = audioIdentityApi.buildCurrentSentenceDocId;
-
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
-    const findNearestChunkWord = (enDiv, clientX, clientY) => window.__chunkNoteLayout.findNearestChunkWord(enDiv, clientX, clientY);
-    const getChunkNoteMeasureFont = () => window.__chunkNoteLayout.getChunkNoteMeasureFont();
-    const measureChunkNoteTextBox = (text, minW, minH, maxW) => window.__chunkNoteLayout.measureChunkNoteTextBox(text, minW, minH, maxW);
-    const applyChunkNoteAutoSize = (note) => window.__chunkNoteLayout.applyChunkNoteAutoSize(note);
-    const buildChunkNoteLayout = (note, width, height) => window.__chunkNoteLayout.buildChunkNoteLayout(note, width, height);
-    const canChunkNoteTextFitMinReadable = (note, width, height) => window.__chunkNoteLayout.canChunkNoteTextFitMinReadable(note, width, height);
-    const sanitizeChunkNoteFontSize = (rawSize) => window.__chunkNoteLayout.sanitizeChunkNoteFontSize(rawSize);
-    const makeSelectionNoteBaseId = (chunkRef, startGlobal, endGlobal) => window.__chunkNoteLayout.makeSelectionNoteBaseId(chunkRef, startGlobal, endGlobal);
-    const makeSelectionNoteId = (chunkRef, startGlobal, endGlobal) => window.__chunkNoteLayout.makeSelectionNoteId(chunkRef, startGlobal, endGlobal);
 
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
     // State bridge (var _ns, _cnApi, _snApi) + API init happens in startup block
@@ -157,7 +142,6 @@
 
     // === Import / export / restore shared helpers ===
     const getFirstFileFromEvent = window.ImportExportSharedHelpers.getFirstFileFromEvent;
-    const getCurrentAudioFilenameBase = audioIdentityApi.getCurrentAudioFilenameBase;
     const markFileLoaded = window.ImportExportSharedHelpers.markFileLoaded;
 
     function applyCurrentAudioMeta(meta) {
@@ -241,8 +225,8 @@
         state: _ns,
         loadFromDB: loadFromDB,
         saveToDB: saveToDB,
-        getChunkNotesStorageKey: getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
+        getChunkNotesStorageKey: audioIdentityApi.getChunkNotesStorageKey,
+        getChunkNoteDraftStorageKey: audioIdentityApi.getChunkNoteDraftStorageKey,
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
         getIsChunkMode: function () { return _ch.isChunkMode; },
         currentAudioKeyGetter: function () { return audioIdentityApi.currentAudioKey; },
@@ -250,14 +234,14 @@
         mainAppArea: mainAppArea,
         chunkNoteSvgLayer: chunkNoteSvgLayer,
         chunkNoteLayer: chunkNoteLayer,
-        getChunkNoteMeasureFont: getChunkNoteMeasureFont,
-        measureChunkNoteTextBox: measureChunkNoteTextBox,
-        applyChunkNoteAutoSize: applyChunkNoteAutoSize,
-        buildChunkNoteLayout: buildChunkNoteLayout,
-        canChunkNoteTextFitMinReadable: canChunkNoteTextFitMinReadable,
-        makeSelectionNoteBaseId: makeSelectionNoteBaseId,
-        makeSelectionNoteId: makeSelectionNoteId,
-        findNearestChunkWord: findNearestChunkWord,
+        getChunkNoteMeasureFont: window.__chunkNoteLayout.getChunkNoteMeasureFont,
+        measureChunkNoteTextBox: window.__chunkNoteLayout.measureChunkNoteTextBox,
+        applyChunkNoteAutoSize: window.__chunkNoteLayout.applyChunkNoteAutoSize,
+        buildChunkNoteLayout: window.__chunkNoteLayout.buildChunkNoteLayout,
+        canChunkNoteTextFitMinReadable: window.__chunkNoteLayout.canChunkNoteTextFitMinReadable,
+        makeSelectionNoteBaseId: window.__chunkNoteLayout.makeSelectionNoteBaseId,
+        makeSelectionNoteId: window.__chunkNoteLayout.makeSelectionNoteId,
+        findNearestChunkWord: window.__chunkNoteLayout.findNearestChunkWord,
         saveOpenChunkNotePopover: function () {
             if (_cnApi.getChunkNoteModalEl()) _cnApi.saveChunkNoteFromModal();
         },
@@ -267,9 +251,9 @@
         state: _ns,
         loadFromDB: loadFromDB,
         saveToDB: saveToDB,
-        getSentenceNotesStorageKey: getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey: getLegacySentenceNotesStorageKey,
-        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
+        getSentenceNotesStorageKey: audioIdentityApi.getSentenceNotesStorageKey,
+        getLegacySentenceNotesStorageKey: audioIdentityApi.getLegacySentenceNotesStorageKey,
+        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
         isPlainObjectRecord: isPlainObjectRecord,
         getIsChunkMode: function () { return _ch.isChunkMode; },
         getHasAiChunkData: function () { return _ch.hasAiChunkData; },
@@ -354,7 +338,7 @@
         switchSentenceNotesDoc: switchSentenceNotesDoc,
         getAnnotationGenerationScope: getAnnotationGenerationScope,
         emitAnnotationDiagnostics: emitAnnotationDiagnostics,
-        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
+        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
         scheduleGeneratedAnnotationIndexRefresh: scheduleGeneratedAnnotationIndexRefresh,
         renderTranscript: renderTranscript,
         renderChunkMode: renderChunkMode,
@@ -614,7 +598,7 @@
         setChunkNoteVisible: setChunkNoteVisible,
         renderChunkMode: renderChunkMode,
         buildChunkNotesSnapshot: buildChunkNotesSnapshot,
-        getCurrentAudioFilenameBase: getCurrentAudioFilenameBase,
+        getCurrentAudioFilenameBase: audioIdentityApi.getCurrentAudioFilenameBase,
         getChunkNotesFileState: function () { return _cnApi.getChunkNotesFileState(); },
         setChunkNotesFileState: function (fileState) { return _cnApi.setChunkNotesFileState(fileState); },
         getCurrentAudioKey: function () { return audioIdentityApi.currentAudioKey; },
@@ -676,7 +660,7 @@
     // === Temporary compatibility exports for cross-module access ===
     configureReaderPublicFacades({
         selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
+        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
         setChunkNoteVisible: setChunkNoteVisible,
         loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,

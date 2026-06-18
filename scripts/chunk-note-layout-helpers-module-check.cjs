@@ -14,6 +14,39 @@ assert.ok(
 );
 assert.equal(appSource.includes('window.ChunkNoteLayoutHelpers'), false, 'app.js should not read the root helper global');
 
+[
+  'const findNearestChunkWord =',
+  'const getChunkNoteMeasureFont =',
+  'const measureChunkNoteTextBox =',
+  'const applyChunkNoteAutoSize =',
+  'const buildChunkNoteLayout =',
+  'const canChunkNoteTextFitMinReadable =',
+  'const makeSelectionNoteBaseId =',
+  'const makeSelectionNoteId ='
+].forEach((pattern) => {
+  assert.equal(
+    appSource.includes(pattern),
+    false,
+    `reader-runtime should not keep chunk note layout alias: ${pattern}`
+  );
+});
+
+[
+  'getChunkNoteMeasureFont: window.__chunkNoteLayout.getChunkNoteMeasureFont',
+  'measureChunkNoteTextBox: window.__chunkNoteLayout.measureChunkNoteTextBox',
+  'applyChunkNoteAutoSize: window.__chunkNoteLayout.applyChunkNoteAutoSize',
+  'buildChunkNoteLayout: window.__chunkNoteLayout.buildChunkNoteLayout',
+  'canChunkNoteTextFitMinReadable: window.__chunkNoteLayout.canChunkNoteTextFitMinReadable',
+  'makeSelectionNoteBaseId: window.__chunkNoteLayout.makeSelectionNoteBaseId',
+  'makeSelectionNoteId: window.__chunkNoteLayout.makeSelectionNoteId',
+  'findNearestChunkWord: window.__chunkNoteLayout.findNearestChunkWord'
+].forEach((pattern) => {
+  assert.ok(
+    appSource.includes(pattern),
+    `reader-runtime should inject chunk note layout API directly: ${pattern}`
+  );
+});
+
 assert.ok(
   layoutSource.includes("import { wrapChunkNoteTextForCanvas } from '../utils/chunk-note-layout-helpers.js';"),
   'chunk-note-layout.js should import the wrapping helper directly'

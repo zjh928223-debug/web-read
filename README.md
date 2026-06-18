@@ -171,6 +171,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - `src/composables/runtime-state-bindings.js` now owns the `runtimeState` getter/setter bindings that preserve current `st.*` compatibility for startup/session code.
 - `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; `session-init.js` still owns its annotation settings DOM setup.
+- Local audio identity and chunk note layout API aliases have been removed from `reader-runtime.js`; runtime assembly now injects those module APIs directly.
 - `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.
 - `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
