@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 1340 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 1180 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    35 compatibility/runtime modules
+  composables/                    36 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,14 +97,15 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
-reader-runtime.js                 about 1340 lines
+reader-runtime.js                 about 1180 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
 keyboard-module.js                about 385 lines
 playback-module.js                about 253 lines
 style-editor.js                   about 211 lines
-app-handlers.js                   about 99 lines
+app-handlers.js                   about 97 lines
+chunk-note-transfer-module.js     about 195 lines
 chunk-note-layout.js              about 169 lines
 transcript-state.js               about 112 lines
 chunk-state.js                    about 161 lines
@@ -296,6 +297,9 @@ npm run verify:highlight-controls-module
 npm run verify:theme-controls-module
 npm run verify:glass-effects
 npm run verify:style-editor-module
+npm run verify:app-handlers
+npm run verify:marks-store
+npm run verify:chunk-note-transfer
 npm run verify:transcript-interactions
 npm run verify:chunk-interactions
 npm run verify:cloze-interactions
@@ -356,6 +360,9 @@ scripts/highlight-controls-module-check.cjs
 scripts/theme-controls-module-check.cjs
 scripts/glass-effects-check.cjs
 scripts/style-editor-module-check.cjs
+scripts/app-handlers-check.cjs
+scripts/marks-store-check.cjs
+scripts/chunk-note-transfer-check.cjs
 scripts/transcript-interactions-check.cjs
 scripts/chunk-interactions-check.cjs
 scripts/cloze-interactions-check.cjs
@@ -412,6 +419,9 @@ Current checks cover:
 - migrated glass note dimension locking setup into `src/composables/glass-effects.js` through `verify:glass-effects`
 - migrated style editor local JSON parsing into `src/composables/style-editor.js` through `verify:style-editor-module`
 - migrated initial chunk CN hold button label update into `src/composables/chunk-controls-module.js` through `verify:chunk-controls-module`
+- migrated marks import button binding into `src/composables/app-handlers.js` through `verify:app-handlers`
+- removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
+- migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
 - migrated AI chunk word/chunk click/contextmenu ownership through `verify:chunk-interactions`
 - migrated Vue cloze answer draft/check ownership through `verify:cloze-interactions`

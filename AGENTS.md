@@ -65,7 +65,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 1340 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 1180 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/session-facades.js` - public session/annotation facade stubs.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
@@ -78,6 +78,8 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/theme-controls-module.js` - theme control DOM bindings.
 - `src/composables/glass-effects.js` - glass UI decoration and chunk note dimension lock setup.
 - `src/composables/style-editor.js` - visual style editor and local style parsing helper.
+- `src/composables/app-handlers.js` - mark import/export handlers.
+- `src/composables/chunk-note-transfer-module.js` - chunk note import/export transfer UI.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 9 real Pinia stores.
@@ -149,6 +151,9 @@ npm run verify:highlight-controls-module  # Focused highlight controls module ch
 npm run verify:theme-controls-module  # Focused theme controls module check
 npm run verify:glass-effects  # Focused glass effects module check
 npm run verify:style-editor-module  # Focused style editor module check
+npm run verify:app-handlers  # Focused app handlers module check
+npm run verify:marks-store  # Focused marks store ownership check
+npm run verify:chunk-note-transfer  # Focused chunk note import/export transfer check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check
 npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:cloze-interactions  # Focused cloze answer interaction check
