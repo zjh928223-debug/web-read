@@ -5,17 +5,18 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-    'reader-runtime should initialize reader playback runtime through reader interaction runtime'
+    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime should initialize reader playback runtime through reader-feature-runtime'
   );
   assert.ok(
-    runtimeSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
-    'reader-runtime should initialize playback/interactions through reader interaction runtime'
+    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
+    'reader-feature-runtime should initialize playback/interactions through reader interaction runtime'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),

@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const providerSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-state-provider.js'), 'utf8');
@@ -27,8 +28,12 @@ assert.ok(
 );
 
 assert.ok(
-  appSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
-  'app.js should import reader import runtime'
+  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'app.js should delegate reader import runtime through reader-feature-runtime'
+);
+assert.ok(
+  featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
+  'reader-feature-runtime should import reader import runtime'
 );
 
 assert.equal(

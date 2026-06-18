@@ -7,16 +7,21 @@ const { pathToFileURL } = require('node:url');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
-    'reader-runtime should import reader import runtime'
+    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime should delegate reader import runtime through reader-feature-runtime'
   );
   assert.ok(
-    runtimeSource.includes('var importRuntime = initReaderImportRuntime({'),
-    'reader-runtime should initialize import/runtime wiring through reader import runtime'
+    featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
+    'reader-feature-runtime should import reader import runtime'
+  );
+  assert.ok(
+    featureSource.includes('var importRuntime = initReaderImportRuntime({'),
+    'reader-feature-runtime should initialize import/runtime wiring through reader import runtime'
   );
 
   [

@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-runtime.js'), 'utf8');
@@ -15,8 +16,12 @@ assert.ok(
   'reader-runtime.js should keep direct render function imports for existing runtime injections'
 );
 assert.ok(
-  appSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-runtime.js should configure render runtime through reader-interaction-runtime'
+  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'reader-runtime.js should configure render runtime through reader-feature-runtime'
+);
+assert.ok(
+  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+  'reader-feature-runtime should configure render runtime through reader-interaction-runtime'
 );
 assert.equal(appSource.includes('configureRenderRuntime({'), false);
 assert.equal(appSource.includes('function renderTranscript()'), false, 'reader-runtime.js should not own renderTranscript implementation');

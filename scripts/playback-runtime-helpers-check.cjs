@@ -5,18 +5,19 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const readerPlaybackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-    'reader-runtime should initialize playback helpers through reader interaction runtime'
+    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime should initialize playback helpers through reader-feature-runtime'
   );
   assert.ok(
-    runtimeSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'),
-    'reader-runtime should receive playback runtime helpers through the interaction module'
+    featureSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'),
+    'reader-feature-runtime should receive playback runtime helpers through the interaction module'
   );
   [
     'function findChunkIndexByTime(t)',

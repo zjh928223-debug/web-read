@@ -10,6 +10,7 @@ const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runt
 const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
 const importRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js');
 const contextPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js');
+const featurePath = path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
@@ -17,6 +18,7 @@ const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'ut
 const notesRuntimeSource = fs.readFileSync(notesRuntimePath, 'utf8');
 const importRuntimeSource = fs.readFileSync(importRuntimePath, 'utf8');
 const contextSource = fs.readFileSync(contextPath, 'utf8');
+const featureSource = fs.readFileSync(featurePath, 'utf8');
 const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -122,7 +124,8 @@ assert.ok(appSource.includes('const _ch = bootstrapRuntime.chunkState;'));
 assert.ok(appSource.includes('const _clz = bootstrapRuntime.clozeState;'));
 assert.ok(appSource.includes('const _pb = bootstrapRuntime.playbackState;'));
 assert.ok(appSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
-assert.ok(appSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
+assert.ok(appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"));
+assert.ok(featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
 assert.equal(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"), false);
 assert.ok(importRuntimeSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js'"));
 assert.ok(importRuntimeSource.includes('configureRuntimeStateBindings({'));

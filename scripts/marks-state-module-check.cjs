@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
+  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
@@ -53,15 +54,18 @@ async function main() {
     'reader-runtime should not own the markedMap instance'
   );
 
-  [
-    'markedMap: marksStateApi.markedMap',
-    'var interactionRuntime = initReaderInteractionRuntime({'
-  ].forEach((pattern) => {
-    assert.ok(
-      runtimeSource.includes(pattern),
-      `reader-runtime should pass marks state through explicit deps: ${pattern}`
-    );
-  });
+  assert.ok(
+    runtimeSource.includes('marksStateApi: marksStateApi'),
+    'reader-runtime should pass marks state into reader-feature-runtime'
+  );
+  assert.ok(
+    featureSource.includes('markedMap: deps.marksStateApi.markedMap'),
+    'reader-feature-runtime should pass marks state into interaction runtime'
+  );
+  assert.ok(
+    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
+    'reader-feature-runtime should initialize interaction runtime'
+  );
 
   [
     'markedMap: deps.marksStateApi.markedMap',

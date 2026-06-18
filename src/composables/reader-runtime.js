@@ -20,11 +20,7 @@
     import { renderTranscript, renderChunkMode } from './render-runtime.js';
     import { initReaderRuntimeContext } from './reader-runtime-context.js';
     import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';
-    import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
-    import { initReaderControlsRuntime } from './reader-controls-runtime.js';
-    import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
-    import { initReaderAppRuntime } from './reader-app-runtime.js';
-    import { initReaderImportRuntime } from './reader-import-runtime.js';
+    import { initReaderFeatureRuntime } from './reader-feature-runtime.js';
     import { showToast, showError } from './ui-facades.js';
     import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';
 
@@ -145,9 +141,8 @@
     var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;
     var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;
 
-    var chunkControlsApi = null;
-    var importRuntime = initReaderImportRuntime({
-        importModule: window.__importModule,
+    initReaderFeatureRuntime({
+        globalObject: window,
         runtimeState: runtimeState,
         transcriptState: _tr,
         chunkState: _ch,
@@ -176,124 +171,46 @@
         validateTranscriptData: validateTranscriptData,
         validateChunkData: validateChunkData,
         validateClozeData: validateClozeData,
+        validateMarksArray: validateMarksArray,
         switchSentenceNotesDoc: switchSentenceNotesDoc,
         renderTranscript: renderTranscript,
         renderChunkMode: renderChunkMode,
-        forceUpdateUI: forceUpdateUI,
         bridgeToPinia: bridgeToPinia,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
+        getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
+        loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,
         chunkNotesApi: _cnApi,
-        audioPlayer: audioPlayer,
-        transcriptContainer: transcriptContainer,
+        sentenceNotesApi: _snApi,
         notesState: _ns,
-        getChunkControlsApi: function () { return chunkControlsApi; },
-        toggleChunkBtn: toggleChunkBtn,
+        toggleCurrentNote: toggleCurrentNote,
+        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
+        initAnnotationApiSettingsUi: initAnnotationApiSettingsUi,
+        findChunkIndexByTimeHelper: findChunkIndexByTimeHelper,
+        bsFindActiveHelper: bsFindActiveHelper,
+        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
         cleanTextHelper: cleanTextHelper,
         tokenizeTextHelper: tokenizeTextHelper,
         findExactMatchRangeHelper: findExactMatchRangeHelper,
-        buildVocabMatchMap: buildVocabMatchMapHelper
-    });
-    var visualVocabApi = importRuntime.visualVocabApi;
-
-    _cnApi.ensureChunkNoteOverlayLayers();
-
-    var controlsRuntime = initReaderControlsRuntime({
-        transcriptState: _tr,
-        chunkState: _ch,
-        playbackState: _pb,
-        highlightModeBtn: highlightModeBtn,
-        chunkFileInput: chunkFileInput,
+        buildVocabMatchMap: buildVocabMatchMapHelper,
+        mainAppArea: mainAppArea,
+        transcriptContainer: transcriptContainer,
+        audioPlayer: audioPlayer,
         toggleChunkBtn: toggleChunkBtn,
         chunkCnHoldBtn: chunkCnHoldBtn,
-        audioPlayer: audioPlayer,
-        closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu,
-        closeChunkNotePopover: _cnApi.closeChunkNotePopover,
-        renderChunkMode: renderChunkMode,
-        renderTranscript: renderTranscript,
-        clearChunkNoteConnectors: _cnApi.clearChunkNoteConnectors,
-        getForceUpdateUI: function () { return forceUpdateUI; },
-        bridgeToPinia: bridgeToPinia,
-        styleEditor: window.__styleEditor,
-        adjustChunkNoteArrowSizeByGap: _cnApi.adjustChunkNoteArrowSizeByGap,
-        renderAllChunkNoteTags: _cnApi.renderAllChunkNoteTags,
-        scheduleChunkNoteConnectorRedraw: _cnApi.scheduleChunkNoteConnectorRedraw,
-        themeStore: window.__themeStore,
+        highlightModeBtn: highlightModeBtn,
+        themeControlsEl: themeControlsEl,
         themeToggleBtn: themeToggleBtn,
+        themeCustomPanel: themeCustomPanel,
         themeCustomBgInput: themeCustomBgInput,
         themeCustomTextInput: themeCustomTextInput,
         themeCustomSubInput: themeCustomSubInput,
         themeCustomBorderInput: themeCustomBorderInput,
         themeCustomButtonInput: themeCustomButtonInput,
         themeCustomResetBtn: themeCustomResetBtn,
-        refreshAllChunkNoteVisuals: _cnApi.refreshAllChunkNoteVisuals,
-        getLockChunkNoteDimensionsForTheme: function () { return window.__lockChunkNoteDimensionsForTheme; },
-        initAnnotationApiSettingsUi: initAnnotationApiSettingsUi
-    });
-    chunkControlsApi = controlsRuntime.chunkControlsApi;
-
-    // M4+M5 delegated → src/composables/import-module.js
-
-    var interactionRuntime = initReaderInteractionRuntime({
-        runtimeState: runtimeState,
-        transcriptState: _tr,
-        chunkState: _ch,
-        playbackState: _pb,
-        audioPlayer: audioPlayer,
-        mainAppArea: mainAppArea,
-        transcriptContainer: transcriptContainer,
-        findChunkIndexByTimeHelper: findChunkIndexByTimeHelper,
-        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
-        getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
-        bsFindActiveHelper: bsFindActiveHelper,
-        markedMap: marksStateApi.markedMap,
-        vocabMatchMap: visualVocabApi.vocabMatchMap,
-        hasActiveTextSelectionWithinChunk: _snApi.hasActiveTextSelectionWithinChunk,
-        selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); },
-        getSelection: function () { return window.getSelection && window.getSelection(); },
-        playbackModule: window.__playbackModule,
-        getWindow: function () { return window; },
-        bridgeToPinia: bridgeToPinia,
-        getTranscriptContainer: function () { return transcriptContainer; },
-        getClozeMarkup: function () {
-            return window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
-        },
-        checkCloze: function (index) {
-            if (window.__clozeCheck) return window.__clozeCheck(index);
-            return undefined;
-        },
-        tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft
-    });
-    var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
-    var forceUpdateUI = interactionRuntime.forceUpdateUI;
-    var toggleAnnotationBubble = interactionRuntime.toggleAnnotationBubble;
-    var handleBackwardClick = interactionRuntime.handleBackwardClick;
-    var handleForwardClick = interactionRuntime.handleForwardClick;
-
-    initReaderKeyboardRuntime({
-        keyboardModule: window.__keyboardModule,
-        marksStore: window.__marksStore,
-        themeStore: window.__themeStore,
-        audioPlayer: audioPlayer,
-        transcriptState: _tr,
-        chunkState: _ch,
-        notesState: _ns,
-        hotkeyStateApi: hotkeyStateApi,
-        marksStateApi: marksStateApi,
-        chunkControlsApi: chunkControlsApi,
-        chunkNotesApi: _cnApi,
-        saveToDB: saveToDB,
-        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
-        toggleCurrentNote: toggleCurrentNote,
-        toggleAnnotationBubble: toggleAnnotationBubble,
-        setChunkNoteVisible: setChunkNoteVisible,
-        handleBackwardClick: handleBackwardClick,
-        handleForwardClick: handleForwardClick,
-        closeChunkNoteContextMenu: _cnApi.closeChunkNoteContextMenu,
-        closeChunkNoteExportDialog: closeChunkNoteExportDialog,
-        getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
-        chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
+        highlightColorInput: highlightColorInput,
+        sentenceColorInput: sentenceColorInput,
         hotkeyInput: hotkeyInput,
         hotkeyNotesInput: hotkeyNotesInput,
         hotkeyAnnotationBubbleInput: hotkeyAnnotationBubbleInput,
@@ -302,44 +219,9 @@
         hotkeyChunkCnInput: hotkeyChunkCnInput,
         hotkeyChunkShadowInput: hotkeyChunkShadowInput,
         hotkeyChunkNoteInput: hotkeyChunkNoteInput,
-        highlightColorInput: highlightColorInput,
-        sentenceColorInput: sentenceColorInput,
-        themeCustomPanel: themeCustomPanel,
-        themeControlsEl: themeControlsEl,
-        chunkNoteCtxMenu: chunkNoteCtxMenu
-    });
-
-    // Remaining app/runtime setup is delegated to focused modules.
-    var appRuntime = initReaderAppRuntime({
-        annotationLightweightModule: window.__annotationLightweightModule,
-        appHandlers: window.__appHandlers,
-        controlsModule: window.__controlsModule,
-        runtimeState: runtimeState,
-        transcriptState: _tr,
-        chunkState: _ch,
-        marksStateApi: marksStateApi,
-        chunkControlsApi: chunkControlsApi,
-        chunkNotesApi: _cnApi,
-        sentenceNotesApi: _snApi,
-        audioIdentityApi: audioIdentityApi,
-        playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
-        audioPlayer: audioPlayer,
-        getFirstFileFromEvent: getFirstFileFromEvent,
-        readFileAsText: readFileAsText,
-        validateMarksArray: validateMarksArray,
-        saveToDB: saveToDB,
-        setChunkNoteVisible: setChunkNoteVisible,
-        loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
-        loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,
-        switchSentenceNotesDoc: switchSentenceNotesDoc,
-        applyCurrentAudioMeta: applyCurrentAudioMeta,
-        renderTranscript: renderTranscript,
-        renderChunkMode: renderChunkMode,
-        forceUpdateUI: forceUpdateUI,
-        bsFindActiveHelper: bsFindActiveHelper,
-        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
+        chunkNoteCtxMenu: chunkNoteCtxMenu,
         toggleFollowBtn: toggleFollowBtn,
-        mainAppArea: mainAppArea,
         importChunkNotesBtn: importChunkNotesBtn,
         importChunkNotesInput: importChunkNotesInput,
         exportChunkNotesBtn: exportChunkNotesBtn,
@@ -350,8 +232,5 @@
         exportMdAllBtn: exportMdAllBtn,
         importMarksBtn: importMarksBtn,
         importMarksInput: importMarksInput,
-        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
-        showToast: showToast,
-        showError: showError
+        setChunkNoteTransferApi: runtimeContext.setChunkNoteTransferApi
     });
-    runtimeContext.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);

@@ -5,16 +5,21 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-    'reader-runtime should initialize render/playback through reader interaction runtime'
+    runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime should delegate render/playback setup through reader-feature-runtime'
   );
   assert.ok(
-    runtimeSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
-    'reader-runtime should call the interaction runtime module'
+    featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+    'reader-feature-runtime should import reader interaction runtime'
+  );
+  assert.ok(
+    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
+    'reader-feature-runtime should call the interaction runtime module'
   );
   assert.equal(
     runtimeSource.includes("import { configureRenderRuntime"),
@@ -28,8 +33,8 @@ async function main() {
   );
   assert.equal(runtimeSource.includes('configureRenderRuntime({'), false);
   assert.equal(runtimeSource.includes('var playbackRuntime = initReaderPlaybackRuntime({'), false);
-  assert.ok(runtimeSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'));
-  assert.ok(runtimeSource.includes('var forceUpdateUI = interactionRuntime.forceUpdateUI;'));
+  assert.ok(featureSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'));
+  assert.ok(featureSource.includes('forceUpdateUI = interactionRuntime.forceUpdateUI;'));
 
   [
     "import { configureRenderRuntime } from './render-runtime.js';",

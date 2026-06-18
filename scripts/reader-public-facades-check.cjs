@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-public-facades.js'), 'utf8');
 
@@ -23,8 +24,12 @@ const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', '
 });
 
 assert.ok(
-  appSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js';"),
-  'app.js should import reader-app-runtime'
+  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'app.js should delegate reader-app-runtime through reader-feature-runtime'
+);
+assert.ok(
+  featureSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js';"),
+  'reader-feature-runtime should import reader-app-runtime'
 );
 assert.equal(
   appSource.includes("import { configureReaderPublicFacades } from './reader-public-facades.js';"),

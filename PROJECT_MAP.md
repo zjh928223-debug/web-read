@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 340 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 225 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -76,6 +76,7 @@ src/
 │   ├── session-init.js
 │   ├── session-state-provider.js # temporary session-init state provider
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
+│   ├── reader-feature-runtime.js # import/controls/interactions/keyboard/app composition
 │   ├── reader-runtime-context.js # startup context composition for reader-runtime
 │   ├── reader-dom-refs.js       # static reader runtime DOM refs
 │   ├── reader-bootstrap-runtime.js # state/helper/audio/hotkey/marks bootstrap
@@ -198,6 +199,7 @@ npm run verify:control-playback-state-deps # Focused controls/playback state dep
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:reader-runtime-context # Focused reader startup context composition check
+npm run verify:reader-feature-runtime # Focused reader feature runtime composition check
 npm run verify:reader-bootstrap-runtime # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
 npm run verify:reader-notes-session-runtime # Focused reader notes/session runtime setup check

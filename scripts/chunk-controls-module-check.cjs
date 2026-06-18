@@ -4,13 +4,18 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
-  'app.js should import the reader controls runtime module'
+  appSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'app.js should delegate controls setup through reader-feature-runtime'
+);
+assert.ok(
+  featureSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
+  'reader-feature-runtime should import the reader controls runtime module'
 );
 assert.equal(
   appSource.includes("import { initChunkControls } from './chunk-controls-module.js';"),

@@ -1,0 +1,232 @@
+import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
+import { initReaderControlsRuntime } from './reader-controls-runtime.js';
+import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
+import { initReaderAppRuntime } from './reader-app-runtime.js';
+import { initReaderImportRuntime } from './reader-import-runtime.js';
+
+export function initReaderFeatureRuntime(deps = {}) {
+  var globalObject = deps.globalObject || globalThis;
+  var chunkControlsApi = null;
+  var forceUpdateUI;
+
+  var importRuntime = initReaderImportRuntime({
+    importModule: globalObject.__importModule,
+    runtimeState: deps.runtimeState,
+    transcriptState: deps.transcriptState,
+    chunkState: deps.chunkState,
+    clozeState: deps.clozeState,
+    playbackState: deps.playbackState,
+    audioIdentityApi: deps.audioIdentityApi,
+    hotkeyStateApi: deps.hotkeyStateApi,
+    marksStateApi: deps.marksStateApi,
+    audioFileInput: deps.audioFileInput,
+    transcriptFileInput: deps.transcriptFileInput,
+    chunkFileInput: deps.chunkFileInput,
+    clozeFileInput: deps.clozeFileInput,
+    visualFileInput: deps.visualFileInput,
+    getFirstFileFromEvent: deps.getFirstFileFromEvent,
+    readFileAsText: deps.readFileAsText,
+    saveToDB: deps.saveToDB,
+    applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
+    restoreReaderFocus: deps.restoreReaderFocus,
+    showToast: deps.showToast,
+    showError: deps.showError,
+    markFileLoaded: deps.markFileLoaded,
+    lblAudio: deps.lblAudio,
+    lblTranscript: deps.lblTranscript,
+    lblVisual: deps.lblVisual,
+    validateVisualData: deps.validateVisualData,
+    validateTranscriptData: deps.validateTranscriptData,
+    validateChunkData: deps.validateChunkData,
+    validateClozeData: deps.validateClozeData,
+    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
+    renderTranscript: deps.renderTranscript,
+    renderChunkMode: deps.renderChunkMode,
+    forceUpdateUI: forceUpdateUI,
+    bridgeToPinia: deps.bridgeToPinia,
+    closeChunkNoteExportDialog: deps.closeChunkNoteExportDialog,
+    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
+    chunkNotesApi: deps.chunkNotesApi,
+    audioPlayer: deps.audioPlayer,
+    transcriptContainer: deps.transcriptContainer,
+    notesState: deps.notesState,
+    getChunkControlsApi: function () { return chunkControlsApi; },
+    toggleChunkBtn: deps.toggleChunkBtn,
+    cleanTextHelper: deps.cleanTextHelper,
+    tokenizeTextHelper: deps.tokenizeTextHelper,
+    findExactMatchRangeHelper: deps.findExactMatchRangeHelper,
+    buildVocabMatchMap: deps.buildVocabMatchMap
+  });
+  var visualVocabApi = importRuntime.visualVocabApi;
+
+  deps.chunkNotesApi.ensureChunkNoteOverlayLayers();
+
+  var controlsRuntime = initReaderControlsRuntime({
+    transcriptState: deps.transcriptState,
+    chunkState: deps.chunkState,
+    playbackState: deps.playbackState,
+    highlightModeBtn: deps.highlightModeBtn,
+    chunkFileInput: deps.chunkFileInput,
+    toggleChunkBtn: deps.toggleChunkBtn,
+    chunkCnHoldBtn: deps.chunkCnHoldBtn,
+    audioPlayer: deps.audioPlayer,
+    closeChunkNoteContextMenu: deps.chunkNotesApi.closeChunkNoteContextMenu,
+    closeChunkNotePopover: deps.chunkNotesApi.closeChunkNotePopover,
+    renderChunkMode: deps.renderChunkMode,
+    renderTranscript: deps.renderTranscript,
+    clearChunkNoteConnectors: deps.chunkNotesApi.clearChunkNoteConnectors,
+    getForceUpdateUI: function () { return forceUpdateUI; },
+    bridgeToPinia: deps.bridgeToPinia,
+    styleEditor: globalObject.__styleEditor,
+    adjustChunkNoteArrowSizeByGap: deps.chunkNotesApi.adjustChunkNoteArrowSizeByGap,
+    renderAllChunkNoteTags: deps.chunkNotesApi.renderAllChunkNoteTags,
+    scheduleChunkNoteConnectorRedraw: deps.chunkNotesApi.scheduleChunkNoteConnectorRedraw,
+    themeStore: globalObject.__themeStore,
+    themeToggleBtn: deps.themeToggleBtn,
+    themeCustomBgInput: deps.themeCustomBgInput,
+    themeCustomTextInput: deps.themeCustomTextInput,
+    themeCustomSubInput: deps.themeCustomSubInput,
+    themeCustomBorderInput: deps.themeCustomBorderInput,
+    themeCustomButtonInput: deps.themeCustomButtonInput,
+    themeCustomResetBtn: deps.themeCustomResetBtn,
+    refreshAllChunkNoteVisuals: deps.chunkNotesApi.refreshAllChunkNoteVisuals,
+    getLockChunkNoteDimensionsForTheme: function () { return globalObject.__lockChunkNoteDimensionsForTheme; },
+    initAnnotationApiSettingsUi: deps.initAnnotationApiSettingsUi
+  });
+  chunkControlsApi = controlsRuntime.chunkControlsApi;
+
+  var interactionRuntime = initReaderInteractionRuntime({
+    runtimeState: deps.runtimeState,
+    transcriptState: deps.transcriptState,
+    chunkState: deps.chunkState,
+    playbackState: deps.playbackState,
+    audioPlayer: deps.audioPlayer,
+    mainAppArea: deps.mainAppArea,
+    transcriptContainer: deps.transcriptContainer,
+    findChunkIndexByTimeHelper: deps.findChunkIndexByTimeHelper,
+    getCurrentSegmentIndexHelper: deps.getCurrentSegmentIndexHelper,
+    getSegmentCheckpointsHelper: deps.getSegmentCheckpointsHelper,
+    bsFindActiveHelper: deps.bsFindActiveHelper,
+    markedMap: deps.marksStateApi.markedMap,
+    vocabMatchMap: visualVocabApi.vocabMatchMap,
+    hasActiveTextSelectionWithinChunk: deps.sentenceNotesApi.hasActiveTextSelectionWithinChunk,
+    selectSentenceFromChunkTarget: deps.sentenceNotesApi.selectSentenceFromChunkTarget,
+    openChunkNoteContextFromEvent: function (event) { return deps.chunkNotesApi.handleChunkSelectionContextMenu(event); },
+    getSelection: function () { return globalObject.getSelection && globalObject.getSelection(); },
+    playbackModule: globalObject.__playbackModule,
+    getWindow: function () { return globalObject; },
+    bridgeToPinia: deps.bridgeToPinia,
+    getTranscriptContainer: function () { return deps.transcriptContainer; },
+    getClozeMarkup: function () {
+      return globalObject.__buildClozeQuizMarkup ? globalObject.__buildClozeQuizMarkup() : '';
+    },
+    checkCloze: function (index) {
+      if (globalObject.__clozeCheck) return globalObject.__clozeCheck(index);
+      return undefined;
+    },
+    tryRestoreChunkNoteDraft: deps.chunkNotesApi.tryRestoreChunkNoteDraft
+  });
+  var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
+  forceUpdateUI = interactionRuntime.forceUpdateUI;
+  var toggleAnnotationBubble = interactionRuntime.toggleAnnotationBubble;
+  var handleBackwardClick = interactionRuntime.handleBackwardClick;
+  var handleForwardClick = interactionRuntime.handleForwardClick;
+
+  initReaderKeyboardRuntime({
+    keyboardModule: globalObject.__keyboardModule,
+    marksStore: globalObject.__marksStore,
+    themeStore: globalObject.__themeStore,
+    audioPlayer: deps.audioPlayer,
+    transcriptState: deps.transcriptState,
+    chunkState: deps.chunkState,
+    notesState: deps.notesState,
+    hotkeyStateApi: deps.hotkeyStateApi,
+    marksStateApi: deps.marksStateApi,
+    chunkControlsApi: chunkControlsApi,
+    chunkNotesApi: deps.chunkNotesApi,
+    saveToDB: deps.saveToDB,
+    syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
+    toggleCurrentNote: deps.toggleCurrentNote,
+    toggleAnnotationBubble: toggleAnnotationBubble,
+    setChunkNoteVisible: deps.setChunkNoteVisible,
+    handleBackwardClick: handleBackwardClick,
+    handleForwardClick: handleForwardClick,
+    closeChunkNoteContextMenu: deps.chunkNotesApi.closeChunkNoteContextMenu,
+    closeChunkNoteExportDialog: deps.closeChunkNoteExportDialog,
+    getChunkNoteExportDialogEl: deps.getChunkNoteExportDialogEl,
+    chunkNoteCtxAddBtn: deps.chunkNoteCtxAddBtn,
+    hotkeyInput: deps.hotkeyInput,
+    hotkeyNotesInput: deps.hotkeyNotesInput,
+    hotkeyAnnotationBubbleInput: deps.hotkeyAnnotationBubbleInput,
+    hotkeyBackwardInput: deps.hotkeyBackwardInput,
+    hotkeyForwardInput: deps.hotkeyForwardInput,
+    hotkeyChunkCnInput: deps.hotkeyChunkCnInput,
+    hotkeyChunkShadowInput: deps.hotkeyChunkShadowInput,
+    hotkeyChunkNoteInput: deps.hotkeyChunkNoteInput,
+    highlightColorInput: deps.highlightColorInput,
+    sentenceColorInput: deps.sentenceColorInput,
+    themeCustomPanel: deps.themeCustomPanel,
+    themeControlsEl: deps.themeControlsEl,
+    chunkNoteCtxMenu: deps.chunkNoteCtxMenu
+  });
+
+  var appRuntime = initReaderAppRuntime({
+    annotationLightweightModule: globalObject.__annotationLightweightModule,
+    appHandlers: globalObject.__appHandlers,
+    controlsModule: globalObject.__controlsModule,
+    runtimeState: deps.runtimeState,
+    transcriptState: deps.transcriptState,
+    chunkState: deps.chunkState,
+    marksStateApi: deps.marksStateApi,
+    chunkControlsApi: chunkControlsApi,
+    chunkNotesApi: deps.chunkNotesApi,
+    sentenceNotesApi: deps.sentenceNotesApi,
+    audioIdentityApi: deps.audioIdentityApi,
+    playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
+    audioPlayer: deps.audioPlayer,
+    getFirstFileFromEvent: deps.getFirstFileFromEvent,
+    readFileAsText: deps.readFileAsText,
+    validateMarksArray: deps.validateMarksArray,
+    saveToDB: deps.saveToDB,
+    setChunkNoteVisible: deps.setChunkNoteVisible,
+    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
+    loadSentenceNotesForCurrentAudio: deps.loadSentenceNotesForCurrentAudio,
+    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
+    applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
+    renderTranscript: deps.renderTranscript,
+    renderChunkMode: deps.renderChunkMode,
+    forceUpdateUI: forceUpdateUI,
+    bsFindActiveHelper: deps.bsFindActiveHelper,
+    getCurrentSegmentIndexHelper: deps.getCurrentSegmentIndexHelper,
+    toggleFollowBtn: deps.toggleFollowBtn,
+    mainAppArea: deps.mainAppArea,
+    importChunkNotesBtn: deps.importChunkNotesBtn,
+    importChunkNotesInput: deps.importChunkNotesInput,
+    exportChunkNotesBtn: deps.exportChunkNotesBtn,
+    exportAnnotationLightweightBtn: deps.exportAnnotationLightweightBtn,
+    importAnnotationLightweightBtn: deps.importAnnotationLightweightBtn,
+    importAnnotationLightweightInput: deps.importAnnotationLightweightInput,
+    exportJsonBtn: deps.exportJsonBtn,
+    exportMdAllBtn: deps.exportMdAllBtn,
+    importMarksBtn: deps.importMarksBtn,
+    importMarksInput: deps.importMarksInput,
+    syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
+    showToast: deps.showToast,
+    showError: deps.showError
+  });
+
+  if (typeof deps.setChunkNoteTransferApi === 'function') {
+    deps.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);
+  }
+
+  return {
+    importRuntime: importRuntime,
+    visualVocabApi: visualVocabApi,
+    controlsRuntime: controlsRuntime,
+    chunkControlsApi: chunkControlsApi,
+    interactionRuntime: interactionRuntime,
+    playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
+    forceUpdateUI: forceUpdateUI,
+    appRuntime: appRuntime
+  };
+}

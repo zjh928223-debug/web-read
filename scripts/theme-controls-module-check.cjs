@@ -4,13 +4,18 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const themeControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'theme-controls-module.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 assert.ok(
-  runtimeSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
-  'reader-runtime should import the reader controls runtime module'
+  runtimeSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+  'reader-runtime should delegate controls setup through reader-feature-runtime'
+);
+assert.ok(
+  featureSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
+  'reader-feature-runtime should import the reader controls runtime module'
 );
 
 assert.equal(
