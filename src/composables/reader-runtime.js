@@ -33,6 +33,11 @@
     import { initHotkeyState } from './hotkey-state-module.js';
     import { initMarksState } from './marks-state-module.js';
     import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js';
+    import {
+        createReaderFocusRestorer,
+        createCurrentNoteToggler,
+        createChunkNoteTransferDialogAccess
+    } from './reader-runtime-helpers.js';
     import { configureRuntimeStateBindings } from './runtime-state-bindings.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
@@ -149,31 +154,9 @@
         return nextAudioState;
     }
 
-    function restoreReaderFocus() {
-        const focusTarget = mainAppArea || document.body;
-        if (document.activeElement && typeof document.activeElement.blur === 'function') {
-            try { document.activeElement.blur(); } catch (err) {}
-        }
-        if (focusTarget && typeof focusTarget.focus === 'function') {
-            try { focusTarget.focus({ preventScroll: true }); } catch (err) {}
-        }
-    }
-
     const readFileAsText = window.ImportExportSharedHelpers.readFileAsText;
 
     var chunkNoteTransferApi = null;
-
-    function closeChunkNoteExportDialog() {
-        if (chunkNoteTransferApi && typeof chunkNoteTransferApi.closeExportDialog === 'function') {
-            return chunkNoteTransferApi.closeExportDialog();
-        }
-    }
-
-    function getChunkNoteExportDialogEl() {
-        return chunkNoteTransferApi && typeof chunkNoteTransferApi.getExportDialogEl === 'function'
-            ? chunkNoteTransferApi.getExportDialogEl()
-            : null;
-    }
 
     // === UI layer entrypoint: DOM bindings ===
     const {
@@ -197,6 +180,21 @@
         exportAnnotationLightweightBtn, importAnnotationLightweightInput,
         importAnnotationLightweightBtn
     } = collectReaderDomRefs();
+    const restoreReaderFocus = createReaderFocusRestorer({
+        getDocument: function () { return document; },
+        getFocusTarget: function () { return mainAppArea; }
+    });
+    const toggleCurrentNote = createCurrentNoteToggler({
+        chunkState: _ch,
+        transcriptState: _tr,
+        playbackState: _pb,
+        getDocument: function () { return document; }
+    });
+    const chunkNoteTransferDialogAccess = createChunkNoteTransferDialogAccess({
+        getTransferApi: function () { return chunkNoteTransferApi; }
+    });
+    const closeChunkNoteExportDialog = chunkNoteTransferDialogAccess.closeChunkNoteExportDialog;
+    const getChunkNoteExportDialogEl = chunkNoteTransferDialogAccess.getChunkNoteExportDialogEl;
 
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.
@@ -539,22 +537,6 @@
         getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
         saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal
     });
-
-    // Functions called by keyboard-module (defined here to avoid circular deps)
-    function toggleCurrentNote() {
-        if (_ch.isChunkMode) return;
-        var targetIdx = -1;
-        if (_tr.currentWordIndex !== -1) {
-            var w = _tr.words[_tr.currentWordIndex];
-            if (w) targetIdx = w.segIndex;
-        } else if (_pb.lastActiveSegIndex !== -1) {
-            targetIdx = _pb.lastActiveSegIndex;
-        }
-        if (targetIdx !== -1) {
-            var noteEl = document.getElementById('note-' + targetIdx);
-            if (noteEl) noteEl.open = !noteEl.open;
-        }
-    }
 
     // Highlight colors + hotkey bindings → keyboard-module
 
