@@ -1245,8 +1245,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         });
     }
 
-    importMarksBtn.addEventListener('click', () => importMarksInput.click());
-
     window.__annotationLightweightModule.initManualLightweightAnnotationControls({
         exportButton: exportAnnotationLightweightBtn,
         importButton: importAnnotationLightweightBtn,
@@ -1258,32 +1256,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         },
         showToast,
         showError
-    });
-
-    // Annotation prompt handlers → controls-module
-    
-    importMarksInput.addEventListener('change', e => {
-        const f = getFirstFileFromEvent(e);
-        if(!f) return;
-        readFileAsText(f, (rawText) => {
-            try {
-                const arr = validateMarksArray(JSON.parse(rawText), _tr.words.length);
-                markedMap.clear();
-                arr.forEach(mark => {
-                    if (mark.globalIndex < _tr.words.length) {
-                        markedMap.set(mark.globalIndex, {
-                            ...mark,
-                            sourceType: String(mark.sourceType || mark.source || 'marks-json')
-                        });
-                    }
-                });
-                saveToDB('marks', Array.from(markedMap.values())); 
-                if(_ch.isChunkMode) renderChunkMode(); else renderTranscript();
-                forceUpdateUI(audioPlayer.currentTime);
-                syncAnnotationGenerationEntryStatus();
-                showToast('Marks imported', 'success');
-            } catch(x){ showError('MARKS_IMPORT', x && x.message ? x.message : 'Invalid marks file'); }
-        });
     });
 
     // [MIGRATED] exports → src/composables/app-handlers.js

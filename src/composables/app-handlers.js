@@ -75,9 +75,7 @@
             arr.forEach(function (mark) {
               if (mark.globalIndex < words.length) {
                 markedMap.set(mark.globalIndex, {
-                  globalIndex: mark.globalIndex,
-                  word: mark.word,
-                  start: mark.start,
+                  ...mark,
                   sourceType: String(mark.sourceType || mark.source || 'marks-json')
                 });
               }
