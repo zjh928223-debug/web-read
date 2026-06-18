@@ -15,7 +15,7 @@ legacy DOM shell + module-bound controls
         ↓
 app.js remaining runtime shell and compatibility exports
         ↓
-window.__state / state adapters / runtime bridgeToPinia compatibility
+window.__state / state adapters / Pinia bridge module compatibility
         ↓
 Pinia stores in src/pinia-stores
         ↓
@@ -70,6 +70,7 @@ npm run verify:control-playback-state-deps # Focused controls/playback state dep
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
+npm run verify:pinia-bridge-module # Focused Pinia bridge module check
 npm run verify:audio-store-facades # Focused DB compatibility facade check
 npm run verify:chunk-note-style-facades # Focused chunk note style facade check
 npm run verify:keyboard-facades # Focused keyboard helper facade check
@@ -122,7 +123,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 26 moduleized legacy behavior chunks
+├── composables/               # 27 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -152,6 +153,7 @@ Do not change this schema without an explicit migration plan.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `app.js` now owns a local `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
+- `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
 - DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
 - Chunk note style compatibility facades now live in `src/composables/notes-module.js`.

@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining legacy runtime shell, about 1602 lines
+app.js                             remaining legacy runtime shell, about 1587 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    26 compatibility/runtime modules
+  composables/                    27 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -109,6 +109,7 @@ transcript-state.js               about 112 lines
 chunk-state.js                    about 161 lines
 cloze-state.js                    about 109 lines
 playback-state.js                 about 85 lines
+pinia-bridge-module.js            about 41 lines
 glass-effects.js                  about 95 lines
 controls-module.js                about 63 lines
 chunk-controls-module.js          about 218 lines
@@ -152,7 +153,7 @@ Current state flow:
 ```text
 app.js remaining local variables and runtime state adapters
   <-> window.__state getter/setter proxy
-  <-> direct adapter-to-Pinia binding and runtime bridgeToPinia compatibility
+  <-> src/composables/pinia-bridge-module.js bridgeToPinia compatibility
   <-> src/pinia-stores/*.js real Pinia stores
   <-> Vue components
 ```
@@ -276,6 +277,7 @@ npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
 npm run verify:runtime-state-source
 npm run verify:app-window-facades
+npm run verify:pinia-bridge-module
 npm run verify:audio-store-facades
 npm run verify:chunk-note-style-facades
 npm run verify:keyboard-facades
@@ -332,6 +334,7 @@ scripts/control-playback-state-deps-check.cjs
 scripts/session-state-provider-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/app-window-facades-check.cjs
+scripts/pinia-bridge-module-check.cjs
 scripts/audio-store-facades-check.cjs
 scripts/chunk-note-style-facades-check.cjs
 scripts/keyboard-facades-check.cjs
@@ -380,6 +383,7 @@ Current checks cover:
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
+- migrated `window.bridgeToPinia` and the Pinia sync implementation into `src/composables/pinia-bridge-module.js` through `verify:pinia-bridge-module`
 - removed duplicate app-level playback/speed/style window facade ownership through `verify:app-window-facades`
 - migrated DB compatibility window facades into `src/stores/audio.js` through `verify:audio-store-facades`
 - migrated chunk note style compatibility window facades into `src/composables/notes-module.js` through `verify:chunk-note-style-facades`
@@ -451,7 +455,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

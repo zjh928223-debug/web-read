@@ -39,7 +39,7 @@ The current state flow is:
 ```text
 app.js remaining let variables and runtime shell adapters/modules
   -> window.__state getter/setter proxy
-  -> direct adapter-to-Pinia binding plus runtime bridgeToPinia compatibility
+  -> pinia-bridge-module bridgeToPinia compatibility
   -> src/pinia-stores/*.js real Pinia stores
   -> Vue components
 ```
@@ -65,7 +65,8 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1602 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
+- `app.js` - about 1587 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
+- `src/composables/pinia-bridge-module.js` - `bridgeToPinia` compatibility owner.
 - `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/highlight-controls-module.js` - highlight mode controls and temporary highlight window facade.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
@@ -129,6 +130,7 @@ npm run verify:control-playback-state-deps  # Focused controls/playback state de
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:app-window-facades  # Focused app.js duplicate window facade guard
+npm run verify:pinia-bridge-module  # Focused Pinia bridge module check
 npm run verify:audio-store-facades  # Focused DB compatibility facade check
 npm run verify:chunk-note-style-facades  # Focused chunk note style facade check
 npm run verify:keyboard-facades  # Focused keyboard helper facade check

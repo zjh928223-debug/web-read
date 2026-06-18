@@ -8,6 +8,7 @@ const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'a
 const notesModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'notes-module.js'), 'utf8');
 const keyboardModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
+const piniaBridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
@@ -20,7 +21,6 @@ const allowedAppWindowAssignments = new Set([
   '__state',
   'showToast',
   'showError',
-  'bridgeToPinia',
   'selectSentenceFromChunkTarget',
   'openChunkNoteContextFromEvent',
   'notifyAnnotationBubbleWordClick',
@@ -68,6 +68,7 @@ appWindowAssignments.forEach((name) => {
   'isInputLikeTarget',
   'processTranscript',
   'processChunkData',
+  'bridgeToPinia',
   'openChunkStyleModal',
   'closeChunkStyleModal',
   'updateChunkStyle'
@@ -100,6 +101,10 @@ assert.ok(
 ].forEach((name) => {
   assert.ok(importModuleSource.includes(`window.${name} = ${name};`), `import-module should own window.${name}`);
 });
+assert.ok(
+  piniaBridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'),
+  'pinia-bridge-module should own window.bridgeToPinia'
+);
 [
   'initDB',
   'saveToDB',

@@ -22,6 +22,7 @@
     import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
     import { initChunkControls } from './src/composables/chunk-controls-module.js';
     import { initHighlightControls } from './src/composables/highlight-controls-module.js';
+    import { initPiniaBridge } from './src/composables/pinia-bridge-module.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -38,27 +39,6 @@
     const _clz = window.__clozeState;
     const _pb = window.__playbackState;
     const runtimeState = {};
-
-    // Phase 8: Bridge — runtime adapter data → Pinia stores when Pinia exists.
-    function bridgeToPinia() {
-        var ps = window.__piniaStores;
-        var chunkSnapshot = _ch.getSnapshot();
-        var clozeSnapshot = _clz.getSnapshot();
-        // If Pinia already exists, write directly for reactive updates
-        if (ps) {
-            if (ps.transcript) {
-                ps.transcript.segments = _tr.segments; ps.transcript.words = _tr.words;
-                ps.transcript.wordStarts = _tr.wordStarts; ps.transcript.highlightMode = _tr.highlightMode;
-            }
-            if (ps.chunk) {
-                ps.chunk.chunkItems = chunkSnapshot.chunkItems; ps.chunk.isChunkMode = chunkSnapshot.isChunkMode; ps.chunk.hasAiChunkData = chunkSnapshot.hasAiChunkData;
-                ps.chunk.chunkCNVisible = chunkSnapshot.chunkCnVisible; ps.chunk.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
-                ps.chunk.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus'; ps.chunk.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
-                ps.chunk.chunkNoteVisible = !!(_ns && _ns.chunkNoteVisible);
-            }
-            if (ps.cloze) { ps.cloze.items = clozeSnapshot.clozeItems; ps.cloze.hasData = clozeSnapshot.hasClozeData; ps.cloze.answerState = clozeSnapshot.clozeAnswerState; }
-        }
-    }
 
     // [MIGRATED] DB operations → window.__audioStore
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
@@ -570,6 +550,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
     var _ns = window.__notesModule.getNotesState();
+    var bridgeToPinia = initPiniaBridge({
+        transcriptState: _tr,
+        chunkState: _ch,
+        clozeState: _clz,
+        getNotesState: function () { return _ns; }
+    });
     var _cnApi = window.__notesModule.initChunkNotes({
         state: _ns,
         loadFromDB: loadFromDB,
@@ -1583,7 +1569,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     // === Temporary compatibility exports for cross-module access ===
     window.showToast = showToast; window.showError = showError;
-    window.bridgeToPinia = bridgeToPinia;
     window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
     window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
     window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;

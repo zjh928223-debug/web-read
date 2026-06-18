@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Remaining legacy runtime shell, about 1602 lines
+├── app.js                             # Remaining legacy runtime shell, about 1587 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -85,6 +85,7 @@ src/
 │   ├── chunk-state.js
 │   ├── cloze-state.js
 │   ├── playback-state.js
+│   ├── pinia-bridge-module.js    # bridgeToPinia compatibility owner
 │   ├── glass-effects.js
 │   ├── controls-module.js
 │   ├── chunk-controls-module.js  # AI chunk mode controls + temporary window facades
@@ -134,7 +135,7 @@ Current state ownership is transitional:
 ```text
 app.js remaining let state + runtime state adapters
   ↕ window.__state proxy
-  ↕ direct adapter-to-Pinia binding + bridgeToPinia runtime compatibility
+  ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components
 ```
@@ -172,6 +173,7 @@ npm run verify:control-playback-state-deps # Focused controls/playback state dep
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
+npm run verify:pinia-bridge-module # Focused Pinia bridge module check
 npm run verify:audio-store-facades # Focused DB compatibility facade check
 npm run verify:chunk-note-style-facades # Focused chunk note style facade check
 npm run verify:keyboard-facades # Focused keyboard helper facade check
