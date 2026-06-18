@@ -20,6 +20,7 @@
     "verify:chunk-state": "node scripts/chunk-state-check.cjs",
     "verify:cloze-state": "node scripts/cloze-state-check.cjs",
     "verify:playback-state": "node scripts/playback-state-check.cjs",
+    "verify:playback-runtime-helpers": "node scripts/playback-runtime-helpers-check.cjs",
     "verify:state-facades": "node scripts/state-facade-owner-check.cjs",
     "verify:bridge-startup": "node scripts/bridge-startup-check.cjs",
     "verify:file-input-bindings": "node scripts/file-input-bindings-check.cjs",

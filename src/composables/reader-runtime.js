@@ -31,6 +31,7 @@
     import { initAudioIdentity } from './audio-identity-module.js';
     import { initHotkeyState } from './hotkey-state-module.js';
     import { initMarksState } from './marks-state-module.js';
+    import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -709,6 +710,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         vocabMatchMap: visualVocabApi.vocabMatchMap
     });
     var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
+    var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({
+        chunkState: _ch,
+        playbackState: _pb,
+        mainAppArea: mainAppArea,
+        transcriptContainer: transcriptContainer,
+        findChunkIndexByTimeHelper: findChunkIndexByTimeHelper,
+        getWindow: function () { return window; }
+    });
 
     function selectSentenceFromChunkTarget(target) {
         return _snApi.selectSentenceFromChunkTarget(target);
@@ -718,38 +727,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return _snApi.hasActiveTextSelectionWithinChunk();
     }
 
-    function findChunkIndexByTime(t) {
-        return findChunkIndexByTimeHelper(_ch.chunkItems, t);
-    }
-
-    function swapActiveClass(nextEl, prevEl, className) {
-        if (prevEl && prevEl !== nextEl) prevEl.classList.remove(className);
-        if (nextEl && nextEl !== prevEl) nextEl.classList.add(className);
-        return nextEl || null;
-    }
-
-    function followPlaybackTarget(el) {
-        if (!el || !_pb.autoFollow || _pb.userScrollSuppress) return;
-        const container = mainAppArea || transcriptContainer;
-        if (!container || typeof container.getBoundingClientRect !== 'function') {
-            el.scrollIntoView({ behavior: 'auto', block: 'nearest' });
-            return;
-        }
-        const containerRect = container.getBoundingClientRect();
-        const elRect = el.getBoundingClientRect();
-        const viewportHeight = Math.max(1, containerRect.height || container.clientHeight || window.innerHeight || 1);
-        const topGuard = Math.max(24, Math.min(96, viewportHeight * 0.08));
-        const bottomTrigger = Math.max(96, Math.min(220, viewportHeight * 0.18));
-        const safeTop = containerRect.top + topGuard;
-        const safeBottom = containerRect.bottom - bottomTrigger;
-        const needsPageForward = elRect.bottom > safeBottom;
-        const needsPageBack = elRect.top < safeTop;
-        if (!needsPageForward && !needsPageBack) return;
-        const offsetTop = elRect.top - containerRect.top + container.scrollTop;
-        const targetTop = offsetTop - topGuard;
-        container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
-    }
-
     // [MIGRATED] playback navigation → src/composables/playback-module.js
     window.__playbackModule.init({
         state: runtimeState,
@@ -757,9 +734,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
         getSegmentCheckpointsHelper: getSegmentCheckpointsHelper,
         bsFindActiveHelper: bsFindActiveHelper,
-        findChunkIndexByTime: findChunkIndexByTime,
-        swapActiveClass: swapActiveClass,
-        followPlaybackTarget: followPlaybackTarget,
+        findChunkIndexByTime: playbackRuntimeHelpersApi.findChunkIndexByTime,
+        swapActiveClass: playbackRuntimeHelpersApi.swapActiveClass,
+        followPlaybackTarget: playbackRuntimeHelpersApi.followPlaybackTarget,
         getAnnotationBubble: annotationBubbleResolverApi.getAnnotationBubble,
         jumpPrevSentence: jumpPrevSentence,
         jumpNextSentence: jumpNextSentence
@@ -960,7 +937,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         state: runtimeState,
         audioPlayer: audioPlayer,
         bsFindActiveHelper: bsFindActiveHelper,
-        findChunkIndexByTime: findChunkIndexByTime,
+        findChunkIndexByTime: playbackRuntimeHelpersApi.findChunkIndexByTime,
         getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
         toggleFollowBtn: toggleFollowBtn,
         mainAppArea: mainAppArea

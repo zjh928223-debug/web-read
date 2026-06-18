@@ -62,6 +62,7 @@ npm run verify:transcript-state # Focused transcript state adapter check
 npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
+npm run verify:playback-runtime-helpers # Focused playback runtime helper check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check
@@ -136,7 +137,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 40 moduleized legacy behavior chunks
+├── composables/               # 41 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -164,6 +165,7 @@ Do not change this schema without an explicit migration plan.
 - `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js` while remaining render dependencies are explicit injections.
 - Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
+- Playback helper behavior now goes through `src/composables/playback-runtime-helpers.js`; `reader-runtime.js` only injects its API into playback and controls modules.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.

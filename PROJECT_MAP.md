@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 985 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 962 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -80,6 +80,7 @@ src/
 │   ├── keyboard-module.js
 │   ├── style-editor.js          # visual style editor + local style parsing helper
 │   ├── playback-module.js
+│   ├── playback-runtime-helpers.js # playback helper behavior
 │   ├── app-handlers.js          # mark import/export handlers
 │   ├── chunk-note-transfer-module.js # chunk note import/export transfer UI
 │   ├── visual-vocab-module.js   # visual vocab state + processVisual compatibility
@@ -173,6 +174,7 @@ npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check
 npm run verify:playback-state # Focused playback state adapter check
+npm run verify:playback-runtime-helpers # Focused playback runtime helper check
 npm run verify:state-facades # Focused window.__state owner facade check
 npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
 npm run verify:file-input-bindings # Focused file picker DOM binding check

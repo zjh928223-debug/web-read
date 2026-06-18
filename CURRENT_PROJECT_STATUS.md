@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 985 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 962 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    40 compatibility/runtime modules
+  composables/                    41 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,12 +97,13 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 985 lines
+reader-runtime.js                 about 962 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
 keyboard-module.js                about 394 lines
 playback-module.js                about 253 lines
+playback-runtime-helpers.js       about 46 lines
 style-editor.js                   about 211 lines
 app-handlers.js                   about 97 lines
 chunk-note-transfer-module.js     about 195 lines
@@ -218,7 +219,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 
 - `src/composables/playback-module.js` owns the migrated playback update functions.
 - `src/composables/playback-state.js` owns playback transient state such as auto-follow, scroll suppression, active highlight element refs, playback loop signature, and sentence previous-tap navigation state.
-- `reader-runtime.js` still provides dependencies such as `followPlaybackTarget`.
+- `src/composables/playback-runtime-helpers.js` owns playback helper functions for active-class swapping, AI chunk index lookup, and page-style follow scrolling; `reader-runtime.js` only initializes the module and injects its API.
 - Auto-follow now behaves like page turning: when the active sentence reaches the lower trigger area, it scrolls the active sentence near the top of the viewport instead of centering it.
 - The follow threshold is based on the current scroll container height, so resizing or zooming recalculates the visible zone dynamically.
 
@@ -287,6 +288,7 @@ npm run verify:chunk-notes-state
 npm run verify:chunk-state
 npm run verify:cloze-state
 npm run verify:playback-state
+npm run verify:playback-runtime-helpers
 npm run verify:state-facades
 npm run verify:bridge-startup
 npm run verify:file-input-bindings
@@ -417,6 +419,7 @@ Current checks cover:
 - chunk state adapter ownership through `verify:chunk-state`
 - cloze state adapter ownership through `verify:cloze-state`
 - playback transient state adapter ownership through `verify:playback-state`
+- migrated playback runtime helpers into `src/composables/playback-runtime-helpers.js` through `verify:playback-runtime-helpers`
 - migrated `window.__state` owner facades through `verify:state-facades`
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - removed no-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades through `verify:state-facades`
@@ -516,7 +519,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
