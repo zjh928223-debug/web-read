@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining legacy runtime shell, about 1641 lines
+app.js                             remaining legacy runtime shell, about 1621 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -99,7 +99,7 @@ Current composables:
 session-init.js                   about 1590 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 544 lines
-notes-module.js                   about 2485 lines
+notes-module.js                   about 2490 lines
 keyboard-module.js                about 384 lines
 playback-module.js                about 253 lines
 style-editor.js                   about 201 lines
@@ -230,6 +230,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and compatibility globals.
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
+- Chunk note style modal compatibility window facades now live in `src/composables/notes-module.js`; `app.js` injects note style adjustment through `_cnApi`.
 - `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
 - `app.js` still keeps compatibility wrappers for existing global callers, but `index.html` no longer uses inline handlers and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
@@ -276,6 +277,7 @@ npm run verify:session-state-provider
 npm run verify:runtime-state-source
 npm run verify:app-window-facades
 npm run verify:audio-store-facades
+npm run verify:chunk-note-style-facades
 npm run verify:chunk-controls-module
 npm run verify:highlight-controls-module
 npm run verify:transcript-interactions
@@ -329,6 +331,7 @@ scripts/session-state-provider-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/app-window-facades-check.cjs
 scripts/audio-store-facades-check.cjs
+scripts/chunk-note-style-facades-check.cjs
 scripts/chunk-controls-module-check.cjs
 scripts/highlight-controls-module-check.cjs
 scripts/transcript-interactions-check.cjs
@@ -375,6 +378,7 @@ Current checks cover:
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - removed duplicate app-level playback/speed/style window facade ownership through `verify:app-window-facades`
 - migrated DB compatibility window facades into `src/stores/audio.js` through `verify:audio-store-facades`
+- migrated chunk note style compatibility window facades into `src/composables/notes-module.js` through `verify:chunk-note-style-facades`
 - migrated AI chunk mode controls and their temporary window facades into `src/composables/chunk-controls-module.js` through `verify:chunk-controls-module`
 - migrated highlight mode controls and the temporary `window.cycleHighlightMode` facade into `src/composables/highlight-controls-module.js` through `verify:highlight-controls-module`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
@@ -441,7 +445,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, DB facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, DB facades, chunk note style facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

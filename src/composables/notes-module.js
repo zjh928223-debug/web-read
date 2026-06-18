@@ -1719,6 +1719,11 @@
       }
     }
 
+    window.openChunkNoteStyleModal = openChunkNoteStyleModal;
+    window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
+    window.updateChunkNoteStyle = updateChunkNoteStyle;
+    window.adjustChunkNoteArrowSizeByGap = adjustChunkNoteArrowSizeByGap;
+
     return {
       getChunkNotesMap: getChunkNotesMap,
       replaceChunkNotesMap: replaceChunkNotesMap,

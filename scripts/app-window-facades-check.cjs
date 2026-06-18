@@ -5,6 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'audio.js'), 'utf8');
+const notesModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'notes-module.js'), 'utf8');
 const playbackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const controlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
@@ -15,9 +16,6 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
 const allowedAppWindowAssignments = new Set([
   '__USE_VUE_RENDERING',
   '__state',
-  'openChunkNoteStyleModal',
-  'closeChunkNoteStyleModal',
-  'updateChunkNoteStyle',
   'showToast',
   'showError',
   'bridgeToPinia',
@@ -26,7 +24,6 @@ const allowedAppWindowAssignments = new Set([
   'openChunkNoteContextFromEvent',
   'notifyAnnotationBubbleWordClick',
   'isInputLikeTarget',
-  'adjustChunkNoteArrowSizeByGap',
   'getAnnotationGenerationScope',
   'buildCurrentSentenceDocId',
   'clearGeneratedAnnotationIndex',
@@ -65,6 +62,10 @@ appWindowAssignments.forEach((name) => {
   'loadFromDB',
   'deleteFromDB',
   'clearDBStore',
+  'openChunkNoteStyleModal',
+  'closeChunkNoteStyleModal',
+  'updateChunkNoteStyle',
+  'adjustChunkNoteArrowSizeByGap',
   'openChunkStyleModal',
   'closeChunkStyleModal',
   'updateChunkStyle'
@@ -100,6 +101,14 @@ assert.ok(
   highlightControlsSource.includes('window.cycleHighlightMode = cycleHighlightMode;'),
   'highlight-controls-module should own window.cycleHighlightMode'
 );
+[
+  'openChunkNoteStyleModal',
+  'closeChunkNoteStyleModal',
+  'updateChunkNoteStyle',
+  'adjustChunkNoteArrowSizeByGap'
+].forEach((name) => {
+  assert.ok(notesModuleSource.includes(`window.${name} = ${name};`), `notes-module should own window.${name}`);
+});
 
 [
   'toggleChunkMode',

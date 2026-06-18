@@ -65,7 +65,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 ## Important Files
 
-- `app.js` - about 1641 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
+- `app.js` - about 1621 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
 - `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/highlight-controls-module.js` - highlight mode controls and temporary highlight window facade.
 - `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
@@ -130,6 +130,7 @@ npm run verify:session-state-provider  # Focused session-init state provider che
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:app-window-facades  # Focused app.js duplicate window facade guard
 npm run verify:audio-store-facades  # Focused DB compatibility facade check
+npm run verify:chunk-note-style-facades  # Focused chunk note style facade check
 npm run verify:chunk-controls-module  # Focused AI chunk controls module check
 npm run verify:highlight-controls-module  # Focused highlight controls module check
 npm run verify:transcript-interactions  # Focused normal transcript interaction check

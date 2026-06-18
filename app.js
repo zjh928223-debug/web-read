@@ -472,22 +472,6 @@
         return _cnApi.refreshChunkNoteForChunkRef(chunkRef);
     }
 
-    function openChunkNoteStyleModal() {
-        return _cnApi.openChunkNoteStyleModal();
-    }
-
-    function closeChunkNoteStyleModal() {
-        return _cnApi.closeChunkNoteStyleModal();
-    }
-
-    function updateChunkNoteStyle() {
-        return _cnApi.updateChunkNoteStyle();
-    }
-
-    function adjustChunkNoteArrowSizeByGap() {
-        return _cnApi.adjustChunkNoteArrowSizeByGap();
-    }
-
     // === UI layer entrypoint: DOM bindings ===
     const audioPlayer = document.getElementById('audio-player');
     const transcriptContainer = document.getElementById('transcript-container');
@@ -851,7 +835,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] style editor → src/composables/style-editor.js
     window.__styleEditor.init({
         safeParseLocalJSON: safeParseLocalJSON,
-        adjustChunkNoteArrowSizeByGap: adjustChunkNoteArrowSizeByGap,
+        adjustChunkNoteArrowSizeByGap: _cnApi.adjustChunkNoteArrowSizeByGap,
         renderAllChunkNoteTags: renderAllChunkNoteTags,
         scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
         getIsChunkMode: function () { return _ch.isChunkMode; },
@@ -1614,9 +1598,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
 
     // === Temporary compatibility exports for cross-module access ===
-    window.openChunkNoteStyleModal = openChunkNoteStyleModal;
-    window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
-    window.updateChunkNoteStyle = updateChunkNoteStyle;
     window.showToast = showToast; window.showError = showError;
     window.bridgeToPinia = bridgeToPinia;
     window.processTranscript = processTranscript;
@@ -1624,7 +1605,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
     window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;
     window.isInputLikeTarget = isInputLikeTarget;
-    window.adjustChunkNoteArrowSizeByGap = adjustChunkNoteArrowSizeByGap;
     window.getAnnotationGenerationScope = getAnnotationGenerationScope;
     window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
     window.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;
