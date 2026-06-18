@@ -20,6 +20,14 @@
     var chunkNoteKey = deps.chunkNoteKey;
     var backwardKey = deps.backwardKey;
     var forwardKey = deps.forwardKey;
+    var getMarkKey = typeof deps.getMarkKey === 'function' ? deps.getMarkKey : function () { return markKey; };
+    var getNotesKey = typeof deps.getNotesKey === 'function' ? deps.getNotesKey : function () { return notesKey; };
+    var getAnnotationBubbleKey = typeof deps.getAnnotationBubbleKey === 'function' ? deps.getAnnotationBubbleKey : function () { return annotationBubbleKey; };
+    var getChunkCnKey = typeof deps.getChunkCnKey === 'function' ? deps.getChunkCnKey : function () { return chunkCnKey; };
+    var getChunkShadowKey = typeof deps.getChunkShadowKey === 'function' ? deps.getChunkShadowKey : function () { return chunkShadowKey; };
+    var getChunkNoteKey = typeof deps.getChunkNoteKey === 'function' ? deps.getChunkNoteKey : function () { return chunkNoteKey; };
+    var getBackwardKey = typeof deps.getBackwardKey === 'function' ? deps.getBackwardKey : function () { return backwardKey; };
+    var getForwardKey = typeof deps.getForwardKey === 'function' ? deps.getForwardKey : function () { return forwardKey; };
     var toggleMarkCurrent = deps.toggleMarkCurrent;
     var toggleCurrentNote = deps.toggleCurrentNote;
     var toggleAnnotationBubble = deps.toggleAnnotationBubble;
@@ -70,19 +78,19 @@
         e.preventDefault();
         audioPlayer.paused ? audioPlayer.play() : audioPlayer.pause();
       }
-      else if (lowerKey === markKey) {
+      else if (lowerKey === getMarkKey()) {
         e.preventDefault();
         toggleMarkCurrent();
       }
-      else if (lowerKey === notesKey) {
+      else if (lowerKey === getNotesKey()) {
         e.preventDefault();
         toggleCurrentNote();
       }
-      else if (lowerKey === annotationBubbleKey) {
+      else if (lowerKey === getAnnotationBubbleKey()) {
         e.preventDefault();
         toggleAnnotationBubble();
       }
-      else if (lowerKey === chunkCnKey && isChunkMode()) {
+      else if (lowerKey === getChunkCnKey() && isChunkMode()) {
         e.preventDefault();
         if (chunkCnHoldMode()) {
           if (!e.repeat) beginHoldChunkCn();
@@ -90,19 +98,19 @@
           toggleChunkCn();
         }
       }
-      else if (lowerKey === chunkShadowKey && isChunkMode()) {
+      else if (lowerKey === getChunkShadowKey() && isChunkMode()) {
         e.preventDefault();
         toggleChunkShadow();
       }
-      else if (lowerKey === chunkNoteKey && isChunkMode()) {
+      else if (lowerKey === getChunkNoteKey() && isChunkMode()) {
         e.preventDefault();
         setChunkNoteVisible(!chunkNoteVisible(), true);
       }
-      else if (key === backwardKey || lowerKey === backwardKey) {
+      else if (key === getBackwardKey() || lowerKey === getBackwardKey()) {
         e.preventDefault();
         handleBackwardClick();
       }
-      else if (key === forwardKey || lowerKey === forwardKey) {
+      else if (key === getForwardKey() || lowerKey === getForwardKey()) {
         e.preventDefault();
         handleForwardClick();
       }
@@ -114,7 +122,7 @@
       if (!isChunkMode()) return;
       var key = e.key;
       var lowerKey = key.toLowerCase();
-      if (lowerKey === chunkCnKey && chunkCnHoldMode()) {
+      if (lowerKey === getChunkCnKey() && chunkCnHoldMode()) {
         endHoldChunkCn();
       }
     });

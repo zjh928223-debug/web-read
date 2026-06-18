@@ -1,0 +1,152 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+async function main() {
+  const repoRoot = path.resolve(__dirname, '..');
+  const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
+  const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'hotkey-state-module.js'), 'utf8');
+  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+
+  assert.ok(
+    runtimeSource.includes("import { initHotkeyState } from './hotkey-state-module.js';"),
+    'reader-runtime should import hotkey state module'
+  );
+  assert.ok(
+    runtimeSource.includes('var hotkeyStateApi = initHotkeyState();'),
+    'reader-runtime should initialize hotkey state through the module'
+  );
+
+  [
+    ['markKey', 'setMarkKey'],
+    ['notesKey', 'setNotesKey'],
+    ['annotationBubbleKey', 'setAnnotationBubbleKey'],
+    ['chunkCnKey', 'setChunkCnKey'],
+    ['chunkShadowKey', 'setChunkShadowKey'],
+    ['chunkNoteKey', 'setChunkNoteKey'],
+    ['backwardKey', 'setBackwardKey'],
+    ['forwardKey', 'setForwardKey']
+  ].forEach(([field, setter]) => {
+    assert.ok(
+      runtimeSource.includes(`Object.defineProperty(runtimeState, '${field}', { get: function() { return hotkeyStateApi.${field}; }, set: function(v) { hotkeyStateApi.${setter}(v); }`),
+      `runtimeState.${field} should read/write hotkey module state`
+    );
+    assert.ok(
+      runtimeSource.includes(`get${setter.slice(3)}: function () { return hotkeyStateApi.${field}; }`),
+      `keyboard init should pass dynamic getter for ${field}`
+    );
+    assert.ok(
+      runtimeSource.includes(`${setter}: hotkeyStateApi.${setter}`),
+      `keyboard init should pass module setter for ${field}`
+    );
+    assert.equal(
+      runtimeSource.includes(`let ${field}`),
+      false,
+      `reader-runtime should not own local hotkey variable: ${field}`
+    );
+  });
+
+  [
+    'var getMarkKey = typeof deps.getMarkKey ===',
+    'var getNotesKey = typeof deps.getNotesKey ===',
+    'var getAnnotationBubbleKey = typeof deps.getAnnotationBubbleKey ===',
+    'var getChunkCnKey = typeof deps.getChunkCnKey ===',
+    'var getChunkShadowKey = typeof deps.getChunkShadowKey ===',
+    'var getChunkNoteKey = typeof deps.getChunkNoteKey ===',
+    'var getBackwardKey = typeof deps.getBackwardKey ===',
+    'var getForwardKey = typeof deps.getForwardKey ===',
+    'lowerKey === getMarkKey()',
+    'lowerKey === getNotesKey()',
+    'lowerKey === getAnnotationBubbleKey()',
+    'lowerKey === getChunkCnKey()',
+    'lowerKey === getChunkShadowKey()',
+    'lowerKey === getChunkNoteKey()',
+    'key === getBackwardKey() || lowerKey === getBackwardKey()',
+    'key === getForwardKey() || lowerKey === getForwardKey()'
+  ].forEach((pattern) => {
+    assert.ok(
+      keyboardSource.includes(pattern),
+      `keyboard module should use dynamic hotkey source: ${pattern}`
+    );
+  });
+
+  [
+    'if(savedMarkKey) { st.markKey= savedMarkKey.toLowerCase();',
+    'if(savedNotesKey) { st.notesKey= savedNotesKey.toLowerCase();',
+    'if(savedAnnotationBubbleKey) { st.annotationBubbleKey= savedAnnotationBubbleKey.toLowerCase();',
+    'if(savedChunkCnKey) { st.chunkCnKey= savedChunkCnKey.toLowerCase();',
+    'if(savedChunkShadowKey) { st.chunkShadowKey= savedChunkShadowKey.toLowerCase();',
+    'if(savedChunkNoteKey) { st.chunkNoteKey= savedChunkNoteKey.toLowerCase();',
+    'if(savedBackwardKey) { st.backwardKey= savedBackwardKey;',
+    'if(savedForwardKey) { st.forwardKey= savedForwardKey;'
+  ].forEach((pattern) => {
+    assert.ok(
+      sessionInitSource.includes(pattern),
+      `session-init hotkey restore contract should remain intact: ${pattern}`
+    );
+  });
+
+  assert.ok(
+    moduleSource.includes('export function initHotkeyState'),
+    'hotkey state module should export initHotkeyState'
+  );
+
+  const encodedSource = Buffer.from(moduleSource, 'utf8').toString('base64');
+  const { initHotkeyState } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
+  const api = initHotkeyState();
+
+  assert.equal(api.markKey, 'm');
+  assert.equal(api.notesKey, 'n');
+  assert.equal(api.annotationBubbleKey, 'b');
+  assert.equal(api.chunkCnKey, 'c');
+  assert.equal(api.chunkShadowKey, 's');
+  assert.equal(api.chunkNoteKey, 'x');
+  assert.equal(api.backwardKey, 'ArrowLeft');
+  assert.equal(api.forwardKey, 'ArrowRight');
+
+  assert.equal(api.setMarkKey('q'), 'q');
+  assert.equal(api.setNotesKey('w'), 'w');
+  assert.equal(api.setAnnotationBubbleKey('e'), 'e');
+  assert.equal(api.setChunkCnKey('r'), 'r');
+  assert.equal(api.setChunkShadowKey('t'), 't');
+  assert.equal(api.setChunkNoteKey('y'), 'y');
+  assert.equal(api.setBackwardKey('a'), 'a');
+  assert.equal(api.setForwardKey('d'), 'd');
+  assert.deepEqual(
+    {
+      markKey: api.markKey,
+      notesKey: api.notesKey,
+      annotationBubbleKey: api.annotationBubbleKey,
+      chunkCnKey: api.chunkCnKey,
+      chunkShadowKey: api.chunkShadowKey,
+      chunkNoteKey: api.chunkNoteKey,
+      backwardKey: api.backwardKey,
+      forwardKey: api.forwardKey
+    },
+    {
+      markKey: 'q',
+      notesKey: 'w',
+      annotationBubbleKey: 'e',
+      chunkCnKey: 'r',
+      chunkShadowKey: 't',
+      chunkNoteKey: 'y',
+      backwardKey: 'a',
+      forwardKey: 'd'
+    }
+  );
+
+  assert.equal(api.setMarkKey(''), 'm');
+  assert.equal(api.setBackwardKey(null), 'ArrowLeft');
+
+  const customApi = initHotkeyState({ markKey: 'z', forwardKey: 'ArrowDown' });
+  assert.equal(customApi.markKey, 'z');
+  assert.equal(customApi.forwardKey, 'ArrowDown');
+}
+
+main().then(() => {
+  console.log('hotkey state module check passed');
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

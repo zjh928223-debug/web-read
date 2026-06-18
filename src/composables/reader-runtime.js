@@ -29,6 +29,7 @@
     import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
     import { initVisualVocab } from './visual-vocab-module.js';
     import { initAudioIdentity } from './audio-identity-module.js';
+    import { initHotkeyState } from './hotkey-state-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -409,14 +410,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.
 
-    let markKey = 'm';
-    let notesKey = 'n';
-    let annotationBubbleKey = 'b';
-    let chunkCnKey = 'c'; 
-    let chunkShadowKey = 's'; 
-    let chunkNoteKey = 'x';
-    let backwardKey = 'ArrowLeft';
-    let forwardKey = 'ArrowRight';
+    var hotkeyStateApi = initHotkeyState();
     const markedMap = new Map();
 
     // === AI Chunk Mode State ===
@@ -524,14 +518,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'activeSentenceEl', { get: function() { return _pb.activeSentenceEl; }, set: function(v) { _pb.activeSentenceEl = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'activeChunkEl', { get: function() { return _pb.activeChunkEl; }, set: function(v) { _pb.activeChunkEl = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'playbackUiSignature', { get: function() { return _pb.playbackUiSignature; }, set: function(v) { _pb.playbackUiSignature = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'markKey', { get: function() { return markKey; }, set: function(v) { markKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'notesKey', { get: function() { return notesKey; }, set: function(v) { notesKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'annotationBubbleKey', { get: function() { return annotationBubbleKey; }, set: function(v) { annotationBubbleKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'chunkCnKey', { get: function() { return chunkCnKey; }, set: function(v) { chunkCnKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'chunkShadowKey', { get: function() { return chunkShadowKey; }, set: function(v) { chunkShadowKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'chunkNoteKey', { get: function() { return chunkNoteKey; }, set: function(v) { chunkNoteKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'backwardKey', { get: function() { return backwardKey; }, set: function(v) { backwardKey = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'forwardKey', { get: function() { return forwardKey; }, set: function(v) { forwardKey = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'markKey', { get: function() { return hotkeyStateApi.markKey; }, set: function(v) { hotkeyStateApi.setMarkKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'notesKey', { get: function() { return hotkeyStateApi.notesKey; }, set: function(v) { hotkeyStateApi.setNotesKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'annotationBubbleKey', { get: function() { return hotkeyStateApi.annotationBubbleKey; }, set: function(v) { hotkeyStateApi.setAnnotationBubbleKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'chunkCnKey', { get: function() { return hotkeyStateApi.chunkCnKey; }, set: function(v) { hotkeyStateApi.setChunkCnKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'chunkShadowKey', { get: function() { return hotkeyStateApi.chunkShadowKey; }, set: function(v) { hotkeyStateApi.setChunkShadowKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'chunkNoteKey', { get: function() { return hotkeyStateApi.chunkNoteKey; }, set: function(v) { hotkeyStateApi.setChunkNoteKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'backwardKey', { get: function() { return hotkeyStateApi.backwardKey; }, set: function(v) { hotkeyStateApi.setBackwardKey(v); }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'forwardKey', { get: function() { return hotkeyStateApi.forwardKey; }, set: function(v) { hotkeyStateApi.setForwardKey(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'markedMap', { get: function() { return markedMap; }, set: function(v) { markedMap.clear(); if (v instanceof Map) v.forEach(function(value, key) { markedMap.set(key, value); }); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'globalVocab', { get: function() { return visualVocabApi.globalVocab; }, set: function(v) { visualVocabApi.setGlobalVocab(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'vocabMatchMap', { get: function() { return visualVocabApi.vocabMatchMap; }, set: function(v) { visualVocabApi.setVocabMatchMap(v); }, enumerable: true, configurable: true });
@@ -807,9 +801,17 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         isChunkMode: function () { return _ch.isChunkMode; },
         chunkCnHoldMode: function () { return _ch.chunkCnHoldMode; },
         chunkNoteVisible: function () { return _ns.chunkNoteVisible; },
-        markKey: markKey, notesKey: notesKey, annotationBubbleKey: annotationBubbleKey,
-        chunkCnKey: chunkCnKey, chunkShadowKey: chunkShadowKey, chunkNoteKey: chunkNoteKey,
-        backwardKey: backwardKey, forwardKey: forwardKey,
+        markKey: hotkeyStateApi.markKey, notesKey: hotkeyStateApi.notesKey, annotationBubbleKey: hotkeyStateApi.annotationBubbleKey,
+        chunkCnKey: hotkeyStateApi.chunkCnKey, chunkShadowKey: hotkeyStateApi.chunkShadowKey, chunkNoteKey: hotkeyStateApi.chunkNoteKey,
+        backwardKey: hotkeyStateApi.backwardKey, forwardKey: hotkeyStateApi.forwardKey,
+        getMarkKey: function () { return hotkeyStateApi.markKey; },
+        getNotesKey: function () { return hotkeyStateApi.notesKey; },
+        getAnnotationBubbleKey: function () { return hotkeyStateApi.annotationBubbleKey; },
+        getChunkCnKey: function () { return hotkeyStateApi.chunkCnKey; },
+        getChunkShadowKey: function () { return hotkeyStateApi.chunkShadowKey; },
+        getChunkNoteKey: function () { return hotkeyStateApi.chunkNoteKey; },
+        getBackwardKey: function () { return hotkeyStateApi.backwardKey; },
+        getForwardKey: function () { return hotkeyStateApi.forwardKey; },
         toggleMarkCurrent: function () {
             window.__marksStore.toggleMark(markedMap, _tr.currentWordIndex, _tr.words, saveToDB, syncAnnotationGenerationEntryStatus);
         },
@@ -840,14 +842,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         hotkeyChunkNoteInput: hotkeyChunkNoteInput,
         highlightColorInput: highlightColorInput, sentenceColorInput: sentenceColorInput,
         themeCustomPanel: themeCustomPanel, themeControlsEl: themeControlsEl,
-        setMarkKey: function (v) { markKey = v; },
-        setNotesKey: function (v) { notesKey = v; },
-        setAnnotationBubbleKey: function (v) { annotationBubbleKey = v; },
-        setChunkCnKey: function (v) { chunkCnKey = v; },
-        setChunkShadowKey: function (v) { chunkShadowKey = v; },
-        setChunkNoteKey: function (v) { chunkNoteKey = v; },
-        setBackwardKey: function (v) { backwardKey = v; },
-        setForwardKey: function (v) { forwardKey = v; },
+        setMarkKey: hotkeyStateApi.setMarkKey,
+        setNotesKey: hotkeyStateApi.setNotesKey,
+        setAnnotationBubbleKey: hotkeyStateApi.setAnnotationBubbleKey,
+        setChunkCnKey: hotkeyStateApi.setChunkCnKey,
+        setChunkShadowKey: hotkeyStateApi.setChunkShadowKey,
+        setChunkNoteKey: hotkeyStateApi.setChunkNoteKey,
+        setBackwardKey: hotkeyStateApi.setBackwardKey,
+        setForwardKey: hotkeyStateApi.setForwardKey,
         chunkNoteCtxMenu: chunkNoteCtxMenu,
         getChunkNoteExportDialogEl: getChunkNoteExportDialogEl,
         getChunkNoteModalEl: function () { return _cnApi.getChunkNoteModalEl(); },
