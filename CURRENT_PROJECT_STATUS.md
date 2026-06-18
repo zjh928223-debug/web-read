@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 733 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 686 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    42 compatibility/runtime modules
+  composables/                    43 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,9 +97,10 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 733 lines
+reader-runtime.js                 about 686 lines
 session-state-provider.js         about 15 lines
 runtime-state-bindings.js         about 72 lines
+reader-dom-refs.js                about 64 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
 keyboard-module.js                about 394 lines
@@ -297,6 +298,7 @@ npm run verify:inline-handler-bindings
 npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
 npm run verify:runtime-state-source
+npm run verify:reader-dom-refs
 npm run verify:app-window-facades
 npm run verify:pinia-bridge-module
 npm run verify:audio-store-facades
@@ -432,6 +434,7 @@ Current checks cover:
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
 - migrated `runtimeState` and the temporary `window.__state` alias into `src/composables/runtime-state-facade.js` through `verify:runtime-state-facade`
 - migrated runtimeState getter/setter bindings for `st.*` compatibility into `src/composables/runtime-state-bindings.js` while keeping `session-init.js` state provider calls unchanged through `verify:state-facades`
+- migrated static DOM ref collection out of `reader-runtime.js` into `src/composables/reader-dom-refs.js` and removed no-consumer runtime DOM lookups while keeping `session-init.js` annotation settings DOM ownership unchanged through `verify:reader-dom-refs`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - migrated `window.bridgeToPinia` and the Pinia sync implementation into `src/composables/pinia-bridge-module.js` through `verify:pinia-bridge-module`

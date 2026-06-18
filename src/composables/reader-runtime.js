@@ -23,6 +23,7 @@
     import { configureRenderRuntime } from './render-runtime.js';
     import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';
     import { configureSessionStateProvider } from './session-state-provider.js';
+    import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
@@ -196,75 +197,27 @@
     }
 
     // === UI layer entrypoint: DOM bindings ===
-    const audioPlayer = document.getElementById('audio-player');
-    const transcriptContainer = document.getElementById('transcript-container');
-    const toggleFollowBtn = document.getElementById('toggle-follow');
-    const highlightModeBtn = document.getElementById('highlight-mode-btn');
-const themeControlsEl = document.getElementById('theme-controls');
-const themeToggleBtn = document.getElementById('theme-toggle');
-const themeCustomPanel = document.getElementById('theme-custom-panel');
-    const themeCustomBgInput = document.getElementById('theme-custom-bg');
-    const themeCustomTextInput = document.getElementById('theme-custom-text');
-    const themeCustomSubInput = document.getElementById('theme-custom-sub');
-    const themeCustomBorderInput = document.getElementById('theme-custom-border');
-    const themeCustomButtonInput = document.getElementById('theme-custom-button');
-    const themeCustomResetBtn = document.getElementById('theme-custom-reset');
-    const toggleChunkBtn = document.getElementById('toggle-chunk-btn'); 
-    const chunkCnHoldBtn = document.getElementById('btn-chunk-cn-hold');
-    
-    // Inputs & Labels
-    const audioFileInput = document.getElementById('audio-file');
-    const transcriptFileInput = document.getElementById('transcript-file');
-    const visualFileInput = document.getElementById('visual-file');
-    const chunkFileInput = document.getElementById('chunk-file'); 
-    const clozeFileInput = document.getElementById('cloze-file');
-    
-    const lblAudio = document.getElementById('lbl-audio');
-    const lblTranscript = document.getElementById('lbl-transcript');
-    const lblVisual = document.getElementById('lbl-visual');
-
-    const highlightColorInput = document.getElementById('highlight-color-input');
-    const sentenceColorInput = document.getElementById('sentence-color-input');
-    
-    const hotkeyInput = document.getElementById('hotkey-input');
-    const hotkeyNotesInput = document.getElementById('hotkey-notes-input');
-    const hotkeyAnnotationBubbleInput = document.getElementById('hotkey-annotation-bubble-input');
-    const hotkeyBackwardInput = document.getElementById('hotkey-backward-input');
-    const hotkeyForwardInput = document.getElementById('hotkey-forward-input');
-    const hotkeyChunkCnInput = document.getElementById('hotkey-chunk-cn-input'); 
-    const hotkeyChunkShadowInput = document.getElementById('hotkey-chunk-shadow-input');
-    const hotkeyChunkNoteInput = document.getElementById('hotkey-chunk-note-input');
-    const importChunkNotesBtn = document.getElementById('btn-import-chunk-notes');
-    const importChunkNotesInput = document.getElementById('import-chunk-notes-file');
-    const exportChunkNotesBtn = document.getElementById('btn-export-chunk-notes');
-    const importSentenceNotesBtn = document.getElementById('btn-import-sentence-notes');
-    const importSentenceNotesInput = document.getElementById('import-sentence-notes-file');
-    const exportSentenceNotesBtn = document.getElementById('btn-export-sentence-notes');
-    const chunkNoteSvgLayer = document.getElementById('chunk-note-svg-layer');
-    let chunkNoteLayer = document.getElementById('chunk-note-layer');
-    const chunkNoteProbe = document.getElementById('chunk-note-probe');
-    const chunkNoteCtxMenu = document.getElementById('chunk-note-ctx-menu');
-    const chunkNoteCtxAddBtn = document.getElementById('chunk-note-ctx-add');
-    const mainAppArea = document.getElementById('main-app-area');
-    if (mainAppArea && !mainAppArea.hasAttribute('tabindex')) {
-        mainAppArea.setAttribute('tabindex', '-1');
-    }
-    const toggleNotePreviewBtn = document.getElementById('toggle-note-preview-btn');
-    const notePreviewSidebar = document.getElementById('note-preview-sidebar');
-    const notePreviewResizeHandle = document.getElementById('note-preview-resize-handle');
-    const notePreviewResizeHandleY = document.getElementById('note-preview-resize-handle-y');
-    const notePreviewEmpty = document.getElementById('note-preview-empty');
-    const notePreviewList = document.getElementById('note-preview-list');
-    const importMarksBtn = document.getElementById('import-marks-btn');
-    const importMarksInput = document.getElementById('import-marks-file');
-    const exportJsonBtn = document.getElementById('export-json');
-    const exportMdAllBtn = document.getElementById('export-md-all');
-    const exportAnnotationLightweightBtn = document.getElementById('btn-export-annotation-lightweight');
-    const importAnnotationLightweightInput = document.getElementById('import-annotation-lightweight-file');
-    const importAnnotationLightweightBtn = document.getElementById('btn-import-annotation-lightweight');
-    const annotationApiSettingsBtn = document.getElementById('btn-annotation-api-settings');
-    const annotationApiSettingsPanel = document.getElementById('annotation-api-settings-panel');
-    const modalBackdrop = document.getElementById('modal-backdrop');
+    const {
+        audioPlayer, transcriptContainer, toggleFollowBtn, highlightModeBtn,
+        themeControlsEl, themeToggleBtn, themeCustomPanel,
+        themeCustomBgInput, themeCustomTextInput, themeCustomSubInput,
+        themeCustomBorderInput, themeCustomButtonInput, themeCustomResetBtn,
+        toggleChunkBtn, chunkCnHoldBtn,
+        audioFileInput, transcriptFileInput, visualFileInput, chunkFileInput, clozeFileInput,
+        lblAudio, lblTranscript, lblVisual,
+        highlightColorInput, sentenceColorInput,
+        hotkeyInput, hotkeyNotesInput, hotkeyAnnotationBubbleInput,
+        hotkeyBackwardInput, hotkeyForwardInput, hotkeyChunkCnInput,
+        hotkeyChunkShadowInput, hotkeyChunkNoteInput,
+        importChunkNotesBtn, importChunkNotesInput, exportChunkNotesBtn,
+        chunkNoteSvgLayer, chunkNoteLayer, chunkNoteProbe, chunkNoteCtxMenu,
+        chunkNoteCtxAddBtn, mainAppArea,
+        toggleNotePreviewBtn, notePreviewSidebar, notePreviewResizeHandle,
+        notePreviewResizeHandleY, notePreviewEmpty, notePreviewList,
+        importMarksBtn, importMarksInput, exportJsonBtn, exportMdAllBtn,
+        exportAnnotationLightweightBtn, importAnnotationLightweightInput,
+        importAnnotationLightweightBtn
+    } = collectReaderDomRefs();
 
     // === Runtime state ===
     // Playback transient state is owned by src/composables/playback-state.js.

@@ -65,9 +65,10 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 733 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 686 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
+- `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
 - `src/composables/session-facades.js` - public session/annotation facade stubs.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
 - `src/composables/annotation-bubble-resolver.js` - generated/vocab annotation bubble hit resolution.
@@ -147,6 +148,7 @@ npm run verify:inline-handler-bindings  # Focused remaining inline handler migra
 npm run verify:control-playback-state-deps  # Focused controls/playback state dependency check
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:runtime-state-source  # Focused runtime state source guard
+npm run verify:reader-dom-refs  # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades  # Focused app.js duplicate window facade guard
 npm run verify:pinia-bridge-module  # Focused Pinia bridge module check
 npm run verify:audio-store-facades  # Focused DB compatibility facade check

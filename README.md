@@ -70,6 +70,7 @@ npm run verify:inline-handler-bindings # Focused remaining inline handler migrat
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
+npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
 npm run verify:pinia-bridge-module # Focused Pinia bridge module check
 npm run verify:audio-store-facades # Focused DB compatibility facade check
@@ -169,6 +170,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - `src/composables/runtime-state-bindings.js` now owns the `runtimeState` getter/setter bindings that preserve current `st.*` compatibility for startup/session code.
+- `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; `session-init.js` still owns its annotation settings DOM setup.
 - `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.
 - `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.

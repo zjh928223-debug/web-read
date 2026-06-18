@@ -29,6 +29,7 @@
     "verify:session-state-provider": "node scripts/session-state-provider-check.cjs",
     "verify:runtime-state-source": "node scripts/runtime-state-source-check.cjs",
     "verify:runtime-state-facade": "node scripts/runtime-state-facade-check.cjs",
+    "verify:reader-dom-refs": "node scripts/reader-dom-refs-check.cjs",
     "verify:app-window-facades": "node scripts/app-window-facades-check.cjs",
     "verify:pinia-bridge-module": "node scripts/pinia-bridge-module-check.cjs",
     "verify:session-facades": "node scripts/session-facades-check.cjs",
