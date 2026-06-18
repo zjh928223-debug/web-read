@@ -72,3 +72,15 @@
     deleteFromDB: deleteFromDB,
     clearDBStore: clearDBStore
   };
+
+  function callAudioStore(methodName, args) {
+    var store = window.__audioStore;
+    if (!store || typeof store[methodName] !== 'function') return undefined;
+    return store[methodName].apply(store, args);
+  }
+
+  window.initDB = function () { return callAudioStore('initDB', arguments); };
+  window.saveToDB = function () { return callAudioStore('saveToDB', arguments); };
+  window.loadFromDB = function () { return callAudioStore('loadFromDB', arguments); };
+  window.deleteFromDB = function () { return callAudioStore('deleteFromDB', arguments); };
+  window.clearDBStore = function () { return callAudioStore('clearDBStore', arguments); };

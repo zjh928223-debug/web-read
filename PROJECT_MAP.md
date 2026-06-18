@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Remaining legacy runtime shell, about 1646 lines
+├── app.js                             # Remaining legacy runtime shell, about 1641 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -172,6 +172,7 @@ npm run verify:control-playback-state-deps # Focused controls/playback state dep
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
+npm run verify:audio-store-facades # Focused DB compatibility facade check
 npm run verify:chunk-controls-module # Focused AI chunk controls module check
 npm run verify:highlight-controls-module # Focused highlight controls module check
 npm run verify:transcript-interactions # Focused normal transcript interaction check

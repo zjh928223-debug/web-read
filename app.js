@@ -61,11 +61,8 @@
     }
 
     // [MIGRATED] DB operations → window.__audioStore
-    var initDB = function () { return window.__audioStore.initDB(); };
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
     var loadFromDB = function (id) { return window.__audioStore.loadFromDB(id); };
-    var deleteFromDB = function (id) { return window.__audioStore.deleteFromDB(id); };
-    var clearDBStore = function () { return window.__audioStore.clearDBStore(); };
 
     function safeParseLocalJSON(key, fallbackValue) {
         try {
@@ -1620,8 +1617,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     window.openChunkNoteStyleModal = openChunkNoteStyleModal;
     window.closeChunkNoteStyleModal = closeChunkNoteStyleModal;
     window.updateChunkNoteStyle = updateChunkNoteStyle;
-    window.initDB = initDB; window.saveToDB = saveToDB; window.loadFromDB = loadFromDB;
-    window.deleteFromDB = deleteFromDB; window.clearDBStore = clearDBStore;
     window.showToast = showToast; window.showError = showError;
     window.bridgeToPinia = bridgeToPinia;
     window.processTranscript = processTranscript;

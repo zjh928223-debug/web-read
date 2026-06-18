@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining legacy runtime shell, about 1646 lines
+app.js                             remaining legacy runtime shell, about 1641 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -275,6 +275,7 @@ npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
 npm run verify:runtime-state-source
 npm run verify:app-window-facades
+npm run verify:audio-store-facades
 npm run verify:chunk-controls-module
 npm run verify:highlight-controls-module
 npm run verify:transcript-interactions
@@ -327,6 +328,7 @@ scripts/control-playback-state-deps-check.cjs
 scripts/session-state-provider-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/app-window-facades-check.cjs
+scripts/audio-store-facades-check.cjs
 scripts/chunk-controls-module-check.cjs
 scripts/highlight-controls-module-check.cjs
 scripts/transcript-interactions-check.cjs
@@ -372,6 +374,7 @@ Current checks cover:
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - removed duplicate app-level playback/speed/style window facade ownership through `verify:app-window-facades`
+- migrated DB compatibility window facades into `src/stores/audio.js` through `verify:audio-store-facades`
 - migrated AI chunk mode controls and their temporary window facades into `src/composables/chunk-controls-module.js` through `verify:chunk-controls-module`
 - migrated highlight mode controls and the temporary `window.cycleHighlightMode` facade into `src/composables/highlight-controls-module.js` through `verify:highlight-controls-module`
 - migrated normal transcript word click/contextmenu ownership through `verify:transcript-interactions`
@@ -438,7 +441,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, DB facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
