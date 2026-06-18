@@ -28,6 +28,7 @@
     import { initThemeControls } from './theme-controls-module.js';
     import { initChunkNoteTransfer } from './chunk-note-transfer-module.js';
     import { initVisualVocab } from './visual-vocab-module.js';
+    import { initAudioIdentity } from './audio-identity-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -107,13 +108,22 @@
     } = window.VocabMatchingHelpers;
 
     // === Identity/storage key helpers (extracted to identity-and-storage-keys.js) ===
-    const buildAudioKey = window.IdentityStorageKeys.buildAudioKey;
-    const buildTranscriptKey = (data) => window.IdentityStorageKeys.buildTranscriptKey(data, _tr.segments);
-    const getChunkNotesStorageKey = () => window.IdentityStorageKeys.getChunkNotesStorageKey(currentAudioKey);
-    const getChunkNoteDraftStorageKey = () => window.IdentityStorageKeys.getChunkNoteDraftStorageKey(currentAudioKey);
-    const getSentenceNotesStorageKey = window.IdentityStorageKeys.getSentenceNotesStorageKey;
-    const getLegacySentenceNotesStorageKey = (audioKey = currentAudioKey) => window.IdentityStorageKeys.getLegacySentenceNotesStorageKey(audioKey);
-    const buildCurrentSentenceDocId = (transcriptSource = null) => window.IdentityStorageKeys.buildCurrentSentenceDocId(transcriptSource, currentAudioKey, _tr.segments);
+    var audioIdentityApi = initAudioIdentity({
+        buildAudioKey: window.IdentityStorageKeys.buildAudioKey,
+        buildCurrentAudioMetaState: window.ImportExportSharedHelpers.buildCurrentAudioMetaState,
+        getCurrentAudioFilenameBase: window.ImportExportSharedHelpers.getCurrentAudioFilenameBase,
+        getChunkNotesStorageKey: window.IdentityStorageKeys.getChunkNotesStorageKey,
+        getChunkNoteDraftStorageKey: window.IdentityStorageKeys.getChunkNoteDraftStorageKey,
+        getSentenceNotesStorageKey: window.IdentityStorageKeys.getSentenceNotesStorageKey,
+        getLegacySentenceNotesStorageKey: window.IdentityStorageKeys.getLegacySentenceNotesStorageKey,
+        buildCurrentSentenceDocId: window.IdentityStorageKeys.buildCurrentSentenceDocId,
+        getSegments: function () { return _tr.segments; }
+    });
+    const getChunkNotesStorageKey = audioIdentityApi.getChunkNotesStorageKey;
+    const getChunkNoteDraftStorageKey = audioIdentityApi.getChunkNoteDraftStorageKey;
+    const getSentenceNotesStorageKey = audioIdentityApi.getSentenceNotesStorageKey;
+    const getLegacySentenceNotesStorageKey = audioIdentityApi.getLegacySentenceNotesStorageKey;
+    const buildCurrentSentenceDocId = audioIdentityApi.buildCurrentSentenceDocId;
 
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
     const findNearestChunkWord = (enDiv, clientX, clientY) => window.__chunkNoteLayout.findNearestChunkWord(enDiv, clientX, clientY);
@@ -142,16 +152,15 @@
 
     // === Import / export / restore shared helpers ===
     const getFirstFileFromEvent = window.ImportExportSharedHelpers.getFirstFileFromEvent;
-    const getCurrentAudioFilenameBase = (fallback = 'audio') => window.ImportExportSharedHelpers.getCurrentAudioFilenameBase(currentAudioMeta, fallback);
+    const getCurrentAudioFilenameBase = audioIdentityApi.getCurrentAudioFilenameBase;
     const markFileLoaded = window.ImportExportSharedHelpers.markFileLoaded;
 
     function applyCurrentAudioMeta(meta) {
-        const nextAudioState = window.ImportExportSharedHelpers.buildCurrentAudioMetaState(meta, buildAudioKey);
-        currentAudioMeta = nextAudioState.currentAudioMeta;
-        currentAudioKey = nextAudioState.currentAudioKey;
+        const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);
         if (_cnApi && typeof _cnApi.setChunkNoteDraftRestoreDone === 'function') {
             _cnApi.setChunkNoteDraftRestoreDone(nextAudioState.chunkNoteDraftRestoreDone);
         }
+        return nextAudioState;
     }
 
     const isInputLikeTarget = window.__keyboardModule.isInputLikeTarget;
@@ -430,7 +439,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
         sanitizeChunkNoteFontSize: window.__chunkNoteLayout.sanitizeChunkNoteFontSize,
         getIsChunkMode: function () { return _ch.isChunkMode; },
-        currentAudioKeyGetter: function () { return currentAudioKey; },
+        currentAudioKeyGetter: function () { return audioIdentityApi.currentAudioKey; },
         getHasAiChunkData: function () { return _ch.hasAiChunkData; },
         mainAppArea: mainAppArea,
         chunkNoteSvgLayer: chunkNoteSvgLayer,
@@ -502,10 +511,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     Object.defineProperty(runtimeState, 'clozeItems', { get: function() { return _clz.clozeItems; }, set: function(v) { _clz.clozeItems = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'clozeAnswerState', { get: function() { return _clz.clozeAnswerState; }, set: function(v) { _clz.clozeAnswerState = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'manualChunkStates', { get: function() { return _ch.manualChunkStates; }, set: function(v) { _ch.manualChunkStates = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'currentAudioMeta', { get: function() { return currentAudioMeta; }, set: function(v) { currentAudioMeta = v; }, enumerable: true, configurable: true });
-    var __cak = 'default-audio';
+    Object.defineProperty(runtimeState, 'currentAudioMeta', { get: function() { return audioIdentityApi.currentAudioMeta; }, set: function(v) { audioIdentityApi.setCurrentAudioMeta(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'isChunkMode', { get: function() { return _ch.isChunkMode; }, set: function(v) { _ch.isChunkMode = v; }, enumerable: true, configurable: true });
-    Object.defineProperty(runtimeState, 'currentAudioKey', { get: function() { return __cak; }, set: function(v) { __cak = v; }, enumerable: true, configurable: true });
+    Object.defineProperty(runtimeState, 'currentAudioKey', { get: function() { return audioIdentityApi.currentAudioKey; }, set: function(v) { audioIdentityApi.setCurrentAudioKey(v); }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'currentWordIndex', { get: function() { return _tr.currentWordIndex; }, set: function(v) { _tr.currentWordIndex = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'autoFollow', { get: function() { return _pb.autoFollow; }, set: function(v) { _pb.autoFollow = v; }, enumerable: true, configurable: true });
     Object.defineProperty(runtimeState, 'userScrollSuppress', { get: function() { return _pb.userScrollSuppress; }, set: function(v) { _pb.userScrollSuppress = v; }, enumerable: true, configurable: true });
@@ -591,8 +599,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markedMap: markedMap
     });
 
-    let currentAudioMeta = null;
-    let currentAudioKey = 'default-audio';
     let chunkPointerDown = null;
     ensureChunkNoteOverlayLayers();
 
@@ -912,7 +918,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getCurrentAudioFilenameBase: getCurrentAudioFilenameBase,
         getChunkNotesFileState: function () { return _cnApi.getChunkNotesFileState(); },
         setChunkNotesFileState: function (fileState) { return _cnApi.setChunkNotesFileState(fileState); },
-        getCurrentAudioKey: function () { return currentAudioKey; },
+        getCurrentAudioKey: function () { return audioIdentityApi.currentAudioKey; },
         showToast: showToast,
         showError: showError
     });
