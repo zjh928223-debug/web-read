@@ -1324,9 +1324,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         getChunkNoteContentBoxSize: getChunkNoteContentBoxSize
     });
   
-    // Init hold button label
-    setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
-
     // === Temporary compatibility exports for cross-module access ===
     configureReaderPublicFacades({
         selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,

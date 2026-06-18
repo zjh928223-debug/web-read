@@ -194,6 +194,10 @@ export function initChunkControls(deps = {}) {
     });
   }
 
+  setTimeout(function () {
+    try { updateChunkCnHoldBtn(); } catch (e) {}
+  }, 0);
+
   var api = {
     toggleChunkMode: toggleChunkMode,
     setChunkCnVisible: setChunkCnVisible,

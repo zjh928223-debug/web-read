@@ -58,10 +58,20 @@ assert.equal(/\blet\s+holdPrevHadFocusClass\b/.test(appSource), false);
   'chunkControlsApi.beginHoldChunkCn',
   'chunkControlsApi.endHoldChunkCn',
   'chunkControlsApi.toggleChunkCn',
-  'chunkControlsApi.toggleChunkShadow',
-  'chunkControlsApi.updateChunkCnHoldBtn'
+  'chunkControlsApi.toggleChunkShadow'
 ].forEach((fragment) => {
   assert.ok(appSource.includes(fragment), `app.js should delegate through ${fragment}`);
 });
+
+assert.equal(
+  appSource.includes('chunkControlsApi.updateChunkCnHoldBtn'),
+  false,
+  'app.js should not schedule initial chunk CN hold button updates'
+);
+
+assert.ok(
+  moduleSource.includes('setTimeout(function () {') && moduleSource.includes('try { updateChunkCnHoldBtn(); }'),
+  'chunk controls module should own the initial chunk CN hold button update'
+);
 
 console.log('chunk controls module check passed');
