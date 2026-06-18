@@ -8,11 +8,13 @@ const importModulePath = path.join(repoRoot, 'src', 'composables', 'import-modul
 const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js');
 const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js');
 const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
+const importRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
 const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'utf8');
 const notesRuntimeSource = fs.readFileSync(notesRuntimePath, 'utf8');
+const importRuntimeSource = fs.readFileSync(importRuntimePath, 'utf8');
 const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -115,8 +117,10 @@ assert.ok(appSource.includes('const _ch = window.__chunkState;'));
 assert.ok(appSource.includes('const _clz = window.__clozeState;'));
 assert.ok(appSource.includes('const _pb = window.__playbackState;'));
 assert.ok(appSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
-assert.ok(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"));
-assert.ok(appSource.includes('configureRuntimeStateBindings({'));
+assert.ok(appSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
+assert.equal(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"), false);
+assert.ok(importRuntimeSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js'"));
+assert.ok(importRuntimeSource.includes('configureRuntimeStateBindings({'));
 assert.equal(appSource.includes('Object.defineProperty(runtimeState,'), false);
 assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));

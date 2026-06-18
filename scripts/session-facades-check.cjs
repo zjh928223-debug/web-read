@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-facades.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -37,11 +38,20 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
 
 assert.ok(
   appSource.includes("} from './session-facades.js';"),
-  'app.js should import session facades'
+  'app.js should import directly consumed session facades'
 );
 assert.ok(
+  importRuntimeSource.includes("} from './session-facades.js'"),
+  'reader-import-runtime should import session facades'
+);
+assert.equal(
   appSource.includes('configureSessionFacades({'),
-  'app.js should configure session facade runtime deps'
+  false,
+  'app.js should not configure session facade runtime deps directly'
+);
+assert.ok(
+  importRuntimeSource.includes('configureSessionFacades({'),
+  'reader-import-runtime should configure session facade runtime deps'
 );
 
 console.log('session facades check passed');

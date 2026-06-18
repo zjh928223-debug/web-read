@@ -5,17 +5,27 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
   const visualSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'visual-vocab-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
+    runtimeSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
+    'reader-runtime should import reader import runtime'
+  );
+  assert.equal(
     runtimeSource.includes("import { initVisualVocab } from './visual-vocab-module.js';"),
-    'reader-runtime should import the visual vocab module'
+    false,
+    'reader-runtime should not import the visual vocab module directly'
   );
   assert.ok(
-    runtimeSource.includes('var visualVocabApi = initVisualVocab({'),
-    'reader-runtime should initialize visual vocab through the module'
+    importRuntimeSource.includes("import { initVisualVocab } from './visual-vocab-module.js'"),
+    'reader-import-runtime should import the visual vocab module'
+  );
+  assert.ok(
+    importRuntimeSource.includes('var visualVocabApi = initVisualVocab({'),
+    'reader-import-runtime should initialize visual vocab through the module'
   );
   assert.ok(
     bindingsSource.includes("defineRuntimeStateBinding(runtimeState, 'globalVocab', () => visualVocabApi.globalVocab"),
@@ -26,8 +36,8 @@ async function main() {
     'reader-runtime should expose vocabMatchMap through the module facade'
   );
   assert.ok(
-    runtimeSource.includes('rebuildVocabMatching: visualVocabApi.rebuildVocabMatching'),
-    'reader-runtime should inject module-owned rebuildVocabMatching'
+    importRuntimeSource.includes('rebuildVocabMatching: visualVocabApi.rebuildVocabMatching'),
+    'reader-import-runtime should inject module-owned rebuildVocabMatching'
   );
 
   [

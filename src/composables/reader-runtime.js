@@ -18,7 +18,6 @@
     import './render-mode.js';
     import './annotation-lightweight-module.js';
     import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';
-    import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
@@ -26,7 +25,7 @@
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
     import { initReaderAppRuntime } from './reader-app-runtime.js';
-    import { initVisualVocab } from './visual-vocab-module.js';
+    import { initReaderImportRuntime } from './reader-import-runtime.js';
     import { initAudioIdentity } from './audio-identity-module.js';
     import { initHotkeyState } from './hotkey-state-module.js';
     import { initMarksState } from './marks-state-module.js';
@@ -35,18 +34,8 @@
         createCurrentNoteToggler,
         createChunkNoteTransferDialogAccess
     } from './reader-runtime-helpers.js';
-    import { configureRuntimeStateBindings } from './runtime-state-bindings.js';
     import { showToast, showError } from './ui-facades.js';
-    import {
-        configureSessionFacades,
-        clearGeneratedAnnotationIndex,
-        clearPersistedChunkSession,
-        getAnnotationGenerationScope,
-        emitAnnotationDiagnostics,
-        scheduleGeneratedAnnotationIndexRefresh,
-        syncAnnotationGenerationEntryStatus,
-        initAnnotationApiSettingsUi
-    } from './session-facades.js';
+    import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -207,28 +196,9 @@
     var _cnApi = notesRuntime.chunkNotesApi;
     var _snApi = notesRuntime.sentenceNotesApi;
 
-    // === Import module delegation (M4+M5 extracted → src/composables/import-module.js) ===
-    configureSessionFacades({
-        getRuntimeState: function () { return runtimeState; }
-    });
-    configureSessionStateProvider(runtimeState);
-    var visualVocabApi = initVisualVocab({
-        visualFileInput: visualFileInput,
-        validateVisualData: validateVisualData,
-        buildVocabMatchMap: buildVocabMatchMapHelper,
-        hasTranscriptData: function () { return _tr.segments.length > 0; },
-        getWords: function () { return _tr.words; },
-        saveToDB: saveToDB,
-        getFirstFileFromEvent: getFirstFileFromEvent,
-        readFileAsText: readFileAsText,
-        markFileLoaded: markFileLoaded,
-        lblVisual: lblVisual,
-        showToast: showToast,
-        showError: showError,
-        restoreReaderFocus: restoreReaderFocus,
-        bridgeToPinia: bridgeToPinia
-    });
-    configureRuntimeStateBindings({
+    var chunkControlsApi = null;
+    var importRuntime = initReaderImportRuntime({
+        importModule: window.__importModule,
         runtimeState: runtimeState,
         transcriptState: _tr,
         chunkState: _ch,
@@ -237,63 +207,45 @@
         audioIdentityApi: audioIdentityApi,
         hotkeyStateApi: hotkeyStateApi,
         marksStateApi: marksStateApi,
-        visualVocabApi: visualVocabApi
-    });
-
-    var chunkControlsApi = null;
-    var _cpApi = window.__importModule.initChunkPipeline({
-        state: runtimeState,
-        getIsChunkMode: function() { return _ch.isChunkMode; },
-        renderChunkMode: renderChunkMode,
-        bridgeToPinia: bridgeToPinia,
-        toggleChunkBtn: toggleChunkBtn,
-        enterChunkMode: function () { if (chunkControlsApi) chunkControlsApi.toggleChunkMode(true); },
-        cleanTextHelper: cleanTextHelper,
-        tokenizeTextHelper: tokenizeTextHelper,
-        findExactMatchRangeHelper: findExactMatchRangeHelper
-    });
-
-    var _ihApi = window.__importModule.initImportHandlers({
-        state: runtimeState,
         audioFileInput: audioFileInput,
         transcriptFileInput: transcriptFileInput,
         chunkFileInput: chunkFileInput,
         clozeFileInput: clozeFileInput,
+        visualFileInput: visualFileInput,
         getFirstFileFromEvent: getFirstFileFromEvent,
         readFileAsText: readFileAsText,
         saveToDB: saveToDB,
         applyCurrentAudioMeta: applyCurrentAudioMeta,
-        clearGeneratedAnnotationIndex: clearGeneratedAnnotationIndex,
         restoreReaderFocus: restoreReaderFocus,
         showToast: showToast,
         showError: showError,
         markFileLoaded: markFileLoaded,
         lblAudio: lblAudio,
         lblTranscript: lblTranscript,
+        lblVisual: lblVisual,
+        validateVisualData: validateVisualData,
         validateTranscriptData: validateTranscriptData,
         validateChunkData: validateChunkData,
         validateClozeData: validateClozeData,
-        clearPersistedChunkSession: clearPersistedChunkSession,
         switchSentenceNotesDoc: switchSentenceNotesDoc,
-        getAnnotationGenerationScope: getAnnotationGenerationScope,
-        emitAnnotationDiagnostics: emitAnnotationDiagnostics,
-        buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId,
-        scheduleGeneratedAnnotationIndexRefresh: scheduleGeneratedAnnotationIndexRefresh,
         renderTranscript: renderTranscript,
         renderChunkMode: renderChunkMode,
         forceUpdateUI: forceUpdateUI,
-        syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
         bridgeToPinia: bridgeToPinia,
-        rebuildVocabMatching: visualVocabApi.rebuildVocabMatching,
         closeChunkNoteExportDialog: closeChunkNoteExportDialog,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
-        clearChunkNotesFileState: function () { return _cnApi.clearChunkNotesFileState(); },
-        processChunkData: _cpApi.processChunkData,
+        chunkNotesApi: _cnApi,
         audioPlayer: audioPlayer,
         transcriptContainer: transcriptContainer,
-        _ns: _ns,
-        markedMap: marksStateApi.markedMap
+        notesState: _ns,
+        getChunkControlsApi: function () { return chunkControlsApi; },
+        toggleChunkBtn: toggleChunkBtn,
+        cleanTextHelper: cleanTextHelper,
+        tokenizeTextHelper: tokenizeTextHelper,
+        findExactMatchRangeHelper: findExactMatchRangeHelper,
+        buildVocabMatchMap: buildVocabMatchMapHelper
     });
+    var visualVocabApi = importRuntime.visualVocabApi;
 
     _cnApi.ensureChunkNoteOverlayLayers();
 
