@@ -34,6 +34,7 @@
     "verify:reader-public-facades": "node scripts/reader-public-facades-check.cjs",
     "verify:ui-facades": "node scripts/ui-facades-check.cjs",
     "verify:render-mode": "node scripts/render-mode-check.cjs",
+    "verify:glass-effects": "node scripts/glass-effects-check.cjs",
     "verify:audio-store-facades": "node scripts/audio-store-facades-check.cjs",
     "verify:chunk-note-style-facades": "node scripts/chunk-note-style-facades-check.cjs",
     "verify:keyboard-facades": "node scripts/keyboard-facades-check.cjs",

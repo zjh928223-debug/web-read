@@ -92,4 +92,25 @@
     }
   }
 
+  export function initGlassEffects(deps) {
+    function lockChunkNoteDimensions() {
+      deps.listChunkNotes().forEach(function (note) {
+        if (!note || !note.id) return;
+        var tag = deps.getChunkNoteTagById(note.id);
+        if (tag) {
+          var contentBox = deps.getChunkNoteContentBoxSize(tag);
+          var w = Math.max(40, Math.round(contentBox && Number.isFinite(contentBox.width) ? contentBox.width : 0));
+          var h = Math.max(18, Math.round(contentBox && Number.isFinite(contentBox.height) ? contentBox.height : 0));
+          note.w = w;
+          note.h = h;
+        }
+        if (Number.isFinite(Number(note.w)) && Number.isFinite(Number(note.h))) {
+          note.autoSize = false;
+        }
+      });
+    }
+
+    init(lockChunkNoteDimensions);
+  }
+
   window.__glassEffects = { init: init };

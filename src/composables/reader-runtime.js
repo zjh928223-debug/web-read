@@ -17,6 +17,7 @@
     import { runtimeState } from './runtime-state-facade.js';
     import './render-mode.js';
     import './annotation-lightweight-module.js';
+    import { initGlassEffects } from './glass-effects.js';
     import { configureTranscriptInteractions } from './transcript-interactions.js';
     import { configureChunkInteractions } from './chunk-interactions.js';
     import { configureRenderRuntime } from './render-runtime.js';
@@ -1329,26 +1330,11 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         mainAppArea: mainAppArea
     });
 
-    // [MIGRATED] glass effects → src/composables/glass-effects.js
-    (function () {
-      function lockChunkNoteDimensions() {
-        _cnApi.listChunkNotes().forEach(function (note) {
-          if (!note || !note.id) return;
-          var tag = getChunkNoteTagById(note.id);
-          if (tag) {
-            var contentBox = getChunkNoteContentBoxSize(tag);
-            var w = Math.max(40, Math.round(contentBox && Number.isFinite(contentBox.width) ? contentBox.width : 0));
-            var h = Math.max(18, Math.round(contentBox && Number.isFinite(contentBox.height) ? contentBox.height : 0));
-            note.w = w;
-            note.h = h;
-          }
-          if (Number.isFinite(Number(note.w)) && Number.isFinite(Number(note.h))) {
-            note.autoSize = false;
-          }
-        });
-      }
-      window.__glassEffects.init(lockChunkNoteDimensions);
-    })();
+    initGlassEffects({
+        listChunkNotes: function () { return _cnApi.listChunkNotes(); },
+        getChunkNoteTagById: getChunkNoteTagById,
+        getChunkNoteContentBoxSize: getChunkNoteContentBoxSize
+    });
   
     // Init hold button label
     setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
