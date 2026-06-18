@@ -20,8 +20,7 @@
     import { renderTranscript, renderChunkMode } from './render-runtime.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';
-    import { initReaderNotesRuntime } from './reader-notes-runtime.js';
-    import { initReaderSessionRuntime } from './reader-session-runtime.js';
+    import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';
     import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
@@ -132,7 +131,7 @@
     // Sentence prev-tap state is part of playback transient state.
     // Cloze state is owned by src/composables/cloze-state.js + src/pinia-stores/cloze.js.
     // [MIGRATED] shared notes state → src/composables/notes-module.js
-    var notesRuntime = initReaderNotesRuntime({
+    var notesSessionRuntime = initReaderNotesSessionRuntime({
         notesModule: window.__notesModule,
         chunkNoteLayout: window.__chunkNoteLayout,
         transcriptState: _tr,
@@ -153,21 +152,15 @@
         notePreviewResizeHandle: notePreviewResizeHandle,
         notePreviewResizeHandleY: notePreviewResizeHandleY
     });
-    var _ns = notesRuntime.notesState;
-    var bridgeToPinia = notesRuntime.bridgeToPinia;
-    var _cnApi = notesRuntime.chunkNotesApi;
-    var _snApi = notesRuntime.sentenceNotesApi;
-
-    var sessionRuntime = initReaderSessionRuntime({
-        chunkNotesApi: _cnApi,
-        sentenceNotesApi: _snApi,
-        audioIdentityApi: audioIdentityApi
-    });
-    var loadChunkNotesForCurrentAudio = sessionRuntime.loadChunkNotesForCurrentAudio;
-    var setChunkNoteVisible = sessionRuntime.setChunkNoteVisible;
-    var loadSentenceNotesForCurrentAudio = sessionRuntime.loadSentenceNotesForCurrentAudio;
-    var switchSentenceNotesDoc = sessionRuntime.switchSentenceNotesDoc;
-    var applyCurrentAudioMeta = sessionRuntime.applyCurrentAudioMeta;
+    var _ns = notesSessionRuntime.notesState;
+    var bridgeToPinia = notesSessionRuntime.bridgeToPinia;
+    var _cnApi = notesSessionRuntime.chunkNotesApi;
+    var _snApi = notesSessionRuntime.sentenceNotesApi;
+    var loadChunkNotesForCurrentAudio = notesSessionRuntime.loadChunkNotesForCurrentAudio;
+    var setChunkNoteVisible = notesSessionRuntime.setChunkNoteVisible;
+    var loadSentenceNotesForCurrentAudio = notesSessionRuntime.loadSentenceNotesForCurrentAudio;
+    var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;
+    var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;
 
     var chunkControlsApi = null;
     var importRuntime = initReaderImportRuntime({

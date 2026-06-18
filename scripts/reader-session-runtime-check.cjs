@@ -5,23 +5,42 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
-    'reader-runtime should import reader session runtime'
+    runtimeSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime should initialize session lifecycle wrappers through reader notes/session runtime'
   );
   assert.ok(
+    runtimeSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    'reader-runtime should initialize session lifecycle wrappers through the notes/session module'
+  );
+  assert.equal(
+    runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
+    false,
+    'reader-runtime should not import reader session runtime directly'
+  );
+  assert.equal(
     runtimeSource.includes('var sessionRuntime = initReaderSessionRuntime({'),
-    'reader-runtime should initialize session lifecycle wrappers through the module'
+    false,
+    'reader-runtime should not initialize reader session runtime directly'
+  );
+  assert.ok(
+    notesSessionRuntimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
+    'reader-notes-session-runtime should import reader session runtime'
+  );
+  assert.ok(
+    notesSessionRuntimeSource.includes('var sessionRuntime = initReaderSessionRuntime({'),
+    'reader-notes-session-runtime should initialize session lifecycle wrappers through the module'
   );
   [
-    'var loadChunkNotesForCurrentAudio = sessionRuntime.loadChunkNotesForCurrentAudio;',
-    'var setChunkNoteVisible = sessionRuntime.setChunkNoteVisible;',
-    'var loadSentenceNotesForCurrentAudio = sessionRuntime.loadSentenceNotesForCurrentAudio;',
-    'var switchSentenceNotesDoc = sessionRuntime.switchSentenceNotesDoc;',
-    'var applyCurrentAudioMeta = sessionRuntime.applyCurrentAudioMeta;'
+    'var loadChunkNotesForCurrentAudio = notesSessionRuntime.loadChunkNotesForCurrentAudio;',
+    'var setChunkNoteVisible = notesSessionRuntime.setChunkNoteVisible;',
+    'var loadSentenceNotesForCurrentAudio = notesSessionRuntime.loadSentenceNotesForCurrentAudio;',
+    'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
+    'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
     assert.ok(runtimeSource.includes(pattern), `reader-runtime should keep local injection binding: ${pattern}`);
   });

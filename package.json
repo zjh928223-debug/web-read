@@ -31,6 +31,7 @@
     "verify:runtime-state-facade": "node scripts/runtime-state-facade-check.cjs",
     "verify:reader-bootstrap-runtime": "node scripts/reader-bootstrap-runtime-check.cjs",
     "verify:reader-runtime-deps": "node scripts/reader-runtime-deps-check.cjs",
+    "verify:reader-notes-session-runtime": "node scripts/reader-notes-session-runtime-check.cjs",
     "verify:reader-notes-runtime": "node scripts/reader-notes-runtime-check.cjs",
     "verify:reader-session-runtime": "node scripts/reader-session-runtime-check.cjs",
     "verify:reader-interaction-runtime": "node scripts/reader-interaction-runtime-check.cjs",

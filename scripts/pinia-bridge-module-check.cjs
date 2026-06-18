@@ -4,17 +4,26 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
 const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const interactionSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'read-web-interactions-check.cjs'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
-  'reader-runtime should import the notes runtime module that initializes the Pinia bridge'
+  appSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+  'reader-runtime should initialize the Pinia bridge through reader notes/session runtime'
 );
 assert.ok(
-  appSource.includes('var bridgeToPinia = notesRuntime.bridgeToPinia;'),
-  'reader-runtime should receive the Pinia bridge from notes runtime'
+  appSource.includes('var bridgeToPinia = notesSessionRuntime.bridgeToPinia;'),
+  'reader-runtime should receive the Pinia bridge from notes/session runtime'
+);
+assert.ok(
+  notesSessionRuntimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
+  'reader-notes-session-runtime should import the notes runtime module that initializes the Pinia bridge'
+);
+assert.ok(
+  notesSessionRuntimeSource.includes('bridgeToPinia: notesRuntime.bridgeToPinia'),
+  'reader-notes-session-runtime should forward the Pinia bridge from notes runtime'
 );
 assert.equal(appSource.includes('initPiniaBridge({'), false, 'reader-runtime should not initialize Pinia bridge directly');
 assert.equal(appSource.includes('function bridgeToPinia()'), false, 'reader-runtime should not own bridgeToPinia implementation');

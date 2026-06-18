@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
+  const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
   const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
@@ -47,12 +48,16 @@ async function main() {
     'runtimeState.currentAudioKey should read from audio identity module'
   );
   assert.ok(
-    runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
-    'reader-runtime should initialize audio identity session wrappers through reader-session-runtime'
+    runtimeSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime should initialize audio identity session wrappers through reader-notes-session-runtime'
   );
   assert.ok(
-    runtimeSource.includes('var applyCurrentAudioMeta = sessionRuntime.applyCurrentAudioMeta;'),
-    'reader-runtime should receive applyCurrentAudioMeta from reader-session-runtime'
+    runtimeSource.includes('var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'),
+    'reader-runtime should receive applyCurrentAudioMeta from reader-notes-session-runtime'
+  );
+  assert.ok(
+    notesSessionRuntimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
+    'reader-notes-session-runtime should import reader-session-runtime'
   );
   assert.ok(
     sessionRuntimeSource.includes('const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);'),
@@ -87,7 +92,7 @@ async function main() {
 
   [
     'audioIdentityApi: audioIdentityApi',
-    'var sessionRuntime = initReaderSessionRuntime({'
+    'var notesSessionRuntime = initReaderNotesSessionRuntime({'
   ].forEach((pattern) => {
     assert.ok(
       runtimeSource.includes(pattern),

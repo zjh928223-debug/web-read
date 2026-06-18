@@ -127,7 +127,7 @@ assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
 assert.ok(runtimeStateBindingsSource.includes('export function configureRuntimeStateBindings'));
 assert.ok(runtimeStateBindingsSource.includes('Object.defineProperty(runtimeState, field, {'));
-assert.ok(appSource.includes('var _ns = notesRuntime.notesState;'));
+assert.ok(appSource.includes('var _ns = notesSessionRuntime.notesState;'));
 assert.equal(appSource.includes('var _ns = window.__notesModule.getNotesState();'), false);
 assert.ok(notesRuntimeSource.includes('var notesState = notesModule.getNotesState()'));
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);

@@ -5,16 +5,35 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
-    'reader-runtime should import reader notes runtime module'
+    runtimeSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime should initialize reader notes runtime through reader notes/session runtime'
   );
   assert.ok(
+    runtimeSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    'reader-runtime should initialize notes runtime through the notes/session module'
+  );
+  assert.equal(
+    runtimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
+    false,
+    'reader-runtime should not import reader notes runtime directly'
+  );
+  assert.equal(
     runtimeSource.includes('var notesRuntime = initReaderNotesRuntime({'),
-    'reader-runtime should initialize notes runtime through the module'
+    false,
+    'reader-runtime should not initialize notes runtime directly'
+  );
+  assert.ok(
+    notesSessionRuntimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
+    'reader-notes-session-runtime should import reader notes runtime module'
+  );
+  assert.ok(
+    notesSessionRuntimeSource.includes('var notesRuntime = initReaderNotesRuntime({'),
+    'reader-notes-session-runtime should initialize notes runtime through the module'
   );
   [
     'window.__notesModule.getNotesState()',
