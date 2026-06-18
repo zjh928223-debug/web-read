@@ -712,10 +712,14 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
     var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({
         chunkState: _ch,
+        transcriptState: _tr,
         playbackState: _pb,
+        audioPlayer: audioPlayer,
         mainAppArea: mainAppArea,
         transcriptContainer: transcriptContainer,
         findChunkIndexByTimeHelper: findChunkIndexByTimeHelper,
+        getCurrentSegmentIndexHelper: getCurrentSegmentIndexHelper,
+        getForceUpdateUI: function () { return forceUpdateUI; },
         getWindow: function () { return window; }
     });
 
@@ -738,8 +742,8 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         swapActiveClass: playbackRuntimeHelpersApi.swapActiveClass,
         followPlaybackTarget: playbackRuntimeHelpersApi.followPlaybackTarget,
         getAnnotationBubble: annotationBubbleResolverApi.getAnnotationBubble,
-        jumpPrevSentence: jumpPrevSentence,
-        jumpNextSentence: jumpNextSentence
+        jumpPrevSentence: playbackRuntimeHelpersApi.jumpPrevSentence,
+        jumpNextSentence: playbackRuntimeHelpersApi.jumpNextSentence
     });
 
     // Re-bind local references to functions now in playback-module
@@ -842,35 +846,6 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         if (targetIdx !== -1) {
             var noteEl = document.getElementById('note-' + targetIdx);
             if (noteEl) noteEl.open = !noteEl.open;
-        }
-    }
-
-    function jumpPrevSentence() {
-        var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndexHelper(_tr.segments, _tr.words, _tr.wordStarts, cur);
-        var targetTime = 0;
-        if (sIdx !== -1) {
-            var now = Date.now();
-            if (_pb.lastSentencePrevTapSegIndex === sIdx && (now - _pb.lastSentencePrevTapAt) <= 600) {
-                targetTime = sIdx > 0 ? _tr.segments[sIdx - 1].start : _tr.segments[sIdx].start;
-                _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0;
-            } else {
-                targetTime = _tr.segments[sIdx].start;
-                _pb.lastSentencePrevTapSegIndex = sIdx; _pb.lastSentencePrevTapAt = now;
-            }
-        } else { _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0; }
-        audioPlayer.currentTime = targetTime;
-        forceUpdateUI(targetTime);
-    }
-
-    function jumpNextSentence() {
-        var cur = audioPlayer.currentTime;
-        var sIdx = getCurrentSegmentIndexHelper(_tr.segments, _tr.words, _tr.wordStarts, cur);
-        var next = (sIdx >= 0 && sIdx < _tr.segments.length - 1) ? _tr.segments[sIdx + 1] : null;
-        _pb.lastSentencePrevTapSegIndex = -1; _pb.lastSentencePrevTapAt = 0;
-        if (next && Number.isFinite(next.start)) {
-            audioPlayer.currentTime = next.start;
-            forceUpdateUI(next.start);
         }
     }
 

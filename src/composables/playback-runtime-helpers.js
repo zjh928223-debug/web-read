@@ -1,9 +1,14 @@
 export function initPlaybackRuntimeHelpers(options) {
     var chunkState = options.chunkState;
+    var transcriptState = options.transcriptState;
     var playbackState = options.playbackState;
+    var audioPlayer = options.audioPlayer;
     var mainAppArea = options.mainAppArea;
     var transcriptContainer = options.transcriptContainer;
     var findChunkIndexByTimeHelper = options.findChunkIndexByTimeHelper;
+    var getCurrentSegmentIndexHelper = options.getCurrentSegmentIndexHelper;
+    var getForceUpdateUI = typeof options.getForceUpdateUI === 'function' ? options.getForceUpdateUI : function () { return null; };
+    var getNow = typeof options.getNow === 'function' ? options.getNow : function () { return Date.now(); };
     var getWindow = typeof options.getWindow === 'function' ? options.getWindow : function () { return window; };
 
     function findChunkIndexByTime(t) {
@@ -38,9 +43,61 @@ export function initPlaybackRuntimeHelpers(options) {
         container.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
     }
 
+    function forceUpdateAt(time) {
+        var forceUpdateUI = getForceUpdateUI();
+        if (typeof forceUpdateUI === 'function') forceUpdateUI(time);
+    }
+
+    function jumpPrevSentence() {
+        var cur = audioPlayer.currentTime;
+        var sIdx = getCurrentSegmentIndexHelper(
+            transcriptState.segments,
+            transcriptState.words,
+            transcriptState.wordStarts,
+            cur
+        );
+        var targetTime = 0;
+        if (sIdx !== -1) {
+            var now = getNow();
+            if (playbackState.lastSentencePrevTapSegIndex === sIdx && (now - playbackState.lastSentencePrevTapAt) <= 600) {
+                targetTime = sIdx > 0 ? transcriptState.segments[sIdx - 1].start : transcriptState.segments[sIdx].start;
+                playbackState.lastSentencePrevTapSegIndex = -1;
+                playbackState.lastSentencePrevTapAt = 0;
+            } else {
+                targetTime = transcriptState.segments[sIdx].start;
+                playbackState.lastSentencePrevTapSegIndex = sIdx;
+                playbackState.lastSentencePrevTapAt = now;
+            }
+        } else {
+            playbackState.lastSentencePrevTapSegIndex = -1;
+            playbackState.lastSentencePrevTapAt = 0;
+        }
+        audioPlayer.currentTime = targetTime;
+        forceUpdateAt(targetTime);
+    }
+
+    function jumpNextSentence() {
+        var cur = audioPlayer.currentTime;
+        var sIdx = getCurrentSegmentIndexHelper(
+            transcriptState.segments,
+            transcriptState.words,
+            transcriptState.wordStarts,
+            cur
+        );
+        var next = (sIdx >= 0 && sIdx < transcriptState.segments.length - 1) ? transcriptState.segments[sIdx + 1] : null;
+        playbackState.lastSentencePrevTapSegIndex = -1;
+        playbackState.lastSentencePrevTapAt = 0;
+        if (next && Number.isFinite(next.start)) {
+            audioPlayer.currentTime = next.start;
+            forceUpdateAt(next.start);
+        }
+    }
+
     return {
         findChunkIndexByTime: findChunkIndexByTime,
         swapActiveClass: swapActiveClass,
-        followPlaybackTarget: followPlaybackTarget
+        followPlaybackTarget: followPlaybackTarget,
+        jumpPrevSentence: jumpPrevSentence,
+        jumpNextSentence: jumpNextSentence
     };
 }

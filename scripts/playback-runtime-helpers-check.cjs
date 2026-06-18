@@ -19,7 +19,9 @@ async function main() {
   [
     'function findChunkIndexByTime(t)',
     'function swapActiveClass(nextEl, prevEl, className)',
-    'function followPlaybackTarget(el)'
+    'function followPlaybackTarget(el)',
+    'function jumpPrevSentence()',
+    'function jumpNextSentence()'
   ].forEach((pattern) => {
     assert.equal(
       runtimeSource.includes(pattern),
@@ -30,7 +32,9 @@ async function main() {
   [
     'findChunkIndexByTime: playbackRuntimeHelpersApi.findChunkIndexByTime',
     'swapActiveClass: playbackRuntimeHelpersApi.swapActiveClass',
-    'followPlaybackTarget: playbackRuntimeHelpersApi.followPlaybackTarget'
+    'followPlaybackTarget: playbackRuntimeHelpersApi.followPlaybackTarget',
+    'jumpPrevSentence: playbackRuntimeHelpersApi.jumpPrevSentence',
+    'jumpNextSentence: playbackRuntimeHelpersApi.jumpNextSentence'
   ].forEach((pattern) => {
     assert.ok(
       runtimeSource.includes(pattern),
@@ -39,7 +43,9 @@ async function main() {
   });
   [
     'followPlaybackTarget',
-    'swapActiveClass'
+    'swapActiveClass',
+    'jumpPrevSentence',
+    'jumpNextSentence'
   ].forEach((pattern) => {
     assert.equal(
       sessionInitSource.includes(pattern),
@@ -57,8 +63,22 @@ async function main() {
   const { initPlaybackRuntimeHelpers } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   const chunkState = { chunkItems: [{ start: 0 }, { start: 2 }] };
-  const playbackState = { autoFollow: true, userScrollSuppress: false };
+  const transcriptState = {
+    segments: [{ start: 0 }, { start: 5 }, { start: 10 }],
+    words: [],
+    wordStarts: []
+  };
+  const playbackState = {
+    autoFollow: true,
+    userScrollSuppress: false,
+    lastSentencePrevTapSegIndex: -1,
+    lastSentencePrevTapAt: 0
+  };
+  const audioPlayer = { currentTime: 6 };
   const helperCalls = [];
+  const forceUpdateCalls = [];
+  let currentSegmentIndex = 1;
+  let now = 1000;
   const scrollCalls = [];
   const container = {
     clientHeight: 600,
@@ -72,13 +92,21 @@ async function main() {
   };
   const api = initPlaybackRuntimeHelpers({
     chunkState,
+    transcriptState,
     playbackState,
+    audioPlayer,
     mainAppArea: container,
     transcriptContainer: null,
     findChunkIndexByTimeHelper(items, time) {
       helperCalls.push({ items, time });
       return time >= 2 ? 1 : 0;
     },
+    getCurrentSegmentIndexHelper(segments, words, wordStarts, time) {
+      helperCalls.push({ segments, words, wordStarts, time });
+      return currentSegmentIndex;
+    },
+    getForceUpdateUI: () => (time) => forceUpdateCalls.push(time),
+    getNow: () => now,
     getWindow: () => ({ innerHeight: 900 })
   });
 
@@ -117,6 +145,32 @@ async function main() {
   playbackState.userScrollSuppress = true;
   api.followPlaybackTarget(target);
   assert.equal(scrollCalls.length, 1);
+
+  playbackState.userScrollSuppress = false;
+  audioPlayer.currentTime = 6;
+  currentSegmentIndex = 1;
+  now = 1000;
+  api.jumpPrevSentence();
+  assert.equal(audioPlayer.currentTime, 5);
+  assert.equal(playbackState.lastSentencePrevTapSegIndex, 1);
+  assert.equal(playbackState.lastSentencePrevTapAt, 1000);
+  assert.deepEqual(forceUpdateCalls, [5]);
+
+  audioPlayer.currentTime = 5.2;
+  now = 1200;
+  api.jumpPrevSentence();
+  assert.equal(audioPlayer.currentTime, 0);
+  assert.equal(playbackState.lastSentencePrevTapSegIndex, -1);
+  assert.equal(playbackState.lastSentencePrevTapAt, 0);
+  assert.deepEqual(forceUpdateCalls, [5, 0]);
+
+  audioPlayer.currentTime = 5.2;
+  currentSegmentIndex = 1;
+  api.jumpNextSentence();
+  assert.equal(audioPlayer.currentTime, 10);
+  assert.equal(playbackState.lastSentencePrevTapSegIndex, -1);
+  assert.equal(playbackState.lastSentencePrevTapAt, 0);
+  assert.deepEqual(forceUpdateCalls, [5, 0, 10]);
 
   const fallbackCalls = [];
   const fallbackApi = initPlaybackRuntimeHelpers({

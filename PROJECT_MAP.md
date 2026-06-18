@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 962 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 937 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -80,7 +80,7 @@ src/
 │   ├── keyboard-module.js
 │   ├── style-editor.js          # visual style editor + local style parsing helper
 │   ├── playback-module.js
-│   ├── playback-runtime-helpers.js # playback helper behavior
+│   ├── playback-runtime-helpers.js # playback helper behavior + sentence jumps
 │   ├── app-handlers.js          # mark import/export handlers
 │   ├── chunk-note-transfer-module.js # chunk note import/export transfer UI
 │   ├── visual-vocab-module.js   # visual vocab state + processVisual compatibility

@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 962 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 937 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,13 +97,13 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 962 lines
+reader-runtime.js                 about 937 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
 keyboard-module.js                about 394 lines
 playback-module.js                about 253 lines
-playback-runtime-helpers.js       about 46 lines
+playback-runtime-helpers.js       about 103 lines
 style-editor.js                   about 211 lines
 app-handlers.js                   about 97 lines
 chunk-note-transfer-module.js     about 195 lines
@@ -219,7 +219,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 
 - `src/composables/playback-module.js` owns the migrated playback update functions.
 - `src/composables/playback-state.js` owns playback transient state such as auto-follow, scroll suppression, active highlight element refs, playback loop signature, and sentence previous-tap navigation state.
-- `src/composables/playback-runtime-helpers.js` owns playback helper functions for active-class swapping, AI chunk index lookup, and page-style follow scrolling; `reader-runtime.js` only initializes the module and injects its API.
+- `src/composables/playback-runtime-helpers.js` owns playback helper functions for active-class swapping, AI chunk index lookup, page-style follow scrolling, and sentence-mode previous/next jumps; `reader-runtime.js` only initializes the module and injects its API.
 - Auto-follow now behaves like page turning: when the active sentence reaches the lower trigger area, it scrolls the active sentence near the top of the viewport instead of centering it.
 - The follow threshold is based on the current scroll container height, so resizing or zooming recalculates the visible zone dynamically.
 
@@ -419,7 +419,7 @@ Current checks cover:
 - chunk state adapter ownership through `verify:chunk-state`
 - cloze state adapter ownership through `verify:cloze-state`
 - playback transient state adapter ownership through `verify:playback-state`
-- migrated playback runtime helpers into `src/composables/playback-runtime-helpers.js` through `verify:playback-runtime-helpers`
+- migrated playback runtime helpers and sentence-mode jump helpers into `src/composables/playback-runtime-helpers.js` through `verify:playback-runtime-helpers`
 - migrated `window.__state` owner facades through `verify:state-facades`
 - removed no-consumer `window.__state` facades are guarded from reappearing through `verify:state-facades`
 - removed no-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades through `verify:state-facades`
