@@ -5,16 +5,35 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
-    'reader-runtime should import reader playback runtime module'
+    runtimeSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+    'reader-runtime should initialize reader playback runtime through reader interaction runtime'
   );
   assert.ok(
+    runtimeSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
+    'reader-runtime should initialize playback/interactions through reader interaction runtime'
+  );
+  assert.equal(
+    runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
+    false,
+    'reader-runtime should not import reader playback runtime directly'
+  );
+  assert.equal(
     runtimeSource.includes('var playbackRuntime = initReaderPlaybackRuntime({'),
-    'reader-runtime should initialize playback/interactions through reader playback runtime'
+    false,
+    'reader-runtime should not initialize reader playback runtime directly'
+  );
+  assert.ok(
+    interactionRuntimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
+    'reader-interaction-runtime should import reader playback runtime module'
+  );
+  assert.ok(
+    interactionRuntimeSource.includes('var playbackRuntime = initReaderPlaybackRuntime({'),
+    'reader-interaction-runtime should initialize playback/interactions through reader playback runtime'
   );
   [
     "import { configureTranscriptInteractions } from './transcript-interactions.js';",

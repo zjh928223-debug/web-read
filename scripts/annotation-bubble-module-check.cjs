@@ -11,8 +11,8 @@ const resolverSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
-  'reader-runtime should initialize the annotation bubble resolver through reader playback runtime'
+  appSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+  'reader-runtime should initialize the annotation bubble resolver through reader interaction runtime'
 );
 assert.equal(appSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';"), false);
 assert.ok(

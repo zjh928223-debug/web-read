@@ -72,6 +72,7 @@ npm run verify:session-state-provider # Focused session-init state provider chec
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
 npm run verify:reader-notes-runtime # Focused reader notes runtime setup check
+npm run verify:reader-interaction-runtime # Focused reader interaction runtime setup check
 npm run verify:reader-playback-runtime # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime # Focused reader controls runtime setup check
 npm run verify:reader-keyboard-runtime # Focused reader keyboard runtime setup check
@@ -146,7 +147,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 51 moduleized legacy behavior chunks
+├── composables/               # 52 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -166,7 +167,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader runtime dependency collection, reader notes runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, reader runtime dependency collection, reader notes runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -181,6 +182,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; `session-init.js` still owns its annotation settings DOM setup.
 - `src/composables/reader-runtime-deps.js` owns runtime utility/global helper dependency collection for validation, import helpers, identity keys, playback indexes, chunk matching, and vocab matching.
 - `src/composables/reader-notes-runtime.js` owns shared notes state, chunk/sentence notes API initialization, and Pinia bridge initialization for the runtime shell.
+- `src/composables/reader-interaction-runtime.js` owns render runtime configuration and reader playback runtime initialization for the runtime shell.
 - `src/composables/reader-playback-runtime.js` owns annotation bubble resolver setup, playback helper setup, playback module initialization, and transcript/chunk interaction configuration.
 - `src/composables/reader-controls-runtime.js` owns highlight/chunk/theme control initialization, style editor initialization, and annotation settings UI initialization for the runtime shell.
 - `src/composables/reader-keyboard-runtime.js` owns keyboard module initialization and injects hotkey, mark, chunk-note, and panel-close dependencies.

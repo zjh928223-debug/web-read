@@ -28,8 +28,8 @@ assert.ok(
   'annotation-bubble-resolver should own window.notifyAnnotationBubbleWordClick'
 );
 assert.ok(
-  appSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
-  'reader-runtime should initialize annotation bubble resolver through reader playback runtime'
+  appSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+  'reader-runtime should initialize annotation bubble resolver through reader interaction runtime'
 );
 assert.equal(appSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';"), false);
 assert.ok(

@@ -9,8 +9,8 @@ const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components',
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'transcript-interactions.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
-  'reader-runtime should configure transcript interactions through reader playback runtime'
+  appSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+  'reader-runtime should configure transcript interactions through reader interaction runtime'
 );
 assert.equal(
   appSource.includes("transcriptContainer.addEventListener('click'"),

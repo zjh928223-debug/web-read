@@ -31,7 +31,7 @@ async function main() {
 
   [
     'markedMap: marksStateApi.markedMap',
-    'var playbackRuntime = initReaderPlaybackRuntime({'
+    'var interactionRuntime = initReaderInteractionRuntime({'
   ].forEach((pattern) => {
     assert.ok(
       runtimeSource.includes(pattern),

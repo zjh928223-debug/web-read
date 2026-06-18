@@ -5,15 +5,20 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-runtime.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
 const appHandlersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'app-handlers.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';"),
-  'reader-runtime.js should configure the render runtime module'
+  appSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"),
+  'reader-runtime.js should keep direct render function imports for existing runtime injections'
 );
-assert.ok(appSource.includes('configureRenderRuntime({'));
+assert.ok(
+  appSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+  'reader-runtime.js should configure render runtime through reader-interaction-runtime'
+);
+assert.equal(appSource.includes('configureRenderRuntime({'), false);
 assert.equal(appSource.includes('function renderTranscript()'), false, 'reader-runtime.js should not own renderTranscript implementation');
 assert.equal(appSource.includes('function renderChunkMode()'), false, 'reader-runtime.js should not own renderChunkMode implementation');
 assert.equal(appSource.includes('window.renderTranscript = renderTranscript'), false, 'reader-runtime.js should not export window.renderTranscript');
@@ -22,6 +27,11 @@ assert.equal(appSource.includes('window.renderChunkMode = renderChunkMode'), fal
 assert.ok(sessionSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"));
 assert.equal(sessionSource.includes('window.renderTranscript'), false, 'session-init.js should not call window.renderTranscript');
 assert.equal(sessionSource.includes('window.renderChunkMode'), false, 'session-init.js should not call window.renderChunkMode');
+
+assert.ok(interactionRuntimeSource.includes("import { configureRenderRuntime } from './render-runtime.js';"));
+assert.ok(interactionRuntimeSource.includes('configureRenderRuntime({'));
+assert.equal(interactionRuntimeSource.includes('window.'), false, 'reader-interaction-runtime should not read or write window globals');
+assert.equal(interactionRuntimeSource.includes('document.'), false, 'reader-interaction-runtime should not read DOM globals');
 
 assert.ok(runtimeSource.includes('export function configureRenderRuntime'));
 assert.ok(runtimeSource.includes('export function renderTranscript'));

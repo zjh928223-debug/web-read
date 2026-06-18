@@ -17,11 +17,11 @@
     import { runtimeState } from './runtime-state-facade.js';
     import './render-mode.js';
     import './annotation-lightweight-module.js';
-    import { configureRenderRuntime, renderTranscript, renderChunkMode } from './render-runtime.js';
+    import { renderTranscript, renderChunkMode } from './render-runtime.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
-    import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
+    import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
     import { initReaderAppRuntime } from './reader-app-runtime.js';
@@ -285,20 +285,7 @@
 
     // M4+M5 delegated → src/composables/import-module.js
 
-    configureRenderRuntime({
-        bridgeToPinia: bridgeToPinia,
-        getTranscriptContainer: function () { return transcriptContainer; },
-        getClozeMarkup: function () {
-            return window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
-        },
-        checkCloze: function (index) {
-            if (window.__clozeCheck) return window.__clozeCheck(index);
-            return undefined;
-        },
-        tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft
-    });
-
-    var playbackRuntime = initReaderPlaybackRuntime({
+    var interactionRuntime = initReaderInteractionRuntime({
         runtimeState: runtimeState,
         transcriptState: _tr,
         chunkState: _ch,
@@ -317,13 +304,23 @@
         openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); },
         getSelection: function () { return window.getSelection && window.getSelection(); },
         playbackModule: window.__playbackModule,
-        getWindow: function () { return window; }
+        getWindow: function () { return window; },
+        bridgeToPinia: bridgeToPinia,
+        getTranscriptContainer: function () { return transcriptContainer; },
+        getClozeMarkup: function () {
+            return window.__buildClozeQuizMarkup ? window.__buildClozeQuizMarkup() : '';
+        },
+        checkCloze: function (index) {
+            if (window.__clozeCheck) return window.__clozeCheck(index);
+            return undefined;
+        },
+        tryRestoreChunkNoteDraft: _cnApi.tryRestoreChunkNoteDraft
     });
-    var playbackRuntimeHelpersApi = playbackRuntime.playbackRuntimeHelpersApi;
-    var forceUpdateUI = playbackRuntime.forceUpdateUI;
-    var toggleAnnotationBubble = playbackRuntime.toggleAnnotationBubble;
-    var handleBackwardClick = playbackRuntime.handleBackwardClick;
-    var handleForwardClick = playbackRuntime.handleForwardClick;
+    var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
+    var forceUpdateUI = interactionRuntime.forceUpdateUI;
+    var toggleAnnotationBubble = interactionRuntime.toggleAnnotationBubble;
+    var handleBackwardClick = interactionRuntime.handleBackwardClick;
+    var handleForwardClick = interactionRuntime.handleForwardClick;
 
     initReaderKeyboardRuntime({
         keyboardModule: window.__keyboardModule,

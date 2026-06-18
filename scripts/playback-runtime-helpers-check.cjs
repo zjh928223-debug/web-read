@@ -5,17 +5,18 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const readerPlaybackSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
-    'reader-runtime should initialize playback helpers through reader playback runtime'
+    runtimeSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
+    'reader-runtime should initialize playback helpers through reader interaction runtime'
   );
   assert.ok(
-    runtimeSource.includes('var playbackRuntimeHelpersApi = playbackRuntime.playbackRuntimeHelpersApi;'),
-    'reader-runtime should receive playback runtime helpers through the module'
+    runtimeSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'),
+    'reader-runtime should receive playback runtime helpers through the interaction module'
   );
   [
     'function findChunkIndexByTime(t)',
@@ -43,6 +44,9 @@ async function main() {
     );
   });
   assert.equal(runtimeSource.includes('initPlaybackRuntimeHelpers({'), false);
+  assert.ok(interactionRuntimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"));
+  assert.ok(interactionRuntimeSource.includes('var playbackRuntime = initReaderPlaybackRuntime({'));
+  assert.ok(interactionRuntimeSource.includes('playbackRuntimeHelpersApi: playbackRuntime.playbackRuntimeHelpersApi'));
   assert.ok(readerPlaybackSource.includes("import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'"));
   assert.ok(readerPlaybackSource.includes('var playbackRuntimeHelpersApi = initPlaybackRuntimeHelpers({'));
   [

@@ -65,12 +65,13 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 ## Important Files
 
-- `src/composables/reader-runtime.js` - about 389 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 387 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
 - `src/composables/reader-runtime-deps.js` - runtime utility/global helper dependency collection.
 - `src/composables/reader-notes-runtime.js` - shared notes state, chunk/sentence notes API setup, and Pinia bridge runtime.
+- `src/composables/reader-interaction-runtime.js` - render runtime configuration and reader playback runtime initialization.
 - `src/composables/reader-playback-runtime.js` - annotation bubble resolver, playback helper, playback module, and transcript/chunk interaction setup.
 - `src/composables/reader-controls-runtime.js` - highlight/chunk/theme control setup, style editor init, and annotation settings UI init.
 - `src/composables/reader-keyboard-runtime.js` - keyboard module setup with hotkey, mark, chunk-note, and panel-close injected handlers.
@@ -158,6 +159,7 @@ npm run verify:session-state-provider  # Focused session-init state provider che
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:reader-runtime-deps  # Focused reader runtime dependency collection check
 npm run verify:reader-notes-runtime  # Focused reader notes runtime setup check
+npm run verify:reader-interaction-runtime  # Focused reader interaction runtime setup check
 npm run verify:reader-playback-runtime  # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime  # Focused reader controls runtime setup check
 npm run verify:reader-keyboard-runtime  # Focused reader keyboard runtime setup check
