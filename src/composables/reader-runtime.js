@@ -24,6 +24,7 @@
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
+    import { initThemeControls } from './theme-controls-module.js';
     import { initPiniaBridge } from './pinia-bridge-module.js';
     import { configureReaderPublicFacades } from './reader-public-facades.js';
     import { showToast, showError } from './ui-facades.js';
@@ -756,53 +757,19 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     });
 
     // [MIGRATED] session init → src/composables/session-init.js
-    // === Startup wiring: theme ===
-    // [MIGRATED] → window.__themeStore
-    const themeStore = window.__themeStore;
-
-    themeStore.init();
-
-    themeToggleBtn.addEventListener('click', function () {
-        if (typeof window.__lockChunkNoteDimensionsForTheme === 'function') {
-            window.__lockChunkNoteDimensionsForTheme();
-        }
-        var currentTheme = localStorage.getItem('theme') || 'light';
-        var nextTheme = currentTheme === 'light' ? 'dark' : (currentTheme === 'dark' ? 'custom' : 'light');
-        themeStore.applyThemeMode(nextTheme);
-        if (nextTheme === 'custom') {
-            themeStore.openCustomThemePanel();
-        } else {
-            themeStore.closeCustomThemePanel();
-        }
-        refreshAllChunkNoteVisuals();
+    // [MIGRATED] theme control bindings → src/composables/theme-controls-module.js
+    initThemeControls({
+        themeStore: window.__themeStore,
+        themeToggleBtn: themeToggleBtn,
+        themeCustomBgInput: themeCustomBgInput,
+        themeCustomTextInput: themeCustomTextInput,
+        themeCustomSubInput: themeCustomSubInput,
+        themeCustomBorderInput: themeCustomBorderInput,
+        themeCustomButtonInput: themeCustomButtonInput,
+        themeCustomResetBtn: themeCustomResetBtn,
+        refreshAllChunkNoteVisuals: refreshAllChunkNoteVisuals,
+        getLockChunkNoteDimensionsForTheme: function () { return window.__lockChunkNoteDimensionsForTheme; }
     });
-    [
-        ['bg', themeCustomBgInput],
-        ['text', themeCustomTextInput],
-        ['sub', themeCustomSubInput],
-        ['border', themeCustomBorderInput],
-        ['button', themeCustomButtonInput]
-    ].forEach(function (pair) {
-        var key = pair[0];
-        var input = pair[1];
-        if (!input) return;
-        input.addEventListener('input', function () {
-            var colors = themeStore.getStoredCustomThemeColors();
-            colors[key] = input.value;
-            themeStore.applyCustomTheme(colors);
-            refreshAllChunkNoteVisuals();
-        });
-        input.addEventListener('change', function () {
-            themeStore.closeCustomThemePanel();
-        });
-    });
-    if (themeCustomResetBtn) {
-        themeCustomResetBtn.addEventListener('click', function () {
-            themeStore.applyCustomTheme(themeStore.CUSTOM_THEME_DEFAULTS);
-            themeStore.closeCustomThemePanel();
-            refreshAllChunkNoteVisuals();
-        });
-    }
     initAnnotationApiSettingsUi();
 
     // M4+M5 delegated → src/composables/import-module.js

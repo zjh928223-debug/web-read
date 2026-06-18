@@ -40,6 +40,7 @@
     "verify:import-facades": "node scripts/import-facades-check.cjs",
     "verify:chunk-controls-module": "node scripts/chunk-controls-module-check.cjs",
     "verify:highlight-controls-module": "node scripts/highlight-controls-module-check.cjs",
+    "verify:theme-controls-module": "node scripts/theme-controls-module-check.cjs",
     "verify:transcript-interactions": "node scripts/transcript-interactions-check.cjs",
     "verify:chunk-interactions": "node scripts/chunk-interactions-check.cjs",
     "verify:cloze-interactions": "node scripts/cloze-interactions-check.cjs",

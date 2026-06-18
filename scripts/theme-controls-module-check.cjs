@@ -1,0 +1,51 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const repoRoot = path.resolve(__dirname, '..');
+const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const themeControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'theme-controls-module.js'), 'utf8');
+const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+
+assert.ok(
+  runtimeSource.includes("import { initThemeControls } from './theme-controls-module.js';"),
+  'reader-runtime should import the theme controls module'
+);
+
+assert.ok(
+  runtimeSource.includes('initThemeControls({'),
+  'reader-runtime should initialize theme controls through the module'
+);
+
+[
+  'themeStore.init();',
+  "themeToggleBtn.addEventListener('click'",
+  'themeStore.getStoredCustomThemeColors()',
+  'themeStore.applyCustomTheme(themeStore.CUSTOM_THEME_DEFAULTS)'
+].forEach((pattern) => {
+  assert.equal(
+    runtimeSource.includes(pattern),
+    false,
+    `reader-runtime should not own theme control binding logic: ${pattern}`
+  );
+  assert.ok(
+    themeControlsSource.includes(pattern),
+    `theme-controls-module should own theme control binding logic: ${pattern}`
+  );
+});
+
+[
+  "processTranscript(transcriptData);",
+  "processChunkData(chunkData);",
+  "window.toggleChunkMode(true);",
+  "bridgeToPinia();",
+  "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
+  "import { getSessionState } from './session-state-provider.js';"
+].forEach((pattern) => {
+  assert.ok(
+    sessionInitSource.includes(pattern),
+    `session-init contract should remain intact: ${pattern}`
+  );
+});
+
+console.log('theme controls module check passed');
