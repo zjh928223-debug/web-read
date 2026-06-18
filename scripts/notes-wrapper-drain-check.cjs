@@ -14,7 +14,10 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'getChunkNoteAccent',
   'clearChunkWordAnnotations',
   'markChunkWordsByNotes',
-  'setChunkNoteHoverTarget'
+  'setChunkNoteHoverTarget',
+  'persistChunkNoteDraft',
+  'getChunkNoteModalPosition',
+  'applyTempAnnotationByCtx'
 ].forEach((name) => {
   assert.equal(
     new RegExp(`function\\s+${name}\\s*\\(`).test(runtimeSource),

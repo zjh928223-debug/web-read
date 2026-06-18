@@ -226,10 +226,6 @@
         return _cnApi.clearChunkNoteDraft();
     }
 
-    function persistChunkNoteDraft(immediate = false) {
-        return _cnApi.persistCurrentChunkNoteDraft(immediate);
-    }
-
     function getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal) {
         return _cnApi.getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal);
     }
@@ -308,14 +304,6 @@
 
     function closeChunkNotePopover() {
         return _cnApi.closeChunkNotePopover();
-    }
-
-    function getChunkNoteModalPosition(anchorRect, modalEl) {
-        return _cnApi.getChunkNoteModalPosition(anchorRect, modalEl);
-    }
-
-    function applyTempAnnotationByCtx(ctx) {
-        return _cnApi.applyTempAnnotationByCtx(ctx);
     }
 
     function saveChunkNoteFromModal() {

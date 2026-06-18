@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 993 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 981 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
-reader-runtime.js                 about 993 lines
+reader-runtime.js                 about 981 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -432,7 +432,7 @@ Current checks cover:
 - migrated marks import button binding into `src/composables/app-handlers.js` through `verify:app-handlers`
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
-- removed unused chunk note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
+- removed unused chunk note runtime wrappers, including draft/modal/temp-annotation proxies, while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
 - removed absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path from `reader-runtime.js` through `verify:legacy-dom-drain`
 - removed unused sentence note runtime wrappers while keeping `src/composables/notes-module.js` as behavior owner and preserving `session-init.js` restore entry points through `verify:sentence-wrapper-drain`

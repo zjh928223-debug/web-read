@@ -175,7 +175,7 @@ Do not change this schema without an explicit migration plan.
 - Theme control DOM bindings now live in `src/composables/theme-controls-module.js`; glass sizing setup and style editor parsing helpers are owned by `src/composables/glass-effects.js` and `src/composables/style-editor.js`.
 - Marks import button binding now lives in `src/composables/app-handlers.js`; marks toggle behavior remains owned by `src/stores/marks.js`.
 - Chunk note import/export button binding, download/write handling, and export overwrite dialog now live in `src/composables/chunk-note-transfer-module.js`.
-- Unused chunk note runtime wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
+- Unused chunk note runtime wrappers, including draft/modal/temp-annotation proxies, have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
 - Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
 - Unused sentence note runtime wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js` while session restore entry points are kept.
