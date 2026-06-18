@@ -194,126 +194,6 @@
             : null;
     }
 
-    function clearChunkNoteConnectors() {
-        return _cnApi.clearChunkNoteConnectors();
-    }
-
-    function getChunkWordSpan(note) {
-        return _cnApi.getChunkWordSpan(note);
-    }
-
-    function getChunkNoteTagById(noteId) {
-        return _cnApi.getChunkNoteTagById(noteId);
-    }
-
-    function ensureChunkNoteOverlayLayers() {
-        return _cnApi.ensureChunkNoteOverlayLayers();
-    }
-
-    function rectToMainAreaSpace(rect) {
-        return _cnApi.rectToMainAreaSpace(rect);
-    }
-
-    function pointToMainAreaSpace(clientX, clientY) {
-        return _cnApi.pointToMainAreaSpace(clientX, clientY);
-    }
-
-    function syncChunkNoteOverlaySize() {
-        return _cnApi.syncChunkNoteOverlaySize();
-    }
-
-    function clearChunkNoteDraft() {
-        return _cnApi.clearChunkNoteDraft();
-    }
-
-    function getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal) {
-        return _cnApi.getRangeAnchorRectByGlobals(chunkRef, startGlobal, endGlobal);
-    }
-
-    function tryRestoreChunkNoteDraft() {
-        return _cnApi.tryRestoreChunkNoteDraft();
-    }
-
-    function getChunkNoteLayoutBase() {
-        return _cnApi.getChunkNoteLayoutBase();
-    }
-
-    function getChunkNoteContentBoxSize(tag) {
-        return _cnApi.getChunkNoteContentBoxSize(tag);
-    }
-
-    function ensureChunkNoteLayout(note, sourceRect, tagRect = null) {
-        return _cnApi.ensureChunkNoteLayout(note, sourceRect, tagRect);
-    }
-
-    function syncChunkNoteTagToAnchor(note, tag) {
-        return _cnApi.syncChunkNoteTagToAnchor(note, tag);
-    }
-
-    function refreshChunkNoteTagPositions() {
-        return _cnApi.refreshChunkNoteTagPositions();
-    }
-
-    function scheduleChunkNoteLayoutRefresh() {
-        return _cnApi.scheduleChunkNoteLayoutRefresh();
-    }
-
-    function applyChunkNoteTextStyle(textEl, note, options = {}) {
-        return _cnApi.applyChunkNoteTextStyle(textEl, note, options);
-    }
-
-    function renderChunkNoteImage(tag, note) {
-        return _cnApi.renderChunkNoteImage(tag, note);
-    }
-
-    function updateChunkNoteTagCompactState(tag) {
-        return _cnApi.updateChunkNoteTagCompactState(tag);
-    }
-
-    function makeChunkNoteTagDraggable(tag, note) {
-        return _cnApi.makeChunkNoteTagDraggable(tag, note);
-    }
-
-    function makeChunkNoteTagResizable(tag, note) {
-        return _cnApi.makeChunkNoteTagResizable(tag, note);
-    }
-
-    function enableChunkNoteInlineEdit(tag, note) {
-        return _cnApi.enableChunkNoteInlineEdit(tag, note);
-    }
-
-    function spawnChunkNoteTag(note) {
-        return _cnApi.spawnChunkNoteTag(note);
-    }
-
-    function renderAllChunkNoteTags() {
-        return _cnApi.renderAllChunkNoteTags();
-    }
-
-    function drawChunkNoteConnector(note) {
-        return _cnApi.drawChunkNoteConnector(note);
-    }
-
-    function redrawAllChunkNoteConnectors() {
-        return _cnApi.redrawAllChunkNoteConnectors();
-    }
-
-    function scheduleChunkNoteConnectorRedraw() {
-        return _cnApi.scheduleChunkNoteConnectorRedraw();
-    }
-
-    function closeChunkNotePopover() {
-        return _cnApi.closeChunkNotePopover();
-    }
-
-    function upsertChunkNote(ctx, noteText) {
-        return _cnApi.upsertChunkNoteFromModal(ctx, noteText);
-    }
-
-    function refreshChunkNoteForChunkRef(chunkRef) {
-        return _cnApi.refreshChunkNoteForChunkRef(chunkRef);
-    }
-
     // === UI layer entrypoint: DOM bindings ===
     const audioPlayer = document.getElementById('audio-player');
     const transcriptContainer = document.getElementById('transcript-container');
@@ -567,7 +447,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         markedMap: marksStateApi.markedMap
     });
 
-    ensureChunkNoteOverlayLayers();
+    _cnApi.ensureChunkNoteOverlayLayers();
 
     var highlightControlsApi = initHighlightControls({
         transcriptState: _tr,
@@ -586,10 +466,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         audioPlayer: audioPlayer,
         updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI,
         closeChunkNoteContextMenu: closeChunkNoteContextMenu,
-        closeChunkNotePopover: closeChunkNotePopover,
+        closeChunkNotePopover: _cnApi.closeChunkNotePopover,
         renderChunkMode: renderChunkMode,
         renderTranscript: renderTranscript,
-        clearChunkNoteConnectors: clearChunkNoteConnectors,
+        clearChunkNoteConnectors: _cnApi.clearChunkNoteConnectors,
         getForceUpdateUI: function () { return forceUpdateUI; },
         bridgeToPinia: bridgeToPinia
     });
@@ -597,10 +477,10 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     // [MIGRATED] style editor → src/composables/style-editor.js
     window.__styleEditor.init({
         adjustChunkNoteArrowSizeByGap: _cnApi.adjustChunkNoteArrowSizeByGap,
-        renderAllChunkNoteTags: renderAllChunkNoteTags,
-        scheduleChunkNoteConnectorRedraw: scheduleChunkNoteConnectorRedraw,
+        renderAllChunkNoteTags: _cnApi.renderAllChunkNoteTags,
+        scheduleChunkNoteConnectorRedraw: _cnApi.scheduleChunkNoteConnectorRedraw,
         getIsChunkMode: function () { return _ch.isChunkMode; },
-        closeChunkNotePopover: closeChunkNotePopover,
+        closeChunkNotePopover: _cnApi.closeChunkNotePopover,
         updateShadowBtnText: chunkControlsApi.updateShadowBtnText
     });
 
@@ -615,7 +495,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         themeCustomBorderInput: themeCustomBorderInput,
         themeCustomButtonInput: themeCustomButtonInput,
         themeCustomResetBtn: themeCustomResetBtn,
-        refreshAllChunkNoteVisuals: refreshAllChunkNoteVisuals,
+        refreshAllChunkNoteVisuals: _cnApi.refreshAllChunkNoteVisuals,
         getLockChunkNoteDimensionsForTheme: function () { return window.__lockChunkNoteDimensionsForTheme; }
     });
     initAnnotationApiSettingsUi();
@@ -648,37 +528,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
                 });
             });
         }
-        tryRestoreChunkNoteDraft();
+        _cnApi.tryRestoreChunkNoteDraft();
     }
 
     configureRenderRuntime({
         renderTranscript: renderTranscript,
         renderChunkMode: renderChunkMode
     });
-
-    function getChunkNotesForRef(chunkRef) {
-        return _cnApi.getChunkNotesForRef(chunkRef);
-    }
-
-    function getChunkBlocksMatchingRef(chunkRef) {
-        return _cnApi.getChunkBlocksMatchingRef(chunkRef);
-    }
-
-    function getChunkNotesForBlock(block) {
-        return _cnApi.getChunkNotesForBlock(block);
-    }
-
-    function refreshAllChunkNoteVisuals() {
-        return _cnApi.refreshAllChunkNoteVisuals();
-    }
-
-    function handleChunkSelectionContextMenu(e) {
-        return _cnApi.handleChunkSelectionContextMenu(e);
-    }
-
-    function openChunkNoteContextFromEvent(event) {
-        return handleChunkSelectionContextMenu(event);
-    }
 
     var annotationBubbleResolverApi = initAnnotationBubbleResolver({
         getWords: function () { return _tr.words; },
@@ -737,7 +593,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         forceUpdateUI: forceUpdateUI,
         notifyAnnotationBubbleWordClick: notifyAnnotationBubbleWordClick,
         selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        openChunkNoteContextFromEvent: openChunkNoteContextFromEvent
+        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); }
     });
 
     // [MIGRATED] keyboard + event handlers → src/composables/keyboard-module.js
@@ -775,7 +631,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         openChunkNoteDeleteDialog: _cnApi.openChunkNoteDeleteDialog,
         getChunkNoteDeleteDialogEl: function () { return _cnApi.getChunkNoteDeleteDialogEl(); },
         selectedChunkNoteId: function () { return _cnApi.getSelectedChunkNoteId(); },
-        handleChunkSelectionContextMenu: handleChunkSelectionContextMenu,
+        handleChunkSelectionContextMenu: _cnApi.handleChunkSelectionContextMenu,
         chunkNoteCtxAddBtn: chunkNoteCtxAddBtn,
         pendingChunkSelectionCtx: function () { return _cnApi.getPendingChunkSelectionCtx(); },
         consumePendingChunkSelectionCtx: function () { return _cnApi.consumePendingChunkSelectionCtx(); },
@@ -888,18 +744,18 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
 
     initGlassEffects({
         listChunkNotes: function () { return _cnApi.listChunkNotes(); },
-        getChunkNoteTagById: getChunkNoteTagById,
-        getChunkNoteContentBoxSize: getChunkNoteContentBoxSize
+        getChunkNoteTagById: _cnApi.getChunkNoteTagById,
+        getChunkNoteContentBoxSize: _cnApi.getChunkNoteContentBoxSize
     });
   
     // === Temporary compatibility exports for cross-module access ===
     configureReaderPublicFacades({
         selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget,
-        openChunkNoteContextFromEvent: openChunkNoteContextFromEvent,
         buildCurrentSentenceDocId: buildCurrentSentenceDocId,
         loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
         setChunkNoteVisible: setChunkNoteVisible,
         loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,
         switchSentenceNotesDoc: switchSentenceNotesDoc,
-        applyCurrentAudioMeta: applyCurrentAudioMeta
+        applyCurrentAudioMeta: applyCurrentAudioMeta,
+        openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); }
     });

@@ -23,7 +23,42 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'openChunkNoteDeleteDialog',
   'saveChunkNoteFromModal',
   'cancelChunkNoteModal',
-  'openChunkNotePopover'
+  'openChunkNotePopover',
+  'clearChunkNoteConnectors',
+  'getChunkWordSpan',
+  'getChunkNoteTagById',
+  'ensureChunkNoteOverlayLayers',
+  'rectToMainAreaSpace',
+  'pointToMainAreaSpace',
+  'syncChunkNoteOverlaySize',
+  'clearChunkNoteDraft',
+  'getRangeAnchorRectByGlobals',
+  'tryRestoreChunkNoteDraft',
+  'getChunkNoteLayoutBase',
+  'getChunkNoteContentBoxSize',
+  'ensureChunkNoteLayout',
+  'syncChunkNoteTagToAnchor',
+  'refreshChunkNoteTagPositions',
+  'scheduleChunkNoteLayoutRefresh',
+  'applyChunkNoteTextStyle',
+  'renderChunkNoteImage',
+  'updateChunkNoteTagCompactState',
+  'makeChunkNoteTagDraggable',
+  'makeChunkNoteTagResizable',
+  'enableChunkNoteInlineEdit',
+  'spawnChunkNoteTag',
+  'renderAllChunkNoteTags',
+  'drawChunkNoteConnector',
+  'redrawAllChunkNoteConnectors',
+  'scheduleChunkNoteConnectorRedraw',
+  'closeChunkNotePopover',
+  'upsertChunkNote',
+  'refreshChunkNoteForChunkRef',
+  'getChunkNotesForRef',
+  'getChunkBlocksMatchingRef',
+  'getChunkNotesForBlock',
+  'refreshAllChunkNoteVisuals',
+  'handleChunkSelectionContextMenu'
 ].forEach((name) => {
   assert.equal(
     new RegExp(`function\\s+${name}\\s*\\(`).test(runtimeSource),
@@ -42,13 +77,33 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   'setSelectedChunkNote: _cnApi.setSelectedChunkNote',
   'openChunkNoteDeleteDialog: _cnApi.openChunkNoteDeleteDialog',
   'openChunkNotePopover: _cnApi.openChunkNotePopover',
-  'saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal'
+  'saveChunkNoteFromModal: _cnApi.saveChunkNoteFromModal',
+  'clearChunkNoteConnectors: _cnApi.clearChunkNoteConnectors',
+  'closeChunkNotePopover: _cnApi.closeChunkNotePopover',
+  'renderAllChunkNoteTags: _cnApi.renderAllChunkNoteTags',
+  'scheduleChunkNoteConnectorRedraw: _cnApi.scheduleChunkNoteConnectorRedraw',
+  'refreshAllChunkNoteVisuals: _cnApi.refreshAllChunkNoteVisuals',
+  'handleChunkSelectionContextMenu: _cnApi.handleChunkSelectionContextMenu',
+  'getChunkNoteTagById: _cnApi.getChunkNoteTagById',
+  'getChunkNoteContentBoxSize: _cnApi.getChunkNoteContentBoxSize',
+  '_cnApi.ensureChunkNoteOverlayLayers();',
+  '_cnApi.tryRestoreChunkNoteDraft();'
 ].forEach((pattern) => {
   assert.ok(
     runtimeSource.includes(pattern),
     `reader-runtime should inject chunk note API directly: ${pattern}`
   );
 });
+
+assert.equal(
+  /function\s+openChunkNoteContextFromEvent\s*\(/.test(runtimeSource),
+  false,
+  'reader-runtime should not keep thin openChunkNoteContextFromEvent wrapper'
+);
+assert.ok(
+  runtimeSource.includes('openChunkNoteContextFromEvent: function (event) { return _cnApi.handleChunkSelectionContextMenu(event); }'),
+  'reader-runtime should configure openChunkNoteContextFromEvent facade directly from chunk note API'
+);
 
 [
   "processTranscript(transcriptData);",

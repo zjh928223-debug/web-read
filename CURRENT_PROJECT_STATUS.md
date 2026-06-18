@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-src/composables/reader-runtime.js  remaining runtime assembly shell, about 905 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 761 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -97,7 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1592 lines
-reader-runtime.js                 about 905 lines
+reader-runtime.js                 about 761 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -252,7 +252,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
 - Chunk note style modal compatibility window facades now live in `src/composables/notes-module.js`; `reader-runtime.js` injects note style adjustment through `_cnApi`.
 - `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `reader-runtime.js` keeps only a local `_ns` reference to that owner for compatibility.
-- `reader-runtime.js` still configures compatibility dependencies for existing global callers, but direct facade assignments live in focused modules and chunk note keyboard/modal interactions now inject `_cnApi` methods directly instead of keeping local thin wrappers.
+- `reader-runtime.js` still configures compatibility dependencies for existing global callers, but direct facade assignments live in focused modules and chunk note keyboard/modal plus layout/visual interactions now inject `_cnApi` methods directly instead of keeping local thin wrappers.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
@@ -449,7 +449,7 @@ Current checks cover:
 - removed thin marks toggle wrappers from `reader-runtime.js` while keeping `src/stores/marks.js` as behavior owner through `verify:marks-store`
 - migrated marks runtime state into `src/composables/marks-state-module.js` while keeping `session-init.js` marks restore/rebuild writes on `st.markedMap` through `verify:marks-state-module`
 - migrated chunk note import/export button binding, download/write handling, and export overwrite dialog into `src/composables/chunk-note-transfer-module.js` through `verify:chunk-note-transfer`
-- removed unused chunk note runtime wrappers and thin keyboard/modal chunk note wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
+- removed unused chunk note runtime wrappers plus thin keyboard/modal/layout/visual chunk note wrappers while keeping `src/composables/notes-module.js` as behavior owner through `verify:notes-wrapper-drain`
 - migrated visual/vocab state ownership and `window.processVisual` into `src/composables/visual-vocab-module.js` while keeping the `session-init.js` restore call unchanged through `verify:visual-vocab-module`
 - removed absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path from `reader-runtime.js` through `verify:legacy-dom-drain`
 - removed unused sentence note runtime wrappers and thin sentence interaction wrappers while keeping `src/composables/notes-module.js` as behavior owner and preserving `session-init.js` restore entry points through `verify:sentence-wrapper-drain`
