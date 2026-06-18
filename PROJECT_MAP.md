@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 387 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 384 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -79,6 +79,7 @@ src/
 │   ├── reader-dom-refs.js       # static reader runtime DOM refs
 │   ├── reader-runtime-deps.js   # runtime utility/global helper dependency collection
 │   ├── reader-notes-runtime.js  # notes API setup + Pinia bridge runtime
+│   ├── reader-session-runtime.js # session-facing note/audio lifecycle wrappers
 │   ├── reader-interaction-runtime.js # render config + playback runtime initialization
 │   ├── reader-playback-runtime.js # playback setup + transcript/chunk interactions
 │   ├── reader-controls-runtime.js # highlight/chunk/theme/style/settings setup
@@ -195,6 +196,7 @@ npm run verify:session-state-provider # Focused session-init state provider chec
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
 npm run verify:reader-notes-runtime # Focused reader notes runtime setup check
+npm run verify:reader-session-runtime # Focused reader session runtime setup check
 npm run verify:reader-interaction-runtime # Focused reader interaction runtime setup check
 npm run verify:reader-playback-runtime # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime # Focused reader controls runtime setup check

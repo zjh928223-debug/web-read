@@ -21,6 +21,7 @@
     import { collectReaderDomRefs } from './reader-dom-refs.js';
     import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initReaderNotesRuntime } from './reader-notes-runtime.js';
+    import { initReaderSessionRuntime } from './reader-session-runtime.js';
     import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';
     import { initReaderControlsRuntime } from './reader-controls-runtime.js';
     import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
@@ -101,23 +102,6 @@
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
 
     // [MIGRATED] chunk-notes + sentence-notes → src/composables/notes-module.js
-    // State bridge (var _ns, _cnApi, _snApi) + API init happens in startup block
-
-    // === Chunk-note persistence lifecycle ===
-    async function loadChunkNotesForCurrentAudio() { return _cnApi.loadChunkNotesForCurrentAudio(); }
-    function setChunkNoteVisible(next, persist) { return _cnApi.setChunkNoteVisible(next, persist); }
-
-    // === Sentence notebook persistence lifecycle ===
-    async function loadSentenceNotesForCurrentAudio() { return _snApi.loadSentenceNotesForCurrentAudio(); }
-    async function switchSentenceNotesDoc(transcriptSource) { return _snApi.switchSentenceNotesDoc(transcriptSource); }
-
-    function applyCurrentAudioMeta(meta) {
-        const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);
-        if (_cnApi && typeof _cnApi.setChunkNoteDraftRestoreDone === 'function') {
-            _cnApi.setChunkNoteDraftRestoreDone(nextAudioState.chunkNoteDraftRestoreDone);
-        }
-        return nextAudioState;
-    }
 
     var chunkNoteTransferApi = null;
 
@@ -195,6 +179,17 @@
     var bridgeToPinia = notesRuntime.bridgeToPinia;
     var _cnApi = notesRuntime.chunkNotesApi;
     var _snApi = notesRuntime.sentenceNotesApi;
+
+    var sessionRuntime = initReaderSessionRuntime({
+        chunkNotesApi: _cnApi,
+        sentenceNotesApi: _snApi,
+        audioIdentityApi: audioIdentityApi
+    });
+    var loadChunkNotesForCurrentAudio = sessionRuntime.loadChunkNotesForCurrentAudio;
+    var setChunkNoteVisible = sessionRuntime.setChunkNoteVisible;
+    var loadSentenceNotesForCurrentAudio = sessionRuntime.loadSentenceNotesForCurrentAudio;
+    var switchSentenceNotesDoc = sessionRuntime.switchSentenceNotesDoc;
+    var applyCurrentAudioMeta = sessionRuntime.applyCurrentAudioMeta;
 
     var chunkControlsApi = null;
     var importRuntime = initReaderImportRuntime({

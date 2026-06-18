@@ -5,7 +5,9 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+  const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
+  const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -26,11 +28,19 @@ async function main() {
     'runtimeState.currentAudioKey should read from audio identity module'
   );
   assert.ok(
-    runtimeSource.includes('const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);'),
+    runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
+    'reader-runtime should initialize audio identity session wrappers through reader-session-runtime'
+  );
+  assert.ok(
+    runtimeSource.includes('var applyCurrentAudioMeta = sessionRuntime.applyCurrentAudioMeta;'),
+    'reader-runtime should receive applyCurrentAudioMeta from reader-session-runtime'
+  );
+  assert.ok(
+    sessionRuntimeSource.includes('const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);'),
     'applyCurrentAudioMeta wrapper should delegate state changes to audio identity module'
   );
   assert.ok(
-    runtimeSource.includes('_cnApi.setChunkNoteDraftRestoreDone(nextAudioState.chunkNoteDraftRestoreDone);'),
+    sessionRuntimeSource.includes('chunkNotesApi.setChunkNoteDraftRestoreDone(nextAudioState.chunkNoteDraftRestoreDone);'),
     'applyCurrentAudioMeta wrapper should preserve chunk note draft restore side effect'
   );
 
@@ -57,16 +67,25 @@ async function main() {
   });
 
   [
-    'getChunkNotesStorageKey: audioIdentityApi.getChunkNotesStorageKey',
-    'getChunkNoteDraftStorageKey: audioIdentityApi.getChunkNoteDraftStorageKey',
-    'getSentenceNotesStorageKey: audioIdentityApi.getSentenceNotesStorageKey',
-    'getLegacySentenceNotesStorageKey: audioIdentityApi.getLegacySentenceNotesStorageKey',
-    'buildCurrentSentenceDocId: audioIdentityApi.buildCurrentSentenceDocId',
-    'getCurrentAudioFilenameBase: audioIdentityApi.getCurrentAudioFilenameBase'
+    'audioIdentityApi: audioIdentityApi',
+    'var sessionRuntime = initReaderSessionRuntime({'
   ].forEach((pattern) => {
     assert.ok(
       runtimeSource.includes(pattern),
-      `reader-runtime should inject audio identity API directly: ${pattern}`
+      `reader-runtime should pass audio identity API through focused runtime modules: ${pattern}`
+    );
+  });
+
+  [
+    'getChunkNotesStorageKey: deps.audioIdentityApi.getChunkNotesStorageKey',
+    'getChunkNoteDraftStorageKey: deps.audioIdentityApi.getChunkNoteDraftStorageKey',
+    'getSentenceNotesStorageKey: deps.audioIdentityApi.getSentenceNotesStorageKey',
+    'getLegacySentenceNotesStorageKey: deps.audioIdentityApi.getLegacySentenceNotesStorageKey',
+    'buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId'
+  ].forEach((pattern) => {
+    assert.ok(
+      notesRuntimeSource.includes(pattern),
+      `reader-notes-runtime should inject audio identity API directly: ${pattern}`
     );
   });
 

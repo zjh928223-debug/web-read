@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
 const notesSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'notes-module.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -109,9 +110,14 @@ removedRuntimeWrappers.forEach((name) => {
   'async function loadSentenceNotesForCurrentAudio()',
   'async function switchSentenceNotesDoc(transcriptSource)'
 ].forEach((pattern) => {
-  assert.ok(
+  assert.equal(
     runtimeSource.includes(pattern),
-    `reader-runtime should keep externally consumed sentence note boundary: ${pattern}`
+    false,
+    `reader-runtime should not own externally consumed sentence note boundary body: ${pattern}`
+  );
+  assert.ok(
+    sessionRuntimeSource.includes(pattern),
+    `reader-session-runtime should keep externally consumed sentence note boundary: ${pattern}`
   );
 });
 
