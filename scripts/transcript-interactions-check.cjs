@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'TranscriptContainer.vue'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'transcript-interactions.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';"),
+  appSource.includes("import { configureTranscriptInteractions } from './transcript-interactions.js';"),
   'app.js should configure transcript interactions through the module'
 );
 assert.equal(

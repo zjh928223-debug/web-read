@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ChunkModeView.vue'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-interactions.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { configureChunkInteractions } from './src/composables/chunk-interactions.js';"),
+  appSource.includes("import { configureChunkInteractions } from './chunk-interactions.js';"),
   'app.js should configure chunk interactions through the module'
 );
 assert.ok(appSource.includes('configureChunkInteractions({'));

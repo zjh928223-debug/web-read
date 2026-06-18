@@ -2,7 +2,7 @@
   "name": "read-final",
   "version": "1.0.0",
   "description": "Vite/Vue reader with audio sync, AI chunking, cloze quizzes, and annotation tooling",
-  "main": "app.js",
+  "main": "src/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

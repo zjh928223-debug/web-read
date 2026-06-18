@@ -5,7 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const importSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
 const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'file-input-bindings.js'), 'utf8');
 

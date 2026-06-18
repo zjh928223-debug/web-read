@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const resolverSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble-resolver.js'), 'utf8');
 
 [
@@ -27,7 +27,7 @@ assert.ok(
   'annotation-bubble-resolver should own window.notifyAnnotationBubbleWordClick'
 );
 assert.ok(
-  appSource.includes("import { initAnnotationBubbleResolver } from './src/composables/annotation-bubble-resolver.js';"),
+  appSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';"),
   'app.js should initialize annotation bubble resolver'
 );
 

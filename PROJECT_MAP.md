@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Remaining runtime assembly shell, about 1400 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 1400 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -21,7 +21,7 @@ read-web/
 index.html
 ├── src/stores/*.js compatibility modules
 ├── src/composables/*.js compatibility modules
-├── app.js
+├── src/composables/reader-runtime.js
 ├── src/composables/session-init.js
 └── src/main.js
 ```
@@ -34,7 +34,7 @@ Current cleanup work follows `openspec/changes/complete-appjs-decomposition/`. T
 
 Cleanup rules:
 
-- Do not add user-facing feature logic to `app.js`.
+- Do not add user-facing feature logic to `src/composables/reader-runtime.js`.
 - Migrate one boundary at a time and keep compatibility globals only until callers are moved.
 - Do not change IndexedDB schema or `index.html` script order without an explicit migration and full verification.
 - Treat `src/stores/` as compatibility only; long-term ownership belongs in `src/pinia-stores/`, focused runtime modules, or Vue components.
@@ -135,7 +135,7 @@ Current state ownership is transitional:
 ```text
 src/composables/runtime-state-facade.js runtimeState
   ↕ temporary window.__state alias
-app.js remaining runtime assembly
+src/composables/reader-runtime.js remaining runtime assembly
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components

@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const interactionSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'read-web-interactions-check.cjs'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initPiniaBridge } from './src/composables/pinia-bridge-module.js';"),
+  appSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js';"),
   'app.js should import the Pinia bridge module'
 );
 assert.ok(

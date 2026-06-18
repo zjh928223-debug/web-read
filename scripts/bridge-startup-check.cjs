@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 
@@ -13,7 +13,7 @@ assert.equal(mainSource.includes('preferStore: true'), false, 'state adapters sh
 
 assert.equal(appSource.includes('function bridgeToPinia()'), false, 'app.js should not own bridgeToPinia implementation');
 assert.equal(appSource.includes('window.bridgeToPinia ='), false, 'app.js should not own window.bridgeToPinia');
-assert.ok(appSource.includes("import { initPiniaBridge } from './src/composables/pinia-bridge-module.js';"));
+assert.ok(appSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js';"));
 assert.ok(appSource.includes('var bridgeToPinia = initPiniaBridge({'), 'app.js should initialize the bridge module for injected callers');
 assert.ok(bridgeSource.includes('function bridgeToPinia()'), 'bridge module should own bridgeToPinia implementation');
 assert.ok(bridgeSource.includes('var ps = window.__piniaStores;'), 'bridgeToPinia should write directly to Pinia stores');

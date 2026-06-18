@@ -11,7 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `app.js` - remaining runtime assembly shell, no longer owns direct `window.*` facade assignments.
+- `src/composables/reader-runtime.js` - remaining runtime assembly shell, no longer owns direct `window.*` facade assignments.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -25,7 +25,7 @@ Keep this order unless you are deliberately changing the architecture and have v
 index.html
 ├── 9 src/stores/*.js module compatibility stores
 ├── 10 src/composables/*.js module compatibility/runtime modules
-├── app.js as type="module"
+├── src/composables/reader-runtime.js as type="module"
 ├── src/composables/session-init.js as type="module"
 └── /src/main.js as type="module" for Vue + Pinia
 ```
@@ -37,7 +37,7 @@ index.html
 The current state flow is:
 
 ```text
-app.js remaining let variables and runtime shell adapters/modules
+src/composables/reader-runtime.js remaining let variables and runtime shell adapters/modules
   -> window.__state getter/setter proxy
   -> pinia-bridge-module bridgeToPinia compatibility
   -> src/pinia-stores/*.js real Pinia stores
@@ -61,11 +61,11 @@ Vue rendering is enabled by default:
 window.__USE_VUE_RENDERING = true
 ```
 
-The Vue components are active but thin. A lot of interaction still relies on `app.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
+The Vue components are active but thin. A lot of interaction still relies on `src/composables/reader-runtime.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
 
 ## Important Files
 
-- `app.js` - about 1400 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime.js` - about 1400 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/session-facades.js` - public session/annotation facade stubs.
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
@@ -89,7 +89,7 @@ The Vue components are active but thin. A lot of interaction still relies on `ap
 
 The current priority is to finish `complete-appjs-decomposition` before adding new user-facing features. Use `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md` as the current cleanup baseline.
 
-Do not add feature logic to `app.js`. Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
+Do not add feature logic to `src/composables/reader-runtime.js`. Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
 
 ### IndexedDB Schema
 
@@ -106,9 +106,9 @@ Key path: id
 
 Do not reorder `index.html` scripts casually. The app still uses globals and side effects for compatibility.
 
-### app.js
+### reader-runtime.js
 
-Do not add new feature logic to `app.js`. Prefer focused modules, Pinia stores, or Vue components, but respect existing runtime compatibility callers while migrating those callers away.
+Do not add new feature logic to `src/composables/reader-runtime.js`. Prefer focused modules, Pinia stores, or Vue components, but respect existing runtime compatibility callers while migrating those callers away.
 
 ### session-init.js
 

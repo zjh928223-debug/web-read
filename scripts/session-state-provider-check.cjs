@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const providerSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-state-provider.js'), 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
@@ -26,12 +26,12 @@ assert.ok(
 );
 
 assert.ok(
-  appSource.includes("import { configureSessionStateProvider } from './src/composables/session-state-provider.js';"),
+  appSource.includes("import { configureSessionStateProvider } from './session-state-provider.js';"),
   'app.js should import configureSessionStateProvider'
 );
 
 assert.ok(
-  appSource.includes("import { runtimeState } from './src/composables/runtime-state-facade.js';"),
+  appSource.includes("import { runtimeState } from './runtime-state-facade.js';"),
   'app.js should import runtimeState from the runtime-state facade'
 );
 

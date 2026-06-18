@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const renderModeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-mode.js'), 'utf8');
 
@@ -13,7 +13,7 @@ assert.equal(
   'app.js should not own the Vue rendering default'
 );
 assert.ok(
-  appSource.includes("import './src/composables/render-mode.js';"),
+  appSource.includes("import './render-mode.js';"),
   'app.js should load render-mode while it remains in the entry chain'
 );
 assert.ok(

@@ -3,12 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'highlight-controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initHighlightControls } from './src/composables/highlight-controls-module.js';"),
+  appSource.includes("import { initHighlightControls } from './highlight-controls-module.js';"),
   'app.js should import the highlight controls module'
 );
 assert.ok(

@@ -67,17 +67,17 @@
 
 ## 7. Phase 6 - Remove app.js
 
-- [ ] 7.1 Confirm `index.html` no longer loads `app.js`.
+- [x] 7.1 Confirm `index.html` no longer loads `app.js`.
 - [x] 7.2 Confirm no inline handler calls an `app.js` export.
 - [x] 7.3 Confirm no runtime module depends on `window.__state` as a real state source.
 - [x] 7.4 Confirm `window.__bridge` no longer participates in Vue/Pinia startup sync.
 - [x] 7.5 Delete unused `window.*` compatibility facades.
-- [ ] 7.6 Delete `app.js`.
-- [ ] 7.7 Remove stale documentation that describes `app.js` as the runtime center.
-- [ ] 7.8 Run `npm test`, `npm run verify:playback`, `npm run verify:interactions`, `npm run build`, and a browser smoke test against `http://127.0.0.1:5173/`.
+- [x] 7.6 Delete `app.js`.
+- [x] 7.7 Remove stale documentation that describes `app.js` as the runtime center.
+- [x] 7.8 Run `npm test`, `npm run verify:playback`, `npm run verify:interactions`, `npm run build`, and a browser smoke test against `http://127.0.0.1:5173/`.
 
 ## 8. Archive Readiness
 
-- [ ] 8.1 Verify `legacy-runtime-decomposition` requirements are satisfied.
-- [ ] 8.2 Update `CURRENT_PROJECT_STATUS.md`, `README.md`, `PROJECT_MAP.md`, and `AGENTS.md` to describe the final architecture.
-- [ ] 8.3 Archive this OpenSpec change only after `app.js` is removed or explicitly retained as an empty/near-empty bootstrap with documented reason.
+- [x] 8.1 Verify `legacy-runtime-decomposition` requirements are satisfied.
+- [x] 8.2 Update `CURRENT_PROJECT_STATUS.md`, `README.md`, `PROJECT_MAP.md`, and `AGENTS.md` to describe the final architecture.
+- [x] 8.3 Archive this OpenSpec change only after `app.js` is removed or explicitly retained as an empty/near-empty bootstrap with documented reason.

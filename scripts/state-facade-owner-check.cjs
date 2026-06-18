@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appPath = path.join(repoRoot, 'app.js');
+const appPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime.js');
 const importModulePath = path.join(repoRoot, 'src', 'composables', 'import-module.js');
 const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
@@ -106,7 +106,7 @@ assert.ok(appSource.includes('const _tr = window.__transcriptState;'));
 assert.ok(appSource.includes('const _ch = window.__chunkState;'));
 assert.ok(appSource.includes('const _clz = window.__clozeState;'));
 assert.ok(appSource.includes('const _pb = window.__playbackState;'));
-assert.ok(appSource.includes("import { runtimeState } from './src/composables/runtime-state-facade.js';"));
+assert.ok(appSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
 assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
 assert.ok(appSource.includes('var _ns = window.__notesModule.getNotesState();'));

@@ -3,13 +3,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const layoutSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-note-layout.js'), 'utf8');
 const coreModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'utils', 'chunk-note-layout-core.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
-  appSource.includes("import './src/utils/chunk-note-layout-core.js';"),
+  appSource.includes("import '../utils/chunk-note-layout-core.js';"),
   'app.js should load chunk note layout core through the Vite module graph'
 );
 assert.equal(appSource.includes('window.ChunkNoteLayoutCore'), false, 'app.js should not read the root core global');

@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'ui-facades.js'), 'utf8');
 
 [
@@ -22,7 +22,7 @@ assert.equal(
   'ui-facades should not delegate to the legacy __uiStore facade because it delegates back to window.showToast/window.showError'
 );
 assert.ok(
-  appSource.includes("import { showToast, showError } from './src/composables/ui-facades.js';"),
+  appSource.includes("import { showToast, showError } from './ui-facades.js';"),
   'app.js should import UI facades'
 );
 

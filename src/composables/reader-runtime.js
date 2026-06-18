@@ -1,32 +1,32 @@
 ﻿    // === ES Module imports: utility modules that set window globals ===
-    import './src/utils/data-utils.js';
-    import './src/utils/identity-storage-keys.js';
-    import './src/utils/import-export-helpers.js';
-    import './src/utils/sentence-notes-persistence.js';
-    import './src/utils/cloze-utils.js';
-    import './src/utils/cloze-view-model.js';
-    import './src/utils/playback-index.js';
-    import './src/utils/chunk-matching.js';
-    import './src/utils/vocab-matching.js';
-    import './src/utils/chunk-note-layout-helpers.js';
-    import './src/utils/chunk-note-layout-core.js';
-    import './src/composables/transcript-state.js';
-    import './src/composables/chunk-state.js';
-    import './src/composables/cloze-state.js';
-    import './src/composables/playback-state.js';
-    import { runtimeState } from './src/composables/runtime-state-facade.js';
-    import './src/composables/render-mode.js';
-    import './src/composables/annotation-lightweight-module.js';
-    import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
-    import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
-    import { configureRenderRuntime } from './src/composables/render-runtime.js';
-    import { initAnnotationBubbleResolver } from './src/composables/annotation-bubble-resolver.js';
-    import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
-    import { initChunkControls } from './src/composables/chunk-controls-module.js';
-    import { initHighlightControls } from './src/composables/highlight-controls-module.js';
-    import { initPiniaBridge } from './src/composables/pinia-bridge-module.js';
-    import { configureReaderPublicFacades } from './src/composables/reader-public-facades.js';
-    import { showToast, showError } from './src/composables/ui-facades.js';
+    import '../utils/data-utils.js';
+    import '../utils/identity-storage-keys.js';
+    import '../utils/import-export-helpers.js';
+    import '../utils/sentence-notes-persistence.js';
+    import '../utils/cloze-utils.js';
+    import '../utils/cloze-view-model.js';
+    import '../utils/playback-index.js';
+    import '../utils/chunk-matching.js';
+    import '../utils/vocab-matching.js';
+    import '../utils/chunk-note-layout-helpers.js';
+    import '../utils/chunk-note-layout-core.js';
+    import './transcript-state.js';
+    import './chunk-state.js';
+    import './cloze-state.js';
+    import './playback-state.js';
+    import { runtimeState } from './runtime-state-facade.js';
+    import './render-mode.js';
+    import './annotation-lightweight-module.js';
+    import { configureTranscriptInteractions } from './transcript-interactions.js';
+    import { configureChunkInteractions } from './chunk-interactions.js';
+    import { configureRenderRuntime } from './render-runtime.js';
+    import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';
+    import { configureSessionStateProvider } from './session-state-provider.js';
+    import { initChunkControls } from './chunk-controls-module.js';
+    import { initHighlightControls } from './highlight-controls-module.js';
+    import { initPiniaBridge } from './pinia-bridge-module.js';
+    import { configureReaderPublicFacades } from './reader-public-facades.js';
+    import { showToast, showError } from './ui-facades.js';
     import {
         configureSessionFacades,
         clearGeneratedAnnotationIndex,
@@ -36,7 +36,7 @@
         scheduleGeneratedAnnotationIndexRefresh,
         syncAnnotationGenerationEntryStatus,
         initAnnotationApiSettingsUi
-    } from './src/composables/session-facades.js';
+    } from './session-facades.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers

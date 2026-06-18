@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-facades.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -36,7 +36,7 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
 });
 
 assert.ok(
-  appSource.includes("} from './src/composables/session-facades.js';"),
+  appSource.includes("} from './session-facades.js';"),
   'app.js should import session facades'
 );
 assert.ok(

@@ -4,6 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+const rootAppPath = path.join(repoRoot, 'app.js');
 
 const scriptSrcs = Array.from(indexSource.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)).map((match) => match[1]);
 const expectedScriptSrcs = [
@@ -27,12 +28,14 @@ const expectedScriptSrcs = [
   'src/composables/playback-module.js',
   'src/composables/controls-module.js',
   'src/composables/legacy-control-bindings.js',
-  'app.js',
+  'src/composables/reader-runtime.js',
   'src/composables/session-init.js',
   '/src/main.js'
 ];
 
 assert.deepEqual(scriptSrcs, expectedScriptSrcs, 'index.html script order should match the current Phase 5 guardrail');
+assert.equal(fs.existsSync(rootAppPath), false, 'root app.js should be deleted');
+assert.equal(scriptSrcs.includes('app.js'), false, 'index.html should not load root app.js');
 
 [
   'chunk-note-layout-helpers.js',

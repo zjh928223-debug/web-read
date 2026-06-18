@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-public-facades.js'), 'utf8');
 
 [
@@ -22,7 +22,7 @@ const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', '
 });
 
 assert.ok(
-  appSource.includes("import { configureReaderPublicFacades } from './src/composables/reader-public-facades.js';"),
+  appSource.includes("import { configureReaderPublicFacades } from './reader-public-facades.js';"),
   'app.js should import reader-public-facades'
 );
 assert.ok(

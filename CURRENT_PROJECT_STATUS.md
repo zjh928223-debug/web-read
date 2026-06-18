@@ -13,7 +13,7 @@ The project is not a clean Vue-only app yet. It is a working hybrid:
 ```text
 index.html legacy DOM shell
   -> compatibility ES modules under src/stores and src/composables
-  -> app.js remaining runtime assembly shell
+  -> src/composables/reader-runtime.js runtime assembly shell
   -> session-init.js startup and annotation glue
   -> src/main.js Vue + Pinia mount
 ```
@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining runtime assembly shell, about 1400 lines
+src/composables/reader-runtime.js  remaining runtime assembly shell, about 1400 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -58,7 +58,7 @@ There is no `read-26.html` in the current project root. Any reference to `read-2
 1. External Google CSE script
 2. 9 compatibility store modules under src/stores/
 3. 10 compatibility/runtime modules under src/composables/
-4. app.js as an ES module
+4. src/composables/reader-runtime.js as an ES module
 5. src/composables/session-init.js as an ES module
 6. /src/main.js as the Vue + Pinia entry
 ```
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    33 compatibility/runtime modules
+  composables/                    34 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -97,6 +97,7 @@ Current composables:
 
 ```text
 session-init.js                   about 1590 lines
+reader-runtime.js                 about 1400 lines
 session-state-provider.js         about 15 lines
 import-module.js                  about 548 lines
 notes-module.js                   about 2490 lines
@@ -152,14 +153,14 @@ diff.js                           about 38 lines
 
 ## 5. Runtime Architecture
 
-The app still loads `app.js`, but remaining runtime ownership is being narrowed one boundary at a time.
+The root `app.js` file has been removed. The remaining runtime assembly now loads from `src/composables/reader-runtime.js` and should continue shrinking behind focused module owners.
 
 Current state flow:
 
 ```text
 src/composables/runtime-state-facade.js runtimeState
   <-> temporary window.__state getter/setter alias
-app.js remaining runtime assembly
+src/composables/reader-runtime.js remaining runtime assembly
   <-> src/composables/pinia-bridge-module.js bridgeToPinia compatibility
   <-> src/pinia-stores/*.js real Pinia stores
   <-> Vue components
@@ -174,7 +175,7 @@ There are two store layers:
 
 ## 6. Rendering State
 
-`app.js` initializes:
+`src/composables/reader-runtime.js` initializes:
 
 ```js
 window.__USE_VUE_RENDERING = true
@@ -187,9 +188,9 @@ window.__USE_VUE_RENDERING = true
 - direct DOM reads/writes
 - legacy CSS classes
 
-The current migration goal should be to keep behavior stable while gradually moving state ownership and rendering out of `app.js`.
+The current cleanup direction should be to keep behavior stable while gradually moving remaining assembly code out of `src/composables/reader-runtime.js`.
 
-Transcript, chunk, cloze, and playback transient state have started moving out of `app.js`: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js` provide focused adapters. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades, but controls/playback/session-init now receive state through explicit deps/provider instead of direct global reads.
+Transcript, chunk, cloze, and playback transient state have moved behind focused adapters: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js`. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades, but controls/playback/session-init now receive state through explicit deps/provider instead of direct global reads.
 
 ## 7. Important Runtime Behaviors
 
@@ -199,7 +200,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Transcript JSON is loaded through `#transcript-file`.
 - `processTranscript(...)` remains a central transcript ingestion entry; its compatibility window facade is owned by `src/composables/import-module.js`.
 - Normal transcript rendering is handled by `TranscriptContainer.vue` when Vue rendering is active.
-- Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `app.js` only configures temporary runtime dependencies.
+- Normal transcript word click/contextmenu interaction is owned by `TranscriptContainer.vue` plus `src/composables/transcript-interactions.js`; `reader-runtime.js` only configures temporary runtime dependencies.
 - `window.renderTranscript` and `window.renderChunkMode` have been removed. `session-init.js` now reaches the temporary render boundary through `src/composables/render-runtime.js`.
 - `session-init.js` now reaches the temporary state boundary through `src/composables/session-state-provider.js`.
 
@@ -207,7 +208,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - `src/composables/playback-module.js` owns the migrated playback update functions.
 - `src/composables/playback-state.js` owns playback transient state such as auto-follow, scroll suppression, active highlight element refs, playback loop signature, and sentence previous-tap navigation state.
-- `app.js` still provides dependencies such as `followPlaybackTarget`.
+- `reader-runtime.js` still provides dependencies such as `followPlaybackTarget`.
 - Auto-follow now behaves like page turning: when the active sentence reaches the lower trigger area, it scrolls the active sentence near the top of the viewport instead of centering it.
 - The follow threshold is based on the current scroll container height, so resizing or zooming recalculates the visible zone dynamically.
 
@@ -216,10 +217,10 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Chunk data is loaded through `#chunk-file`.
 - `processChunkData(...)` is the central chunk ingestion entry; its compatibility window facade is owned by `src/composables/import-module.js`.
 - `ChunkModeView.vue` renders chunk blocks.
-- AI chunk word/chunk click and contextmenu interaction is owned by `ChunkModeView.vue` plus `src/composables/chunk-interactions.js`; `app.js` only configures temporary runtime dependencies.
+- AI chunk word/chunk click and contextmenu interaction is owned by `ChunkModeView.vue` plus `src/composables/chunk-interactions.js`; `reader-runtime.js` only configures temporary runtime dependencies.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds to `src/pinia-stores/chunk.js`.
-- Highlight mode cycling and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`; `app.js` only initializes the module.
-- AI chunk mode toggle, Chinese visible/hold behavior, focus mode UI, shadow toggle, and the temporary `window.toggleChunkMode` / `window.toggleChunkFocusMode` / `window.toggleChunkShadowManual` / `window.updateChunkCnHoldBtn` facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
+- Highlight mode cycling and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`; `reader-runtime.js` only initializes the module.
+- AI chunk mode toggle, Chinese visible/hold behavior, focus mode UI, shadow toggle, and the temporary `window.toggleChunkMode` / `window.toggleChunkFocusMode` / `window.toggleChunkShadowManual` / `window.updateChunkCnHoldBtn` facades now live in `src/composables/chunk-controls-module.js`; `reader-runtime.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk mode defaults are currently focus-oriented:
   - sentence highlighting by default
   - Chinese hidden unless held, depending on current state
@@ -238,9 +239,9 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 
 - Chunk notes are still high-risk because they cross legacy DOM, Vue-rendered chunks, and compatibility globals.
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
-- Chunk note style modal compatibility window facades now live in `src/composables/notes-module.js`; `app.js` injects note style adjustment through `_cnApi`.
-- `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
-- `app.js` still configures compatibility dependencies for existing global callers, but direct facade assignments live in focused modules and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
+- Chunk note style modal compatibility window facades now live in `src/composables/notes-module.js`; `reader-runtime.js` injects note style adjustment through `_cnApi`.
+- `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `reader-runtime.js` keeps only a local `_ns` reference to that owner for compatibility.
+- `reader-runtime.js` still configures compatibility dependencies for existing global callers, but direct facade assignments live in focused modules and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
@@ -249,7 +250,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 ### Sentence Notes
 
 - Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
-- `app.js` still configures thin compatibility dependencies for existing startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
+- `reader-runtime.js` still configures thin compatibility dependencies for existing startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
 - `window.selectSentenceFromChunkTarget` remains as a compatibility export, but `ChunkModeView.vue` now reaches it through `src/composables/chunk-interactions.js` runtime configuration instead of a direct component call.
 - `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
 
@@ -451,7 +452,7 @@ Local/session storage is also used for UI state, hotkeys, chunk mode settings, a
 Treat these as sensitive when editing:
 
 ```text
-app.js
+src/composables/reader-runtime.js
 src/composables/session-init.js
 src/composables/keyboard-module.js
 src/composables/notes-module.js
@@ -464,7 +465,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
@@ -489,9 +490,9 @@ When documents conflict, prefer this file, then verify against the actual file t
 ## 14. Maintenance Rules
 
 - Prefer small, behavior-preserving changes.
-- Current cleanup mode: do not add user-facing features until the `complete-appjs-decomposition` route has removed or fully neutralized `app.js`.
+- Current cleanup mode: root `app.js` has been removed; do not add user-facing features to the remaining `reader-runtime.js` assembly layer.
 - Do not move script order unless the full app is verified afterward.
-- Do not add new feature logic to `app.js` unless there is no safer place.
+- Do not add new feature logic to `src/composables/reader-runtime.js` unless there is no safer place.
 - Prefer modules, Pinia stores, and Vue components for new work.
 - Keep compatibility globals in place until the caller paths are migrated.
 - Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire, not as places to add new architecture.

@@ -13,7 +13,7 @@ This is a working hybrid app, not a clean Vue-only rewrite.
 ```text
 legacy DOM shell + module-bound controls
         ↓
-app.js remaining runtime assembly shell
+src/composables/reader-runtime.js remaining runtime assembly shell
         ↓
 window.__state / state adapters / Pinia bridge module compatibility
         ↓
@@ -26,9 +26,9 @@ Vue rendering is currently enabled by default through `window.__USE_VUE_RENDERIN
 
 ## Cleanup Mode
 
-The current project priority is to decompose and remove `app.js` before adding new user-facing features. Use `openspec/changes/complete-appjs-decomposition/phase-0-runtime-baseline.md` as the baseline map for the cleanup route.
+The root `app.js` file has been removed as part of `complete-appjs-decomposition`. The current cleanup priority is to keep shrinking `src/composables/reader-runtime.js` before adding new user-facing features.
 
-- Do not add feature logic to `app.js`.
+- Do not add feature logic to `src/composables/reader-runtime.js`.
 - Do not change the IndexedDB schema without a separate migration.
 - Do not reorder `index.html` scripts unless that change is isolated and fully verified.
 - Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as temporary compatibility surfaces.
@@ -100,7 +100,7 @@ npm test             # Same as verify:vite
 ```text
 9 src/stores/*.js module compatibility stores
 10 src/composables/*.js module compatibility/runtime modules
-app.js module
+src/composables/reader-runtime.js module
 src/composables/session-init.js module
 /src/main.js Vue + Pinia module
 ```
@@ -123,7 +123,7 @@ src/
 ├── components/                # 5 Vue components
 ├── pinia-stores/              # 9 real Pinia stores
 ├── stores/                    # 9 legacy window compatibility stores
-├── composables/               # 27 moduleized legacy behavior chunks
+├── composables/               # 34 moduleized legacy behavior chunks
 ├── utils/                     # 11 utility ES modules
 └── services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -143,7 +143,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` is now a remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, and note state go through focused adapters/modules.
+- `src/composables/reader-runtime.js` is the remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, and note state go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -153,7 +153,7 @@ Do not change this schema without an explicit migration plan.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
-- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by `app.js`.
+- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.
 - `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
 - DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
@@ -161,7 +161,7 @@ Do not change this schema without an explicit migration plan.
 - `window.isInputLikeTarget` now lives in `src/composables/keyboard-module.js`.
 - `window.processTranscript` and `window.processChunkData` now live in `src/composables/import-module.js`.
 - Highlight mode controls and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`.
-- AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
+- AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `reader-runtime.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
 - Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.
