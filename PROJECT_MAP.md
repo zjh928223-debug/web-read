@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 1400 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 1340 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -77,7 +77,7 @@ src/
 │   ├── import-module.js
 │   ├── notes-module.js          # chunk note + sentence note subsystem runtime/state
 │   ├── keyboard-module.js
-│   ├── style-editor.js
+│   ├── style-editor.js          # visual style editor + local style parsing helper
 │   ├── playback-module.js
 │   ├── app-handlers.js
 │   ├── chunk-note-layout.js
@@ -86,9 +86,10 @@ src/
 │   ├── cloze-state.js
 │   ├── playback-state.js
 │   ├── pinia-bridge-module.js    # bridgeToPinia compatibility owner
-│   ├── glass-effects.js
+│   ├── glass-effects.js         # glass UI decoration + chunk note dimension lock setup
 │   ├── controls-module.js
 │   ├── chunk-controls-module.js  # AI chunk mode controls + temporary window facades
+│   ├── theme-controls-module.js # theme control DOM bindings
 │   ├── highlight-controls-module.js # highlight controls + temporary facade
 │   ├── file-input-bindings.js   # file picker DOM binding
 │   ├── legacy-control-bindings.js # remaining legacy control DOM binding
