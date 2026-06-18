@@ -14,15 +14,29 @@
     import './src/composables/chunk-state.js';
     import './src/composables/cloze-state.js';
     import './src/composables/playback-state.js';
+    import { runtimeState } from './src/composables/runtime-state-facade.js';
+    import './src/composables/render-mode.js';
     import './src/composables/annotation-lightweight-module.js';
     import { configureTranscriptInteractions } from './src/composables/transcript-interactions.js';
     import { configureChunkInteractions } from './src/composables/chunk-interactions.js';
     import { configureRenderRuntime } from './src/composables/render-runtime.js';
-    import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';
+    import { initAnnotationBubbleResolver } from './src/composables/annotation-bubble-resolver.js';
     import { configureSessionStateProvider } from './src/composables/session-state-provider.js';
     import { initChunkControls } from './src/composables/chunk-controls-module.js';
     import { initHighlightControls } from './src/composables/highlight-controls-module.js';
     import { initPiniaBridge } from './src/composables/pinia-bridge-module.js';
+    import { configureReaderPublicFacades } from './src/composables/reader-public-facades.js';
+    import { showToast, showError } from './src/composables/ui-facades.js';
+    import {
+        configureSessionFacades,
+        clearGeneratedAnnotationIndex,
+        clearPersistedChunkSession,
+        getAnnotationGenerationScope,
+        emitAnnotationDiagnostics,
+        scheduleGeneratedAnnotationIndexRefresh,
+        syncAnnotationGenerationEntryStatus,
+        initAnnotationApiSettingsUi
+    } from './src/composables/session-facades.js';
 
     // === Read-order map ===
     // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -32,14 +46,11 @@
 
     // [MIGRATED] DB schema constants → window.__audioStore
 
-    // Phase 4: Vue rendering toggle (false = old path, true = new Vue path)
-    window.__USE_VUE_RENDERING = true;
+    // Phase 4: Vue rendering default lives in src/composables/render-mode.js.
     const _tr = window.__transcriptState;
     const _ch = window.__chunkState;
     const _clz = window.__clozeState;
     const _pb = window.__playbackState;
-    const runtimeState = {};
-
     // [MIGRATED] DB operations → window.__audioStore
     var saveToDB = function (id, data) { return window.__audioStore.saveToDB(id, data); };
     var loadFromDB = function (id) { return window.__audioStore.loadFromDB(id); };
@@ -53,14 +64,6 @@
         } catch (e) {
             return fallbackValue;
         }
-    }
-
-    // [MIGRATED] toast → window.__uiStore (wrappers kept for ~29 internal call sites)
-    function showToast(message, type, timeoutMs) {
-        return window.__uiStore.showToast(message, type, timeoutMs);
-    }
-    function showError(code, detail) {
-        return window.__uiStore.showError(code, detail);
     }
 
     // === Validation/parsing utilities (extracted to data-utils.js) ===
@@ -604,70 +607,9 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     });
 
     // === Import module delegation (M4+M5 extracted → src/composables/import-module.js) ===
-    // Stubs for functions now in session-init.js (needed at app.js init time)
-    function clearGeneratedAnnotationIndex() {
-        if (typeof window.__session_clearGeneratedAnnotationIndex === 'function') {
-            window.__session_clearGeneratedAnnotationIndex();
-        }
-    }
-    function clearPersistedChunkSession() {
-        if (typeof window.__session_clearPersistedChunkSession === 'function') {
-            return window.__session_clearPersistedChunkSession();
-        }
-        return Promise.resolve();
-    }
-    function getAnnotationGenerationScope() {
-        if (typeof window.__session_getAnnotationGenerationScope === 'function') {
-            return window.__session_getAnnotationGenerationScope();
-        }
-        return { audioKey: 'default-audio', documentId: 'default-document' };
-    }
-    function getAnnotationGenerationScopeKey(scope) {
-        const rawScope = scope || getAnnotationGenerationScope();
-        const audioKey = rawScope && rawScope.audioKey ? String(rawScope.audioKey) : 'default-audio';
-        const documentId = rawScope && rawScope.documentId ? String(rawScope.documentId) : 'default-document';
-        return `${audioKey}::${documentId}`;
-    }
-    function getAnnotationGeneratedIndexScopeKey() {
-        return runtimeState.annotationGeneratedIndexScopeKey
-            ? String(runtimeState.annotationGeneratedIndexScopeKey)
-            : '';
-    }
-    function emitAnnotationDiagnostics() {
-        if (typeof window.__session_emitAnnotationDiagnostics === 'function') {
-            return window.__session_emitAnnotationDiagnostics.apply(null, arguments);
-        }
-    }
-    function emitAnnotationDebug(step, payload) {
-        try {
-            if (window.ANNOTATION_DEBUG === true || localStorage.getItem('annotationDebug') === '1') {
-                console.debug(`[annotation-debug] ${step}`, payload || {});
-            }
-        } catch (error) {}
-    }
-    function scheduleGeneratedAnnotationIndexRefresh() {
-        if (typeof window.__session_scheduleGeneratedAnnotationIndexRefresh === 'function') {
-            return window.__session_scheduleGeneratedAnnotationIndexRefresh();
-        }
-        return Promise.resolve();
-    }
-    function syncAnnotationGenerationEntryStatus() {
-        if (typeof window.__session_syncAnnotationGenerationEntryStatus === 'function') {
-            return window.__session_syncAnnotationGenerationEntryStatus();
-        }
-    }
-    function getAnnotationGeneratedResultStore() {
-        return window.AnnotationGeneratedResultStore || null;
-    }
-    function getAnnotationClickResolver() {
-        return window.AnnotationClickResolver || null;
-    }
-    function initAnnotationApiSettingsUi() {
-        if (typeof window.__session_initAnnotationApiSettingsUi === 'function') {
-            return window.__session_initAnnotationApiSettingsUi();
-        }
-    }
-    window.__state = runtimeState;
+    configureSessionFacades({
+        getRuntimeState: function () { return runtimeState; }
+    });
     configureSessionStateProvider(runtimeState);
     // chunkNoteModalEl: use independent storage to avoid let TDZ
     var __chunkNoteModalEl = null;
@@ -931,135 +873,12 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         return handleChunkSelectionContextMenu(event);
     }
 
-    function getAnnotationBubble() {
-        const bubble = getAnnotationBubbleApi();
-        if (!bubble) return null;
-        if (typeof bubble.init === 'function') {
-            try {
-                bubble.init();
-            } catch (error) {}
-        }
-        return bubble;
-    }
-
-    function pickAnnotationValue(source, keys) {
-        if (!source || typeof source !== 'object') return '';
-        for (const key of keys) {
-            const value = source[key];
-            if (value != null && String(value).trim()) return String(value).trim();
-        }
-        return '';
-    }
-
-    function normalizeAnnotationBubbleHit(match, wordIndex, span) {
-        const data = match && match.data ? match.data : match;
-        if (!data || typeof data !== 'object') return null;
-        const word = Number.isFinite(wordIndex) ? _tr.words[wordIndex] : null;
-        const clickedText = ((span && span.textContent) || (word && (word.word || word.text)) || '').trim();
-        return {
-            markedText: pickAnnotationValue(data, ['markedText', 'marked_text', 'word', 'text']) || clickedText,
-            boundary: pickAnnotationValue(data, ['boundary', 'match_context', 'context', 'phrase']) || clickedText,
-            type: pickAnnotationValue(data, ['type', 'category', 'label', 'tag']),
-            meaning: pickAnnotationValue(data, ['meaning', 'means', 'explanation', 'definition', 'cn', 'zh']),
-            memoryHint: pickAnnotationValue(data, ['memoryHint', 'memory_hint', 'remember', 'note', 'not_meaning', 'hint'])
-        };
-    }
-
-    function resolveGeneratedAnnotationBubbleForSpan(span, wordIndex) {
-        const resolver = getAnnotationClickResolver();
-        const store = getAnnotationGeneratedResultStore();
-        if (!resolver || typeof resolver.resolveClick !== 'function' || !store) return null;
-        const currentScopeKey = getAnnotationGenerationScopeKey();
-        const indexedScopeKey = getAnnotationGeneratedIndexScopeKey();
-        if (indexedScopeKey && indexedScopeKey !== currentScopeKey) {
-            emitAnnotationDebug('app.generated_click_scope_mismatch', {
-                scope: getAnnotationGenerationScope(),
-                indexedScopeKey,
-                currentScopeKey,
-                wordIndex
-            });
-            emitAnnotationDiagnostics('app.generated_click_scope_mismatch', {
-                scope: getAnnotationGenerationScope(),
-                indexedScopeKey,
-                currentScopeKey,
-                wordIndex
-            });
-            return null;
-        }
-        const result = resolver.resolveClick({
-            span,
-            wordIndex,
-            words: _tr.words,
-            generatedStore: store
-        });
-        emitAnnotationDebug('app.generated_click_resolve', {
-            scope: getAnnotationGenerationScope(),
-            wordIndex,
-            clickedText: String((span && span.textContent) || '').trim(),
-            hit: !!result,
-            targetId: result && result.targetId || '',
-            occurrenceKey: result && result.occurrenceKey || '',
-            hasMeaning: !!(result && String(result.meaning || '').trim()),
-            hasMemoryHint: !!(result && String(result.memoryHint || '').trim()),
-            indexedItemCount: typeof store.getItems === 'function' ? store.getItems().length : 0
-        });
-        emitAnnotationDiagnostics('app.generated_click_resolved', {
-            scope: getAnnotationGenerationScope(),
-            wordIndex,
-            hit: !!result,
-            indexedScopeKey,
-            generatedItemCount: typeof store.getItems === 'function' ? store.getItems().length : 0,
-            occurrenceKey: result && result.occurrenceKey || ''
-        });
-        return result;
-    }
-
-    function resolveAnnotationBubbleForSpan(span) {
-        const wordIndex = Number(span && span.dataset ? span.dataset.wordIndex : NaN);
-        if (!Number.isFinite(wordIndex) || wordIndex < 0) return null;
-        const generated = resolveGeneratedAnnotationBubbleForSpan(span, wordIndex);
-        if (generated) return generated;
-        if (!markedMap.has(wordIndex)) return null;
-        const match = vocabMatchMap.get(wordIndex);
-        if (!match) return null;
-        return normalizeAnnotationBubbleHit(match, wordIndex, span);
-    }
-
-    function notifyAnnotationBubbleWordClick(span, options = {}) {
-        const bubble = getAnnotationBubble();
-        if (!bubble) {
-            emitAnnotationDiagnostics('app.generated_bubble_click_skipped', {
-                scope: getAnnotationGenerationScope(),
-                reason: 'bubble-missing'
-            });
-            return false;
-        }
-        const annotation = resolveAnnotationBubbleForSpan(span);
-        const bubbleVisible = typeof bubble.isVisible === 'function' ? bubble.isVisible() : false;
-        emitAnnotationDiagnostics('app.generated_bubble_annotation', {
-            scope: getAnnotationGenerationScope(),
-            wordIndex: Number(span && span.dataset ? span.dataset.wordIndex : NaN),
-            hit: !!annotation,
-            occurrenceKey: annotation && annotation.occurrenceKey || '',
-            bubbleVisible,
-            hasMeaning: !!(annotation && String(annotation.meaning || '').trim()),
-            hasMemoryHint: !!(annotation && String(annotation.memoryHint || '').trim())
-        });
-        if (annotation && typeof bubble.setAnnotation === 'function') {
-            bubble.setAnnotation(annotation);
-            if ((!bubbleVisible || options.forceShow) && typeof bubble.show === 'function') {
-                bubble.show();
-            }
-            return true;
-        }
-        if (typeof bubble.clearAnnotation === 'function') {
-            bubble.clearAnnotation();
-        }
-        if (typeof bubble.hide === 'function') {
-            bubble.hide();
-        }
-        return false;
-    }
+    var annotationBubbleResolverApi = initAnnotationBubbleResolver({
+        getWords: function () { return _tr.words; },
+        markedMap: markedMap,
+        vocabMatchMap: vocabMatchMap
+    });
+    var notifyAnnotationBubbleWordClick = annotationBubbleResolverApi.notifyAnnotationBubbleWordClick;
 
     function selectSentenceFromChunkTarget(target) {
         return _snApi.selectSentenceFromChunkTarget(target);
@@ -1268,7 +1087,7 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
         findChunkIndexByTime: findChunkIndexByTime,
         swapActiveClass: swapActiveClass,
         followPlaybackTarget: followPlaybackTarget,
-        getAnnotationBubble: getAnnotationBubble,
+        getAnnotationBubble: annotationBubbleResolverApi.getAnnotationBubble,
         jumpPrevSentence: jumpPrevSentence,
         jumpNextSentence: jumpNextSentence
     });
@@ -1568,20 +1387,13 @@ const themeCustomPanel = document.getElementById('theme-custom-panel');
     setTimeout(()=>{ try{chunkControlsApi.updateChunkCnHoldBtn();}catch(e){} }, 0);
 
     // === Temporary compatibility exports for cross-module access ===
-    window.showToast = showToast; window.showError = showError;
-    window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
-    window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
-    window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;
-    window.getAnnotationGenerationScope = getAnnotationGenerationScope;
-    window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
-    window.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;
-    window.loadChunkNotesForCurrentAudio = loadChunkNotesForCurrentAudio;
-    window.setChunkNoteVisible = setChunkNoteVisible;
-    window.loadSentenceNotesForCurrentAudio = loadSentenceNotesForCurrentAudio;
-    window.switchSentenceNotesDoc = switchSentenceNotesDoc;
-    window.applyCurrentAudioMeta = applyCurrentAudioMeta;
-    window.clearPersistedChunkSession = clearPersistedChunkSession;
-    window.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
-    window.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
-    window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
-    window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
+    configureReaderPublicFacades({
+        selectSentenceFromChunkTarget: selectSentenceFromChunkTarget,
+        openChunkNoteContextFromEvent: openChunkNoteContextFromEvent,
+        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
+        loadChunkNotesForCurrentAudio: loadChunkNotesForCurrentAudio,
+        setChunkNoteVisible: setChunkNoteVisible,
+        loadSentenceNotesForCurrentAudio: loadSentenceNotesForCurrentAudio,
+        switchSentenceNotesDoc: switchSentenceNotesDoc,
+        applyCurrentAudioMeta: applyCurrentAudioMeta
+    });

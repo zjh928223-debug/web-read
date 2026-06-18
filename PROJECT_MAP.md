@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── app.js                             # Remaining legacy runtime shell, about 1587 lines
+├── app.js                             # Remaining runtime assembly shell, about 1400 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -26,7 +26,7 @@ index.html
 └── src/main.js
 ```
 
-The page no longer contains inline DOM event handlers. Remaining legacy controls are bound by `src/composables/legacy-control-bindings.js`, while `app.js` and some composables still export compatibility functions onto `window`.
+The page no longer contains inline DOM event handlers. Remaining legacy controls are bound by `src/composables/legacy-control-bindings.js`, while focused composables own the remaining compatibility functions exposed on `window`.
 
 ## Cleanup Baseline
 
@@ -133,8 +133,9 @@ src/
 Current state ownership is transitional:
 
 ```text
-app.js remaining let state + runtime state adapters
-  ↕ window.__state proxy
+src/composables/runtime-state-facade.js runtimeState
+  ↕ temporary window.__state alias
+app.js remaining runtime assembly
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components

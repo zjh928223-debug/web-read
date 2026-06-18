@@ -13,7 +13,7 @@ The project is not a clean Vue-only app yet. It is a working hybrid:
 ```text
 index.html legacy DOM shell
   -> compatibility ES modules under src/stores and src/composables
-  -> app.js remaining legacy runtime shell
+  -> app.js remaining runtime assembly shell
   -> session-init.js startup and annotation glue
   -> src/main.js Vue + Pinia mount
 ```
@@ -39,7 +39,7 @@ Top-level runtime files:
 
 ```text
 index.html                         browser entry and legacy DOM shell
-app.js                             remaining legacy runtime shell, about 1587 lines
+app.js                             remaining runtime assembly shell, about 1400 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
@@ -74,7 +74,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    27 compatibility/runtime modules
+  composables/                    33 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -109,6 +109,12 @@ transcript-state.js               about 112 lines
 chunk-state.js                    about 161 lines
 cloze-state.js                    about 109 lines
 playback-state.js                 about 85 lines
+runtime-state-facade.js           about 8 lines
+render-mode.js                    about 9 lines
+ui-facades.js                     about 24 lines
+session-facades.js                about 120 lines
+reader-public-facades.js          about 60 lines
+annotation-bubble-resolver.js     about 160 lines
 pinia-bridge-module.js            about 41 lines
 glass-effects.js                  about 95 lines
 controls-module.js                about 63 lines
@@ -151,8 +157,9 @@ The app still loads `app.js`, but remaining runtime ownership is being narrowed 
 Current state flow:
 
 ```text
-app.js remaining local variables and runtime state adapters
-  <-> window.__state getter/setter proxy
+src/composables/runtime-state-facade.js runtimeState
+  <-> temporary window.__state getter/setter alias
+app.js remaining runtime assembly
   <-> src/composables/pinia-bridge-module.js bridgeToPinia compatibility
   <-> src/pinia-stores/*.js real Pinia stores
   <-> Vue components
@@ -176,7 +183,7 @@ window.__USE_VUE_RENDERING = true
 `src/main.js` then mirrors the render flag into the transcript Pinia store and applies the legacy/Vue container display mode. The Vue components are active, but many interactions still rely on:
 
 - module-bound legacy controls from `src/composables/legacy-control-bindings.js`
-- `window.xxx` functions exported by `app.js` and composables
+- `window.xxx` compatibility functions owned by focused composables
 - direct DOM reads/writes
 - legacy CSS classes
 
@@ -233,7 +240,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 - Chunk note record CRUD, import normalization, snapshot saving, export file handle state, selected/active note state, block-ref note lookup, draft storage, pending context access, right-click context resolution, popover DOM, rendered tag lifecycle, drag/resize/edit behavior, connector drawing, delete prompt, and style modal runtime now delegate through `src/composables/notes-module.js`.
 - Chunk note style modal compatibility window facades now live in `src/composables/notes-module.js`; `app.js` injects note style adjustment through `_cnApi`.
 - `src/composables/notes-module.js` now owns shared chunk/sentence note runtime state through `window.__notesState`; `app.js` keeps only a local `_ns` reference to that owner for compatibility.
-- `app.js` still keeps compatibility wrappers for existing global callers, but `index.html` no longer uses inline handlers and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
+- `app.js` still configures compatibility dependencies for existing global callers, but direct facade assignments live in focused modules and the chunk note overlay/tag interaction implementation has moved behind the `_cnApi` subsystem API.
 - Right-click or selected text can create chunk note bubbles.
 - Saved notes add underline markers to selected words.
 - Hovering note tags can draw connector lines through `#chunk-note-svg-layer`.
@@ -242,7 +249,7 @@ Transcript, chunk, cloze, and playback transient state have started moving out o
 ### Sentence Notes
 
 - Sentence note draft, edit persistence, selected sentence transitions, focus phrase capture, note preview rendering, preview visibility/resize state, and current-doc import snapshot application now delegate through `src/composables/notes-module.js`.
-- `app.js` still keeps thin compatibility wrappers for existing global, inline, startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
+- `app.js` still configures thin compatibility dependencies for existing startup, import, and Vue callers, while the note state itself is owned by `window.__notesState`.
 - `window.selectSentenceFromChunkTarget` remains as a compatibility export, but `ChunkModeView.vue` now reaches it through `src/composables/chunk-interactions.js` runtime configuration instead of a direct component call.
 - `session-init.js` still uses global sentence note load/switch entrypoints; direct API injection is a later cleanup step.
 
@@ -381,10 +388,12 @@ Current checks cover:
 - removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
 - removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
+- migrated `runtimeState` and the temporary `window.__state` alias into `src/composables/runtime-state-facade.js` through `verify:runtime-state-facade`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
 - confirmed `window.__bridge` is not part of Vue/Pinia startup sync through `verify:bridge-startup`
 - migrated `window.bridgeToPinia` and the Pinia sync implementation into `src/composables/pinia-bridge-module.js` through `verify:pinia-bridge-module`
-- removed duplicate app-level playback/speed/style window facade ownership through `verify:app-window-facades`
+- removed direct app-level window facade ownership through `verify:app-window-facades`
+- migrated session, annotation bubble resolver, reader public, UI, render-mode, and runtime-state facades into focused modules through `verify:session-facades`, `verify:annotation-bubble-resolver`, `verify:reader-public-facades`, `verify:ui-facades`, `verify:render-mode`, and `verify:runtime-state-facade`
 - migrated DB compatibility window facades into `src/stores/audio.js` through `verify:audio-store-facades`
 - migrated chunk note style compatibility window facades into `src/composables/notes-module.js` through `verify:chunk-note-style-facades`
 - migrated `window.isInputLikeTarget` into `src/composables/keyboard-module.js` through `verify:keyboard-facades`
@@ -455,7 +464,7 @@ index.html script order
 
 Main risks:
 
-- `app.js` still owns some remaining central runtime state and global exports, while transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- `app.js` still holds remaining runtime assembly code, while direct global facade ownership, transcript, chunk, cloze, playback transient, note state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.

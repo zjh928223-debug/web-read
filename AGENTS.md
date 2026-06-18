@@ -11,7 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `app.js` - remaining legacy runtime shell, still owns some runtime state and compatibility facades.
+- `app.js` - remaining runtime assembly shell, no longer owns direct `window.*` facade assignments.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -61,11 +61,17 @@ Vue rendering is enabled by default:
 window.__USE_VUE_RENDERING = true
 ```
 
-The Vue components are active but thin. A lot of interaction still relies on `app.js`, `window.xxx` exports, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
+The Vue components are active but thin. A lot of interaction still relies on `app.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
 
 ## Important Files
 
-- `app.js` - about 1587 lines. High risk. Remaining central state, compatibility facades, and legacy exports.
+- `app.js` - about 1400 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
+- `src/composables/session-facades.js` - public session/annotation facade stubs.
+- `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
+- `src/composables/annotation-bubble-resolver.js` - generated/vocab annotation bubble hit resolution.
+- `src/composables/ui-facades.js` - early toast/error facade owner.
+- `src/composables/render-mode.js` - default Vue rendering flag owner.
 - `src/composables/pinia-bridge-module.js` - `bridgeToPinia` compatibility owner.
 - `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/highlight-controls-module.js` - highlight mode controls and temporary highlight window facade.

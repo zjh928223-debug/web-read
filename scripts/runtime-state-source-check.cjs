@@ -5,6 +5,8 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const composablesDir = path.join(repoRoot, 'src', 'composables');
+const runtimeStateFacadePath = path.join(composablesDir, 'runtime-state-facade.js');
+const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
 
 function listFiles(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -15,6 +17,7 @@ function listFiles(dir) {
 }
 
 listFiles(composablesDir).forEach((filePath) => {
+  if (filePath === runtimeStateFacadePath) return;
   const source = fs.readFileSync(filePath, 'utf8');
   assert.equal(
     source.includes('window.__state'),
@@ -24,13 +27,13 @@ listFiles(composablesDir).forEach((filePath) => {
 });
 
 assert.ok(
-  appSource.includes('const runtimeState = {};'),
-  'app.js should own a local runtimeState object'
+  runtimeStateFacadeSource.includes('export const runtimeState = {};'),
+  'runtime-state-facade should own the runtimeState object'
 );
 
 assert.ok(
-  appSource.includes('window.__state = runtimeState;'),
-  'app.js should expose runtimeState only as the temporary window.__state facade'
+  runtimeStateFacadeSource.includes('window.__state = runtimeState;'),
+  'runtime-state-facade should expose runtimeState only as the temporary window.__state facade'
 );
 
 assert.equal(

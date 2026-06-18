@@ -6,11 +6,16 @@ const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble.js'), 'utf8');
+const resolverSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble-resolver.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { getAnnotationBubbleApi } from './src/composables/annotation-bubble.js';"),
-  'app.js should import the annotation bubble API from the module graph'
+  appSource.includes("import { initAnnotationBubbleResolver } from './src/composables/annotation-bubble-resolver.js';"),
+  'app.js should initialize the annotation bubble resolver from the module graph'
+);
+assert.ok(
+  resolverSource.includes("import { getAnnotationBubbleApi } from './annotation-bubble.js';"),
+  'annotation bubble resolver should import the annotation bubble API from the module graph'
 );
 assert.equal(appSource.includes('window.AnnotationBubble'), false, 'app.js should not read the root annotation bubble global');
 

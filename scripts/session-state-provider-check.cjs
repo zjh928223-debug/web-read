@@ -6,6 +6,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'app.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const providerSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-state-provider.js'), 'utf8');
+const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
 
 assert.equal(
   sessionInitSource.includes('window.__state'),
@@ -30,13 +31,13 @@ assert.ok(
 );
 
 assert.ok(
-  appSource.includes('const runtimeState = {};'),
-  'app.js should create a local runtimeState owner before exposing the compatibility facade'
+  appSource.includes("import { runtimeState } from './src/composables/runtime-state-facade.js';"),
+  'app.js should import runtimeState from the runtime-state facade'
 );
 
 assert.ok(
-  appSource.includes('window.__state = runtimeState;'),
-  'app.js should expose runtimeState through the temporary window.__state compatibility facade'
+  runtimeStateFacadeSource.includes('window.__state = runtimeState;'),
+  'runtime-state-facade should expose runtimeState through the temporary window.__state compatibility facade'
 );
 
 assert.ok(

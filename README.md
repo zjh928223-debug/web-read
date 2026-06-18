@@ -13,7 +13,7 @@ This is a working hybrid app, not a clean Vue-only rewrite.
 ```text
 legacy DOM shell + module-bound controls
         ↓
-app.js remaining runtime shell and compatibility exports
+app.js remaining runtime assembly shell
         ↓
 window.__state / state adapters / Pinia bridge module compatibility
         ↓
@@ -143,7 +143,7 @@ Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
 
-- `app.js` still owns remaining central runtime state and compatibility facades, but transcript, chunk, cloze, playback transient, and note state now go through focused adapters/modules. No-consumer `window.__state` facades are being removed behind `verify:state-facades`.
+- `app.js` is now a remaining runtime assembly shell. Direct `window.*` facade ownership has moved to focused modules, while transcript, chunk, cloze, playback transient, and note state go through focused adapters/modules.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
@@ -152,7 +152,8 @@ Do not change this schema without an explicit migration plan.
 - Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - `src/composables/session-init.js` receives its temporary state view through `src/composables/session-state-provider.js` instead of reading `window.__state` directly.
-- `app.js` now owns a local `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
+- `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
+- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by `app.js`.
 - `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
 - DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
@@ -163,7 +164,7 @@ Do not change this schema without an explicit migration plan.
 - AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; `app.js` only initializes the module and passes its API to keyboard/import callers.
 - Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
 - Annotation lightweight import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
-- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; `app.js` reaches it through a module API.
+- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.
 - Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `session-init.js` reaches it through a module API.
 - `src/composables/session-init.js` mixes startup restore, persisted-state cleanup, and the annotation import/export implementation.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
