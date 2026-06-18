@@ -24,6 +24,7 @@
     import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';
     import { configureSessionStateProvider } from './session-state-provider.js';
     import { collectReaderDomRefs } from './reader-dom-refs.js';
+    import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
     import { initChunkControls } from './chunk-controls-module.js';
     import { initHighlightControls } from './highlight-controls-module.js';
     import { initThemeControls } from './theme-controls-module.js';
@@ -73,60 +74,45 @@
     // === Validation/parsing utilities (extracted to data-utils.js) ===
     const {
         isPlainObjectRecord,
-        isFiniteNum,
-        normalizeLooseKey,
-        getLooseProp,
-        looksLikeSegmentArray,
         validateVisualData,
         validateChunkData,
-        validateMarksArray
-    } = window.DataUtils;
-    const validateTranscriptData = (json) => window.DataUtils.validateTranscriptData(json, _tr.segments);
-    const {
+        validateMarksArray,
+        validateTranscriptData,
         validateClozeData,
-        normalizeClozeAnswer,
-        escapeHtml
-    } = window.ClozeUtils;
-    const {
-        createInitialClozeAnswerState,
-        buildClozeQuizViewModel
-    } = window.ClozeViewModelHelpers;
-    const {
-        findChunkIndexByTime: findChunkIndexByTimeHelper,
-        bsFindActive: bsFindActiveHelper,
-        getCurrentSegmentIndex: getCurrentSegmentIndexHelper,
-        getSegmentCheckpoints: getSegmentCheckpointsHelper
-    } = window.PlaybackIndexHelpers;
-    const {
-        clamp: clampHelper,
-        cleanText: cleanTextHelper,
-        tokenizeText: tokenizeTextHelper,
-        findExactMatchRange: findExactMatchRangeHelper,
-        findExactMatch: findExactMatchHelper,
-        adjustIndex: adjustIndexHelper,
-        scoreMatchCandidate: scoreMatchCandidateHelper,
-        normalizeChunkCandidateBounds: normalizeChunkCandidateBoundsHelper,
-        buildChunkCandidateVariants: buildChunkCandidateVariantsHelper,
-        buildChunkMatchWindow: buildChunkMatchWindowHelper,
-        clampChunkMatchCandidate: clampChunkMatchCandidateHelper,
-        buildChunkCandidateEndWindow: buildChunkCandidateEndWindowHelper,
-        getChunkCandidateBoundaryWords: getChunkCandidateBoundaryWordsHelper,
-        normalizeChunkMatchCandidate: normalizeChunkMatchCandidateHelper
-    } = window.ChunkMatchingHelpers;
-    const {
-        buildVocabMatchMap: buildVocabMatchMapHelper
-    } = window.VocabMatchingHelpers;
+        findChunkIndexByTimeHelper,
+        bsFindActiveHelper,
+        getCurrentSegmentIndexHelper,
+        getSegmentCheckpointsHelper,
+        cleanTextHelper,
+        tokenizeTextHelper,
+        findExactMatchRangeHelper,
+        buildVocabMatchMapHelper,
+        buildAudioKey,
+        buildCurrentAudioMetaState,
+        getCurrentAudioFilenameBase,
+        getChunkNotesStorageKey,
+        getChunkNoteDraftStorageKey,
+        getSentenceNotesStorageKey,
+        getLegacySentenceNotesStorageKey,
+        buildCurrentSentenceDocId,
+        getFirstFileFromEvent,
+        markFileLoaded,
+        readFileAsText
+    } = collectReaderRuntimeDeps({
+        transcriptState: _tr,
+        getWindow: function () { return window; }
+    });
 
     // === Identity/storage key helpers (extracted to identity-and-storage-keys.js) ===
     var audioIdentityApi = initAudioIdentity({
-        buildAudioKey: window.IdentityStorageKeys.buildAudioKey,
-        buildCurrentAudioMetaState: window.ImportExportSharedHelpers.buildCurrentAudioMetaState,
-        getCurrentAudioFilenameBase: window.ImportExportSharedHelpers.getCurrentAudioFilenameBase,
-        getChunkNotesStorageKey: window.IdentityStorageKeys.getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey: window.IdentityStorageKeys.getChunkNoteDraftStorageKey,
-        getSentenceNotesStorageKey: window.IdentityStorageKeys.getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey: window.IdentityStorageKeys.getLegacySentenceNotesStorageKey,
-        buildCurrentSentenceDocId: window.IdentityStorageKeys.buildCurrentSentenceDocId,
+        buildAudioKey: buildAudioKey,
+        buildCurrentAudioMetaState: buildCurrentAudioMetaState,
+        getCurrentAudioFilenameBase: getCurrentAudioFilenameBase,
+        getChunkNotesStorageKey: getChunkNotesStorageKey,
+        getChunkNoteDraftStorageKey: getChunkNoteDraftStorageKey,
+        getSentenceNotesStorageKey: getSentenceNotesStorageKey,
+        getLegacySentenceNotesStorageKey: getLegacySentenceNotesStorageKey,
+        buildCurrentSentenceDocId: buildCurrentSentenceDocId,
         getSegments: function () { return _tr.segments; }
     });
     // [MIGRATED] chunk-note layout functions → src/composables/chunk-note-layout.js
@@ -142,10 +128,6 @@
     async function loadSentenceNotesForCurrentAudio() { return _snApi.loadSentenceNotesForCurrentAudio(); }
     async function switchSentenceNotesDoc(transcriptSource) { return _snApi.switchSentenceNotesDoc(transcriptSource); }
 
-    // === Import / export / restore shared helpers ===
-    const getFirstFileFromEvent = window.ImportExportSharedHelpers.getFirstFileFromEvent;
-    const markFileLoaded = window.ImportExportSharedHelpers.markFileLoaded;
-
     function applyCurrentAudioMeta(meta) {
         const nextAudioState = audioIdentityApi.applyCurrentAudioMeta(meta);
         if (_cnApi && typeof _cnApi.setChunkNoteDraftRestoreDone === 'function') {
@@ -153,8 +135,6 @@
         }
         return nextAudioState;
     }
-
-    const readFileAsText = window.ImportExportSharedHelpers.readFileAsText;
 
     var chunkNoteTransferApi = null;
 

@@ -5,7 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
-├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 587 lines
+├── src/composables/reader-runtime.js  # Remaining runtime assembly shell, about 569 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -77,6 +77,7 @@ src/
 │   ├── session-state-provider.js # temporary session-init state provider
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
 │   ├── reader-dom-refs.js       # static reader runtime DOM refs
+│   ├── reader-runtime-deps.js   # runtime utility/global helper dependency collection
 │   ├── reader-runtime-helpers.js # focus/current-note/export-dialog helper runtime
 │   ├── import-module.js
 │   ├── notes-module.js          # chunk note + sentence note subsystem runtime/state
@@ -185,6 +186,7 @@ npm run verify:inline-handler-bindings # Focused remaining inline handler migrat
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
+npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
 npm run verify:reader-runtime-helpers # Focused reader runtime helper extraction check
 npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
