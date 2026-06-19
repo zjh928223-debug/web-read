@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
@@ -16,7 +17,7 @@ async function main() {
     'reader-runtime should delegate reader playback runtime through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
     'reader-runtime-shell should initialize reader playback runtime through reader-feature-runtime'
   );
   assert.ok(

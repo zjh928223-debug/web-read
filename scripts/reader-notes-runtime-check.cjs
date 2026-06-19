@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -15,11 +16,11 @@ async function main() {
     'reader-runtime should delegate reader notes runtime through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
     'reader-runtime-shell should initialize reader notes runtime through reader notes/session runtime'
   );
   assert.ok(
-    shellSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    assemblySource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
     'reader-runtime-shell should initialize notes runtime through the notes/session module'
   );
   assert.equal(

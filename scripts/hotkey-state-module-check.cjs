@@ -6,8 +6,10 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'hotkey-state-module.js'), 'utf8');
@@ -19,7 +21,7 @@ async function main() {
     'reader-runtime should delegate hotkey state assembly through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
     'reader-runtime-shell should initialize hotkey state through reader runtime context'
   );
   assert.ok(
@@ -27,8 +29,8 @@ async function main() {
     'reader-runtime-context should initialize hotkey state through reader bootstrap runtime'
   );
   assert.ok(
-    shellSource.includes('var hotkeyStateApi = bootstrapRuntime.hotkeyStateApi;'),
-    'reader-runtime-shell should receive hotkey state through the bootstrap module'
+    featureDepsSource.includes('hotkeyStateApi: bootstrapRuntime.hotkeyStateApi'),
+    'reader-feature-runtime-deps should receive hotkey state through the bootstrap module'
   );
   assert.equal(
     runtimeSource.includes("import { initHotkeyState } from './hotkey-state-module.js';"),

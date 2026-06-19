@@ -6,6 +6,8 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
+  const depsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -14,12 +16,16 @@ async function main() {
     'reader-runtime should delegate notes/session through reader runtime shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime-shell should import reader notes/session runtime'
+    assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    'reader-runtime-assembly should import reader notes/session runtime'
   );
   assert.ok(
-    shellSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
-    'reader-runtime-shell should initialize notes/session through the combined module'
+    assemblySource.includes("import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';"),
+    'reader-runtime-assembly should import reader notes/session runtime dependency assembly'
+  );
+  assert.ok(
+    assemblySource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
+    'reader-runtime-assembly should initialize notes/session through the combined module'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
@@ -45,8 +51,24 @@ async function main() {
     'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
     'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
-    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should bind notes/session result: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not bind notes/session result directly: ${pattern}`);
   });
+
+  [
+    'export function createReaderNotesSessionRuntimeDeps',
+    'notesModule: globalObject.__notesModule',
+    'chunkNoteLayout: globalObject.__chunkNoteLayout',
+    'transcriptState: bootstrapRuntime.transcriptState',
+    'chunkState: bootstrapRuntime.chunkState',
+    'clozeState: bootstrapRuntime.clozeState',
+    'audioIdentityApi: bootstrapRuntime.audioIdentityApi',
+    'isPlainObjectRecord: bootstrapRuntime.runtimeDeps.isPlainObjectRecord',
+    'notePreviewResizeHandleY: domRefs.notePreviewResizeHandleY'
+  ].forEach((pattern) => {
+    assert.ok(depsSource.includes(pattern), `reader-notes-session-runtime-deps should own ${pattern}`);
+  });
+  assert.equal(depsSource.includes('window.'), false, 'reader-notes-session-runtime-deps should not read or write window globals');
+  assert.equal(depsSource.includes('document.'), false, 'reader-notes-session-runtime-deps should not read document globals');
 
   [
     "import { initReaderNotesRuntime } from './reader-notes-runtime.js';",

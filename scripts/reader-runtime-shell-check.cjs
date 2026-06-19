@@ -5,6 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
 assert.ok(
@@ -16,20 +17,28 @@ assert.ok(
   'reader-runtime should delegate assembly to the shell module'
 );
 [
+  "import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';",
+  'return initReaderRuntimeAssembly(deps);'
+].forEach((pattern) => {
+  assert.ok(shellSource.includes(pattern), `reader-runtime-shell should delegate to assembly: ${pattern}`);
+});
+[
   "import { runtimeState } from './runtime-state-facade.js';",
   "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
   "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
   "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';",
+  "import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';",
   "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
+  "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';",
   'var runtimeContext = initReaderRuntimeContext({',
-  'var notesSessionRuntime = initReaderNotesSessionRuntime({',
+  'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
   'var featureRuntime = initReaderFeatureRuntime({',
   'runtimeState: runtimeState',
   'renderTranscript: renderTranscript',
   'renderChunkMode: renderChunkMode',
-  'setChunkNoteTransferApi: runtimeContext.setChunkNoteTransferApi'
+  'notesSessionRuntime: notesSessionRuntime'
 ].forEach((pattern) => {
-  assert.ok(shellSource.includes(pattern), `reader-runtime-shell should own ${pattern}`);
+  assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should own ${pattern}`);
 });
 [
   "import { runtimeState } from './runtime-state-facade.js';",
@@ -38,13 +47,16 @@ assert.ok(
   "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';",
   "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
   'var runtimeContext = initReaderRuntimeContext({',
-  'var notesSessionRuntime = initReaderNotesSessionRuntime({',
+  'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
   'initReaderFeatureRuntime({'
 ].forEach((pattern) => {
   assert.equal(runtimeSource.includes(pattern), false, `reader-runtime should not own shell assembly: ${pattern}`);
+  assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not own assembly internals: ${pattern}`);
 });
 assert.equal(shellSource.includes('window.'), false, 'reader-runtime-shell should receive window through explicit deps');
 assert.equal(shellSource.includes('document.'), false, 'reader-runtime-shell should receive document through explicit deps');
+assert.equal(assemblySource.includes('window.'), false, 'reader-runtime-assembly should receive window through explicit deps');
+assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
 [
   'setChunkNoteVisible(_ns.chunkNoteVisible, false);',

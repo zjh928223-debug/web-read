@@ -6,7 +6,8 @@
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
 ├── src/composables/reader-runtime.js  # Thin runtime entry, about 28 lines
-├── src/composables/reader-runtime-shell.js # Remaining runtime assembly shell, about 232 lines
+├── src/composables/reader-runtime-shell.js # Thin runtime shell entry, about 5 lines
+├── src/composables/reader-runtime-assembly.js # Remaining runtime assembly, about 51 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -74,15 +75,18 @@ src/
 │   └── annotation.js
 ├── composables/
 │   ├── reader-runtime.js        # thin runtime entry
-│   ├── reader-runtime-shell.js  # remaining runtime assembly shell
+│   ├── reader-runtime-shell.js  # thin runtime shell entry
+│   ├── reader-runtime-assembly.js # context/notes/feature assembly sequence
 │   ├── session-init.js
 │   ├── session-state-provider.js # temporary session-init state provider
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
 │   ├── reader-feature-runtime.js # import/controls/interactions/keyboard/app composition
+│   ├── reader-feature-runtime-deps.js # feature runtime dependency assembly
 │   ├── reader-runtime-context.js # startup context composition for reader-runtime
 │   ├── reader-dom-refs.js       # static reader runtime DOM refs
 │   ├── reader-bootstrap-runtime.js # state/helper/audio/hotkey/marks bootstrap
 │   ├── reader-runtime-deps.js   # runtime utility/global helper dependency collection
+│   ├── reader-notes-session-runtime-deps.js # notes/session dependency assembly
 │   ├── reader-notes-session-runtime.js # notes setup + session wrapper composition
 │   ├── reader-notes-runtime.js  # notes API setup + Pinia bridge runtime
 │   ├── reader-session-runtime.js # session-facing note/audio lifecycle wrappers
@@ -162,7 +166,8 @@ Current state ownership is transitional:
 src/composables/runtime-state-facade.js runtimeState
   ↕ temporary window.__state alias
 src/composables/reader-runtime.js thin runtime entry
-  → src/composables/reader-runtime-shell.js remaining runtime assembly
+  → src/composables/reader-runtime-shell.js thin runtime shell entry
+  → src/composables/reader-runtime-assembly.js remaining runtime assembly
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components
@@ -202,10 +207,13 @@ npm run verify:control-playback-state-deps # Focused controls/playback state dep
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:reader-runtime-shell # Focused reader runtime shell assembly check
+npm run verify:reader-runtime-assembly # Focused reader runtime assembly sequence check
 npm run verify:reader-runtime-context # Focused reader startup context composition check
 npm run verify:reader-feature-runtime # Focused reader feature runtime composition check
+npm run verify:reader-feature-runtime-deps # Focused reader feature runtime dependency assembly check
 npm run verify:reader-bootstrap-runtime # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
+npm run verify:reader-notes-session-runtime-deps # Focused reader notes/session runtime dependency assembly check
 npm run verify:reader-notes-session-runtime # Focused reader notes/session runtime setup check
 npm run verify:reader-notes-runtime # Focused reader notes runtime setup check
 npm run verify:reader-session-runtime # Focused reader session runtime setup check

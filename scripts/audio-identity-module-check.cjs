@@ -6,8 +6,11 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
+  const notesSessionDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
@@ -20,7 +23,7 @@ async function main() {
     'reader-runtime should delegate audio identity assembly through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
     'reader-runtime-shell should initialize audio identity through reader runtime context'
   );
   assert.ok(
@@ -28,8 +31,8 @@ async function main() {
     'reader-runtime-context should initialize audio identity through reader bootstrap runtime'
   );
   assert.ok(
-    shellSource.includes('var audioIdentityApi = bootstrapRuntime.audioIdentityApi;'),
-    'reader-runtime-shell should receive audio identity API from bootstrap runtime'
+    notesSessionDepsSource.includes('audioIdentityApi: bootstrapRuntime.audioIdentityApi'),
+    'reader-notes-session-runtime-deps should receive audio identity API from bootstrap runtime'
   );
   assert.equal(
     runtimeSource.includes("import { initAudioIdentity } from './audio-identity-module.js';"),
@@ -58,12 +61,12 @@ async function main() {
     'runtimeState.currentAudioKey should read from audio identity module'
   );
   assert.ok(
-    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
     'reader-runtime-shell should initialize audio identity session wrappers through reader-notes-session-runtime'
   );
   assert.ok(
-    shellSource.includes('var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'),
-    'reader-runtime-shell should receive applyCurrentAudioMeta from reader-notes-session-runtime'
+    featureDepsSource.includes('applyCurrentAudioMeta: notesSessionRuntime.applyCurrentAudioMeta'),
+    'reader-feature-runtime-deps should receive applyCurrentAudioMeta from reader-notes-session-runtime'
   );
   assert.ok(
     notesSessionRuntimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
@@ -101,12 +104,12 @@ async function main() {
   });
 
   [
-    'audioIdentityApi: audioIdentityApi',
-    'var notesSessionRuntime = initReaderNotesSessionRuntime({'
+    'audioIdentityApi: bootstrapRuntime.audioIdentityApi',
+    'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'
   ].forEach((pattern) => {
     assert.ok(
-      shellSource.includes(pattern),
-      `reader-runtime-shell should pass audio identity API through focused runtime modules: ${pattern}`
+      notesSessionDepsSource.includes(pattern) || assemblySource.includes(pattern),
+      `reader runtime should pass audio identity API through focused runtime modules: ${pattern}`
     );
   });
 

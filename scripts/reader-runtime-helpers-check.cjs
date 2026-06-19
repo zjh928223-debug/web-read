@@ -6,7 +6,9 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const helperSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-helpers.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -26,16 +28,16 @@ async function main() {
     'reader-runtime should delegate reader-runtime-context through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
     'reader-runtime-shell should use reader-runtime-context'
   );
   assert.ok(
-    shellSource.includes('restoreReaderFocus: runtimeContext.restoreReaderFocus,'),
-    'reader-runtime-shell should receive restoreReaderFocus from context'
+    featureDepsSource.includes('restoreReaderFocus: runtimeContext.restoreReaderFocus,'),
+    'reader-feature-runtime-deps should receive restoreReaderFocus from context'
   );
   assert.ok(
-    shellSource.includes('toggleCurrentNote: runtimeContext.toggleCurrentNote,'),
-    'reader-runtime-shell should receive toggleCurrentNote from context'
+    featureDepsSource.includes('toggleCurrentNote: runtimeContext.toggleCurrentNote,'),
+    'reader-feature-runtime-deps should receive toggleCurrentNote from context'
   );
 
   [

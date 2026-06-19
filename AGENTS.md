@@ -12,7 +12,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 
 - `index.html` - browser entry and legacy DOM shell.
 - `src/composables/reader-runtime.js` - thin runtime entry that imports side-effect modules and initializes the runtime shell.
-- `src/composables/reader-runtime-shell.js` - remaining runtime assembly shell, no longer owns direct `window.*` facade assignments.
+- `src/composables/reader-runtime-shell.js` - thin compatibility entry that delegates to runtime assembly.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -39,7 +39,8 @@ The current state flow is:
 
 ```text
 src/composables/reader-runtime.js thin runtime entry
-  -> src/composables/reader-runtime-shell.js remaining runtime shell adapters/modules
+  -> src/composables/reader-runtime-shell.js thin runtime shell entry
+  -> src/composables/reader-runtime-assembly.js remaining runtime assembly
   -> window.__state getter/setter proxy
   -> pinia-bridge-module bridgeToPinia compatibility
   -> src/pinia-stores/*.js real Pinia stores
@@ -63,19 +64,22 @@ Vue rendering is enabled by default:
 window.__USE_VUE_RENDERING = true
 ```
 
-The Vue components are active but thin. A lot of interaction still relies on `src/composables/reader-runtime-shell.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
+The Vue components are active but thin. A lot of interaction still relies on `src/composables/reader-runtime-assembly.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
 
 ## Important Files
 
 - `src/composables/reader-runtime.js` - about 28 lines. Thin runtime entry and side-effect import chain.
-- `src/composables/reader-runtime-shell.js` - about 232 lines. High risk. Remaining runtime assembly and compatibility wiring.
+- `src/composables/reader-runtime-shell.js` - about 5 lines. Thin compatibility entry for runtime assembly.
+- `src/composables/reader-runtime-assembly.js` - about 51 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
 - `src/composables/reader-feature-runtime.js` - feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff.
+- `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context, bootstrap state, and notes/session wrappers.
 - `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
 - `src/composables/reader-bootstrap-runtime.js` - state adapter references, DB compatibility wrappers, runtime helper collection, audio identity, hotkey state, and marks state bootstrap.
 - `src/composables/reader-runtime-deps.js` - runtime utility/global helper dependency collection.
+- `src/composables/reader-notes-session-runtime-deps.js` - notes/session runtime dependency assembly for runtime context, bootstrap state, and DOM refs.
 - `src/composables/reader-notes-session-runtime.js` - notes runtime setup plus session-facing note/audio lifecycle wrapper composition.
 - `src/composables/reader-notes-runtime.js` - shared notes state, chunk/sentence notes API setup, and Pinia bridge runtime.
 - `src/composables/reader-session-runtime.js` - session-facing chunk/sentence note lifecycle wrappers and `applyCurrentAudioMeta(...)` side-effect wrapper.
@@ -166,10 +170,13 @@ npm run verify:control-playback-state-deps  # Focused controls/playback state de
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:reader-runtime-shell  # Focused reader runtime shell assembly check
+npm run verify:reader-runtime-assembly  # Focused reader runtime assembly sequence check
 npm run verify:reader-runtime-context  # Focused reader startup context composition check
 npm run verify:reader-feature-runtime  # Focused reader feature runtime composition check
+npm run verify:reader-feature-runtime-deps  # Focused reader feature runtime dependency assembly check
 npm run verify:reader-bootstrap-runtime  # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps  # Focused reader runtime dependency collection check
+npm run verify:reader-notes-session-runtime-deps  # Focused reader notes/session runtime dependency assembly check
 npm run verify:reader-notes-session-runtime  # Focused reader notes/session runtime setup check
 npm run verify:reader-notes-runtime  # Focused reader notes runtime setup check
 npm run verify:reader-session-runtime  # Focused reader session runtime setup check

@@ -6,6 +6,8 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
@@ -14,12 +16,20 @@ async function main() {
     'reader-runtime should import reader runtime shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-    'reader-runtime-shell should import reader feature runtime'
+    assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
+    'reader-runtime-assembly should import reader feature runtime'
   );
   assert.ok(
-    shellSource.includes('initReaderFeatureRuntime({'),
-    'reader-runtime-shell should delegate feature runtime setup'
+    assemblySource.includes("import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';"),
+    'reader-runtime-assembly should import reader feature runtime dependency assembly'
+  );
+  assert.ok(
+    assemblySource.includes('initReaderFeatureRuntime({'),
+    'reader-runtime-assembly should delegate feature runtime setup'
+  );
+  assert.ok(
+    assemblySource.includes('...createReaderFeatureRuntimeDeps({'),
+    'reader-runtime-assembly should assemble feature deps through the focused deps module'
   );
   [
     'validateMarksArray: validateMarksArray',
@@ -30,8 +40,22 @@ async function main() {
     'findExactMatchRangeHelper: findExactMatchRangeHelper',
     'buildVocabMatchMap: buildVocabMatchMapHelper'
   ].forEach((pattern) => {
-    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should pass required feature helper: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not own feature helper mapping: ${pattern}`);
   });
+  [
+    'export function createReaderFeatureRuntimeDeps',
+    'validateMarksArray: runtimeDeps.validateMarksArray',
+    'findChunkIndexByTimeHelper: runtimeDeps.findChunkIndexByTimeHelper',
+    'getSegmentCheckpointsHelper: runtimeDeps.getSegmentCheckpointsHelper',
+    'cleanTextHelper: runtimeDeps.cleanTextHelper',
+    'tokenizeTextHelper: runtimeDeps.tokenizeTextHelper',
+    'findExactMatchRangeHelper: runtimeDeps.findExactMatchRangeHelper',
+    'buildVocabMatchMap: runtimeDeps.buildVocabMatchMapHelper'
+  ].forEach((pattern) => {
+    assert.ok(featureDepsSource.includes(pattern), `reader-feature-runtime-deps should pass required feature helper: ${pattern}`);
+  });
+  assert.equal(featureDepsSource.includes('window.'), false, 'reader-feature-runtime-deps should not read or write window globals');
+  assert.equal(featureDepsSource.includes('document.'), false, 'reader-feature-runtime-deps should not read document globals');
   [
     "import { initReaderImportRuntime } from './reader-import-runtime.js';",
     "import { initReaderControlsRuntime } from './reader-controls-runtime.js';",

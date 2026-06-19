@@ -6,8 +6,10 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
@@ -20,7 +22,7 @@ async function main() {
     'reader-runtime should delegate marks state assembly through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
+    assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
     'reader-runtime-shell should initialize marks state through reader runtime context'
   );
   assert.ok(
@@ -28,8 +30,8 @@ async function main() {
     'reader-runtime-context should initialize marks state through reader bootstrap runtime'
   );
   assert.ok(
-    shellSource.includes('var marksStateApi = bootstrapRuntime.marksStateApi;'),
-    'reader-runtime-shell should receive marks state through the bootstrap module'
+    featureDepsSource.includes('marksStateApi: bootstrapRuntime.marksStateApi'),
+    'reader-feature-runtime-deps should receive marks state through the bootstrap module'
   );
   assert.equal(
     runtimeSource.includes("import { initMarksState } from './marks-state-module.js';"),
@@ -60,8 +62,8 @@ async function main() {
   );
 
   assert.ok(
-    shellSource.includes('marksStateApi: marksStateApi'),
-    'reader-runtime-shell should pass marks state into reader-feature-runtime'
+    featureDepsSource.includes('marksStateApi: bootstrapRuntime.marksStateApi'),
+    'reader-feature-runtime-deps should pass marks state into reader-feature-runtime'
   );
   assert.ok(
     featureSource.includes('markedMap: deps.marksStateApi.markedMap'),

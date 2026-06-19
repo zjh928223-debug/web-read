@@ -6,6 +6,7 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
@@ -15,11 +16,11 @@ async function main() {
     'reader-runtime should delegate session lifecycle wrappers through reader-runtime-shell'
   );
   assert.ok(
-    shellSource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
+    assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
     'reader-runtime-shell should initialize session lifecycle wrappers through reader notes/session runtime'
   );
   assert.ok(
-    shellSource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime({'),
+    assemblySource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
     'reader-runtime-shell should initialize session lifecycle wrappers through the notes/session module'
   );
   assert.equal(
@@ -47,7 +48,7 @@ async function main() {
     'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
     'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
-    assert.ok(shellSource.includes(pattern), `reader-runtime-shell should keep local injection binding: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not keep local injection binding: ${pattern}`);
   });
 
   [

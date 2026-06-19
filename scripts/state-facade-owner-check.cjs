@@ -10,8 +10,10 @@ const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runt
 const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
 const importRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js');
 const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js');
+const assemblyPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
 const contextPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js');
 const featurePath = path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js');
+const featureDepsPath = path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js');
 const appSource = fs.readFileSync(appPath, 'utf8');
 const importModuleSource = fs.readFileSync(importModulePath, 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(runtimeStateFacadePath, 'utf8');
@@ -19,8 +21,10 @@ const runtimeStateBindingsSource = fs.readFileSync(runtimeStateBindingsPath, 'ut
 const notesRuntimeSource = fs.readFileSync(notesRuntimePath, 'utf8');
 const importRuntimeSource = fs.readFileSync(importRuntimePath, 'utf8');
 const shellSource = fs.readFileSync(shellPath, 'utf8');
+const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
 const contextSource = fs.readFileSync(contextPath, 'utf8');
 const featureSource = fs.readFileSync(featurePath, 'utf8');
+const featureDepsSource = fs.readFileSync(featureDepsPath, 'utf8');
 const runtimeStateBindingsLines = runtimeStateBindingsSource.split(/\r?\n/);
 
 function findStatePropertyLine(field) {
@@ -119,15 +123,15 @@ function assertNoStateProperty(field) {
 });
 
 assert.ok(appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"));
-assert.ok(shellSource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"));
-assert.ok(shellSource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'));
+assert.ok(assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"));
+assert.ok(assemblySource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'));
 assert.ok(contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
-assert.ok(shellSource.includes('const transcriptState = bootstrapRuntime.transcriptState;'));
-assert.ok(shellSource.includes('const chunkState = bootstrapRuntime.chunkState;'));
-assert.ok(shellSource.includes('const clozeState = bootstrapRuntime.clozeState;'));
-assert.ok(shellSource.includes('const playbackState = bootstrapRuntime.playbackState;'));
-assert.ok(shellSource.includes("import { runtimeState } from './runtime-state-facade.js';"));
-assert.ok(shellSource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"));
+assert.ok(featureDepsSource.includes('transcriptState: bootstrapRuntime.transcriptState'));
+assert.ok(featureDepsSource.includes('chunkState: bootstrapRuntime.chunkState'));
+assert.ok(featureDepsSource.includes('clozeState: bootstrapRuntime.clozeState'));
+assert.ok(featureDepsSource.includes('playbackState: bootstrapRuntime.playbackState'));
+assert.ok(assemblySource.includes("import { runtimeState } from './runtime-state-facade.js';"));
+assert.ok(assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"));
 assert.ok(featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
 assert.equal(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"), false);
 assert.ok(importRuntimeSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js'"));
@@ -137,7 +141,7 @@ assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
 assert.ok(runtimeStateBindingsSource.includes('export function configureRuntimeStateBindings'));
 assert.ok(runtimeStateBindingsSource.includes('Object.defineProperty(runtimeState, field, {'));
-assert.ok(shellSource.includes('var notesState = notesSessionRuntime.notesState;'));
+assert.ok(featureDepsSource.includes('notesState: notesSessionRuntime.notesState'));
 assert.equal(appSource.includes('var _ns = window.__notesModule.getNotesState();'), false);
 assert.ok(notesRuntimeSource.includes('var notesState = notesModule.getNotesState()'));
 assert.equal(importModuleSource.includes('state.chunkNotesFileHandle'), false);
