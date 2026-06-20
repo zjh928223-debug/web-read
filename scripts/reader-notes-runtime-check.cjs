@@ -5,23 +5,23 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should delegate reader notes runtime through reader-runtime-shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should delegate reader notes runtime through reader-runtime-assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime-shell should initialize reader notes runtime through reader notes/session runtime'
+    'reader-runtime-assembly should initialize reader notes runtime through reader notes/session runtime'
   );
   assert.ok(
     assemblySource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
-    'reader-runtime-shell should initialize notes runtime through the notes/session module'
+    'reader-runtime-assembly should initialize notes runtime through the notes/session module'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),

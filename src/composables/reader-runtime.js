@@ -16,7 +16,7 @@ import './cloze-state.js';
 import './playback-state.js';
 import './render-mode.js';
 import './annotation-lightweight-module.js';
-import { initReaderRuntimeShell } from './reader-runtime-shell.js';
+import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';
 
 // === Read-order map ===
 // 1) Data layer: validation, identity, storage keys, persistence helpers
@@ -24,7 +24,7 @@ import { initReaderRuntimeShell } from './reader-runtime-shell.js';
 // 3) Feature layer: import handlers, matching, rendering, interactions
 // 4) Input layer: keyboard/mouse/global listeners (kept behavior-intact)
 
-initReaderRuntimeShell({
+initReaderRuntimeAssembly({
   getWindow: function () { return window; },
   getDocument: function () { return document; }
 });

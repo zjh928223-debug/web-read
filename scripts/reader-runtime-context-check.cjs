@@ -5,23 +5,23 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should import the runtime shell module'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should import the runtime assembly module'
   );
   assert.ok(
     assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime-shell should import the runtime context module'
+    'reader-runtime-assembly should import the runtime context module'
   );
   assert.ok(
     assemblySource.includes('var runtimeContext = initReaderRuntimeContext({'),
-    'reader-runtime-shell should initialize through the runtime context module'
+    'reader-runtime-assembly should initialize through the runtime context module'
   );
   [
     "import { collectReaderDomRefs } from './reader-dom-refs.js';",

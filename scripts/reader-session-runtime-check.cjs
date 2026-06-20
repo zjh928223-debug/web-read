@@ -5,23 +5,23 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should delegate session lifecycle wrappers through reader-runtime-shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should delegate session lifecycle wrappers through reader-runtime-assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime-shell should initialize session lifecycle wrappers through reader notes/session runtime'
+    'reader-runtime-assembly should initialize session lifecycle wrappers through reader notes/session runtime'
   );
   assert.ok(
     assemblySource.includes('var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
-    'reader-runtime-shell should initialize session lifecycle wrappers through the notes/session module'
+    'reader-runtime-assembly should initialize session lifecycle wrappers through the notes/session module'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderSessionRuntime } from './reader-session-runtime.js';"),
@@ -48,7 +48,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'var switchSentenceNotesDoc = notesSessionRuntime.switchSentenceNotesDoc;',
     'var applyCurrentAudioMeta = notesSessionRuntime.applyCurrentAudioMeta;'
   ].forEach((pattern) => {
-    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not keep local injection binding: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-assembly should not keep local injection binding: ${pattern}`);
   });
 
   [

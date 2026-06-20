@@ -11,8 +11,7 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 ## Current Entry Points
 
 - `index.html` - browser entry and legacy DOM shell.
-- `src/composables/reader-runtime.js` - thin runtime entry that imports side-effect modules and initializes the runtime shell.
-- `src/composables/reader-runtime-shell.js` - thin compatibility entry that delegates to runtime assembly.
+- `src/composables/reader-runtime.js` - thin runtime entry that imports side-effect modules and initializes runtime assembly.
 - `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
@@ -39,7 +38,6 @@ The current state flow is:
 
 ```text
 src/composables/reader-runtime.js thin runtime entry
-  -> src/composables/reader-runtime-shell.js thin runtime shell entry
   -> src/composables/reader-runtime-assembly.js remaining runtime assembly
   -> window.__state getter/setter proxy
   -> pinia-bridge-module bridgeToPinia compatibility
@@ -69,10 +67,10 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 ## Important Files
 
 - `src/composables/reader-runtime.js` - about 28 lines. Thin runtime entry and side-effect import chain.
-- `src/composables/reader-runtime-shell.js` - about 5 lines. Thin compatibility entry for runtime assembly.
 - `src/composables/reader-runtime-assembly.js` - about 51 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
+- `src/composables/session-annotation-services.js` - annotation service/global lookup helpers and diagnostics emit used by `session-init.js`.
 - `src/composables/reader-feature-runtime.js` - feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff.
 - `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context, bootstrap state, and notes/session wrappers.
 - `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
@@ -122,7 +120,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 
 `complete-appjs-decomposition` has been completed and archived under `openspec/changes/archive/2026-06-18-complete-appjs-decomposition/`. Current cleanup context comes from `CURRENT_PROJECT_STATUS.md` and the active spec at `openspec/specs/legacy-runtime-decomposition/spec.md`.
 
-Do not add feature logic to `src/composables/reader-runtime.js` or `src/composables/reader-runtime-shell.js`. Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
+Do not add feature logic to `src/composables/reader-runtime.js`; do not reintroduce `src/composables/reader-runtime-shell.js`. Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire. Migrate one boundary at a time, keep compatibility only until callers move, and run the required verification before starting the next boundary.
 
 ### IndexedDB Schema
 
@@ -141,7 +139,7 @@ Do not reorder `index.html` scripts casually. The app still uses globals and sid
 
 ### reader-runtime.js
 
-Do not add new feature logic to `src/composables/reader-runtime.js` or `src/composables/reader-runtime-shell.js`. Prefer focused modules, Pinia stores, or Vue components, but respect existing runtime compatibility callers while migrating those callers away.
+Do not add new feature logic to `src/composables/reader-runtime.js`; do not reintroduce `src/composables/reader-runtime-shell.js`. Prefer focused modules, Pinia stores, or Vue components, but respect existing runtime compatibility callers while migrating those callers away.
 
 ### session-init.js
 
@@ -168,8 +166,9 @@ npm run verify:file-input-bindings  # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings  # Focused remaining inline handler migration check
 npm run verify:control-playback-state-deps  # Focused controls/playback state dependency check
 npm run verify:session-state-provider  # Focused session-init state provider check
+npm run verify:session-annotation-services  # Focused session annotation service helper check
 npm run verify:runtime-state-source  # Focused runtime state source guard
-npm run verify:reader-runtime-shell  # Focused reader runtime shell assembly check
+npm run verify:reader-runtime-shell  # Focused retired reader runtime assembly guard
 npm run verify:reader-runtime-assembly  # Focused reader runtime assembly sequence check
 npm run verify:reader-runtime-context  # Focused reader startup context composition check
 npm run verify:reader-feature-runtime  # Focused reader feature runtime composition check

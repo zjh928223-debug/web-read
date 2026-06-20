@@ -5,7 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
@@ -19,12 +19,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should delegate audio identity assembly through reader-runtime-shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should delegate audio identity assembly through reader-runtime-assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime-shell should initialize audio identity through reader runtime context'
+    'reader-runtime-assembly should initialize audio identity through reader runtime context'
   );
   assert.ok(
     contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"),
@@ -62,7 +62,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   );
   assert.ok(
     assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-    'reader-runtime-shell should initialize audio identity session wrappers through reader-notes-session-runtime'
+    'reader-runtime-assembly should initialize audio identity session wrappers through reader-notes-session-runtime'
   );
   assert.ok(
     featureDepsSource.includes('applyCurrentAudioMeta: notesSessionRuntime.applyCurrentAudioMeta'),

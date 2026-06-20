@@ -4,17 +4,17 @@ const path = require('node:path');
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 
   assert.ok(
     assemblySource.includes("import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';"),
-    'reader-runtime-shell should import reader feature runtime dependency assembly'
+    'reader-runtime-assembly should import reader feature runtime dependency assembly'
   );
   assert.ok(
     assemblySource.includes('...createReaderFeatureRuntimeDeps({'),
-    'reader-runtime-shell should pass feature deps through reader-feature-runtime-deps'
+    'reader-runtime-assembly should pass feature deps through reader-feature-runtime-deps'
   );
   [
     'globalObject: deps.globalObject',

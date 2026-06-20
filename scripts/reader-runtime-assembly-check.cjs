@@ -4,18 +4,20 @@ const path = require('node:path');
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    shellSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
-    'reader-runtime-shell should import the runtime assembly'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should import the runtime assembly directly'
   );
   assert.ok(
-    shellSource.includes('return initReaderRuntimeAssembly(deps);'),
-    'reader-runtime-shell should delegate directly to the runtime assembly'
+    runtimeSource.includes('initReaderRuntimeAssembly({'),
+    'reader-runtime should initialize the runtime assembly directly'
   );
+  assert.equal(runtimeSource.includes('reader-runtime-shell.js'), false, 'reader-runtime should not import the retired shell');
+  assert.equal(runtimeSource.includes('initReaderRuntimeShell'), false, 'reader-runtime should not call the retired shell');
   [
     "import { runtimeState } from './runtime-state-facade.js';",
     "import { renderTranscript, renderChunkMode } from './render-runtime.js';",

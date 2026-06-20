@@ -5,15 +5,15 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should import reader runtime shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should import reader runtime assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
@@ -40,7 +40,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'findExactMatchRangeHelper: findExactMatchRangeHelper',
     'buildVocabMatchMap: buildVocabMatchMapHelper'
   ].forEach((pattern) => {
-    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not own feature helper mapping: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-assembly should not own feature helper mapping: ${pattern}`);
   });
   [
     'export function createReaderFeatureRuntimeDeps',

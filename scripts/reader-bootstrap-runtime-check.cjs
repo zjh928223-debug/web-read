@@ -5,7 +5,7 @@ const path = require('node:path');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
   const notesDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
@@ -22,16 +22,16 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-context should initialize bootstrap state through the module'
   );
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should use reader-runtime-shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should use reader-runtime-assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"),
-    'reader-runtime-shell should use reader-runtime-context'
+    'reader-runtime-assembly should use reader-runtime-context'
   );
   assert.ok(
     assemblySource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'),
-    'reader-runtime-shell should bind bootstrap state from runtime context'
+    'reader-runtime-assembly should bind bootstrap state from runtime context'
   );
   [
     "import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';",
@@ -68,7 +68,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'var hotkeyStateApi = bootstrapRuntime.hotkeyStateApi;',
     'var marksStateApi = bootstrapRuntime.marksStateApi;'
   ].forEach((pattern) => {
-    assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not bind bootstrap result directly: ${pattern}`);
+    assert.equal(shellSource.includes(pattern), false, `reader-runtime-assembly should not bind bootstrap result directly: ${pattern}`);
   });
   [
     'transcriptState: bootstrapRuntime.transcriptState',

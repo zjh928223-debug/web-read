@@ -6,7 +6,6 @@
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
 ├── src/composables/reader-runtime.js  # Thin runtime entry, about 28 lines
-├── src/composables/reader-runtime-shell.js # Thin runtime shell entry, about 5 lines
 ├── src/composables/reader-runtime-assembly.js # Remaining runtime assembly, about 51 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
@@ -36,7 +35,7 @@ The page no longer contains inline DOM event handlers. Remaining legacy controls
 
 Cleanup rules:
 
-- Do not add user-facing feature logic to `src/composables/reader-runtime.js` or `src/composables/reader-runtime-shell.js`.
+- Do not add user-facing feature logic to `src/composables/reader-runtime.js`; do not reintroduce `src/composables/reader-runtime-shell.js`.
 - Migrate one boundary at a time and keep compatibility globals only until callers are moved.
 - Do not change IndexedDB schema or `index.html` script order without an explicit migration and full verification.
 - Treat `src/stores/` as compatibility only; long-term ownership belongs in `src/pinia-stores/`, focused runtime modules, or Vue components.
@@ -75,10 +74,10 @@ src/
 │   └── annotation.js
 ├── composables/
 │   ├── reader-runtime.js        # thin runtime entry
-│   ├── reader-runtime-shell.js  # thin runtime shell entry
 │   ├── reader-runtime-assembly.js # context/notes/feature assembly sequence
 │   ├── session-init.js
 │   ├── session-state-provider.js # temporary session-init state provider
+│   ├── session-annotation-services.js # annotation service/global lookup helpers
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
 │   ├── reader-feature-runtime.js # import/controls/interactions/keyboard/app composition
 │   ├── reader-feature-runtime-deps.js # feature runtime dependency assembly
@@ -166,7 +165,6 @@ Current state ownership is transitional:
 src/composables/runtime-state-facade.js runtimeState
   ↕ temporary window.__state alias
 src/composables/reader-runtime.js thin runtime entry
-  → src/composables/reader-runtime-shell.js thin runtime shell entry
   → src/composables/reader-runtime-assembly.js remaining runtime assembly
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
@@ -205,8 +203,9 @@ npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
+npm run verify:session-annotation-services # Focused session annotation service helper check
 npm run verify:runtime-state-source # Focused runtime state source guard
-npm run verify:reader-runtime-shell # Focused reader runtime shell assembly check
+npm run verify:reader-runtime-shell # Focused retired reader runtime assembly guard
 npm run verify:reader-runtime-assembly # Focused reader runtime assembly sequence check
 npm run verify:reader-runtime-context # Focused reader startup context composition check
 npm run verify:reader-feature-runtime # Focused reader feature runtime composition check

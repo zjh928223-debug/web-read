@@ -9,7 +9,7 @@ const runtimeStateFacadePath = path.join(repoRoot, 'src', 'composables', 'runtim
 const runtimeStateBindingsPath = path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js');
 const notesRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js');
 const importRuntimePath = path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js');
-const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js');
+const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
 const assemblyPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
 const contextPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js');
 const featurePath = path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js');
@@ -122,7 +122,7 @@ function assertNoStateProperty(field) {
   assert.equal(pattern.test(appSource), false, `app.js should not contain ${pattern}`);
 });
 
-assert.ok(appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"));
+assert.ok(appSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"));
 assert.ok(assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"));
 assert.ok(assemblySource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'));
 assert.ok(contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));

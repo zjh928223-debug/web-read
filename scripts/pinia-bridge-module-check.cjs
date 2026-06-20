@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
@@ -13,12 +13,12 @@ const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', '
 const interactionSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'read-web-interactions-check.cjs'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-  'reader-runtime should delegate Pinia bridge assembly through reader-runtime-shell'
+  appSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+  'reader-runtime should delegate Pinia bridge assembly through reader-runtime-assembly'
 );
 assert.ok(
   assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-  'reader-runtime-shell should initialize the Pinia bridge through reader notes/session runtime'
+  'reader-runtime-assembly should initialize the Pinia bridge through reader notes/session runtime'
 );
 assert.ok(
   assemblySource.includes('notesSessionRuntime: notesSessionRuntime'),

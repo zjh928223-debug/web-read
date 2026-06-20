@@ -27,6 +27,7 @@
     "verify:inline-handler-bindings": "node scripts/inline-handler-bindings-check.cjs",
     "verify:control-playback-state-deps": "node scripts/control-playback-state-deps-check.cjs",
     "verify:session-state-provider": "node scripts/session-state-provider-check.cjs",
+    "verify:session-annotation-services": "node scripts/session-annotation-services-check.cjs",
     "verify:runtime-state-source": "node scripts/runtime-state-source-check.cjs",
     "verify:runtime-state-facade": "node scripts/runtime-state-facade-check.cjs",
     "verify:reader-runtime-shell": "node scripts/reader-runtime-shell-check.cjs",

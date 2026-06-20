@@ -4,7 +4,7 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
@@ -12,12 +12,12 @@ const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components',
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-interactions.js'), 'utf8');
 
 assert.ok(
-  appSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-  'reader-runtime should delegate chunk interactions through reader-runtime-shell'
+  appSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+  'reader-runtime should delegate chunk interactions through reader-runtime-assembly'
 );
 assert.ok(
   assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-  'reader-runtime-shell should delegate chunk interactions through reader-feature-runtime'
+  'reader-runtime-assembly should delegate chunk interactions through reader-feature-runtime'
 );
 assert.ok(
   featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),

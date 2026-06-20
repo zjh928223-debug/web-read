@@ -7,7 +7,7 @@ const { pathToFileURL } = require('node:url');
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimePath = path.join(repoRoot, 'src', 'composables', 'reader-runtime.js');
-  const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js');
+  const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
   const assemblyPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
   const featurePath = path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js');
   const modulePath = path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js');
@@ -20,12 +20,12 @@ async function main() {
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
 
   assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-    'reader-runtime should delegate controls setup through reader-runtime-shell'
+    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+    'reader-runtime should delegate controls setup through reader-runtime-assembly'
   );
   assert.ok(
     assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-    'reader-runtime-shell should delegate controls setup through reader-feature-runtime'
+    'reader-runtime-assembly should delegate controls setup through reader-feature-runtime'
   );
   assert.ok(
     featureSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),

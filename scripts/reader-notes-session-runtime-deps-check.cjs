@@ -4,17 +4,17 @@ const path = require('node:path');
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
+  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
 
   assert.ok(
     assemblySource.includes("import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';"),
-    'reader-runtime-shell should import reader notes/session dependency assembly'
+    'reader-runtime-assembly should import reader notes/session dependency assembly'
   );
   assert.ok(
     assemblySource.includes('initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({'),
-    'reader-runtime-shell should initialize notes/session through the dependency assembly module'
+    'reader-runtime-assembly should initialize notes/session through the dependency assembly module'
   );
   [
     'notesModule: globalObject.__notesModule',

@@ -1,6 +1,13 @@
 import { renderTranscript, renderChunkMode } from './render-runtime.js';
 import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';
 import { getSessionState } from './session-state-provider.js';
+import {
+    emitAnnotationDiagnostics,
+    getAnnotationApiConfigHelper,
+    getAnnotationGeneratedResultStore,
+    getAnnotationGenerationStorage,
+    getAnnotationTargetSource
+} from './session-annotation-services.js';
 
   var st = getSessionState();
   var _ns = window._ns || {};
@@ -152,44 +159,6 @@ import { getSessionState } from './session-state-provider.js';
                 ? generatedStore.getItems().length
                 : 0
         });
-    }
-
-    function getAnnotationGenerationStorage() {
-        return window.AnnotationGenerationStorage || null;
-    }
-
-    function getAnnotationBlockPlanner() {
-        return window.AnnotationBlockPlanner || null;
-    }
-
-    function getAnnotationPromptBuilder() {
-        return window.AnnotationPromptBuilder || null;
-    }
-
-    function getAnnotationGeneratedResultStore() {
-        return window.AnnotationGeneratedResultStore || null;
-    }
-
-    function getAnnotationClickResolver() {
-        return window.AnnotationClickResolver || null;
-    }
-
-    function getAnnotationTargetSource() {
-        return window.AnnotationTargetSource || null;
-    }
-
-    function getAnnotationGenerationDiagnostics() {
-        return window.AnnotationGenerationDiagnostics || null;
-    }
-
-    function getAnnotationApiConfigHelper() {
-        return window.AnnotationApiConfig || null;
-    }
-
-    function emitAnnotationDiagnostics(event, payload) {
-        const diagnostics = getAnnotationGenerationDiagnostics();
-        if (!diagnostics || typeof diagnostics.emit !== 'function') return;
-        diagnostics.emit(event, payload);
     }
 
     function normalizeAnnotationMark(mark, fallbackSourceType = 'manual-mark') {

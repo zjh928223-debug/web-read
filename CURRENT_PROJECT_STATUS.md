@@ -1,6 +1,6 @@
 # Read-Web Current Project Status
 
-Last scanned: 2026-06-18
+Last scanned: 2026-06-20
 
 This document records the current state of the `E:\read-web` project from the actual file tree and entry files. It should be treated as the primary current-status document when it conflicts with older migration notes.
 
@@ -14,7 +14,6 @@ The project is not a clean Vue-only app yet. It is a working hybrid:
 index.html legacy DOM shell
   -> compatibility ES modules under src/stores and src/composables
   -> src/composables/reader-runtime.js thin runtime entry
-  -> src/composables/reader-runtime-shell.js thin runtime shell entry
   -> src/composables/reader-runtime-assembly.js remaining runtime assembly
   -> session-init.js startup and annotation glue
   -> src/main.js Vue + Pinia mount
@@ -42,7 +41,6 @@ Top-level runtime files:
 ```text
 index.html                         browser entry and legacy DOM shell
 src/composables/reader-runtime.js  thin runtime entry, about 28 lines
-src/composables/reader-runtime-shell.js  thin runtime shell entry, about 5 lines
 src/composables/reader-runtime-assembly.js  remaining runtime assembly, about 51 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
@@ -100,9 +98,9 @@ ToastMessage.vue                  toast UI, about 27 lines
 Current composables:
 
 ```text
-session-init.js                   about 1592 lines
+session-init.js                   about 1561 lines
+session-annotation-services.js    about 43 lines
 reader-runtime.js                 about 28 lines
-reader-runtime-shell.js           about 5 lines
 reader-runtime-assembly.js        about 51 lines
 reader-feature-runtime.js         about 223 lines
 reader-feature-runtime-deps.js    about 101 lines
@@ -184,7 +182,7 @@ diff.js                           about 38 lines
 
 ## 5. Runtime Architecture
 
-The root `app.js` file has been removed. `src/composables/reader-runtime.js` now only acts as the runtime entry; `src/composables/reader-runtime-shell.js` is a thin compatibility entry, and the remaining runtime assembly loads from `src/composables/reader-runtime-assembly.js` and should continue shrinking behind focused module owners.
+The root `app.js` file has been removed. `src/composables/reader-runtime.js` now only acts as the runtime entry and directly initializes `src/composables/reader-runtime-assembly.js`, which should continue shrinking behind focused module owners.
 
 Current state flow:
 
@@ -192,7 +190,6 @@ Current state flow:
 src/composables/runtime-state-facade.js runtimeState
   <-> temporary window.__state getter/setter alias
 src/composables/reader-runtime.js thin runtime entry
-  <-> src/composables/reader-runtime-shell.js thin runtime shell entry
   <-> src/composables/reader-runtime-assembly.js remaining runtime assembly
   <-> src/composables/pinia-bridge-module.js bridgeToPinia compatibility
   <-> src/pinia-stores/*.js real Pinia stores
@@ -233,7 +230,7 @@ window.__USE_VUE_RENDERING = true
 - direct DOM reads/writes
 - legacy CSS classes
 
-The current cleanup direction should be to keep behavior stable while gradually moving remaining assembly code out of `src/composables/reader-runtime-assembly.js`. `src/composables/reader-runtime.js` is now only the side-effect import entry and shell initializer, and `src/composables/reader-runtime-shell.js` only delegates to the assembly module.
+The current cleanup direction should be to keep behavior stable while gradually moving remaining assembly code out of `src/composables/reader-runtime-assembly.js`. `src/composables/reader-runtime.js` is now only the side-effect import entry and assembly initializer.
 
 Transcript, chunk, cloze, and playback transient state have moved behind focused adapters: `src/composables/transcript-state.js`, `src/composables/chunk-state.js`, `src/composables/cloze-state.js`, and `src/composables/playback-state.js`. The transcript/chunk/cloze adapters bind directly to the real Pinia stores after Pinia creation; playback state currently stays in its runtime adapter. `window.__state` fields remain as compatibility facades, but controls/playback/session-init now receive state through explicit deps/provider instead of direct global reads.
 
@@ -333,6 +330,7 @@ npm run verify:file-input-bindings
 npm run verify:inline-handler-bindings
 npm run verify:control-playback-state-deps
 npm run verify:session-state-provider
+npm run verify:session-annotation-services
 npm run verify:runtime-state-source
 npm run verify:reader-runtime-shell
 npm run verify:reader-runtime-assembly
@@ -422,6 +420,7 @@ scripts/file-input-bindings-check.cjs
 scripts/inline-handler-bindings-check.cjs
 scripts/control-playback-state-deps-check.cjs
 scripts/session-state-provider-check.cjs
+scripts/session-annotation-services-check.cjs
 scripts/runtime-state-source-check.cjs
 scripts/reader-runtime-shell-check.cjs
 scripts/reader-runtime-assembly-check.cjs
@@ -495,13 +494,14 @@ Current checks cover:
 - removed remaining inline DOM handlers from `index.html` through `verify:inline-handler-bindings`
 - removed direct `window.__state` reads from controls/playback modules through `verify:control-playback-state-deps`
 - removed direct `window.__state` reads from `session-init.js` through `verify:session-state-provider`
+- moved annotation service/global lookup helpers and diagnostics emit out of `session-init.js` into `src/composables/session-annotation-services.js` through `verify:session-annotation-services`
 - migrated `runtimeState` and the temporary `window.__state` alias into `src/composables/runtime-state-facade.js` through `verify:runtime-state-facade`
 - migrated runtimeState getter/setter bindings for `st.*` compatibility into `src/composables/runtime-state-bindings.js` while keeping `session-init.js` state provider calls unchanged through `verify:state-facades`
 - moved startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access out of `reader-runtime.js` into `src/composables/reader-runtime-context.js` while keeping `session-init.js` restore/public contracts unchanged through `verify:reader-runtime-context`
 - moved feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff out of `reader-runtime.js` into `src/composables/reader-feature-runtime.js` while keeping `session-init.js` restore/public contracts unchanged through `verify:reader-feature-runtime`
 - moved feature runtime dependency assembly out of `reader-runtime-shell.js` into `src/composables/reader-feature-runtime-deps.js`, leaving the feature dependency mapping outside the thin shell while preserving session restore/public contracts through `verify:reader-feature-runtime-deps`
 - moved notes/session runtime dependency assembly out of `reader-runtime-shell.js` into `src/composables/reader-notes-session-runtime-deps.js`, leaving the notes/session dependency mapping outside the thin shell while preserving notes/session public contracts through `verify:reader-notes-session-runtime-deps`
-- moved the remaining context/notes/feature initialization sequence out of `reader-runtime-shell.js` into `src/composables/reader-runtime-assembly.js`; `reader-runtime-shell.js` is now only a compatibility entry delegated to the assembly module and guarded through `verify:reader-runtime-assembly`
+- moved the remaining context/notes/feature initialization sequence out of `reader-runtime-shell.js` into `src/composables/reader-runtime-assembly.js`; `reader-runtime-shell.js` was later retired and is guarded from reappearing through `verify:reader-runtime-shell`
 - migrated static DOM ref collection out of `reader-runtime.js` into `src/composables/reader-dom-refs.js` and removed no-consumer runtime DOM lookups while keeping `session-init.js` annotation settings DOM ownership unchanged through `verify:reader-dom-refs`
 - moved bootstrap state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization out of `reader-runtime.js` into `src/composables/reader-bootstrap-runtime.js` while keeping `session-init.js` state/audio/hotkey/marks contracts unchanged through `verify:reader-bootstrap-runtime`
 - moved reader runtime utility/global helper dependency collection out of `reader-runtime.js` into `src/composables/reader-runtime-deps.js` while keeping import/chunk/cloze/playback/session contracts unchanged through `verify:reader-runtime-deps`
@@ -515,7 +515,7 @@ Current checks cover:
 - moved chunk note transfer, annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade initialization out of `reader-runtime.js` into `src/composables/reader-app-runtime.js` while keeping session/import/public contracts unchanged through `verify:reader-app-runtime`
 - moved session facade setup, session state provider setup, visual vocab setup, runtime state bindings, chunk pipeline, and import handler initialization out of `reader-runtime.js` into `src/composables/reader-import-runtime.js` while keeping `session-init.js` import/restore contracts unchanged through `verify:reader-import-runtime`
 - moved reader focus restore, current-note toggling, and chunk-note export dialog access helpers out of `reader-runtime.js` into `src/composables/reader-runtime-helpers.js` while keeping import/keyboard/session contracts unchanged through `verify:reader-runtime-helpers`
-- moved the remaining runtime assembly out of `src/composables/reader-runtime.js` into `src/composables/reader-runtime-shell.js`, then moved the remaining shell sequence into `src/composables/reader-runtime-assembly.js`; `reader-runtime.js` is now a thin side-effect import entry, `reader-runtime-shell.js` is a thin compatibility entry, and `session-init.js` public contracts are guarded through `verify:reader-runtime-shell` and `verify:reader-runtime-assembly`
+- moved the remaining runtime assembly out of `src/composables/reader-runtime.js` into `src/composables/reader-runtime-shell.js`, then moved the remaining shell sequence into `src/composables/reader-runtime-assembly.js`, and later retired `reader-runtime-shell.js`; `reader-runtime.js` is now a thin side-effect import entry that directly initializes `reader-runtime-assembly.js`, and `session-init.js` public contracts are guarded through `verify:reader-runtime-shell` and `verify:reader-runtime-assembly`
 - removed local audio identity and chunk note layout API aliases from `reader-runtime.js`, injecting module APIs directly while preserving `session-init.js` public facade calls through `verify:audio-identity-module` and `verify:chunk-note-layout-helpers`
 - moved the `renderTranscript` / `renderChunkMode` implementation body out of `reader-runtime.js` and into `src/composables/render-runtime.js`, while preserving the unchanged `session-init.js` render imports through `verify:render-facades`
 - guarded `runtimeState` as the runtime module source while `window.__state` remains only a compatibility alias through `verify:runtime-state-source`
@@ -607,7 +607,7 @@ index.html script order
 
 Main risks:
 
-- Root `app.js` has been removed. `src/composables/reader-runtime.js` is now a thin runtime entry; `src/composables/reader-runtime-shell.js` is now a thin compatibility entry, and remaining runtime assembly lives in `src/composables/reader-runtime-assembly.js`, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader startup context, reader bootstrap runtime, reader feature runtime composition, reader feature runtime dependency assembly, reader runtime dependency collection, reader notes/session runtime dependency assembly, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
+- Root `app.js` has been removed. `src/composables/reader-runtime.js` is now a thin runtime entry; `src/composables/reader-runtime-shell.js` has been retired, and remaining runtime assembly lives in `src/composables/reader-runtime-assembly.js`, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader startup context, reader bootstrap runtime, reader feature runtime composition, reader feature runtime dependency assembly, reader runtime dependency collection, reader notes/session runtime dependency assembly, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
 - `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
@@ -634,7 +634,7 @@ When documents conflict, prefer this file, then verify against the actual file t
 - Prefer small, behavior-preserving changes.
 - Current cleanup mode: root `app.js` has been removed; do not add user-facing features to `reader-runtime.js` or the remaining `reader-runtime-assembly.js` layer.
 - Do not move script order unless the full app is verified afterward.
-- Do not add new feature logic to `src/composables/reader-runtime.js` or `src/composables/reader-runtime-shell.js` unless there is no safer place.
+- Do not add new feature logic to `src/composables/reader-runtime.js`; do not reintroduce `src/composables/reader-runtime-shell.js`.
 - Prefer modules, Pinia stores, and Vue components for new work.
 - Keep compatibility globals in place until the caller paths are migrated.
 - Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as compatibility surfaces to retire, not as places to add new architecture.

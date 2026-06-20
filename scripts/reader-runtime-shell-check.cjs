@@ -3,25 +3,35 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js'), 'utf8');
-const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const runtimePath = path.join(repoRoot, 'src', 'composables', 'reader-runtime.js');
+const shellPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-shell.js');
+const assemblyPath = path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js');
+const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
 
+const runtimeSource = fs.readFileSync(runtimePath, 'utf8');
+const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
+const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
+
+assert.equal(fs.existsSync(shellPath), false, 'reader-runtime-shell.js should be retired');
 assert.ok(
-  runtimeSource.includes("import { initReaderRuntimeShell } from './reader-runtime-shell.js';"),
-  'reader-runtime should import the shell module'
+  runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
+  'reader-runtime should import the runtime assembly directly'
 );
 assert.ok(
-  runtimeSource.includes('initReaderRuntimeShell({'),
-  'reader-runtime should delegate assembly to the shell module'
+  runtimeSource.includes('initReaderRuntimeAssembly({'),
+  'reader-runtime should initialize the runtime assembly directly'
 );
-[
-  "import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';",
-  'return initReaderRuntimeAssembly(deps);'
-].forEach((pattern) => {
-  assert.ok(shellSource.includes(pattern), `reader-runtime-shell should delegate to assembly: ${pattern}`);
-});
+assert.equal(
+  runtimeSource.includes('reader-runtime-shell.js'),
+  false,
+  'reader-runtime should not import the retired shell'
+);
+assert.equal(
+  runtimeSource.includes('initReaderRuntimeShell'),
+  false,
+  'reader-runtime should not call the retired shell initializer'
+);
+
 [
   "import { runtimeState } from './runtime-state-facade.js';",
   "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
@@ -33,28 +43,10 @@ assert.ok(
   'var runtimeContext = initReaderRuntimeContext({',
   'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
   'var featureRuntime = initReaderFeatureRuntime({',
-  'runtimeState: runtimeState',
-  'renderTranscript: renderTranscript',
-  'renderChunkMode: renderChunkMode',
   'notesSessionRuntime: notesSessionRuntime'
 ].forEach((pattern) => {
   assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should own ${pattern}`);
 });
-[
-  "import { runtimeState } from './runtime-state-facade.js';",
-  "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
-  "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
-  "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';",
-  "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
-  'var runtimeContext = initReaderRuntimeContext({',
-  'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
-  'initReaderFeatureRuntime({'
-].forEach((pattern) => {
-  assert.equal(runtimeSource.includes(pattern), false, `reader-runtime should not own shell assembly: ${pattern}`);
-  assert.equal(shellSource.includes(pattern), false, `reader-runtime-shell should not own assembly internals: ${pattern}`);
-});
-assert.equal(shellSource.includes('window.'), false, 'reader-runtime-shell should receive window through explicit deps');
-assert.equal(shellSource.includes('document.'), false, 'reader-runtime-shell should receive document through explicit deps');
 assert.equal(assemblySource.includes('window.'), false, 'reader-runtime-assembly should receive window through explicit deps');
 assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
@@ -72,4 +64,4 @@ assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assemb
   assert.ok(sessionInitSource.includes(pattern), `session-init contract should remain intact: ${pattern}`);
 });
 
-console.log('reader runtime shell check passed');
+console.log('reader runtime shell retired check passed');
