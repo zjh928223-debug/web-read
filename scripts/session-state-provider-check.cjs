@@ -9,6 +9,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const providerSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-state-provider.js'), 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
 
@@ -25,8 +26,9 @@ assert.equal(
 );
 
 assert.ok(
-  sessionInitSource.includes("import { getSessionState } from './session-state-provider.js';"),
-  'session-init.js should import getSessionState'
+  sessionInitSource.includes("from './session-runtime-assembly.js';")
+    && sessionAssemblySource.includes("import { getSessionState } from './session-state-provider.js';"),
+  'session-init should delegate to session-runtime-assembly, which imports getSessionState'
 );
 
 assert.ok(

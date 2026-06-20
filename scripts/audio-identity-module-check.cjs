@@ -16,7 +16,22 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'audio-identity-module.js'), 'utf8');
   const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
-  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
   assert.ok(
     runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
@@ -140,9 +155,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
 
   [
-    'applyCurrentAudioMeta(audioMeta);',
-    'applyCurrentAudioMeta({ name: audioBlob.name',
-    'currentAudioKey: st.currentAudioKey'
+    'deps.applyCurrentAudioMeta(audioMeta);',
+    'deps.applyCurrentAudioMeta({',
+    'name: audioBlob.name ||',
+    'currentAudioKey: state.currentAudioKey'
   ].forEach((pattern) => {
     assert.ok(
       sessionInitSource.includes(pattern),

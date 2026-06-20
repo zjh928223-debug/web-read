@@ -15,7 +15,8 @@ index.html legacy DOM shell
   -> compatibility ES modules under src/stores and src/composables
   -> src/composables/reader-runtime.js thin runtime entry
   -> src/composables/reader-runtime-assembly.js remaining runtime assembly
-  -> session-init.js startup and annotation glue
+  -> src/composables/session-init.js thin session entry
+  -> src/composables/session-runtime-assembly.js session startup/annotation assembly
   -> src/main.js Vue + Pinia mount
 ```
 
@@ -42,12 +43,15 @@ Top-level runtime files:
 index.html                         browser entry and legacy DOM shell
 src/composables/reader-runtime.js  thin runtime entry, about 28 lines
 src/composables/reader-runtime-assembly.js  remaining runtime assembly, about 51 lines
+src/composables/session-init.js    thin session entry, about 7 lines
+src/composables/session-runtime-assembly.js  session runtime assembly, about 253 lines
 styles.css                         global styles, about 2322 lines
 vite.config.js                     Vite + Vue config
 package.json                       scripts and dependencies
 src/main.js                        Vue mount, Pinia setup, side-effect imports, about 149 lines
 src/App.vue                        root Vue component
-src/composables/session-init.js    startup restore and annotation/session glue
+src/composables/session-init.js    thin session entry, about 7 lines
+src/composables/session-runtime-assembly.js  session runtime assembly, about 253 lines
 ```
 
 There is no `read-26.html` in the current project root. Any reference to `read-26.html` is legacy context from the source project, not the current web app entry.
@@ -76,7 +80,7 @@ src/
   App.vue                         1 root Vue component
   main.js                         1 Vue/Pinia bootstrap module
   components/                     5 Vue components
-  composables/                    61 compatibility/runtime modules
+  composables/                    75 compatibility/runtime modules
   pinia-stores/                   9 real Pinia stores
   stores/                         9 compatibility window stores
   utils/                          11 utility modules
@@ -98,8 +102,22 @@ ToastMessage.vue                  toast UI, about 27 lines
 Current composables:
 
 ```text
-session-init.js                   about 1561 lines
+session-init.js                   about 7 lines
+session-runtime-assembly.js       about 253 lines
 session-annotation-services.js    about 43 lines
+session-annotation-text.js        about 560 lines
+session-annotation-export-payload.js about 68 lines
+session-annotation-import-normalization.js about 115 lines
+session-annotation-bundle-merge.js about 167 lines
+session-annotation-generated-index.js about 172 lines
+session-annotation-marks.js       about 174 lines
+session-annotation-context.js     about 89 lines
+session-annotation-lightweight-io.js about 129 lines
+session-annotation-api-settings-runtime.js about 27 lines
+session-startup-cleanup.js        about 48 lines
+session-restore-runtime.js        about 94 lines
+session-startup-runtime.js        about 58 lines
+session-ui-settings-restore.js    about 69 lines
 reader-runtime.js                 about 28 lines
 reader-runtime-assembly.js        about 51 lines
 reader-feature-runtime.js         about 223 lines
@@ -307,8 +325,8 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
   - `#btn-export-annotation-lightweight`
   - `#btn-import-annotation-lightweight`
   - `#import-annotation-lightweight-file`
-- Lightweight annotation import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; the real import/export implementation remains in `src/composables/session-init.js`.
-- API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; `index.html` no longer loads the root regular script.
+- Lightweight annotation import/export button glue now lives in `src/composables/annotation-lightweight-module.js`; session-side export/import/merge behavior lives in `src/composables/session-annotation-*.js` and `src/composables/session-annotation-lightweight-io.js`.
+- API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; session initialization reaches it through `src/composables/session-annotation-api-settings-runtime.js`, and `index.html` no longer loads the root regular script.
 
 ## 8. Current Commands
 
@@ -608,7 +626,7 @@ index.html script order
 Main risks:
 
 - Root `app.js` has been removed. `src/composables/reader-runtime.js` is now a thin runtime entry; `src/composables/reader-runtime-shell.js` has been retired, and remaining runtime assembly lives in `src/composables/reader-runtime-assembly.js`, while direct global facade ownership, transcript, chunk, cloze, playback transient, playback helper behavior, reader startup context, reader bootstrap runtime, reader feature runtime composition, reader feature runtime dependency assembly, reader runtime dependency collection, reader notes/session runtime dependency assembly, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, Pinia bridge, DB facades, import facades, chunk note style facades, keyboard helper facades, highlight controls, and AI chunk controls now delegate through focused adapters/modules. A small set of no-consumer `window.__state` facades has been removed.
-- `session-init.js` mixes startup restore, persisted cleanup, annotation import/export, and diagnostics.
+- `session-init.js` is now a thin entry that initializes `session-runtime-assembly.js`; the remaining session assembly still wires legacy `window.*` compatibility facades for focused session modules.
 - Vue and legacy DOM both render or influence reading state.
 - `src/stores/` and `src/pinia-stores/` can be confused.
 - Some modules depend on import-time side effects.

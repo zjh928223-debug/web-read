@@ -5,8 +5,27 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const sessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-session-runtime.js'), 'utf8');
+const readerSentenceRuntimeSource = [
+  'reader-feature-runtime.js',
+  'reader-app-runtime.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 const notesSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'notes-module.js'), 'utf8');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
 const removedRuntimeWrappers = [
   'saveSentenceNotesDebounced',
@@ -96,9 +115,9 @@ removedRuntimeWrappers.forEach((name) => {
 });
 
 [
-  'await loadSentenceNotesForCurrentAudio();',
-  'await switchSentenceNotesDoc(transcriptData);',
-  'await switchSentenceNotesDoc();'
+  'await deps.loadSentenceNotesForCurrentAudio();',
+  'await deps.switchSentenceNotesDoc(transcriptData);',
+  'await deps.switchSentenceNotesDoc();'
 ].forEach((pattern) => {
   assert.ok(
     sessionInitSource.includes(pattern),
@@ -133,12 +152,12 @@ removedRuntimeWrappers.forEach((name) => {
 });
 
 [
-  'hasActiveTextSelectionWithinChunk: _snApi.hasActiveTextSelectionWithinChunk',
-  'selectSentenceFromChunkTarget: _snApi.selectSentenceFromChunkTarget'
+  'hasActiveTextSelectionWithinChunk: deps.sentenceNotesApi.hasActiveTextSelectionWithinChunk',
+  'selectSentenceFromChunkTarget: deps.sentenceNotesApi.selectSentenceFromChunkTarget'
 ].forEach((pattern) => {
   assert.ok(
-    runtimeSource.includes(pattern),
-    `reader-runtime should inject sentence note API directly: ${pattern}`
+    readerSentenceRuntimeSource.includes(pattern),
+    `focused reader runtime should inject sentence note API directly: ${pattern}`
   );
 });
 

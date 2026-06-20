@@ -6,12 +6,15 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-services.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
+  const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
+  const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
 
   assert.ok(
-    sessionInitSource.includes("from './session-annotation-services.js';"),
-    'session-init should import annotation service helpers from the focused module'
+    sessionInitSource.includes("from './session-runtime-assembly.js';")
+      && sessionAssemblySource.includes("from './session-annotation-services.js';"),
+    'session-init should reach annotation service helpers through session-runtime-assembly'
   );
   [
     'function getAnnotationGenerationStorage()',

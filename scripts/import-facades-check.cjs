@@ -5,7 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const importSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
-const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-restore-runtime.js'), 'utf8');
 
 [
   'processTranscript',
@@ -21,7 +21,7 @@ const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 });
 
 assert.equal(appSource.includes('var _importApi = {'), false, 'app.js should not keep the temporary import API wrapper');
-assert.ok(sessionSource.includes('processTranscript(transcriptData);'), 'session-init should still use the compatibility transcript entry');
-assert.ok(sessionSource.includes('processChunkData(chunkData);'), 'session-init should still use the compatibility chunk entry');
+assert.ok(sessionSource.includes('deps.processTranscript(transcriptData);'), 'session restore runtime should still use the compatibility transcript entry');
+assert.ok(sessionSource.includes('deps.processChunkData(chunkData);'), 'session restore runtime should still use the compatibility chunk entry');
 
 console.log('import facades check passed');

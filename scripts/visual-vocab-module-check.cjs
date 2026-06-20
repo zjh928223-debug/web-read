@@ -11,7 +11,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
   const visualSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'visual-vocab-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
-  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const sessionRestoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-restore-runtime.js'), 'utf8');
 
   assert.ok(
     runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
@@ -78,8 +78,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
 
   assert.ok(
-    sessionInitSource.includes('processVisual(visualData);'),
-    'session-init should keep the existing processVisual restore contract'
+    sessionRestoreSource.includes('deps.processVisual(visualData);'),
+    'session restore runtime should keep the existing processVisual restore contract'
   );
 
   const previousWindow = global.window;

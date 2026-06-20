@@ -10,7 +10,8 @@ const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const notesSessionDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
 const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-dom-refs.js'), 'utf8');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+const sessionApiSettingsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-api-settings-runtime.js'), 'utf8');
 
 assert.ok(
   contextSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
@@ -80,13 +81,21 @@ assert.equal(
 [
   "document.getElementById('btn-annotation-api-settings')",
   "document.getElementById('annotation-api-settings-panel')",
-  'function initAnnotationApiSettingsUi()',
   'window.__session_initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;',
   'initAnnotationApiSettingsUi();'
 ].forEach((pattern) => {
   assert.ok(
-    sessionInitSource.includes(pattern),
-    `session-init should keep annotation API settings DOM contract: ${pattern}`
+    sessionAssemblySource.includes(pattern),
+    `session-runtime-assembly should keep annotation API settings DOM contract: ${pattern}`
+  );
+});
+
+[
+  'function initAnnotationApiSettingsUi()',
+].forEach((pattern) => {
+  assert.ok(
+    sessionApiSettingsRuntimeSource.includes(pattern),
+    `session annotation API settings runtime should keep contract: ${pattern}`
   );
 });
 

@@ -12,7 +12,8 @@ The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 
 - `index.html` - browser entry and legacy DOM shell.
 - `src/composables/reader-runtime.js` - thin runtime entry that imports side-effect modules and initializes runtime assembly.
-- `src/composables/session-init.js` - startup/session restore plus annotation import/export glue.
+- `src/composables/session-init.js` - thin session entry that initializes session runtime assembly.
+- `src/composables/session-runtime-assembly.js` - session startup/restore/annotation assembly over focused modules.
 - `src/main.js` - Vue mount, Pinia setup, adapter-to-Pinia binding, and compatibility delegation.
 
 There is no `read-26.html` in the current root. Any script or doc that refers to it is legacy context.
@@ -45,6 +46,15 @@ src/composables/reader-runtime.js thin runtime entry
   -> Vue components
 ```
 
+Session startup flow is:
+
+```text
+src/composables/session-init.js thin session entry
+  -> src/composables/session-runtime-assembly.js session assembly
+  -> focused session-* modules for restore/startup/annotation import-export
+  -> window.__session_* compatibility facades
+```
+
 There is also a compatibility layer:
 
 ```text
@@ -70,7 +80,22 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/reader-runtime-assembly.js` - about 51 lines. High risk. Remaining runtime assembly and compatibility wiring.
 - `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
-- `src/composables/session-annotation-services.js` - annotation service/global lookup helpers and diagnostics emit used by `session-init.js`.
+- `src/composables/session-annotation-services.js` - annotation service/global lookup helpers and diagnostics emit used by session runtime modules.
+- `src/composables/session-init.js` - about 7 lines. Thin session entry only.
+- `src/composables/session-runtime-assembly.js` - about 253 lines. Session assembly and `window.__session_*` facade assignment.
+- `src/composables/session-annotation-text.js` - annotation text normalization, sentence splitting, and context sentence resolution.
+- `src/composables/session-annotation-export-payload.js` - lightweight annotation export payload construction.
+- `src/composables/session-annotation-import-normalization.js` - lightweight annotation import item normalization and target matching.
+- `src/composables/session-annotation-bundle-merge.js` - lightweight annotation generated/status bundle merge.
+- `src/composables/session-annotation-generated-index.js` - generated annotation scope/index refresh runtime.
+- `src/composables/session-annotation-marks.js` - annotation mark normalization, encoded target parsing, and mark rebuild runtime.
+- `src/composables/session-annotation-context.js` - annotation document context and target collection runtime.
+- `src/composables/session-annotation-lightweight-io.js` - session-side lightweight annotation import/export IO runtime.
+- `src/composables/session-annotation-api-settings-runtime.js` - annotation API settings UI session runtime.
+- `src/composables/session-restore-runtime.js` - persisted session restore runtime.
+- `src/composables/session-startup-runtime.js` - DB-ready startup orchestration.
+- `src/composables/session-startup-cleanup.js` - startup/persisted cleanup runtime.
+- `src/composables/session-ui-settings-restore.js` - persisted UI/hotkey settings restore.
 - `src/composables/reader-feature-runtime.js` - feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff.
 - `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context, bootstrap state, and notes/session wrappers.
 - `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
@@ -106,7 +131,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/hotkey-state-module.js` - hotkey runtime state owner.
 - `src/composables/marks-state-module.js` - marks runtime state owner.
 - `src/composables/playback-runtime-helpers.js` - playback helper behavior and sentence jump owner.
-- `src/composables/session-init.js` - high risk. Startup restore, persisted state cleanup, and annotation import/export glue.
+- `src/composables/session-init.js` - thin session entry only. Do not add feature logic here.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 9 real Pinia stores.
 - `src/stores/` - 9 window compatibility stores.
@@ -143,7 +168,7 @@ Do not add new feature logic to `src/composables/reader-runtime.js`; do not rein
 
 ### session-init.js
 
-Treat `src/composables/session-init.js` as high-risk. It is not just startup code; it also owns annotation workflow glue and persisted session behavior.
+Do not add feature logic to `src/composables/session-init.js`. It is a thin entry; put session behavior in focused `session-*` modules and wire it through `src/composables/session-runtime-assembly.js`.
 
 ## Commands
 
@@ -166,7 +191,21 @@ npm run verify:file-input-bindings  # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings  # Focused remaining inline handler migration check
 npm run verify:control-playback-state-deps  # Focused controls/playback state dependency check
 npm run verify:session-state-provider  # Focused session-init state provider check
+npm run verify:session-runtime-assembly  # Focused thin session entry and session assembly guard
 npm run verify:session-annotation-services  # Focused session annotation service helper check
+npm run verify:session-annotation-text  # Focused session annotation text/context helper check
+npm run verify:session-annotation-export-payload  # Focused annotation lightweight export payload check
+npm run verify:session-annotation-import-normalization  # Focused annotation lightweight import normalization check
+npm run verify:session-annotation-bundle-merge  # Focused annotation lightweight bundle merge check
+npm run verify:session-annotation-generated-index  # Focused generated annotation index runtime check
+npm run verify:session-annotation-marks  # Focused annotation marks runtime check
+npm run verify:session-annotation-context  # Focused annotation document context check
+npm run verify:session-annotation-lightweight-io  # Focused annotation lightweight IO runtime check
+npm run verify:session-annotation-api-settings-runtime  # Focused annotation API settings runtime check
+npm run verify:session-startup-cleanup  # Focused startup cleanup runtime check
+npm run verify:session-restore-runtime  # Focused persisted session restore runtime check
+npm run verify:session-startup-runtime  # Focused DB-ready startup orchestration check
+npm run verify:session-ui-settings-restore  # Focused persisted UI settings restore check
 npm run verify:runtime-state-source  # Focused runtime state source guard
 npm run verify:reader-runtime-shell  # Focused retired reader runtime assembly guard
 npm run verify:reader-runtime-assembly  # Focused reader runtime assembly sequence check

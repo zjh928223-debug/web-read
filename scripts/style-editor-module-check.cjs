@@ -6,7 +6,22 @@ const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const styleEditorSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
 assert.equal(
   runtimeSource.includes('function safeParseLocalJSON'),
@@ -43,10 +58,10 @@ assert.equal(
 );
 
 [
-  "processTranscript(transcriptData);",
-  "processChunkData(chunkData);",
-  "window.toggleChunkMode(true);",
-  "bridgeToPinia();"
+  "deps.processTranscript(transcriptData);",
+  "deps.processChunkData(chunkData);",
+  "windowObject.toggleChunkMode(true);",
+  "deps.bridgeToPinia();"
 ].forEach((pattern) => {
   assert.ok(
     sessionInitSource.includes(pattern),

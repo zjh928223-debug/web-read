@@ -3,19 +3,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+const sessionApiSettingsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-api-settings-runtime.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-api-settings-ui.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
-  sessionInitSource.includes("import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';"),
-  'session-init.js should import the annotation API settings UI from the module graph'
+  sessionAssemblySource.includes("import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';"),
+  'session-runtime-assembly should import the annotation API settings UI from the module graph'
 );
 assert.equal(
-  sessionInitSource.includes('window.AnnotationApiSettingsUI'),
+  sessionApiSettingsRuntimeSource.includes('window.AnnotationApiSettingsUI'),
   false,
-  'session-init.js should not read the root annotation API settings global'
+  'session annotation API settings runtime should not read the root annotation API settings global'
 );
 
 assert.ok(

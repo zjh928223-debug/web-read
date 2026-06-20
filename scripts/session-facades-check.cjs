@@ -4,9 +4,10 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const readerAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-facades.js'), 'utf8');
-const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 
 [
   'clearGeneratedAnnotationIndex',
@@ -32,13 +33,13 @@ const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
   '__session_syncAnnotationGenerationEntryStatus',
   '__session_initAnnotationApiSettingsUi'
 ].forEach((name) => {
-  assert.ok(sessionInitSource.includes(`window.${name} =`), `session-init should expose ${name}`);
+  assert.ok(sessionAssemblySource.includes(`window.${name} =`), `session-runtime-assembly should expose ${name}`);
   assert.ok(facadeSource.includes(`window.${name}`), `session-facades should delegate to ${name}`);
 });
 
 assert.ok(
-  appSource.includes("} from './session-facades.js';"),
-  'app.js should import directly consumed session facades'
+  readerAssemblySource.includes("import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';"),
+  'reader-runtime-assembly should import directly consumed session facades'
 );
 assert.ok(
   importRuntimeSource.includes("} from './session-facades.js'"),

@@ -7,6 +7,8 @@ read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
 ├── src/composables/reader-runtime.js  # Thin runtime entry, about 28 lines
 ├── src/composables/reader-runtime-assembly.js # Remaining runtime assembly, about 51 lines
+├── src/composables/session-init.js    # Thin session entry, about 7 lines
+├── src/composables/session-runtime-assembly.js # Session startup/annotation assembly, about 253 lines
 ├── styles.css                         # Global CSS linked by index.html
 ├── vite.config.js                     # Vite + Vue config
 ├── package.json                       # Current commands and dependencies
@@ -36,6 +38,7 @@ The page no longer contains inline DOM event handlers. Remaining legacy controls
 Cleanup rules:
 
 - Do not add user-facing feature logic to `src/composables/reader-runtime.js`; do not reintroduce `src/composables/reader-runtime-shell.js`.
+- Do not add feature logic to `src/composables/session-init.js`; keep it as a thin entry that initializes `src/composables/session-runtime-assembly.js`.
 - Migrate one boundary at a time and keep compatibility globals only until callers are moved.
 - Do not change IndexedDB schema or `index.html` script order without an explicit migration and full verification.
 - Treat `src/stores/` as compatibility only; long-term ownership belongs in `src/pinia-stores/`, focused runtime modules, or Vue components.
@@ -75,9 +78,23 @@ src/
 ├── composables/
 │   ├── reader-runtime.js        # thin runtime entry
 │   ├── reader-runtime-assembly.js # context/notes/feature assembly sequence
-│   ├── session-init.js
+│   ├── session-init.js          # thin session entry
+│   ├── session-runtime-assembly.js # session startup/annotation assembly
 │   ├── session-state-provider.js # temporary session-init state provider
 │   ├── session-annotation-services.js # annotation service/global lookup helpers
+│   ├── session-annotation-text.js # annotation text normalization/context helpers
+│   ├── session-annotation-export-payload.js # lightweight export payload builder
+│   ├── session-annotation-import-normalization.js # lightweight import normalization
+│   ├── session-annotation-bundle-merge.js # lightweight generated/status merge
+│   ├── session-annotation-generated-index.js # generated annotation index runtime
+│   ├── session-annotation-marks.js # annotation mark normalize/rebuild runtime
+│   ├── session-annotation-context.js # annotation document context runtime
+│   ├── session-annotation-lightweight-io.js # lightweight annotation import/export IO
+│   ├── session-annotation-api-settings-runtime.js # API settings session runtime
+│   ├── session-restore-runtime.js # persisted session restore runtime
+│   ├── session-startup-runtime.js # DB-ready startup orchestration
+│   ├── session-startup-cleanup.js # startup persisted cleanup runtime
+│   ├── session-ui-settings-restore.js # persisted UI/hotkey restore
 │   ├── runtime-state-bindings.js # runtimeState st.* compatibility bindings
 │   ├── reader-feature-runtime.js # import/controls/interactions/keyboard/app composition
 │   ├── reader-feature-runtime-deps.js # feature runtime dependency assembly
@@ -169,6 +186,10 @@ src/composables/reader-runtime.js thin runtime entry
   ↕ pinia-bridge-module bridgeToPinia runtime compatibility
   ↕ src/pinia-stores real Pinia state
   ↕ Vue components
+src/composables/session-init.js thin session entry
+  → src/composables/session-runtime-assembly.js session assembly
+  → focused session-* modules for restore/startup/annotation import-export
+  → window.__session_* compatibility facades
 ```
 
 Compatibility stores in `src/stores/` attach `window.__themeStore`, `window.__audioStore`, `window.__uiStore`, and similar objects. `src/main.js` replaces selected compatibility methods with Pinia-backed methods after the Vue app is mounted.
@@ -203,7 +224,21 @@ npm run verify:file-input-bindings # Focused file picker DOM binding check
 npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
+npm run verify:session-runtime-assembly # Focused thin session entry and assembly guard
 npm run verify:session-annotation-services # Focused session annotation service helper check
+npm run verify:session-annotation-text # Focused session annotation text/context helper check
+npm run verify:session-annotation-export-payload # Focused annotation lightweight export payload check
+npm run verify:session-annotation-import-normalization # Focused annotation lightweight import normalization check
+npm run verify:session-annotation-bundle-merge # Focused annotation lightweight bundle merge check
+npm run verify:session-annotation-generated-index # Focused generated annotation index runtime check
+npm run verify:session-annotation-marks # Focused annotation marks runtime check
+npm run verify:session-annotation-context # Focused annotation document context check
+npm run verify:session-annotation-lightweight-io # Focused annotation lightweight IO runtime check
+npm run verify:session-annotation-api-settings-runtime # Focused annotation API settings runtime check
+npm run verify:session-startup-cleanup # Focused startup cleanup runtime check
+npm run verify:session-restore-runtime # Focused persisted session restore runtime check
+npm run verify:session-startup-runtime # Focused DB-ready startup orchestration check
+npm run verify:session-ui-settings-restore # Focused persisted UI settings restore check
 npm run verify:runtime-state-source # Focused runtime state source guard
 npm run verify:reader-runtime-shell # Focused retired reader runtime assembly guard
 npm run verify:reader-runtime-assembly # Focused reader runtime assembly sequence check

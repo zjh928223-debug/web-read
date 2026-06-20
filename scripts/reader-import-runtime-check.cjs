@@ -11,7 +11,22 @@ async function main() {
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
-  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
   assert.ok(
     runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
@@ -71,11 +86,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(moduleSource.includes('document.'), false, 'reader-import-runtime should not read document globals');
 
   [
-    'processTranscript(transcriptData);',
-    'processChunkData(chunkData);',
-    'window.toggleChunkMode(true);',
-    'bridgeToPinia();',
-    'processVisual(visualData);'
+    'deps.processTranscript(transcriptData);',
+    'deps.processChunkData(chunkData);',
+    'windowObject.toggleChunkMode(true);',
+    'deps.bridgeToPinia();',
+    'deps.processVisual(visualData);'
   ].forEach((pattern) => {
     assert.ok(
       sessionInitSource.includes(pattern),

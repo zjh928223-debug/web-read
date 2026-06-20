@@ -15,7 +15,22 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'marks-state-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
-  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
   assert.ok(
     runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
@@ -100,11 +115,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'session-init should not depend on a bare markedMap binding'
   );
   [
-    'if (normalizedMark) st.markedMap.set(normalizedMark.globalIndex, normalizedMark);',
-    'const nextMap = replaceExisting ? new Map() : new Map(st.markedMap);',
-    'st.markedMap.clear();',
-    'nextMap.forEach((value, key) => st.markedMap.set(key, value));',
-    "saveToDB('marks', Array.from(st.markedMap.values()));"
+    'nextMap.set(globalIndex, normalizeAnnotationMark({',
+    'const nextMap = replaceExisting ? new Map() : new Map(state.markedMap);',
+    'state.markedMap.clear();',
+    'nextMap.forEach((value, key) => state.markedMap.set(key, value));',
+    "deps.saveToDB('marks', Array.from(state.markedMap.values()));"
   ].forEach((pattern) => {
     assert.ok(
       sessionInitSource.includes(pattern),

@@ -14,7 +14,22 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'hotkey-state-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
-  const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const sessionInitSource = [
+  'session-runtime-assembly.js',
+  'session-restore-runtime.js',
+  'session-startup-runtime.js',
+  'session-startup-cleanup.js',
+  'session-ui-settings-restore.js',
+  'session-annotation-api-settings-runtime.js',
+  'session-annotation-context.js',
+  'session-annotation-generated-index.js',
+  'session-annotation-marks.js',
+  'session-annotation-lightweight-io.js',
+  'session-annotation-export-payload.js',
+  'session-annotation-import-normalization.js',
+  'session-annotation-bundle-merge.js',
+  'session-annotation-text.js'
+].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
   assert.ok(
     runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
@@ -105,14 +120,14 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
 
   [
-    'if(savedMarkKey) { st.markKey= savedMarkKey.toLowerCase();',
-    'if(savedNotesKey) { st.notesKey= savedNotesKey.toLowerCase();',
-    'if(savedAnnotationBubbleKey) { st.annotationBubbleKey= savedAnnotationBubbleKey.toLowerCase();',
-    'if(savedChunkCnKey) { st.chunkCnKey= savedChunkCnKey.toLowerCase();',
-    'if(savedChunkShadowKey) { st.chunkShadowKey= savedChunkShadowKey.toLowerCase();',
-    'if(savedChunkNoteKey) { st.chunkNoteKey= savedChunkNoteKey.toLowerCase();',
-    'if(savedBackwardKey) { st.backwardKey= savedBackwardKey;',
-    'if(savedForwardKey) { st.forwardKey= savedForwardKey;'
+    'if (savedMarkKey) { state.markKey = savedMarkKey.toLowerCase(); deps.hotkeyInput.value = state.markKey; }',
+    'if (savedNotesKey) { state.notesKey = savedNotesKey.toLowerCase(); deps.hotkeyNotesInput.value = state.notesKey; }',
+    'if (savedAnnotationBubbleKey) { state.annotationBubbleKey = savedAnnotationBubbleKey.toLowerCase();',
+    'if (savedChunkCnKey) { state.chunkCnKey = savedChunkCnKey.toLowerCase(); deps.hotkeyChunkCnInput.value = state.chunkCnKey; }',
+    'if (savedChunkShadowKey) { state.chunkShadowKey = savedChunkShadowKey.toLowerCase(); deps.hotkeyChunkShadowInput.value = state.chunkShadowKey; }',
+    'if (savedChunkNoteKey) { state.chunkNoteKey = savedChunkNoteKey.toLowerCase();',
+    'if (savedBackwardKey) { state.backwardKey = savedBackwardKey; deps.hotkeyBackwardInput.value = state.backwardKey; }',
+    'if (savedForwardKey) { state.forwardKey = savedForwardKey; deps.hotkeyForwardInput.value = state.forwardKey; }'
   ].forEach((pattern) => {
     assert.ok(
       sessionInitSource.includes(pattern),

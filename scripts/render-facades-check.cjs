@@ -7,7 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
-const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-runtime.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
@@ -36,8 +36,8 @@ assert.equal(appSource.includes('window.renderTranscript = renderTranscript'), f
 assert.equal(appSource.includes('window.renderChunkMode = renderChunkMode'), false, 'reader-runtime.js should not export window.renderChunkMode');
 
 assert.ok(sessionSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"));
-assert.equal(sessionSource.includes('window.renderTranscript'), false, 'session-init.js should not call window.renderTranscript');
-assert.equal(sessionSource.includes('window.renderChunkMode'), false, 'session-init.js should not call window.renderChunkMode');
+assert.equal(sessionSource.includes('window.renderTranscript'), false, 'session runtime assembly should not call window.renderTranscript');
+assert.equal(sessionSource.includes('window.renderChunkMode'), false, 'session runtime assembly should not call window.renderChunkMode');
 
 assert.ok(interactionRuntimeSource.includes("import { configureRenderRuntime } from './render-runtime.js';"));
 assert.ok(interactionRuntimeSource.includes('configureRenderRuntime({'));
