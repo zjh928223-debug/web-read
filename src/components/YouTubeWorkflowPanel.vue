@@ -67,6 +67,11 @@
             <input v-model="apiKey" type="password" autocomplete="off" placeholder="仅提交到本地服务内存，不保存">
           </label>
 
+          <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
+            <input v-model="rememberApiKey" type="checkbox">
+            <span>记住 API key（仅本机浏览器）</span>
+          </label>
+
           <label>
             <span>模型</span>
             <input v-model.trim="model" type="text" placeholder="gemini-2.5-flash">
@@ -397,7 +402,8 @@ const serviceOnline = ref(false)
 const linkInput = ref('')
 const linkCards = ref([])
 const linkNotice = ref('')
-const apiKey = ref('')
+const rememberApiKey = ref(loadBoolSetting('youtubeWorkflow.rememberApiKey', false))
+const apiKey = ref(rememberApiKey.value ? loadTextSetting('youtubeWorkflow.apiKey', '') : '')
 const model = ref(loadTextSetting('youtubeWorkflow.model', 'gemini-2.5-flash'))
 const baseUrl = ref(loadTextSetting('youtubeWorkflow.baseUrl', ''))
 const proxyUrl = ref('')
@@ -510,6 +516,14 @@ const capsuleEdge = computed(() => getCapsuleEdge(capsulePosition.value, getCaps
 
 watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
 watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
+watch(apiKey, (value) => {
+  if (rememberApiKey.value) saveTextSetting('youtubeWorkflow.apiKey', value)
+})
+watch(rememberApiKey, (value) => {
+  saveBoolSetting('youtubeWorkflow.rememberApiKey', value)
+  if (value) saveTextSetting('youtubeWorkflow.apiKey', apiKey.value)
+  else window.localStorage.removeItem('youtubeWorkflow.apiKey')
+})
 watch(materialFloatingVisible, async (visible) => {
   if (!visible) return
   await nextTick()
@@ -695,7 +709,7 @@ function closePanel() {
   panelOpen.value = false
   panelShrunk.value = false
   panelPosition.value = getDefaultPanelPosition()
-  apiKey.value = ''
+  if (!rememberApiKey.value) apiKey.value = ''
   cancelRecordsOpen.value = false
 }
 
@@ -1371,6 +1385,21 @@ function loadTextSetting(key, fallback) {
 function saveTextSetting(key, value) {
   try {
     window.localStorage.setItem(key, String(value || ''))
+  } catch (_err) {}
+}
+
+function loadBoolSetting(key, fallback) {
+  try {
+    const value = window.localStorage.getItem(key)
+    return value == null ? fallback : value === 'true'
+  } catch (_err) {
+    return fallback
+  }
+}
+
+function saveBoolSetting(key, value) {
+  try {
+    window.localStorage.setItem(key, value ? 'true' : 'false')
   } catch (_err) {}
 }
 
