@@ -6,6 +6,14 @@ const VIEWPORT = { width: 1280, height: 720 };
 
 const jobs = new Map();
 let jobCounter = 0;
+const recentJob = {
+  jobId: 'recent-ready',
+  status: 'ready',
+  stage: 'ready',
+  title: 'Recent Ready Material',
+  url: 'https://www.youtube.com/watch?v=recent123',
+  finishedAt: new Date('2026-06-23T10:20:00Z').toISOString()
+};
 
 function json(body) {
   return {
@@ -20,7 +28,7 @@ async function mockWorkflowService(page) {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/api/health') return route.fulfill(json({ ok: true }));
-    if (url.pathname === '/api/recent') return route.fulfill(json([]));
+    if (url.pathname === '/api/recent') return route.fulfill(json([recentJob]));
     if (url.pathname === '/api/jobs' && request.method() === 'POST') {
       const payload = JSON.parse(request.postData() || '{}');
       const jobId = `job-${++jobCounter}`;
@@ -100,6 +108,12 @@ async function main() {
     const panel = page.locator('.youtube-workflow-panel');
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
+    await page.waitForSelector('.youtube-workflow-recent');
+    assert.match(
+      await page.locator('.youtube-workflow-recent').innerText(),
+      /Recent Ready Material/,
+      'recent ready tasks should render in the panel'
+    );
 
     const centered = await panel.boundingBox();
     assert.ok(Math.abs(centered.x - 300) <= 8, `panel should open centered, got x=${centered.x}`);

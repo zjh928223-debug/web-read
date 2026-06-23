@@ -57,6 +57,12 @@ async function main() {
   assert.ok(panelSource.includes('FLOAT_SNAP_THRESHOLD'), 'capsule snapping should use a named threshold');
   assert.ok(panelSource.includes('getCapsuleSize'), 'capsule dragging should snap against the actual rendered size');
   assert.ok(panelSource.includes('correctCapsuleOverflow'), 'capsule dragging should correct post-transform viewport overflow');
+  assert.ok(panelSource.includes('recentJobs') && panelSource.includes('refreshRecent'), 'panel should display service recent tasks');
+  assert.ok(panelSource.includes('visibleRecentJobs'), 'recent tasks should not duplicate jobs already visible in the current queue');
+  assert.ok(panelSource.includes('最近任务'), 'panel should include a recent tasks section');
+  assert.ok(panelSource.includes('openRecentJob'), 'ready recent tasks should be reopenable without a history library');
+  assert.ok(panelSource.includes('recentTaskMetaText'), 'recent tasks should show a completion/update timestamp');
+  assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('高级设置'), 'Base URL should be hidden in advanced settings');
   assert.ok(panelSource.includes('loadTextSetting') && panelSource.includes('saveTextSetting'), 'model and Base URL should persist outside IndexedDB');
   assert.ok(panelSource.includes('上一篇') && panelSource.includes('下一篇'), 'reader controls should include previous/next queue navigation');
@@ -80,6 +86,8 @@ async function main() {
   assert.ok(stylesSource.includes('[data-status="transcribing"] .youtube-job-status-badge'), 'Whisper state should be visually distinct');
   assert.ok(stylesSource.includes('.youtube-workflow-job[data-active="true"]'), 'the active running queue row should be visually emphasized');
   assert.ok(stylesSource.includes('.youtube-job-log'), 'styles should include a compact running log area');
+  assert.ok(stylesSource.includes('.youtube-workflow-recent'), 'styles should include a focused recent task section');
+  assert.ok(stylesSource.includes('.youtube-workflow-recent-job'), 'recent task rows should have their own subdued styling');
   assert.ok(stylesSource.includes('.youtube-material-link-label') && stylesSource.includes('.youtube-material-link-input'), 'styles should visually prioritize the material link input');
   assert.ok(stylesSource.includes('.youtube-link-state-text') && stylesSource.includes('.youtube-link-card .small-btn'), 'styles should keep parsed link cards compact and state-first');
   assert.equal(backdropBlock.includes('justify-content: flex-end'), false, 'workflow overlay must not use right-side drawer positioning');

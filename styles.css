@@ -291,7 +291,8 @@ body {
 }
 
 .youtube-workflow-form,
-.youtube-workflow-queue {
+.youtube-workflow-queue,
+.youtube-workflow-recent {
   display: grid;
   gap: 10px;
 }
@@ -509,6 +510,16 @@ body {
   border-color: rgba(37, 99, 235, 0.5);
   box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.85);
   background: rgba(248, 251, 255, 0.96);
+}
+
+.youtube-workflow-recent {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.youtube-workflow-recent-job {
+  background: rgba(248, 250, 252, 0.82);
 }
 
 .youtube-workflow-job-main {

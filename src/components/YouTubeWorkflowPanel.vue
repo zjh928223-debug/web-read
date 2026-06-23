@@ -119,7 +119,7 @@
                 <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
                 <span class="youtube-job-position">{{ index + 1 }} / {{ queueJobs.length }}</span>
               </div>
-              <strong class="youtube-job-title">{{ job.title || shortUrl(job.request && job.request.url) || job.jobId }}</strong>
+              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
               <small v-if="job.status === 'ready'">{{ readyJobMetaText(job) }}</small>
               <small v-if="job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
               <div v-if="isActiveJob(job)" class="youtube-job-log" aria-label="运行日志">
@@ -149,6 +149,44 @@
             <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
             <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
           </div>
+        </section>
+
+        <section class="youtube-workflow-recent">
+          <div class="youtube-workflow-summary">
+            <strong>最近任务</strong>
+            <span>{{ recentSummary }}</span>
+            <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
+          </div>
+
+          <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近任务</div>
+
+          <article
+            v-for="job in visibleRecentJobs"
+            :key="job.jobId"
+            class="youtube-workflow-job youtube-workflow-recent-job"
+            :data-status="job.status"
+          >
+            <div class="youtube-workflow-job-main">
+              <div class="youtube-job-status-line">
+                <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
+                <span class="youtube-job-position">{{ recentTaskMetaText(job) }}</span>
+              </div>
+              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+              <small v-if="job.status === 'ready'">{{ jobOpenStateText(job) || '可重新打开' }}</small>
+              <small v-if="job.status === 'failed' && job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
+            </div>
+            <div class="youtube-workflow-job-actions">
+              <button
+                v-if="job.status === 'ready'"
+                type="button"
+                class="small-btn primary"
+                :disabled="job.jobId === currentJobId"
+                @click="openRecentJob(job)"
+              >
+                {{ openJobActionText(job) }}
+              </button>
+            </div>
+          </article>
         </section>
 
         <div v-if="cancelRecordsOpen" class="youtube-subwindow">
@@ -188,7 +226,7 @@
     <div v-if="switchModal" class="youtube-switch-modal-backdrop" role="dialog" aria-modal="true">
       <section class="youtube-switch-modal">
         <h3>{{ switchModal.title }}</h3>
-        <p v-if="switchModal.target">目标：{{ switchModal.target.title || shortUrl(switchModal.target.request && switchModal.target.request.url) }}</p>
+        <p v-if="switchModal.target">目标：{{ jobDisplayTitle(switchModal.target) }}</p>
         <p v-if="switchModal.queueText">队列：{{ switchModal.queueText }}</p>
         <p v-if="switchModal.currentText">当前文章：{{ switchModal.currentText }}</p>
         <p>{{ switchModal.message }}</p>
@@ -266,6 +304,7 @@ const baseUrl = ref(loadTextSetting('youtubeWorkflow.baseUrl', ''))
 const showAdvanced = ref(false)
 const starting = ref(false)
 const queueJobs = ref([])
+const recentJobs = ref([])
 const showFloatingAfterClose = ref(false)
 const cancelRecordsOpen = ref(false)
 const cancelRecordsNotice = ref('')
@@ -308,6 +347,15 @@ const queueSummary = computed(() => {
   const ready = readyJobs.value.length
   const running = queueJobs.value.filter((job) => !terminalStatuses.has(job.status)).length
   return `${total} 项 · ${running} 处理中/等待 · ${ready} 可打开`
+})
+const visibleRecentJobs = computed(() => {
+  const queueIds = new Set(queueJobs.value.map((job) => job.jobId))
+  return recentJobs.value.filter((job) => !queueIds.has(job.jobId))
+})
+const recentSummary = computed(() => {
+  const total = visibleRecentJobs.value.length
+  const ready = visibleRecentJobs.value.filter((job) => job.status === 'ready').length
+  return `${total} 项 · ${ready} 可打开`
 })
 const materialFloatingVisible = computed(() => {
   return showFloatingAfterClose.value
@@ -541,6 +589,14 @@ function handleBackdropPointerDown() {
 async function refreshQueue() {
   await checkHealth()
   await Promise.all(queueJobs.value.map((job) => refreshJob(job.jobId)))
+  await refreshRecent()
+}
+
+async function refreshRecent() {
+  try {
+    const items = await youtubeWorkflowClient.recent(10)
+    recentJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
+  } catch (_err) {}
 }
 
 async function refreshJob(jobId) {
@@ -557,6 +613,9 @@ function updateJob(fresh) {
   else queueJobs.value.push(fresh)
   if (fresh.status === 'ready' && previous && previous.status !== 'ready') {
     maybeAutoOpen(fresh)
+  }
+  if (terminalStatuses.has(fresh.status) && (!previous || previous.status !== fresh.status)) {
+    refreshRecent()
   }
 }
 
@@ -630,11 +689,15 @@ function requestSwitch(job, title) {
     target: job,
     title,
     queueText: index >= 0 ? `${index + 1} / ${readyJobs.value.length}` : '',
-    currentText: currentJobId.value ? listenText(queueJobs.value.find((item) => item.jobId === currentJobId.value)) : '未开始',
+    currentText: currentJobId.value ? listenText(queueJobs.value.find((item) => item.jobId === currentJobId.value) || recentJobs.value.find((item) => item.jobId === currentJobId.value)) : '未开始',
     message: '确认后会加载目标文章，当前播放会停止，新文章不会自动播放。',
     confirmText: '确认切换',
     wasPlaying: paused
   }
+}
+
+function openRecentJob(job) {
+  openJob(normalizeRecentJob(job))
 }
 
 function goQueue(offset) {
@@ -712,6 +775,13 @@ function isJobOpened(job) {
   return !!(job && (job.jobId === currentJobId.value || loadedReadyJobs.has(job.jobId)))
 }
 
+function normalizeRecentJob(job) {
+  return {
+    ...job,
+    request: job.request || { url: job.url || '' }
+  }
+}
+
 function isActiveJob(job) {
   if (!job) return false
   const active = queueJobs.value.find((item) => !terminalStatuses.has(item.status) && item.status !== 'queued')
@@ -731,6 +801,27 @@ function jobOpenStateText(job) {
   if (job.jobId === currentJobId.value) return '当前阅读中'
   if (loadedReadyJobs.has(job.jobId)) return '已打开'
   return ''
+}
+
+function jobDisplayTitle(job) {
+  return (job && job.title) || shortUrl(job && (job.url || (job.request && job.request.url))) || (job && job.jobId) || ''
+}
+
+function recentTaskMetaText(job) {
+  const stamp = formatShortDate(job && (job.finishedAt || job.updatedAt || job.createdAt))
+  return stamp || '最近完成'
+}
+
+function formatShortDate(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 function readyJobMetaText(job) {
