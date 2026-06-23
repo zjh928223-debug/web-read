@@ -1,15 +1,30 @@
 // Annotation lightweight import/export DOM glue.
 (function () {
+  var runtimeHandlers = {
+    exportManualLightweightAnnotations: null,
+    importManualLightweightAnnotations: null
+  };
+
+  function configureManualLightweightAnnotationRuntime(config) {
+    config = config || {};
+    runtimeHandlers.exportManualLightweightAnnotations = typeof config.exportManualLightweightAnnotations === 'function'
+      ? config.exportManualLightweightAnnotations
+      : null;
+    runtimeHandlers.importManualLightweightAnnotations = typeof config.importManualLightweightAnnotations === 'function'
+      ? config.importManualLightweightAnnotations
+      : null;
+  }
+
   function exportManualLightweightAnnotations() {
-    if (typeof window.__session_exportManualLightweightAnnotations === 'function') {
-      return window.__session_exportManualLightweightAnnotations();
+    if (typeof runtimeHandlers.exportManualLightweightAnnotations === 'function') {
+      return runtimeHandlers.exportManualLightweightAnnotations();
     }
     throw new Error('Annotation lightweight export module is not ready');
   }
 
   async function importManualLightweightAnnotations(file) {
-    if (typeof window.__session_importManualLightweightAnnotations === 'function') {
-      return window.__session_importManualLightweightAnnotations(file);
+    if (typeof runtimeHandlers.importManualLightweightAnnotations === 'function') {
+      return runtimeHandlers.importManualLightweightAnnotations(file);
     }
     throw new Error('Annotation lightweight import module is not ready');
   }
@@ -74,6 +89,7 @@
   }
 
   window.__annotationLightweightModule = {
+    configureManualLightweightAnnotationRuntime: configureManualLightweightAnnotationRuntime,
     exportManualLightweightAnnotations: exportManualLightweightAnnotations,
     importManualLightweightAnnotations: importManualLightweightAnnotations,
     buildImportSuccessMessage: buildImportSuccessMessage,

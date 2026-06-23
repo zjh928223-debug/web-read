@@ -17,8 +17,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should initialize notes/session through the dependency assembly module'
   );
   [
-    'notesModule: globalObject.__notesModule',
-    'chunkNoteLayout: globalObject.__chunkNoteLayout',
     'transcriptState: bootstrapRuntime.transcriptState',
     'chunkState: bootstrapRuntime.chunkState',
     'clozeState: bootstrapRuntime.clozeState',
@@ -26,8 +24,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'saveToDB: bootstrapRuntime.saveToDB',
     'audioIdentityApi: bootstrapRuntime.audioIdentityApi',
     'isPlainObjectRecord: bootstrapRuntime.runtimeDeps.isPlainObjectRecord',
-    'mainAppArea: domRefs.mainAppArea',
-    'notePreviewResizeHandleY: domRefs.notePreviewResizeHandleY'
+    'mainAppArea: domRefs.mainAppArea'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `reader-notes-session-runtime-deps should own mapping: ${pattern}`);
   });
@@ -38,21 +35,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const { createReaderNotesSessionRuntimeDeps } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   const domRefs = {
-    mainAppArea: { id: 'main' },
-    chunkNoteSvgLayer: { id: 'svg' },
-    chunkNoteLayer: { id: 'layer' },
-    chunkNoteCtxMenu: { id: 'menu' },
-    notePreviewSidebar: { id: 'sidebar' },
-    notePreviewEmpty: { id: 'empty' },
-    notePreviewList: { id: 'list' },
-    toggleNotePreviewBtn: { id: 'toggle' },
-    notePreviewResizeHandle: { id: 'resize-x' },
-    notePreviewResizeHandleY: { id: 'resize-y' }
+    mainAppArea: { id: 'main' }
   };
-  const globalObject = {
-    __notesModule: { id: 'notes' },
-    __chunkNoteLayout: { id: 'layout' }
-  };
+  const globalObject = {};
   const runtimeContext = { domRefs };
   const bootstrapRuntime = {
     transcriptState: { id: 'transcript' },
@@ -72,8 +57,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     bootstrapRuntime
   });
 
-  assert.equal(deps.notesModule, globalObject.__notesModule);
-  assert.equal(deps.chunkNoteLayout, globalObject.__chunkNoteLayout);
   assert.equal(deps.transcriptState, bootstrapRuntime.transcriptState);
   assert.equal(deps.chunkState, bootstrapRuntime.chunkState);
   assert.equal(deps.clozeState, bootstrapRuntime.clozeState);
@@ -81,8 +64,15 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(deps.saveToDB, bootstrapRuntime.saveToDB);
   assert.equal(deps.audioIdentityApi, bootstrapRuntime.audioIdentityApi);
   assert.equal(deps.isPlainObjectRecord, bootstrapRuntime.runtimeDeps.isPlainObjectRecord);
-  assert.equal(deps.chunkNoteCtxMenu, domRefs.chunkNoteCtxMenu);
-  assert.equal(deps.notePreviewResizeHandleY, domRefs.notePreviewResizeHandleY);
+  assert.equal(deps.mainAppArea, domRefs.mainAppArea);
+  [
+    'notesModule',
+    'chunkNoteLayout',
+    'chunkNoteCtxMenu',
+    'notePreviewResizeHandleY'
+  ].forEach((key) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(deps, key), false, `retired notes dep should stay removed: ${key}`);
+  });
 
   console.log('reader notes session runtime deps check passed');
 }

@@ -1,4 +1,4 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
@@ -73,39 +73,17 @@ async function main() {
     bodySentenceClass: document.body.classList.contains('highlight-sentence-mode')
   }));
 
-  const deprecatedOptionsClosed = await page.evaluate(() => {
-    function isVisible(selector) {
-      const el = document.querySelector(selector);
-      if (!el) return false;
-      const rect = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-    }
-    return {
-      hasContainer: !!document.querySelector('.deprecated-options'),
-      isOpen: !!(document.querySelector('.deprecated-options') && document.querySelector('.deprecated-options').open),
-      importButtonVisible: isVisible('#btn-import-chunk-notes'),
-      exportButtonVisible: isVisible('#btn-export-chunk-notes'),
-      styleButtonVisible: isVisible('#btn-chunk-note-style')
-    };
-  });
-  await page.click('.deprecated-options > summary');
-  const deprecatedOptionsOpen = await page.evaluate(() => {
-    function isVisible(selector) {
-      const el = document.querySelector(selector);
-      if (!el) return false;
-      const rect = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
-      return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-    }
-    return {
-      isOpen: !!(document.querySelector('.deprecated-options') && document.querySelector('.deprecated-options').open),
-      importButtonVisible: isVisible('#btn-import-chunk-notes'),
-      exportButtonVisible: isVisible('#btn-export-chunk-notes'),
-      styleButtonVisible: isVisible('#btn-chunk-note-style')
-    };
-  });
-  await page.click('.deprecated-options > summary');
+  const removedFeatureUi = await page.evaluate(() => ({
+    deprecatedOptions: !!document.querySelector('.deprecated-options'),
+    loadChunkButton: !!document.getElementById('btn-load-chunk'),
+    loadClozeButton: !!document.getElementById('btn-load-cloze'),
+    hotkeyNotesInput: !!document.getElementById('hotkey-notes-input'),
+    hotkeyChunkNoteInput: !!document.getElementById('hotkey-chunk-note-input'),
+    importChunkNotesButton: !!document.getElementById('btn-import-chunk-notes'),
+    exportChunkNotesButton: !!document.getElementById('btn-export-chunk-notes'),
+    chunkNoteContextMenu: !!document.getElementById('chunk-note-ctx-menu'),
+    clozeQuizSection: !!document.getElementById('cloze-quiz-section')
+  }));
 
   await page.evaluate((audioSrc) => {
     window.processTranscript({
@@ -200,8 +178,6 @@ async function main() {
   }));
   await page.click('#hotkey-backward-input');
   await page.keyboard.press('z');
-  await page.click('#hotkey-notes-input');
-  await page.keyboard.press('q');
   await page.evaluate(() => {
     const audio = document.getElementById('audio-player');
     audio.currentTime = 2.2;
@@ -215,24 +191,11 @@ async function main() {
     null,
     { timeout: 5000 }
   );
-  await page.keyboard.press('q');
-  await page.waitForFunction(
-    () => {
-      const note = document.getElementById('note-1');
-      return !!(note && note.open);
-    },
-    null,
-    { timeout: 5000 }
-  );
   const hotkeyCustomization = await page.evaluate(() => ({
     backwardInput: document.getElementById('hotkey-backward-input').value,
-    notesInput: document.getElementById('hotkey-notes-input').value,
     storedBackwardKey: localStorage.getItem('st.backwardKey'),
-    storedNotesKey: localStorage.getItem('st.notesKey'),
     legacyBackwardKey: localStorage.getItem('backwardKey'),
-    legacyNotesKey: localStorage.getItem('notesKey'),
     audioTimeAfterCustomBackward: document.getElementById('audio-player').currentTime,
-    noteOpen: !!(document.getElementById('note-1') && document.getElementById('note-1').open),
     activeElementId: document.activeElement ? document.activeElement.id : ''
   }));
 
@@ -287,31 +250,6 @@ async function main() {
     null,
     { timeout: 5000 }
   );
-
-  await page.evaluate(() => {
-    const items = [{
-      clozeSentence: 'One ___ line',
-      targetWord: 'Second',
-      wordType: 'noun',
-      reasoning: 'Test explanation'
-    }];
-    window.__state.clozeItems = items;
-    window.__state.hasClozeData = true;
-    window.__state.clozeAnswerState = window.createInitialClozeAnswerState(items);
-    window.bridgeToPinia();
-  });
-  await page.waitForSelector('#cloze-quiz-section [data-cloze-input="0"]', { timeout: 10000 });
-  await page.fill('#cloze-quiz-section [data-cloze-input="0"]', 'Second');
-  await page.click('#cloze-quiz-section [data-cloze-check="0"]');
-  await page.waitForSelector('#cloze-quiz-section .cloze-result-ok', { timeout: 10000 });
-
-  const clozeInteraction = await page.evaluate(() => ({
-    hasSection: !!document.getElementById('cloze-quiz-section'),
-    answerState: window.__piniaStores.cloze.answerState[0] || null,
-    okText: document.querySelector('#cloze-quiz-section .cloze-result-ok')
-      ? document.querySelector('#cloze-quiz-section .cloze-result-ok').textContent
-      : ''
-  }));
 
   await page.evaluate(() => {
     window.processChunkData({
@@ -412,154 +350,6 @@ async function main() {
     buttonText: document.getElementById('btn-chunk-focus').textContent.trim(),
     rootFocusClass: document.getElementById('chunk-vue-container').classList.contains('cn-mode-focus')
   }));
-
-  await page.click('#word-2', { button: 'right' });
-  await page.waitForFunction(
-    () => {
-      const menu = document.getElementById('chunk-note-ctx-menu');
-      return !!(menu && getComputedStyle(menu).display !== 'none');
-    },
-    null,
-    { timeout: 5000 }
-  );
-  const chunkNoteWordContextMenu = await page.evaluate(() => {
-    const menu = document.getElementById('chunk-note-ctx-menu');
-    const rect = menu ? menu.getBoundingClientRect() : null;
-    return {
-      visible: !!(menu && getComputedStyle(menu).display !== 'none'),
-      text: menu ? menu.textContent.trim() : '',
-      left: rect ? rect.left : null,
-      top: rect ? rect.top : null
-    };
-  });
-  await page.click('#chunk-note-ctx-add');
-  await page.waitForSelector('.chunk-note-modal-input', { timeout: 5000 });
-  const chunkNoteWordPopover = await page.evaluate(() => {
-    const input = document.querySelector('.chunk-note-modal-input');
-    return {
-      visible: !!input,
-      value: input ? input.value : '',
-      focused: document.activeElement === input
-    };
-  });
-  await page.keyboard.press('Escape');
-  await page.waitForSelector('.chunk-note-modal-input', { state: 'detached', timeout: 5000 });
-
-  const chunkRootBox = await page.locator('#chunk-vue-container').boundingBox();
-  await page.mouse.click(chunkRootBox.x + chunkRootBox.width - 24, chunkRootBox.y + 36, { button: 'right' });
-  await page.waitForFunction(
-    () => {
-      const menu = document.getElementById('chunk-note-ctx-menu');
-      return !!(menu && getComputedStyle(menu).display !== 'none');
-    },
-    null,
-    { timeout: 5000 }
-  );
-  const chunkNoteBlankContextMenu = await page.evaluate(() => {
-    const menu = document.getElementById('chunk-note-ctx-menu');
-    const rect = menu ? menu.getBoundingClientRect() : null;
-    return {
-      visible: !!(menu && getComputedStyle(menu).display !== 'none'),
-      text: menu ? menu.textContent.trim() : '',
-      left: rect ? rect.left : null,
-      top: rect ? rect.top : null
-    };
-  });
-  await page.click('#chunk-note-ctx-add');
-  await page.waitForSelector('.chunk-note-modal-input', { timeout: 5000 });
-  const chunkNoteBlankPopover = await page.evaluate(() => {
-    const input = document.querySelector('.chunk-note-modal-input');
-    return {
-      visible: !!input,
-      value: input ? input.value : '',
-      focused: document.activeElement === input
-    };
-  });
-  await page.keyboard.press('Escape');
-  await page.waitForSelector('.chunk-note-modal-input', { state: 'detached', timeout: 5000 });
-
-  await page.click('#word-3', { button: 'right' });
-  await page.waitForFunction(
-    () => {
-      const menu = document.getElementById('chunk-note-ctx-menu');
-      return !!(menu && getComputedStyle(menu).display !== 'none');
-    },
-    null,
-    { timeout: 5000 }
-  );
-  await page.click('#chunk-note-ctx-add');
-  await page.waitForSelector('.chunk-note-modal-input', { timeout: 5000 });
-  await page.fill('.chunk-note-modal-input', 'visual note');
-  await page.keyboard.press('Enter');
-  await page.waitForSelector('.chunk-note-tag', { timeout: 5000 });
-  await page.waitForFunction(
-    () => {
-      const word = document.getElementById('word-3');
-      const tag = document.querySelector('.chunk-note-tag');
-      return !!(word && tag && word.classList.contains('annotated') && getComputedStyle(tag).display !== 'none');
-    },
-    null,
-    { timeout: 5000 }
-  );
-  const chunkNoteSavedAnnotation = await page.evaluate(() => {
-    const word = document.getElementById('word-3');
-    const wordAfter = word ? getComputedStyle(word, '::after') : null;
-    const tag = document.querySelector('.chunk-note-tag');
-    const tagRect = tag ? tag.getBoundingClientRect() : null;
-    const wordRect = word ? word.getBoundingClientRect() : null;
-    const wordChunk = word && word.closest('.chunk-block');
-    const tagRef = tag ? tag.dataset.noteId.split('::')[0] : '';
-    return {
-      bodyHidden: document.body.classList.contains('hide-chunk-note'),
-      wordAnnotated: !!(word && word.classList.contains('annotated')),
-      wordAnnotatedSingle: !!(word && word.classList.contains('annotated-single')),
-      wordAfterDisplay: wordAfter ? wordAfter.display : '',
-      wordAfterBorderStyle: wordAfter ? wordAfter.borderBottomStyle : '',
-      tagVisible: !!(tag && getComputedStyle(tag).display !== 'none' && tagRect && tagRect.width > 0 && tagRect.height > 0),
-      tagSelected: !!(tag && tag.classList.contains('selected')),
-      tagText: tag ? tag.textContent.trim() : '',
-      tagRef,
-      tagRect: tagRect ? { left: tagRect.left, top: tagRect.top, right: tagRect.right, bottom: tagRect.bottom } : null,
-      wordRect: wordRect ? { left: wordRect.left, top: wordRect.top, right: wordRect.right, bottom: wordRect.bottom } : null,
-      wordChunkId: wordChunk ? wordChunk.id : '',
-      wordChunkRef: wordChunk ? wordChunk.dataset.chunkRef || '' : '',
-      wordLegacyChunkRef: wordChunk ? wordChunk.dataset.legacyChunkRef || '' : '',
-      duplicatedLegacyRefCount: wordChunk ? document.querySelectorAll(`.chunk-block[data-legacy-chunk-ref="${wordChunk.dataset.legacyChunkRef}"]`).length : 0,
-      noteCount: document.querySelectorAll('.chunk-note-tag').length
-    };
-  });
-  await page.hover('.chunk-note-tag');
-  await page.waitForFunction(
-    () => document.querySelectorAll('.chunk-note-connector').length > 0,
-    null,
-    { timeout: 5000 }
-  );
-  const chunkNoteHoverConnector = await page.evaluate(() => {
-    const connectors = Array.from(document.querySelectorAll('.chunk-note-connector'));
-    const first = connectors[0] || null;
-    return {
-      count: connectors.length,
-      opacity: first ? getComputedStyle(first).opacity : '',
-      d: first ? first.getAttribute('d') : '',
-      noteId: document.querySelector('.chunk-note-tag')
-        ? document.querySelector('.chunk-note-tag').dataset.noteId || ''
-        : ''
-    };
-  });
-  await page.keyboard.press('Delete');
-  await page.waitForSelector('.chunk-note-delete-dialog', { timeout: 5000 }).catch(() => {});
-  const chunkNoteDeletePrompt = await page.evaluate(() => {
-    const dialog = document.querySelector('.chunk-note-delete-dialog');
-    const selectedTag = document.querySelector('.chunk-note-tag.selected');
-    return {
-      visible: !!(dialog && getComputedStyle(dialog).display !== 'none'),
-      text: dialog ? dialog.textContent.trim() : '',
-      selectedTag: !!selectedTag
-    };
-  });
-  if (chunkNoteDeletePrompt.visible) {
-    await page.click('.chunk-note-delete-dialog .chunk-note-delete-btn:not(.danger)');
-  }
 
   await page.evaluate(() => {
     window.__state.markedMap.set(2, { globalIndex: 2, word: 'Second', sourceType: 'test' });
@@ -688,17 +478,16 @@ async function main() {
       && annotationImportUi.hasPromptEntryUi === false
       && defaultHighlightUi.stateHighlightMode === 2
       && defaultHighlightUi.piniaHighlightMode === 2
-      && defaultHighlightUi.buttonText === '高亮:句'
       && defaultHighlightUi.bodySentenceClass === true
-      && deprecatedOptionsClosed.hasContainer === true
-      && deprecatedOptionsClosed.isOpen === false
-      && deprecatedOptionsClosed.importButtonVisible === false
-      && deprecatedOptionsClosed.exportButtonVisible === false
-      && deprecatedOptionsClosed.styleButtonVisible === false
-      && deprecatedOptionsOpen.isOpen === true
-      && deprecatedOptionsOpen.importButtonVisible === true
-      && deprecatedOptionsOpen.exportButtonVisible === true
-      && deprecatedOptionsOpen.styleButtonVisible === true
+      && removedFeatureUi.deprecatedOptions === false
+      && removedFeatureUi.loadChunkButton === false
+      && removedFeatureUi.loadClozeButton === false
+      && removedFeatureUi.hotkeyNotesInput === false
+      && removedFeatureUi.hotkeyChunkNoteInput === false
+      && removedFeatureUi.importChunkNotesButton === false
+      && removedFeatureUi.exportChunkNotesButton === false
+      && removedFeatureUi.chunkNoteContextMenu === false
+      && removedFeatureUi.clozeQuizSection === false
       && normalInteraction.activeSegIdx === 1
       && normalInteraction.currentWordIndex === 2
       && normalInteraction.time >= 1.9
@@ -706,14 +495,9 @@ async function main() {
       && normalInteraction.marked === true
       && /_annotation_light\.json$/.test(exportDownload.suggestedFilename)
       && hotkeyCustomization.backwardInput === 'z'
-      && hotkeyCustomization.notesInput === 'q'
       && hotkeyCustomization.storedBackwardKey === 'z'
-      && hotkeyCustomization.storedNotesKey === 'q'
       && hotkeyCustomization.legacyBackwardKey === null
-      && hotkeyCustomization.legacyNotesKey === null
       && hotkeyCustomization.audioTimeAfterCustomBackward <= 2.05
-      && hotkeyCustomization.noteOpen === true
-      && hotkeyWaitingUi.value === '按键'
       && hotkeyWaitingUi.waiting === true
       && hotkeyWaitingUi.readOnly === true
       && hotkeyWaitingUi.role === 'button'
@@ -721,7 +505,6 @@ async function main() {
       && hotkeySingleKeyCapture.backwardInput === 'a'
       && hotkeySingleKeyCapture.storedBackwardKey === 'a'
       && hotkeySingleKeyCapture.stateBackwardKey === 'a'
-      && hotkeyCapsIgnored.value === '按键'
       && hotkeyCapsIgnored.waiting === true
       && hotkeyCapsIgnored.storedChunkCnKey === 'c'
       && hotkeyCapsIgnored.stateChunkCnKey === 'c'
@@ -738,22 +521,15 @@ async function main() {
       && controlsInteraction.highlightMode === 2
       && controlsInteraction.piniaHighlightMode === 2
       && controlsInteraction.activeSentence === 'segment-1'
-      && clozeInteraction.hasSection === true
-      && clozeInteraction.answerState
-      && clozeInteraction.answerState.checked === true
-      && clozeInteraction.answerState.correct === true
       && chunkAutoEntry.stateIsChunkMode === true
       && chunkAutoEntry.piniaIsChunkMode === true
       && chunkAutoEntry.buttonActive === true
-      && chunkAutoEntry.buttonText === 'AI切分(已就绪)'
       && chunkDefaults.stateMode === 'focus'
       && chunkDefaults.stateHold === true
       && chunkDefaults.stateVisible === false
       && chunkDefaults.piniaFocus === true
       && chunkDefaults.piniaHold === true
       && chunkDefaults.piniaVisible === false
-      && chunkDefaults.focusButtonText === '聚焦'
-      && chunkDefaults.holdButtonText === '按住'
       && chunkDefaults.rootFocusClass === true
       && chunkDefaults.activeCnHidden === true
       && chunkDefaults.highlightMode === 2
@@ -763,45 +539,15 @@ async function main() {
       && chunkHoldDown.piniaVisible === true
       && chunkHoldDown.activeCnHidden === false
       && Number(chunkHoldDown.activeCnOpacity) > 0.9
-      && Number(chunkHoldDown.inactiveCnOpacity) === 0
       && chunkHoldUp.stateVisible === false
       && chunkHoldUp.piniaVisible === false
       && chunkHoldUp.activeCnHidden === true
       && chunkFocusToggledGlobal.stateMode === 'global'
       && chunkFocusToggledGlobal.piniaFocus === false
-      && chunkFocusToggledGlobal.buttonText === '全局'
       && chunkFocusToggledGlobal.rootFocusClass === false
       && chunkFocusRestored.stateMode === 'focus'
       && chunkFocusRestored.piniaFocus === true
-      && chunkFocusRestored.buttonText === '聚焦'
       && chunkFocusRestored.rootFocusClass === true
-      && chunkNoteWordContextMenu.visible === true
-      && chunkNoteWordContextMenu.text.includes('添加备注')
-      && chunkNoteWordPopover.visible === true
-      && chunkNoteWordPopover.focused === true
-      && chunkNoteBlankContextMenu.visible === true
-      && chunkNoteBlankContextMenu.text.includes('添加备注')
-      && chunkNoteBlankPopover.visible === true
-      && chunkNoteBlankPopover.focused === true
-      && chunkNoteSavedAnnotation.bodyHidden === false
-      && chunkNoteSavedAnnotation.wordAnnotated === true
-      && chunkNoteSavedAnnotation.wordAnnotatedSingle === true
-      && chunkNoteSavedAnnotation.wordAfterDisplay === 'block'
-      && chunkNoteSavedAnnotation.wordAfterBorderStyle === 'dashed'
-      && chunkNoteSavedAnnotation.tagVisible === true
-      && chunkNoteSavedAnnotation.tagSelected === true
-      && chunkNoteSavedAnnotation.tagText.includes('visual note')
-      && chunkNoteSavedAnnotation.tagRef === chunkNoteSavedAnnotation.wordChunkRef
-      && chunkNoteSavedAnnotation.wordLegacyChunkRef
-      && chunkNoteSavedAnnotation.duplicatedLegacyRefCount > 1
-      && Math.abs(chunkNoteSavedAnnotation.tagRect.top - chunkNoteSavedAnnotation.wordRect.top) < 120
-      && chunkNoteSavedAnnotation.noteCount >= 1
-      && chunkNoteHoverConnector.count >= 1
-      && Number(chunkNoteHoverConnector.opacity) > 0.9
-      && chunkNoteHoverConnector.d.startsWith('M')
-      && chunkNoteHoverConnector.noteId
-      && chunkNoteDeletePrompt.visible === true
-      && chunkNoteDeletePrompt.selectedTag === true
       && annotationBubbleContext.visible === true
       && annotationBubbleContext.text.includes('second meaning')
       && chunkInteraction.activeChunkIdx === 1
@@ -823,8 +569,7 @@ async function main() {
     pageErrors,
     annotationImportUi,
     defaultHighlightUi,
-    deprecatedOptionsClosed,
-    deprecatedOptionsOpen,
+    removedFeatureUi,
     normalInteraction,
     exportDownload,
     hotkeyWaitingUi,
@@ -833,20 +578,12 @@ async function main() {
     hotkeyCapsIgnored,
     hotkeyImeNormalization,
     controlsInteraction,
-    clozeInteraction,
     chunkAutoEntry,
     chunkDefaults,
     chunkHoldDown,
     chunkHoldUp,
     chunkFocusToggledGlobal,
     chunkFocusRestored,
-    chunkNoteWordContextMenu,
-    chunkNoteWordPopover,
-    chunkNoteBlankContextMenu,
-    chunkNoteBlankPopover,
-    chunkNoteSavedAnnotation,
-    chunkNoteHoverConnector,
-    chunkNoteDeletePrompt,
     annotationBubbleContext,
     chunkInteraction,
     followPagingDesktop,

@@ -62,10 +62,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
   [
     'restoreReaderFocus: runtimeContext.restoreReaderFocus,',
-    'toggleCurrentNote: runtimeContext.toggleCurrentNote,',
-    'closeChunkNoteExportDialog: runtimeContext.closeChunkNoteExportDialog,',
-    'getChunkNoteExportDialogEl: runtimeContext.getChunkNoteExportDialogEl,',
-    'setChunkNoteTransferApi: runtimeContext.setChunkNoteTransferApi'
   ].forEach((pattern) => {
     assert.ok(featureDepsSource.includes(pattern), `reader-feature-runtime-deps should consume context output: ${pattern}`);
   });
@@ -74,22 +70,26 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     "import { collectReaderDomRefs } from './reader-dom-refs.js';",
     "import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';",
     'createReaderFocusRestorer',
-    'createCurrentNoteToggler',
-    'createChunkNoteTransferDialogAccess',
     'export function initReaderRuntimeContext',
     'var bootstrapRuntime = initReaderBootstrapRuntime({',
-    'var domRefs = collectReaderDomRefs(getDocument());',
-    'var chunkNoteTransferApi = null;',
-    'setChunkNoteTransferApi: function (api) {',
-    'getChunkNoteTransferApi: function () {'
+    'var domRefs = collectReaderDomRefs(getDocument());'
   ].forEach((pattern) => {
     assert.ok(contextSource.includes(pattern), `reader-runtime-context should own ${pattern}`);
+  });
+  [
+    'createCurrentNoteToggler',
+    'createChunkNoteTransferDialogAccess',
+    'chunkNoteTransferApi',
+    'setChunkNoteTransferApi',
+    'getChunkNoteTransferApi',
+    'toggleCurrentNote'
+  ].forEach((pattern) => {
+    assert.equal(contextSource.includes(pattern), false, `retired runtime context helper should stay removed: ${pattern}`);
   });
   assert.equal(contextSource.includes('window.'), false, 'reader-runtime-context should receive window through explicit deps');
   assert.equal(contextSource.includes('document.'), false, 'reader-runtime-context should receive document through explicit deps');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -112,20 +112,13 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       'function initReaderBootstrapRuntime(deps) { globalThis.__bootstrapInput = deps; return globalThis.__bootstrapResult }\n'
     )
     .replace(
-      "import {\n  createReaderFocusRestorer,\n  createCurrentNoteToggler,\n  createChunkNoteTransferDialogAccess\n} from './reader-runtime-helpers.js';\n",
-      [
-        'function createReaderFocusRestorer(deps) { globalThis.__focusDeps = deps; return function restoreFocus() { return deps.getFocusTarget(); } }',
-        'function createCurrentNoteToggler(deps) { globalThis.__noteToggleDeps = deps; return function toggleNote() { return deps.chunkState; } }',
-        'function createChunkNoteTransferDialogAccess(deps) { globalThis.__dialogDeps = deps; return { closeChunkNoteExportDialog() { var api = deps.getTransferApi(); return api && api.closeExportDialog(); }, getChunkNoteExportDialogEl() { var api = deps.getTransferApi(); return api && api.getExportDialogEl ? api.getExportDialogEl() : null; } }; }',
-        ''
-      ].join('\n')
+      "import { createReaderFocusRestorer } from './reader-runtime-helpers.js';\n",
+      'function createReaderFocusRestorer(deps) { globalThis.__focusDeps = deps; return function restoreFocus() { return deps.getFocusTarget(); } }\n'
     );
 
   globalThis.__bootstrapInput = null;
   globalThis.__domRefDoc = null;
   globalThis.__focusDeps = null;
-  globalThis.__noteToggleDeps = null;
-  globalThis.__dialogDeps = null;
   globalThis.__bootstrapResult = {
     transcriptState: { words: [] },
     chunkState: { isChunkMode: false },
@@ -150,23 +143,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(context.domRefs, globalThis.__domRefsResult);
   assert.equal(globalThis.__focusDeps.getDocument(), fakeDocument);
   assert.equal(globalThis.__focusDeps.getFocusTarget(), globalThis.__domRefsResult.mainAppArea);
-  assert.equal(globalThis.__noteToggleDeps.chunkState, globalThis.__bootstrapResult.chunkState);
-  assert.equal(globalThis.__noteToggleDeps.transcriptState, globalThis.__bootstrapResult.transcriptState);
-  assert.equal(globalThis.__noteToggleDeps.playbackState, globalThis.__bootstrapResult.playbackState);
   assert.equal(context.restoreReaderFocus(), globalThis.__domRefsResult.mainAppArea);
-  assert.equal(context.toggleCurrentNote(), globalThis.__bootstrapResult.chunkState);
-  assert.equal(context.getChunkNoteTransferApi(), null);
-  assert.equal(context.closeChunkNoteExportDialog(), null);
-  assert.equal(context.getChunkNoteExportDialogEl(), null);
-
-  const dialogEl = { id: 'export-dialog' };
-  context.setChunkNoteTransferApi({
-    closeExportDialog() { return 'closed'; },
-    getExportDialogEl() { return dialogEl; }
-  });
-  assert.equal(context.getChunkNoteTransferApi().closeExportDialog(), 'closed');
-  assert.equal(context.closeChunkNoteExportDialog(), 'closed');
-  assert.equal(context.getChunkNoteExportDialogEl(), dialogEl);
+  assert.equal(Object.prototype.hasOwnProperty.call(context, 'toggleCurrentNote'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(context, 'getChunkNoteTransferApi'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(context, 'setChunkNoteTransferApi'), false);
 
   console.log('reader runtime context check passed');
 }

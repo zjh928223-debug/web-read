@@ -28,13 +28,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 ].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
   assert.ok(
-    contextSource.includes("} from './reader-runtime-helpers.js';"),
+    contextSource.includes("import { createReaderFocusRestorer } from './reader-runtime-helpers.js';"),
     'reader-runtime-context should import reader runtime helpers'
   );
   [
-    'createReaderFocusRestorer({',
-    'createCurrentNoteToggler({',
-    'createChunkNoteTransferDialogAccess({'
+    'createReaderFocusRestorer({'
   ].forEach((pattern) => {
     assert.ok(contextSource.includes(pattern), `reader-runtime-context should configure ${pattern}`);
   });
@@ -50,13 +48,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     featureDepsSource.includes('restoreReaderFocus: runtimeContext.restoreReaderFocus,'),
     'reader-feature-runtime-deps should receive restoreReaderFocus from context'
   );
-  assert.ok(
-    featureDepsSource.includes('toggleCurrentNote: runtimeContext.toggleCurrentNote,'),
-    'reader-feature-runtime-deps should receive toggleCurrentNote from context'
-  );
 
   [
-    "} from './reader-runtime-helpers.js';",
+    "import { createReaderFocusRestorer } from './reader-runtime-helpers.js';",
     'createReaderFocusRestorer({',
     'createCurrentNoteToggler({',
     'createChunkNoteTransferDialogAccess({',
@@ -74,17 +68,23 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
 
   [
-    'export function createReaderFocusRestorer',
-    'export function createCurrentNoteToggler',
-    'export function createChunkNoteTransferDialogAccess'
+    'export function createReaderFocusRestorer'
   ].forEach((pattern) => {
     assert.ok(helperSource.includes(pattern), `reader-runtime-helpers should own ${pattern}`);
+  });
+  [
+    'export function createCurrentNoteToggler',
+    'export function createChunkNoteTransferDialogAccess',
+    'function toggleCurrentNote()',
+    'function closeChunkNoteExportDialog()',
+    'function getChunkNoteExportDialogEl()'
+  ].forEach((pattern) => {
+    assert.equal(helperSource.includes(pattern), false, `retired runtime helper should stay removed: ${pattern}`);
   });
   assert.equal(helperSource.includes('window.'), false, 'reader-runtime-helpers should not read or write window globals');
   assert.equal(helperSource.includes('document.'), false, 'reader-runtime-helpers should not read document globals directly');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -94,11 +94,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
 
   const encodedSource = Buffer.from(helperSource, 'utf8').toString('base64');
-  const {
-    createReaderFocusRestorer,
-    createCurrentNoteToggler,
-    createChunkNoteTransferDialogAccess
-  } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
+  const { createReaderFocusRestorer } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   let blurred = 0;
   let focused = 0;
@@ -122,53 +118,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(blurred, 1, 'focus restorer should blur the current active element');
   assert.equal(focused, 1, 'focus restorer should focus the injected target');
   assert.deepEqual(focusTarget.receivedOptions, { preventScroll: true });
-
-  const noteEl = { open: false };
-  const toggler = createCurrentNoteToggler({
-    chunkState: { isChunkMode: false },
-    transcriptState: { currentWordIndex: 0, words: [{ segIndex: 3 }] },
-    playbackState: { lastActiveSegIndex: 8 },
-    getDocument: () => ({
-      getElementById(id) {
-        assert.equal(id, 'note-3');
-        return noteEl;
-      }
-    })
-  });
-  toggler();
-  assert.equal(noteEl.open, true, 'current note toggler should open the selected note element');
-  toggler();
-  assert.equal(noteEl.open, false, 'current note toggler should toggle the selected note element');
-
-  const chunkModeNote = { open: false };
-  createCurrentNoteToggler({
-    chunkState: { isChunkMode: true },
-    transcriptState: { currentWordIndex: 0, words: [{ segIndex: 1 }] },
-    playbackState: { lastActiveSegIndex: -1 },
-    getDocument: () => ({ getElementById: () => chunkModeNote })
-  })();
-  assert.equal(chunkModeNote.open, false, 'current note toggler should do nothing in chunk mode');
-
-  let closed = 0;
-  const dialogEl = { id: 'export-dialog' };
-  const dialogAccess = createChunkNoteTransferDialogAccess({
-    getTransferApi: () => ({
-      closeExportDialog() {
-        closed += 1;
-        return 'closed';
-      },
-      getExportDialogEl() {
-        return dialogEl;
-      }
-    })
-  });
-  assert.equal(dialogAccess.closeChunkNoteExportDialog(), 'closed');
-  assert.equal(closed, 1);
-  assert.equal(dialogAccess.getChunkNoteExportDialogEl(), dialogEl);
-
-  const emptyDialogAccess = createChunkNoteTransferDialogAccess({ getTransferApi: () => null });
-  assert.equal(emptyDialogAccess.closeChunkNoteExportDialog(), undefined);
-  assert.equal(emptyDialogAccess.getChunkNoteExportDialogEl(), null);
 
   console.log('reader runtime helpers check passed');
 }

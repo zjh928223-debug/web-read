@@ -21,8 +21,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     marksStateApi: deps.marksStateApi,
     audioFileInput: deps.audioFileInput,
     transcriptFileInput: deps.transcriptFileInput,
-    chunkFileInput: deps.chunkFileInput,
-    clozeFileInput: deps.clozeFileInput,
     visualFileInput: deps.visualFileInput,
     getFirstFileFromEvent: deps.getFirstFileFromEvent,
     readFileAsText: deps.readFileAsText,
@@ -37,14 +35,11 @@ export function initReaderFeatureRuntime(deps = {}) {
     lblVisual: deps.lblVisual,
     validateVisualData: deps.validateVisualData,
     validateTranscriptData: deps.validateTranscriptData,
-    validateChunkData: deps.validateChunkData,
-    validateClozeData: deps.validateClozeData,
     switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,
     forceUpdateUI: forceUpdateUI,
     bridgeToPinia: deps.bridgeToPinia,
-    closeChunkNoteExportDialog: deps.closeChunkNoteExportDialog,
     loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
     chunkNotesApi: deps.chunkNotesApi,
     audioPlayer: deps.audioPlayer,
@@ -66,7 +61,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     chunkState: deps.chunkState,
     playbackState: deps.playbackState,
     highlightModeBtn: deps.highlightModeBtn,
-    chunkFileInput: deps.chunkFileInput,
     toggleChunkBtn: deps.toggleChunkBtn,
     chunkCnHoldBtn: deps.chunkCnHoldBtn,
     audioPlayer: deps.audioPlayer,
@@ -90,8 +84,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     themeCustomButtonInput: deps.themeCustomButtonInput,
     themeCustomResetBtn: deps.themeCustomResetBtn,
     refreshAllChunkNoteVisuals: deps.chunkNotesApi.refreshAllChunkNoteVisuals,
-    getLockChunkNoteDimensionsForTheme: function () { return globalObject.__lockChunkNoteDimensionsForTheme; },
-    initAnnotationApiSettingsUi: deps.initAnnotationApiSettingsUi
+    getLockChunkNoteDimensionsForTheme: function () { return globalObject.__lockChunkNoteDimensionsForTheme; }
   });
   chunkControlsApi = controlsRuntime.chunkControlsApi;
 
@@ -110,20 +103,10 @@ export function initReaderFeatureRuntime(deps = {}) {
     markedMap: deps.marksStateApi.markedMap,
     vocabMatchMap: visualVocabApi.vocabMatchMap,
     hasActiveTextSelectionWithinChunk: deps.sentenceNotesApi.hasActiveTextSelectionWithinChunk,
-    selectSentenceFromChunkTarget: deps.sentenceNotesApi.selectSentenceFromChunkTarget,
-    openChunkNoteContextFromEvent: function (event) { return deps.chunkNotesApi.handleChunkSelectionContextMenu(event); },
     getSelection: function () { return globalObject.getSelection && globalObject.getSelection(); },
     playbackModule: globalObject.__playbackModule,
     getWindow: function () { return globalObject; },
     bridgeToPinia: deps.bridgeToPinia,
-    getTranscriptContainer: function () { return deps.transcriptContainer; },
-    getClozeMarkup: function () {
-      return globalObject.__buildClozeQuizMarkup ? globalObject.__buildClozeQuizMarkup() : '';
-    },
-    checkCloze: function (index) {
-      if (globalObject.__clozeCheck) return globalObject.__clozeCheck(index);
-      return undefined;
-    },
     tryRestoreChunkNoteDraft: deps.chunkNotesApi.tryRestoreChunkNoteDraft
   });
   var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
@@ -146,28 +129,19 @@ export function initReaderFeatureRuntime(deps = {}) {
     chunkNotesApi: deps.chunkNotesApi,
     saveToDB: deps.saveToDB,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
-    toggleCurrentNote: deps.toggleCurrentNote,
     toggleAnnotationBubble: toggleAnnotationBubble,
-    setChunkNoteVisible: deps.setChunkNoteVisible,
     handleBackwardClick: handleBackwardClick,
     handleForwardClick: handleForwardClick,
-    closeChunkNoteContextMenu: deps.chunkNotesApi.closeChunkNoteContextMenu,
-    closeChunkNoteExportDialog: deps.closeChunkNoteExportDialog,
-    getChunkNoteExportDialogEl: deps.getChunkNoteExportDialogEl,
-    chunkNoteCtxAddBtn: deps.chunkNoteCtxAddBtn,
     hotkeyInput: deps.hotkeyInput,
-    hotkeyNotesInput: deps.hotkeyNotesInput,
     hotkeyAnnotationBubbleInput: deps.hotkeyAnnotationBubbleInput,
     hotkeyBackwardInput: deps.hotkeyBackwardInput,
     hotkeyForwardInput: deps.hotkeyForwardInput,
     hotkeyChunkCnInput: deps.hotkeyChunkCnInput,
     hotkeyChunkShadowInput: deps.hotkeyChunkShadowInput,
-    hotkeyChunkNoteInput: deps.hotkeyChunkNoteInput,
     highlightColorInput: deps.highlightColorInput,
     sentenceColorInput: deps.sentenceColorInput,
     themeCustomPanel: deps.themeCustomPanel,
-    themeControlsEl: deps.themeControlsEl,
-    chunkNoteCtxMenu: deps.chunkNoteCtxMenu
+    themeControlsEl: deps.themeControlsEl
   });
 
   var appRuntime = initReaderAppRuntime({
@@ -200,9 +174,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     getCurrentSegmentIndexHelper: deps.getCurrentSegmentIndexHelper,
     toggleFollowBtn: deps.toggleFollowBtn,
     mainAppArea: deps.mainAppArea,
-    importChunkNotesBtn: deps.importChunkNotesBtn,
-    importChunkNotesInput: deps.importChunkNotesInput,
-    exportChunkNotesBtn: deps.exportChunkNotesBtn,
     exportAnnotationLightweightBtn: deps.exportAnnotationLightweightBtn,
     importAnnotationLightweightBtn: deps.importAnnotationLightweightBtn,
     importAnnotationLightweightInput: deps.importAnnotationLightweightInput,
@@ -214,10 +185,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     showToast: deps.showToast,
     showError: deps.showError
   });
-
-  if (typeof deps.setChunkNoteTransferApi === 'function') {
-    deps.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);
-  }
 
   return {
     importRuntime: importRuntime,

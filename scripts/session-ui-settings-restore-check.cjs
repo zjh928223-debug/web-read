@@ -7,13 +7,16 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-ui-settings-restore.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const assemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const lifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
+  const lifecycleSource = fs.readFileSync(lifecyclePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && assemblySource.includes("from './session-ui-settings-restore.js';"),
+      && assemblySource.includes("from './session-lifecycle-runtime.js';")
+      && lifecycleSource.includes("from './session-ui-settings-restore.js';"),
     'session-init should reach UI settings restore through session-runtime-assembly'
   );
   assert.equal(sessionInitSource.includes('readStoredHotkey'), false, 'session-init should not keep UI settings restore logic');

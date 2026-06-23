@@ -42,6 +42,7 @@ async function main() {
 
   const api = sandbox.window.__annotationLightweightModule;
   assert.ok(api, 'annotation lightweight module should attach to window');
+  assert.equal(typeof api.configureManualLightweightAnnotationRuntime, 'function');
   assert.equal(typeof api.exportManualLightweightAnnotations, 'function');
   assert.equal(typeof api.importManualLightweightAnnotations, 'function');
   assert.equal(typeof api.buildImportSuccessMessage, 'function');
@@ -62,19 +63,21 @@ async function main() {
 
   let exported = false;
   let importedFile = null;
-  sandbox.window.__session_exportManualLightweightAnnotations = () => {
-    exported = true;
-    return { ok: true };
-  };
-  sandbox.window.__session_importManualLightweightAnnotations = async (file) => {
-    importedFile = file;
-    return {
-      importedCount: 2,
-      skippedCount: 0,
-      ambiguousItems: [],
-      markedTextMismatchTargetIds: [],
-    };
-  };
+  api.configureManualLightweightAnnotationRuntime({
+    exportManualLightweightAnnotations: () => {
+      exported = true;
+      return { ok: true };
+    },
+    importManualLightweightAnnotations: async (file) => {
+      importedFile = file;
+      return {
+        importedCount: 2,
+        skippedCount: 0,
+        ambiguousItems: [],
+        markedTextMismatchTargetIds: [],
+      };
+    }
+  });
 
   const exportButton = new FakeElement();
   const importButton = new FakeElement();
@@ -113,11 +116,17 @@ async function main() {
   assert.deepEqual(toastCalls, [{ message: '轻量回填完成 2 条', type: 'success' }]);
   assert.deepEqual(errorCalls, []);
 
-  sandbox.window.__session_importManualLightweightAnnotations = async () => {
-    throw new Error('bad import');
-  };
+  api.configureManualLightweightAnnotationRuntime({
+    exportManualLightweightAnnotations: () => ({ ok: true }),
+    importManualLightweightAnnotations: async () => {
+      throw new Error('bad import');
+    }
+  });
   await importInput.dispatch('change', { file, target: importInput });
   assert.deepEqual(errorCalls.at(-1), { code: 'ANNOTATION_LIGHT_IMPORT', message: 'bad import' });
+
+  assert.equal(source.includes('__session_exportManualLightweightAnnotations'), false);
+  assert.equal(source.includes('__session_importManualLightweightAnnotations'), false);
 
   console.log('annotation lightweight module check passed');
 }

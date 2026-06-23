@@ -8,7 +8,6 @@ const uiFacadesSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables'
 const renderModeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-mode.js'), 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
 const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'audio.js'), 'utf8');
-const notesModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'notes-module.js'), 'utf8');
 const keyboardModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
 const piniaBridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
@@ -50,10 +49,6 @@ appWindowAssignments.forEach((name) => {
   'loadFromDB',
   'deleteFromDB',
   'clearDBStore',
-  'openChunkNoteStyleModal',
-  'closeChunkNoteStyleModal',
-  'updateChunkNoteStyle',
-  'adjustChunkNoteArrowSizeByGap',
   'isInputLikeTarget',
   'processTranscript',
   'processChunkData',
@@ -64,10 +59,7 @@ appWindowAssignments.forEach((name) => {
   'emitAnnotationDiagnostics',
   'scheduleGeneratedAnnotationIndexRefresh',
   'syncAnnotationGenerationEntryStatus',
-  'initAnnotationApiSettingsUi',
   'notifyAnnotationBubbleWordClick',
-  'selectSentenceFromChunkTarget',
-  'openChunkNoteContextFromEvent',
   'buildCurrentSentenceDocId',
   'loadChunkNotesForCurrentAudio',
   'setChunkNoteVisible',
@@ -119,8 +111,6 @@ assert.ok(
   'annotation-bubble-resolver should own window.notifyAnnotationBubbleWordClick'
 );
 [
-  'selectSentenceFromChunkTarget',
-  'openChunkNoteContextFromEvent',
   'buildCurrentSentenceDocId',
   'loadChunkNotesForCurrentAudio',
   'setChunkNoteVisible',
@@ -131,16 +121,30 @@ assert.ok(
   assert.ok(readerPublicFacadesSource.includes(`window.${name} = ${name};`), `reader-public-facades should own window.${name}`);
 });
 [
+  'selectSentenceFromChunkTarget',
+  'openChunkNoteContextFromEvent',
+  'openChunkNoteStyleModal',
+  'closeChunkNoteStyleModal',
+  'updateChunkNoteStyle',
+  'adjustChunkNoteArrowSizeByGap'
+].forEach((name) => {
+  assert.equal(readerPublicFacadesSource.includes(`window.${name} =`), false, `retired reader window facade should stay removed: ${name}`);
+});
+[
   'getAnnotationGenerationScope',
   'clearGeneratedAnnotationIndex',
   'clearPersistedChunkSession',
   'emitAnnotationDiagnostics',
   'scheduleGeneratedAnnotationIndexRefresh',
-  'syncAnnotationGenerationEntryStatus',
-  'initAnnotationApiSettingsUi'
+  'syncAnnotationGenerationEntryStatus'
 ].forEach((name) => {
-  assert.ok(sessionFacadesSource.includes(`window.${name} = ${name};`), `session-facades should own window.${name}`);
+  assert.ok(sessionFacadesSource.includes(`windowObject.${name} = ${name};`), `session-facades should own window.${name}`);
 });
+assert.equal(
+  sessionFacadesSource.includes('window.initAnnotationApiSettingsUi ='),
+  false,
+  'session-facades should not own retired window.initAnnotationApiSettingsUi facade'
+);
 [
   'initDB',
   'saveToDB',
@@ -154,15 +158,6 @@ assert.ok(
   highlightControlsSource.includes('window.cycleHighlightMode = cycleHighlightMode;'),
   'highlight-controls-module should own window.cycleHighlightMode'
 );
-[
-  'openChunkNoteStyleModal',
-  'closeChunkNoteStyleModal',
-  'updateChunkNoteStyle',
-  'adjustChunkNoteArrowSizeByGap'
-].forEach((name) => {
-  assert.ok(notesModuleSource.includes(`window.${name} = ${name};`), `notes-module should own window.${name}`);
-});
-
 [
   'toggleChunkMode',
   'toggleChunkFocusMode',

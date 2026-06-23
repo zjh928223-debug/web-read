@@ -8,6 +8,8 @@ const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'r
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+const sessionLifecycleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js'), 'utf8');
+const sessionAnnotationSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
 const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-runtime.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
@@ -35,7 +37,8 @@ assert.equal(appSource.includes('function renderChunkMode()'), false, 'reader-ru
 assert.equal(appSource.includes('window.renderTranscript = renderTranscript'), false, 'reader-runtime.js should not export window.renderTranscript');
 assert.equal(appSource.includes('window.renderChunkMode = renderChunkMode'), false, 'reader-runtime.js should not export window.renderChunkMode');
 
-assert.ok(sessionSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"));
+assert.ok(sessionLifecycleSource.includes("import { renderTranscript } from './render-runtime.js';"));
+assert.ok(sessionAnnotationSource.includes("import { renderTranscript, renderChunkMode } from './render-runtime.js';"));
 assert.equal(sessionSource.includes('window.renderTranscript'), false, 'session runtime assembly should not call window.renderTranscript');
 assert.equal(sessionSource.includes('window.renderChunkMode'), false, 'session runtime assembly should not call window.renderChunkMode');
 
@@ -48,7 +51,9 @@ assert.ok(runtimeSource.includes('export function configureRenderRuntime'));
 assert.ok(runtimeSource.includes('export function renderTranscript'));
 assert.ok(runtimeSource.includes('export function renderChunkMode'));
 assert.ok(runtimeSource.includes('runtime.bridgeToPinia'), 'render runtime should own the bridge render call');
-assert.ok(runtimeSource.includes('bindClozeQuiz(transcriptContainer)'), 'render runtime should own cloze quiz binding');
+assert.equal(runtimeSource.includes('bindClozeQuiz'), false, 'render runtime should not keep retired cloze quiz binding');
+assert.equal(runtimeSource.includes('getClozeMarkup'), false, 'render runtime should not keep retired cloze markup hook');
+assert.equal(runtimeSource.includes('checkCloze'), false, 'render runtime should not keep retired cloze check hook');
 assert.ok(runtimeSource.includes('runtime.tryRestoreChunkNoteDraft'), 'render runtime should own chunk note draft restore hook');
 assert.equal(runtimeSource.includes('window.'), false, 'render runtime should not read or write window globals');
 assert.equal(runtimeSource.includes('document.'), false, 'render runtime should not read DOM globals');

@@ -68,11 +68,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     ['markKey', 'setMarkKey'],
-    ['notesKey', 'setNotesKey'],
     ['annotationBubbleKey', 'setAnnotationBubbleKey'],
     ['chunkCnKey', 'setChunkCnKey'],
     ['chunkShadowKey', 'setChunkShadowKey'],
-    ['chunkNoteKey', 'setChunkNoteKey'],
     ['backwardKey', 'setBackwardKey'],
     ['forwardKey', 'setForwardKey']
   ].forEach(([field, setter]) => {
@@ -97,19 +95,15 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'var getMarkKey = typeof deps.getMarkKey ===',
-    'var getNotesKey = typeof deps.getNotesKey ===',
     'var getAnnotationBubbleKey = typeof deps.getAnnotationBubbleKey ===',
     'var getChunkCnKey = typeof deps.getChunkCnKey ===',
     'var getChunkShadowKey = typeof deps.getChunkShadowKey ===',
-    'var getChunkNoteKey = typeof deps.getChunkNoteKey ===',
     'var getBackwardKey = typeof deps.getBackwardKey ===',
     'var getForwardKey = typeof deps.getForwardKey ===',
     'lowerKey === getMarkKey()',
-    'lowerKey === getNotesKey()',
     'lowerKey === getAnnotationBubbleKey()',
     'lowerKey === getChunkCnKey()',
     'lowerKey === getChunkShadowKey()',
-    'lowerKey === getChunkNoteKey()',
     'key === getBackwardKey() || lowerKey === getBackwardKey()',
     'key === getForwardKey() || lowerKey === getForwardKey()'
   ].forEach((pattern) => {
@@ -121,11 +115,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'if (savedMarkKey) { state.markKey = savedMarkKey.toLowerCase(); deps.hotkeyInput.value = state.markKey; }',
-    'if (savedNotesKey) { state.notesKey = savedNotesKey.toLowerCase(); deps.hotkeyNotesInput.value = state.notesKey; }',
     'if (savedAnnotationBubbleKey) { state.annotationBubbleKey = savedAnnotationBubbleKey.toLowerCase();',
     'if (savedChunkCnKey) { state.chunkCnKey = savedChunkCnKey.toLowerCase(); deps.hotkeyChunkCnInput.value = state.chunkCnKey; }',
     'if (savedChunkShadowKey) { state.chunkShadowKey = savedChunkShadowKey.toLowerCase(); deps.hotkeyChunkShadowInput.value = state.chunkShadowKey; }',
-    'if (savedChunkNoteKey) { state.chunkNoteKey = savedChunkNoteKey.toLowerCase();',
     'if (savedBackwardKey) { state.backwardKey = savedBackwardKey; deps.hotkeyBackwardInput.value = state.backwardKey; }',
     'if (savedForwardKey) { state.forwardKey = savedForwardKey; deps.hotkeyForwardInput.value = state.forwardKey; }'
   ].forEach((pattern) => {
@@ -139,46 +131,60 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     moduleSource.includes('export function initHotkeyState'),
     'hotkey state module should export initHotkeyState'
   );
+  [
+    'notesKey',
+    'setNotesKey',
+    'chunkNoteKey',
+    'setChunkNoteKey',
+    'getNotesKey',
+    'getChunkNoteKey',
+    'savedNotesKey',
+    'savedChunkNoteKey'
+  ].forEach((pattern) => {
+    assert.equal(
+      [
+        moduleSource,
+        bindingsSource,
+        keyboardRuntimeSource,
+        keyboardSource,
+        sessionInitSource
+      ].join('\n').includes(pattern),
+      false,
+      `retired notes hotkey contract should stay removed: ${pattern}`
+    );
+  });
 
   const encodedSource = Buffer.from(moduleSource, 'utf8').toString('base64');
   const { initHotkeyState } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
   const api = initHotkeyState();
 
   assert.equal(api.markKey, 'm');
-  assert.equal(api.notesKey, 'n');
   assert.equal(api.annotationBubbleKey, 'b');
   assert.equal(api.chunkCnKey, 'c');
   assert.equal(api.chunkShadowKey, 's');
-  assert.equal(api.chunkNoteKey, 'x');
   assert.equal(api.backwardKey, 'ArrowLeft');
   assert.equal(api.forwardKey, 'ArrowRight');
 
   assert.equal(api.setMarkKey('q'), 'q');
-  assert.equal(api.setNotesKey('w'), 'w');
   assert.equal(api.setAnnotationBubbleKey('e'), 'e');
   assert.equal(api.setChunkCnKey('r'), 'r');
   assert.equal(api.setChunkShadowKey('t'), 't');
-  assert.equal(api.setChunkNoteKey('y'), 'y');
   assert.equal(api.setBackwardKey('a'), 'a');
   assert.equal(api.setForwardKey('d'), 'd');
   assert.deepEqual(
     {
       markKey: api.markKey,
-      notesKey: api.notesKey,
       annotationBubbleKey: api.annotationBubbleKey,
       chunkCnKey: api.chunkCnKey,
       chunkShadowKey: api.chunkShadowKey,
-      chunkNoteKey: api.chunkNoteKey,
       backwardKey: api.backwardKey,
       forwardKey: api.forwardKey
     },
     {
       markKey: 'q',
-      notesKey: 'w',
       annotationBubbleKey: 'e',
       chunkCnKey: 'r',
       chunkShadowKey: 't',
-      chunkNoteKey: 'y',
       backwardKey: 'a',
       forwardKey: 'd'
     }

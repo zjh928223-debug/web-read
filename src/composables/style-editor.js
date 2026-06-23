@@ -189,8 +189,6 @@
     if (backdrop) {
       backdrop.onclick = function () {
         closeChunkStyleModal();
-        var noteModal = document.getElementById('chunk-note-style-modal');
-        if (noteModal) noteModal.style.display = 'none';
         if (typeof closeChunkNotePopover === 'function') closeChunkNotePopover();
       };
     }

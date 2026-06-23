@@ -3,8 +3,6 @@ import { initReaderSessionRuntime } from './reader-session-runtime.js';
 
 export function initReaderNotesSessionRuntime(deps = {}) {
   var notesRuntime = initReaderNotesRuntime({
-    notesModule: deps.notesModule,
-    chunkNoteLayout: deps.chunkNoteLayout,
     transcriptState: deps.transcriptState,
     chunkState: deps.chunkState,
     clozeState: deps.clozeState,
@@ -12,16 +10,7 @@ export function initReaderNotesSessionRuntime(deps = {}) {
     saveToDB: deps.saveToDB,
     audioIdentityApi: deps.audioIdentityApi,
     isPlainObjectRecord: deps.isPlainObjectRecord,
-    mainAppArea: deps.mainAppArea,
-    chunkNoteSvgLayer: deps.chunkNoteSvgLayer,
-    chunkNoteLayer: deps.chunkNoteLayer,
-    chunkNoteCtxMenu: deps.chunkNoteCtxMenu,
-    notePreviewSidebar: deps.notePreviewSidebar,
-    notePreviewEmpty: deps.notePreviewEmpty,
-    notePreviewList: deps.notePreviewList,
-    toggleNotePreviewBtn: deps.toggleNotePreviewBtn,
-    notePreviewResizeHandle: deps.notePreviewResizeHandle,
-    notePreviewResizeHandleY: deps.notePreviewResizeHandleY
+    mainAppArea: deps.mainAppArea
   });
 
   var sessionRuntime = initReaderSessionRuntime({

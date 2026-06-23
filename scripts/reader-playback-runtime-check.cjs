@@ -99,7 +99,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(playbackRuntimeSource.includes('mainUpdateHighlight'), false, 'reader-playback-runtime should not keep unused mainUpdateHighlight alias');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -160,8 +159,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     markedMap: new Map([[1, true]]),
     vocabMatchMap: new Map([[2, true]]),
     hasActiveTextSelectionWithinChunk: () => false,
-    selectSentenceFromChunkTarget: () => 'select',
-    openChunkNoteContextFromEvent: () => 'open-note',
     getSelection: () => 'selection',
     playbackModule: {
       init(deps) {
@@ -191,7 +188,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(globalThis.__transcriptDeps.isChunkMode(), false);
   assert.equal(globalThis.__transcriptDeps.legacyTranscriptContainer.id, 'transcript');
   assert.equal(globalThis.__chunkDeps.getSelection(), 'selection');
-  assert.equal(globalThis.__chunkDeps.openChunkNoteContextFromEvent(), 'open-note');
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__chunkDeps, 'openChunkNoteContextFromEvent'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__chunkDeps, 'selectSentenceFromChunkTarget'), false);
 
   assert.equal(result.playbackRuntimeHelpersApi.jumpNextSentence(), 'next');
   assert.equal(result.forceUpdateUI, win.forceUpdateUI);

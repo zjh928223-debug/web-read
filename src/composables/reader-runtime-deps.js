@@ -2,8 +2,6 @@ export function collectReaderRuntimeDeps(deps = {}) {
   var win = typeof deps.getWindow === 'function' ? deps.getWindow() : deps.window
   var transcriptState = deps.transcriptState || {}
   var dataUtils = win.DataUtils
-  var clozeUtils = win.ClozeUtils
-  var clozeViewModelHelpers = win.ClozeViewModelHelpers
   var playbackIndexHelpers = win.PlaybackIndexHelpers
   var chunkMatchingHelpers = win.ChunkMatchingHelpers
   var vocabMatchingHelpers = win.VocabMatchingHelpers
@@ -18,7 +16,6 @@ export function collectReaderRuntimeDeps(deps = {}) {
     validateTranscriptData(json) {
       return dataUtils.validateTranscriptData(json, transcriptState.segments)
     },
-    validateClozeData: clozeUtils.validateClozeData,
     findChunkIndexByTimeHelper: playbackIndexHelpers.findChunkIndexByTime,
     bsFindActiveHelper: playbackIndexHelpers.bsFindActive,
     getCurrentSegmentIndexHelper: playbackIndexHelpers.getCurrentSegmentIndex,

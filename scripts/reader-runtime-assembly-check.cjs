@@ -54,7 +54,6 @@ async function main() {
   assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -101,8 +100,8 @@ async function main() {
       'function showToast() { return "toast"; }\nfunction showError() { return "error"; }\n'
     )
     .replace(
-      "import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';\n",
-      'function syncAnnotationGenerationEntryStatus() { return "sync"; }\nfunction initAnnotationApiSettingsUi() { return "settings"; }\n'
+      "import { syncAnnotationGenerationEntryStatus } from './session-facades.js';\n",
+      'function syncAnnotationGenerationEntryStatus() { return "sync"; }\n'
     );
 
   globalThis.__assemblyCalls = [];
@@ -135,6 +134,11 @@ async function main() {
   assert.equal(globalThis.__assemblyCalls[3][1].runtimeState.id, 'runtime-state');
   assert.equal(globalThis.__assemblyCalls[3][1].renderTranscript(), 'transcript');
   assert.equal(globalThis.__assemblyCalls[3][1].renderChunkMode(), 'chunk');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(globalThis.__assemblyCalls[3][1], 'initAnnotationApiSettingsUi'),
+    false,
+    'reader-runtime-assembly should not pass retired annotation API settings facade'
+  );
   assert.equal(globalThis.__assemblyCalls[4][1].featureDeps, true);
   assert.equal(api.runtimeContext, globalThis.__runtimeContext);
   assert.equal(api.bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);

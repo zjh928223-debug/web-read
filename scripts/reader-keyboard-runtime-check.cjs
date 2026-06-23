@@ -60,13 +60,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'export function initReaderKeyboardRuntime',
     'deps.keyboardModule.init({',
     'isChunkMode: function () { return deps.chunkState.isChunkMode }',
-    'chunkNoteVisible: function () { return deps.notesState.chunkNoteVisible }',
     'getMarkKey: function () { return deps.hotkeyStateApi.markKey }',
     'setMarkKey: deps.hotkeyStateApi.setMarkKey',
     'beginHoldChunkCn: deps.chunkControlsApi.beginHoldChunkCn',
     'deps.marksStore.toggleMark(',
-    'closeCustomThemePanel: function () { deps.themeStore.closeCustomThemePanel() }',
-    'getChunkNoteExportDialogEl: deps.getChunkNoteExportDialogEl'
+    'closeCustomThemePanel: function () { deps.themeStore.closeCustomThemePanel() }'
   ].forEach((pattern) => {
     assert.ok(
       moduleSource.includes(pattern),
@@ -76,6 +74,19 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   assert.equal(moduleSource.includes('window.'), false, 'reader-keyboard-runtime should not read window globals');
   assert.equal(moduleSource.includes('document.'), false, 'reader-keyboard-runtime should not read document globals');
+  [
+    'chunkNoteVisible',
+    'hotkeyNotesInput',
+    'hotkeyChunkNoteInput',
+    'chunkNoteCtxAddBtn',
+    'chunkNoteCtxMenu',
+    'getChunkNoteExportDialogEl',
+    'closeChunkNoteExportDialog',
+    'toggleCurrentNote',
+    'setChunkNoteVisible'
+  ].forEach((pattern) => {
+    assert.equal(moduleSource.includes(pattern), false, `retired keyboard note wiring should stay removed: ${pattern}`);
+  });
 
   [
     'deps.processTranscript(transcriptData);',
@@ -125,24 +136,17 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       isChunkMode: true,
       chunkCnHoldMode: false
     },
-    notesState: {
-      chunkNoteVisible: true
-    },
     hotkeyStateApi: {
       markKey: 'm',
-      notesKey: 'n',
       annotationBubbleKey: 'b',
       chunkCnKey: 'c',
       chunkShadowKey: 's',
-      chunkNoteKey: 'x',
       backwardKey: 'ArrowLeft',
       forwardKey: 'ArrowRight',
       setMarkKey(value) { this.markKey = value; },
-      setNotesKey(value) { this.notesKey = value; },
       setAnnotationBubbleKey(value) { this.annotationBubbleKey = value; },
       setChunkCnKey(value) { this.chunkCnKey = value; },
       setChunkShadowKey(value) { this.chunkShadowKey = value; },
-      setChunkNoteKey(value) { this.chunkNoteKey = value; },
       setBackwardKey(value) { this.backwardKey = value; },
       setForwardKey(value) { this.forwardKey = value; }
     },
@@ -155,44 +159,22 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       toggleChunkCn() {},
       toggleChunkShadow() {}
     },
-    chunkNotesApi: {
-      cancelChunkNoteModal() {},
-      closeChunkNoteDeleteDialog() {},
-      setSelectedChunkNote() {},
-      openChunkNoteDeleteDialog() {},
-      getChunkNoteDeleteDialogEl() { return { id: 'delete-dialog' }; },
-      getSelectedChunkNoteId() { return 'note-1'; },
-      handleChunkSelectionContextMenu() {},
-      getPendingChunkSelectionCtx() { return { id: 'pending' }; },
-      consumePendingChunkSelectionCtx() { return { id: 'consumed' }; },
-      openChunkNotePopover() {},
-      getChunkNoteModalEl() { return { id: 'modal' }; },
-      saveChunkNoteFromModal() {}
-    },
+    chunkNotesApi: {},
     saveToDB() { calls.saveDb += 1; },
     syncAnnotationGenerationEntryStatus() { calls.sync += 1; },
-    toggleCurrentNote() {},
     toggleAnnotationBubble() {},
-    setChunkNoteVisible() {},
     handleBackwardClick() {},
     handleForwardClick() {},
-    closeChunkNoteContextMenu() {},
-    closeChunkNoteExportDialog() {},
-    getChunkNoteExportDialogEl() { return { id: 'export-dialog' }; },
-    chunkNoteCtxAddBtn: { id: 'add' },
     hotkeyInput: { id: 'hotkey' },
-    hotkeyNotesInput: { id: 'notes' },
     hotkeyAnnotationBubbleInput: { id: 'bubble' },
     hotkeyBackwardInput: { id: 'back' },
     hotkeyForwardInput: { id: 'forward' },
     hotkeyChunkCnInput: { id: 'cn' },
     hotkeyChunkShadowInput: { id: 'shadow' },
-    hotkeyChunkNoteInput: { id: 'note' },
     highlightColorInput: { id: 'highlight' },
     sentenceColorInput: { id: 'sentence' },
     themeCustomPanel: { id: 'theme-panel' },
-    themeControlsEl: { id: 'theme-controls' },
-    chunkNoteCtxMenu: { id: 'ctx-menu' }
+    themeControlsEl: { id: 'theme-controls' }
   };
 
   initReaderKeyboardRuntime(deps);
@@ -201,15 +183,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(keyboardConfig.audioPlayer, deps.audioPlayer);
   assert.equal(keyboardConfig.isChunkMode(), true);
   assert.equal(keyboardConfig.chunkCnHoldMode(), false);
-  assert.equal(keyboardConfig.chunkNoteVisible(), true);
   assert.equal(keyboardConfig.getMarkKey(), 'm');
   deps.hotkeyStateApi.setMarkKey('z');
   assert.equal(keyboardConfig.getMarkKey(), 'z');
   assert.equal(keyboardConfig.beginHoldChunkCn, deps.chunkControlsApi.beginHoldChunkCn);
-  assert.deepEqual(keyboardConfig.getChunkNoteExportDialogEl(), deps.getChunkNoteExportDialogEl());
-  assert.deepEqual(keyboardConfig.pendingChunkSelectionCtx(), { id: 'pending' });
-  assert.deepEqual(keyboardConfig.consumePendingChunkSelectionCtx(), { id: 'consumed' });
-  assert.equal(keyboardConfig.getChunkNoteModalEl().id, 'modal');
 
   keyboardConfig.toggleMarkCurrent();
   assert.equal(calls.mark.marked, markedMap);

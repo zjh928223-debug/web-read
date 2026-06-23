@@ -19,15 +19,17 @@ assert.equal(
   false,
   'btn-load-cloze should not use an inline onclick handler'
 );
-assert.match(indexSource, /id="btn-load-chunk"[^>]*type="button"/);
-assert.match(indexSource, /id="btn-load-cloze"[^>]*type="button"/);
+assert.equal(indexSource.includes('id="btn-load-chunk"'), false, 'manual chunk import button should stay removed');
+assert.equal(indexSource.includes('id="btn-load-cloze"'), false, 'cloze import button should stay removed');
+assert.equal(indexSource.includes('id="chunk-file"'), false, 'manual chunk import input should stay removed');
+assert.equal(indexSource.includes('id="cloze-file"'), false, 'cloze import input should stay removed');
 
 assert.ok(mainSource.includes("import './composables/file-input-bindings.js'"));
-assert.ok(bindingsSource.includes("'btn-load-chunk'"));
-assert.ok(bindingsSource.includes("'chunk-file'"));
-assert.ok(bindingsSource.includes("'btn-load-cloze'"));
-assert.ok(bindingsSource.includes("'cloze-file'"));
-assert.ok(bindingsSource.includes("addEventListener('click'"));
+assert.ok(bindingsSource.includes('export function bindReaderFileInputLaunchers'));
+assert.equal(bindingsSource.includes("'btn-load-chunk'"), false);
+assert.equal(bindingsSource.includes("'chunk-file'"), false);
+assert.equal(bindingsSource.includes("'btn-load-cloze'"), false);
+assert.equal(bindingsSource.includes("'cloze-file'"), false);
 assert.equal(bindingsSource.includes('window.'), false, 'file input bindings should not add window compatibility globals');
 
 assert.equal(
@@ -40,6 +42,15 @@ assert.equal(
   false,
   'app.js should not inject btn-load-cloze wiring into import handlers'
 );
-assert.ok(importSource.includes("document.getElementById('btn-load-cloze')"));
+assert.equal(
+  importSource.includes("document.getElementById('btn-load-cloze')"),
+  false,
+  'import module should not own removed cloze import lookup'
+);
+assert.equal(
+  importSource.includes("document.getElementById('btn-load-chunk')"),
+  false,
+  'import module should not own removed manual chunk import lookup'
+);
 
 console.log('file input bindings check passed');

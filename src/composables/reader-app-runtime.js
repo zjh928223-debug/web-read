@@ -1,30 +1,7 @@
 import { initGlassEffects } from './glass-effects.js'
-import { initChunkNoteTransfer } from './chunk-note-transfer-module.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 
 export function initReaderAppRuntime(deps = {}) {
-  var chunkNoteTransferApi = initChunkNoteTransfer({
-    importButton: deps.importChunkNotesBtn,
-    importInput: deps.importChunkNotesInput,
-    exportButton: deps.exportChunkNotesBtn,
-    getFirstFileFromEvent: deps.getFirstFileFromEvent,
-    readFileAsText: deps.readFileAsText,
-    applyImportedChunkNotes: function (data) { return deps.chunkNotesApi.applyImportedChunkNotes(data) },
-    saveChunkNotesNow: deps.chunkNotesApi.saveChunkNotesNow,
-    getHasAiChunkData: function () { return deps.chunkState.hasAiChunkData },
-    getIsChunkMode: function () { return deps.chunkState.isChunkMode },
-    enterChunkMode: function () { return deps.chunkControlsApi.toggleChunkMode(true) },
-    setChunkNoteVisible: deps.setChunkNoteVisible,
-    renderChunkMode: deps.renderChunkMode,
-    buildChunkNotesSnapshot: deps.chunkNotesApi.buildChunkNotesSnapshot,
-    getCurrentAudioFilenameBase: deps.audioIdentityApi.getCurrentAudioFilenameBase,
-    getChunkNotesFileState: function () { return deps.chunkNotesApi.getChunkNotesFileState() },
-    setChunkNotesFileState: function (fileState) { return deps.chunkNotesApi.setChunkNotesFileState(fileState) },
-    getCurrentAudioKey: function () { return deps.audioIdentityApi.currentAudioKey },
-    showToast: deps.showToast,
-    showError: deps.showError
-  })
-
   deps.annotationLightweightModule.initManualLightweightAnnotationControls({
     exportButton: deps.exportAnnotationLightweightBtn,
     importButton: deps.importAnnotationLightweightBtn,
@@ -84,15 +61,13 @@ export function initReaderAppRuntime(deps = {}) {
   })
 
   configureReaderPublicFacades({
-    selectSentenceFromChunkTarget: deps.sentenceNotesApi.selectSentenceFromChunkTarget,
     buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId,
     loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
     setChunkNoteVisible: deps.setChunkNoteVisible,
     loadSentenceNotesForCurrentAudio: deps.loadSentenceNotesForCurrentAudio,
     switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
-    applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
-    openChunkNoteContextFromEvent: function (event) { return deps.chunkNotesApi.handleChunkSelectionContextMenu(event) }
+    applyCurrentAudioMeta: deps.applyCurrentAudioMeta
   })
 
-  return { chunkNoteTransferApi }
+  return {}
 }

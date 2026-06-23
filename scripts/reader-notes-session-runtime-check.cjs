@@ -71,14 +71,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'export function createReaderNotesSessionRuntimeDeps',
-    'notesModule: globalObject.__notesModule',
-    'chunkNoteLayout: globalObject.__chunkNoteLayout',
     'transcriptState: bootstrapRuntime.transcriptState',
     'chunkState: bootstrapRuntime.chunkState',
     'clozeState: bootstrapRuntime.clozeState',
     'audioIdentityApi: bootstrapRuntime.audioIdentityApi',
     'isPlainObjectRecord: bootstrapRuntime.runtimeDeps.isPlainObjectRecord',
-    'notePreviewResizeHandleY: domRefs.notePreviewResizeHandleY'
+    'mainAppArea: domRefs.mainAppArea'
   ].forEach((pattern) => {
     assert.ok(depsSource.includes(pattern), `reader-notes-session-runtime-deps should own ${pattern}`);
   });
@@ -104,7 +102,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(moduleSource.includes('document.'), false, 'reader-notes-session-runtime should not read document globals');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -134,8 +131,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const { initReaderNotesSessionRuntime } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   const deps = {
-    notesModule: { id: 'notes' },
-    chunkNoteLayout: { id: 'layout' },
     transcriptState: { id: 'transcript' },
     chunkState: { id: 'chunk' },
     clozeState: { id: 'cloze' },
@@ -143,24 +138,16 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     saveToDB: () => 'save-db',
     audioIdentityApi: { currentAudioKey: 'audio-key' },
     isPlainObjectRecord: () => true,
-    mainAppArea: { id: 'main' },
-    chunkNoteSvgLayer: { id: 'svg' },
-    chunkNoteLayer: { id: 'layer' },
-    chunkNoteCtxMenu: { id: 'menu' },
-    notePreviewSidebar: { id: 'sidebar' },
-    notePreviewEmpty: { id: 'empty' },
-    notePreviewList: { id: 'list' },
-    toggleNotePreviewBtn: { id: 'toggle' },
-    notePreviewResizeHandle: { id: 'resize-x' },
-    notePreviewResizeHandleY: { id: 'resize-y' }
+    mainAppArea: { id: 'main' }
   };
   const api = initReaderNotesSessionRuntime(deps);
 
-  assert.equal(globalThis.__notesRuntimeDeps.notesModule, deps.notesModule);
-  assert.equal(globalThis.__notesRuntimeDeps.chunkNoteLayout, deps.chunkNoteLayout);
   assert.equal(globalThis.__notesRuntimeDeps.transcriptState, deps.transcriptState);
   assert.equal(globalThis.__notesRuntimeDeps.audioIdentityApi, deps.audioIdentityApi);
-  assert.equal(globalThis.__notesRuntimeDeps.notePreviewResizeHandleY, deps.notePreviewResizeHandleY);
+  assert.equal(globalThis.__notesRuntimeDeps.mainAppArea, deps.mainAppArea);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__notesRuntimeDeps, 'notePreviewResizeHandleY'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__notesRuntimeDeps, 'notesModule'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__notesRuntimeDeps, 'chunkNoteLayout'), false);
   assert.deepEqual(globalThis.__sessionRuntimeDeps.chunkNotesApi, { chunk: true });
   assert.deepEqual(globalThis.__sessionRuntimeDeps.sentenceNotesApi, { sentence: true });
   assert.equal(globalThis.__sessionRuntimeDeps.audioIdentityApi, deps.audioIdentityApi);
