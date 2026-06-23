@@ -292,7 +292,9 @@ body {
 
 .youtube-workflow-form,
 .youtube-workflow-queue,
-.youtube-workflow-recent {
+.youtube-workflow-recent,
+.youtube-workflow-history,
+.youtube-history-panel {
   display: grid;
   gap: 10px;
 }
@@ -520,6 +522,50 @@ body {
 
 .youtube-workflow-recent-job {
   background: rgba(248, 250, 252, 0.82);
+}
+
+.youtube-workflow-history {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.youtube-history-filters {
+  display: grid;
+  grid-template-columns: 1fr minmax(110px, 140px) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.youtube-history-filters input,
+.youtube-history-filters select {
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.youtube-workflow-history-job {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.youtube-workflow-job-actions .danger {
+  border-color: rgba(185, 28, 28, 0.28);
+  color: #991b1b;
+}
+
+.youtube-quality-card {
+  max-width: min(620px, calc(100vw - 48px));
+}
+
+.youtube-quality-card ul {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 18px;
 }
 
 .youtube-workflow-job-main {
@@ -760,7 +806,8 @@ body {
 
   .youtube-workflow-row,
   .youtube-workflow-job,
-  .youtube-link-card {
+  .youtube-link-card,
+  .youtube-history-filters {
     display: grid;
     grid-template-columns: 1fr;
   }

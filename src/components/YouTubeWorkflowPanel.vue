@@ -81,6 +81,33 @@
               <span>Base URL（可选，使用代理网关时填写）</span>
               <input v-model.trim="baseUrl" type="text" placeholder="留空使用官方默认地址">
             </label>
+            <label>
+              <span>代理</span>
+              <input v-model.trim="proxyUrl" type="text" placeholder="例如 http://127.0.0.1:7897，留空关闭">
+            </label>
+            <label>
+              <span>cookies 文件</span>
+              <input v-model.trim="cookiesPath" type="text" placeholder="YouTube cookies 文件路径">
+            </label>
+            <label>
+              <span>输出目录</span>
+              <input v-model.trim="outputDir" type="text" placeholder="生成文件输出目录">
+            </label>
+            <label>
+              <span>yt-dlp 路径</span>
+              <input v-model.trim="ytDlpPath" type="text" placeholder="yt-dlp.exe">
+            </label>
+            <label>
+              <span>WhisperX 路径</span>
+              <input v-model.trim="whisperxPath" type="text" placeholder="whisperx.exe">
+            </label>
+            <div class="youtube-primary-actions">
+              <button type="button" class="small-btn" @click="saveBackendConfig">保存后台配置</button>
+              <button type="button" class="small-btn" @click="refreshMaintenance">维护状态</button>
+              <button type="button" class="small-btn" @click="checkCleanup">检查旧文件</button>
+            </div>
+            <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
+            <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
             <p>普通 Gemini 官方 API 留空即可。</p>
           </div>
 
@@ -140,7 +167,7 @@
                 {{ openJobActionText(job) }}
               </button>
               <button v-if="job.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(job)">优先处理</button>
-              <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="redoJob(job)">优先重做</button>
+              <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="retryJob(job, 'translating')">优先重试</button>
               <button v-if="!terminalStatuses.has(job.status)" type="button" class="small-btn" @click="cancelJob(job)">取消</button>
             </div>
           </article>
@@ -187,6 +214,57 @@
               </button>
             </div>
           </article>
+        </section>
+
+        <section class="youtube-workflow-history">
+          <div class="youtube-workflow-summary">
+            <strong>历史库</strong>
+            <span>{{ historySummary }}</span>
+            <button type="button" class="small-btn" @click="toggleHistory">{{ historyOpen ? '收起' : '打开' }}</button>
+          </div>
+
+          <div v-if="historyOpen" class="youtube-history-panel">
+            <div class="youtube-history-filters">
+              <input
+                v-model.trim="historyQuery"
+                type="search"
+                placeholder="搜索标题 / URL / 日期"
+                @keydown.enter.prevent="refreshHistory"
+              >
+              <select v-model="historyStatus" @change="refreshHistory">
+                <option value="">全部状态</option>
+                <option value="ready">成功</option>
+                <option value="failed">失败</option>
+                <option value="canceled">取消</option>
+              </select>
+              <button type="button" class="small-btn" @click="refreshHistory">搜索</button>
+            </div>
+
+            <div v-if="!historyJobs.length" class="youtube-workflow-empty">暂无历史记录</div>
+
+            <article
+              v-for="job in historyJobs"
+              :key="job.jobId"
+              class="youtube-workflow-job youtube-workflow-history-job"
+              :data-status="job.status"
+            >
+              <div class="youtube-workflow-job-main">
+                <div class="youtube-job-status-line">
+                  <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
+                  <span class="youtube-job-position">{{ historyMetaText(job) }}</span>
+                </div>
+                <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                <small>{{ shortUrl(job.url || (job.request && job.request.url)) }}</small>
+              </div>
+              <div class="youtube-workflow-job-actions">
+                <button v-if="job.status === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(job)">重新打开</button>
+                <button v-if="job.status === 'ready'" type="button" class="small-btn" @click="showQuality(job)">质量报告</button>
+                <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="retryJob(job, 'translating')">优先重试</button>
+                <button type="button" class="small-btn" @click="deleteHistoryJob(job, false)">删记录</button>
+                <button type="button" class="small-btn danger" @click="deleteHistoryJob(job, true)">删文件</button>
+              </div>
+            </article>
+          </div>
         </section>
 
         <div v-if="cancelRecordsOpen" class="youtube-subwindow">
@@ -277,6 +355,27 @@
         </div>
       </section>
     </div>
+
+    <div v-if="qualityModal" class="youtube-subwindow">
+      <section class="youtube-subwindow-card youtube-quality-card">
+        <header>
+          <strong>质量报告</strong>
+          <button type="button" class="youtube-workflow-icon-btn" @click="qualityModal = null">x</button>
+        </header>
+        <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
+        <p>{{ qualityIssueSummary(qualityModal.report) }}</p>
+        <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
+          <li v-for="issue in qualityModal.report.issues.slice(0, 8)" :key="issue.code + issue.message">
+            {{ issue.code }}：{{ issue.message }}
+          </li>
+        </ul>
+        <div class="youtube-workflow-actions">
+          <button type="button" @click="retryJob(qualityModal.job, 'segmenting')">重新AI切分</button>
+          <button type="button" class="small-btn" @click="retryJob(qualityModal.job, 'translating')">重新翻译</button>
+          <button type="button" class="small-btn" @click="qualityModal = null">关闭</button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
@@ -301,16 +400,28 @@ const linkNotice = ref('')
 const apiKey = ref('')
 const model = ref(loadTextSetting('youtubeWorkflow.model', 'gemini-2.5-flash'))
 const baseUrl = ref(loadTextSetting('youtubeWorkflow.baseUrl', ''))
+const proxyUrl = ref('')
+const cookiesPath = ref('')
+const outputDir = ref('')
+const ytDlpPath = ref('')
+const whisperxPath = ref('')
+const backendConfigNotice = ref('')
+const maintenanceInfo = ref(null)
 const showAdvanced = ref(false)
 const starting = ref(false)
 const queueJobs = ref([])
 const recentJobs = ref([])
+const historyJobs = ref([])
+const historyOpen = ref(false)
+const historyQuery = ref('')
+const historyStatus = ref('')
 const showFloatingAfterClose = ref(false)
 const cancelRecordsOpen = ref(false)
 const cancelRecordsNotice = ref('')
 const switchModal = ref(null)
 const incompletePrompt = ref(null)
 const folderChoice = ref(null)
+const qualityModal = ref(null)
 const currentJobId = ref('')
 const panelPosition = ref(getDefaultPanelPosition())
 const capsulePosition = ref(clampPosition(loadPosition('youtubeWorkflowCapsulePosition', { x: 24, y: 540 }), DEFAULT_CAPSULE_SIZE.width, DEFAULT_CAPSULE_SIZE.height))
@@ -356,6 +467,11 @@ const recentSummary = computed(() => {
   const total = visibleRecentJobs.value.length
   const ready = visibleRecentJobs.value.filter((job) => job.status === 'ready').length
   return `${total} 项 · ${ready} 可打开`
+})
+const historySummary = computed(() => {
+  if (!historyOpen.value) return '搜索 / 删除 / 重新打开'
+  const ready = historyJobs.value.filter((job) => job.status === 'ready').length
+  return `${historyJobs.value.length} 项 · ${ready} 成功`
 })
 const materialFloatingVisible = computed(() => {
   return showFloatingAfterClose.value
@@ -565,6 +681,7 @@ function openPanel(options = {}) {
   panelOpen.value = true
   panelShrunk.value = false
   checkHealth()
+  loadBackendConfig()
   refreshQueue()
 }
 
@@ -597,6 +714,71 @@ async function refreshRecent() {
     const items = await youtubeWorkflowClient.recent(10)
     recentJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
   } catch (_err) {}
+}
+
+async function toggleHistory() {
+  historyOpen.value = !historyOpen.value
+  if (historyOpen.value) await refreshHistory()
+}
+
+async function refreshHistory() {
+  try {
+    const items = await youtubeWorkflowClient.history({
+      query: historyQuery.value,
+      status: historyStatus.value,
+      limit: 50
+    })
+    historyJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
+  } catch (err) {
+    window.alert(err && err.message ? err.message : String(err))
+  }
+}
+
+async function loadBackendConfig() {
+  try {
+    const config = await youtubeWorkflowClient.getConfig()
+    if (config.model) model.value = config.model
+    if (config.baseUrl) baseUrl.value = config.baseUrl
+    proxyUrl.value = config.proxyUrl || ''
+    cookiesPath.value = config.cookiesPath || ''
+    outputDir.value = config.outputDir || ''
+    ytDlpPath.value = config.ytDlpPath || ''
+    whisperxPath.value = config.whisperxPath || ''
+  } catch (_err) {}
+}
+
+async function saveBackendConfig() {
+  try {
+    const saved = await youtubeWorkflowClient.saveConfig({
+      model: model.value,
+      baseUrl: baseUrl.value,
+      proxyUrl: proxyUrl.value,
+      cookiesPath: cookiesPath.value,
+      outputDir: outputDir.value,
+      ytDlpPath: ytDlpPath.value,
+      whisperxPath: whisperxPath.value
+    })
+    backendConfigNotice.value = `已保存后台配置：${saved.outputDir || outputDir.value || '默认输出目录'}`
+  } catch (err) {
+    backendConfigNotice.value = err && err.message ? err.message : String(err)
+  }
+}
+
+async function refreshMaintenance() {
+  try {
+    maintenanceInfo.value = await youtubeWorkflowClient.maintenance()
+  } catch (err) {
+    backendConfigNotice.value = err && err.message ? err.message : String(err)
+  }
+}
+
+async function checkCleanup() {
+  try {
+    const result = await youtubeWorkflowClient.cleanupMaintenance({ olderThanDays: 30 })
+    backendConfigNotice.value = `可清理 ${result.candidates ? result.candidates.length : 0} 个旧目录，约 ${formatBytes(result.bytes || 0)}`
+  } catch (err) {
+    backendConfigNotice.value = err && err.message ? err.message : String(err)
+  }
 }
 
 async function refreshJob(jobId) {
@@ -847,9 +1029,12 @@ async function prioritizeJob(job) {
   updateJob(updated)
 }
 
-async function redoJob(job) {
-  const redone = await youtubeWorkflowClient.redoJob(job.jobId)
-  queueJobs.value.push(redone)
+async function retryJob(job, stage = 'translating') {
+  const payload = { stage, model: model.value, baseUrl: baseUrl.value }
+  if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
+  const retried = await youtubeWorkflowClient.retryJob(job.jobId, payload)
+  queueJobs.value.push(retried)
+  qualityModal.value = null
   startPolling()
 }
 
@@ -974,6 +1159,65 @@ async function loadLocalFiles(audioFile, transcriptData, chunkData) {
     window.processChunkData(chunkData)
     resetChunkChineseDisplay()
   }
+}
+
+function historyMetaText(job) {
+  const parts = []
+  const stamp = formatShortDate(job && (job.finishedAt || job.updatedAt || job.createdAt))
+  const duration = Number(job && job.durationSeconds)
+  const bytes = totalFileBytes(job && job.fileSizes)
+  if (stamp) parts.push(stamp)
+  if (Number.isFinite(duration) && duration > 0) parts.push(`${duration.toFixed(1)}s`)
+  if (bytes > 0) parts.push(formatBytes(bytes))
+  return parts.join(' · ') || '无详情'
+}
+
+function totalFileBytes(fileSizes) {
+  if (!fileSizes || typeof fileSizes !== 'object') return 0
+  return Object.values(fileSizes).reduce((total, value) => {
+    const size = Number(value)
+    return total + (Number.isFinite(size) ? size : 0)
+  }, 0)
+}
+
+function formatBytes(value) {
+  const size = Number(value)
+  if (!Number.isFinite(size) || size <= 0) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  if (size < 1024 * 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`
+  return `${(size / 1024 / 1024 / 1024).toFixed(1)} GB`
+}
+
+function maintenanceText(info) {
+  if (!info) return ''
+  return `任务 ${info.jobs || 0} · 历史 ${info.history || 0} · 输出 ${formatBytes(info.outputBytes || 0)} · 状态 ${formatBytes(info.stateBytes || 0)}`
+}
+
+async function deleteHistoryJob(job, deleteFiles) {
+  const message = deleteFiles
+    ? `确定删除历史记录并删除生成文件吗？\n${jobDisplayTitle(job)}`
+    : `确定只删除历史记录吗？\n${jobDisplayTitle(job)}`
+  if (!window.confirm(message)) return
+  await youtubeWorkflowClient.deleteHistory(job.jobId, { deleteFiles })
+  historyJobs.value = historyJobs.value.filter((item) => item.jobId !== job.jobId)
+  await refreshRecent()
+}
+
+async function showQuality(job) {
+  try {
+    const report = await youtubeWorkflowClient.quality(job.jobId)
+    qualityModal.value = { job, report }
+  } catch (err) {
+    window.alert(err && err.message ? err.message : String(err))
+  }
+}
+
+function qualityIssueSummary(report) {
+  if (!report) return '暂无报告'
+  const total = Array.isArray(report.issues) ? report.issues.length : 0
+  if (!total) return `通过 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
+  return `发现 ${total} 个问题 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
 }
 
 function statusText(job) {

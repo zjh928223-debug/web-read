@@ -32,6 +32,26 @@ export function createYoutubeWorkflowClient(options = {}) {
     async diagnostics() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/diagnostics')))
     },
+    async getConfig() {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/config')))
+    },
+    async saveConfig(payload) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/config'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
+    async maintenance() {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/maintenance')))
+    },
+    async cleanupMaintenance(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/maintenance/cleanup'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async createJob(payload) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs'), {
         method: 'POST',
@@ -57,6 +77,13 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'POST'
       }))
     },
+    async retryJob(jobId, payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/retry`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async clearCanceledJobs() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-canceled'), {
         method: 'POST'
@@ -72,6 +99,27 @@ export function createYoutubeWorkflowClient(options = {}) {
     },
     async recent(limit = 10) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/recent?limit=${encodeURIComponent(limit)}`)))
+    },
+    async history(options = {}) {
+      const params = new URLSearchParams()
+      if (options.query) params.set('query', options.query)
+      if (options.status) params.set('status', options.status)
+      params.set('limit', options.limit || 50)
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/history?${params.toString()}`)))
+    },
+    async getHistory(jobId) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/history/${encodeURIComponent(jobId)}`)))
+    },
+    async deleteHistory(jobId, options = {}) {
+      const params = new URLSearchParams()
+      if (options.deleteFiles) params.set('deleteFiles', 'true')
+      const suffix = params.toString() ? `?${params.toString()}` : ''
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/history/${encodeURIComponent(jobId)}${suffix}`), {
+        method: 'DELETE'
+      }))
+    },
+    async quality(jobId) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/quality`)))
     },
     eventsUrl(jobId) {
       return apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`)
