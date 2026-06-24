@@ -144,15 +144,16 @@
             <span>只扫描所填目录和直接子目录</span>
           </div>
           <label class="youtube-import-path">
-            <span>旧素材目录路径</span>
+            <span>已选目录</span>
             <input
-              v-model.trim="legacyImportPath"
+              :value="legacyImportPath || '尚未选择目录'"
               type="text"
-              placeholder="例如 D:\\EnglishMaterials\\old"
+              readonly
             >
           </label>
           <div class="youtube-primary-actions">
-            <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">扫描目录</button>
+            <button type="button" class="small-btn primary" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
+            <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
             <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
             <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
           </div>
@@ -749,10 +750,29 @@ async function enqueueUrls() {
   }
 }
 
-async function scanLegacyImport() {
-  const rootPath = legacyImportPath.value.trim()
-  if (!rootPath) return
+async function chooseLegacyImportFolder() {
   legacyImportBusy.value = true
+  legacyImportNotice.value = '正在打开系统文件夹选择框...'
+  try {
+    const result = await youtubeWorkflowClient.pickImportFolder({ initialDir: legacyImportPath.value })
+    if (!result || !result.selected || !result.path) {
+      legacyImportNotice.value = '已取消选择目录'
+      return
+    }
+    legacyImportPath.value = result.path
+    legacyImportPreview.value = null
+    await scanLegacyImport(result.path, { keepBusy: true })
+  } catch (err) {
+    legacyImportNotice.value = err && err.message ? err.message : String(err)
+  } finally {
+    legacyImportBusy.value = false
+  }
+}
+
+async function scanLegacyImport(rootOverride = '', options = {}) {
+  const rootPath = String(rootOverride || legacyImportPath.value || '').trim()
+  if (!rootPath) return
+  if (!options.keepBusy) legacyImportBusy.value = true
   legacyImportNotice.value = '正在扫描旧素材目录...'
   try {
     const preview = await youtubeWorkflowClient.scanImportRoot({ rootPath })
@@ -763,7 +783,7 @@ async function scanLegacyImport() {
     legacyImportPreview.value = null
     legacyImportNotice.value = err && err.message ? err.message : String(err)
   } finally {
-    legacyImportBusy.value = false
+    if (!options.keepBusy) legacyImportBusy.value = false
   }
 }
 

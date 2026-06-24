@@ -66,7 +66,10 @@ async function main() {
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');
   assert.ok(panelSource.includes('历史库'), 'history library entry should be visible in the workflow panel');
   assert.ok(panelSource.includes('导入旧素材目录'), 'panel should expose explicit legacy material import');
-  assert.ok(panelSource.includes('legacyImportPath') && panelSource.includes('scanLegacyImport'), 'legacy import should scan a user-provided directory path');
+  assert.ok(panelSource.includes('legacyImportPath') && panelSource.includes('scanLegacyImport'), 'legacy import should scan a selected directory path');
+  assert.ok(panelSource.includes('chooseLegacyImportFolder') && panelSource.includes('pickImportFolder'), 'legacy import should use the local service to open a system folder picker');
+  assert.ok(panelSource.includes('readonly'), 'legacy import path should be displayed as read-only instead of requiring manual typing');
+  assert.ok(panelSource.includes('选择并扫描目录'), 'legacy import should combine system folder selection with scanning');
   assert.ok(panelSource.includes('enqueueLegacyImport') && panelSource.includes('createImportJobs'), 'legacy import preview should enqueue selected items through the service');
   assert.ok(panelSource.includes('scanImportRoot'), 'legacy import should call the scan endpoint before queueing');
   assert.ok(panelSource.includes('legacyImportSelectedCount'), 'legacy import should count selected preview items before queueing');

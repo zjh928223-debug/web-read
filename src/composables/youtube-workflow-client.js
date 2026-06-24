@@ -109,6 +109,13 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'POST'
       }))
     },
+    async pickImportFolder(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/import/pick-folder'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async scanImportRoot(payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/import/scan'), {
         method: 'POST',

@@ -455,6 +455,11 @@ body {
   background: rgba(255, 255, 255, 0.96);
 }
 
+.youtube-import-path input[readonly] {
+  color: var(--secondary-text, #64748b);
+  cursor: default;
+}
+
 .youtube-import-list {
   display: grid;
   gap: 6px;
