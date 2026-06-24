@@ -132,7 +132,8 @@ async function main() {
     const reopened = await panel.boundingBox();
     assert.ok(Math.abs(reopened.x - 300) <= 8, `closed panel should reopen centered, got x=${reopened.x}`);
 
-    await page.locator('.youtube-workflow-check input').check();
+    const floatToggle = page.getByRole('checkbox', { name: '显示任务浮标' });
+    await floatToggle.check();
     let capsule = page.locator('.youtube-material-float');
     await capsule.waitFor({ state: 'visible' });
     assert.match(await capsule.innerText(), /暂无任务/, 'checked empty queue should show an empty-state floating indicator immediately');
@@ -152,7 +153,7 @@ async function main() {
 
     await capsule.click();
     await panel.waitFor({ state: 'visible' });
-    await page.locator('.youtube-workflow-check input').uncheck();
+    await floatToggle.uncheck();
     await page.locator('.youtube-window-actions button').nth(1).click();
     await panel.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('.youtube-material-float').count(), 0, 'unchecked empty queue should not show floating indicator');
@@ -167,7 +168,7 @@ async function main() {
     await offscreenPage.locator('.youtube-reader-controls .small-btn').first().click();
     const offscreenPanel = offscreenPage.locator('.youtube-workflow-panel');
     await offscreenPanel.waitFor({ state: 'visible' });
-    await offscreenPage.locator('.youtube-workflow-check input').check();
+    await offscreenPage.getByRole('checkbox', { name: '显示任务浮标' }).check();
     await offscreenPage.locator('.youtube-window-actions button').first().click();
     await offscreenPanel.waitFor({ state: 'hidden' });
     const clampedCapsule = offscreenPage.locator('.youtube-material-float');
@@ -196,7 +197,7 @@ async function main() {
 
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
-    await page.locator('.youtube-workflow-check input').check();
+    await floatToggle.check();
     await page.mouse.click(12, 12);
     await panel.waitFor({ state: 'hidden' });
     capsule = page.locator('.youtube-material-float');
@@ -204,14 +205,14 @@ async function main() {
 
     await capsule.click();
     await panel.waitFor({ state: 'visible' });
-    await page.locator('.youtube-workflow-check input').uncheck();
+    await floatToggle.uncheck();
     await page.locator('.youtube-window-actions button').first().click();
     await panel.waitFor({ state: 'hidden' });
     assert.equal(await page.locator('.youtube-material-float').count(), 0, 'unchecked shrink should not show floating indicator');
 
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
-    await page.locator('.youtube-workflow-check input').check();
+    await floatToggle.check();
     await page.locator('.youtube-window-actions button').first().click();
     await panel.waitFor({ state: 'hidden' });
     capsule = page.locator('.youtube-material-float');
