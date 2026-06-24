@@ -97,6 +97,7 @@
     "verify:youtube-workflow-loader": "node scripts/youtube-workflow-loader-check.cjs",
     "verify:youtube-workflow-panel": "node scripts/youtube-workflow-panel-check.cjs",
     "verify:youtube-workflow-panel-behavior": "node scripts/youtube-workflow-panel-behavior-check.cjs",
+    "verify:youtube-workflow-secret": "node scripts/youtube-workflow-secret-check.cjs",
     "verify:youtube-workflow-startup": "node scripts/youtube-workflow-startup-check.cjs",
     "verify:production-preview": "node scripts/production-preview-load-check.cjs",
     "verify:read26": "npm run verify:vite",

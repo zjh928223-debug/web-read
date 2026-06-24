@@ -27,6 +27,10 @@ async function main() {
 
   await client.health();
   await client.diagnostics();
+  await client.diagnosticsPackage();
+  await client.credentialStatus();
+  await client.saveCredential({ apiKey: 'SECRET-CLIENT-TEST' });
+  await client.deleteCredential();
   await client.getConfig();
   await client.saveConfig({ model: 'gemini-test' });
   await client.maintenance();
@@ -54,6 +58,10 @@ async function main() {
   assert.deepEqual(calls.map((call) => call.url), [
     'http://127.0.0.1:8765/api/health',
     'http://127.0.0.1:8765/api/diagnostics',
+    'http://127.0.0.1:8765/api/diagnostics/package',
+    'http://127.0.0.1:8765/api/credentials/gemini/status',
+    'http://127.0.0.1:8765/api/credentials/gemini',
+    'http://127.0.0.1:8765/api/credentials/gemini',
     'http://127.0.0.1:8765/api/config',
     'http://127.0.0.1:8765/api/config',
     'http://127.0.0.1:8765/api/maintenance',
@@ -73,16 +81,18 @@ async function main() {
     'http://127.0.0.1:8765/api/history/job-1?deleteFiles=true',
     'http://127.0.0.1:8765/api/jobs/job-1/quality',
   ]);
-  assert.equal(calls[3].options.method, 'POST');
-  assert.equal(calls[5].options.method, 'POST');
-  assert.equal(calls[6].options.method, 'POST');
-  assert.equal(JSON.parse(calls[6].options.body).geminiMode, 'mock');
-  assert.equal(calls[8].options.method, 'POST');
+  assert.equal(calls[4].options.method, 'POST');
+  assert.equal(calls[5].options.method, 'DELETE');
+  assert.equal(calls[7].options.method, 'POST');
   assert.equal(calls[9].options.method, 'POST');
   assert.equal(calls[10].options.method, 'POST');
-  assert.equal(calls[11].options.method, 'POST');
+  assert.equal(JSON.parse(calls[10].options.body).geminiMode, 'mock');
   assert.equal(calls[12].options.method, 'POST');
-  assert.equal(calls[18].options.method, 'DELETE');
+  assert.equal(calls[13].options.method, 'POST');
+  assert.equal(calls[14].options.method, 'POST');
+  assert.equal(calls[15].options.method, 'POST');
+  assert.equal(calls[16].options.method, 'POST');
+  assert.equal(calls[22].options.method, 'DELETE');
 
   console.log('youtube workflow client check passed');
 }

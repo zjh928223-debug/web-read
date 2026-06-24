@@ -32,6 +32,26 @@ export function createYoutubeWorkflowClient(options = {}) {
     async diagnostics() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/diagnostics')))
     },
+    async diagnosticsPackage() {
+      const response = await fetchImpl(apiUrl('/api/diagnostics/package'))
+      if (!response.ok) throw new Error(`Unable to fetch diagnostics package: ${response.status}`)
+      return response.blob()
+    },
+    async credentialStatus() {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/credentials/gemini/status')))
+    },
+    async saveCredential(payload) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/credentials/gemini'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
+    async deleteCredential() {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/credentials/gemini'), {
+        method: 'DELETE'
+      }))
+    },
     async getConfig() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/config')))
     },

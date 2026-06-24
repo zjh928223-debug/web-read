@@ -479,6 +479,15 @@ body {
   align-items: center;
 }
 
+.youtube-credential-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: #475569;
+  font-size: 13px;
+}
+
 .youtube-workflow-actions,
 .youtube-workflow-job-actions {
   flex-wrap: wrap;

@@ -64,13 +64,19 @@
 
           <label v-if="geminiMode === 'real'">
             <span>Gemini API key</span>
-            <input v-model="apiKey" type="password" autocomplete="off" placeholder="仅提交到本地服务内存，不保存">
+            <input v-model="apiKey" type="password" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
           </label>
 
           <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
             <input v-model="rememberApiKey" type="checkbox">
-            <span>记住 API key（仅本机浏览器）</span>
+            <span>保存 API key 到系统凭据</span>
           </label>
+          <div v-if="geminiMode === 'real'" class="youtube-credential-actions">
+            <span>{{ credentialStatusText }}</span>
+            <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
+            <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
+          </div>
+          <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
 
           <label>
             <span>模型</span>
@@ -110,6 +116,8 @@
               <button type="button" class="small-btn" @click="saveBackendConfig">保存后台配置</button>
               <button type="button" class="small-btn" @click="refreshMaintenance">维护状态</button>
               <button type="button" class="small-btn" @click="checkCleanup">检查旧文件</button>
+              <button type="button" class="small-btn" @click="confirmCleanup">清理旧文件</button>
+              <button type="button" class="small-btn" @click="downloadDiagnosticsPackage">导出诊断包</button>
             </div>
             <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
             <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
@@ -125,7 +133,7 @@
             <button type="submit" :disabled="starting || !canEnqueue">
               <span>{{ primaryActionText }}</span>
             </button>
-            <span v-if="geminiMode === 'real' && !apiKey.trim()" class="youtube-workflow-hint">需要填写 Gemini API key</span>
+            <span v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-workflow-hint">需要填写 Gemini API key 或保存系统凭据</span>
             <span v-else-if="!validLinkCards.length" class="youtube-workflow-hint">暂无可处理素材</span>
           </div>
         </form>
@@ -403,7 +411,9 @@ const linkInput = ref('')
 const linkCards = ref([])
 const linkNotice = ref('')
 const rememberApiKey = ref(loadBoolSetting('youtubeWorkflow.rememberApiKey', false))
-const apiKey = ref(rememberApiKey.value ? loadTextSetting('youtubeWorkflow.apiKey', '') : '')
+const apiKey = ref('')
+const credentialStatus = ref({ stored: false, provider: '' })
+const credentialNotice = ref('')
 const model = ref(loadTextSetting('youtubeWorkflow.model', 'gemini-2.5-flash'))
 const baseUrl = ref(loadTextSetting('youtubeWorkflow.baseUrl', ''))
 const proxyUrl = ref('')
@@ -448,7 +458,9 @@ const geminiMode = computed(() => {
 })
 const validLinkCards = computed(() => linkCards.value.filter((card) => card.valid))
 const invalidLinkCards = computed(() => linkCards.value.filter((card) => !card.valid))
-const canEnqueue = computed(() => validLinkCards.value.length > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim()))
+const canEnqueue = computed(() => {
+  return validLinkCards.value.length > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
+})
 const primaryActionText = computed(() => {
   if (starting.value) return '提交中...'
   if (validLinkCards.value.length) return `开始后台处理 ${validLinkCards.value.length} 条素材`
@@ -478,6 +490,10 @@ const historySummary = computed(() => {
   if (!historyOpen.value) return '搜索 / 删除 / 重新打开'
   const ready = historyJobs.value.filter((job) => job.status === 'ready').length
   return `${historyJobs.value.length} 项 · ${ready} 成功`
+})
+const credentialStatusText = computed(() => {
+  if (!credentialStatus.value || !credentialStatus.value.stored) return '未保存系统凭据'
+  return `已保存系统凭据：${credentialStatus.value.provider || 'system'}`
 })
 const materialFloatingVisible = computed(() => {
   return showFloatingAfterClose.value
@@ -516,13 +532,8 @@ const capsuleEdge = computed(() => getCapsuleEdge(capsulePosition.value, getCaps
 
 watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
 watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
-watch(apiKey, (value) => {
-  if (rememberApiKey.value) saveTextSetting('youtubeWorkflow.apiKey', value)
-})
 watch(rememberApiKey, (value) => {
   saveBoolSetting('youtubeWorkflow.rememberApiKey', value)
-  if (value) saveTextSetting('youtubeWorkflow.apiKey', apiKey.value)
-  else window.localStorage.removeItem('youtubeWorkflow.apiKey')
 })
 watch(materialFloatingVisible, async (visible) => {
   if (!visible) return
@@ -531,6 +542,7 @@ watch(materialFloatingVisible, async (visible) => {
 })
 
 onMounted(() => {
+  window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
   checkHealth()
   bindPlaybackTracking()
 })
@@ -663,9 +675,12 @@ async function enqueueUrls() {
   commitLinkInput()
   const cards = validLinkCards.value
   if (!cards.length) return
-  if (geminiMode.value === 'real' && !apiKey.value.trim()) return
+  if (geminiMode.value === 'real' && !apiKey.value.trim() && !credentialStatus.value.stored) return
   starting.value = true
   try {
+    if (geminiMode.value === 'real' && rememberApiKey.value && apiKey.value.trim()) {
+      await saveCredential({ silent: true })
+    }
     for (const card of cards) {
       const payload = {
         url: card.url,
@@ -675,7 +690,7 @@ async function enqueueUrls() {
         autoOpenWhenReady: false,
         replacePolicy: 'ask'
       }
-      if (geminiMode.value === 'real') payload.apiKey = apiKey.value
+      if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
       const job = await youtubeWorkflowClient.createJob(payload)
       queueJobs.value.push(job)
     }
@@ -696,6 +711,7 @@ function openPanel(options = {}) {
   panelShrunk.value = false
   checkHealth()
   loadBackendConfig()
+  loadCredentialStatus()
   refreshQueue()
 }
 
@@ -709,7 +725,7 @@ function closePanel() {
   panelOpen.value = false
   panelShrunk.value = false
   panelPosition.value = getDefaultPanelPosition()
-  if (!rememberApiKey.value) apiKey.value = ''
+  apiKey.value = ''
   cancelRecordsOpen.value = false
 }
 
@@ -761,6 +777,35 @@ async function loadBackendConfig() {
   } catch (_err) {}
 }
 
+async function loadCredentialStatus() {
+  if (geminiMode.value !== 'real') return
+  try {
+    credentialStatus.value = await youtubeWorkflowClient.credentialStatus()
+  } catch (_err) {
+    credentialStatus.value = { stored: false, provider: '' }
+  }
+}
+
+async function saveCredential(options = {}) {
+  if (!apiKey.value.trim()) return
+  try {
+    credentialStatus.value = await youtubeWorkflowClient.saveCredential({ apiKey: apiKey.value })
+    credentialNotice.value = options.silent ? '' : 'API key 已保存到系统凭据'
+  } catch (err) {
+    credentialNotice.value = err && err.message ? err.message : String(err)
+    if (options.silent) throw err
+  }
+}
+
+async function deleteCredential() {
+  try {
+    credentialStatus.value = await youtubeWorkflowClient.deleteCredential()
+    credentialNotice.value = '已清除系统凭据'
+  } catch (err) {
+    credentialNotice.value = err && err.message ? err.message : String(err)
+  }
+}
+
 async function saveBackendConfig() {
   try {
     const saved = await youtubeWorkflowClient.saveConfig({
@@ -790,6 +835,40 @@ async function checkCleanup() {
   try {
     const result = await youtubeWorkflowClient.cleanupMaintenance({ olderThanDays: 30 })
     backendConfigNotice.value = `可清理 ${result.candidates ? result.candidates.length : 0} 个旧目录，约 ${formatBytes(result.bytes || 0)}`
+  } catch (err) {
+    backendConfigNotice.value = err && err.message ? err.message : String(err)
+  }
+}
+
+async function confirmCleanup() {
+  try {
+    const preview = await youtubeWorkflowClient.cleanupMaintenance({ olderThanDays: 30 })
+    const count = preview.candidates ? preview.candidates.length : 0
+    if (!count) {
+      backendConfigNotice.value = '没有可清理的旧文件'
+      return
+    }
+    if (!window.confirm(`确认清理 ${count} 个旧目录，约 ${formatBytes(preview.bytes || 0)}？`)) return
+    const result = await youtubeWorkflowClient.cleanupMaintenance({ olderThanDays: 30, confirm: true })
+    backendConfigNotice.value = `已清理 ${result.candidates ? result.candidates.length : 0} 个旧目录`
+    await refreshMaintenance()
+  } catch (err) {
+    backendConfigNotice.value = err && err.message ? err.message : String(err)
+  }
+}
+
+async function downloadDiagnosticsPackage() {
+  try {
+    const blob = await youtubeWorkflowClient.diagnosticsPackage()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `subtitle-workflow-diagnostics-${Date.now()}.zip`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    backendConfigNotice.value = '诊断包已导出'
   } catch (err) {
     backendConfigNotice.value = err && err.message ? err.message : String(err)
   }

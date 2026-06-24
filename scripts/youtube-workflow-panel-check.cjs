@@ -70,8 +70,11 @@ async function main() {
   assert.ok(panelSource.includes("retryJob(job, 'translating')"), 'failed jobs should use stage retry instead of full redo from the UI');
   assert.ok(panelSource.includes('saveBackendConfig') && panelSource.includes('loadBackendConfig'), 'advanced settings should manage backend config without API keys');
   assert.ok(panelSource.includes('refreshMaintenance') && panelSource.includes('checkCleanup'), 'advanced settings should expose lightweight maintenance checks');
-  assert.ok(panelSource.includes('rememberApiKey') && panelSource.includes('youtubeWorkflow.apiKey'), 'API key persistence should be explicit and browser-local');
-  assert.ok(panelSource.includes("if (!rememberApiKey.value) apiKey.value = ''"), 'closing the panel should clear API key unless the user opted in');
+  assert.ok(panelSource.includes('credentialStatus') && panelSource.includes('saveCredential') && panelSource.includes('deleteCredential'), 'API key persistence should use backend system credentials');
+  assert.equal(panelSource.includes('youtubeWorkflow.apiKey'), false, 'API key must not be persisted in browser localStorage');
+  assert.ok(panelSource.includes("apiKey.value = ''"), 'closing the panel should clear typed API key material');
+  assert.ok(panelSource.includes('downloadDiagnosticsPackage'), 'advanced maintenance should allow exporting a sanitized diagnostics package');
+  assert.ok(panelSource.includes('diagnosticsPackage'), 'panel should call the diagnostics package client endpoint');
   assert.ok(panelSource.includes('高级设置'), 'Base URL should be hidden in advanced settings');
   assert.ok(panelSource.includes('loadTextSetting') && panelSource.includes('saveTextSetting'), 'model and Base URL should persist outside IndexedDB');
   assert.ok(panelSource.includes('上一篇') && panelSource.includes('下一篇'), 'reader controls should include previous/next queue navigation');
