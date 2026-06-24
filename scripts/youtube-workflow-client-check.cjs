@@ -47,6 +47,8 @@ async function main() {
   await client.redoJob('job-3');
   await client.retryJob('job-4', { stage: 'translating' });
   await client.clearCanceledJobs();
+  await client.scanImportRoot({ rootPath: 'D:/legacy-materials' });
+  await client.createImportJobs({ items: [{ audioPath: 'D:/legacy-materials/a.mp3', selected: true }], geminiMode: 'mock' });
   await client.getSession('job-1');
   await client.getFile('job-1', 'audio');
   await client.recent(5);
@@ -73,6 +75,8 @@ async function main() {
     'http://127.0.0.1:8765/api/jobs/job-3/redo',
     'http://127.0.0.1:8765/api/jobs/job-4/retry',
     'http://127.0.0.1:8765/api/jobs/clear-canceled',
+    'http://127.0.0.1:8765/api/import/scan',
+    'http://127.0.0.1:8765/api/import/jobs',
     'http://127.0.0.1:8765/api/jobs/job-1/session',
     'http://127.0.0.1:8765/api/jobs/job-1/file/audio',
     'http://127.0.0.1:8765/api/recent?limit=5',
@@ -92,7 +96,10 @@ async function main() {
   assert.equal(calls[14].options.method, 'POST');
   assert.equal(calls[15].options.method, 'POST');
   assert.equal(calls[16].options.method, 'POST');
-  assert.equal(calls[22].options.method, 'DELETE');
+  assert.equal(calls[17].options.method, 'POST');
+  assert.equal(calls[18].options.method, 'POST');
+  assert.equal(JSON.parse(calls[18].options.body).geminiMode, 'mock');
+  assert.equal(calls[24].options.method, 'DELETE');
 
   console.log('youtube workflow client check passed');
 }

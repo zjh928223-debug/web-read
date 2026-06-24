@@ -65,6 +65,11 @@ async function main() {
   assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');
   assert.ok(panelSource.includes('历史库'), 'history library entry should be visible in the workflow panel');
+  assert.ok(panelSource.includes('导入旧素材目录'), 'panel should expose explicit legacy material import');
+  assert.ok(panelSource.includes('legacyImportPath') && panelSource.includes('scanLegacyImport'), 'legacy import should scan a user-provided directory path');
+  assert.ok(panelSource.includes('enqueueLegacyImport') && panelSource.includes('createImportJobs'), 'legacy import preview should enqueue selected items through the service');
+  assert.ok(panelSource.includes('scanImportRoot'), 'legacy import should call the scan endpoint before queueing');
+  assert.ok(panelSource.includes('legacyImportSelectedCount'), 'legacy import should count selected preview items before queueing');
   assert.ok(panelSource.includes('deleteHistoryJob'), 'history entries should support deleting records or generated files');
   assert.ok(panelSource.includes('showQuality') && panelSource.includes('qualityIssueSummary'), 'ready jobs should expose a quality report');
   assert.ok(panelSource.includes("retryJob(job, 'translating')"), 'failed jobs should use stage retry instead of full redo from the UI');
@@ -101,6 +106,7 @@ async function main() {
   assert.ok(stylesSource.includes('.youtube-workflow-recent'), 'styles should include a focused recent task section');
   assert.ok(stylesSource.includes('.youtube-workflow-recent-job'), 'recent task rows should have their own subdued styling');
   assert.ok(stylesSource.includes('.youtube-workflow-history') && stylesSource.includes('.youtube-history-filters'), 'styles should include the collapsible history library');
+  assert.ok(stylesSource.includes('.youtube-import-panel') && stylesSource.includes('.youtube-import-item'), 'styles should include a focused legacy import preview panel');
   assert.ok(stylesSource.includes('.youtube-quality-card'), 'styles should include the quality report subwindow');
   assert.ok(stylesSource.includes('.youtube-material-link-label') && stylesSource.includes('.youtube-material-link-input'), 'styles should visually prioritize the material link input');
   assert.ok(stylesSource.includes('.youtube-link-state-text') && stylesSource.includes('.youtube-link-card .small-btn'), 'styles should keep parsed link cards compact and state-first');

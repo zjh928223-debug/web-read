@@ -109,6 +109,20 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'POST'
       }))
     },
+    async scanImportRoot(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/import/scan'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
+    async createImportJobs(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/import/jobs'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async getSession(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/session`)))
     },

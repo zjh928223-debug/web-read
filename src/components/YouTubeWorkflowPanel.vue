@@ -138,6 +138,37 @@
           </div>
         </form>
 
+        <section class="youtube-import-panel">
+          <div class="youtube-workflow-summary">
+            <strong>导入旧素材目录</strong>
+            <span>只扫描所填目录和直接子目录</span>
+          </div>
+          <label class="youtube-import-path">
+            <span>旧素材目录路径</span>
+            <input
+              v-model.trim="legacyImportPath"
+              type="text"
+              placeholder="例如 D:\\EnglishMaterials\\old"
+            >
+          </label>
+          <div class="youtube-primary-actions">
+            <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">扫描目录</button>
+            <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
+            <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
+          </div>
+          <div v-if="legacyImportItems.length" class="youtube-import-list">
+            <article v-for="item in legacyImportItems" :key="item.id || item.audioPath" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
+              <label class="youtube-workflow-check">
+                <input v-model="item.selected" type="checkbox">
+                <span>{{ importActionText(item) }}</span>
+              </label>
+              <strong>{{ item.title || item.audioName }}</strong>
+              <small>{{ importConfidenceText(item) }}</small>
+              <small>{{ shortPath(item.audioPath) }}</small>
+            </article>
+          </div>
+        </section>
+
         <section class="youtube-workflow-queue">
           <div class="youtube-workflow-summary">
             <strong>素材队列</strong>
@@ -410,6 +441,10 @@ const serviceOnline = ref(false)
 const linkInput = ref('')
 const linkCards = ref([])
 const linkNotice = ref('')
+const legacyImportPath = ref(loadTextSetting('youtubeWorkflow.legacyImportPath', ''))
+const legacyImportPreview = ref(null)
+const legacyImportNotice = ref('')
+const legacyImportBusy = ref(false)
 const rememberApiKey = ref(loadBoolSetting('youtubeWorkflow.rememberApiKey', false))
 const apiKey = ref('')
 const credentialStatus = ref({ stored: false, provider: '' })
@@ -458,6 +493,14 @@ const geminiMode = computed(() => {
 })
 const validLinkCards = computed(() => linkCards.value.filter((card) => card.valid))
 const invalidLinkCards = computed(() => linkCards.value.filter((card) => !card.valid))
+const legacyImportItems = computed(() => {
+  const items = legacyImportPreview.value && legacyImportPreview.value.items
+  return Array.isArray(items) ? items : []
+})
+const legacyImportSelectedCount = computed(() => legacyImportItems.value.filter((item) => item && item.selected).length)
+const canEnqueueLegacyImport = computed(() => {
+  return legacyImportSelectedCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
+})
 const canEnqueue = computed(() => {
   return validLinkCards.value.length > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
@@ -532,6 +575,7 @@ const capsuleEdge = computed(() => getCapsuleEdge(capsulePosition.value, getCaps
 
 watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
 watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
+watch(legacyImportPath, (value) => saveTextSetting('youtubeWorkflow.legacyImportPath', value))
 watch(rememberApiKey, (value) => {
   saveBoolSetting('youtubeWorkflow.rememberApiKey', value)
 })
@@ -702,6 +746,60 @@ async function enqueueUrls() {
     window.alert(err && err.message ? err.message : String(err))
   } finally {
     starting.value = false
+  }
+}
+
+async function scanLegacyImport() {
+  const rootPath = legacyImportPath.value.trim()
+  if (!rootPath) return
+  legacyImportBusy.value = true
+  legacyImportNotice.value = '正在扫描旧素材目录...'
+  try {
+    const preview = await youtubeWorkflowClient.scanImportRoot({ rootPath })
+    legacyImportPreview.value = preview
+    const summary = preview && preview.summary ? preview.summary : {}
+    legacyImportNotice.value = `发现 ${summary.total || 0} 项，默认选中 ${summary.selected || 0} 项`
+  } catch (err) {
+    legacyImportPreview.value = null
+    legacyImportNotice.value = err && err.message ? err.message : String(err)
+  } finally {
+    legacyImportBusy.value = false
+  }
+}
+
+async function enqueueLegacyImport() {
+  const items = legacyImportItems.value.filter((item) => item && item.selected)
+  if (!items.length) {
+    legacyImportNotice.value = '没有选中的旧素材'
+    return
+  }
+  if (geminiMode.value === 'real' && !apiKey.value.trim() && !credentialStatus.value.stored) {
+    legacyImportNotice.value = '需要填写 Gemini API key 或使用已保存的系统凭据'
+    return
+  }
+  legacyImportBusy.value = true
+  try {
+    if (geminiMode.value === 'real' && rememberApiKey.value && apiKey.value.trim()) {
+      await saveCredential({ silent: true })
+    }
+    const payload = {
+      items,
+      geminiMode: geminiMode.value,
+      model: model.value,
+      baseUrl: baseUrl.value,
+      autoOpenWhenReady: false,
+      replacePolicy: 'ask'
+    }
+    if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
+    const result = await youtubeWorkflowClient.createImportJobs(payload)
+    const jobs = Array.isArray(result.jobs) ? result.jobs : []
+    queueJobs.value.push(...jobs)
+    legacyImportNotice.value = `已加入素材队列 ${result.created || jobs.length || 0} 项`
+    startPolling()
+  } catch (err) {
+    legacyImportNotice.value = err && err.message ? err.message : String(err)
+  } finally {
+    legacyImportBusy.value = false
   }
 }
 
@@ -1313,6 +1411,20 @@ function qualityIssueSummary(report) {
   return `发现 ${total} 个问题 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
 }
 
+function importActionText(item) {
+  if (!item) return ''
+  return item.action === 'ai_only' ? '已有字幕：只做 AI 切分' : '无字幕：Whisper 转写 + AI 切分'
+}
+
+function importConfidenceText(item) {
+  if (!item) return ''
+  const parts = []
+  if (item.duplicate) parts.push('疑似已导入')
+  if (item.action === 'ai_only') parts.push(`字幕匹配 ${Number(item.confidence || 0)}%`)
+  if (item.reason) parts.push(item.reason)
+  return parts.join(' · ') || '可导入'
+}
+
 function statusText(job) {
   return {
     queued: '等待中',
@@ -1339,6 +1451,11 @@ function errorLabel(category) {
 function shortUrl(value) {
   const text = String(value || '')
   return text.length > 72 ? `${text.slice(0, 69)}...` : text
+}
+
+function shortPath(value) {
+  const text = String(value || '')
+  return text.length > 96 ? `...${text.slice(-93)}` : text
 }
 
 function listenText(job) {
