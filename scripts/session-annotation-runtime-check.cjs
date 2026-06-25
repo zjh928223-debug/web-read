@@ -23,16 +23,13 @@ assert.ok(
   "from './session-annotation-marks.js';",
   "from './session-annotation-context.js';",
   "from './session-annotation-lightweight-io.js';",
-  "from './session-annotation-api-settings-runtime.js';",
   'export function createSessionAnnotationRuntime',
   'createSessionAnnotationGeneratedIndexRuntime({',
   'createSessionAnnotationContextRuntime({',
   'createSessionAnnotationMarksRuntime({',
   'createSessionAnnotationLightweightIoRuntime({',
-  'createSessionAnnotationApiSettingsRuntime({',
   'globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({',
   'installAnnotationContextExport();',
-  'initAnnotationApiSettingsUi: annotationApiSettingsRuntime.initAnnotationApiSettingsUi',
   'emitAnnotationDiagnostics,',
   'getAnnotationGeneratedResultStore'
 ].forEach((pattern) => {
@@ -45,7 +42,6 @@ assert.ok(
   "from './session-annotation-marks.js';",
   "from './session-annotation-context.js';",
   "from './session-annotation-lightweight-io.js';",
-  "from './session-annotation-api-settings-runtime.js';",
   'createSessionAnnotationGeneratedIndexRuntime({',
   'createSessionAnnotationLightweightIoRuntime({',
   'globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({'

@@ -526,6 +526,17 @@ body {
   font-weight: 700;
 }
 
+.youtube-recent-search {
+  min-width: 160px;
+  max-width: 240px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+  font: inherit;
+}
+
 .youtube-workflow-check {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -1177,6 +1188,41 @@ body {
       box-shadow: inset 1px 1px 0 rgba(255,255,255,0.52), 0 2px 8px rgba(0,0,0,0.10);
       transform: translateY(-0.5px);
     }
+    .deprecated-file-entry {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 36px;
+      color: var(--text-sub);
+    }
+    .deprecated-file-entry > summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 6px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.38);
+      font-weight: 600;
+      user-select: none;
+    }
+    .deprecated-file-entry > summary::-webkit-details-marker {
+      display: none;
+    }
+    .deprecated-file-entry > summary::after {
+      content: " ▾";
+      color: var(--text-sub);
+      font-weight: 500;
+    }
+    .deprecated-file-entry[open] > summary::after {
+      content: " ▴";
+    }
+    .deprecated-file-entry-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: 10px;
+      flex-wrap: wrap;
+    }
     .file-btn.loaded { background-color: #e0f2f1; border-color: #26a69a; color: #00695c; font-weight: 500; }
     [data-theme="dark"] .file-btn.loaded { background-color: #004d40; border-color: #26a69a; color: #80cbc4; }
 
@@ -1323,6 +1369,22 @@ body {
     button:focus-visible, #toggle-follow:focus-visible, .small-btn:focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
+    }
+    .mark-count-badge {
+      display: inline-flex;
+      align-items: center;
+      cursor: default;
+      pointer-events: none;
+      color: var(--muted-text) !important;
+      background: rgba(255, 255, 255, 0.48) !important;
+      border-color: rgba(100, 116, 139, 0.22);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .mark-count-badge[data-count]:not([data-count="0"]) {
+      color: #126a3a !important;
+      background: rgba(34, 197, 94, 0.14) !important;
+      border-color: rgba(34, 197, 94, 0.32);
     }
     /* 婵€娲荤姸鎬?*/
     #toggle-follow.on, .speed-button-active, #highlight-mode-btn.active, #toggle-sidebar-btn.active, #toggle-chunk-btn.active, #btn-chunk-focus.active {

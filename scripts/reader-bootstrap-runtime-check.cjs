@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,7 +17,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',

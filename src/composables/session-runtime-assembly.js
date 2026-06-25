@@ -33,7 +33,6 @@ export function initSessionRuntimeAssembly(env = {}) {
     const getAnnotationGenerationScope = annotationRuntime.getAnnotationGenerationScope;
     const scheduleGeneratedAnnotationIndexRefresh = annotationRuntime.scheduleGeneratedAnnotationIndexRefresh;
     const syncAnnotationGenerationEntryStatus = annotationRuntime.syncAnnotationGenerationEntryStatus;
-    const initAnnotationApiSettingsUi = annotationRuntime.initAnnotationApiSettingsUi;
     const emitAnnotationDiagnostics = annotationRuntime.emitAnnotationDiagnostics;
     const lifecycleRuntime = startSessionLifecycleRuntime({
         state: st,
@@ -57,5 +56,4 @@ export function initSessionRuntimeAssembly(env = {}) {
         scheduleGeneratedAnnotationIndexRefresh,
         syncAnnotationGenerationEntryStatus
       });
-      initAnnotationApiSettingsUi();
 }

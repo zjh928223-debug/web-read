@@ -159,6 +159,19 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'DELETE'
       }))
     },
+    async readerRecent(options = {}) {
+      const params = new URLSearchParams()
+      if (options.query) params.set('query', options.query)
+      params.set('limit', options.limit || 50)
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/reader/recent?${params.toString()}`)))
+    },
+    async recordReaderActivity(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/reader/activity'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async quality(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/quality`)))
     },

@@ -1,8 +1,6 @@
 import { renderTranscript, renderChunkMode } from './render-runtime.js';
-import { getAnnotationApiSettingsUiApi } from './annotation-api-settings-ui.js';
 import {
     emitAnnotationDiagnostics,
-    getAnnotationApiConfigHelper,
     getAnnotationGeneratedResultStore,
     getAnnotationGenerationStorage,
     getAnnotationTargetSource
@@ -29,9 +27,6 @@ import {
 import {
     createSessionAnnotationLightweightIoRuntime
 } from './session-annotation-lightweight-io.js';
-import {
-    createSessionAnnotationApiSettingsRuntime
-} from './session-annotation-api-settings-runtime.js';
 
 export function createSessionAnnotationRuntime(deps = {}) {
     const state = deps.state;
@@ -49,7 +44,8 @@ export function createSessionAnnotationRuntime(deps = {}) {
         consoleApi: console,
         getAnnotationGenerationStorage,
         getAnnotationGeneratedResultStore,
-        emitAnnotationDiagnostics
+        emitAnnotationDiagnostics,
+        markCountEl: domRefs.annotationMarkCountEl
     });
     const clearGeneratedAnnotationIndex = generatedIndexRuntime.clearGeneratedAnnotationIndex;
     const getAnnotationGenerationScope = generatedIndexRuntime.getAnnotationGenerationScope;
@@ -113,21 +109,12 @@ export function createSessionAnnotationRuntime(deps = {}) {
         });
     }
 
-    const annotationApiSettingsRuntime = createSessionAnnotationApiSettingsRuntime({
-        buttonEl: domRefs.annotationApiSettingsBtn,
-        panelEl: domRefs.annotationApiSettingsPanel,
-        getAnnotationApiConfigHelper,
-        getAnnotationApiSettingsUiApi,
-        syncAnnotationGenerationEntryStatus
-    });
-
     return {
         clearGeneratedAnnotationIndex,
         getAnnotationGenerationScope,
         scheduleGeneratedAnnotationIndexRefresh,
         syncAnnotationGenerationEntryStatus,
         normalizeAnnotationMark,
-        initAnnotationApiSettingsUi: annotationApiSettingsRuntime.initAnnotationApiSettingsUi,
         emitAnnotationDiagnostics,
         getAnnotationGeneratedResultStore
     };

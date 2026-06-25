@@ -49,8 +49,7 @@ async function main() {
     'const annotationRuntime = createSessionAnnotationRuntime({',
     'const lifecycleRuntime = startSessionLifecycleRuntime({',
     'configureSessionFacades({',
-    'getWindow: function () { return windowObject; }',
-    'initAnnotationApiSettingsUi();'
+    'getWindow: function () { return windowObject; }'
   ].forEach((pattern) => {
     assert.ok(assemblySource.includes(pattern), `session-runtime-assembly should contain ${pattern}`);
   });
@@ -71,7 +70,7 @@ async function main() {
     'globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({',
     'createSessionAnnotationGeneratedIndexRuntime({',
     'createSessionAnnotationLightweightIoRuntime({',
-    'createSessionAnnotationApiSettingsRuntime({'
+    'markCountEl: domRefs.annotationMarkCountEl'
   ].forEach((pattern) => {
     assert.ok(annotationRuntimeSource.includes(pattern), `session-annotation-runtime should contain ${pattern}`);
   });

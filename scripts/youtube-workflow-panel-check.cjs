@@ -7,6 +7,7 @@ async function main() {
   const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
   const panelPath = path.join(repoRoot, 'src', 'components', 'YouTubeWorkflowPanel.vue');
   const panelSource = fs.readFileSync(panelPath, 'utf8');
+  const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const stylesSource = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
   const backdropBlock = stylesSource.match(/\.youtube-workflow-backdrop\s*\{[^}]+\}/)?.[0] || '';
   const panelBlock = stylesSource.match(/\.youtube-workflow-panel\s*\{[^}]+\}/)?.[0] || '';
@@ -57,11 +58,15 @@ async function main() {
   assert.ok(panelSource.includes('FLOAT_SNAP_THRESHOLD'), 'capsule snapping should use a named threshold');
   assert.ok(panelSource.includes('getCapsuleSize'), 'capsule dragging should snap against the actual rendered size');
   assert.ok(panelSource.includes('correctCapsuleOverflow'), 'capsule dragging should correct post-transform viewport overflow');
-  assert.ok(panelSource.includes('recentJobs') && panelSource.includes('refreshRecent'), 'panel should display service recent tasks');
-  assert.ok(panelSource.includes('visibleRecentJobs'), 'recent tasks should not duplicate jobs already visible in the current queue');
-  assert.ok(panelSource.includes('最近任务'), 'panel should include a recent tasks section');
-  assert.ok(panelSource.includes('openRecentJob'), 'ready recent tasks should be reopenable without a history library');
-  assert.ok(panelSource.includes('recentTaskMetaText'), 'recent tasks should show a completion/update timestamp');
+  assert.ok(panelSource.includes('recentJobs') && panelSource.includes('refreshRecent'), 'panel should display reader recent items');
+  assert.ok(panelSource.includes('readerRecent'), 'recent reading should come from the reader activity endpoint');
+  assert.ok(panelSource.includes('recordReaderActivity'), 'panel should persist reader activity');
+  assert.ok(panelSource.includes('visibleRecentJobs'), 'recent reading should have its own visible list');
+  assert.ok(panelSource.includes('最近阅读'), 'panel should include a recent reading section');
+  assert.ok(panelSource.includes('openRecentJob'), 'recent reading items should be reopenable without a history library');
+  assert.ok(panelSource.includes('readerProgressText'), 'recent reading should show listening progress');
+  assert.ok(panelSource.includes('readerTimeText'), 'recent reading should show last activity time');
+  assert.ok(indexSource.includes('deprecated-file-entry') && indexSource.includes('过时入口'), 'manual audio/subtitle file inputs should be folded into the deprecated entry');
   assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');
   assert.ok(panelSource.includes('历史库'), 'history library entry should be visible in the workflow panel');
@@ -87,7 +92,8 @@ async function main() {
   assert.ok(panelSource.includes('loadTextSetting') && panelSource.includes('saveTextSetting'), 'model and Base URL should persist outside IndexedDB');
   assert.ok(panelSource.includes('上一篇') && panelSource.includes('下一篇'), 'reader controls should include previous/next queue navigation');
   assert.ok(panelSource.includes('确认切换'), 'queue navigation should use a confirmation modal');
-  assert.ok(panelSource.includes('openFolderPicker'), 'queue end state should offer folder picker flow');
+  assert.ok(panelSource.includes("type: 'import-folder'") && panelSource.includes('chooseLegacyImportFolder'), 'queue end state should route local materials through the import flow');
+  assert.ok(!panelSource.includes('window.showDirectoryPicker'), 'local folder loading should not bypass the standard material import flow');
   assert.ok(panelSource.includes('startPanelDrag') && panelSource.includes('startCapsuleDrag'), 'panel and capsule should be draggable');
   assert.ok(panelSource.includes('prioritizeJob') && panelSource.includes('retryJob'), 'queued and failed jobs should expose priority actions');
   assert.ok(panelSource.includes('clearCanceledJobs'), 'canceled records should be clearable from a secondary view');

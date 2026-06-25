@@ -51,6 +51,7 @@ async function main() {
 
   const state = {
     currentAudioKey: 'audio-1',
+    markedMap: new Map([[1, { word: 'one' }], [3, { word: 'two' }]]),
     annotationGeneratedIndexRefreshSeq: 0,
     annotationGeneratedIndexScopeKey: 'old'
   };
@@ -58,6 +59,13 @@ async function main() {
   const diagnostics = [];
   const warnings = [];
   const debug = [];
+  const markCountAttrs = {};
+  const markCountEl = {
+    textContent: '',
+    setAttribute(name, value) {
+      markCountAttrs[name] = value;
+    }
+  };
   let cleared = 0;
   let loadedScope = null;
   let indexed = null;
@@ -112,6 +120,7 @@ async function main() {
     getAnnotationGeneratedResultStore() {
       return store;
     },
+    markCountEl,
     emitAnnotationDiagnostics(event, payload) {
       diagnostics.push({ event, payload });
     }
@@ -131,6 +140,10 @@ async function main() {
   runtime.clearGeneratedAnnotationIndex();
   assert.equal(cleared, 1);
   assert.equal(state.annotationGeneratedIndexScopeKey, '');
+  assert.deepEqual(await runtime.syncAnnotationGenerationEntryStatus(), { markedCount: 2 });
+  assert.equal(markCountEl.textContent, '已标记 2');
+  assert.equal(markCountAttrs['data-count'], '2');
+  assert.equal(markCountAttrs.title, '当前文章已标记 2 个重点词');
 
   const missingRuntime = api.createSessionAnnotationGeneratedIndexRuntime({
     state: { currentAudioKey: 'a', annotationGeneratedIndexRefreshSeq: 0, annotationGeneratedIndexScopeKey: '' },

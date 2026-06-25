@@ -23,7 +23,6 @@ async function main() {
     'function getAnnotationGenerationStorage()',
     'function getAnnotationGeneratedResultStore()',
     'function getAnnotationTargetSource()',
-    'function getAnnotationApiConfigHelper()',
     'function emitAnnotationDiagnostics(event, payload)'
   ].forEach((pattern) => {
     assert.equal(sessionInitSource.includes(pattern), false, `session-init should not keep local helper: ${pattern}`);
@@ -32,7 +31,6 @@ async function main() {
     'export function getAnnotationGenerationStorage',
     'export function getAnnotationGeneratedResultStore',
     'export function getAnnotationTargetSource',
-    'export function getAnnotationApiConfigHelper',
     'export function emitAnnotationDiagnostics'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `session-annotation-services should export ${pattern}`);
@@ -44,12 +42,9 @@ async function main() {
 
   const globalObject = {
     AnnotationGenerationStorage: { id: 'storage' },
-    AnnotationBlockPlanner: { id: 'planner' },
-    AnnotationPromptBuilder: { id: 'prompt' },
     AnnotationGeneratedResultStore: { id: 'store' },
     AnnotationClickResolver: { id: 'click' },
     AnnotationTargetSource: { id: 'target' },
-    AnnotationApiConfig: { id: 'config' },
     AnnotationGenerationDiagnostics: {
       calls: [],
       emit(event, payload) {
@@ -59,12 +54,9 @@ async function main() {
   };
 
   assert.equal(api.getAnnotationGenerationStorage(globalObject), globalObject.AnnotationGenerationStorage);
-  assert.equal(api.getAnnotationBlockPlanner(globalObject), globalObject.AnnotationBlockPlanner);
-  assert.equal(api.getAnnotationPromptBuilder(globalObject), globalObject.AnnotationPromptBuilder);
   assert.equal(api.getAnnotationGeneratedResultStore(globalObject), globalObject.AnnotationGeneratedResultStore);
   assert.equal(api.getAnnotationClickResolver(globalObject), globalObject.AnnotationClickResolver);
   assert.equal(api.getAnnotationTargetSource(globalObject), globalObject.AnnotationTargetSource);
-  assert.equal(api.getAnnotationApiConfigHelper(globalObject), globalObject.AnnotationApiConfig);
   assert.equal(api.getAnnotationGenerationDiagnostics(globalObject), globalObject.AnnotationGenerationDiagnostics);
   assert.equal(api.getAnnotationGenerationStorage({}), null);
 

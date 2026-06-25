@@ -12,6 +12,7 @@ export function normalizeAnnotationGenerationScope(scope) {
 export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
   const state = deps.state || {};
   const namespace = deps.namespace || {};
+  const markCountEl = deps.markCountEl || null;
   const getWindow = typeof deps.getWindow === 'function'
     ? deps.getWindow
     : function () { return globalThis; };
@@ -157,7 +158,14 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
   }
 
   async function syncAnnotationGenerationEntryStatus() {
-    return undefined;
+    const markedMap = state.markedMap instanceof Map ? state.markedMap : null;
+    const count = markedMap ? markedMap.size : 0;
+    if (markCountEl) {
+      markCountEl.textContent = `已标记 ${count}`;
+      markCountEl.setAttribute('data-count', String(count));
+      markCountEl.setAttribute('title', `当前文章已标记 ${count} 个重点词`);
+    }
+    return { markedCount: count };
   }
 
   return {

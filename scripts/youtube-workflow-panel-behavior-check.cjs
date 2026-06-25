@@ -8,11 +8,14 @@ const jobs = new Map();
 let jobCounter = 0;
 const recentJob = {
   jobId: 'recent-ready',
-  status: 'ready',
-  stage: 'ready',
   title: 'Recent Ready Material',
   url: 'https://www.youtube.com/watch?v=recent123',
-  finishedAt: new Date('2026-06-23T10:20:00Z').toISOString()
+  readStatus: 'in-progress',
+  lastActivityAt: new Date('2026-06-23T10:20:00Z').toISOString(),
+  overallCoverageRatio: 0.42,
+  lastPositionSeconds: 120,
+  durationSeconds: 300,
+  markCount: 2
 };
 
 function json(body) {
@@ -28,7 +31,8 @@ async function mockWorkflowService(page) {
     const request = route.request();
     const url = new URL(request.url());
     if (url.pathname === '/api/health') return route.fulfill(json({ ok: true }));
-    if (url.pathname === '/api/recent') return route.fulfill(json([recentJob]));
+    if (url.pathname === '/api/reader/recent') return route.fulfill(json([recentJob]));
+    if (url.pathname === '/api/reader/activity') return route.fulfill(json(recentJob));
     if (url.pathname === '/api/jobs' && request.method() === 'POST') {
       const payload = JSON.parse(request.postData() || '{}');
       const jobId = `job-${++jobCounter}`;

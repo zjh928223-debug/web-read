@@ -40,8 +40,7 @@ assert.equal(scriptSrcs.includes('app.js'), false, 'index.html should not load r
   'src/composables/notes-module.js',
   'chunk-note-layout-helpers.js',
   'chunk-note-layout-core.js',
-  'annotation-bubble.js',
-  'annotation-api-settings-ui.js'
+  'annotation-bubble.js'
 ].forEach((scriptName) => {
   const pattern = new RegExp(`<script src="${scriptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"></script>`);
   assert.equal(pattern.test(indexSource), false, `${scriptName} should not be loaded as a root regular script`);

@@ -56,6 +56,8 @@ async function main() {
   await client.history({ query: 'alpha', status: 'ready', limit: 20 });
   await client.getHistory('job-1');
   await client.deleteHistory('job-1', { deleteFiles: true });
+  await client.readerRecent({ query: 'read', limit: 10 });
+  await client.recordReaderActivity({ jobId: 'job-1', event: 'progress' });
   await client.quality('job-1');
 
   assert.deepEqual(calls.map((call) => call.url), [
@@ -85,6 +87,8 @@ async function main() {
     'http://127.0.0.1:8765/api/history?query=alpha&status=ready&limit=20',
     'http://127.0.0.1:8765/api/history/job-1',
     'http://127.0.0.1:8765/api/history/job-1?deleteFiles=true',
+    'http://127.0.0.1:8765/api/reader/recent?query=read&limit=10',
+    'http://127.0.0.1:8765/api/reader/activity',
     'http://127.0.0.1:8765/api/jobs/job-1/quality',
   ]);
   assert.equal(calls[4].options.method, 'POST');
@@ -103,6 +107,8 @@ async function main() {
   assert.equal(calls[19].options.method, 'POST');
   assert.equal(JSON.parse(calls[19].options.body).geminiMode, 'mock');
   assert.equal(calls[25].options.method, 'DELETE');
+  assert.equal(calls[27].options.method, 'POST');
+  assert.equal(JSON.parse(calls[27].options.body).event, 'progress');
 
   console.log('youtube workflow client check passed');
 }

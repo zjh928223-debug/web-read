@@ -28,6 +28,50 @@
           <span>启动命令：python -m uvicorn youtube_workflow.service:app --host 127.0.0.1 --port 8765</span>
         </div>
 
+        <section class="youtube-workflow-recent">
+          <div class="youtube-workflow-summary">
+            <strong>最近阅读</strong>
+            <span>{{ recentSummary }}</span>
+            <input
+              v-model.trim="recentQuery"
+              class="youtube-recent-search"
+              type="search"
+              placeholder="搜索文章"
+              @keydown.enter.prevent="refreshRecent"
+            >
+            <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
+          </div>
+          <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
+
+          <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
+
+          <article
+            v-for="job in visibleRecentJobs"
+            :key="job.jobId"
+            class="youtube-workflow-job youtube-workflow-recent-job"
+            :data-status="job.readStatus || 'not-started'"
+          >
+            <div class="youtube-workflow-job-main">
+              <div class="youtube-job-status-line">
+                <span class="youtube-job-status-badge">{{ readStatusText(job) }}</span>
+                <span class="youtube-job-position">{{ readerTimeText(job) }}</span>
+              </div>
+              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+              <small>{{ readerProgressText(job) }}</small>
+            </div>
+            <div class="youtube-workflow-job-actions">
+              <button
+                type="button"
+                class="small-btn primary"
+                :disabled="job.jobId === currentJobId"
+                @click="openRecentJob(job)"
+              >
+                {{ openJobActionText(job) }}
+              </button>
+            </div>
+          </article>
+        </section>
+
         <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
           <label class="youtube-material-link-label">
             <span>素材链接</span>
@@ -223,44 +267,6 @@
           </div>
         </section>
 
-        <section class="youtube-workflow-recent">
-          <div class="youtube-workflow-summary">
-            <strong>最近任务</strong>
-            <span>{{ recentSummary }}</span>
-            <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
-          </div>
-
-          <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近任务</div>
-
-          <article
-            v-for="job in visibleRecentJobs"
-            :key="job.jobId"
-            class="youtube-workflow-job youtube-workflow-recent-job"
-            :data-status="job.status"
-          >
-            <div class="youtube-workflow-job-main">
-              <div class="youtube-job-status-line">
-                <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
-                <span class="youtube-job-position">{{ recentTaskMetaText(job) }}</span>
-              </div>
-              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-              <small v-if="job.status === 'ready'">{{ jobOpenStateText(job) || '可重新打开' }}</small>
-              <small v-if="job.status === 'failed' && job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
-            </div>
-            <div class="youtube-workflow-job-actions">
-              <button
-                v-if="job.status === 'ready'"
-                type="button"
-                class="small-btn primary"
-                :disabled="job.jobId === currentJobId"
-                @click="openRecentJob(job)"
-              >
-                {{ openJobActionText(job) }}
-              </button>
-            </div>
-          </article>
-        </section>
-
         <section class="youtube-workflow-history">
           <div class="youtube-workflow-summary">
             <strong>历史库</strong>
@@ -372,35 +378,6 @@
       </section>
     </div>
 
-    <div v-if="folderChoice" class="youtube-switch-modal-backdrop" role="dialog" aria-modal="true">
-      <section class="youtube-switch-modal youtube-folder-choice">
-        <h3>选择阅读文件</h3>
-        <label>
-          <span>音频</span>
-          <select v-model="folderChoice.selectedAudio">
-            <option v-for="item in folderChoice.audios" :key="item.name" :value="item.name">{{ item.name }}</option>
-          </select>
-        </label>
-        <label>
-          <span>Whisper 字幕</span>
-          <select v-model="folderChoice.selectedTranscript">
-            <option v-for="item in folderChoice.transcripts" :key="item.name" :value="item.name">{{ item.name }}</option>
-          </select>
-        </label>
-        <label>
-          <span>AI 切分</span>
-          <select v-model="folderChoice.selectedChunk">
-            <option value="">无</option>
-            <option v-for="item in folderChoice.chunks" :key="item.name" :value="item.name">{{ item.name }}</option>
-          </select>
-        </label>
-        <div class="youtube-workflow-actions">
-          <button type="button" @click="confirmFolderChoice">打开</button>
-          <button type="button" class="small-btn" @click="folderChoice = null">取消</button>
-        </div>
-      </section>
-    </div>
-
     <div v-if="qualityModal" class="youtube-subwindow">
       <section class="youtube-subwindow-card youtube-quality-card">
         <header>
@@ -430,11 +407,11 @@ import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
-const audioExtensions = new Set(['.mp3', '.m4a', '.wav', '.webm', '.ogg', '.flac', '.aac', '.mp4', '.wmv'])
 const FLOAT_SNAP_THRESHOLD = 96
 const FLOAT_PEEK_WIDTH = 42
 const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
 const PANEL_MAX_SIZE = { width: 680, height: 720 }
+const READER_SYNC_INTERVAL_MS = 15000
 
 const panelOpen = ref(false)
 const panelShrunk = ref(false)
@@ -463,6 +440,8 @@ const showAdvanced = ref(false)
 const starting = ref(false)
 const queueJobs = ref([])
 const recentJobs = ref([])
+const recentQuery = ref('')
+const readerActivityNotice = ref('')
 const historyJobs = ref([])
 const historyOpen = ref(false)
 const historyQuery = ref('')
@@ -472,7 +451,6 @@ const cancelRecordsOpen = ref(false)
 const cancelRecordsNotice = ref('')
 const switchModal = ref(null)
 const incompletePrompt = ref(null)
-const folderChoice = ref(null)
 const qualityModal = ref(null)
 const currentJobId = ref('')
 const panelPosition = ref(getDefaultPanelPosition())
@@ -486,6 +464,10 @@ let panelDrag = null
 let capsuleDrag = null
 let capsuleMoved = false
 let linkSequence = 0
+let readerSessionId = ''
+let readerSessionStartedAt = ''
+let readerLastSyncAt = 0
+let markCountObserver = null
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
@@ -522,13 +504,13 @@ const queueSummary = computed(() => {
   return `${total} 项 · ${running} 处理中/等待 · ${ready} 可打开`
 })
 const visibleRecentJobs = computed(() => {
-  const queueIds = new Set(queueJobs.value.map((job) => job.jobId))
-  return recentJobs.value.filter((job) => !queueIds.has(job.jobId))
+  return recentJobs.value
 })
 const recentSummary = computed(() => {
   const total = visibleRecentJobs.value.length
-  const ready = visibleRecentJobs.value.filter((job) => job.status === 'ready').length
-  return `${total} 项 · ${ready} 可打开`
+  const unfinished = visibleRecentJobs.value.filter((job) => job.readStatus === 'in-progress').length
+  const completed = visibleRecentJobs.value.filter((job) => job.completed).length
+  return `${total} 篇 · ${unfinished} 未听完 · ${completed} 已听完`
 })
 const historySummary = computed(() => {
   if (!historyOpen.value) return '搜索 / 删除 / 重新打开'
@@ -588,13 +570,17 @@ watch(materialFloatingVisible, async (visible) => {
 
 onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
-  checkHealth()
   bindPlaybackTracking()
+  bindMarkCountTracking()
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onBeforeUnmount(() => {
   stopPolling()
+  syncReaderActivity('close')
+  window.removeEventListener('beforeunload', handleBeforeUnload)
   unbindPlaybackTracking()
+  unbindMarkCountTracking()
 })
 
 function makeLoader() {
@@ -752,7 +738,7 @@ async function enqueueUrls() {
 
 async function chooseLegacyImportFolder() {
   legacyImportBusy.value = true
-  legacyImportNotice.value = '正在打开系统文件夹选择框...'
+  legacyImportNotice.value = '正在打开系统文件夹选择框；如果没有看到，请检查任务栏或用 Alt+Tab 切换。'
   try {
     const result = await youtubeWorkflowClient.pickImportFolder({ initialDir: legacyImportPath.value })
     if (!result || !result.selected || !result.path) {
@@ -771,7 +757,10 @@ async function chooseLegacyImportFolder() {
 
 async function scanLegacyImport(rootOverride = '', options = {}) {
   const rootPath = String(rootOverride || legacyImportPath.value || '').trim()
-  if (!rootPath) return
+  if (!rootPath) {
+    legacyImportNotice.value = '请先选择旧素材目录'
+    return
+  }
   if (!options.keepBusy) legacyImportBusy.value = true
   legacyImportNotice.value = '正在扫描旧素材目录...'
   try {
@@ -859,9 +848,12 @@ async function refreshQueue() {
 
 async function refreshRecent() {
   try {
-    const items = await youtubeWorkflowClient.recent(10)
+    const items = await youtubeWorkflowClient.readerRecent({ query: recentQuery.value, limit: 50 })
     recentJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
-  } catch (_err) {}
+    readerActivityNotice.value = ''
+  } catch (err) {
+    readerActivityNotice.value = err && err.message ? err.message : String(err)
+  }
 }
 
 async function toggleHistory() {
@@ -1102,10 +1094,10 @@ function goQueue(offset) {
   if (nextIndex >= items.length) {
     const paused = pauseForDecision()
     switchModal.value = {
-      type: 'folder',
+      type: 'import-folder',
       title: '本次素材队列已经到最后一篇。',
-      message: '是否选择本地文件夹加载新的阅读内容？',
-      confirmText: '选择文件夹',
+      message: '是否选择旧素材目录并导入到标准素材库？导入后会加入素材队列末尾。',
+      confirmText: '选择并扫描目录',
       wasPlaying: paused
     }
     return
@@ -1117,8 +1109,10 @@ async function confirmSwitch() {
   const modal = switchModal.value
   switchModal.value = null
   if (!modal) return
-  if (modal.type === 'folder') {
-    await openFolderPicker()
+  if (modal.type === 'import-folder') {
+    openPanel()
+    await nextTick()
+    await chooseLegacyImportFolder()
     return
   }
   if (modal.target) await loadJob(modal.target)
@@ -1142,9 +1136,15 @@ function pauseForDecision() {
 
 async function loadJob(job) {
   try {
-    await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
+    if (currentJobId.value && currentJobId.value !== job.jobId) {
+      await syncReaderActivity('switch')
+    }
+    const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
     currentJobId.value = job.jobId
     loadedReadyJobs.add(job.jobId)
+    startReaderSession(job)
+    await syncReaderActivity('open', { manifest: result && result.manifest })
+    await refreshRecent()
     const audio = getAudio()
     if (audio) audio.pause()
     hidePanelAfterLoad()
@@ -1205,6 +1205,70 @@ function recentTaskMetaText(job) {
   return stamp || '最近完成'
 }
 
+function readStatusText(job) {
+  if (job && job.completed) {
+    const count = Number(job.completedCount || 0)
+    return count > 1 ? `已听完 ${count} 次` : '已听完'
+  }
+  if (job && job.readStatus === 'in-progress') return '未听完'
+  return '未开始'
+}
+
+function readerTimeText(job) {
+  const stamp = job && (job.lastActivityAt || job.finishedAt || job.createdAt)
+  if (!stamp) return '暂无阅读时间'
+  return formatRelativeTime(stamp)
+}
+
+function readerProgressText(job) {
+  const parts = []
+  const coverage = Number(job && job.overallCoverageRatio)
+  if (job && job.completed) {
+    parts.push('已听完')
+  } else if (Number.isFinite(coverage) && coverage > 0) {
+    parts.push(`已听 ${Math.round(coverage * 100)}%`)
+  } else {
+    parts.push('未开始')
+  }
+  const position = Number(job && job.lastPositionSeconds)
+  const duration = Number(job && job.durationSeconds)
+  if (Number.isFinite(position) && position > 0 && Number.isFinite(duration) && duration > 0) {
+    parts.push(`上次 ${formatClock(position)} / ${formatClock(duration)}`)
+  }
+  const markCount = Number(job && job.markCount)
+  if (Number.isFinite(markCount) && markCount > 0) parts.push(`标记 ${markCount}`)
+  return parts.join(' · ')
+}
+
+function formatRelativeTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  if (diffMs >= 0 && diffMs < minute) return '刚刚'
+  if (diffMs >= 0 && diffMs < hour) return `${Math.floor(diffMs / minute)} 分钟前`
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) return `今天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) {
+    return `昨天 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`
+  }
+  const options = date.getFullYear() === now.getFullYear()
+    ? { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }
+    : { year: 'numeric', month: '2-digit', day: '2-digit' }
+  return date.toLocaleString('zh-CN', options)
+}
+
+function formatClock(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0))
+  const minutes = Math.floor(safe / 60)
+  const rest = String(safe % 60).padStart(2, '0')
+  return `${minutes}:${rest}`
+}
+
 function formatShortDate(value) {
   if (!value) return ''
   const date = new Date(value)
@@ -1224,7 +1288,7 @@ function readyJobMetaText(job) {
 }
 
 function openJobActionText(job) {
-  if (!job || job.status !== 'ready') return '打开这篇'
+  if (!job) return '打开这篇'
   if (job.jobId === currentJobId.value) return '当前阅读中'
   if (loadedReadyJobs.has(job.jobId)) return '重新打开'
   return '打开这篇'
@@ -1263,113 +1327,6 @@ function showCancelRecords() {
   }
   cancelRecordsNotice.value = ''
   cancelRecordsOpen.value = true
-}
-
-async function openFolderPicker() {
-  if (!window.showDirectoryPicker) {
-    window.alert('当前浏览器不支持文件夹选择，请使用支持 File System Access API 的 Chromium 浏览器。')
-    return
-  }
-  const handle = await window.showDirectoryPicker({ mode: 'read' })
-  const bundle = await inspectDirectoryHandle(handle)
-  if (!bundle.audios.length) throw new Error('文件夹里没有找到音频文件。')
-  if (!bundle.transcripts.length) throw new Error('文件夹里没有找到 Whisper transcript JSON。')
-  const selectedAudio = chooseLikely(bundle.audios, bundle.transcripts[0] && bundle.transcripts[0].name).name
-  const selectedTranscript = chooseLikely(bundle.transcripts, selectedAudio).name
-  const selectedChunk = bundle.chunks.length ? chooseLikely(bundle.chunks, selectedTranscript).name : ''
-  if (bundle.audios.length === 1 && bundle.transcripts.length === 1 && bundle.chunks.length <= 1) {
-    await loadFolderSelection({ ...bundle, selectedAudio, selectedTranscript, selectedChunk })
-  } else {
-    folderChoice.value = { ...bundle, selectedAudio, selectedTranscript, selectedChunk }
-  }
-}
-
-async function inspectDirectoryHandle(handle) {
-  const audios = []
-  const transcripts = []
-  const chunks = []
-  for await (const [name, entry] of handle.entries()) {
-    if (entry.kind !== 'file') continue
-    const file = await entry.getFile()
-    const lower = name.toLowerCase()
-    const ext = lower.slice(lower.lastIndexOf('.'))
-    if (audioExtensions.has(ext)) {
-      audios.push({ name, file })
-    } else if (lower.endsWith('.json')) {
-      try {
-        const data = JSON.parse(await file.text())
-        if (isTranscriptData(data)) transcripts.push({ name, file, data })
-        else if (isChunkData(data) && (lower.endsWith('.ai-chunks.json') || lower === 'output.json')) chunks.push({ name, file, data })
-      } catch (_err) {}
-    }
-  }
-  return { audios, transcripts, chunks }
-}
-
-function isTranscriptData(data) {
-  return !!(data && Array.isArray(data.segments) && data.segments.length)
-}
-
-function isChunkData(data) {
-  return !!(data && Array.isArray(data.s) && data.s.some((segment) => Array.isArray(segment.chunks) && segment.chunks.length))
-}
-
-function chooseLikely(items, targetName = '') {
-  if (items.length <= 1) return items[0]
-  const target = normalizeName(targetName)
-  return [...items].sort((a, b) => scoreName(b.name, target) - scoreName(a.name, target))[0]
-}
-
-function normalizeName(name) {
-  return String(name || '').toLowerCase().replace(/\.(transcript|ai-chunks)?\.?json$|\.[^.]+$/g, '').replace(/[^a-z0-9]+/g, '')
-}
-
-function scoreName(name, target) {
-  const normalized = normalizeName(name)
-  if (!target) return normalized.length
-  let score = 0
-  for (const char of normalized) if (target.includes(char)) score += 1
-  return score
-}
-
-async function confirmFolderChoice() {
-  if (!folderChoice.value) return
-  await loadFolderSelection(folderChoice.value)
-  folderChoice.value = null
-}
-
-async function loadFolderSelection(choice) {
-  const audio = choice.audios.find((item) => item.name === choice.selectedAudio)
-  const transcript = choice.transcripts.find((item) => item.name === choice.selectedTranscript)
-  const chunk = choice.chunks.find((item) => item.name === choice.selectedChunk)
-  if (!audio || !transcript) throw new Error('请选择音频和 Whisper 字幕。')
-  await loadLocalFiles(audio.file, transcript.data, chunk && chunk.data)
-}
-
-async function loadLocalFiles(audioFile, transcriptData, chunkData) {
-  if (typeof window.saveToDB !== 'function') throw new Error('saveToDB is not available')
-  const audioMeta = {
-    name: audioFile.name,
-    size: audioFile.size || 0,
-    lastModified: audioFile.lastModified || Date.now(),
-    type: audioFile.type || 'application/octet-stream',
-    source: 'local-folder'
-  }
-  await Promise.resolve(window.saveToDB('audio', audioFile))
-  await Promise.resolve(window.saveToDB('audioMeta', audioMeta))
-  await Promise.resolve(window.saveToDB('transcript', transcriptData))
-  if (chunkData) await Promise.resolve(window.saveToDB('chunkData', chunkData))
-  if (window.__state) window.__state.currentAudioMeta = audioMeta
-  const audio = getAudio()
-  if (audio) {
-    audio.src = URL.createObjectURL(audioFile)
-    audio.pause()
-  }
-  if (typeof window.processTranscript === 'function') window.processTranscript(transcriptData)
-  if (chunkData && typeof window.processChunkData === 'function') {
-    window.processChunkData(chunkData)
-    resetChunkChineseDisplay()
-  }
 }
 
 function historyMetaText(job) {
@@ -1490,11 +1447,23 @@ function getAudio() {
   return document.getElementById('audio-player')
 }
 
+function startReaderSession(job) {
+  const jobId = job && job.jobId ? String(job.jobId) : ''
+  if (!jobId) return
+  readerSessionId = `${jobId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  readerSessionStartedAt = new Date().toISOString()
+  readerLastSyncAt = 0
+  if (!playback.has(jobId)) {
+    playback.set(jobId, { intervals: [], lastTime: null, coverageRatio: 0, completed: false })
+  }
+}
+
 function bindPlaybackTracking() {
   const audio = getAudio()
   if (!audio) return
   audio.addEventListener('timeupdate', handleTimeUpdate)
   audio.addEventListener('play', handlePlay)
+  audio.addEventListener('pause', handlePause)
   audio.addEventListener('seeking', handleSeeking)
   audio.addEventListener('ended', handleEnded)
 }
@@ -1504,11 +1473,13 @@ function unbindPlaybackTracking() {
   if (!audio) return
   audio.removeEventListener('timeupdate', handleTimeUpdate)
   audio.removeEventListener('play', handlePlay)
+  audio.removeEventListener('pause', handlePause)
   audio.removeEventListener('seeking', handleSeeking)
   audio.removeEventListener('ended', handleEnded)
 }
 
 function playbackState() {
+  ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return null
   if (!playback.has(currentJobId.value)) {
     playback.set(currentJobId.value, { intervals: [], lastTime: null, coverageRatio: 0, completed: false })
@@ -1516,10 +1487,29 @@ function playbackState() {
   return playback.get(currentJobId.value)
 }
 
+function ensureCurrentJobFromAudioMeta() {
+  if (currentJobId.value) return
+  const meta = window.__state && window.__state.currentAudioMeta
+  const jobId = meta && meta.source === 'youtube-workflow' ? String(meta.jobId || '') : ''
+  if (!jobId) return
+  currentJobId.value = jobId
+  startReaderSession({ jobId })
+}
+
 function handlePlay() {
   const state = playbackState()
   const audio = getAudio()
   if (state && audio) state.lastTime = audio.currentTime
+  if (currentJobId.value && readerLastSyncAt === 0) {
+    readerLastSyncAt = Date.now()
+    syncReaderActivity('open')
+  }
+}
+
+function handlePause() {
+  const audio = getAudio()
+  if (audio && audio.ended) return
+  syncReaderActivity('pause')
 }
 
 function handleSeeking() {
@@ -1538,6 +1528,7 @@ function handleTimeUpdate() {
     if (current - previous <= maxNaturalDelta) {
       addInterval(state, previous, current)
       updateCoverage(state, audio.duration)
+      scheduleReaderActivitySync()
     }
   }
   state.lastTime = current
@@ -1549,6 +1540,7 @@ function handleEnded() {
   if (!state || !audio) return
   updateCoverage(state, audio.duration)
   if (state.coverageRatio >= 0.7) state.completed = true
+  syncReaderActivity('ended')
 }
 
 function addInterval(state, start, end) {
@@ -1568,6 +1560,82 @@ function updateCoverage(state, duration) {
   if (!Number.isFinite(duration) || duration <= 0) return
   const covered = state.intervals.reduce((total, item) => total + Math.max(0, item[1] - item[0]), 0)
   state.coverageRatio = Math.max(0, Math.min(1, covered / duration))
+}
+
+function scheduleReaderActivitySync() {
+  const now = Date.now()
+  if (now - readerLastSyncAt < READER_SYNC_INTERVAL_MS) return
+  readerLastSyncAt = now
+  syncReaderActivity('progress')
+}
+
+async function syncReaderActivity(event = 'progress') {
+  if (!currentJobId.value) return null
+  const payload = buildReaderActivityPayload(event)
+  if (!payload) return null
+  try {
+    const updated = await youtubeWorkflowClient.recordReaderActivity(payload)
+    mergeRecentReaderItem(updated)
+    readerActivityNotice.value = ''
+    return updated
+  } catch (err) {
+    readerActivityNotice.value = '进度保存失败'
+    return null
+  }
+}
+
+function buildReaderActivityPayload(event) {
+  const audio = getAudio()
+  const state = playbackState()
+  if (!currentJobId.value) return null
+  return {
+    jobId: currentJobId.value,
+    event,
+    sessionId: readerSessionId || `${currentJobId.value}-session`,
+    sessionStartedAt: readerSessionStartedAt || new Date().toISOString(),
+    positionSeconds: audio && Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+    durationSeconds: audio && Number.isFinite(audio.duration) ? audio.duration : 0,
+    intervals: state && Array.isArray(state.intervals) ? state.intervals.map((item) => [item[0], item[1]]) : [],
+    coverageRatio: state && Number.isFinite(state.coverageRatio) ? state.coverageRatio : 0,
+    markCount: getCurrentMarkCount()
+  }
+}
+
+function mergeRecentReaderItem(item) {
+  if (!item || !item.jobId) return
+  const index = recentJobs.value.findIndex((entry) => entry.jobId === item.jobId)
+  if (index >= 0) recentJobs.value[index] = { ...recentJobs.value[index], ...item }
+  else recentJobs.value.unshift(item)
+}
+
+function getCurrentMarkCount() {
+  const el = document.getElementById('annotation-mark-count')
+  const value = el ? Number(el.dataset.count || 0) : 0
+  return Number.isFinite(value) ? Math.max(0, value) : 0
+}
+
+function bindMarkCountTracking() {
+  const el = document.getElementById('annotation-mark-count')
+  if (!el || typeof MutationObserver === 'undefined') return
+  markCountObserver = new MutationObserver(() => {
+    if (!currentJobId.value) return
+    syncReaderActivity('annotation')
+  })
+  markCountObserver.observe(el, { attributes: true, attributeFilter: ['data-count'] })
+}
+
+function unbindMarkCountTracking() {
+  if (markCountObserver) markCountObserver.disconnect()
+  markCountObserver = null
+}
+
+function handleBeforeUnload() {
+  const payload = buildReaderActivityPayload('close')
+  if (!payload || !navigator.sendBeacon) return
+  try {
+    const body = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+    navigator.sendBeacon(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, body)
+  } catch (_err) {}
 }
 
 function resetChunkChineseDisplay() {

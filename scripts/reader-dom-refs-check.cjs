@@ -13,7 +13,6 @@ const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
 const sessionAnnotationRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
-const sessionApiSettingsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-api-settings-runtime.js'), 'utf8');
 
 assert.ok(
   contextSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
@@ -93,22 +92,12 @@ assert.equal(
   );
 });
 
-[
-  "annotationApiSettingsBtn: getElement('btn-annotation-api-settings')",
-  "annotationApiSettingsPanel: getElement('annotation-api-settings-panel')"
-].forEach((pattern) => {
-  assert.ok(
-    sessionRuntimeDepsSource.includes(pattern),
-    `session-runtime-deps should keep annotation API settings DOM contract: ${pattern}`
-  );
-});
-
 assert.ok(
   sessionAssemblySource.includes("from './session-annotation-runtime.js';") &&
-    sessionAnnotationRuntimeSource.includes('buttonEl: domRefs.annotationApiSettingsBtn') &&
-    sessionAnnotationRuntimeSource.includes('panelEl: domRefs.annotationApiSettingsPanel') &&
-    sessionAssemblySource.includes('initAnnotationApiSettingsUi();'),
-  'session-runtime-assembly should reach annotation API settings refs through session-annotation-runtime'
+    sessionRuntimeDepsSource.includes("annotationMarkCountEl: getElement('annotation-mark-count')") &&
+    sessionAnnotationRuntimeSource.includes('markCountEl: domRefs.annotationMarkCountEl') &&
+    sessionAssemblySource.includes('initAnnotationApiSettingsUi();') === false,
+  'session runtime should expose mark count and omit retired annotation API settings wiring'
 );
 
 assert.equal(
@@ -116,14 +105,5 @@ assert.equal(
   false,
   'session-runtime-deps should not keep retired annotation API settings facade'
 );
-
-[
-  'function initAnnotationApiSettingsUi()',
-].forEach((pattern) => {
-  assert.ok(
-    sessionApiSettingsRuntimeSource.includes(pattern),
-    `session annotation API settings runtime should keep contract: ${pattern}`
-  );
-});
 
 console.log('reader DOM refs check passed');

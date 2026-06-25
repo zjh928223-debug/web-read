@@ -12,7 +12,7 @@ async function main() {
   [
     'export function createSessionRuntimeDeps',
     "getElement('audio-player')",
-    "getElement('btn-annotation-api-settings')",
+    "getElement('annotation-mark-count')",
     'windowObject.saveToDB',
     'annotationLightweightModule: windowObject.__annotationLightweightModule'
   ].forEach((pattern) => {
@@ -32,8 +32,7 @@ async function main() {
   const { createSessionRuntimeDeps } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
   const elements = new Map([
     ['audio-player', { id: 'audio-player', currentTime: 12 }],
-    ['btn-annotation-api-settings', { id: 'settings-button' }],
-    ['annotation-api-settings-panel', { id: 'settings-panel' }],
+    ['annotation-mark-count', { id: 'annotation-mark-count' }],
     ['hotkey-input', { id: 'hotkey-input' }]
   ]);
   const windowObject = {
@@ -63,7 +62,7 @@ async function main() {
   assert.equal(deps.documentObject, documentObject);
   assert.equal(deps.namespace, windowObject._ns);
   assert.equal(deps.domRefs.audioPlayer.id, 'audio-player');
-  assert.equal(deps.domRefs.annotationApiSettingsBtn.id, 'settings-button');
+  assert.equal(deps.domRefs.annotationMarkCountEl.id, 'annotation-mark-count');
   assert.equal(deps.domRefs.hotkeyInput.id, 'hotkey-input');
   assert.equal(deps.globals.saveToDB, windowObject.saveToDB);
   assert.equal(deps.globals.showToast, windowObject.showToast);
