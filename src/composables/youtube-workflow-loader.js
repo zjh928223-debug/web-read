@@ -32,6 +32,20 @@ async function blobToJson(blob, label) {
   }
 }
 
+function createJsonFileLike(payload, filename) {
+  const text = JSON.stringify(payload, null, 2)
+  if (typeof File === 'function') {
+    return new File([text], filename, { type: 'application/json' })
+  }
+  return {
+    name: filename,
+    type: 'application/json',
+    async text() {
+      return text
+    },
+  }
+}
+
 function validateGeneratedSession({ audioBlob, transcript, chunkData, validateTranscriptData, validateChunkData }) {
   if (!audioBlob || !Number.isFinite(Number(audioBlob.size)) || Number(audioBlob.size) <= 0) {
     throw new Error('audio file is missing or empty')
@@ -67,8 +81,37 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   }
   const processTranscript = deps.processTranscript || (typeof window !== 'undefined' ? window.processTranscript : null)
   const processChunkData = deps.processChunkData || (typeof window !== 'undefined' ? window.processChunkData : null)
+  const annotationLightweightModule = deps.annotationLightweightModule || (typeof window !== 'undefined' ? window.__annotationLightweightModule : null)
   const resetChunkDisplay = typeof deps.resetChunkDisplay === 'function' ? deps.resetChunkDisplay : function () {}
   const createObjectURL = deps.createObjectURL || (typeof URL !== 'undefined' ? URL.createObjectURL.bind(URL) : null)
+
+  async function restoreReaderMarks(jobId) {
+    if (!client || typeof client.getReaderMarks !== 'function') return
+    if (typeof deps.applyReaderMarks !== 'function') return
+    const payload = await client.getReaderMarks(jobId)
+    const marks = payload && Array.isArray(payload.marks) ? payload.marks : []
+    await deps.applyReaderMarks(marks)
+  }
+
+  async function restoreAnnotationBackfillResult(jobId) {
+    if (!client || typeof client.getAnnotationBackfillResult !== 'function') return { status: 'skipped', reason: 'missing-client-method' }
+    if (!annotationLightweightModule || typeof annotationLightweightModule.importManualLightweightAnnotations !== 'function') {
+      return { status: 'skipped', reason: 'missing-importer' }
+    }
+
+    try {
+      const payload = await client.getAnnotationBackfillResult(jobId)
+      const result = payload && payload.result ? payload.result : payload
+      if (!result || !Array.isArray(result.items) || !result.items.length) {
+        return { status: 'skipped', reason: 'empty-result' }
+      }
+      const importFile = createJsonFileLike(result, `${jobId}_annotation_backfill_result.json`)
+      const imported = await annotationLightweightModule.importManualLightweightAnnotations(importFile, { replaceExisting: false })
+      return { status: 'imported', imported }
+    } catch (_err) {
+      return { status: 'skipped', reason: 'unavailable' }
+    }
+  }
 
   async function loadJobIntoReader(jobId, options = {}) {
     const replacePolicy = options.replacePolicy || 'ask'
@@ -116,6 +159,8 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       await deps.switchSentenceNotesDoc(validated.transcript)
     }
     processChunkData(validated.chunkData)
+    await restoreReaderMarks(jobId)
+    await restoreAnnotationBackfillResult(jobId)
     resetChunkDisplay()
     if (typeof deps.showToast === 'function') deps.showToast('YouTube result loaded', 'success')
     return { status: 'loaded', jobId, manifest }

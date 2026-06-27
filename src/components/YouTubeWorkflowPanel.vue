@@ -28,7 +28,13 @@
           <span>启动命令：python -m uvicorn youtube_workflow.service:app --host 127.0.0.1 --port 8765</span>
         </div>
 
-        <section class="youtube-workflow-recent">
+        <nav class="youtube-workflow-section-tabs" aria-label="素材处理视图">
+          <button type="button" data-view="recent" :aria-pressed="workflowView === 'recent'" :data-active="workflowView === 'recent' ? 'true' : 'false'" @click="setWorkflowView('recent')">最近</button>
+          <button type="button" data-view="queue" :aria-pressed="workflowView === 'queue'" :data-active="workflowView === 'queue' ? 'true' : 'false'" @click="setWorkflowView('queue')">队列</button>
+          <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">历史库</button>
+        </nav>
+
+        <section v-if="workflowView === 'recent'" class="youtube-workflow-recent">
           <div class="youtube-workflow-summary">
             <strong>最近阅读</strong>
             <span>{{ recentSummary }}</span>
@@ -36,6 +42,8 @@
               v-model.trim="recentQuery"
               class="youtube-recent-search"
               type="search"
+              name="youtube-recent-search"
+              autocomplete="off"
               placeholder="搜索文章"
               @keydown.enter.prevent="refreshRecent"
             >
@@ -72,13 +80,16 @@
           </article>
         </section>
 
-        <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
+        <section v-if="workflowView === 'queue'" class="youtube-workflow-process-view">
+          <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
           <label class="youtube-material-link-label">
             <span>素材链接</span>
             <input
               v-model.trim="linkInput"
               class="youtube-material-link-input"
               type="url"
+              name="youtube-material-link"
+              autocomplete="off"
               placeholder="粘贴一个或多个 http/https 视频素材链接"
               @keydown.enter.prevent="commitLinkInput"
               @paste="handleLinkPaste"
@@ -108,7 +119,7 @@
 
           <label v-if="geminiMode === 'real'">
             <span>Gemini API key</span>
-            <input v-model="apiKey" type="password" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
+            <input v-model="apiKey" type="password" name="youtube-gemini-api-key" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
           </label>
 
           <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
@@ -124,7 +135,7 @@
 
           <label>
             <span>模型</span>
-            <input v-model.trim="model" type="text" placeholder="gemini-2.5-flash">
+            <input v-model.trim="model" type="text" name="youtube-workflow-model" autocomplete="off" placeholder="gemini-2.5-flash">
           </label>
 
           <button type="button" class="youtube-advanced-toggle" @click="showAdvanced = !showAdvanced">
@@ -134,27 +145,27 @@
           <div v-if="showAdvanced" class="youtube-advanced-settings">
             <label>
               <span>Base URL（可选，使用代理网关时填写）</span>
-              <input v-model.trim="baseUrl" type="text" placeholder="留空使用官方默认地址">
+              <input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址">
             </label>
             <label>
               <span>代理</span>
-              <input v-model.trim="proxyUrl" type="text" placeholder="例如 http://127.0.0.1:7897，留空关闭">
+              <input v-model.trim="proxyUrl" type="text" name="youtube-workflow-proxy-url" autocomplete="off" placeholder="例如 http://127.0.0.1:7897，留空关闭">
             </label>
             <label>
               <span>cookies 文件</span>
-              <input v-model.trim="cookiesPath" type="text" placeholder="YouTube cookies 文件路径">
+              <input v-model.trim="cookiesPath" type="text" name="youtube-workflow-cookies-path" autocomplete="off" placeholder="YouTube cookies 文件路径">
             </label>
             <label>
               <span>输出目录</span>
-              <input v-model.trim="outputDir" type="text" placeholder="生成文件输出目录">
+              <input v-model.trim="outputDir" type="text" name="youtube-workflow-output-dir" autocomplete="off" placeholder="生成文件输出目录">
             </label>
             <label>
               <span>yt-dlp 路径</span>
-              <input v-model.trim="ytDlpPath" type="text" placeholder="yt-dlp.exe">
+              <input v-model.trim="ytDlpPath" type="text" name="youtube-workflow-ytdlp-path" autocomplete="off" placeholder="yt-dlp.exe">
             </label>
             <label>
               <span>WhisperX 路径</span>
-              <input v-model.trim="whisperxPath" type="text" placeholder="whisperx.exe">
+              <input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe">
             </label>
             <div class="youtube-primary-actions">
               <button type="button" class="small-btn" @click="saveBackendConfig">保存后台配置</button>
@@ -168,11 +179,6 @@
             <p>普通 Gemini 官方 API 留空即可。</p>
           </div>
 
-          <label class="youtube-workflow-check">
-            <input v-model="showFloatingAfterClose" type="checkbox">
-            <span>显示任务浮标</span>
-          </label>
-
           <div class="youtube-primary-actions">
             <button type="submit" :disabled="starting || !canEnqueue">
               <span>{{ primaryActionText }}</span>
@@ -180,41 +186,9 @@
             <span v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-workflow-hint">需要填写 Gemini API key 或保存系统凭据</span>
             <span v-else-if="!validLinkCards.length" class="youtube-workflow-hint">暂无可处理素材</span>
           </div>
-        </form>
+          </form>
 
-        <section class="youtube-import-panel">
-          <div class="youtube-workflow-summary">
-            <strong>导入旧素材目录</strong>
-            <span>只扫描所填目录和直接子目录</span>
-          </div>
-          <label class="youtube-import-path">
-            <span>已选目录</span>
-            <input
-              :value="legacyImportPath || '尚未选择目录'"
-              type="text"
-              readonly
-            >
-          </label>
-          <div class="youtube-primary-actions">
-            <button type="button" class="small-btn primary" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
-            <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
-            <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
-            <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
-          </div>
-          <div v-if="legacyImportItems.length" class="youtube-import-list">
-            <article v-for="item in legacyImportItems" :key="item.id || item.audioPath" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
-              <label class="youtube-workflow-check">
-                <input v-model="item.selected" type="checkbox">
-                <span>{{ importActionText(item) }}</span>
-              </label>
-              <strong>{{ item.title || item.audioName }}</strong>
-              <small>{{ importConfidenceText(item) }}</small>
-              <small>{{ shortPath(item.audioPath) }}</small>
-            </article>
-          </div>
-        </section>
-
-        <section class="youtube-workflow-queue">
+          <section class="youtube-workflow-queue">
           <div class="youtube-workflow-summary">
             <strong>素材队列</strong>
             <span>{{ queueSummary }}</span>
@@ -265,9 +239,45 @@
             <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
             <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
           </div>
+          </section>
         </section>
 
-        <section class="youtube-workflow-history">
+        <section v-if="workflowView === 'library'" class="youtube-workflow-library-view">
+          <section class="youtube-import-panel">
+            <div class="youtube-workflow-summary">
+              <strong>导入旧素材目录</strong>
+              <span>只扫描所填目录和直接子目录</span>
+            </div>
+            <label class="youtube-import-path">
+              <span>已选目录</span>
+              <input
+                :value="legacyImportPath || '尚未选择目录'"
+                type="text"
+                name="youtube-legacy-import-path"
+                autocomplete="off"
+                readonly
+              >
+            </label>
+            <div class="youtube-primary-actions">
+              <button type="button" class="small-btn primary" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
+              <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
+              <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
+              <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
+            </div>
+            <div v-if="legacyImportItems.length" class="youtube-import-list">
+              <article v-for="item in legacyImportItems" :key="item.id || item.audioPath" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
+                <label class="youtube-workflow-check">
+                  <input v-model="item.selected" type="checkbox">
+                  <span>{{ importActionText(item) }}</span>
+                </label>
+                <strong>{{ item.title || item.audioName }}</strong>
+                <small>{{ importConfidenceText(item) }}</small>
+                <small>{{ shortPath(item.audioPath) }}</small>
+              </article>
+            </div>
+          </section>
+
+          <section class="youtube-workflow-history">
           <div class="youtube-workflow-summary">
             <strong>历史库</strong>
             <span>{{ historySummary }}</span>
@@ -279,10 +289,12 @@
               <input
                 v-model.trim="historyQuery"
                 type="search"
+                name="youtube-history-search"
+                autocomplete="off"
                 placeholder="搜索标题 / URL / 日期"
                 @keydown.enter.prevent="refreshHistory"
               >
-              <select v-model="historyStatus" @change="refreshHistory">
+              <select v-model="historyStatus" name="youtube-history-status" @change="refreshHistory">
                 <option value="">全部状态</option>
                 <option value="ready">成功</option>
                 <option value="failed">失败</option>
@@ -316,13 +328,22 @@
               </div>
             </article>
           </div>
+          </section>
         </section>
+
+        <div class="youtube-workflow-panel-footer">
+          <label class="youtube-workflow-check">
+            <input v-model="showFloatingAfterClose" type="checkbox">
+            <span>显示任务浮标</span>
+          </label>
+          <span class="youtube-workflow-hint">关闭后保留队列状态入口</span>
+        </div>
 
         <div v-if="cancelRecordsOpen" class="youtube-subwindow">
           <div class="youtube-subwindow-card">
             <header>
               <strong>取消记录</strong>
-              <button type="button" class="youtube-workflow-icon-btn" @click="cancelRecordsOpen = false">x</button>
+              <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭取消记录" title="关闭" @click="cancelRecordsOpen = false">x</button>
             </header>
             <p v-if="!canceledJobs.length">没有取消记录。</p>
             <ul v-else>
@@ -382,7 +403,7 @@
       <section class="youtube-subwindow-card youtube-quality-card">
         <header>
           <strong>质量报告</strong>
-          <button type="button" class="youtube-workflow-icon-btn" @click="qualityModal = null">x</button>
+          <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" @click="qualityModal = null">x</button>
         </header>
         <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
         <p>{{ qualityIssueSummary(qualityModal.report) }}</p>
@@ -410,7 +431,8 @@ const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
 const FLOAT_PEEK_WIDTH = 42
 const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
-const PANEL_MAX_SIZE = { width: 680, height: 720 }
+const PANEL_MAX_SIZE = { width: 380, height: 720 }
+const PANEL_DEFAULT_MARGIN = 24
 const READER_SYNC_INTERVAL_MS = 15000
 
 const panelOpen = ref(false)
@@ -441,6 +463,7 @@ const starting = ref(false)
 const queueJobs = ref([])
 const recentJobs = ref([])
 const recentQuery = ref('')
+const workflowView = ref('recent')
 const readerActivityNotice = ref('')
 const historyJobs = ref([])
 const historyOpen = ref(false)
@@ -468,6 +491,7 @@ let readerSessionId = ''
 let readerSessionStartedAt = ''
 let readerLastSyncAt = 0
 let markCountObserver = null
+let readerMarksSyncTimer = 0
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
@@ -488,7 +512,7 @@ const canEnqueue = computed(() => {
   return validLinkCards.value.length > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
 const primaryActionText = computed(() => {
-  if (starting.value) return '提交中...'
+  if (starting.value) return '提交中…'
   if (validLinkCards.value.length) return `开始后台处理 ${validLinkCards.value.length} 条素材`
   return '暂无可处理素材'
 })
@@ -577,6 +601,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  syncReaderMarks()
   syncReaderActivity('close')
   window.removeEventListener('beforeunload', handleBeforeUnload)
   unbindPlaybackTracking()
@@ -588,7 +613,8 @@ function makeLoader() {
     client: youtubeWorkflowClient,
     saveToDB: window.saveToDB,
     applyCurrentAudioMeta(meta) {
-      if (window.__state) window.__state.currentAudioMeta = meta
+      if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
+      else if (window.__state) window.__state.currentAudioMeta = meta
     },
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,
@@ -596,6 +622,8 @@ function makeLoader() {
     audioPlayer: document.getElementById('audio-player'),
     validateTranscriptData: window.DataUtils && window.DataUtils.validateTranscriptData,
     validateChunkData: window.DataUtils && window.DataUtils.validateChunkData,
+    applyReaderMarks,
+    annotationLightweightModule: window.__annotationLightweightModule,
     resetChunkDisplay: resetChunkChineseDisplay,
     showToast: window.showToast
   })
@@ -621,9 +649,7 @@ function handleLinkPaste(event) {
   const text = event.clipboardData && event.clipboardData.getData('text')
   const links = parseLinks(text)
   if (!links.length) return
-  event.preventDefault()
-  addLinkCards(links)
-  linkInput.value = ''
+  window.setTimeout(() => commitLinkInput(), 0)
 }
 
 function parseLinks(value) {
@@ -762,7 +788,7 @@ async function scanLegacyImport(rootOverride = '', options = {}) {
     return
   }
   if (!options.keepBusy) legacyImportBusy.value = true
-  legacyImportNotice.value = '正在扫描旧素材目录...'
+  legacyImportNotice.value = '正在扫描旧素材目录…'
   try {
     const preview = await youtubeWorkflowClient.scanImportRoot({ rootPath })
     legacyImportPreview.value = preview
@@ -820,6 +846,16 @@ function openPanel(options = {}) {
   loadBackendConfig()
   loadCredentialStatus()
   refreshQueue()
+}
+
+function setWorkflowView(view) {
+  workflowView.value = view
+  if (view === 'recent') refreshRecent()
+  if (view === 'queue') refreshQueue()
+  if (view === 'library') {
+    historyOpen.value = true
+    refreshHistory()
+  }
 }
 
 function shrinkPanel() {
@@ -1185,7 +1221,7 @@ function isActiveJob(job) {
 function jobLogLines(job) {
   const lines = Array.isArray(job && job.logSummary) ? job.logSummary : []
   const cleaned = lines.map((line) => String(line || '').trim()).filter(Boolean)
-  if (!cleaned.length) return ['等待后台日志...']
+  if (!cleaned.length) return ['等待后台日志…']
   return cleaned.slice(-5)
 }
 
@@ -1427,12 +1463,12 @@ function errorLabel(category) {
 
 function shortUrl(value) {
   const text = String(value || '')
-  return text.length > 72 ? `${text.slice(0, 69)}...` : text
+  return text.length > 72 ? `${text.slice(0, 69)}…` : text
 }
 
 function shortPath(value) {
   const text = String(value || '')
-  return text.length > 96 ? `...${text.slice(-93)}` : text
+  return text.length > 96 ? `…${text.slice(-93)}` : text
 }
 
 function listenText(job) {
@@ -1614,11 +1650,81 @@ function getCurrentMarkCount() {
   return Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
+function normalizeReaderMarks(marks) {
+  const state = window.__state
+  const words = state && Array.isArray(state.words) ? state.words : []
+  const normalized = []
+  for (const raw of Array.isArray(marks) ? marks : []) {
+    if (!raw || typeof raw !== 'object') continue
+    const globalIndex = Number(raw.globalIndex)
+    if (!Number.isInteger(globalIndex) || globalIndex < 0 || globalIndex >= words.length) continue
+    const word = words[globalIndex] || {}
+    normalized.push({
+      ...raw,
+      globalIndex,
+      word: String(raw.word || word.word || ''),
+      start: Number.isFinite(Number(raw.start)) ? Number(raw.start) : word.start,
+      sourceType: String(raw.sourceType || raw.source || 'manual-mark')
+    })
+  }
+  return normalized
+}
+
+function getCurrentReaderMarks() {
+  const state = window.__state
+  const markedMap = state && state.markedMap instanceof Map ? state.markedMap : null
+  if (!markedMap) return []
+  return normalizeReaderMarks(Array.from(markedMap.values()))
+}
+
+function syncMarkedWordVisuals(marks) {
+  document.querySelectorAll('[data-word-index].marked').forEach((el) => el.classList.remove('marked'))
+  const markStore = window.__marksStore
+  marks.forEach((mark) => {
+    if (markStore && typeof markStore.syncMarkedWordVisual === 'function') {
+      markStore.syncMarkedWordVisual(mark.globalIndex, true)
+    } else {
+      document.querySelectorAll(`[data-word-index="${mark.globalIndex}"]`).forEach((el) => el.classList.add('marked'))
+    }
+  })
+}
+
+async function applyReaderMarks(marks) {
+  const state = window.__state
+  if (!state || !(state.markedMap instanceof Map)) return
+  const normalized = normalizeReaderMarks(marks)
+  state.markedMap.clear()
+  normalized.forEach((mark) => state.markedMap.set(mark.globalIndex, mark))
+  syncMarkedWordVisuals(normalized)
+  if (typeof window.saveToDB === 'function') window.saveToDB('marks', normalized)
+  if (typeof window.syncAnnotationGenerationEntryStatus === 'function') await window.syncAnnotationGenerationEntryStatus()
+  if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
+}
+
+function scheduleReaderMarksSync() {
+  if (!currentJobId.value) return
+  if (readerMarksSyncTimer) window.clearTimeout(readerMarksSyncTimer)
+  readerMarksSyncTimer = window.setTimeout(() => {
+    readerMarksSyncTimer = 0
+    syncReaderMarks()
+  }, 250)
+}
+
+async function syncReaderMarks() {
+  if (!currentJobId.value) return null
+  try {
+    return await youtubeWorkflowClient.saveReaderMarks(currentJobId.value, { marks: getCurrentReaderMarks() })
+  } catch (_err) {
+    return null
+  }
+}
+
 function bindMarkCountTracking() {
   const el = document.getElementById('annotation-mark-count')
   if (!el || typeof MutationObserver === 'undefined') return
   markCountObserver = new MutationObserver(() => {
     if (!currentJobId.value) return
+    scheduleReaderMarksSync()
     syncReaderActivity('annotation')
   })
   markCountObserver.observe(el, { attributes: true, attributeFilter: ['data-count'] })
@@ -1627,6 +1733,8 @@ function bindMarkCountTracking() {
 function unbindMarkCountTracking() {
   if (markCountObserver) markCountObserver.disconnect()
   markCountObserver = null
+  if (readerMarksSyncTimer) window.clearTimeout(readerMarksSyncTimer)
+  readerMarksSyncTimer = 0
 }
 
 function handleBeforeUnload() {
@@ -1635,6 +1743,10 @@ function handleBeforeUnload() {
   try {
     const body = new Blob([JSON.stringify(payload)], { type: 'application/json' })
     navigator.sendBeacon(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, body)
+  } catch (_err) {}
+  try {
+    const marksBody = new Blob([JSON.stringify({ marks: getCurrentReaderMarks() })], { type: 'application/json' })
+    navigator.sendBeacon(`${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`, marksBody)
   } catch (_err) {}
 }
 
@@ -1711,11 +1823,11 @@ function getViewportSize() {
 
 function getDefaultPanelPosition() {
   const viewport = getViewportSize()
-  const width = Math.min(PANEL_MAX_SIZE.width, Math.max(320, viewport.width - 32))
-  const height = Math.min(PANEL_MAX_SIZE.height, Math.max(240, viewport.height - 32))
+  const width = Math.min(PANEL_MAX_SIZE.width, Math.max(320, viewport.width - PANEL_DEFAULT_MARGIN * 2))
+  const height = Math.min(PANEL_MAX_SIZE.height, Math.max(240, viewport.height - PANEL_DEFAULT_MARGIN * 2))
   return clampPosition({
-    x: Math.round((viewport.width - width) / 2),
-    y: Math.round((viewport.height - height) / 2)
+    x: viewport.width - width - PANEL_DEFAULT_MARGIN,
+    y: PANEL_DEFAULT_MARGIN
   }, width, height)
 }
 

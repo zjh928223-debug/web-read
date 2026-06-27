@@ -41,6 +41,7 @@ export function collectReaderDomRefs(doc = document) {
     exportMdAllBtn: doc.getElementById('export-md-all'),
     exportAnnotationLightweightBtn: doc.getElementById('btn-export-annotation-lightweight'),
     importAnnotationLightweightInput: doc.getElementById('import-annotation-lightweight-file'),
-    importAnnotationLightweightBtn: doc.getElementById('btn-import-annotation-lightweight')
+    importAnnotationLightweightBtn: doc.getElementById('btn-import-annotation-lightweight'),
+    annotationBackfillAiBtn: doc.getElementById('btn-annotation-backfill-ai')
   };
 }

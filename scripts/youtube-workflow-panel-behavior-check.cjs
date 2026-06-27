@@ -119,22 +119,24 @@ async function main() {
       'recent ready tasks should render in the panel'
     );
 
-    const centered = await panel.boundingBox();
-    assert.ok(Math.abs(centered.x - 300) <= 8, `panel should open centered, got x=${centered.x}`);
+    const docked = await panel.boundingBox();
+    assert.ok(docked.width <= 420, `panel should open as a compact utility drawer, got width=${docked.width}`);
+    assert.ok(Math.abs((docked.x + docked.width) - (VIEWPORT.width - 24)) <= 12, `panel should open near the right edge, got right=${docked.x + docked.width}`);
+    assert.ok(Math.abs(docked.y - 24) <= 12, `panel should open near the top margin, got y=${docked.y}`);
 
-    await page.mouse.move(centered.x + 120, centered.y + 24);
+    await page.mouse.move(docked.x + 120, docked.y + 24);
     await page.mouse.down();
-    await page.mouse.move(520, 190, { steps: 8 });
+    await page.mouse.move(620, 190, { steps: 8 });
     await page.mouse.up();
     const dragged = await panel.boundingBox();
-    assert.ok(dragged.x > centered.x + 80, `panel should be draggable, got x=${dragged.x}`);
+    assert.ok(dragged.x < docked.x - 80, `panel should be draggable away from the right dock, got x=${dragged.x}`);
 
     await page.locator('.youtube-window-actions button').nth(1).click();
     await panel.waitFor({ state: 'hidden' });
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
     const reopened = await panel.boundingBox();
-    assert.ok(Math.abs(reopened.x - 300) <= 8, `closed panel should reopen centered, got x=${reopened.x}`);
+    assert.ok(Math.abs((reopened.x + reopened.width) - (VIEWPORT.width - 24)) <= 12, `closed panel should reopen near the right edge, got right=${reopened.x + reopened.width}`);
 
     const floatToggle = page.getByRole('checkbox', { name: '显示任务浮标' });
     await floatToggle.check();
@@ -184,6 +186,8 @@ async function main() {
 
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
+    await page.locator('.youtube-workflow-section-tabs button[data-view="queue"]').click();
+    await page.waitForSelector('.youtube-workflow-form');
     await page.locator('.youtube-workflow-form input[type="url"]').fill('https://www.youtube.com/watch?v=test123');
     await page.locator('.youtube-workflow-form input[type="url"]').press('Enter');
     await page.locator('.youtube-workflow-form input[type="password"]').fill('fake-key-for-ui-test');

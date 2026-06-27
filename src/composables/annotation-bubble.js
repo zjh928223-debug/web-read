@@ -2,9 +2,13 @@
     'use strict';
 
     const STORAGE_KEY = 'annotationBubbleFrame';
-    const MIN_WIDTH = 260;
-    const MIN_HEIGHT = 190;
-    const DEFAULT_FRAME = { left: 36, top: 96, width: 360, height: 320 };
+    const MIN_WIDTH = 280;
+    const MIN_HEIGHT = 170;
+    const MAX_WIDTH = 760;
+    const MAX_HEIGHT = 580;
+    const SIDE_PANEL_WIDTH_RATIO = 0.72;
+    const SIDE_PANEL_HEIGHT_RATIO = 0.82;
+    const DEFAULT_FRAME = { left: 56, top: 72, width: 450, height: 320 };
     const EMPTY_MESSAGE = '点击一个已标注单词查看释义';
     const TYPE_ABBREVIATIONS = {
         word: 'W',
@@ -49,7 +53,9 @@
             const raw = global.localStorage && global.localStorage.getItem(STORAGE_KEY);
             if (!raw) return { ...DEFAULT_FRAME };
             const parsed = JSON.parse(raw);
-            return normalizeFrame({ ...DEFAULT_FRAME, ...parsed });
+            const nextFrame = { ...DEFAULT_FRAME, ...parsed };
+            if (isLegacySideFrame(nextFrame)) return normalizeFrame(DEFAULT_FRAME);
+            return normalizeFrame(nextFrame);
         } catch (error) {
             return { ...DEFAULT_FRAME };
         }
@@ -62,13 +68,23 @@
     }
 
     function normalizeFrame(next) {
-        const maxWidth = Math.max(MIN_WIDTH, global.innerWidth - 24);
-        const maxHeight = Math.max(MIN_HEIGHT, global.innerHeight - 24);
+        const maxWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, global.innerWidth - 24));
+        const maxHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, global.innerHeight - 24));
         const width = clampNumber(Number(next.width), MIN_WIDTH, maxWidth);
         const height = clampNumber(Number(next.height), MIN_HEIGHT, maxHeight);
         const left = clampNumber(Number(next.left), 12, Math.max(12, global.innerWidth - width - 12));
         const top = clampNumber(Number(next.top), 12, Math.max(12, global.innerHeight - height - 12));
         return { left, top, width, height };
+    }
+
+    function isLegacySideFrame(next) {
+        const width = Number(next.width);
+        const height = Number(next.height);
+        const viewportWidth = Number(global.innerWidth || 0);
+        const viewportHeight = Number(global.innerHeight || 0);
+        if (viewportWidth > 0 && Number.isFinite(width) && width >= viewportWidth * SIDE_PANEL_WIDTH_RATIO) return true;
+        if (viewportHeight > 0 && Number.isFinite(height) && height >= viewportHeight * SIDE_PANEL_HEIGHT_RATIO) return true;
+        return false;
     }
 
     function clampNumber(value, min, max) {

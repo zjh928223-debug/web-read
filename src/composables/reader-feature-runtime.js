@@ -177,6 +177,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     exportAnnotationLightweightBtn: deps.exportAnnotationLightweightBtn,
     importAnnotationLightweightBtn: deps.importAnnotationLightweightBtn,
     importAnnotationLightweightInput: deps.importAnnotationLightweightInput,
+    annotationBackfillAiBtn: deps.annotationBackfillAiBtn,
     exportJsonBtn: deps.exportJsonBtn,
     exportMdAllBtn: deps.exportMdAllBtn,
     importMarksBtn: deps.importMarksBtn,

@@ -63,8 +63,20 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     }
   }
 
+  function nextGeneratedIndexRefreshSeq() {
+    const currentSeq = Number(state.annotationGeneratedIndexRefreshSeq);
+    const nextSeq = Number.isFinite(currentSeq) ? currentSeq + 1 : 1;
+    state.annotationGeneratedIndexRefreshSeq = nextSeq;
+    return nextSeq;
+  }
+
+  function getGeneratedIndexRefreshSeq() {
+    const currentSeq = Number(state.annotationGeneratedIndexRefreshSeq);
+    return Number.isFinite(currentSeq) ? currentSeq : 0;
+  }
+
   function clearGeneratedAnnotationIndex() {
-    state.annotationGeneratedIndexRefreshSeq++;
+    nextGeneratedIndexRefreshSeq();
     state.annotationGeneratedIndexScopeKey = '';
     const store = typeof deps.getAnnotationGeneratedResultStore === 'function'
       ? deps.getAnnotationGeneratedResultStore()
@@ -94,7 +106,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
     const scope = getAnnotationGenerationScope();
     const scopeKey = getAnnotationGenerationScopeKey(scope);
-    const refreshSeq = ++state.annotationGeneratedIndexRefreshSeq;
+    const refreshSeq = nextGeneratedIndexRefreshSeq();
     emitDiagnostics('app.generated_index_refresh_start', {
       scope,
       scopeKey,
@@ -102,7 +114,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     });
 
     const bundle = await storage.loadBundle(scope);
-    if (refreshSeq !== state.annotationGeneratedIndexRefreshSeq || getAnnotationGenerationScopeKey() !== scopeKey) {
+    if (refreshSeq !== getGeneratedIndexRefreshSeq() || getAnnotationGenerationScopeKey() !== scopeKey) {
       emitDiagnostics('app.generated_index_refresh_stale', {
         scope,
         scopeKey,

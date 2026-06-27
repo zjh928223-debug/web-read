@@ -58,6 +58,14 @@ async function main() {
   await client.deleteHistory('job-1', { deleteFiles: true });
   await client.readerRecent({ query: 'read', limit: 10 });
   await client.recordReaderActivity({ jobId: 'job-1', event: 'progress' });
+  await client.getReaderMarks('job-1');
+  await client.saveReaderMarks('job-1', { marks: [{ globalIndex: 1, word: 'workflow' }] });
+  await client.runAnnotationBackfill('job-1', {
+    template: { articleId: 'article-1', items: [{ targetId: 'target-1' }] },
+    model: 'gemini-test',
+  });
+  await client.getAnnotationBackfillResult('job-1');
+  await client.getAnnotationBackfillRunResult('job-1', 'run-1');
   await client.quality('job-1');
 
   assert.deepEqual(calls.map((call) => call.url), [
@@ -89,6 +97,11 @@ async function main() {
     'http://127.0.0.1:8765/api/history/job-1?deleteFiles=true',
     'http://127.0.0.1:8765/api/reader/recent?query=read&limit=10',
     'http://127.0.0.1:8765/api/reader/activity',
+    'http://127.0.0.1:8765/api/jobs/job-1/reader-marks',
+    'http://127.0.0.1:8765/api/jobs/job-1/reader-marks',
+    'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill',
+    'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill/latest',
+    'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill/runs/run-1',
     'http://127.0.0.1:8765/api/jobs/job-1/quality',
   ]);
   assert.equal(calls[4].options.method, 'POST');
@@ -109,6 +122,11 @@ async function main() {
   assert.equal(calls[25].options.method, 'DELETE');
   assert.equal(calls[27].options.method, 'POST');
   assert.equal(JSON.parse(calls[27].options.body).event, 'progress');
+  assert.equal(calls[29].options.method, 'POST');
+  assert.equal(JSON.parse(calls[29].options.body).marks[0].word, 'workflow');
+  assert.equal(calls[30].options.method, 'POST');
+  assert.equal(JSON.parse(calls[30].options.body).template.articleId, 'article-1');
+  assert.equal(JSON.parse(calls[30].options.body).model, 'gemini-test');
 
   console.log('youtube workflow client check passed');
 }

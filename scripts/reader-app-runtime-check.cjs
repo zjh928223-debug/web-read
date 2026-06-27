@@ -63,9 +63,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     "import { initGlassEffects } from './glass-effects.js'",
+    "import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'",
+    "import { youtubeWorkflowClient } from './youtube-workflow-client.js'",
     "import { configureReaderPublicFacades } from './reader-public-facades.js'",
     'export function initReaderAppRuntime',
     'deps.annotationLightweightModule.initManualLightweightAnnotationControls({',
+    'initAnnotationBackfillAiControls({',
     'deps.appHandlers.initExports({',
     'deps.appHandlers.initMarksImport({',
     'deps.controlsModule.init({',
@@ -108,12 +111,21 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       "const initGlassEffects = globalThis.__readerAppRuntimeTest.initGlassEffects;\n"
     )
     .replace(
+      "import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'\n",
+      "const initAnnotationBackfillAiControls = globalThis.__readerAppRuntimeTest.initAnnotationBackfillAiControls;\n"
+    )
+    .replace(
+      "import { youtubeWorkflowClient } from './youtube-workflow-client.js'\n",
+      "const youtubeWorkflowClient = globalThis.__readerAppRuntimeTest.youtubeWorkflowClient;\n"
+    )
+    .replace(
       "import { configureReaderPublicFacades } from './reader-public-facades.js'\n",
       "const configureReaderPublicFacades = globalThis.__readerAppRuntimeTest.configureReaderPublicFacades;\n"
     );
 
   const calls = {
     annotationLightweight: [],
+    annotationBackfill: [],
     exports: [],
     marksImport: [],
     controls: [],
@@ -125,6 +137,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     initGlassEffects(deps) {
       calls.glass.push(deps);
     },
+    initAnnotationBackfillAiControls(deps) {
+      calls.annotationBackfill.push(deps);
+      return { id: 'annotation-backfill-controller' };
+    },
+    youtubeWorkflowClient: { id: 'youtube-client' },
     configureReaderPublicFacades(deps) {
       calls.publicFacades.push(deps);
     }
@@ -183,6 +200,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     exportAnnotationLightweightBtn: { id: 'export-annotation' },
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
+    annotationBackfillAiBtn: { id: 'annotation-backfill-ai' },
     exportJsonBtn: { id: 'export-json' },
     exportMdAllBtn: { id: 'export-md' },
     importMarksBtn: { id: 'import-marks' },
@@ -196,6 +214,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   assert.deepEqual(api, {});
   assert.equal(calls.annotationLightweight.length, 1);
+  assert.equal(calls.annotationBackfill.length, 1);
   assert.equal(calls.exports.length, 1);
   assert.equal(calls.marksImport.length, 1);
   assert.equal(calls.controls.length, 1);
@@ -205,6 +224,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   calls.annotationLightweight[0].refreshAfterImport();
   assert.equal(calls.rendered, 'chunk');
   assert.equal(calls.forcedTime, 12.5);
+  calls.annotationBackfill[0].refreshAfterImport();
+  assert.equal(calls.rendered, 'chunk');
+  assert.equal(calls.annotationBackfill[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
   deps.chunkState.isChunkMode = false;
   calls.annotationLightweight[0].refreshAfterImport();
   assert.equal(calls.rendered, 'transcript');

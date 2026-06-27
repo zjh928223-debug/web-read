@@ -43,6 +43,7 @@ async function main() {
   const api = sandbox.window.__annotationLightweightModule;
   assert.ok(api, 'annotation lightweight module should attach to window');
   assert.equal(typeof api.configureManualLightweightAnnotationRuntime, 'function');
+  assert.equal(typeof api.buildManualLightweightAnnotationTemplate, 'function');
   assert.equal(typeof api.exportManualLightweightAnnotations, 'function');
   assert.equal(typeof api.importManualLightweightAnnotations, 'function');
   assert.equal(typeof api.buildImportSuccessMessage, 'function');
@@ -59,11 +60,17 @@ async function main() {
   );
 
   assert.throws(() => api.exportManualLightweightAnnotations(), /not ready/);
+  assert.throws(() => api.buildManualLightweightAnnotationTemplate(), /not ready/);
   await assert.rejects(() => api.importManualLightweightAnnotations({}), /not ready/);
 
   let exported = false;
+  let templateBuilt = false;
   let importedFile = null;
   api.configureManualLightweightAnnotationRuntime({
+    buildManualLightweightAnnotationTemplate: () => {
+      templateBuilt = true;
+      return { articleId: 'template-only', items: [] };
+    },
     exportManualLightweightAnnotations: () => {
       exported = true;
       return { ok: true };
@@ -78,6 +85,9 @@ async function main() {
       };
     }
   });
+
+  assert.deepEqual(api.buildManualLightweightAnnotationTemplate(), { articleId: 'template-only', items: [] });
+  assert.equal(templateBuilt, true);
 
   const exportButton = new FakeElement();
   const importButton = new FakeElement();

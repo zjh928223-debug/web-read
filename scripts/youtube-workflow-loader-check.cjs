@@ -43,6 +43,25 @@ async function main() {
       if (kind === 'transcript') return new Blob([JSON.stringify(makeTranscript())], { type: 'application/json' });
       return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 2, en: 'Hello world', zh: '你好' }] }] })], { type: 'application/json' });
     },
+    async getReaderMarks(jobId) {
+      calls.push(['readerMarks', jobId]);
+      return { marks: [{ globalIndex: 1, word: 'world', sourceType: 'manual-mark' }] };
+    },
+    async getAnnotationBackfillResult(jobId) {
+      calls.push(['annotationBackfillResult', jobId]);
+      return {
+        status: 'ready',
+        result: {
+          schemaVersion: 1,
+          items: [{
+            targetId: 'transcript-0-1-1',
+            markedText: 'world',
+            meaning: '世界',
+            memoryHint: 'world',
+          }],
+        },
+      };
+    },
   };
   const loader = api.createYoutubeWorkflowLoader({
     client,
@@ -53,6 +72,14 @@ async function main() {
     applyCurrentAudioMeta: (meta) => calls.push(['audioMeta', meta.name]),
     processTranscript: (data) => calls.push(['transcript', data.segments.length]),
     processChunkData: (data) => calls.push(['chunkData', data.s.length]),
+    applyReaderMarks: async (marks) => calls.push(['applyReaderMarks', marks.length]),
+    annotationLightweightModule: {
+      async importManualLightweightAnnotations(file, options = {}) {
+        const parsed = JSON.parse(await file.text());
+        calls.push(['importAnnotationBackfillResult', parsed.items.length, file.name, options.replaceExisting]);
+        return { importedCount: parsed.items.length };
+      },
+    },
     resetChunkDisplay: () => calls.push(['resetChunkDisplay']),
     validateTranscriptData: (data) => data,
     validateChunkData: (data) => data,
@@ -64,6 +91,10 @@ async function main() {
   assert.deepEqual(writes.map(([key]) => key), ['audio', 'audioMeta', 'transcript', 'chunkData']);
   assert.ok(calls.some((call) => call[0] === 'transcript'));
   assert.ok(calls.some((call) => call[0] === 'chunkData'));
+  assert.ok(calls.some((call) => call[0] === 'readerMarks' && call[1] === 'job-1'));
+  assert.ok(calls.some((call) => call[0] === 'applyReaderMarks' && call[1] === 1));
+  assert.ok(calls.some((call) => call[0] === 'annotationBackfillResult' && call[1] === 'job-1'));
+  assert.ok(calls.some((call) => call[0] === 'importAnnotationBackfillResult' && call[1] === 1 && call[3] === false), 'loader should import saved annotation backfill result without replacing existing reader marks or calling Gemini again');
   assert.ok(calls.some((call) => call[0] === 'resetChunkDisplay'), 'loader should reset AI chunk Chinese visibility after loading generated chunk data');
 
   const failedWrites = [];

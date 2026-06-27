@@ -100,6 +100,8 @@ async function main() {
   assert.equal(panelSource.includes('<select v-model="geminiMode"'), false, 'mock/off/real mode selector should not be shown to users');
   assert.ok(panelSource.includes("const geminiMode = computed"), 'workflow mode should be computed from hidden dev controls');
   assert.ok(panelSource.includes("replacePolicy: 'ask'"), 'queue submission should not silently replace current content');
+  assert.ok(panelSource.includes("window.applyCurrentAudioMeta(meta)"), 'workflow loader should apply audio meta through the reader facade so audioKey stays in sync');
+  assert.ok(panelSource.includes("annotationLightweightModule: window.__annotationLightweightModule"), 'workflow loader should receive the lightweight annotation importer for saved AI backfill results');
   assert.equal(panelSource.includes('切换到阅读器'), false, 'open action should not use ambiguous switch-to-reader wording');
   assert.equal(panelSource.includes('YouTube URL'), false, 'URL label should not be YouTube-specific');
 

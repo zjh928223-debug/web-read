@@ -1,4 +1,6 @@
 import { initGlassEffects } from './glass-effects.js'
+import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'
+import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 
 export function initReaderAppRuntime(deps = {}) {
@@ -14,6 +16,22 @@ export function initReaderAppRuntime(deps = {}) {
     },
     showToast: deps.showToast,
     showError: deps.showError
+  })
+
+  initAnnotationBackfillAiControls({
+    button: deps.annotationBackfillAiBtn,
+    state: deps.runtimeState,
+    annotationLightweightModule: deps.annotationLightweightModule,
+    client: youtubeWorkflowClient,
+    refreshAfterImport: function () {
+      if (deps.chunkState.isChunkMode) deps.renderChunkMode()
+      else deps.renderTranscript()
+      deps.forceUpdateUI(deps.audioPlayer.currentTime)
+    },
+    showToast: deps.showToast,
+    showError: deps.showError,
+    windowObject: globalThis,
+    documentObject: globalThis.document
   })
 
   deps.appHandlers.initExports({

@@ -26,7 +26,7 @@ async function main() {
     'function downloadJsonFile(payload, filename)',
     'function sanitizeFilenamePart(value',
     'function exportManualLightweightAnnotations()',
-    'async function importManualLightweightAnnotations(file)'
+    'async function importManualLightweightAnnotations(file, options = {})'
   ].forEach((pattern) => {
     assert.equal(sessionInitSource.includes(pattern), false, `session-init should not keep lightweight IO helper: ${pattern}`);
   });
@@ -34,7 +34,8 @@ async function main() {
     "from './session-annotation-export-payload.js';",
     "from './session-annotation-import-normalization.js';",
     "from './session-annotation-bundle-merge.js';",
-    'export function createSessionAnnotationLightweightIoRuntime'
+    'export function createSessionAnnotationLightweightIoRuntime',
+    'replaceExisting: options.replaceExisting !== false'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `lightweight IO module should contain ${pattern}`);
   });

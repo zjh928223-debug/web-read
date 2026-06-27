@@ -77,6 +77,7 @@ export function createReaderFeatureRuntimeDeps(deps) {
     exportAnnotationLightweightBtn: domRefs.exportAnnotationLightweightBtn,
     importAnnotationLightweightBtn: domRefs.importAnnotationLightweightBtn,
     importAnnotationLightweightInput: domRefs.importAnnotationLightweightInput,
+    annotationBackfillAiBtn: domRefs.annotationBackfillAiBtn,
     exportJsonBtn: domRefs.exportJsonBtn,
     exportMdAllBtn: domRefs.exportMdAllBtn,
     importMarksBtn: domRefs.importMarksBtn,

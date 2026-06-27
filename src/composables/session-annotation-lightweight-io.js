@@ -80,10 +80,14 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     };
   }
 
-  function exportManualLightweightAnnotations() {
-    const payload = buildManualLightweightAnnotationExportPayload(
+  function buildManualLightweightAnnotationTemplate() {
+    return buildManualLightweightAnnotationExportPayload(
       getManualLightweightAnnotationExportPayloadDeps()
     );
+  }
+
+  function exportManualLightweightAnnotations() {
+    const payload = buildManualLightweightAnnotationTemplate();
     const helper = deps.windowObject.ImportExportSharedHelpers || null;
     const audioBase = helper && typeof helper.getCurrentAudioFilenameBase === 'function'
       ? helper.getCurrentAudioFilenameBase(deps.state.currentAudioMeta, 'article')
@@ -94,7 +98,7 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     return payload;
   }
 
-  async function importManualLightweightAnnotations(file) {
+  async function importManualLightweightAnnotations(file, options = {}) {
     const storage = requireLightweightIoFunction(deps, 'getAnnotationGenerationStorage')();
     if (!storage || typeof storage.saveBundle !== 'function' || typeof storage.loadBundle !== 'function') {
       throw new Error('AnnotationGenerationStorage 不可用');
@@ -112,13 +116,14 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')();
     requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(normalized.generated && normalized.generated.items, {
       sourceType: 'annotation-lightweight-import',
-      replaceExisting: true
+      replaceExisting: options.replaceExisting !== false
     });
     await requireLightweightIoFunction(deps, 'syncAnnotationGenerationEntryStatus')();
     return normalized;
   }
 
   return {
+    buildManualLightweightAnnotationTemplate,
     exportManualLightweightAnnotations,
     importManualLightweightAnnotations,
     installAnnotationContextExport,

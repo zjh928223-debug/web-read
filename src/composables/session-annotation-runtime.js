@@ -104,6 +104,7 @@ export function createSessionAnnotationRuntime(deps = {}) {
     annotationLightweightIoRuntime.installAnnotationContextExport();
     if (globals.annotationLightweightModule && typeof globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime === 'function') {
         globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({
+            buildManualLightweightAnnotationTemplate: annotationLightweightIoRuntime.buildManualLightweightAnnotationTemplate,
             exportManualLightweightAnnotations: annotationLightweightIoRuntime.exportManualLightweightAnnotations,
             importManualLightweightAnnotations: annotationLightweightIoRuntime.importManualLightweightAnnotations
         });

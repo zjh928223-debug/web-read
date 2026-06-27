@@ -137,6 +137,50 @@ async function main() {
   assert.equal(diagnostics.at(-1).event, 'app.generated_index_refresh_complete');
   assert.equal(debug[0].message, '[annotation-debug] app.generated_index_refresh');
 
+  let uninitializedIndexed = null;
+  const uninitializedState = {
+    currentAudioKey: 'audio-2',
+    markedMap: new Map()
+  };
+  const uninitializedRuntime = api.createSessionAnnotationGeneratedIndexRuntime({
+    state: uninitializedState,
+    namespace: { currentDocId: 'doc-2' },
+    getWindow() {
+      return {};
+    },
+    consoleApi: {
+      warn(message, payload) {
+        warnings.push({ message, payload });
+      },
+      debug() {}
+    },
+    getAnnotationGenerationStorage() {
+      return {
+        async loadBundle() {
+          return {
+            generated: { items: [{ targetId: 'uninitialized-seq' }] }
+          };
+        }
+      };
+    },
+    getAnnotationGeneratedResultStore() {
+      return {
+        clear() {},
+        indexBundle(generated, scope) {
+          uninitializedIndexed = { generated, scope };
+          return { itemCount: generated.items.length };
+        }
+      };
+    },
+    emitAnnotationDiagnostics(event, payload) {
+      diagnostics.push({ event, payload });
+    }
+  });
+  assert.deepEqual(await uninitializedRuntime.refreshGeneratedAnnotationIndexForCurrentDocument(), { itemCount: 1 });
+  assert.equal(uninitializedState.annotationGeneratedIndexRefreshSeq, 1);
+  assert.equal(uninitializedState.annotationGeneratedIndexScopeKey, 'audio-2::doc-2');
+  assert.equal(uninitializedIndexed.generated.items[0].targetId, 'uninitialized-seq');
+
   runtime.clearGeneratedAnnotationIndex();
   assert.equal(cleared, 1);
   assert.equal(state.annotationGeneratedIndexScopeKey, '');
