@@ -60,6 +60,13 @@ async function main() {
   const warnings = [];
   const debug = [];
   const markCountAttrs = {};
+  const dispatchedEvents = [];
+  class FakeCustomEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  }
   const markCountEl = {
     textContent: '',
     setAttribute(name, value) {
@@ -99,6 +106,10 @@ async function main() {
     getWindow() {
       return {
         ANNOTATION_DEBUG: false,
+        CustomEvent: FakeCustomEvent,
+        dispatchEvent(event) {
+          dispatchedEvents.push(event);
+        },
         localStorage: {
           getItem(key) {
             return key === 'annotation.debug' ? 'true' : '';
@@ -188,6 +199,12 @@ async function main() {
   assert.equal(markCountEl.textContent, '已标记 2');
   assert.equal(markCountAttrs['data-count'], '2');
   assert.equal(markCountAttrs.title, '当前文章已标记 2 个重点词');
+
+  assert.equal(dispatchedEvents.at(-1).type, 'reader-marks-changed');
+  assert.deepEqual(dispatchedEvents.at(-1).detail, {
+    markedCount: 2,
+    scope: { audioKey: 'audio-1', documentId: 'doc-1' }
+  });
 
   const missingRuntime = api.createSessionAnnotationGeneratedIndexRuntime({
     state: { currentAudioKey: 'a', annotationGeneratedIndexRefreshSeq: 0, annotationGeneratedIndexScopeKey: '' },

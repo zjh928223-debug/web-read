@@ -596,7 +596,9 @@ onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
   bindPlaybackTracking()
   bindMarkCountTracking()
+  window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
   window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('pagehide', handleBeforeUnload)
 })
 
 onBeforeUnmount(() => {
@@ -604,6 +606,8 @@ onBeforeUnmount(() => {
   syncReaderMarks()
   syncReaderActivity('close')
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('pagehide', handleBeforeUnload)
+  window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
   unbindPlaybackTracking()
   unbindMarkCountTracking()
 })
@@ -1702,6 +1706,7 @@ async function applyReaderMarks(marks) {
 }
 
 function scheduleReaderMarksSync() {
+  ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
   if (readerMarksSyncTimer) window.clearTimeout(readerMarksSyncTimer)
   readerMarksSyncTimer = window.setTimeout(() => {
@@ -1711,12 +1716,20 @@ function scheduleReaderMarksSync() {
 }
 
 async function syncReaderMarks() {
+  ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return null
   try {
     return await youtubeWorkflowClient.saveReaderMarks(currentJobId.value, { marks: getCurrentReaderMarks() })
   } catch (_err) {
     return null
   }
+}
+
+function handleReaderMarksChanged() {
+  ensureCurrentJobFromAudioMeta()
+  if (!currentJobId.value) return
+  scheduleReaderMarksSync()
+  syncReaderActivity('annotation')
 }
 
 function bindMarkCountTracking() {
@@ -1737,16 +1750,35 @@ function unbindMarkCountTracking() {
   readerMarksSyncTimer = 0
 }
 
+function sendJsonOnUnload(url, payload) {
+  if (!url || !payload) return false
+  const text = JSON.stringify(payload)
+  const blob = new Blob([text], { type: 'application/json' })
+  if (navigator.sendBeacon && navigator.sendBeacon(url, blob)) return true
+  if (typeof fetch === 'function') {
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: text,
+      keepalive: true
+    }).catch(() => {})
+    return true
+  }
+  return false
+}
+
 function handleBeforeUnload() {
+  ensureCurrentJobFromAudioMeta()
   const payload = buildReaderActivityPayload('close')
-  if (!payload || !navigator.sendBeacon) return
+  if (!payload) return
   try {
-    const body = new Blob([JSON.stringify(payload)], { type: 'application/json' })
-    navigator.sendBeacon(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, body)
+    sendJsonOnUnload(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, payload)
   } catch (_err) {}
   try {
-    const marksBody = new Blob([JSON.stringify({ marks: getCurrentReaderMarks() })], { type: 'application/json' })
-    navigator.sendBeacon(`${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`, marksBody)
+    sendJsonOnUnload(
+      `${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`,
+      { marks: getCurrentReaderMarks() }
+    )
   } catch (_err) {}
 }
 

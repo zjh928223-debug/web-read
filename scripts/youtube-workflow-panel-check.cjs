@@ -102,6 +102,9 @@ async function main() {
   assert.ok(panelSource.includes("replacePolicy: 'ask'"), 'queue submission should not silently replace current content');
   assert.ok(panelSource.includes("window.applyCurrentAudioMeta(meta)"), 'workflow loader should apply audio meta through the reader facade so audioKey stays in sync');
   assert.ok(panelSource.includes("annotationLightweightModule: window.__annotationLightweightModule"), 'workflow loader should receive the lightweight annotation importer for saved AI backfill results');
+  assert.ok(panelSource.includes('reader-marks-changed'), 'workflow panel should sync reader marks when the reader mark state changes');
+  assert.ok(panelSource.includes("window.addEventListener('pagehide', handleBeforeUnload)"), 'workflow panel should save reader marks when the page is hidden or closed');
+  assert.ok(panelSource.includes('sendJsonOnUnload'), 'workflow panel should use unload-safe JSON delivery for final reader mark sync');
   assert.equal(panelSource.includes('切换到阅读器'), false, 'open action should not use ambiguous switch-to-reader wording');
   assert.equal(panelSource.includes('YouTube URL'), false, 'URL label should not be YouTube-specific');
 

@@ -63,6 +63,23 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     }
   }
 
+  function emitReaderMarksChanged(markedCount) {
+    const windowObject = getWindow();
+    if (!windowObject || typeof windowObject.dispatchEvent !== 'function') return;
+    const CustomEventCtor = typeof windowObject.CustomEvent === 'function'
+      ? windowObject.CustomEvent
+      : (typeof CustomEvent === 'function' ? CustomEvent : null);
+    if (!CustomEventCtor) return;
+    try {
+      windowObject.dispatchEvent(new CustomEventCtor('reader-marks-changed', {
+        detail: {
+          markedCount,
+          scope: getAnnotationGenerationScope()
+        }
+      }));
+    } catch (_error) {}
+  }
+
   function nextGeneratedIndexRefreshSeq() {
     const currentSeq = Number(state.annotationGeneratedIndexRefreshSeq);
     const nextSeq = Number.isFinite(currentSeq) ? currentSeq + 1 : 1;
@@ -177,6 +194,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
       markCountEl.setAttribute('data-count', String(count));
       markCountEl.setAttribute('title', `当前文章已标记 ${count} 个重点词`);
     }
+    emitReaderMarksChanged(count);
     return { markedCount: count };
   }
 
