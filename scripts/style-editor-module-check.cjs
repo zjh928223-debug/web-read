@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -6,13 +6,14 @@ const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const styleEditorSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'style-editor.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
+const cssSource = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
 const sessionInitSource = [
   'session-runtime-assembly.js',
   'session-restore-runtime.js',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -50,6 +51,11 @@ assert.ok(
   styleEditorSource.includes('function safeParseLocalJSON'),
   'style-editor should own safeParseLocalJSON'
 );
+
+assert.ok(indexSource.includes('id="chunk-style-modal"'), 'chunk style modal should remain in the DOM');
+assert.match(cssSource, /#style-editor-modal,\s*#chunk-style-modal\s*\{[\s\S]*?display:\s*none;/);
+assert.match(cssSource, /#style-editor-modal,\s*#chunk-style-modal\s*\{[\s\S]*?position:\s*fixed;/);
+assert.match(cssSource, /\.modal-backdrop\s*\{[\s\S]*?display:\s*none;/);
 
 assert.equal(
   styleEditorSource.includes('deps.safeParseLocalJSON'),

@@ -25,8 +25,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'applyCurrentAudioMeta: notesSessionRuntime.applyCurrentAudioMeta',
     'bridgeToPinia: notesSessionRuntime.bridgeToPinia',
     'restoreReaderFocus: runtimeContext.restoreReaderFocus',
-    'closeChunkNoteExportDialog: runtimeContext.closeChunkNoteExportDialog',
-    'setChunkNoteTransferApi: runtimeContext.setChunkNoteTransferApi',
     'audioPlayer: domRefs.audioPlayer'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `reader-feature-runtime-deps should own mapping: ${pattern}`);
@@ -43,8 +41,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     markFileLoaded: () => 'loaded',
     validateVisualData: () => true,
     validateTranscriptData: () => true,
-    validateChunkData: () => true,
-    validateClozeData: () => true,
     validateMarksArray: () => true,
     findChunkIndexByTimeHelper: () => 1,
     bsFindActiveHelper: () => 2,
@@ -69,8 +65,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const domRefs = {
     audioFileInput: { id: 'audio-file' },
     transcriptFileInput: { id: 'transcript-file' },
-    chunkFileInput: { id: 'chunk-file' },
-    clozeFileInput: { id: 'cloze-file' },
     visualFileInput: { id: 'visual-file' },
     lblAudio: { id: 'lbl-audio' },
     lblTranscript: { id: 'lbl-transcript' },
@@ -93,19 +87,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     highlightColorInput: { id: 'highlight-color' },
     sentenceColorInput: { id: 'sentence-color' },
     hotkeyInput: { id: 'hotkey' },
-    hotkeyNotesInput: { id: 'hotkey-notes' },
     hotkeyAnnotationBubbleInput: { id: 'hotkey-annotation' },
     hotkeyBackwardInput: { id: 'hotkey-backward' },
     hotkeyForwardInput: { id: 'hotkey-forward' },
     hotkeyChunkCnInput: { id: 'hotkey-chunk-cn' },
     hotkeyChunkShadowInput: { id: 'hotkey-chunk-shadow' },
-    hotkeyChunkNoteInput: { id: 'hotkey-chunk-note' },
-    chunkNoteCtxAddBtn: { id: 'ctx-add' },
-    chunkNoteCtxMenu: { id: 'ctx-menu' },
     toggleFollowBtn: { id: 'toggle-follow' },
-    importChunkNotesBtn: { id: 'import-chunk-notes' },
-    importChunkNotesInput: { id: 'import-chunk-notes-input' },
-    exportChunkNotesBtn: { id: 'export-chunk-notes' },
     exportAnnotationLightweightBtn: { id: 'export-annotation' },
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
@@ -116,11 +103,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   };
   const runtimeContext = {
     domRefs,
-    restoreReaderFocus: () => 'focus',
-    toggleCurrentNote: () => 'note',
-    closeChunkNoteExportDialog: () => 'closed',
-    getChunkNoteExportDialogEl: () => ({ id: 'dialog' }),
-    setChunkNoteTransferApi: () => 'transfer'
+    restoreReaderFocus: () => 'focus'
   };
   const notesSessionRuntime = {
     applyCurrentAudioMeta: () => 'audio-meta',
@@ -142,8 +125,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     showError: () => 'error',
     renderTranscript: () => 'transcript',
     renderChunkMode: () => 'chunk',
-    syncAnnotationGenerationEntryStatus: () => 'sync',
-    initAnnotationApiSettingsUi: () => 'settings'
+    syncAnnotationGenerationEntryStatus: () => 'sync'
   });
 
   assert.equal(api.transcriptState, bootstrapRuntime.transcriptState);
@@ -154,11 +136,28 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(api.applyCurrentAudioMeta, notesSessionRuntime.applyCurrentAudioMeta);
   assert.equal(api.bridgeToPinia, notesSessionRuntime.bridgeToPinia);
   assert.equal(api.restoreReaderFocus, runtimeContext.restoreReaderFocus);
-  assert.equal(api.toggleCurrentNote, runtimeContext.toggleCurrentNote);
-  assert.equal(api.closeChunkNoteExportDialog, runtimeContext.closeChunkNoteExportDialog);
-  assert.equal(api.getChunkNoteExportDialogEl, runtimeContext.getChunkNoteExportDialogEl);
-  assert.equal(api.setChunkNoteTransferApi, runtimeContext.setChunkNoteTransferApi);
   assert.equal(api.audioPlayer, domRefs.audioPlayer);
+  [
+    'toggleCurrentNote',
+    'closeChunkNoteExportDialog',
+    'getChunkNoteExportDialogEl',
+    'setChunkNoteTransferApi',
+    'chunkFileInput',
+    'clozeFileInput',
+    'hotkeyNotesInput',
+    'hotkeyChunkNoteInput',
+    'chunkNoteCtxAddBtn',
+    'chunkNoteCtxMenu',
+    'importChunkNotesBtn',
+    'exportChunkNotesBtn'
+  ].forEach((key) => {
+    assert.equal(Object.prototype.hasOwnProperty.call(api, key), false, `retired feature dep should stay removed: ${key}`);
+  });
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(api, 'initAnnotationApiSettingsUi'),
+    false,
+    'reader feature deps should not carry retired annotation API settings facade'
+  );
 
   console.log('reader feature runtime deps check passed');
 }

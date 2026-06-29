@@ -55,11 +55,9 @@ export function configureRuntimeStateBindings(options) {
   defineRuntimeStateBinding(runtimeState, 'currentAudioKey', () => audioIdentityApi.currentAudioKey, (value) => { audioIdentityApi.setCurrentAudioKey(value); });
 
   defineRuntimeStateBinding(runtimeState, 'markKey', () => hotkeyStateApi.markKey, (value) => { hotkeyStateApi.setMarkKey(value); });
-  defineRuntimeStateBinding(runtimeState, 'notesKey', () => hotkeyStateApi.notesKey, (value) => { hotkeyStateApi.setNotesKey(value); });
   defineRuntimeStateBinding(runtimeState, 'annotationBubbleKey', () => hotkeyStateApi.annotationBubbleKey, (value) => { hotkeyStateApi.setAnnotationBubbleKey(value); });
   defineRuntimeStateBinding(runtimeState, 'chunkCnKey', () => hotkeyStateApi.chunkCnKey, (value) => { hotkeyStateApi.setChunkCnKey(value); });
   defineRuntimeStateBinding(runtimeState, 'chunkShadowKey', () => hotkeyStateApi.chunkShadowKey, (value) => { hotkeyStateApi.setChunkShadowKey(value); });
-  defineRuntimeStateBinding(runtimeState, 'chunkNoteKey', () => hotkeyStateApi.chunkNoteKey, (value) => { hotkeyStateApi.setChunkNoteKey(value); });
   defineRuntimeStateBinding(runtimeState, 'backwardKey', () => hotkeyStateApi.backwardKey, (value) => { hotkeyStateApi.setBackwardKey(value); });
   defineRuntimeStateBinding(runtimeState, 'forwardKey', () => hotkeyStateApi.forwardKey, (value) => { hotkeyStateApi.setForwardKey(value); });
 

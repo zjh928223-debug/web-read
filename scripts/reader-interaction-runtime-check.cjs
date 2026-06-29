@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -15,7 +15,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -75,7 +74,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(moduleSource.includes('document.'), false, 'reader-interaction-runtime should not read document globals');
 
   [
-    "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',
@@ -102,9 +100,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   const deps = {
     bridgeToPinia: () => 'bridge',
-    getTranscriptContainer: () => ({ id: 'transcript' }),
-    getClozeMarkup: () => '<button>answer</button>',
-    checkCloze: () => true,
     tryRestoreChunkNoteDraft: () => 'draft',
     runtimeState: { runtime: true },
     transcriptState: { segments: [] },
@@ -120,8 +115,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     markedMap: new Map([[1, true]]),
     vocabMatchMap: new Map([[2, true]]),
     hasActiveTextSelectionWithinChunk: () => false,
-    selectSentenceFromChunkTarget: () => 'select',
-    openChunkNoteContextFromEvent: () => 'open',
     getSelection: () => 'selection',
     playbackModule: { init() {} },
     getWindow: () => ({})
@@ -130,9 +123,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const result = initReaderInteractionRuntime(deps);
 
   assert.equal(globalThis.__renderRuntimeDeps.bridgeToPinia, deps.bridgeToPinia);
-  assert.equal(globalThis.__renderRuntimeDeps.getTranscriptContainer, deps.getTranscriptContainer);
-  assert.equal(globalThis.__renderRuntimeDeps.getClozeMarkup(), '<button>answer</button>');
-  assert.equal(globalThis.__renderRuntimeDeps.checkCloze(), true);
   assert.equal(globalThis.__renderRuntimeDeps.tryRestoreChunkNoteDraft, deps.tryRestoreChunkNoteDraft);
   assert.equal(globalThis.__playbackRuntimeDeps.runtimeState, deps.runtimeState);
   assert.equal(globalThis.__playbackRuntimeDeps.transcriptState, deps.transcriptState);
@@ -142,6 +132,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(globalThis.__playbackRuntimeDeps.markedMap, deps.markedMap);
   assert.equal(globalThis.__playbackRuntimeDeps.vocabMatchMap, deps.vocabMatchMap);
   assert.equal(globalThis.__playbackRuntimeDeps.getSelection(), 'selection');
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__playbackRuntimeDeps, 'selectSentenceFromChunkTarget'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__playbackRuntimeDeps, 'openChunkNoteContextFromEvent'), false);
   assert.equal(result.playbackRuntimeHelpersApi.jumpNextSentence(), 'next');
   assert.equal(result.forceUpdateUI(), 'force');
   assert.equal(result.toggleAnnotationBubble(), 'toggle');

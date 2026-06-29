@@ -6,7 +6,7 @@ import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runt
 import { initReaderFeatureRuntime } from './reader-feature-runtime.js';
 import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';
 import { showToast, showError } from './ui-facades.js';
-import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';
+import { syncAnnotationGenerationEntryStatus } from './session-facades.js';
 
 export function initReaderRuntimeAssembly(deps = {}) {
   var getWindow = typeof deps.getWindow === 'function' ? deps.getWindow : function () { return globalThis; };
@@ -37,8 +37,7 @@ export function initReaderRuntimeAssembly(deps = {}) {
       showError: showError,
       renderTranscript: renderTranscript,
       renderChunkMode: renderChunkMode,
-      syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
-      initAnnotationApiSettingsUi: initAnnotationApiSettingsUi
+      syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus
     })
   });
 

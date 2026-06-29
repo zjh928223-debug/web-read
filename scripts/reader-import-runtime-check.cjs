@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -17,7 +17,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -219,18 +218,13 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     findExactMatchRangeHelper() {},
     audioFileInput: { id: 'audio-file' },
     transcriptFileInput: { id: 'transcript-file' },
-    chunkFileInput: { id: 'chunk-file' },
-    clozeFileInput: { id: 'cloze-file' },
     applyCurrentAudioMeta() {},
     lblAudio: { id: 'lbl-audio' },
     lblTranscript: { id: 'lbl-transcript' },
     validateTranscriptData(data) { return data; },
-    validateChunkData(data) { return data; },
-    validateClozeData(data) { return data; },
     switchSentenceNotesDoc() {},
     renderTranscript() {},
     forceUpdateUI: undefined,
-    closeChunkNoteExportDialog() {},
     loadChunkNotesForCurrentAudio() {},
     chunkNotesApi: {
       clearChunkNotesFileState() { return 'cleared'; }
@@ -261,7 +255,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.chunkPipeline[0].state, deps.runtimeState);
   calls.chunkPipeline[0].enterChunkMode();
   assert.equal(toggledChunkMode, true);
-  assert.equal(calls.importHandlers[0].processChunkData, fakeChunkPipelineApi.processChunkData);
+  assert.equal(calls.importHandlers[0].processChunkData, undefined);
+  assert.equal(api.chunkPipelineApi.processChunkData, fakeChunkPipelineApi.processChunkData);
   assert.equal(calls.importHandlers[0].rebuildVocabMatching, fakeVisualApi.rebuildVocabMatching);
   assert.equal(calls.importHandlers[0].clearGeneratedAnnotationIndex, sessionFns.clearGeneratedAnnotationIndex);
   assert.equal(calls.importHandlers[0].syncAnnotationGenerationEntryStatus, sessionFns.syncAnnotationGenerationEntryStatus);

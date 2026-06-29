@@ -49,12 +49,6 @@ export function createSessionRestoreRuntime(deps = {}) {
       await deps.switchSentenceNotesDoc();
     }
 
-    const notesData = await deps.loadFromDB('notes');
-    if (notesData) {
-      deps.processNotes(notesData);
-      deps.markFileLoaded(deps.lblNotes, 'Notes restored');
-    }
-
     const visualData = await deps.loadFromDB('visual');
     if (visualData) {
       deps.processVisual(visualData);

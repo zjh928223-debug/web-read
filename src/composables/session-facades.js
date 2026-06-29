@@ -1,4 +1,6 @@
 let runtimeStateGetter = function () { return null; };
+let windowObject = typeof window !== 'undefined' ? window : globalThis;
+const runtimeHandlers = {};
 
 function getRuntimeState() {
   try {
@@ -9,29 +11,44 @@ function getRuntimeState() {
 }
 
 export function configureSessionFacades(options = {}) {
+  if (typeof options.getWindow === 'function') {
+    windowObject = options.getWindow() || windowObject;
+  } else if (options.windowObject) {
+    windowObject = options.windowObject;
+  }
   if (typeof options.getRuntimeState === 'function') {
     runtimeStateGetter = options.getRuntimeState;
   }
+  [
+    'clearGeneratedAnnotationIndex',
+    'clearPersistedChunkSession',
+    'getAnnotationGenerationScope',
+    'emitAnnotationDiagnostics',
+    'scheduleGeneratedAnnotationIndexRefresh',
+    'syncAnnotationGenerationEntryStatus'
+  ].forEach((name) => {
+    if (typeof options[name] === 'function') runtimeHandlers[name] = options[name];
+  });
   installSessionWindowFacades();
   return sessionFacadesApi;
 }
 
 export function clearGeneratedAnnotationIndex() {
-  if (typeof window.__session_clearGeneratedAnnotationIndex === 'function') {
-    window.__session_clearGeneratedAnnotationIndex();
+  if (typeof runtimeHandlers.clearGeneratedAnnotationIndex === 'function') {
+    runtimeHandlers.clearGeneratedAnnotationIndex();
   }
 }
 
 export function clearPersistedChunkSession() {
-  if (typeof window.__session_clearPersistedChunkSession === 'function') {
-    return window.__session_clearPersistedChunkSession();
+  if (typeof runtimeHandlers.clearPersistedChunkSession === 'function') {
+    return runtimeHandlers.clearPersistedChunkSession();
   }
   return Promise.resolve();
 }
 
 export function getAnnotationGenerationScope() {
-  if (typeof window.__session_getAnnotationGenerationScope === 'function') {
-    return window.__session_getAnnotationGenerationScope();
+  if (typeof runtimeHandlers.getAnnotationGenerationScope === 'function') {
+    return runtimeHandlers.getAnnotationGenerationScope();
   }
   return { audioKey: 'default-audio', documentId: 'default-document' };
 }
@@ -51,54 +68,48 @@ export function getAnnotationGeneratedIndexScopeKey() {
 }
 
 export function emitAnnotationDiagnostics() {
-  if (typeof window.__session_emitAnnotationDiagnostics === 'function') {
-    return window.__session_emitAnnotationDiagnostics.apply(null, arguments);
+  if (typeof runtimeHandlers.emitAnnotationDiagnostics === 'function') {
+    return runtimeHandlers.emitAnnotationDiagnostics.apply(null, arguments);
   }
 }
 
 export function emitAnnotationDebug(step, payload) {
   try {
-    if (window.ANNOTATION_DEBUG === true || localStorage.getItem('annotationDebug') === '1') {
+    const storage = windowObject && windowObject.localStorage ? windowObject.localStorage : globalThis.localStorage;
+    if (windowObject.ANNOTATION_DEBUG === true || (storage && storage.getItem('annotationDebug') === '1')) {
       console.debug(`[annotation-debug] ${step}`, payload || {});
     }
   } catch (error) {}
 }
 
 export function scheduleGeneratedAnnotationIndexRefresh() {
-  if (typeof window.__session_scheduleGeneratedAnnotationIndexRefresh === 'function') {
-    return window.__session_scheduleGeneratedAnnotationIndexRefresh();
+  if (typeof runtimeHandlers.scheduleGeneratedAnnotationIndexRefresh === 'function') {
+    return runtimeHandlers.scheduleGeneratedAnnotationIndexRefresh();
   }
   return Promise.resolve();
 }
 
 export function syncAnnotationGenerationEntryStatus() {
-  if (typeof window.__session_syncAnnotationGenerationEntryStatus === 'function') {
-    return window.__session_syncAnnotationGenerationEntryStatus();
+  if (typeof runtimeHandlers.syncAnnotationGenerationEntryStatus === 'function') {
+    return runtimeHandlers.syncAnnotationGenerationEntryStatus();
   }
 }
 
 export function getAnnotationGeneratedResultStore() {
-  return window.AnnotationGeneratedResultStore || null;
+  return windowObject.AnnotationGeneratedResultStore || null;
 }
 
 export function getAnnotationClickResolver() {
-  return window.AnnotationClickResolver || null;
-}
-
-export function initAnnotationApiSettingsUi() {
-  if (typeof window.__session_initAnnotationApiSettingsUi === 'function') {
-    return window.__session_initAnnotationApiSettingsUi();
-  }
+  return windowObject.AnnotationClickResolver || null;
 }
 
 function installSessionWindowFacades() {
-  window.getAnnotationGenerationScope = getAnnotationGenerationScope;
-  window.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;
-  window.clearPersistedChunkSession = clearPersistedChunkSession;
-  window.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
-  window.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
-  window.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
-  window.initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;
+  windowObject.getAnnotationGenerationScope = getAnnotationGenerationScope;
+  windowObject.clearGeneratedAnnotationIndex = clearGeneratedAnnotationIndex;
+  windowObject.clearPersistedChunkSession = clearPersistedChunkSession;
+  windowObject.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
+  windowObject.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
+  windowObject.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
 }
 
 const sessionFacadesApi = {
@@ -112,8 +123,7 @@ const sessionFacadesApi = {
   scheduleGeneratedAnnotationIndexRefresh,
   syncAnnotationGenerationEntryStatus,
   getAnnotationGeneratedResultStore,
-  getAnnotationClickResolver,
-  initAnnotationApiSettingsUi
+  getAnnotationClickResolver
 };
 
 installSessionWindowFacades();

@@ -1,5 +1,3 @@
-import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interactions.js';
-
   // === M5: AI chunk alignment/matching pipeline ===
   function initChunkPipeline(deps) {
     var state = deps.state;
@@ -287,9 +285,6 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
 
     var audioFileInput = deps.audioFileInput;
     var transcriptFileInput = deps.transcriptFileInput;
-    var chunkFileInput = deps.chunkFileInput;
-    var clozeFileInput = deps.clozeFileInput;
-
     var getFirstFileFromEvent = deps.getFirstFileFromEvent;
     var readFileAsText = deps.readFileAsText;
     var saveToDB = deps.saveToDB;
@@ -302,8 +297,6 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
     var lblAudio = deps.lblAudio;
     var lblTranscript = deps.lblTranscript;
     var validateTranscriptData = deps.validateTranscriptData;
-    var validateChunkData = deps.validateChunkData;
-    var validateClozeData = deps.validateClozeData;
     var clearPersistedChunkSession = deps.clearPersistedChunkSession;
     var switchSentenceNotesDoc = deps.switchSentenceNotesDoc;
     var getAnnotationGenerationScope = deps.getAnnotationGenerationScope;
@@ -316,7 +309,6 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
     var syncAnnotationGenerationEntryStatus = deps.syncAnnotationGenerationEntryStatus;
     var bridgeToPinia = deps.bridgeToPinia;
     var rebuildVocabMatching = deps.rebuildVocabMatching;
-    var closeChunkNoteExportDialog = deps.closeChunkNoteExportDialog;
     var loadChunkNotesForCurrentAudio = deps.loadChunkNotesForCurrentAudio;
     var _ns = deps._ns || window.__notesState || null;
     var clearChunkNotesFileState = typeof deps.clearChunkNotesFileState === 'function'
@@ -327,11 +319,7 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
             _ns.chunkNotesFileHandleAudioKey = '';
             _ns.chunkNotesFileName = '';
         };
-    var processChunkData = deps.processChunkData;
-
     var audioPlayer = deps.audioPlayer;
-    var transcriptContainer = deps.transcriptContainer;
-    var loadClozeBtn = deps.loadClozeBtn || (typeof document !== 'undefined' ? document.getElementById('btn-load-cloze') : null);
     var markedMap = deps.markedMap;
 
     // Audio
@@ -342,7 +330,6 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
         applyCurrentAudioMeta({ name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' });
         clearGeneratedAnnotationIndex();
         clearChunkNotesFileState();
-        closeChunkNoteExportDialog();
         saveToDB('audioMeta', state.currentAudioMeta);
         loadChunkNotesForCurrentAudio().then(function () {
             if (state.isChunkMode) renderChunkMode();
@@ -386,7 +373,6 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
           state.segments = json.segments || [];
           state.hasAiChunkData = false;
           state.chunkItems = [];
-          resetClozeState();
           state.words = state.segments.reduce(function (acc, s) { return acc.concat(s.words || []); }, []);
           var gIdx = 0;
           state.segments.forEach(function (seg, sIdx) {
@@ -417,128 +403,10 @@ import { createClozeAnswerState, checkClozeAnswerState } from './cloze-interacti
            }
     }
 
-    // Chunk File
-    chunkFileInput.addEventListener('change', function (event) {
-        var file = getFirstFileFromEvent(event);
-        if (!file) return;
-        readFileAsText(file, function (rawText) {
-            try {
-                var data = validateChunkData(JSON.parse(rawText));
-                state.manualChunkStates = {};
-                resetClozeState();
-                try {
-                    localStorage.removeItem('manualChunkStates');
-                } catch (e) {}
-                saveToDB('chunkData', data);
-                processChunkData(data);
-                showToast('AI chunk data loaded', 'success');
-            } catch (err) { showError('CHUNK_PARSE', err && err.message ? err.message : 'Invalid chunk JSON'); }
-            finally { event.target.value = ''; restoreReaderFocus(); }
-        });
-    });
-
-    function resetClozeState() {
-        state.clozeItems.length = 0;
-        state.clozeAnswerState.length = 0;
-        state.hasClozeData = false;
-        window.__hasClozeData = false;
-        if (loadClozeBtn) {
-            loadClozeBtn.classList.remove('active');
-        }
-    }
-
-    // Cloze State (exposed for Vue Phase 4)
-    window.__clozeItems = state.clozeItems;
-    window.__clozeAnswerState = state.clozeAnswerState;
-    window.__hasClozeData = state.hasClozeData;
-
-    function setClozeData(items) {
-        state.clozeItems = Array.isArray(items) ? items : [];
-        state.hasClozeData = state.clozeItems.length > 0;
-        state.clozeAnswerState = createClozeAnswerState(state.clozeItems);
-        window.__clozeItems = state.clozeItems;
-        window.__clozeAnswerState = state.clozeAnswerState;
-        window.__hasClozeData = state.hasClozeData;
-        if (loadClozeBtn) {
-            loadClozeBtn.classList.toggle('active', state.hasClozeData);
-        }
-        bridgeToPinia();
-    }
-
-    function buildClozeQuizMarkup() {
-        if (window.__USE_VUE_RENDERING) return '';
-        if (!state.hasClozeData || !state.clozeItems.length) return '';
-        var quizVm = window.buildClozeQuizViewModel(state.clozeItems, state.clozeAnswerState);
-        var cards = quizVm.cards.map(function (card) {
-            var resultHtml = card.resultKind === 'hint'
-                ? '<div class="cloze-result-hint">填写后点击“检查答案”。</div>'
-                : card.resultKind === 'ok'
-                    ? '<div class="cloze-result-ok">回答正确。标准答案：<strong>' + window.escapeHtml(card.targetWord) + '</strong></div>' + (card.reasoning ? '<div class="cloze-result-reason">' + window.escapeHtml(card.reasoning) + '</div>' : '')
-                    : '<div class="cloze-result-error">不匹配。标准答案：<strong>' + window.escapeHtml(card.targetWord) + '</strong></div>' + (card.reasoning ? '<div class="cloze-result-reason">' + window.escapeHtml(card.reasoning) + '</div>' : '');
-            var metaHtml = card.wordType ? '<div class="cloze-meta">' + window.escapeHtml(card.wordType) + '</div>' : '';
-            return '\n                <section class="cloze-card ' + card.statusClass + '" data-cloze-card="' + card.index + '">\n                    <div class="cloze-card-head">\n                        <span class="cloze-index">' + card.indexLabel + '</span>\n                        ' + metaHtml + '\n                    </div>\n                    <div class="cloze-sentence">' + window.escapeHtml(card.clozeSentence) + '</div>\n                    <div class="cloze-answer-row">\n                        <input type="text" class="cloze-answer-input" data-cloze-input="' + card.index + '" value="' + window.escapeHtml(card.userAnswer) + '" placeholder="输入答案">\n                        <button type="button" class="small-btn cloze-check-btn" data-cloze-check="' + card.index + '">检查答案</button>\n                    </div>\n                    ' + resultHtml + '\n                </section>\n            ';
-        }).join('');
-
-        return '\n            <section class="cloze-quiz-section" id="cloze-quiz-section">\n                <div class="cloze-quiz-header">\n                    <h3>文章填空</h3>\n                    <p>AI 切分内容读完后，可以直接在这里做题。无论回答对错，都会显示标准答案和解释。</p>\n                </div>\n                <div class="cloze-quiz-list">' + cards + '</div>\n            </section>\n        ';
-    }
-
-    function handleClozeCheck(index) {
-        var item = state.clozeItems[index];
-        if (!item) return;
-        var input = document.querySelector('[data-cloze-input="' + index + '"]');
-        var userAnswer = input ? input.value : '';
-        var result = checkClozeAnswerState({
-            items: state.clozeItems,
-            answerState: state.clozeAnswerState,
-            index: index,
-            userAnswer: userAnswer
-        });
-        if (!result) return;
-        state.clozeAnswerState = result.answerState;
-        window.__clozeAnswerState = state.clozeAnswerState;
-        bridgeToPinia();
-        if (!window.__USE_VUE_RENDERING) {
-            renderChunkMode();
-            var nextInput = transcriptContainer.querySelector('[data-cloze-input="' + index + '"]');
-            if (nextInput) {
-                nextInput.focus();
-                nextInput.setSelectionRange(nextInput.value.length, nextInput.value.length);
-            }
-        }
-    }
-
-    // Expose for Vue Phase 4
-    window.__clozeCheck = handleClozeCheck;
-    window.__buildClozeQuizMarkup = buildClozeQuizMarkup;
-
-    if (clozeFileInput) {
-        clozeFileInput.addEventListener('change', function (event) {
-            var file = getFirstFileFromEvent(event);
-            if (!file) return;
-            readFileAsText(file, function (rawText) {
-                try {
-                    var data = validateClozeData(JSON.parse(rawText));
-                    setClozeData(data);
-                    if (state.isChunkMode) renderChunkMode();
-                    showToast('Cloze questions loaded', 'success');
-                } catch (err) {
-                    showError('CLOZE_PARSE', err && err.message ? err.message : 'Invalid cloze JSON');
-                } finally {
-                    event.target.value = '';
-                    restoreReaderFocus();
-                }
-            });
-        });
-    }
-
     window.processTranscript = processTranscript;
 
     return {
-        processTranscript: processTranscript,
-        setClozeData: setClozeData,
-        resetClozeState: resetClozeState,
-        buildClozeQuizMarkup: buildClozeQuizMarkup,
-        handleClozeCheck: handleClozeCheck
+        processTranscript: processTranscript
     };
   }
 

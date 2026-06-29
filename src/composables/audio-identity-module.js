@@ -10,9 +10,13 @@ export function initAudioIdentity(deps = {}) {
     var getLegacySentenceNotesStorageKeyHelper = deps.getLegacySentenceNotesStorageKey;
     var buildCurrentSentenceDocIdHelper = deps.buildCurrentSentenceDocId;
     var getSegments = typeof deps.getSegments === 'function' ? deps.getSegments : function () { return []; };
+    var onCurrentAudioMetaChange = typeof deps.onCurrentAudioMetaChange === 'function'
+        ? deps.onCurrentAudioMetaChange
+        : function () {};
 
     function setCurrentAudioMeta(value) {
         currentAudioMeta = value || null;
+        onCurrentAudioMetaChange(currentAudioMeta);
         return currentAudioMeta;
     }
 

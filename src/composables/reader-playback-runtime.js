@@ -51,7 +51,6 @@ export function initReaderPlaybackRuntime(deps = {}) {
     notifyAnnotationBubbleWordClick,
     isChunkMode() { return deps.chunkState.isChunkMode },
     hasActiveTextSelectionWithinChunk: deps.hasActiveTextSelectionWithinChunk,
-    selectSentenceFromChunkTarget: deps.selectSentenceFromChunkTarget,
     legacyTranscriptContainer: deps.transcriptContainer
   })
 
@@ -59,9 +58,7 @@ export function initReaderPlaybackRuntime(deps = {}) {
     getAudioPlayer() { return deps.audioPlayer },
     getSelection: deps.getSelection,
     forceUpdateUI,
-    notifyAnnotationBubbleWordClick,
-    selectSentenceFromChunkTarget: deps.selectSentenceFromChunkTarget,
-    openChunkNoteContextFromEvent: deps.openChunkNoteContextFromEvent
+    notifyAnnotationBubbleWordClick
   })
 
   return {

@@ -35,22 +35,21 @@
       <button type="button" id="theme-custom-reset" class="small-btn">重置配色</button>
     </div>
   </div>
-  <svg id="chunk-note-svg-layer" aria-hidden="true"></svg>
-  <div id="chunk-note-probe" class="chunk-note-probe"></div>
-  <div id="chunk-note-ctx-menu">
-    <button type="button" id="chunk-note-ctx-add" class="chunk-note-ctx-item">添加备注</button>
-  </div>
-
   <div id="main-app-area">
     <div class="container">
       <div class="controls">
-        <label>音频:</label>
-        <label for="audio-file" class="file-btn" id="lbl-audio">选择音频</label>
-        <input type="file" id="audio-file" accept="audio/*">
-        
-        <label>字幕:</label>
-        <label for="transcript-file" class="file-btn" id="lbl-transcript">选择字幕</label>
-        <input type="file" id="transcript-file" accept=".json">
+        <details class="deprecated-file-entry">
+          <summary>过时入口</summary>
+          <div class="deprecated-file-entry-actions">
+            <label>音频:</label>
+            <label for="audio-file" class="file-btn" id="lbl-audio">选择音频</label>
+            <input type="file" id="audio-file" accept="audio/*">
+
+            <label>字幕:</label>
+            <label for="transcript-file" class="file-btn" id="lbl-transcript">选择字幕</label>
+            <input type="file" id="transcript-file" accept=".json">
+          </div>
+        </details>
       </div>
 
       <audio id="audio-player" controls></audio>
@@ -74,10 +73,6 @@
           <button id="toggle-follow" class="on">跟随:开</button>
           
           <span class="hotkey-box">
-            释义 <input id="hotkey-notes-input" class="hotkey-input" type="text" maxlength="1" value="n" />
-          </span>
-
-          <span class="hotkey-box">
             标记 <input id="hotkey-input" class="hotkey-input" type="text" maxlength="1" value="m" />
           </span>
 
@@ -97,18 +92,14 @@
           <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
           <button id="import-marks-btn" class="small-btn">导标记</button>
           <button id="export-json" class="small-btn">存JSON</button>
+          <span id="annotation-mark-count" class="small-btn mark-count-badge" role="status" aria-live="polite" data-count="0" title="当前文章已标记 0 个重点词">已标记 0</span>
           <button id="export-md-all" class="small-btn">存TXT</button>
           <button id="btn-export-annotation-lightweight" class="small-btn" type="button" title="导出轻量回填模板，适合补 boundary/type/meaning/memoryHint">导出轻回填模板</button>
           <input type="file" id="import-annotation-lightweight-file" accept=".json" style="display: none;" />
           <button id="btn-import-annotation-lightweight" class="small-btn" type="button" title="导入轻量回填结果，适合日常补释义">导入轻回填结果</button>
-          <button id="btn-annotation-api-settings" class="small-btn" type="button" aria-haspopup="dialog" aria-expanded="false" hidden>API设置</button>
-          <div id="annotation-api-settings-panel" class="annotation-api-settings-panel" role="dialog" aria-label="Annotation API Settings" hidden></div>
+          <button id="btn-annotation-backfill-ai" class="small-btn" type="button" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
 
-          <input type="file" id="chunk-file" accept=".json" style="display: none;">
-          <input type="file" id="cloze-file" accept=".json" style="display: none;">
           <button id="toggle-chunk-btn">AI切分</button>
-          <button id="btn-load-chunk" class="small-btn" type="button">导切分</button>
-          <button id="btn-load-cloze" class="small-btn" type="button">导填空</button>
           <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">T</button>
           
           <span class="hotkey-box">
@@ -122,18 +113,6 @@
             影<input id="hotkey-chunk-shadow-input" class="hotkey-input" type="text" maxlength="1" value="s" />
           </span>
 
-          <span class="hotkey-box" title="AI切分模式下开关右侧备注">
-            注<input id="hotkey-chunk-note-input" class="hotkey-input" type="text" maxlength="1" value="x" />
-          </span>
-          <details class="deprecated-options">
-            <summary class="small-btn" title="旧备注工具">过时选项</summary>
-            <span class="deprecated-options-body">
-              <input type="file" id="import-chunk-notes-file" accept=".json" style="display:none;">
-              <button id="btn-import-chunk-notes" class="small-btn" title="导入备注 JSON">导注</button>
-              <button id="btn-export-chunk-notes" class="small-btn" title="导出备注 JSON">存注</button>
-              <button id="btn-chunk-note-style" title="调整备注样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">N</button>
-            </span>
-          </details>
         </div>
       </div>
 
@@ -149,7 +128,7 @@
   <div id="chunk-style-modal">
       <div class="modal-header">
           <span class="modal-title">AI切分模式样式</span>
-          <span id="btn-close-chunk-style-modal" class="close-modal">脳</span>
+          <span id="btn-close-chunk-style-modal" class="close-modal">&times;</span>
       </div>
       
       <div class="style-section">
@@ -182,52 +161,19 @@
       </div>
   </div>
 
-  <div id="chunk-note-style-modal">
-      <div class="modal-header">
-          <span class="modal-title">备注样式</span>
-          <span id="btn-close-chunk-note-style-modal" class="close-modal">脳</span>
-      </div>
-      <div class="style-section">
-          <h4>备注样式</h4>
-          <div class="control-row">
-              <span style="font-size:12px; margin-right:4px; width:50px;">字号</span>
-              <input type="number" id="chunk-note-size-input" class="style-input-num" value="14" min="10" max="36" step="1"> px
-          </div>
-          <div class="control-row">
-              <span style="font-size:12px; margin-right:4px; width:50px;">颜色</span>
-              <input type="color" id="chunk-note-color-input" class="color-input" value="#4b5563">
-          </div>
-          <div class="control-row">
-              <span style="font-size:12px; margin-right:4px; width:50px;">宽度</span>
-              <input type="number" id="chunk-note-width-input" class="style-input-num" value="260" min="140" max="1200" step="10"> px
-          </div>
-          <div class="control-row">
-              <span style="font-size:12px; margin-right:4px; width:50px;">高度</span>
-              <input type="number" id="chunk-note-min-height-input" class="style-input-num" value="18" min="18" max="360" step="2"> px
-          </div>
-          <div class="control-row">
-              <span style="font-size:12px; margin-right:4px; width:50px;">箭头</span>
-              <input type="number" id="chunk-note-arrow-size-input" class="style-input-num" value="12" min="6" max="28" step="1"> px
-          </div>
-      </div>
-  </div>
-
   <script async src="https://cse.google.com/cse.js?cx=048d09e2e2f764b7b"></script>
 
   <script type="module" src="src/stores/theme.js"></script>
   <script type="module" src="src/stores/ui.js"></script>
   <script type="module" src="src/stores/audio.js"></script>
   <script type="module" src="src/stores/marks.js"></script>
-  <script type="module" src="src/stores/cloze.js"></script>
   <script type="module" src="src/stores/transcript.js"></script>
   <script type="module" src="src/stores/chunk.js"></script>
   <script type="module" src="src/stores/notes.js"></script>
   <script type="module" src="src/stores/annotation.js"></script>
   <script type="module" src="src/composables/glass-effects.js"></script>
-  <script type="module" src="src/composables/chunk-note-layout.js"></script>
   <script type="module" src="src/composables/app-handlers.js"></script>
   <script type="module" src="src/composables/style-editor.js"></script>
-  <script type="module" src="src/composables/notes-module.js"></script>
   <script type="module" src="src/composables/import-module.js"></script>
   <script type="module" src="src/composables/keyboard-module.js"></script>
   <script type="module" src="src/composables/playback-module.js"></script>

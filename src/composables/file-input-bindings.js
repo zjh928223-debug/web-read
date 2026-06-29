@@ -13,8 +13,6 @@ function bindFileInputLauncher(doc, buttonId, inputId) {
 export function bindReaderFileInputLaunchers(doc) {
   var targetDoc = doc || (typeof document !== 'undefined' ? document : null);
   if (!targetDoc) return;
-  bindFileInputLauncher(targetDoc, 'btn-load-chunk', 'chunk-file');
-  bindFileInputLauncher(targetDoc, 'btn-load-cloze', 'cloze-file');
 }
 
 if (typeof document !== 'undefined') {

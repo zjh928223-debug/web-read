@@ -1,6 +1,5 @@
 export function initChunkControls(deps = {}) {
   var state = deps.state;
-  var chunkFileInput = deps.chunkFileInput;
   var toggleChunkBtn = deps.toggleChunkBtn;
   var chunkCnHoldBtn = deps.chunkCnHoldBtn;
   var audioPlayer = deps.audioPlayer;
@@ -25,7 +24,6 @@ export function initChunkControls(deps = {}) {
 
   function toggleChunkMode(forceState = null) {
     if (!state.chunkItems || state.chunkItems.length === 0 || !state.hasAiChunkData) {
-      if (chunkFileInput && typeof chunkFileInput.click === 'function') chunkFileInput.click();
       return;
     }
 

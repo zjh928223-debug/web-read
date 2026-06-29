@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -22,7 +22,6 @@ async function main() {
     'session-startup-runtime.js',
     'session-startup-cleanup.js',
     'session-ui-settings-restore.js',
-    'session-annotation-api-settings-runtime.js',
     'session-annotation-context.js',
     'session-annotation-generated-index.js',
     'session-annotation-marks.js',
@@ -58,7 +57,8 @@ async function main() {
     'initHighlightControls({',
     'initThemeControls({',
     'window.__styleEditor.init({',
-    'initAnnotationApiSettingsUi();'
+    'initAnnotationApiSettingsUi();',
+    'deps.initAnnotationApiSettingsUi()'
   ].forEach((pattern) => {
     assert.equal(
       runtimeSource.includes(pattern),
@@ -76,7 +76,6 @@ async function main() {
     'var chunkControlsApi = initChunkControls({',
     'deps.styleEditor.init({',
     'initThemeControls({',
-    'deps.initAnnotationApiSettingsUi()',
     'updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI',
     'updateShadowBtnText: chunkControlsApi.updateShadowBtnText'
   ].forEach((pattern) => {
@@ -94,7 +93,6 @@ async function main() {
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',
     'deps.bridgeToPinia();',
-    "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
     "import { getSessionState } from './session-state-provider.js';"
   ].forEach((pattern) => {
     assert.ok(
@@ -107,8 +105,7 @@ async function main() {
     highlight: [],
     chunk: [],
     theme: [],
-    style: [],
-    annotationSettings: 0
+    style: []
   };
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'reader-controls-runtime-'));
   const tempModulePath = path.join(tempDir, 'reader-controls-runtime.mjs');
@@ -180,8 +177,7 @@ async function main() {
     themeCustomButtonInput: { id: 'themeCustomButtonInput' },
     themeCustomResetBtn: { id: 'themeCustomResetBtn' },
     refreshAllChunkNoteVisuals() {},
-    getLockChunkNoteDimensionsForTheme() { return false; },
-    initAnnotationApiSettingsUi() { calls.annotationSettings += 1; }
+    getLockChunkNoteDimensionsForTheme() { return false; }
   };
 
   const api = initReaderControlsRuntime(deps);
@@ -190,7 +186,6 @@ async function main() {
   assert.equal(calls.chunk.length, 1, 'chunk controls should be initialized once');
   assert.equal(calls.theme.length, 1, 'theme controls should be initialized once');
   assert.equal(calls.style.length, 1, 'style editor should be initialized once');
-  assert.equal(calls.annotationSettings, 1, 'annotation settings UI should be initialized once');
 
   assert.equal(calls.highlight[0].transcriptState, deps.transcriptState);
   assert.equal(calls.highlight[0].chunkState, deps.chunkState);

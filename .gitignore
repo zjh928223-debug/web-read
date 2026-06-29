@@ -9,6 +9,7 @@ __tmp_*
 node_modules/
 .playwright-artifacts/
 .playwright-deps/
+.codex/startup-logs/
 output/*.log
 output/playwright/*.png
 output/playwright/*.json

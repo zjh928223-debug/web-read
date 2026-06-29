@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -16,7 +16,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -99,7 +98,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(playbackRuntimeSource.includes('mainUpdateHighlight'), false, 'reader-playback-runtime should not keep unused mainUpdateHighlight alias');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -160,8 +158,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     markedMap: new Map([[1, true]]),
     vocabMatchMap: new Map([[2, true]]),
     hasActiveTextSelectionWithinChunk: () => false,
-    selectSentenceFromChunkTarget: () => 'select',
-    openChunkNoteContextFromEvent: () => 'open-note',
     getSelection: () => 'selection',
     playbackModule: {
       init(deps) {
@@ -191,7 +187,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(globalThis.__transcriptDeps.isChunkMode(), false);
   assert.equal(globalThis.__transcriptDeps.legacyTranscriptContainer.id, 'transcript');
   assert.equal(globalThis.__chunkDeps.getSelection(), 'selection');
-  assert.equal(globalThis.__chunkDeps.openChunkNoteContextFromEvent(), 'open-note');
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__chunkDeps, 'openChunkNoteContextFromEvent'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(globalThis.__chunkDeps, 'selectSentenceFromChunkTarget'), false);
 
   assert.equal(result.playbackRuntimeHelpersApi.jumpNextSentence(), 'next');
   assert.equal(result.forceUpdateUI, win.forceUpdateUI);

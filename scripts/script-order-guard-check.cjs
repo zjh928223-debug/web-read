@@ -13,16 +13,13 @@ const expectedScriptSrcs = [
   'src/stores/ui.js',
   'src/stores/audio.js',
   'src/stores/marks.js',
-  'src/stores/cloze.js',
   'src/stores/transcript.js',
   'src/stores/chunk.js',
   'src/stores/notes.js',
   'src/stores/annotation.js',
   'src/composables/glass-effects.js',
-  'src/composables/chunk-note-layout.js',
   'src/composables/app-handlers.js',
   'src/composables/style-editor.js',
-  'src/composables/notes-module.js',
   'src/composables/import-module.js',
   'src/composables/keyboard-module.js',
   'src/composables/playback-module.js',
@@ -38,10 +35,12 @@ assert.equal(fs.existsSync(rootAppPath), false, 'root app.js should be deleted')
 assert.equal(scriptSrcs.includes('app.js'), false, 'index.html should not load root app.js');
 
 [
+  'src/stores/cloze.js',
+  'src/composables/chunk-note-layout.js',
+  'src/composables/notes-module.js',
   'chunk-note-layout-helpers.js',
   'chunk-note-layout-core.js',
-  'annotation-bubble.js',
-  'annotation-api-settings-ui.js'
+  'annotation-bubble.js'
 ].forEach((scriptName) => {
   const pattern = new RegExp(`<script src="${scriptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"></script>`);
   assert.equal(pattern.test(indexSource), false, `${scriptName} should not be loaded as a root regular script`);
