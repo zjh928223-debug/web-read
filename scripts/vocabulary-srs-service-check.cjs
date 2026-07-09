@@ -165,6 +165,71 @@ async function main() {
   assert.equal(knownWord.status, 'known');
   assertIsoAfter((await repository.getReviewState(futureWord.id)).due_at, '2026-07-09T00:04:00.000Z', 'known words should not remain immediately due');
 
+  const contextRepository = api.createInMemoryVocabularyRepository();
+  const contextService = api.createVocabularyService({
+    repository: contextRepository,
+    scheduler: api.createSrsScheduler({ enable_fuzz: false }),
+  });
+  const chargeFirst = await contextService.addWord({
+    word: 'charge',
+    lemma: 'charge',
+    language: 'en',
+    context: {
+      sentence: 'The company will charge users a monthly fee.',
+      meaning: 'In this sentence, charge means to ask someone to pay.',
+      source_title: 'Article A',
+      source_url: 'https://example.test/a',
+    },
+    createdAt,
+  });
+  assert.equal(chargeFirst.meaning, 'In this sentence, charge means to ask someone to pay.');
+  const chargeContextsAfterFirstAdd = await contextRepository.getContextsForWord(chargeFirst.id);
+  assert.equal(chargeContextsAfterFirstAdd.length, 1);
+  assert.equal(chargeContextsAfterFirstAdd[0].meaning, 'In this sentence, charge means to ask someone to pay.');
+
+  const chargeSecond = await contextService.addWord({
+    word: 'charged',
+    lemma: 'charge',
+    language: 'en',
+    context: {
+      sentence: 'He was charged with fraud.',
+      meaning: 'In this sentence, charged means accused of a crime.',
+      source_title: 'Article B',
+      source_url: 'https://example.test/b',
+    },
+    createdAt: '2026-07-09T00:05:00.000Z',
+  });
+  assert.equal(chargeSecond.id, chargeFirst.id);
+  assert.equal(chargeSecond.meaning, 'In this sentence, charge means to ask someone to pay.');
+  const chargeContextsAfterSecondAdd = await contextRepository.getContextsForWord(chargeFirst.id);
+  assert.equal(chargeContextsAfterSecondAdd.length, 2);
+  assert.deepEqual(
+    chargeContextsAfterSecondAdd.map((context) => context.meaning),
+    [
+      'In this sentence, charge means to ask someone to pay.',
+      'In this sentence, charged means accused of a crime.',
+    ]
+  );
+
+  const signal = await contextService.addWord({
+    word: 'signal',
+    lemma: 'signal',
+    language: 'en',
+    context: {
+      sentence: 'The signal faded near the tunnel.',
+      source_title: 'Article C',
+      source_url: 'https://example.test/c',
+    },
+    createdAt,
+  });
+  const signalContexts = await contextRepository.getContextsForWord(signal.id);
+  assert.equal(signalContexts.length, 1);
+  assert.equal(signalContexts[0].meaning, null);
+
+  const contextsBeforeReview = await contextRepository.getContextsForWord(chargeFirst.id);
+  await contextService.reviewWord(chargeFirst.id, 'good', '2026-07-09T00:06:00.000Z');
+  assert.deepEqual(await contextRepository.getContextsForWord(chargeFirst.id), contextsBeforeReview);
+
   for (const rating of ['again', 'hard', 'good', 'easy']) {
     const word = await service.addWord({
       word: `sample-${rating}`,

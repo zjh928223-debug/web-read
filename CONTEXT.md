@@ -12,6 +12,10 @@ _Avoid_: Word, card, token
 The canonical text for a Vocabulary Entry as it should be shown to the learner.
 _Avoid_: Lookup key, normalized word
 
+**Contextual Meaning**:
+The AI explanation of a Vocabulary Entry in one specific sentence or occurrence.
+_Avoid_: Dictionary definition, general meaning
+
 **Review State**:
 The current spaced-repetition memory state for a Vocabulary Entry.
 _Avoid_: Progress, score

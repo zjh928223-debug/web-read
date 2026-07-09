@@ -146,6 +146,7 @@ function normalizeStoredContext(context) {
     id: normalizeText(context.id) || createVocabularyId('vocab_context'),
     word_id: wordId,
     sentence,
+    meaning: normalizeNullableText(context.meaning),
     source_title: normalizeNullableText(context.source_title || context.sourceTitle),
     source_url: normalizeNullableText(context.source_url || context.sourceUrl),
     surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),

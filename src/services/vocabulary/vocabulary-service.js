@@ -27,6 +27,7 @@ export function createVocabularyService(options = {}) {
     const lemma = normalizeLemma(input.lemma || wordText);
     const lookupKey = normalizeLookupKey(input.lookup_key || input.lookupKey || lemma);
     const language = normalizeLanguage(input.language);
+    const initialMeaning = normalizeNullableText(input.meaning) || getContextMeaning(input.context);
     if (!wordText) throw new Error('Vocabulary word is required');
     if (!lemma) throw new Error('Vocabulary lemma is required');
     if (!lookupKey) throw new Error('Vocabulary lookup key is required');
@@ -41,7 +42,7 @@ export function createVocabularyService(options = {}) {
           lookup_key: lookupKey,
           language,
           phonetic: normalizeNullableText(input.phonetic),
-          meaning: normalizeNullableText(input.meaning),
+          meaning: initialMeaning,
           note: normalizeNullableText(input.note),
           status: WORD_STATUSES.NEW,
           created_at: createdAt,
@@ -171,6 +172,7 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
     id: createVocabularyId('vocab_context'),
     word_id: wordId,
     sentence,
+    meaning: getContextMeaning(context),
     source_title: normalizeNullableText(context.source_title || context.sourceTitle),
     source_url: normalizeNullableText(context.source_url || context.sourceUrl),
     surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),
@@ -178,6 +180,11 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
   };
   snapshot.contexts.push(entry);
   return entry;
+}
+
+function getContextMeaning(context) {
+  if (!context || typeof context !== 'object') return null;
+  return normalizeNullableText(context.meaning);
 }
 
 function findWordOrThrow(snapshot, wordId) {
