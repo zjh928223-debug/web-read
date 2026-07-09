@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 class FakeButton {
   constructor() {
@@ -48,9 +49,39 @@ function createWindowObject(options = {}) {
 }
 
 async function importModule(filePath) {
-  const source = fs.readFileSync(filePath, 'utf8');
-  const encoded = Buffer.from(source, 'utf8').toString('base64');
-  return import(`data:text/javascript;base64,${encoded}#${Date.now()}`);
+  const repoRoot = path.resolve(__dirname, '..');
+  const tempRoot = path.join(repoRoot, 'node_modules', '.tmp-annotation-backfill');
+  fs.mkdirSync(tempRoot, { recursive: true });
+  const tempDir = fs.mkdtempSync(path.join(tempRoot, `${process.pid}-`));
+  try {
+    const tempComposables = path.join(tempDir, 'src', 'composables');
+    const tempVocabulary = path.join(tempDir, 'src', 'services', 'vocabulary');
+    fs.mkdirSync(tempComposables, { recursive: true });
+    fs.mkdirSync(tempVocabulary, { recursive: true });
+    const rewriteSource = (source) => source
+      .replace(/from '\.\.\/services\/vocabulary\/([^']+)\.js'/g, "from '../services/vocabulary/$1.mjs'")
+      .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
+      .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"');
+    fs.writeFileSync(
+      path.join(tempComposables, 'annotation-backfill-ai-module.mjs'),
+      rewriteSource(fs.readFileSync(filePath, 'utf8'))
+    );
+    ['vocabulary-models.js', 'vocabulary-repository.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'srs-scheduler.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
+      const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
+      if (fs.existsSync(sourcePath)) {
+        fs.writeFileSync(path.join(tempVocabulary, file.replace(/\.js$/, '.mjs')), rewriteSource(fs.readFileSync(sourcePath, 'utf8')));
+      }
+    });
+    return await import(`${pathToFileURL(path.join(tempComposables, 'annotation-backfill-ai-module.mjs')).href}#${Date.now()}`);
+  } finally {
+    const resolvedTemp = path.resolve(tempDir);
+    const resolvedTempRoot = path.resolve(tempRoot);
+    if (resolvedTemp.startsWith(resolvedTempRoot + path.sep)) {
+      try {
+        fs.rmSync(resolvedTemp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      } catch (_error) {}
+    }
+  }
 }
 
 function createTemplate(ids) {
@@ -112,6 +143,97 @@ function createProgressiveTemplate() {
   };
 }
 
+function createSrsTemplate() {
+  return {
+    schemaVersion: 2,
+    articleId: 'article-srs',
+    articleText: [
+      'Dinner starts soon.',
+      'The chef will grill the fish.',
+      'People take clean water for granted.',
+      'This is a very long selected passage that should stay out of SRS.',
+    ].join(' '),
+    articleSentences: [
+      'Dinner starts soon.',
+      'The chef will grill the fish.',
+      'People take clean water for granted.',
+      'This is a very long selected passage that should stay out of SRS.',
+    ],
+    items: [{
+      targetId: 'target-word',
+      markedText: 'Grill',
+      sourceSentence: 'The chef will grill the fish.',
+      sentenceBefore: 'Dinner starts soon.',
+      sentenceAfter: 'People take clean water for granted.',
+      occurrenceIndex: 0,
+    }, {
+      targetId: 'target-phrase',
+      markedText: 'take it for granted',
+      sourceSentence: 'People take clean water for granted.',
+      sentenceBefore: 'The chef will grill the fish.',
+      sentenceAfter: 'This is a very long selected passage that should stay out of SRS.',
+      occurrenceIndex: 0,
+    }, {
+      targetId: 'target-long',
+      markedText: 'this is a very long selected passage that should stay out of srs',
+      sourceSentence: 'This is a very long selected passage that should stay out of SRS.',
+      occurrenceIndex: 0,
+    }],
+  };
+}
+
+function createSrsResult(ids = ['target-word', 'target-phrase', 'target-long']) {
+  const texts = {
+    'target-word': 'Grill',
+    'target-phrase': 'take it for granted',
+    'target-long': 'this is a very long selected passage that should stay out of srs',
+    'target-old': 'old',
+  };
+  return {
+    schemaVersion: 1,
+    items: ids.map((id) => ({
+      targetId: id,
+      markedText: texts[id],
+      boundary: texts[id],
+      type: 'word',
+      meaning: `meaning:${id}`,
+      memoryHint: `hint:${id}`,
+    })),
+  };
+}
+
+function createFakeSrsDeps(existingByLemma = {}) {
+  const pendingGroups = new Map();
+  const added = [];
+  const vocabularyService = {
+    async getWordByLemma(lemma) {
+      return existingByLemma[lemma] || null;
+    },
+    async addWord(input) {
+      added.push(input);
+      return existingByLemma[input.lemma] || {
+        id: `word-${input.lemma}`,
+        lemma: input.lemma,
+        status: 'new',
+      };
+    },
+  };
+  const srsPendingRepository = {
+    async getPendingCandidates(scopeKey) {
+      return pendingGroups.get(scopeKey) || null;
+    },
+    async setPendingCandidates(scopeKey, group) {
+      const next = { ...group, scopeKey, candidates: [...(group.candidates || [])] };
+      pendingGroups.set(scopeKey, next);
+      return next;
+    },
+    async clearPendingCandidates(scopeKey) {
+      pendingGroups.delete(scopeKey);
+    },
+  };
+  return { vocabularyService, srsPendingRepository, pendingGroups, added };
+}
+
 async function readJsonFileLike(file) {
   return JSON.parse(await file.text());
 }
@@ -157,6 +279,8 @@ function createController(api, overrides = {}) {
     showToast: (message, type) => notices.push({ message, type }),
     showError: (code, message) => notices.push({ code, message, type: 'error' }),
     windowObject: overrides.windowObject || createWindowObject(),
+    vocabularyService: overrides.vocabularyService,
+    srsPendingRepository: overrides.srsPendingRepository,
   });
   return { button, controller, imported, calls, notices, client, state };
 }
@@ -177,6 +301,7 @@ async function main() {
   assert.ok(source.includes('apiKey: runOptions.apiKey'), 'AI annotation backfill should pass per-run API key without relying on queue credentials');
   assert.ok(source.includes('ANNOTATION_BACKFILL_MODEL_STORAGE_KEY'), 'AI annotation model should persist in localStorage');
   assert.ok(source.includes('mergeWithLatest'), 'incremental AI backfill should ask the backend to merge new items with latest saved result');
+  assert.ok(source.includes('addSrsCandidates'), 'AI annotation backfill should expose SRS candidate actions');
 
   {
     const { button, controller } = createController(api);
@@ -583,6 +708,134 @@ async function main() {
     assert.equal(calls.length, 1);
     assert.deepEqual(calls[0].payload.template.items.map((item) => item.targetId), ['target-3']);
     assert.equal(calls[0].payload.mergeWithLatest, true);
+  }
+
+  {
+    const srsDeps = createFakeSrsDeps();
+    const { controller, calls } = createController(api, {
+      template: createSrsTemplate(),
+      state: {
+        currentAudioMeta: { source: 'youtube-workflow', jobId: 'job-1', name: 'Article SRS.audio' },
+        currentAudioKey: 'audio-1',
+      },
+      result: createSrsResult(['target-word', 'target-phrase', 'target-long', 'target-old']),
+      vocabularyService: srsDeps.vocabularyService,
+      srsPendingRepository: srsDeps.srsPendingRepository,
+    });
+    await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
+    assert.equal(calls.length, 1);
+    const pending = srsDeps.pendingGroups.get('job-1');
+    assert.deepEqual(pending.candidates.map((candidate) => [candidate.lemma, candidate.entry_type]), [
+      ['grill', 'word'],
+      ['take it for granted', 'phrase'],
+    ]);
+    assert.equal(controller.getStatusSnapshot().srsSummary.wordCandidates, 1);
+    assert.equal(controller.getStatusSnapshot().srsSummary.phraseCandidates, 1);
+    assert.equal(controller.getStatusSnapshot().srsSummary.excludedLongText, 1);
+    assert.equal(srsDeps.added.length, 0, 'AI explanation should not automatically write SRS entries');
+
+    await controller.addSrsCandidates('words');
+    assert.deepEqual(srsDeps.added.map((item) => [item.lemma, item.entry_type]), [['grill', 'word']]);
+    assert.deepEqual(srsDeps.pendingGroups.get('job-1').candidates.map((candidate) => candidate.lemma), ['take it for granted']);
+
+    await controller.addSrsCandidates('all');
+    assert.deepEqual(srsDeps.added.map((item) => [item.lemma, item.entry_type]), [
+      ['grill', 'word'],
+      ['take it for granted', 'phrase'],
+    ]);
+    assert.equal(srsDeps.pendingGroups.has('job-1'), false);
+  }
+
+  {
+    const srsDeps = createFakeSrsDeps();
+    const template = createSrsTemplate();
+    const cached = createSrsResult(['target-word']);
+    const { controller, calls } = createController(api, {
+      template,
+      windowObject: createWindowObject({ confirm: () => true }),
+      result: createSrsResult(['target-word', 'target-phrase']),
+      vocabularyService: srsDeps.vocabularyService,
+      srsPendingRepository: srsDeps.srsPendingRepository,
+      client: {
+        getConfig: async () => ({ model: 'gemini-2.5-flash' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => ({
+          result: cached,
+          metadata: {
+            model: 'gemini-2.5-flash',
+            itemCount: 1,
+            templateItemCount: 3,
+          },
+        }),
+        runAnnotationBackfill: async (jobId, payload) => {
+          calls.push({ jobId, payload });
+          return { result: createSrsResult(['target-word', 'target-phrase']) };
+        },
+      },
+    });
+    await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
+    assert.deepEqual(calls[0].payload.template.items.map((item) => item.targetId), ['target-phrase', 'target-long']);
+    assert.deepEqual(srsDeps.pendingGroups.get('job-1').candidates.map((candidate) => candidate.targetId), ['target-phrase']);
+  }
+
+  {
+    const srsDeps = createFakeSrsDeps();
+    const template = createSrsTemplate();
+    const cached = createSrsResult(['target-word', 'target-phrase', 'target-long']);
+    const { controller, calls } = createController(api, {
+      template,
+      vocabularyService: srsDeps.vocabularyService,
+      srsPendingRepository: srsDeps.srsPendingRepository,
+      client: {
+        getConfig: async () => ({ model: 'gemini-2.5-flash' }),
+        credentialStatus: async () => ({ stored: true }),
+        maintenance: async () => ({ jobStatuses: {} }),
+        getAnnotationBackfillResult: async () => ({
+          result: cached,
+          metadata: {
+            model: 'gemini-2.5-flash',
+            itemCount: 3,
+            templateItemCount: 3,
+          },
+        }),
+        runAnnotationBackfill: async (jobId, payload) => {
+          calls.push({ jobId, payload });
+          return { result: cached };
+        },
+      },
+    });
+    await controller.openDialog();
+    assert.equal(controller.getStatusSnapshot().srsSummary.pending, false);
+    assert.equal(controller.getStatusSnapshot().srsSummary.canBuildFromExisting, true);
+    assert.equal(controller.getStatusSnapshot().srsSummary.visible, true);
+    assert.equal(controller.getStatusSnapshot().srsSummary.compact, true);
+    await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
+    assert.deepEqual(calls, [], 'fully covered restore should not call Gemini');
+    assert.equal(srsDeps.pendingGroups.has('job-1'), false, 'restoring old explanations should not create new SRS pending candidates');
+    assert.equal(controller.getStatusSnapshot().srsSummary.wordCandidates, 0);
+    await controller.generateSrsCandidatesFromExistingAnnotations();
+    assert.deepEqual(calls, [], 'cold-start candidate generation should read saved explanations without calling Gemini');
+    assert.equal(srsDeps.added.length, 0, 'cold-start candidate generation should not write vocabulary entries');
+    assert.deepEqual(srsDeps.pendingGroups.get('job-1').candidates.map((candidate) => [candidate.lemma, candidate.entry_type]), [
+      ['grill', 'word'],
+      ['take it for granted', 'phrase'],
+    ]);
+    assert.equal(controller.getStatusSnapshot().srsSummary.wordCandidates, 1);
+    assert.equal(controller.getStatusSnapshot().srsSummary.phraseCandidates, 1);
+    assert.equal(controller.getStatusSnapshot().srsSummary.compact, false);
+  }
+
+  {
+    const srsDeps = createFakeSrsDeps();
+    const { controller } = createController(api, {
+      template: createSrsTemplate(),
+      vocabularyService: srsDeps.vocabularyService,
+      srsPendingRepository: srsDeps.srsPendingRepository,
+    });
+    await controller.openDialog();
+    assert.equal(controller.getStatusSnapshot().srsSummary.visible, false, 'current article without saved AI explanations should not show the cold-start SRS entry');
+    assert.equal(controller.getStatusSnapshot().srsSummary.canBuildFromExisting, false);
   }
 
   {

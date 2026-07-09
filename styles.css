@@ -3619,6 +3619,33 @@ body {
       font-weight: 650;
     }
 
+    .annotation-backfill-dialog__srs {
+      display: grid;
+      gap: 9px;
+      padding: 10px;
+      border: 1px solid rgba(125,211,252,0.58);
+      border-radius: 10px;
+      background: rgba(240,249,255,0.68);
+    }
+
+    .annotation-backfill-dialog__srs[hidden] {
+      display: none;
+    }
+
+    .annotation-backfill-dialog__srs-stats {
+      color: rgba(51,65,85,0.92);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 700;
+    }
+
+    .annotation-backfill-dialog__srs-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
     .annotation-backfill-dialog__progress {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));

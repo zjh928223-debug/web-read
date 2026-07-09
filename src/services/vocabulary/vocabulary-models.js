@@ -8,6 +8,11 @@ export const WORD_STATUSES = Object.freeze({
   IGNORED: 'ignored',
 });
 
+export const VOCABULARY_ENTRY_TYPES = Object.freeze({
+  WORD: 'word',
+  PHRASE: 'phrase',
+});
+
 export const REVIEW_RATINGS = Object.freeze({
   AGAIN: 'again',
   HARD: 'hard',
@@ -23,6 +28,7 @@ export const REVIEW_STATES = Object.freeze({
 });
 
 const VALID_WORD_STATUSES = new Set(Object.values(WORD_STATUSES));
+const VALID_VOCABULARY_ENTRY_TYPES = new Set(Object.values(VOCABULARY_ENTRY_TYPES));
 const VALID_REVIEW_RATINGS = new Set(Object.values(REVIEW_RATINGS));
 const VALID_REVIEW_STATES = new Set(Object.values(REVIEW_STATES));
 
@@ -62,6 +68,11 @@ export function normalizeLookupKey(value) {
 
 export function normalizeLanguage(value) {
   return normalizeText(value || 'en').toLowerCase() || 'en';
+}
+
+export function normalizeVocabularyEntryType(value) {
+  const normalized = normalizeText(value).toLowerCase();
+  return VALID_VOCABULARY_ENTRY_TYPES.has(normalized) ? normalized : VOCABULARY_ENTRY_TYPES.WORD;
 }
 
 export function normalizeText(value) {
@@ -127,6 +138,7 @@ function normalizeStoredWord(word) {
     word: normalizeText(word.word) || lemma,
     lemma,
     lookup_key: normalizeLookupKey(word.lookup_key || word.lookupKey || lemma),
+    entry_type: normalizeVocabularyEntryType(word.entry_type || word.entryType),
     language: normalizeLanguage(word.language),
     phonetic: normalizeNullableText(word.phonetic),
     meaning: normalizeNullableText(word.meaning),

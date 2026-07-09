@@ -1,3 +1,13 @@
+import {
+  VOCABULARY_ENTRY_TYPES,
+  applySrsCandidatesToVocabulary,
+  buildSrsCandidatesFromBackfillRun,
+  createIndexedDbSrsPendingCandidatesRepository,
+  createVocabularyService,
+  getRemainingSrsCandidatesAfterApply,
+  summarizeSrsCandidates,
+} from '../services/vocabulary/index.js';
+
 const DEFAULT_BUTTON_TEXT = 'AI解释标注';
 const RECOMMENDED_ANNOTATION_MODEL = 'gemini-3.1-flash-lite';
 const DEFAULT_GEMINI_MODEL = RECOMMENDED_ANNOTATION_MODEL;
@@ -398,6 +408,89 @@ function buildAnnotationSummary(template, savedPayload, selectedRunId = '', mark
   };
 }
 
+function createEmptySrsSummary() {
+  return {
+    wordCandidates: 0,
+    phraseCandidates: 0,
+    excludedLongText: 0,
+    existing: 0,
+    known: 0,
+    ignored: 0,
+    pending: false,
+    canBuildFromExisting: false,
+    visible: false,
+    compact: false,
+  };
+}
+
+function getSrsScopeKey(identity, template) {
+  return String(
+    identity && identity.jobId
+    || template && template.articleId
+    || identity && identity.audioKey
+    || ''
+  ).trim();
+}
+
+function normalizeSourceTitle(value) {
+  return String(value || '')
+    .replace(/\.[^.\\/]+$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getSrsSourceInfo(state, template) {
+  const meta = state && state.currentAudioMeta && typeof state.currentAudioMeta === 'object'
+    ? state.currentAudioMeta
+    : {};
+  return {
+    sourceTitle: normalizeSourceTitle(meta.title || meta.name || template && template.articleId),
+    sourceUrl: String(meta.source_url || meta.sourceUrl || meta.url || meta.webUrl || meta.videoSource || '').trim(),
+  };
+}
+
+function getRequestTargetIds(requestTemplate) {
+  return (Array.isArray(requestTemplate && requestTemplate.items) ? requestTemplate.items : [])
+    .map((item) => String(item && (item.targetId || item.target_id || item.id) || '').trim())
+    .filter(Boolean);
+}
+
+function mergeSrsPendingCandidates(existingGroup, nextGroup) {
+  const byTargetId = new Map();
+  const excludedByTargetId = new Map();
+  const appendCandidate = (candidate) => {
+    const targetId = String(candidate && (candidate.targetId || candidate.target_id) || '').trim();
+    if (targetId) byTargetId.set(targetId, candidate);
+  };
+  const appendExcluded = (item) => {
+    const targetId = String(item && (item.targetId || item.target_id) || '').trim();
+    if (targetId) excludedByTargetId.set(targetId, item);
+  };
+  (Array.isArray(existingGroup && existingGroup.candidates) ? existingGroup.candidates : []).forEach(appendCandidate);
+  (Array.isArray(nextGroup && nextGroup.candidates) ? nextGroup.candidates : []).forEach(appendCandidate);
+  (Array.isArray(existingGroup && existingGroup.excluded) ? existingGroup.excluded : []).forEach(appendExcluded);
+  (Array.isArray(nextGroup && nextGroup.excluded) ? nextGroup.excluded : []).forEach(appendExcluded);
+  return {
+    scopeKey: nextGroup && nextGroup.scopeKey || existingGroup && existingGroup.scopeKey || '',
+    candidates: Array.from(byTargetId.values()),
+    excluded: Array.from(excludedByTargetId.values()),
+  };
+}
+
+async function collectExistingVocabularyWords(vocabularyService, candidates) {
+  if (!vocabularyService || typeof vocabularyService.getWordByLemma !== 'function') return [];
+  const seen = new Set();
+  const existing = [];
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const key = `${candidate && candidate.language || 'en'}::${candidate && candidate.lemma || ''}`;
+    if (!candidate || !candidate.lemma || seen.has(key)) continue;
+    seen.add(key);
+    const word = await vocabularyService.getWordByLemma(candidate.lemma, { language: candidate.language });
+    if (word) existing.push(word);
+  }
+  return existing;
+}
+
 function createElement(documentObject, tagName, className, textContent) {
   const element = documentObject.createElement(tagName);
   if (className) element.className = className;
@@ -410,6 +503,11 @@ function createAnnotationBackfillDialog(options = {}) {
   const onRun = typeof options.onRun === 'function' ? options.onRun : function () {};
   const onSelectRecord = typeof options.onSelectRecord === 'function' ? options.onSelectRecord : function () {};
   const onModelChange = typeof options.onModelChange === 'function' ? options.onModelChange : function () {};
+  const onAddSrsCandidates = typeof options.onAddSrsCandidates === 'function' ? options.onAddSrsCandidates : function () {};
+  const onSkipSrsCandidates = typeof options.onSkipSrsCandidates === 'function' ? options.onSkipSrsCandidates : function () {};
+  const onBuildSrsCandidatesFromExisting = typeof options.onBuildSrsCandidatesFromExisting === 'function'
+    ? options.onBuildSrsCandidatesFromExisting
+    : function () {};
   const initialModel = String(options.initialModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
   let mounted = false;
   let open = false;
@@ -422,6 +520,12 @@ function createAnnotationBackfillDialog(options = {}) {
   let apiKeyInput = null;
   let statusEl = null;
   let recordsEl = null;
+  let srsPanelEl = null;
+  let srsStatsEl = null;
+  let srsAddAllButton = null;
+  let srsAddWordsButton = null;
+  let srsSkipButton = null;
+  let srsBuildExistingButton = null;
   let startButton = null;
   let closeButton = null;
   let cancelButton = null;
@@ -433,6 +537,7 @@ function createAnnotationBackfillDialog(options = {}) {
   let currentStatus = { message: '填写模型和 API key 后开始。', state: 'idle' };
 
   let annotationSummary = { totalCount: 0, markedWordCount: 0, coveredCount: 0, missingCount: 0, selectedRunId: '', records: [] };
+  let srsSummary = createEmptySrsSummary();
 
   function setOpenState(nextOpen) {
     open = !!nextOpen;
@@ -500,6 +605,22 @@ function createAnnotationBackfillDialog(options = {}) {
     recordsEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-list');
     recordsSection.append(recordsTitle, recordsEl);
 
+    srsPanelEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs');
+    const srsTitle = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-title', 'SRS 词库');
+    srsStatsEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs-stats');
+    const srsActions = createElement(documentObject, 'div', 'annotation-backfill-dialog__srs-actions');
+    srsAddAllButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--primary', '加入单词和短语');
+    srsAddAllButton.type = 'button';
+    srsAddWordsButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '只加入单词');
+    srsAddWordsButton.type = 'button';
+    srsSkipButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '本次不加入');
+    srsSkipButton.type = 'button';
+    srsBuildExistingButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '从已有解释生成候选');
+    srsBuildExistingButton.type = 'button';
+    srsActions.append(srsAddAllButton, srsAddWordsButton, srsSkipButton, srsBuildExistingButton);
+    srsPanelEl.append(srsTitle, srsStatsEl, srsActions);
+    renderSrsSummary();
+
     const footer = createElement(documentObject, 'div', 'annotation-backfill-dialog__footer');
     cancelButton = createElement(documentObject, 'button', 'annotation-backfill-dialog__button annotation-backfill-dialog__button--secondary', '取消');
     cancelButton.type = 'button';
@@ -507,7 +628,7 @@ function createAnnotationBackfillDialog(options = {}) {
     startButton.type = 'submit';
     footer.append(cancelButton, startButton);
 
-    form.append(modelLabel, keyLabel, recordsSection, progress, statusEl, footer);
+    form.append(modelLabel, keyLabel, recordsSection, srsPanelEl, progress, statusEl, footer);
     rootEl.append(header, form);
     documentObject.body.append(backdropEl, rootEl);
 
@@ -525,6 +646,10 @@ function createAnnotationBackfillDialog(options = {}) {
     });
     closeButton.addEventListener('click', closeDialog);
     cancelButton.addEventListener('click', closeDialog);
+    srsAddAllButton.addEventListener('click', function () { return onAddSrsCandidates('all'); });
+    srsAddWordsButton.addEventListener('click', function () { return onAddSrsCandidates('words'); });
+    srsSkipButton.addEventListener('click', function () { return onSkipSrsCandidates(); });
+    srsBuildExistingButton.addEventListener('click', function () { return onBuildSrsCandidatesFromExisting(); });
   }
 
   function resetProgress() {
@@ -611,6 +736,7 @@ function createAnnotationBackfillDialog(options = {}) {
     if (apiKeyInput) apiKeyInput.disabled = busy;
     if (cancelButton) cancelButton.disabled = busy;
     renderAnnotationSummary();
+    renderSrsSummary();
     if (startButton) {
       startButton.disabled = busy;
       startButton.textContent = busy ? '解释中...' : '开始解释';
@@ -698,6 +824,59 @@ function createAnnotationBackfillDialog(options = {}) {
     renderAnnotationSummary();
   }
 
+  function renderSrsSummary() {
+    const total = Number(srsSummary.wordCandidates || 0) + Number(srsSummary.phraseCandidates || 0);
+    const hasPending = !!srsSummary.pending && total > 0;
+    const canBuild = !!srsSummary.canBuildFromExisting;
+    if (srsPanelEl) srsPanelEl.hidden = !hasPending && !canBuild;
+    if (srsStatsEl) {
+      srsStatsEl.textContent = hasPending
+        ? [
+          `可加入单词 ${srsSummary.wordCandidates || 0} 个`,
+          `可加入短语 ${srsSummary.phraseCandidates || 0} 个`,
+          `已排除长文本 ${srsSummary.excludedLongText || 0} 个`,
+          `已在词库中 ${srsSummary.existing || 0} 个`,
+          `已掌握 ${srsSummary.known || 0} 个`,
+          `已忽略 ${srsSummary.ignored || 0} 个`,
+        ].join(' · ')
+        : '已有 AI 解释，可生成 SRS 候选。';
+    }
+    if (srsAddAllButton) {
+      srsAddAllButton.hidden = !hasPending;
+      srsAddAllButton.disabled = busy || total <= 0;
+    }
+    if (srsAddWordsButton) {
+      srsAddWordsButton.hidden = !hasPending;
+      srsAddWordsButton.disabled = busy || Number(srsSummary.wordCandidates || 0) <= 0;
+    }
+    if (srsSkipButton) {
+      srsSkipButton.hidden = !hasPending;
+      srsSkipButton.disabled = busy || total <= 0;
+    }
+    if (srsBuildExistingButton) {
+      srsBuildExistingButton.hidden = hasPending || !canBuild;
+      srsBuildExistingButton.disabled = busy || hasPending || !canBuild;
+    }
+  }
+
+  function updateSrsSummary(summary = {}) {
+    const wordCandidates = Number(summary.wordCandidates || 0);
+    const phraseCandidates = Number(summary.phraseCandidates || 0);
+    const hasPending = !!summary.pending && (wordCandidates + phraseCandidates) > 0;
+    const canBuildFromExisting = !!summary.canBuildFromExisting && !hasPending;
+    srsSummary = {
+      ...createEmptySrsSummary(),
+      ...summary,
+      wordCandidates,
+      phraseCandidates,
+      pending: hasPending,
+      canBuildFromExisting,
+      visible: hasPending || canBuildFromExisting,
+      compact: !hasPending && canBuildFromExisting,
+    };
+    renderSrsSummary();
+  }
+
   function getStatusSnapshot() {
     return {
       open,
@@ -708,6 +887,7 @@ function createAnnotationBackfillDialog(options = {}) {
         ...annotationSummary,
         records: annotationSummary.records.map((record) => ({ ...record })),
       },
+      srsSummary: { ...srsSummary },
       values: { ...latestValues },
     };
   }
@@ -722,6 +902,7 @@ function createAnnotationBackfillDialog(options = {}) {
     setStatus,
     setStep,
     updateAnnotationSummary,
+    updateSrsSummary,
     resetProgress,
     getStatusSnapshot,
     isOpen() {
@@ -740,6 +921,8 @@ export function createAnnotationBackfillAiController(deps = {}) {
   const refreshAfterImport = typeof deps.refreshAfterImport === 'function' ? deps.refreshAfterImport : function () {};
   const windowObject = deps.windowObject || (typeof window !== 'undefined' ? window : null);
   const documentObject = deps.documentObject || (windowObject && windowObject.document) || (typeof document !== 'undefined' ? document : null);
+  const vocabularyService = deps.vocabularyService || createVocabularyService();
+  const srsPendingRepository = deps.srsPendingRepository || createIndexedDbSrsPendingCandidatesRepository();
   const confirmRun = typeof deps.confirmRun === 'function'
     ? deps.confirmRun
     : (windowObject && typeof windowObject.confirm === 'function' ? windowObject.confirm.bind(windowObject) : function () { return true; });
@@ -759,6 +942,15 @@ export function createAnnotationBackfillAiController(deps = {}) {
     },
     onSelectRecord(record) {
       return importSavedBackfillRun(record && record.runId);
+    },
+    onAddSrsCandidates(mode) {
+      return addSrsCandidates(mode);
+    },
+    onSkipSrsCandidates() {
+      return skipSrsCandidates();
+    },
+    onBuildSrsCandidatesFromExisting() {
+      return generateSrsCandidatesFromExistingAnnotations();
     },
     onRun: function (runOptions) {
       return run(runOptions);
@@ -813,10 +1005,179 @@ export function createAnnotationBackfillAiController(deps = {}) {
       const savedPayload = await loadSavedBackfillPayload(client, identity.jobId);
       const summary = buildAnnotationSummary(template, savedPayload, getSelectedRunId(windowObject, identity.jobId), getCurrentMarkedWordCount());
       dialog.updateAnnotationSummary(summary);
+      await refreshSrsPendingSummary(identity, template, { canBuildFromExisting: summary.coveredCount > 0 });
       return summary;
     } catch (_error) {
       dialog.updateAnnotationSummary(emptySummary);
+      dialog.updateSrsSummary(createEmptySrsSummary());
       return emptySummary;
+    }
+  }
+
+  async function buildSrsSummaryForGroup(group) {
+    const candidates = Array.isArray(group && group.candidates) ? group.candidates : [];
+    const excluded = Array.isArray(group && group.excluded) ? group.excluded : [];
+    if (!candidates.length) {
+      return {
+        ...createEmptySrsSummary(),
+        canBuildFromExisting: !!(group && group.canBuildFromExisting),
+      };
+    }
+    const existingWords = await collectExistingVocabularyWords(vocabularyService, candidates);
+    return {
+      ...summarizeSrsCandidates(candidates, excluded, existingWords),
+      pending: true,
+    };
+  }
+
+  async function refreshSrsPendingSummary(identity, template, options = {}) {
+    try {
+      const scopeKey = getSrsScopeKey(identity, template);
+      if (!scopeKey || !srsPendingRepository || typeof srsPendingRepository.getPendingCandidates !== 'function') {
+        dialog.updateSrsSummary({
+          ...createEmptySrsSummary(),
+          canBuildFromExisting: !!options.canBuildFromExisting,
+        });
+        return null;
+      }
+      const group = await srsPendingRepository.getPendingCandidates(scopeKey);
+      dialog.updateSrsSummary(await buildSrsSummaryForGroup({
+        ...(group || {}),
+        canBuildFromExisting: !!options.canBuildFromExisting,
+      }));
+      return group;
+    } catch (_error) {
+      dialog.updateSrsSummary({
+        ...createEmptySrsSummary(),
+        canBuildFromExisting: !!options.canBuildFromExisting,
+      });
+      return null;
+    }
+  }
+
+  async function storeSrsCandidatesForRun(identity, template, requestTemplate, result) {
+    const scopeKey = getSrsScopeKey(identity, template);
+    if (!scopeKey || !srsPendingRepository || typeof srsPendingRepository.setPendingCandidates !== 'function') return null;
+    const requestedTargetIds = getRequestTargetIds(requestTemplate);
+    const sourceInfo = getSrsSourceInfo(state, template);
+    const built = buildSrsCandidatesFromBackfillRun({
+      template,
+      result,
+      requestedTargetIds,
+      sourceTitle: sourceInfo.sourceTitle,
+      sourceUrl: sourceInfo.sourceUrl,
+    });
+    if (!built.candidates.length && !built.excluded.length) {
+      dialog.updateSrsSummary(createEmptySrsSummary());
+      return null;
+    }
+    const existingGroup = typeof srsPendingRepository.getPendingCandidates === 'function'
+      ? await srsPendingRepository.getPendingCandidates(scopeKey)
+      : null;
+    const merged = mergeSrsPendingCandidates(existingGroup, {
+      scopeKey,
+      candidates: built.candidates,
+      excluded: built.excluded,
+    });
+    const saved = await srsPendingRepository.setPendingCandidates(scopeKey, merged);
+    dialog.updateSrsSummary(await buildSrsSummaryForGroup(saved));
+    return saved;
+  }
+
+  async function addSrsCandidates(mode = 'all') {
+    const identity = getCurrentIdentity(state);
+    let template = null;
+    try {
+      template = annotationLightweightModule && typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate === 'function'
+        ? annotationLightweightModule.buildManualLightweightAnnotationTemplate()
+        : null;
+      const scopeKey = getSrsScopeKey(identity, template);
+      if (!scopeKey) return null;
+      const group = await srsPendingRepository.getPendingCandidates(scopeKey);
+      const candidates = Array.isArray(group && group.candidates) ? group.candidates : [];
+      if (!candidates.length) {
+        dialog.updateSrsSummary(createEmptySrsSummary());
+        return null;
+      }
+      const normalizedMode = mode === 'words' || mode === VOCABULARY_ENTRY_TYPES.WORD ? 'words' : 'all';
+      const result = await applySrsCandidatesToVocabulary({
+        vocabularyService,
+        candidates,
+        mode: normalizedMode,
+      });
+      const remaining = normalizedMode === 'words'
+        ? getRemainingSrsCandidatesAfterApply(candidates, normalizedMode)
+        : [];
+      if (remaining.length) {
+        const saved = await srsPendingRepository.setPendingCandidates(scopeKey, {
+          ...group,
+          candidates: remaining,
+        });
+        dialog.updateSrsSummary(await buildSrsSummaryForGroup(saved));
+      } else {
+        await srsPendingRepository.clearPendingCandidates(scopeKey);
+        dialog.updateSrsSummary(createEmptySrsSummary());
+      }
+      showToast(`已加入 SRS：新增 ${result.added} 个，追加语境 ${result.existingContextAdded + result.knownContextAdded} 个，跳过忽略 ${result.ignoredSkipped} 个。`, 'success');
+      return result;
+    } catch (error) {
+      showError('ANNOTATION_BACKFILL_SRS', error && error.message ? error.message : '加入 SRS 失败');
+      await refreshSrsPendingSummary(identity, template);
+      return null;
+    }
+  }
+
+  async function skipSrsCandidates() {
+    const identity = getCurrentIdentity(state);
+    let template = null;
+    try {
+      template = annotationLightweightModule && typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate === 'function'
+        ? annotationLightweightModule.buildManualLightweightAnnotationTemplate()
+        : null;
+      const scopeKey = getSrsScopeKey(identity, template);
+      if (scopeKey) await srsPendingRepository.clearPendingCandidates(scopeKey);
+      dialog.updateSrsSummary(createEmptySrsSummary());
+      showToast('本次 AI 解释候选未加入 SRS。', 'info');
+      return true;
+    } catch (error) {
+      showError('ANNOTATION_BACKFILL_SRS', error && error.message ? error.message : '清理 SRS 候选失败');
+      await refreshSrsPendingSummary(identity, template);
+      return false;
+    }
+  }
+
+  async function generateSrsCandidatesFromExistingAnnotations() {
+    const identity = getCurrentIdentity(state);
+    if (!identity.jobId) {
+      refreshAvailability();
+      showError('ANNOTATION_BACKFILL_SRS', STANDARD_MATERIAL_ERROR);
+      return null;
+    }
+    if (!annotationLightweightModule || typeof annotationLightweightModule.buildManualLightweightAnnotationTemplate !== 'function') {
+      showError('ANNOTATION_BACKFILL_SRS', '轻回填模板模块尚未就绪。');
+      return null;
+    }
+    try {
+      const template = annotationLightweightModule.buildManualLightweightAnnotationTemplate();
+      const savedPayload = await loadSavedBackfillPayload(client, identity.jobId);
+      const result = savedPayload && savedPayload.result ? savedPayload.result : null;
+      if (!result || !Array.isArray(result.items) || !result.items.length) {
+        dialog.updateSrsSummary(createEmptySrsSummary());
+        showToast('当前文章没有可转入 SRS 的已有 AI 解释。', 'warning');
+        return null;
+      }
+      const requestTemplate = buildRequestTemplate(template, getTemplateItems(template));
+      const saved = await storeSrsCandidatesForRun(identity, template, requestTemplate, result);
+      if (saved && Array.isArray(saved.candidates) && saved.candidates.length) {
+        showToast('已从当前已有 AI 解释生成 SRS 候选。', 'success');
+      } else {
+        showToast('当前已有解释没有可加入 SRS 的单词或短语。', 'warning');
+      }
+      return saved;
+    } catch (error) {
+      dialog.updateSrsSummary(createEmptySrsSummary());
+      showError('ANNOTATION_BACKFILL_SRS', error && error.message ? error.message : '从已有解释生成 SRS 候选失败');
+      return null;
     }
   }
 
@@ -982,6 +1343,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
         dialog.setStep('import', 'done', `${restoredCount} 条`);
         activeStep = '';
         if (coverage.fullyCovered) {
+          await refreshSrsPendingSummary(startedIdentity, template, { canBuildFromExisting: coverage.coveredCount > 0 });
           dialog.setStatus(`本地已有 ${coverage.coveredCount} 条解释，已恢复，未调用 Gemini API。`, 'success');
           showToast(`本地已有 ${coverage.coveredCount} 条 AI 解释，已恢复，未调用 API。`, 'success');
           return { response: { result: savedResult, reused: true }, imported: cachedImportResult };
@@ -989,6 +1351,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
         if (coverage.partiallyCovered) {
           const confirmed = confirmRun(createIncrementalConfirmMessage(coverage));
           if (!confirmed) {
+            await refreshSrsPendingSummary(startedIdentity, template, { canBuildFromExisting: coverage.coveredCount > 0 });
             dialog.setStatus(`已恢复 ${coverage.coveredCount} 条；新增 ${coverage.missingCount} 条未解释，已取消 API 调用。`, 'warning');
             showToast(`已恢复已有解释；新增 ${coverage.missingCount} 条未调用 API。`, 'warning');
             return { response: { result: savedResult, reused: true, canceled: true }, imported: cachedImportResult };
@@ -1056,6 +1419,11 @@ export function createAnnotationBackfillAiController(deps = {}) {
         metadata: response && response.metadata,
         history: response && response.history,
       }, generatedRunId, getCurrentMarkedWordCount()));
+      try {
+        await storeSrsCandidatesForRun(startedIdentity, template, requestTemplate, result);
+      } catch (_error) {
+        dialog.updateSrsSummary(createEmptySrsSummary());
+      }
       dialog.setStatus(`完成，已导入 ${importedCount} 条解释。`, 'success');
       showToast(`AI解释标注完成，已导入 ${importedCount} 条。`, 'success');
       return { response, imported: importResult };
@@ -1083,6 +1451,9 @@ export function createAnnotationBackfillAiController(deps = {}) {
 
   return {
     run,
+    addSrsCandidates,
+    skipSrsCandidates,
+    generateSrsCandidatesFromExistingAnnotations,
     importSavedBackfillRun,
     openDialog,
     closeDialog() {

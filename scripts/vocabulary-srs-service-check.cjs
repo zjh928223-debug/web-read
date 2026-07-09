@@ -9,6 +9,8 @@ async function importVocabularyApi(repoRoot) {
   const files = [
     'vocabulary-models.js',
     'vocabulary-repository.js',
+    'srs-candidates.js',
+    'srs-pending-candidates.js',
     'srs-scheduler.js',
     'vocabulary-service.js',
     'index.js',
@@ -53,6 +55,8 @@ async function main() {
   assert.equal(api.REVIEW_RATINGS.HARD, 'hard');
   assert.equal(api.REVIEW_RATINGS.GOOD, 'good');
   assert.equal(api.REVIEW_RATINGS.EASY, 'easy');
+  assert.equal(api.VOCABULARY_ENTRY_TYPES.WORD, 'word');
+  assert.equal(api.VOCABULARY_ENTRY_TYPES.PHRASE, 'phrase');
 
   const repository = api.createInMemoryVocabularyRepository();
   const service = api.createVocabularyService({
@@ -72,6 +76,7 @@ async function main() {
   assert.equal(first.word, 'Running');
   assert.equal(first.lemma, 'Run');
   assert.equal(first.lookup_key, 'run');
+  assert.equal(first.entry_type, 'word');
   assert.equal(first.language, 'en');
   assert.equal(first.status, 'new');
   assert.equal(first.created_at, createdAt);
@@ -128,11 +133,27 @@ async function main() {
     word: 'United   States',
     lemma: 'United States',
     language: 'en',
+    entry_type: 'phrase',
     createdAt,
   });
   assert.equal(phrase.lemma, 'United States');
   assert.equal(phrase.lookup_key, 'united states');
+  assert.equal(phrase.entry_type, 'phrase');
   assert.equal((await service.getWordByLemma('  united    states  ')).id, phrase.id);
+
+  const legacyRepository = api.createInMemoryVocabularyRepository({
+    words: [{
+      id: 'legacy-word-1',
+      word: 'legacy',
+      lemma: 'legacy',
+      lookup_key: 'legacy',
+      language: 'en',
+      status: 'new',
+      created_at: createdAt,
+      updated_at: createdAt,
+    }],
+  });
+  assert.equal((await legacyRepository.getWord('legacy-word-1')).entry_type, 'word', 'legacy vocabulary entries should default to word');
 
   const futureWord = await service.addWord({
     word: 'Durable',
@@ -226,6 +247,33 @@ async function main() {
   assert.equal(signalContexts.length, 1);
   assert.equal(signalContexts[0].meaning, null);
 
+  await contextService.addWord({
+    word: 'signal',
+    lemma: 'signal',
+    language: 'en',
+    context: {
+      sentence: 'The signal faded near the tunnel.',
+      source_title: 'Article C',
+      source_url: 'https://example.test/c',
+    },
+    createdAt: '2026-07-09T00:06:30.000Z',
+  });
+  assert.equal((await contextRepository.getContextsForWord(signal.id)).length, 1, 'identical context should not be appended twice');
+
+  await contextService.addWord({
+    word: 'signal',
+    lemma: 'signal',
+    language: 'en',
+    context: {
+      sentence: 'The signal faded near the tunnel.',
+      meaning: 'In this sentence, signal means reception.',
+      source_title: 'Article C',
+      source_url: 'https://example.test/c',
+    },
+    createdAt: '2026-07-09T00:07:00.000Z',
+  });
+  assert.equal((await contextRepository.getContextsForWord(signal.id)).length, 2, 'same sentence with different meaning should remain useful context');
+
   const contextsBeforeReview = await contextRepository.getContextsForWord(chargeFirst.id);
   await contextService.reviewWord(chargeFirst.id, 'good', '2026-07-09T00:06:00.000Z');
   assert.deepEqual(await contextRepository.getContextsForWord(chargeFirst.id), contextsBeforeReview);
@@ -241,6 +289,108 @@ async function main() {
     assert.equal(result.rating, rating);
     assert.ok(Date.parse(result.nextDueAt) >= Date.parse('2026-07-09T01:00:00.000Z'));
   }
+
+  const candidateTemplate = {
+    articleId: 'article-srs',
+    items: [{
+      targetId: 'target-word',
+      markedText: 'Grill',
+      sourceSentence: 'The chef will grill the fish.',
+      sentenceBefore: 'Dinner starts soon.',
+      sentenceAfter: 'Guests are waiting.',
+    }, {
+      targetId: 'target-phrase',
+      markedText: 'take it for granted',
+      sourceSentence: 'People take clean water for granted.',
+    }, {
+      targetId: 'target-long',
+      markedText: 'this is a very long selected passage that should stay out of srs',
+      sourceSentence: 'This is a very long selected passage that should stay out of SRS.',
+    }],
+  };
+  const candidateResult = {
+    items: [{
+      targetId: 'target-word',
+      markedText: 'Grill',
+      meaning: 'In this sentence, grill means cook over heat.',
+    }, {
+      targetId: 'target-phrase',
+      markedText: 'take it for granted',
+      meaning: 'Treat something as automatically available.',
+    }, {
+      targetId: 'target-long',
+      markedText: 'this is a very long selected passage that should stay out of srs',
+      meaning: 'This is an explanation for a long text selection.',
+    }, {
+      targetId: 'target-old',
+      markedText: 'old',
+      meaning: 'Should not be included because it was not requested in this run.',
+    }],
+  };
+  const candidateBuild = api.buildSrsCandidatesFromBackfillRun({
+    template: candidateTemplate,
+    result: candidateResult,
+    requestedTargetIds: ['target-word', 'target-phrase', 'target-long'],
+    sourceTitle: 'Article SRS',
+    sourceUrl: 'https://example.test/srs',
+  });
+  assert.deepEqual(candidateBuild.candidates.map((candidate) => [candidate.lemma, candidate.entry_type]), [
+    ['grill', 'word'],
+    ['take it for granted', 'phrase'],
+  ]);
+  assert.equal(candidateBuild.excluded.length, 1, 'long text selections should be excluded from SRS candidates');
+  assert.equal(candidateBuild.candidates[0].context.sentence, 'The chef will grill the fish.');
+  assert.equal(candidateBuild.candidates[0].context.meaning, 'In this sentence, grill means cook over heat.');
+  assert.equal(candidateBuild.candidates[0].context.source_title, 'Article SRS');
+  assert.equal(candidateBuild.candidates[0].context.source_url, 'https://example.test/srs');
+  assert.equal(candidateBuild.candidates[0].context.surrounding_text, 'Dinner starts soon. The chef will grill the fish. Guests are waiting.');
+
+  const candidateRepository = api.createInMemoryVocabularyRepository();
+  const candidateService = api.createVocabularyService({
+    repository: candidateRepository,
+    scheduler: api.createSrsScheduler({ enable_fuzz: false }),
+  });
+  await candidateService.addWord({ word: 'known phrase', lemma: 'known phrase', entry_type: 'phrase', createdAt });
+  await candidateService.markWordKnown((await candidateService.getWordByLemma('known phrase')).id, '2026-07-09T00:07:00.000Z');
+  await candidateService.addWord({ word: 'ignored phrase', lemma: 'ignored phrase', entry_type: 'phrase', createdAt });
+  await candidateService.ignoreWord((await candidateService.getWordByLemma('ignored phrase')).id, '2026-07-09T00:08:00.000Z');
+  const applyResult = await api.applySrsCandidatesToVocabulary({
+    vocabularyService: candidateService,
+    candidates: [{
+      word: 'fresh word',
+      lemma: 'fresh word',
+      entry_type: 'phrase',
+      language: 'en',
+      context: { sentence: 'A fresh word appears.', meaning: 'A new phrase meaning.' },
+    }, {
+      word: 'known phrase',
+      lemma: 'known phrase',
+      entry_type: 'phrase',
+      language: 'en',
+      context: { sentence: 'Known phrase appears again.', meaning: 'Known but uncertain.' },
+    }, {
+      word: 'ignored phrase',
+      lemma: 'ignored phrase',
+      entry_type: 'phrase',
+      language: 'en',
+      context: { sentence: 'Ignored phrase appears again.', meaning: 'Ignored meaning.' },
+    }],
+    mode: 'all',
+  });
+  assert.equal(applyResult.added, 1);
+  assert.equal(applyResult.knownContextAdded, 1);
+  assert.equal(applyResult.ignoredSkipped, 1);
+  assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('known phrase')).id)).length, 1);
+  assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('ignored phrase')).id)).length, 0);
+
+  const pendingRepository = api.createInMemorySrsPendingCandidatesRepository();
+  await pendingRepository.setPendingCandidates('article-srs', {
+    scopeKey: 'article-srs',
+    candidates: candidateBuild.candidates,
+  });
+  assert.equal((await pendingRepository.getPendingCandidates('article-srs')).candidates.length, 2);
+  await pendingRepository.clearPendingCandidates('article-srs');
+  assert.equal(await pendingRepository.getPendingCandidates('article-srs'), null);
 
   console.log('vocabulary SRS service check passed');
 }

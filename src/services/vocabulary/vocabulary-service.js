@@ -7,6 +7,7 @@ import {
   compareIsoAsc,
   createVocabularyId,
   normalizeLanguage,
+  normalizeVocabularyEntryType,
   normalizeLemma,
   normalizeLookupKey,
   normalizeNullableText,
@@ -40,6 +41,7 @@ export function createVocabularyService(options = {}) {
           word: wordText,
           lemma,
           lookup_key: lookupKey,
+          entry_type: normalizeVocabularyEntryType(input.entry_type || input.entryType),
           language,
           phonetic: normalizeNullableText(input.phonetic),
           meaning: initialMeaning,
@@ -178,6 +180,14 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
     surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),
     created_at: toIsoString(context.created_at || context.createdAt || createdAt),
   };
+  const duplicate = snapshot.contexts.find((existing) => (
+    existing.word_id === wordId
+    && normalizeText(existing.sentence) === entry.sentence
+    && normalizeNullableText(existing.meaning) === entry.meaning
+    && normalizeNullableText(existing.source_url || existing.sourceUrl) === entry.source_url
+    && normalizeNullableText(existing.source_title || existing.sourceTitle) === entry.source_title
+  ));
+  if (duplicate) return duplicate;
   snapshot.contexts.push(entry);
   return entry;
 }
