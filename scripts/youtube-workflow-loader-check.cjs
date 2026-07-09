@@ -28,13 +28,15 @@ async function main() {
 
   const writes = [];
   const calls = [];
+  const mediaCalls = [];
   const client = {
     async getSession(jobId) {
       calls.push(['session', jobId]);
       return {
         jobId,
         title: 'Example',
-        files: { audio: 'a', transcript: 't', chunkData: 'c' },
+        files: { audio: 'a', transcript: 't', chunkData: 'c', video: 'v' },
+        media: { videoSource: 'auto-single' },
       };
     },
     async getFile(jobId, kind) {
@@ -62,6 +64,10 @@ async function main() {
         },
       };
     },
+    fileUrl(jobId, kind) {
+      calls.push(['fileUrl', jobId, kind]);
+      return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`;
+    },
   };
   const loader = api.createYoutubeWorkflowLoader({
     client,
@@ -73,6 +79,14 @@ async function main() {
     processTranscript: (data) => calls.push(['transcript', data.segments.length]),
     processChunkData: (data) => calls.push(['chunkData', data.s.length]),
     applyReaderMarks: async (marks) => calls.push(['applyReaderMarks', marks.length]),
+    mediaSource: {
+      setAudioElement(element) {
+        mediaCalls.push(['setAudioElement', !!element]);
+      },
+      loadJobMedia(payload) {
+        mediaCalls.push(['loadJobMedia', payload]);
+      },
+    },
     annotationLightweightModule: {
       async importManualLightweightAnnotations(file, options = {}) {
         const parsed = JSON.parse(await file.text());
@@ -96,6 +110,14 @@ async function main() {
   assert.ok(calls.some((call) => call[0] === 'annotationBackfillResult' && call[1] === 'job-1'));
   assert.ok(calls.some((call) => call[0] === 'importAnnotationBackfillResult' && call[1] === 1 && call[3] === false), 'loader should import saved annotation backfill result without replacing existing reader marks or calling Gemini again');
   assert.ok(calls.some((call) => call[0] === 'resetChunkDisplay'), 'loader should reset AI chunk Chinese visibility after loading generated chunk data');
+  assert.ok(calls.some((call) => call[0] === 'fileUrl' && call[1] === 'job-1' && call[2] === 'video'), 'loader should request the service video URL when manifest has a video file');
+  assert.ok(mediaCalls.some((call) => call[0] === 'setAudioElement' && call[1] === true), 'loader should register the audio element with the shared media source');
+  assert.ok(mediaCalls.some((call) => {
+    return call[0] === 'loadJobMedia'
+      && call[1].hasVideo === true
+      && call[1].videoUrl.endsWith('/api/jobs/job-1/file/video')
+      && call[1].videoSource === 'auto-single';
+  }), 'loader should register video availability with the shared media source');
 
   const failedWrites = [];
   const badLoader = api.createYoutubeWorkflowLoader({

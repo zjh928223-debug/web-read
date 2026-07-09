@@ -4,6 +4,9 @@ import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 
 export function initReaderAppRuntime(deps = {}) {
+  var audioPlayer = (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+    ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+    : deps.audioPlayer
   deps.annotationLightweightModule.initManualLightweightAnnotationControls({
     exportButton: deps.exportAnnotationLightweightBtn,
     importButton: deps.importAnnotationLightweightBtn,
@@ -12,7 +15,7 @@ export function initReaderAppRuntime(deps = {}) {
     refreshAfterImport: function () {
       if (deps.chunkState.isChunkMode) deps.renderChunkMode()
       else deps.renderTranscript()
-      deps.forceUpdateUI(deps.audioPlayer.currentTime)
+      deps.forceUpdateUI(audioPlayer.currentTime)
     },
     showToast: deps.showToast,
     showError: deps.showError
@@ -26,7 +29,7 @@ export function initReaderAppRuntime(deps = {}) {
     refreshAfterImport: function () {
       if (deps.chunkState.isChunkMode) deps.renderChunkMode()
       else deps.renderTranscript()
-      deps.forceUpdateUI(deps.audioPlayer.currentTime)
+      deps.forceUpdateUI(audioPlayer.currentTime)
     },
     showToast: deps.showToast,
     showError: deps.showError,
@@ -56,7 +59,7 @@ export function initReaderAppRuntime(deps = {}) {
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,
     forceUpdateUI: deps.forceUpdateUI,
-    audioPlayer: deps.audioPlayer,
+    audioPlayer: audioPlayer,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
     showToast: deps.showToast,
     showError: deps.showError
@@ -64,7 +67,7 @@ export function initReaderAppRuntime(deps = {}) {
 
   deps.controlsModule.init({
     state: deps.runtimeState,
-    audioPlayer: deps.audioPlayer,
+    audioPlayer: audioPlayer,
     bsFindActiveHelper: deps.bsFindActiveHelper,
     findChunkIndexByTime: deps.playbackRuntimeHelpersApi.findChunkIndexByTime,
     getCurrentSegmentIndexHelper: deps.getCurrentSegmentIndexHelper,

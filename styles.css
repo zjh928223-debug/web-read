@@ -921,6 +921,134 @@ body {
   transform: none !important;
 }
 
+.youtube-video-preference {
+  width: fit-content;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--pru-row-border, var(--border-color));
+  border-radius: var(--pru-radius-row, 8px);
+  background: var(--pru-shell-surface, var(--card-bg));
+  color: var(--pru-shell-text, var(--text-main));
+  white-space: nowrap;
+}
+
+.youtube-video-player {
+  position: fixed;
+  z-index: 1320;
+  display: grid;
+  grid-template-rows: 30px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.28);
+  border-radius: 8px;
+  background: #111318;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
+  color: #f8fafc;
+  cursor: move;
+  user-select: none;
+}
+
+.youtube-video-player.is-minimized {
+  grid-template-rows: 32px;
+}
+
+.youtube-video-titlebar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 3px 6px 3px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(31, 41, 51, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: move;
+}
+
+.youtube-video-titlebar strong,
+.youtube-video-titlebar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-video-titlebar strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.youtube-video-titlebar span {
+  color: rgba(203, 213, 225, 0.72);
+  font-size: 11px;
+}
+
+.youtube-video-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.youtube-video-actions .youtube-workflow-icon-btn {
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f8fafc;
+  cursor: default;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.youtube-video-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #050608;
+  cursor: move;
+}
+
+.youtube-video-player[data-controls-visible="true"] video {
+  cursor: default;
+}
+
+.youtube-video-player .youtube-video-resize-handle {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  left: auto;
+  top: auto;
+  z-index: 3;
+  width: 16px;
+  height: 16px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(135deg, transparent 52%, rgba(248, 250, 252, 0.74) 52%);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  cursor: nwse-resize;
+  isolation: auto;
+  overflow: visible;
+}
+
+.youtube-video-player .youtube-video-resize-handle::before {
+  content: none;
+}
+
+#audio-player.video-media-active {
+  opacity: 0.42;
+  filter: grayscale(0.8);
+}
+
 .youtube-subwindow,
 .youtube-switch-modal-backdrop {
   position: fixed;
@@ -3605,4 +3733,497 @@ body {
       background: #4f46e5;
       color: #fff;
       box-shadow: 0 8px 18px rgba(79,70,229,0.20);
+    }
+
+    /* Material Center V2: focused left navigation and readable task tables */
+    .youtube-reader-controls .youtube-reader-video-priority {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .youtube-reader-video-priority-check {
+      display: inline-grid;
+      place-items: center;
+      width: 18px;
+      height: 18px;
+      border: 1px solid color-mix(in srgb, var(--pru-shell-muted) 34%, var(--pru-shell-border));
+      border-radius: 4px;
+      background: var(--pru-shell-surface);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .youtube-reader-video-priority[data-active="true"] .youtube-reader-video-priority-check {
+      border-color: var(--pru-accent);
+      background: var(--pru-accent);
+    }
+
+    .youtube-workflow .youtube-workflow-panel {
+      width: min(720px, calc(100vw - 48px));
+      height: min(860px, calc(100vh - 48px));
+      max-height: min(860px, calc(100vh - 48px));
+      padding: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      background: color-mix(in srgb, var(--pru-shell-bg) 88%, var(--pru-reader-bg));
+    }
+
+    .youtube-workflow .youtube-workflow-header {
+      position: sticky;
+      z-index: 3;
+      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin: 0;
+      padding: 18px 18px 14px;
+      background: color-mix(in srgb, var(--pru-shell-bg) 92%, var(--pru-reader-bg));
+    }
+
+    .youtube-workflow-layout {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-content: start;
+      gap: 4px;
+      padding: 12px 8px;
+      border-right: 1px solid var(--pru-shell-border);
+      border-radius: 0;
+      background: color-mix(in srgb, var(--pru-reader-muted) 46%, transparent);
+    }
+
+    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button {
+      min-height: 34px;
+      justify-content: space-between;
+      padding: 0 9px !important;
+      border-color: transparent !important;
+      border-radius: 6px !important;
+      background: transparent !important;
+      color: var(--pru-shell-muted) !important;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: none !important;
+    }
+
+    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"] {
+      position: relative;
+      border-color: color-mix(in srgb, var(--pru-accent) 16%, var(--pru-row-border)) !important;
+      background: color-mix(in srgb, var(--pru-accent) 10%, var(--pru-shell-surface)) !important;
+      color: var(--pru-shell-text) !important;
+    }
+
+    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"]::before {
+      content: "";
+      display: block !important;
+      position: absolute;
+      left: 0;
+      top: 8px;
+      bottom: 8px;
+      width: 3px;
+      border-radius: 999px;
+      background: var(--pru-accent);
+    }
+
+    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav small {
+      min-width: 20px;
+      padding: 2px 6px;
+      border-radius: var(--pru-radius-pill);
+      background: color-mix(in srgb, var(--pru-shell-muted) 12%, transparent);
+      color: var(--pru-shell-muted);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.2;
+      text-align: center;
+    }
+
+    .youtube-workflow-content {
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 14px 16px 16px;
+      overscroll-behavior: contain;
+      scrollbar-color: color-mix(in srgb, var(--pru-shell-muted) 34%, transparent) transparent;
+    }
+
+    .youtube-workflow-page,
+    .youtube-workflow-add-view,
+    .youtube-workflow-settings-view {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .youtube-workflow-page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .youtube-workflow-page-head h3 {
+      margin: 0;
+      color: var(--pru-shell-text);
+      font: 750 20px/1.25 var(--pru-ui-font);
+      letter-spacing: 0;
+    }
+
+    .youtube-workflow-page-head p,
+    .youtube-workflow-page-head > span,
+    .youtube-workflow-toolbar > span {
+      margin: 4px 0 0;
+      color: var(--pru-shell-muted);
+      font: 500 12px/1.45 var(--pru-ui-font);
+    }
+
+    .youtube-setting-chips {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 260px;
+    }
+
+    .youtube-setting-chips span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 5px 8px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: var(--pru-radius-pill);
+      background: var(--pru-shell-surface);
+      color: var(--pru-shell-muted);
+      font: 650 11px/1.2 var(--pru-ui-font);
+    }
+
+    .youtube-workflow-toolbar,
+    .youtube-history-filters,
+    .youtube-primary-actions,
+    .youtube-mode-options,
+    .youtube-secondary-actions,
+    .youtube-credential-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .youtube-history-filters {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 132px auto;
+    }
+
+    .youtube-filter-tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(3, minmax(0, auto));
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--pru-reader-muted) 56%, transparent);
+    }
+
+    .youtube-workflow .youtube-filter-tabs button {
+      min-height: 26px;
+      padding: 0 8px !important;
+      border-color: transparent !important;
+      background: transparent !important;
+      color: var(--pru-shell-muted) !important;
+      box-shadow: none !important;
+      font-size: 12px;
+    }
+
+    .youtube-workflow .youtube-filter-tabs button[data-active="true"] {
+      border-color: var(--pru-row-border) !important;
+      background: var(--pru-shell-surface) !important;
+      color: var(--pru-shell-text) !important;
+    }
+
+    .youtube-workflow-form,
+    .youtube-import-panel,
+    .youtube-workflow-settings-strip,
+    .youtube-advanced-settings {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: var(--pru-radius-panel);
+      background: color-mix(in srgb, var(--pru-shell-surface) 82%, transparent);
+    }
+
+    .youtube-workflow-form,
+    .youtube-workflow-recent,
+    .youtube-workflow-queue,
+    .youtube-workflow-history {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .youtube-workflow label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .youtube-workflow textarea.youtube-material-link-input {
+      width: 100%;
+      min-width: 0;
+      min-height: 116px;
+      resize: vertical;
+      padding: 11px 12px;
+      border: 1px solid color-mix(in srgb, var(--pru-accent) 34%, var(--pru-shell-border));
+      border-radius: 7px;
+      background: var(--pru-shell-surface);
+      color: var(--pru-shell-text);
+      font: 500 14px/1.45 var(--pru-ui-font);
+      letter-spacing: 0;
+    }
+
+    .youtube-workflow textarea.youtube-material-link-input::placeholder {
+      color: color-mix(in srgb, var(--pru-shell-muted) 72%, transparent);
+    }
+
+    .youtube-workflow textarea.youtube-material-link-input:focus-visible {
+      outline: none;
+      border-color: var(--pru-accent);
+      box-shadow: 0 0 0 3px var(--pru-focus-ring);
+    }
+
+    .youtube-workflow .youtube-workflow-job,
+    .youtube-workflow .youtube-link-card,
+    .youtube-workflow .youtube-import-item {
+      display: grid;
+      border-color: var(--pru-row-border);
+      background: color-mix(in srgb, var(--pru-shell-surface) 70%, var(--pru-shell-row));
+    }
+
+    .youtube-workflow .youtube-workflow-job {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 12px;
+      min-height: 68px;
+      padding: 11px 12px;
+      border-radius: 7px;
+    }
+
+    .youtube-workflow .youtube-workflow-queue,
+    .youtube-workflow .youtube-workflow-history {
+      display: grid;
+      gap: 8px;
+    }
+
+    .youtube-workflow .youtube-workflow-job-main {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .youtube-workflow .youtube-job-title,
+    .youtube-workflow .youtube-workflow-job-main strong {
+      overflow: hidden;
+      color: var(--pru-shell-text);
+      font-size: 14px;
+      font-weight: 750;
+      line-height: 1.35;
+      text-overflow: clip;
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    .youtube-workflow .youtube-job-status-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      order: 2;
+    }
+
+    .youtube-workflow .youtube-workflow-job-main > small,
+    .youtube-workflow .youtube-job-source {
+      overflow: hidden;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .youtube-job-progress {
+      width: 100%;
+      height: 5px;
+      overflow: hidden;
+      border-radius: var(--pru-radius-pill);
+      background: color-mix(in srgb, var(--pru-shell-muted) 14%, transparent);
+    }
+
+    .youtube-job-progress span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--pru-accent);
+      transition: width 160ms var(--pru-ease);
+    }
+
+    .youtube-workflow-job[data-status="ready"] .youtube-job-progress span,
+    .youtube-workflow-job[data-status="finished"] .youtube-job-progress span,
+    .youtube-workflow-job[data-status="completed"] .youtube-job-progress span {
+      background: var(--pru-success);
+    }
+
+    .youtube-workflow-job[data-status="failed"] .youtube-job-progress span {
+      background: var(--pru-danger);
+    }
+
+    .youtube-workflow .youtube-workflow-job-actions {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: flex-end;
+      gap: 6px;
+      max-width: 190px;
+    }
+
+    .youtube-workflow .youtube-workflow-job-actions .small-btn {
+      min-width: 52px;
+    }
+
+    .youtube-workflow .youtube-workflow-history-job {
+      grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+    }
+
+    .youtube-history-detail {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 8px;
+      margin-top: 2px;
+      padding: 10px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--pru-shell-surface) 86%, var(--pru-reader-muted));
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .youtube-history-detail span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .youtube-danger-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      grid-column: 1 / -1;
+    }
+
+    .youtube-workflow .youtube-danger-actions .danger {
+      border-color: color-mix(in srgb, var(--pru-danger) 36%, var(--pru-shell-border)) !important;
+      color: var(--pru-danger) !important;
+    }
+
+    .youtube-link-card {
+      grid-template-columns: 18px 20px minmax(0, 1fr) auto auto;
+      align-items: center;
+    }
+
+    .youtube-mode-options {
+      justify-content: space-between;
+      padding: 8px 10px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--pru-shell-bg) 78%, var(--pru-reader-bg));
+      color: var(--pru-shell-muted);
+      font: 500 12px/1.4 var(--pru-ui-font);
+    }
+
+    .youtube-workflow-mode-check {
+      color: var(--pru-shell-text);
+      font-weight: 750;
+    }
+
+    .youtube-import-item {
+      grid-template-columns: minmax(150px, auto) minmax(0, 1fr);
+      align-items: center;
+    }
+
+    .youtube-workflow-panel-footer {
+      margin: 0;
+      padding: 10px 16px;
+      border-top: 1px solid var(--pru-shell-border);
+      background: color-mix(in srgb, var(--pru-shell-bg) 92%, var(--pru-reader-bg));
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+
+    @media (max-width: 760px) {
+      .youtube-workflow .youtube-workflow-panel {
+        width: min(100vw - 16px, 720px);
+        max-height: calc(100vh - 16px);
+      }
+
+      .youtube-workflow-layout {
+        grid-template-columns: minmax(0, 1fr);
+        max-height: calc(100vh - 96px);
+      }
+
+      .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        padding: 8px;
+        border-right: 0;
+        border-bottom: 1px solid var(--pru-shell-border);
+      }
+
+      .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button {
+        justify-content: center;
+        gap: 4px;
+        padding: 0 6px !important;
+      }
+
+      .youtube-workflow-content {
+        padding: 12px;
+      }
+
+      .youtube-workflow-page-head,
+      .youtube-workflow .youtube-workflow-job,
+      .youtube-workflow .youtube-workflow-history-job,
+      .youtube-history-filters {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .youtube-workflow-page-head {
+        display: grid;
+      }
+
+      .youtube-workflow .youtube-workflow-job-actions {
+        max-width: none;
+        justify-content: flex-start;
+      }
+
+      .youtube-history-detail {
+        grid-template-columns: minmax(0, 1fr);
+      }
     }

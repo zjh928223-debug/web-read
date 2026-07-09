@@ -2,7 +2,9 @@ export function initChunkControls(deps = {}) {
   var state = deps.state;
   var toggleChunkBtn = deps.toggleChunkBtn;
   var chunkCnHoldBtn = deps.chunkCnHoldBtn;
-  var audioPlayer = deps.audioPlayer;
+  var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+    ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+    : deps.audioPlayer;
   var holdPrevHadFocusClass = null;
 
   function bridgeToPinia() {

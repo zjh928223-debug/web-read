@@ -24,11 +24,12 @@ function getRuntimeAudioPlayer() {
   return typeof runtime.getAudioPlayer === 'function' ? runtime.getAudioPlayer() : null;
 }
 
-function seekTranscriptWord(start) {
+function seekTranscriptWord(start, wordIndex) {
   var audio = getRuntimeAudioPlayer();
   if (audio) audio.currentTime = start;
   if (typeof runtime.forceUpdateUI === 'function') {
-    runtime.forceUpdateUI(start);
+    var options = Number.isInteger(wordIndex) ? { wordIndex: wordIndex } : undefined;
+    runtime.forceUpdateUI(start, options);
   }
 }
 
@@ -52,7 +53,10 @@ export function handleTranscriptWordClick(options) {
     transcriptStore.currentWordIndex = index;
   }
   if (Number.isFinite(start)) {
-    seekTranscriptWord(start);
+    seekTranscriptWord(start, index);
+  }
+  if (transcriptStore && index !== -1) {
+    transcriptStore.currentWordIndex = index;
   }
   notifyWordClick(element);
 }

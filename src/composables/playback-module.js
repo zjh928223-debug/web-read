@@ -1,5 +1,7 @@
   function init(deps) {
-    var audioPlayer = deps.audioPlayer;
+    var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+      ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+      : deps.audioPlayer;
     var getCurrentSegmentIndexHelper = deps.getCurrentSegmentIndexHelper;
     var getSegmentCheckpointsHelper = deps.getSegmentCheckpointsHelper;
     var bsFindActiveHelper = deps.bsFindActiveHelper;
@@ -112,8 +114,11 @@
       return bsFindActiveHelper(st.wordStarts, st.words, time);
     }
 
-    function forceUpdateUI(time) {
-      var idx = bsFindActive(time);
+    function forceUpdateUI(time, options) {
+      var preferredWordIndex = Number(options && options.wordIndex);
+      var idx = Number.isInteger(preferredWordIndex) && state.words[preferredWordIndex]
+        ? preferredWordIndex
+        : bsFindActive(time);
       mainUpdateHighlight(idx, time);
     }
 

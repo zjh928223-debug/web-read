@@ -116,6 +116,13 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
+    async pickVideoFile(payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/media/pick-video'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
+    },
     async scanImportRoot(payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/import/scan'), {
         method: 'POST',
@@ -137,6 +144,16 @@ export function createYoutubeWorkflowClient(options = {}) {
       const response = await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`))
       if (!response.ok) throw new Error(`Unable to fetch ${kind}: ${response.status}`)
       return response.blob()
+    },
+    fileUrl(jobId, kind) {
+      return apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`)
+    },
+    async bindVideoSource(jobId, payload = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/video-source`), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload || {})
+      }))
     },
     async recent(limit = 10) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/recent?limit=${encodeURIComponent(limit)}`)))

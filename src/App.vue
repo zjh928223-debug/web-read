@@ -2,6 +2,7 @@
   <div>
     <ToastMessage />
     <YouTubeWorkflowPanel />
+    <VideoPlayerFloat />
     <TranscriptContainer />
     <ChunkModeView />
     <span style="display:none" data-vue-mounted>1</span>
@@ -12,6 +13,7 @@
 import { onMounted } from 'vue'
 import ToastMessage from './components/ToastMessage.vue'
 import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
+import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
 import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
 

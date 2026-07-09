@@ -12,6 +12,7 @@
     "verify:playback": "node scripts/read-web-playback-check.cjs",
     "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",
+    "verify:vocabulary-srs": "node scripts/vocabulary-srs-service-check.cjs",
     "verify:annotation-lightweight-module": "node scripts/annotation-lightweight-module-check.cjs",
     "verify:annotation-backfill-ai": "node scripts/annotation-backfill-ai-module-check.cjs",
     "verify:keyboard-boundary": "node scripts/keyboard-module-boundary-check.cjs",
@@ -97,6 +98,8 @@
     "verify:youtube-workflow-loader": "node scripts/youtube-workflow-loader-check.cjs",
     "verify:youtube-workflow-panel": "node scripts/youtube-workflow-panel-check.cjs",
     "verify:youtube-workflow-panel-behavior": "node scripts/youtube-workflow-panel-behavior-check.cjs",
+    "verify:video-player": "node scripts/video-player-module-check.cjs",
+    "verify:video-player-behavior": "node scripts/video-player-behavior-check.cjs",
     "verify:youtube-workflow-secret": "node scripts/youtube-workflow-secret-check.cjs",
     "verify:youtube-workflow-startup": "node scripts/youtube-workflow-startup-check.cjs",
     "verify:production-preview": "node scripts/production-preview-load-check.cjs",
@@ -116,6 +119,7 @@
   },
   "dependencies": {
     "pinia": "^3.0.4",
+    "ts-fsrs": "^5.4.1",
     "vue": "^3.5.34"
   }
 }

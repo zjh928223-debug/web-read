@@ -18,11 +18,12 @@ function getAudioPlayer() {
   return typeof runtime.getAudioPlayer === 'function' ? runtime.getAudioPlayer() : null;
 }
 
-function seekChunkTime(start) {
+function seekChunkTime(start, wordIndex) {
   var audio = getAudioPlayer();
   if (audio) audio.currentTime = start;
   if (typeof runtime.forceUpdateUI === 'function') {
-    runtime.forceUpdateUI(start);
+    var options = Number.isInteger(wordIndex) ? { wordIndex: wordIndex } : undefined;
+    runtime.forceUpdateUI(start, options);
   }
 }
 
@@ -49,7 +50,11 @@ export function handleChunkWordClick(options) {
 
   var start = Number(word && word.start);
   if (Number.isFinite(start)) {
-    seekChunkTime(start);
+    seekChunkTime(start, idx);
+  }
+
+  if (transcriptStore && idx != null) {
+    transcriptStore.currentWordIndex = idx;
   }
 
   notifyAnnotation(target);

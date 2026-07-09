@@ -2,6 +2,16 @@
   <Teleport to=".controls">
     <div class="youtube-reader-controls">
       <button type="button" class="small-btn" @click="openPanel">素材处理</button>
+      <button
+        type="button"
+        class="small-btn youtube-reader-video-priority"
+        :aria-pressed="videoPriority ? 'true' : 'false'"
+        :data-active="videoPriority ? 'true' : 'false'"
+        @click="toggleVideoPriority"
+      >
+        <span class="youtube-reader-video-priority-check" aria-hidden="true">{{ videoPriority ? '✓' : '' }}</span>
+        <span>视频优先</span>
+      </button>
       <button type="button" class="small-btn" :disabled="!canGoPrevious" @click="goQueue(-1)">上一篇</button>
       <button type="button" class="small-btn" :disabled="!canUseNext" @click="goQueue(1)">下一篇</button>
     </div>
@@ -28,308 +38,412 @@
           <span>启动命令：python -m uvicorn youtube_workflow.service:app --host 127.0.0.1 --port 8765</span>
         </div>
 
-        <nav class="youtube-workflow-section-tabs" aria-label="素材处理视图">
-          <button type="button" data-view="recent" :aria-pressed="workflowView === 'recent'" :data-active="workflowView === 'recent' ? 'true' : 'false'" @click="setWorkflowView('recent')">最近</button>
-          <button type="button" data-view="queue" :aria-pressed="workflowView === 'queue'" :data-active="workflowView === 'queue' ? 'true' : 'false'" @click="setWorkflowView('queue')">队列</button>
-          <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">历史库</button>
-        </nav>
-
-        <section v-if="workflowView === 'recent'" class="youtube-workflow-recent">
-          <div class="youtube-workflow-summary">
-            <strong>最近阅读</strong>
-            <span>{{ recentSummary }}</span>
-            <input
-              v-model.trim="recentQuery"
-              class="youtube-recent-search"
-              type="search"
-              name="youtube-recent-search"
-              autocomplete="off"
-              placeholder="搜索文章"
-              @keydown.enter.prevent="refreshRecent"
-            >
-            <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
-          </div>
-          <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
-
-          <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
-
-          <article
-            v-for="job in visibleRecentJobs"
-            :key="job.jobId"
-            class="youtube-workflow-job youtube-workflow-recent-job"
-            :data-status="job.readStatus || 'not-started'"
-          >
-            <div class="youtube-workflow-job-main">
-              <div class="youtube-job-status-line">
-                <span class="youtube-job-status-badge">{{ readStatusText(job) }}</span>
-                <span class="youtube-job-position">{{ readerTimeText(job) }}</span>
-              </div>
-              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-              <small>{{ readerProgressText(job) }}</small>
-            </div>
-            <div class="youtube-workflow-job-actions">
-              <button
-                type="button"
-                class="small-btn primary"
-                :disabled="job.jobId === currentJobId"
-                @click="openRecentJob(job)"
-              >
-                {{ openJobActionText(job) }}
-              </button>
-            </div>
-          </article>
-        </section>
-
-        <section v-if="workflowView === 'queue'" class="youtube-workflow-process-view">
-          <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
-          <label class="youtube-material-link-label">
-            <span>素材链接</span>
-            <input
-              v-model.trim="linkInput"
-              class="youtube-material-link-input"
-              type="url"
-              name="youtube-material-link"
-              autocomplete="off"
-              placeholder="粘贴一个或多个 http/https 视频素材链接"
-              @keydown.enter.prevent="commitLinkInput"
-              @paste="handleLinkPaste"
-              @blur="commitLinkInput"
-            >
-          </label>
-
-          <div class="youtube-link-card-list">
-            <article v-for="(card, index) in linkCards" :key="card.id" class="youtube-link-card" :data-valid="card.valid">
-              <span class="youtube-link-index">{{ index + 1 }}</span>
-              <span class="youtube-link-status">{{ card.valid ? '✓' : '!' }}</span>
-              <div class="youtube-link-main">
-                <small class="youtube-link-state-text">{{ card.valid ? '格式有效' : '链接格式无效' }}</small>
-                <strong>{{ shortUrl(card.url) }}</strong>
-              </div>
-              <button type="button" class="small-btn" @click="copyLink(card.url)">复制</button>
-              <button type="button" class="small-btn" @click="removeLinkCard(card.id)">删除</button>
-            </article>
-          </div>
-
-          <p v-if="invalidLinkCards.length" class="youtube-workflow-hint">
-            已跳过 {{ invalidLinkCards.length }} 条格式无效链接。
-          </p>
-          <p v-if="linkNotice" class="youtube-workflow-hint" data-tone="warning">
-            {{ linkNotice }}
-          </p>
-
-          <label v-if="geminiMode === 'real'">
-            <span>Gemini API key</span>
-            <input v-model="apiKey" type="password" name="youtube-gemini-api-key" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
-          </label>
-
-          <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
-            <input v-model="rememberApiKey" type="checkbox">
-            <span>保存 API key 到系统凭据</span>
-          </label>
-          <div v-if="geminiMode === 'real'" class="youtube-credential-actions">
-            <span>{{ credentialStatusText }}</span>
-            <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
-            <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
-          </div>
-          <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
-
-          <label>
-            <span>模型</span>
-            <input v-model.trim="model" type="text" name="youtube-workflow-model" autocomplete="off" placeholder="gemini-2.5-flash">
-          </label>
-
-          <button type="button" class="youtube-advanced-toggle" @click="showAdvanced = !showAdvanced">
-            高级设置
-          </button>
-
-          <div v-if="showAdvanced" class="youtube-advanced-settings">
-            <label>
-              <span>Base URL（可选，使用代理网关时填写）</span>
-              <input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址">
-            </label>
-            <label>
-              <span>代理</span>
-              <input v-model.trim="proxyUrl" type="text" name="youtube-workflow-proxy-url" autocomplete="off" placeholder="例如 http://127.0.0.1:7897，留空关闭">
-            </label>
-            <label>
-              <span>cookies 文件</span>
-              <input v-model.trim="cookiesPath" type="text" name="youtube-workflow-cookies-path" autocomplete="off" placeholder="YouTube cookies 文件路径">
-            </label>
-            <label>
-              <span>输出目录</span>
-              <input v-model.trim="outputDir" type="text" name="youtube-workflow-output-dir" autocomplete="off" placeholder="生成文件输出目录">
-            </label>
-            <label>
-              <span>yt-dlp 路径</span>
-              <input v-model.trim="ytDlpPath" type="text" name="youtube-workflow-ytdlp-path" autocomplete="off" placeholder="yt-dlp.exe">
-            </label>
-            <label>
-              <span>WhisperX 路径</span>
-              <input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe">
-            </label>
-            <div class="youtube-primary-actions">
-              <button type="button" class="small-btn" @click="saveBackendConfig">保存后台配置</button>
-              <button type="button" class="small-btn" @click="refreshMaintenance">维护状态</button>
-              <button type="button" class="small-btn" @click="checkCleanup">检查旧文件</button>
-              <button type="button" class="small-btn" @click="confirmCleanup">清理旧文件</button>
-              <button type="button" class="small-btn" @click="downloadDiagnosticsPackage">导出诊断包</button>
-            </div>
-            <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
-            <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
-            <p>普通 Gemini 官方 API 留空即可。</p>
-          </div>
-
-          <div class="youtube-primary-actions">
-            <button type="submit" :disabled="starting || !canEnqueue">
-              <span>{{ primaryActionText }}</span>
+        <div class="youtube-workflow-layout">
+          <nav class="youtube-workflow-section-tabs youtube-workflow-nav" aria-label="素材处理视图">
+            <button type="button" data-view="add" :aria-pressed="workflowView === 'add'" :data-active="workflowView === 'add' ? 'true' : 'false'" @click="setWorkflowView('add')">
+              <span>添加</span>
             </button>
-            <span v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-workflow-hint">需要填写 Gemini API key 或保存系统凭据</span>
-            <span v-else-if="!validLinkCards.length" class="youtube-workflow-hint">暂无可处理素材</span>
-          </div>
-          </form>
+            <button type="button" data-view="queue" :aria-pressed="workflowView === 'queue'" :data-active="workflowView === 'queue' ? 'true' : 'false'" @click="setWorkflowView('queue')">
+              <span>队列</span>
+              <small v-if="queueJobs.length">{{ queueJobs.length }}</small>
+            </button>
+            <button type="button" data-view="recent" :aria-pressed="workflowView === 'recent'" :data-active="workflowView === 'recent' ? 'true' : 'false'" @click="setWorkflowView('recent')">
+              <span>最近</span>
+              <small v-if="recentJobs.length">{{ recentJobs.length }}</small>
+            </button>
+            <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">
+              <span>历史</span>
+              <small v-if="historyJobs.length">{{ historyJobs.length }}</small>
+            </button>
+            <button type="button" data-view="settings" :aria-pressed="workflowView === 'settings'" :data-active="workflowView === 'settings' ? 'true' : 'false'" @click="setWorkflowView('settings')">
+              <span>设置</span>
+            </button>
+          </nav>
 
-          <section class="youtube-workflow-queue">
-          <div class="youtube-workflow-summary">
-            <strong>素材队列</strong>
-            <span>{{ queueSummary }}</span>
-            <button type="button" class="small-btn" @click="refreshQueue">刷新</button>
-          </div>
-
-          <div v-if="!queueJobs.length" class="youtube-workflow-empty">暂无任务</div>
-
-          <article
-            v-for="(job, index) in queueJobs"
-            :key="job.jobId"
-            class="youtube-workflow-job"
-            :data-status="job.status"
-            :data-active="isActiveJob(job) ? 'true' : 'false'"
-          >
-            <div class="youtube-workflow-job-main">
-              <div class="youtube-job-status-line">
-                <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
-                <span class="youtube-job-position">{{ index + 1 }} / {{ queueJobs.length }}</span>
-              </div>
-              <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-              <small v-if="job.status === 'ready'">{{ readyJobMetaText(job) }}</small>
-              <small v-if="job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
-              <div v-if="isActiveJob(job)" class="youtube-job-log" aria-label="运行日志">
-                <div class="youtube-job-log-title">当前过程</div>
-                <ul>
-                  <li v-for="line in jobLogLines(job)" :key="line">{{ line }}</li>
-                </ul>
-              </div>
-            </div>
-            <div class="youtube-workflow-job-actions">
-              <button
-                v-if="job.status === 'ready'"
-                type="button"
-                class="small-btn primary"
-                :disabled="job.jobId === currentJobId"
-                @click="openJob(job)"
-              >
-                {{ openJobActionText(job) }}
-              </button>
-              <button v-if="job.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(job)">优先处理</button>
-              <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="retryJob(job, 'translating')">优先重试</button>
-              <button v-if="!terminalStatuses.has(job.status)" type="button" class="small-btn" @click="cancelJob(job)">取消</button>
-            </div>
-          </article>
-
-          <div class="youtube-secondary-actions">
-            <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
-            <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
-          </div>
-          </section>
-        </section>
-
-        <section v-if="workflowView === 'library'" class="youtube-workflow-library-view">
-          <section class="youtube-import-panel">
-            <div class="youtube-workflow-summary">
-              <strong>导入旧素材目录</strong>
-              <span>只扫描所填目录和直接子目录</span>
-            </div>
-            <label class="youtube-import-path">
-              <span>已选目录</span>
-              <input
-                :value="legacyImportPath || '尚未选择目录'"
-                type="text"
-                name="youtube-legacy-import-path"
-                autocomplete="off"
-                readonly
-              >
-            </label>
-            <div class="youtube-primary-actions">
-              <button type="button" class="small-btn primary" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
-              <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
-              <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
-              <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
-            </div>
-            <div v-if="legacyImportItems.length" class="youtube-import-list">
-              <article v-for="item in legacyImportItems" :key="item.id || item.audioPath" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
-                <label class="youtube-workflow-check">
-                  <input v-model="item.selected" type="checkbox">
-                  <span>{{ importActionText(item) }}</span>
-                </label>
-                <strong>{{ item.title || item.audioName }}</strong>
-                <small>{{ importConfidenceText(item) }}</small>
-                <small>{{ shortPath(item.audioPath) }}</small>
-              </article>
-            </div>
-          </section>
-
-          <section class="youtube-workflow-history">
-          <div class="youtube-workflow-summary">
-            <strong>历史库</strong>
-            <span>{{ historySummary }}</span>
-            <button type="button" class="small-btn" @click="toggleHistory">{{ historyOpen ? '收起' : '打开' }}</button>
-          </div>
-
-          <div v-if="historyOpen" class="youtube-history-panel">
-            <div class="youtube-history-filters">
-              <input
-                v-model.trim="historyQuery"
-                type="search"
-                name="youtube-history-search"
-                autocomplete="off"
-                placeholder="搜索标题 / URL / 日期"
-                @keydown.enter.prevent="refreshHistory"
-              >
-              <select v-model="historyStatus" name="youtube-history-status" @change="refreshHistory">
-                <option value="">全部状态</option>
-                <option value="ready">成功</option>
-                <option value="failed">失败</option>
-                <option value="canceled">取消</option>
-              </select>
-              <button type="button" class="small-btn" @click="refreshHistory">搜索</button>
-            </div>
-
-            <div v-if="!historyJobs.length" class="youtube-workflow-empty">暂无历史记录</div>
-
-            <article
-              v-for="job in historyJobs"
-              :key="job.jobId"
-              class="youtube-workflow-job youtube-workflow-history-job"
-              :data-status="job.status"
-            >
-              <div class="youtube-workflow-job-main">
-                <div class="youtube-job-status-line">
-                  <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
-                  <span class="youtube-job-position">{{ historyMetaText(job) }}</span>
+          <main class="youtube-workflow-content">
+            <section v-if="workflowView === 'add'" class="youtube-workflow-add-view youtube-workflow-page">
+              <div class="youtube-workflow-page-head">
+                <div>
+                  <h3>添加素材</h3>
+                  <p>粘贴链接或选择本地目录后加入处理队列。</p>
                 </div>
-                <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-                <small>{{ shortUrl(job.url || (job.request && job.request.url)) }}</small>
+                <div class="youtube-setting-chips" aria-label="当前处理设置">
+                  <span>{{ materialModeText }}</span>
+                  <span>模型 {{ model || '未设置' }}</span>
+                  <span>{{ credentialCompactText }}</span>
+                </div>
               </div>
-              <div class="youtube-workflow-job-actions">
-                <button v-if="job.status === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(job)">重新打开</button>
-                <button v-if="job.status === 'ready'" type="button" class="small-btn" @click="showQuality(job)">质量报告</button>
-                <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="retryJob(job, 'translating')">优先重试</button>
-                <button type="button" class="small-btn" @click="deleteHistoryJob(job, false)">删记录</button>
-                <button type="button" class="small-btn danger" @click="deleteHistoryJob(job, true)">删文件</button>
+
+              <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
+                <label class="youtube-material-link-label">
+                  <span>素材链接</span>
+                  <textarea
+                    v-model.trim="linkInput"
+                    class="youtube-material-link-input"
+                    name="youtube-material-link"
+                    autocomplete="off"
+                    rows="4"
+                    placeholder="粘贴一个或多个 http/https 视频素材链接，每行一个"
+                    @keydown.enter.ctrl.prevent="commitLinkInput"
+                    @paste="handleLinkPaste"
+                    @blur="commitLinkInput"
+                  />
+                </label>
+
+                <div class="youtube-primary-actions">
+                  <button type="submit" :disabled="starting || !canEnqueue">
+                    <span>{{ primaryActionText }}</span>
+                  </button>
+                  <button type="button" class="small-btn" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
+                  <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
+                </div>
+
+                <div class="youtube-mode-options" aria-label="素材模式">
+                  <label class="youtube-workflow-check youtube-workflow-mode-check">
+                    <input v-model="videoPriority" type="checkbox">
+                    <span>视频优先</span>
+                  </label>
+                  <span>{{ materialModeHelpText }}</span>
+                </div>
+
+                <div class="youtube-link-card-list">
+                  <article v-for="(card, index) in linkCards" :key="card.id" class="youtube-link-card" :data-valid="card.valid">
+                    <span class="youtube-link-index">{{ index + 1 }}</span>
+                    <span class="youtube-link-status">{{ card.valid ? '✓' : '!' }}</span>
+                    <div class="youtube-link-main">
+                      <small class="youtube-link-state-text">{{ card.valid ? '格式有效' : '链接格式无效' }}</small>
+                      <strong>{{ shortUrl(card.url) }}</strong>
+                    </div>
+                    <button type="button" class="small-btn" @click="copyLink(card.url)">复制</button>
+                    <button type="button" class="small-btn" @click="removeLinkCard(card.id)">删除</button>
+                  </article>
+                </div>
+
+                <p v-if="invalidLinkCards.length" class="youtube-workflow-hint">
+                  已跳过 {{ invalidLinkCards.length }} 条格式无效链接。
+                </p>
+                <p v-if="linkNotice" class="youtube-workflow-hint" data-tone="warning">
+                  {{ linkNotice }}
+                </p>
+                <p v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-workflow-hint">需要填写 Gemini API key 或保存系统凭据</p>
+                <p v-else-if="!validLinkCards.length" class="youtube-workflow-hint">暂无可处理素材</p>
+              </form>
+
+              <section class="youtube-import-panel">
+                <div class="youtube-workflow-summary">
+                  <strong>导入旧素材目录</strong>
+                  <span>扫描旧素材目录并批量加入队列</span>
+                </div>
+                <label class="youtube-import-path">
+                  <span>已选目录</span>
+                  <input
+                    :value="legacyImportPath || '尚未选择目录'"
+                    type="text"
+                    name="youtube-legacy-import-path"
+                    autocomplete="off"
+                    readonly
+                  >
+                </label>
+                <div class="youtube-primary-actions">
+                  <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
+                  <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
+                </div>
+                <div v-if="legacyImportItems.length" class="youtube-import-list">
+                  <article v-for="item in legacyImportItems" :key="item.id || importSourcePath(item)" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
+                    <label class="youtube-workflow-check">
+                      <input v-model="item.selected" type="checkbox">
+                      <span>{{ importActionText(item) }}</span>
+                    </label>
+                    <strong>{{ item.title || item.audioName || item.videoName }}</strong>
+                    <small>{{ importConfidenceText(item) }}</small>
+                    <small>{{ shortPath(importSourcePath(item)) }}</small>
+                  </article>
+                </div>
+              </section>
+
+              <section v-if="geminiMode === 'real'" class="youtube-workflow-settings-strip">
+                <div class="youtube-workflow-summary">
+                  <strong>处理设置</strong>
+                  <span>{{ credentialStatusText }}</span>
+                </div>
+                <label>
+                  <span>模型</span>
+                  <input v-model.trim="model" type="text" name="youtube-workflow-model" autocomplete="off" placeholder="gemini-2.5-flash">
+                </label>
+                <label>
+                  <span>Gemini API key</span>
+                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
+                </label>
+                <label class="youtube-workflow-check">
+                  <input v-model="rememberApiKey" type="checkbox">
+                  <span>保存 API key 到系统凭据</span>
+                </label>
+                <div class="youtube-credential-actions">
+                  <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
+                  <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
+                </div>
+                <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
+              </section>
+            </section>
+
+            <section v-if="workflowView === 'queue'" class="youtube-workflow-process-view youtube-workflow-page">
+              <div class="youtube-workflow-page-head">
+                <div>
+                  <h3>素材队列</h3>
+                  <p>按处理状态查看任务，完成后可直接打开。</p>
+                </div>
+                <button type="button" class="small-btn" @click="refreshQueue">刷新</button>
               </div>
-            </article>
-          </div>
-          </section>
-        </section>
+              <div class="youtube-workflow-toolbar">
+                <span>{{ queueSummary }}</span>
+                <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
+                <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
+              </div>
+
+              <section class="youtube-workflow-queue">
+                <div v-if="!queueJobs.length" class="youtube-workflow-empty">暂无任务</div>
+                <article
+                  v-for="(job, index) in queueJobs"
+                  :key="job.jobId"
+                  class="youtube-workflow-job youtube-workflow-queue-job"
+                  :data-status="job.status"
+                  :data-active="isActiveJob(job) ? 'true' : 'false'"
+                >
+                  <div class="youtube-workflow-job-main">
+                    <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                    <div class="youtube-job-status-line">
+                      <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
+                      <span class="youtube-job-position">{{ index + 1 }} / {{ queueJobs.length }}</span>
+                      <span class="youtube-job-position">{{ jobProgressText(job) }}</span>
+                    </div>
+                    <small class="youtube-job-source">{{ jobSourceText(job) }}</small>
+                    <div class="youtube-job-progress" aria-hidden="true">
+                      <span :style="{ width: `${jobProgressPercent(job)}%` }"></span>
+                    </div>
+                    <small v-if="job.status === 'ready'">{{ readyJobMetaText(job) }}</small>
+                    <small v-if="job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
+                    <div v-if="isActiveJob(job)" class="youtube-job-log" aria-label="运行日志">
+                      <div class="youtube-job-log-title">当前过程</div>
+                      <ul>
+                        <li v-for="line in jobLogLines(job)" :key="line">{{ line }}</li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="youtube-workflow-job-actions">
+                    <button
+                      v-if="job.status === 'ready'"
+                      type="button"
+                      class="small-btn primary"
+                      :disabled="job.jobId === currentJobId"
+                      @click="openJob(job)"
+                    >
+                      {{ openJobActionText(job) }}
+                    </button>
+                    <button v-if="job.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(job)">置顶</button>
+                    <button v-if="job.status === 'failed'" type="button" class="small-btn primary" @click="retryJob(job, 'translating')">重试</button>
+                    <button v-if="!terminalStatuses.has(job.status)" type="button" class="small-btn" @click="cancelJob(job)">取消</button>
+                  </div>
+                </article>
+              </section>
+            </section>
+
+            <section v-if="workflowView === 'recent'" class="youtube-workflow-recent youtube-workflow-page">
+              <div class="youtube-workflow-page-head">
+                <div>
+                  <h3>最近阅读</h3>
+                  <p>从上次位置继续，或打开已完成素材。</p>
+                </div>
+                <span>{{ recentSummary }}</span>
+              </div>
+              <div class="youtube-workflow-toolbar">
+                <input
+                  v-model.trim="recentQuery"
+                  class="youtube-recent-search"
+                  type="search"
+                  name="youtube-recent-search"
+                  autocomplete="off"
+                  placeholder="搜索文章"
+                  @keydown.enter.prevent="refreshRecent"
+                >
+                <div class="youtube-filter-tabs" aria-label="最近阅读筛选">
+                  <button type="button" :data-active="recentFilter === 'all' ? 'true' : 'false'" @click="recentFilter = 'all'">全部</button>
+                  <button type="button" :data-active="recentFilter === 'unfinished' ? 'true' : 'false'" @click="recentFilter = 'unfinished'">未听完</button>
+                  <button type="button" :data-active="recentFilter === 'finished' ? 'true' : 'false'" @click="recentFilter = 'finished'">已听完</button>
+                </div>
+                <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
+              </div>
+              <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
+
+              <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
+              <article
+                v-for="job in visibleRecentJobs"
+                :key="job.jobId"
+                class="youtube-workflow-job youtube-workflow-recent-job"
+                :data-status="job.readStatus || 'not-started'"
+              >
+                <div class="youtube-workflow-job-main">
+                  <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                  <div class="youtube-job-status-line">
+                    <span class="youtube-job-status-badge">{{ readStatusText(job) }}</span>
+                    <span class="youtube-job-position">{{ readerTimeText(job) }}</span>
+                  </div>
+                  <small>{{ readerProgressText(job) }}</small>
+                  <div class="youtube-job-progress" aria-hidden="true">
+                    <span :style="{ width: `${readerProgressPercent(job)}%` }"></span>
+                  </div>
+                </div>
+                <div class="youtube-workflow-job-actions">
+                  <button
+                    type="button"
+                    class="small-btn primary"
+                    :disabled="job.jobId === currentJobId"
+                    @click="openRecentJob(job)"
+                  >
+                    {{ recentOpenActionText(job) }}
+                  </button>
+                </div>
+              </article>
+            </section>
+
+            <section v-if="workflowView === 'library'" class="youtube-workflow-library-view youtube-workflow-page">
+              <div class="youtube-workflow-page-head">
+                <div>
+                  <h3>历史库</h3>
+                  <p>查找已处理素材，打开、查看报告或管理本地文件。</p>
+                </div>
+                <span>{{ historySummary }}</span>
+              </div>
+              <div class="youtube-history-filters">
+                <input
+                  v-model.trim="historyQuery"
+                  type="search"
+                  name="youtube-history-search"
+                  autocomplete="off"
+                  placeholder="搜索标题 / URL"
+                  @keydown.enter.prevent="refreshHistory"
+                >
+                <select v-model="historyStatus" name="youtube-history-status" @change="refreshHistory">
+                  <option value="">全部状态</option>
+                  <option value="ready">成功</option>
+                  <option value="failed">失败</option>
+                  <option value="canceled">取消</option>
+                </select>
+                <button type="button" class="small-btn" @click="refreshHistory">搜索</button>
+              </div>
+
+              <section v-if="historyOpen" class="youtube-workflow-history">
+                <div v-if="!historyJobs.length" class="youtube-workflow-empty">暂无历史记录</div>
+                <article
+                  v-for="job in historyJobs"
+                  :key="job.jobId"
+                  class="youtube-workflow-job youtube-workflow-history-job"
+                  :data-status="job.status"
+                  :data-expanded="expandedHistoryJobId === job.jobId ? 'true' : 'false'"
+                >
+                  <div class="youtube-workflow-job-main">
+                    <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                    <div class="youtube-job-status-line">
+                      <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
+                      <span class="youtube-job-position">{{ historyMetaText(job) }}</span>
+                    </div>
+                    <small class="youtube-job-source">{{ historySourceText(job) }}</small>
+                  </div>
+                  <div class="youtube-workflow-job-actions">
+                    <button v-if="job.status === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(job)">重新打开</button>
+                    <button v-if="job.status === 'failed'" type="button" class="small-btn primary" @click="retryJob(job, 'translating')">重试</button>
+                    <button v-if="job.status === 'ready'" type="button" class="small-btn" @click="showQuality(job)">报告</button>
+                    <button type="button" class="small-btn" @click="toggleHistoryDetails(job)">{{ expandedHistoryJobId === job.jobId ? '收起' : '更多' }}</button>
+                  </div>
+                  <div v-if="expandedHistoryJobId === job.jobId" class="youtube-history-detail">
+                    <span>质量报告：{{ job.status === 'ready' ? '可查看' : '暂无' }}</span>
+                    <span>来源：{{ historySourceText(job) }}</span>
+                    <span>记录：{{ historyMetaText(job) }}</span>
+                    <div class="youtube-danger-actions">
+                      <button type="button" class="small-btn" @click="deleteHistoryJob(job, false)">删记录</button>
+                      <button type="button" class="small-btn danger" @click="deleteHistoryJob(job, true)">删文件</button>
+                    </div>
+                  </div>
+                </article>
+              </section>
+            </section>
+
+            <section v-if="workflowView === 'settings'" class="youtube-workflow-settings-view youtube-workflow-page">
+              <div class="youtube-workflow-page-head">
+                <div>
+                  <h3>设置</h3>
+                  <p>配置模型、凭据和后台维护选项。</p>
+                </div>
+              </div>
+              <section class="youtube-workflow-settings-strip">
+                <div class="youtube-workflow-summary">
+                  <strong>模型与凭据</strong>
+                  <span>{{ credentialStatusText }}</span>
+                </div>
+                <label class="youtube-workflow-check youtube-workflow-mode-check">
+                  <input v-model="videoPriority" type="checkbox">
+                  <span>视频优先</span>
+                </label>
+                <label>
+                  <span>模型</span>
+                  <input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash">
+                </label>
+                <label v-if="geminiMode === 'real'">
+                  <span>Gemini API key</span>
+                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
+                </label>
+                <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
+                  <input v-model="rememberApiKey" type="checkbox">
+                  <span>保存 API key 到系统凭据</span>
+                </label>
+                <div v-if="geminiMode === 'real'" class="youtube-credential-actions">
+                  <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
+                  <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
+                </div>
+                <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
+              </section>
+
+              <button type="button" class="youtube-advanced-toggle" @click="showAdvanced = !showAdvanced">
+                {{ showAdvanced ? '收起高级设置' : '高级设置' }}
+              </button>
+              <div v-if="showAdvanced" class="youtube-advanced-settings">
+                <label>
+                  <span>Base URL（可选，使用代理网关时填写）</span>
+                  <input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址">
+                </label>
+                <label>
+                  <span>代理</span>
+                  <input v-model.trim="proxyUrl" type="text" name="youtube-workflow-proxy-url" autocomplete="off" placeholder="例如 http://127.0.0.1:7897，留空关闭">
+                </label>
+                <label>
+                  <span>cookies 文件</span>
+                  <input v-model.trim="cookiesPath" type="text" name="youtube-workflow-cookies-path" autocomplete="off" placeholder="YouTube cookies 文件路径">
+                </label>
+                <label>
+                  <span>输出目录</span>
+                  <input v-model.trim="outputDir" type="text" name="youtube-workflow-output-dir" autocomplete="off" placeholder="生成文件输出目录">
+                </label>
+                <label>
+                  <span>yt-dlp 路径</span>
+                  <input v-model.trim="ytDlpPath" type="text" name="youtube-workflow-ytdlp-path" autocomplete="off" placeholder="yt-dlp.exe">
+                </label>
+                <label>
+                  <span>WhisperX 路径</span>
+                  <input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe">
+                </label>
+                <div class="youtube-primary-actions">
+                  <button type="button" class="small-btn primary" @click="saveBackendConfig">保存后台配置</button>
+                  <button type="button" class="small-btn" @click="refreshMaintenance">维护状态</button>
+                  <button type="button" class="small-btn" @click="checkCleanup">检查旧文件</button>
+                  <button type="button" class="small-btn" @click="confirmCleanup">清理旧文件</button>
+                  <button type="button" class="small-btn" @click="downloadDiagnosticsPackage">导出诊断包</button>
+                </div>
+                <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
+                <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
+                <p>普通 Gemini 官方 API 留空即可。</p>
+              </div>
+            </section>
+          </main>
+        </div>
 
         <div class="youtube-workflow-panel-footer">
           <label class="youtube-workflow-check">
@@ -431,7 +545,7 @@ const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
 const FLOAT_PEEK_WIDTH = 42
 const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
-const PANEL_MAX_SIZE = { width: 380, height: 720 }
+const PANEL_MAX_SIZE = { width: 720, height: 860 }
 const PANEL_DEFAULT_MARGIN = 24
 const READER_SYNC_INTERVAL_MS = 15000
 
@@ -463,12 +577,15 @@ const starting = ref(false)
 const queueJobs = ref([])
 const recentJobs = ref([])
 const recentQuery = ref('')
+const recentFilter = ref('all')
 const workflowView = ref('recent')
 const readerActivityNotice = ref('')
 const historyJobs = ref([])
-const historyOpen = ref(false)
+const historyOpen = ref(true)
 const historyQuery = ref('')
 const historyStatus = ref('')
+const expandedHistoryJobId = ref('')
+const videoPriority = ref(loadBoolSetting('youtubeWorkflow.videoPriority', true))
 const showFloatingAfterClose = ref(false)
 const cancelRecordsOpen = ref(false)
 const cancelRecordsNotice = ref('')
@@ -492,6 +609,8 @@ let readerSessionStartedAt = ''
 let readerLastSyncAt = 0
 let markCountObserver = null
 let readerMarksSyncTimer = 0
+let playbackTrackedMedia = null
+let unsubscribeMediaSourceTracking = null
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
@@ -500,6 +619,8 @@ const geminiMode = computed(() => {
 })
 const validLinkCards = computed(() => linkCards.value.filter((card) => card.valid))
 const invalidLinkCards = computed(() => linkCards.value.filter((card) => !card.valid))
+const pendingValidLinkCount = computed(() => parseLinks(linkInput.value).filter((link) => isValidMaterialUrl(link)).length)
+const enqueuableMaterialCount = computed(() => validLinkCards.value.length + pendingValidLinkCount.value)
 const legacyImportItems = computed(() => {
   const items = legacyImportPreview.value && legacyImportPreview.value.items
   return Array.isArray(items) ? items : []
@@ -509,11 +630,11 @@ const canEnqueueLegacyImport = computed(() => {
   return legacyImportSelectedCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
 const canEnqueue = computed(() => {
-  return validLinkCards.value.length > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
+  return enqueuableMaterialCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
 const primaryActionText = computed(() => {
   if (starting.value) return '提交中…'
-  if (validLinkCards.value.length) return `开始后台处理 ${validLinkCards.value.length} 条素材`
+  if (enqueuableMaterialCount.value) return `加入队列 ${enqueuableMaterialCount.value} 项`
   return '暂无可处理素材'
 })
 const readyJobs = computed(() => queueJobs.value.filter((job) => job.status === 'ready'))
@@ -528,22 +649,37 @@ const queueSummary = computed(() => {
   return `${total} 项 · ${running} 处理中/等待 · ${ready} 可打开`
 })
 const visibleRecentJobs = computed(() => {
+  if (recentFilter.value === 'unfinished') {
+    return recentJobs.value.filter((job) => job && !readerCompletedForDisplay(job))
+  }
+  if (recentFilter.value === 'finished') {
+    return recentJobs.value.filter((job) => job && readerCompletedForDisplay(job))
+  }
   return recentJobs.value
 })
 const recentSummary = computed(() => {
-  const total = visibleRecentJobs.value.length
-  const unfinished = visibleRecentJobs.value.filter((job) => job.readStatus === 'in-progress').length
-  const completed = visibleRecentJobs.value.filter((job) => job.completed).length
+  const total = recentJobs.value.length
+  const unfinished = recentJobs.value.filter((job) => job && !readerCompletedForDisplay(job)).length
+  const completed = recentJobs.value.filter((job) => job && readerCompletedForDisplay(job)).length
   return `${total} 篇 · ${unfinished} 未听完 · ${completed} 已听完`
 })
 const historySummary = computed(() => {
-  if (!historyOpen.value) return '搜索 / 删除 / 重新打开'
   const ready = historyJobs.value.filter((job) => job.status === 'ready').length
   return `${historyJobs.value.length} 项 · ${ready} 成功`
+})
+const credentialCompactText = computed(() => {
+  if (geminiMode.value !== 'real') return '凭据 开发模式'
+  return credentialStatus.value && credentialStatus.value.stored ? '凭据 系统已保存' : '凭据 未保存'
 })
 const credentialStatusText = computed(() => {
   if (!credentialStatus.value || !credentialStatus.value.stored) return '未保存系统凭据'
   return `已保存系统凭据：${credentialStatus.value.provider || 'system'}`
+})
+const materialModeText = computed(() => {
+  return videoPriority.value ? '视频优先' : '音频优先'
+})
+const materialModeHelpText = computed(() => {
+  return videoPriority.value ? '优先下载带画面素材，适合后续查看视频。' : '优先走音频素材，处理更轻量。'
 })
 const materialFloatingVisible = computed(() => {
   return showFloatingAfterClose.value
@@ -583,6 +719,10 @@ const capsuleEdge = computed(() => getCapsuleEdge(capsulePosition.value, getCaps
 watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
 watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
 watch(legacyImportPath, (value) => saveTextSetting('youtubeWorkflow.legacyImportPath', value))
+watch(videoPriority, (value) => {
+  saveBoolSetting('youtubeWorkflow.videoPriority', value)
+  syncVideoPreferred(value)
+})
 watch(rememberApiKey, (value) => {
   saveBoolSetting('youtubeWorkflow.rememberApiKey', value)
 })
@@ -592,8 +732,47 @@ watch(materialFloatingVisible, async (visible) => {
   correctCapsuleOverflow()
 })
 
+function getMediaSource() {
+  return typeof window !== 'undefined' ? window.__mediaSource : null
+}
+
+function syncVideoPreferred(value) {
+  const mediaSource = getMediaSource()
+  if (mediaSource && typeof mediaSource.setVideoPreferred === 'function') {
+    mediaSource.setVideoPreferred(!!value)
+  }
+  if (value) refreshCurrentJobMediaForVideoPriority()
+}
+
+function toggleVideoPriority() {
+  videoPriority.value = !videoPriority.value
+}
+
+async function refreshCurrentJobMediaForVideoPriority() {
+  if (!currentJobId.value) return
+  const mediaSource = getMediaSource()
+  if (!mediaSource || typeof mediaSource.loadJobMedia !== 'function') return
+  const currentMediaState = typeof mediaSource.getState === 'function' ? mediaSource.getState() : null
+  if (currentMediaState && currentMediaState.jobId === currentJobId.value && currentMediaState.videoAvailable) return
+  try {
+    const manifest = await youtubeWorkflowClient.getSession(currentJobId.value)
+    const files = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
+    if (!files.video) return
+    const media = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
+    mediaSource.loadJobMedia({
+      jobId: currentJobId.value,
+      title: manifest.title || '',
+      hasVideo: true,
+      videoUrl: youtubeWorkflowClient.fileUrl(currentJobId.value, 'video'),
+      videoSource: media.videoSource || 'session-refresh'
+    })
+    if (typeof mediaSource.setVideoPreferred === 'function') mediaSource.setVideoPreferred(true)
+  } catch (_err) {}
+}
+
 onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
+  syncVideoPreferred(videoPriority.value)
   bindPlaybackTracking()
   bindMarkCountTracking()
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
@@ -748,6 +927,7 @@ async function enqueueUrls() {
         geminiMode: geminiMode.value,
         model: model.value,
         baseUrl: baseUrl.value,
+        videoPriority: videoPriority.value,
         autoOpenWhenReady: false,
         replacePolicy: 'ask'
       }
@@ -758,6 +938,7 @@ async function enqueueUrls() {
     const submittedIds = new Set(cards.map((card) => card.id))
     linkCards.value = linkCards.value.filter((card) => !submittedIds.has(card.id))
     linkNotice.value = ''
+    workflowView.value = 'queue'
     startPolling()
   } catch (err) {
     window.alert(err && err.message ? err.message : String(err))
@@ -826,6 +1007,7 @@ async function enqueueLegacyImport() {
       geminiMode: geminiMode.value,
       model: model.value,
       baseUrl: baseUrl.value,
+      videoPriority: videoPriority.value,
       autoOpenWhenReady: false,
       replacePolicy: 'ask'
     }
@@ -834,6 +1016,7 @@ async function enqueueLegacyImport() {
     const jobs = Array.isArray(result.jobs) ? result.jobs : []
     queueJobs.value.push(...jobs)
     legacyImportNotice.value = `已加入素材队列 ${result.created || jobs.length || 0} 项`
+    workflowView.value = 'queue'
     startPolling()
   } catch (err) {
     legacyImportNotice.value = err && err.message ? err.message : String(err)
@@ -859,6 +1042,10 @@ function setWorkflowView(view) {
   if (view === 'library') {
     historyOpen.value = true
     refreshHistory()
+  }
+  if (view === 'settings') {
+    loadBackendConfig()
+    loadCredentialStatus()
   }
 }
 
@@ -1151,6 +1338,7 @@ async function confirmSwitch() {
   if (!modal) return
   if (modal.type === 'import-folder') {
     openPanel()
+    setWorkflowView('add')
     await nextTick()
     await chooseLegacyImportFolder()
     return
@@ -1240,17 +1428,97 @@ function jobDisplayTitle(job) {
   return (job && job.title) || shortUrl(job && (job.url || (job.request && job.request.url))) || (job && job.jobId) || ''
 }
 
+function jobSourceText(job) {
+  const sourcePath = job && (
+    job.audioPath
+    || job.videoPath
+    || job.sourcePath
+    || (job.sourceMap && job.sourceMap.originalAudio && job.sourceMap.originalAudio.path)
+    || (job.sourceMap && job.sourceMap.originalVideo && job.sourceMap.originalVideo.path)
+    || (job.request && (job.request.audioPath || job.request.videoPath))
+  )
+  if (sourcePath) return shortPath(sourcePath)
+  const url = job && (job.url || (job.request && job.request.url))
+  if (url) return shortUrl(url)
+  return job && job.jobId ? `任务 ${job.jobId}` : '暂无来源'
+}
+
+function historySourceText(job) {
+  return jobSourceText(job)
+}
+
+function jobProgressPercent(job) {
+  if (!job) return 0
+  const direct = Number(job.progressPercent ?? job.progress ?? job.percent)
+  if (Number.isFinite(direct) && direct >= 0) return Math.max(0, Math.min(100, direct <= 1 ? direct * 100 : direct))
+  const stage = String(job.stage || job.status || '')
+  const fallback = {
+    queued: 8,
+    downloading: 24,
+    transcribing: 46,
+    segmenting: 64,
+    translating: 78,
+    validating: 90,
+    ready: 100,
+    failed: 100,
+    canceled: 100
+  }
+  return fallback[stage] ?? fallback[job.status] ?? 0
+}
+
+function jobProgressText(job) {
+  if (!job) return ''
+  if (job.status === 'ready') return '已完成'
+  if (job.status === 'failed') return '需要处理'
+  if (job.status === 'canceled') return '已取消'
+  if (job.status === 'queued') return '排队中'
+  return `${Math.round(jobProgressPercent(job))}%`
+}
+
+function clampRatio(value) {
+  const ratio = Number(value)
+  if (!Number.isFinite(ratio) || ratio <= 0) return 0
+  return Math.max(0, Math.min(1, ratio))
+}
+
+function readerProgressRatio(job) {
+  if (!job) return 0
+  const coverage = Number(job.overallCoverageRatio)
+  if (Number.isFinite(coverage) && coverage > 0) return clampRatio(coverage)
+  const position = Number(job.lastPositionSeconds)
+  const duration = Number(job.durationSeconds)
+  if (Number.isFinite(position) && position > 0 && Number.isFinite(duration) && duration > 0) {
+    return clampRatio(position / duration)
+  }
+  return 0
+}
+
+function readerCompletedForDisplay(job) {
+  return !!(job && (job.completed || readerProgressRatio(job) >= 0.97))
+}
+
+function readerProgressPercent(job) {
+  if (!job) return 0
+  if (readerCompletedForDisplay(job)) return 100
+  return Math.max(0, Math.min(100, readerProgressRatio(job) * 100))
+}
+
+function toggleHistoryDetails(job) {
+  const jobId = job && job.jobId
+  expandedHistoryJobId.value = expandedHistoryJobId.value === jobId ? '' : jobId
+}
+
 function recentTaskMetaText(job) {
   const stamp = formatShortDate(job && (job.finishedAt || job.updatedAt || job.createdAt))
   return stamp || '最近完成'
 }
 
 function readStatusText(job) {
-  if (job && job.completed) {
+  if (readerCompletedForDisplay(job)) {
     const count = Number(job.completedCount || 0)
     return count > 1 ? `已听完 ${count} 次` : '已听完'
   }
-  if (job && job.readStatus === 'in-progress') return '未听完'
+  if ((job && job.readStatus === 'in-progress') || readerProgressRatio(job) > 0) return '未听完'
   return '未开始'
 }
 
@@ -1262,11 +1530,11 @@ function readerTimeText(job) {
 
 function readerProgressText(job) {
   const parts = []
-  const coverage = Number(job && job.overallCoverageRatio)
-  if (job && job.completed) {
+  const ratio = readerProgressRatio(job)
+  if (readerCompletedForDisplay(job)) {
     parts.push('已听完')
-  } else if (Number.isFinite(coverage) && coverage > 0) {
-    parts.push(`已听 ${Math.round(coverage * 100)}%`)
+  } else if (ratio > 0) {
+    parts.push(`已听 ${Math.max(1, Math.round(ratio * 100))}%`)
   } else {
     parts.push('未开始')
   }
@@ -1334,6 +1602,13 @@ function openJobActionText(job) {
   return '打开这篇'
 }
 
+function recentOpenActionText(job) {
+  if (!job) return '打开'
+  if (job.jobId === currentJobId.value) return '当前阅读中'
+  if (!readerCompletedForDisplay(job)) return '继续'
+  return loadedReadyJobs.has(job.jobId) ? '重新打开' : '打开'
+}
+
 async function cancelJob(job) {
   const canceled = await youtubeWorkflowClient.cancelJob(job.jobId)
   updateJob(canceled)
@@ -1345,7 +1620,7 @@ async function prioritizeJob(job) {
 }
 
 async function retryJob(job, stage = 'translating') {
-  const payload = { stage, model: model.value, baseUrl: baseUrl.value }
+  const payload = { stage, model: model.value, baseUrl: baseUrl.value, videoPriority: videoPriority.value }
   if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
   const retried = await youtubeWorkflowClient.retryJob(job.jobId, payload)
   queueJobs.value.push(retried)
@@ -1428,6 +1703,10 @@ function qualityIssueSummary(report) {
   return `发现 ${total} 个问题 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
 }
 
+function importSourcePath(item) {
+  return item && (item.audioPath || item.videoPath || item.sourcePath || '')
+}
+
 function importActionText(item) {
   if (!item) return ''
   return item.action === 'ai_only' ? '已有字幕：只做 AI 切分' : '无字幕：Whisper 转写 + AI 切分'
@@ -1483,8 +1762,16 @@ function listenText(job) {
   return '未开始'
 }
 
+function getReaderMedia() {
+  const audio = document.getElementById('audio-player')
+  if (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.getActiveMediaElement === 'function') {
+    return window.__mediaSource.getActiveMediaElement(audio) || audio
+  }
+  return audio
+}
+
 function getAudio() {
-  return document.getElementById('audio-player')
+  return getReaderMedia()
 }
 
 function startReaderSession(job) {
@@ -1498,24 +1785,48 @@ function startReaderSession(job) {
   }
 }
 
+function addPlaybackTrackingListeners(media) {
+  if (!media || typeof media.addEventListener !== 'function') return
+  media.addEventListener('timeupdate', handleTimeUpdate)
+  media.addEventListener('play', handlePlay)
+  media.addEventListener('pause', handlePause)
+  media.addEventListener('seeking', handleSeeking)
+  media.addEventListener('ended', handleEnded)
+}
+
+function removePlaybackTrackingListeners(media) {
+  if (!media || typeof media.removeEventListener !== 'function') return
+  media.removeEventListener('timeupdate', handleTimeUpdate)
+  media.removeEventListener('play', handlePlay)
+  media.removeEventListener('pause', handlePause)
+  media.removeEventListener('seeking', handleSeeking)
+  media.removeEventListener('ended', handleEnded)
+}
+
+function bindPlaybackTrackingTo(media) {
+  if (!media || playbackTrackedMedia === media) return
+  removePlaybackTrackingListeners(playbackTrackedMedia)
+  playbackTrackedMedia = media
+  addPlaybackTrackingListeners(playbackTrackedMedia)
+}
+
 function bindPlaybackTracking() {
-  const audio = getAudio()
-  if (!audio) return
-  audio.addEventListener('timeupdate', handleTimeUpdate)
-  audio.addEventListener('play', handlePlay)
-  audio.addEventListener('pause', handlePause)
-  audio.addEventListener('seeking', handleSeeking)
-  audio.addEventListener('ended', handleEnded)
+  bindPlaybackTrackingTo(getReaderMedia())
+  const mediaSource = getMediaSource()
+  if (mediaSource && typeof mediaSource.subscribe === 'function' && !unsubscribeMediaSourceTracking) {
+    unsubscribeMediaSourceTracking = mediaSource.subscribe(() => {
+      bindPlaybackTrackingTo(getReaderMedia())
+    })
+  }
 }
 
 function unbindPlaybackTracking() {
-  const audio = getAudio()
-  if (!audio) return
-  audio.removeEventListener('timeupdate', handleTimeUpdate)
-  audio.removeEventListener('play', handlePlay)
-  audio.removeEventListener('pause', handlePause)
-  audio.removeEventListener('seeking', handleSeeking)
-  audio.removeEventListener('ended', handleEnded)
+  if (typeof unsubscribeMediaSourceTracking === 'function') {
+    unsubscribeMediaSourceTracking()
+    unsubscribeMediaSourceTracking = null
+  }
+  removePlaybackTrackingListeners(playbackTrackedMedia)
+  playbackTrackedMedia = null
 }
 
 function playbackState() {

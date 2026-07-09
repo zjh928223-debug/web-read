@@ -8,6 +8,7 @@ const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'r
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
+const playbackModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ChunkModeView.vue'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-interactions.js'), 'utf8');
 
@@ -51,7 +52,46 @@ assert.ok(moduleSource.includes('export function handleChunkWordClick'));
 assert.ok(moduleSource.includes('export function handleChunkWordContextMenu'));
 assert.ok(moduleSource.includes('export function handleChunkContextMenu'));
 assert.ok(moduleSource.includes('export function handleChunkClick'));
+assert.ok(moduleSource.includes('wordIndex'), 'word clicks should pass the clicked word index into the forced UI update');
+assert.ok(playbackModuleSource.includes('function forceUpdateUI(time, options)'), 'forced playback updates should accept an explicit word index option');
+assert.ok(playbackModuleSource.includes('options.wordIndex'), 'forced playback updates should prefer the clicked word index over time-only lookup');
 assert.equal(moduleSource.includes('window.'), false, 'chunk interactions should not create or read window globals');
 assert.equal(moduleSource.includes('document.'), false, 'chunk interactions should receive DOM dependencies explicitly');
 
-console.log('chunk interactions check passed');
+async function runBehaviorCheck() {
+  const encodedSource = Buffer.from(moduleSource, 'utf8').toString('base64');
+  const mod = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
+
+  const transcriptStore = { currentWordIndex: -1 };
+  const media = { currentTime: 0 };
+  const calls = [];
+
+  mod.configureChunkInteractions({
+    getAudioPlayer() { return media; },
+    getSelection() { return { isCollapsed: true }; },
+    forceUpdateUI(time, options) {
+      calls.push({ time, options });
+      transcriptStore.currentWordIndex = 99;
+    },
+    notifyAnnotationBubbleWordClick() { return true; }
+  });
+
+  mod.handleChunkWordClick({
+    word: { globalIndex: 2, start: 1.25 },
+    transcriptStore,
+    element: { id: 'word-2' }
+  });
+
+  assert.equal(media.currentTime, 1.25);
+  assert.deepEqual(calls[0], { time: 1.25, options: { wordIndex: 2 } });
+  assert.equal(transcriptStore.currentWordIndex, 2, 'clicked word index should remain authoritative after forceUpdateUI');
+}
+
+runBehaviorCheck()
+  .then(() => {
+    console.log('chunk interactions check passed');
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });

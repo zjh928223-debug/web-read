@@ -22,6 +22,7 @@ const expectedScriptSrcs = [
   'src/composables/style-editor.js',
   'src/composables/import-module.js',
   'src/composables/keyboard-module.js',
+  'src/composables/media-source-module.js',
   'src/composables/playback-module.js',
   'src/composables/controls-module.js',
   'src/composables/legacy-control-bindings.js',

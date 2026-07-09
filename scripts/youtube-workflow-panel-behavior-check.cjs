@@ -102,11 +102,21 @@ async function main() {
       localStorage.removeItem('youtubeWorkflowCapsulePosition');
       localStorage.removeItem('youtubeWorkflow.model');
       localStorage.removeItem('youtubeWorkflow.baseUrl');
+      localStorage.removeItem('youtubeWorkflow.videoPriority');
     });
     await mockWorkflowService(page);
 
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.youtube-reader-controls .small-btn');
+
+    const videoPriorityButton = page.locator('.youtube-reader-controls .youtube-reader-video-priority');
+    await videoPriorityButton.waitFor({ state: 'visible' });
+    assert.match(await videoPriorityButton.innerText(), /视频优先/, 'reader toolbar should expose the video priority toggle');
+    assert.equal(await videoPriorityButton.getAttribute('data-active'), 'true', 'video priority should default on');
+    await videoPriorityButton.click();
+    assert.equal(await videoPriorityButton.getAttribute('data-active'), 'false', 'video priority should be toggleable off');
+    await videoPriorityButton.click();
+    assert.equal(await videoPriorityButton.getAttribute('data-active'), 'true', 'video priority should be toggleable back on');
 
     const openButton = page.locator('.youtube-reader-controls .small-btn').first();
     const panel = page.locator('.youtube-workflow-panel');
@@ -120,13 +130,13 @@ async function main() {
     );
 
     const docked = await panel.boundingBox();
-    assert.ok(docked.width <= 420, `panel should open as a compact utility drawer, got width=${docked.width}`);
+    assert.ok(docked.width <= 740, `panel should open as a focused material center, got width=${docked.width}`);
     assert.ok(Math.abs((docked.x + docked.width) - (VIEWPORT.width - 24)) <= 12, `panel should open near the right edge, got right=${docked.x + docked.width}`);
     assert.ok(Math.abs(docked.y - 24) <= 12, `panel should open near the top margin, got y=${docked.y}`);
 
     await page.mouse.move(docked.x + 120, docked.y + 24);
     await page.mouse.down();
-    await page.mouse.move(620, 190, { steps: 8 });
+    await page.mouse.move(360, 190, { steps: 8 });
     await page.mouse.up();
     const dragged = await panel.boundingBox();
     assert.ok(dragged.x < docked.x - 80, `panel should be draggable away from the right dock, got x=${dragged.x}`);
@@ -186,11 +196,30 @@ async function main() {
 
     await openButton.click();
     await panel.waitFor({ state: 'visible' });
-    await page.locator('.youtube-workflow-section-tabs button[data-view="queue"]').click();
+    await page.locator('.youtube-workflow-section-tabs button[data-view="add"]').click();
     await page.waitForSelector('.youtube-workflow-form');
-    await page.locator('.youtube-workflow-form input[type="url"]').fill('https://www.youtube.com/watch?v=test123');
-    await page.locator('.youtube-workflow-form input[type="url"]').press('Enter');
-    await page.locator('.youtube-workflow-form input[type="password"]').fill('fake-key-for-ui-test');
+    const contentScroll = await page.locator('.youtube-workflow-content').evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollTop = 240;
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        scrollTop: element.scrollTop,
+        overflowY: style.overflowY
+      };
+    });
+    assert.ok(
+      contentScroll.scrollHeight > contentScroll.clientHeight,
+      `material center content should overflow vertically on the add view, got ${JSON.stringify(contentScroll)}`
+    );
+    assert.ok(
+      contentScroll.scrollTop > 0 && contentScroll.overflowY !== 'hidden',
+      `material center content should be vertically scrollable, got ${JSON.stringify(contentScroll)}`
+    );
+    await page.locator('.youtube-workflow-form textarea[name="youtube-material-link"]').fill('https://www.youtube.com/watch?v=test123');
+    await page.locator('.youtube-workflow-form textarea[name="youtube-material-link"]').press('Control+Enter');
+    await page.locator('input[name="youtube-gemini-api-key"]').fill('fake-key-for-ui-test');
     await page.locator('.youtube-workflow-form button[type="submit"]').click();
     await page.waitForSelector('.youtube-workflow-job');
     await page.waitForSelector('.youtube-workflow-job[data-active="true"] .youtube-job-log');

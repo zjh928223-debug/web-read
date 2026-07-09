@@ -30,6 +30,9 @@ async function main() {
   assert.equal(panelSource.includes('开始后台处理 {{ validLinkCards.length }} 条素材'), false, 'primary action should not render a 0-material processing label');
   assert.ok(panelSource.includes('暂无可处理素材'), 'empty input state should say there is no material to process');
   assert.equal(panelSource.includes('elapsed(job)'), false, 'queue rows should not show ticking elapsed time by default');
+  assert.ok(panelSource.includes('视频优先'), 'video material preference should remain visible after the V2 layout');
+  assert.ok(panelSource.includes('videoPriority'), 'video material preference should be wired to task payloads');
+  assert.ok(panelSource.includes("saveBoolSetting('youtubeWorkflow.videoPriority'"), 'video material preference should persist outside IndexedDB');
   assert.ok(panelSource.includes('显示任务浮标'), 'floating task preference should be explicit');
   assert.ok(panelSource.includes('cancelRecordsNotice'), 'empty canceled-record clicks should show inline feedback');
   assert.ok(panelSource.includes('showCancelRecords'), 'canceled-records action should handle the empty state explicitly');
@@ -66,6 +69,14 @@ async function main() {
   assert.ok(panelSource.includes('openRecentJob'), 'recent reading items should be reopenable without a history library');
   assert.ok(panelSource.includes('readerProgressText'), 'recent reading should show listening progress');
   assert.ok(panelSource.includes('readerTimeText'), 'recent reading should show last activity time');
+  assert.ok(panelSource.includes('readerProgressRatio'), 'recent reading should derive progress through one shared ratio helper');
+  assert.ok(panelSource.includes('lastPositionSeconds') && panelSource.includes('position / duration'), 'recent progress should fall back to saved position and duration when coverage is missing');
+  assert.ok(panelSource.includes('getReaderMedia'), 'reader activity tracking should resolve the active audio/video element');
+  assert.ok(panelSource.includes('window.__mediaSource.getActiveMediaElement(audio)'), 'recent progress should read the active video element when video priority is enabled');
+  assert.ok(panelSource.includes('bindPlaybackTrackingTo(getReaderMedia())'), 'reader activity tracking should rebind when the active media element changes');
+  assert.ok(panelSource.includes('refreshCurrentJobMediaForVideoPriority'), 'enabling video priority should refresh media metadata for the current job');
+  assert.ok(panelSource.includes('youtubeWorkflowClient.getSession(currentJobId.value)'), 'video priority refresh should re-read the current job session');
+  assert.ok(panelSource.includes("youtubeWorkflowClient.fileUrl(currentJobId.value, 'video')"), 'video priority refresh should use the service video endpoint');
   assert.ok(indexSource.includes('deprecated-file-entry') && indexSource.includes('过时入口'), 'manual audio/subtitle file inputs should be folded into the deprecated entry');
   assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');
