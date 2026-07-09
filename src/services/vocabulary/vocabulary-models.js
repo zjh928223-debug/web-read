@@ -53,6 +53,10 @@ export function cloneVocabularyValue(value) {
 }
 
 export function normalizeLemma(value) {
+  return normalizeText(value);
+}
+
+export function normalizeLookupKey(value) {
   return normalizeText(value).toLowerCase();
 }
 
@@ -122,6 +126,7 @@ function normalizeStoredWord(word) {
     id,
     word: normalizeText(word.word) || lemma,
     lemma,
+    lookup_key: normalizeLookupKey(word.lookup_key || word.lookupKey || lemma),
     language: normalizeLanguage(word.language),
     phonetic: normalizeNullableText(word.phonetic),
     meaning: normalizeNullableText(word.meaning),

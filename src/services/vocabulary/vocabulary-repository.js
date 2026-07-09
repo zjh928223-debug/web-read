@@ -2,7 +2,7 @@ import {
   VOCABULARY_STORE_KEY,
   cloneVocabularyValue,
   normalizeLanguage,
-  normalizeLemma,
+  normalizeLookupKey,
   normalizeVocabularySnapshot,
 } from './vocabulary-models.js';
 
@@ -100,11 +100,11 @@ export function createVocabularyRepository(storage) {
   }
 
   async function findWordByLemma(lemma, options = {}) {
-    const normalizedLemma = normalizeLemma(lemma);
+    const lookupKey = normalizeLookupKey(lemma);
     const language = normalizeLanguage(options.language);
     const snapshot = await loadSnapshot();
     return cloneVocabularyValue(snapshot.words.find((word) => (
-      word.lemma === normalizedLemma && word.language === language
+      word.lookup_key === lookupKey && word.language === language
     )) || null);
   }
 

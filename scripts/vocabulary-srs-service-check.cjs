@@ -70,7 +70,8 @@ async function main() {
   });
 
   assert.equal(first.word, 'Running');
-  assert.equal(first.lemma, 'run');
+  assert.equal(first.lemma, 'Run');
+  assert.equal(first.lookup_key, 'run');
   assert.equal(first.language, 'en');
   assert.equal(first.status, 'new');
   assert.equal(first.created_at, createdAt);
@@ -107,6 +108,32 @@ async function main() {
   const lookup = await service.getWordByLemma('RUN', { language: 'en' });
   assert.equal(lookup.id, first.id);
 
+  const properNoun = await service.addWord({
+    word: 'US',
+    lemma: 'US',
+    language: 'en',
+    createdAt,
+  });
+  const properNounDuplicate = await service.addWord({
+    word: 'us',
+    lemma: 'us',
+    language: 'en',
+    createdAt: '2026-07-09T00:01:00.000Z',
+  });
+  assert.equal(properNoun.id, properNounDuplicate.id, 'lookup key should still dedupe case-only variants');
+  assert.equal(properNoun.lemma, 'US', 'lemma should preserve canonical casing for proper nouns and abbreviations');
+  assert.equal(properNoun.lookup_key, 'us');
+
+  const phrase = await service.addWord({
+    word: 'United   States',
+    lemma: 'United States',
+    language: 'en',
+    createdAt,
+  });
+  assert.equal(phrase.lemma, 'United States');
+  assert.equal(phrase.lookup_key, 'united states');
+  assert.equal((await service.getWordByLemma('  united    states  ')).id, phrase.id);
+
   const futureWord = await service.addWord({
     word: 'Durable',
     lemma: 'durable',
@@ -118,7 +145,7 @@ async function main() {
   assertIsoAfter(futureReview.nextDueAt, '2026-07-09T00:02:00.000Z', 'review should move due_at forward');
 
   const dueWords = await service.getDueWords('2026-07-09T00:02:00.000Z');
-  assert.deepEqual(dueWords.map((entry) => entry.word.lemma), ['run']);
+  assert.deepEqual(dueWords.map((entry) => entry.word.lemma), ['Run', 'US', 'United States']);
 
   const logs = await repository.getReviewLogsForWord(futureWord.id);
   assert.equal(logs.length, 1);

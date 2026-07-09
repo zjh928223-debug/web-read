@@ -8,6 +8,7 @@ import {
   createVocabularyId,
   normalizeLanguage,
   normalizeLemma,
+  normalizeLookupKey,
   normalizeNullableText,
   normalizeText,
   toIsoString,
@@ -24,17 +25,20 @@ export function createVocabularyService(options = {}) {
     const createdAt = toIsoString(input.createdAt || input.created_at || nowProvider());
     const wordText = normalizeText(input.word);
     const lemma = normalizeLemma(input.lemma || wordText);
+    const lookupKey = normalizeLookupKey(input.lookup_key || input.lookupKey || lemma);
     const language = normalizeLanguage(input.language);
     if (!wordText) throw new Error('Vocabulary word is required');
     if (!lemma) throw new Error('Vocabulary lemma is required');
+    if (!lookupKey) throw new Error('Vocabulary lookup key is required');
 
     return repository.updateSnapshot((snapshot) => {
-      let word = snapshot.words.find((item) => item.lemma === lemma && item.language === language);
+      let word = snapshot.words.find((item) => item.lookup_key === lookupKey && item.language === language);
       if (!word) {
         word = {
           id: createVocabularyId('vocab_word'),
           word: wordText,
           lemma,
+          lookup_key: lookupKey,
           language,
           phonetic: normalizeNullableText(input.phonetic),
           meaning: normalizeNullableText(input.meaning),
