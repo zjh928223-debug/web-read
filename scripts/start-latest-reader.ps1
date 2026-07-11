@@ -150,9 +150,6 @@ if (-not $FrontendOnly) {
       -RedirectStandardError (Join-Path $logRoot "youtube-workflow-service.err.log")
   }
 
-  if (-not (Wait-HttpOk -Url $ServiceHealthUrl -TimeoutSeconds $StartupTimeoutSeconds)) {
-    throw "Workflow service did not become ready. See logs under $logRoot"
-  }
 }
 
 if (-not $ServiceOnly) {
@@ -173,5 +170,11 @@ if (-not $ServiceOnly) {
 
   if (-not $NoOpen) {
     Start-Process $ReaderUrl
+  }
+}
+
+if (-not $FrontendOnly) {
+  if (-not (Wait-HttpOk -Url $ServiceHealthUrl -TimeoutSeconds $StartupTimeoutSeconds)) {
+    throw "Workflow service did not become ready. See logs under $logRoot"
   }
 }

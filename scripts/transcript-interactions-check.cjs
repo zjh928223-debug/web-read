@@ -38,6 +38,8 @@ assert.ok(playbackRuntimeSource.includes('legacyTranscriptContainer: deps.transc
 assert.ok(componentSource.includes("from '../composables/transcript-interactions.js'"));
 assert.ok(componentSource.includes('handleTranscriptWordClick({ word: word, event: event, transcriptStore: ts })'));
 assert.ok(componentSource.includes('handleTranscriptWordContextMenu({ word: word, event: event })'));
+assert.ok(componentSource.includes('markedMap.has(idx)'), 'TranscriptContainer should restore marked word styling after Vue rerenders');
+assert.ok(componentSource.includes('classes.marked = true'), 'TranscriptContainer should render persisted marks as marked');
 assert.equal(componentSource.includes('window.forceUpdateUI'), false);
 assert.equal(componentSource.includes('window.notifyAnnotationBubbleWordClick'), false);
 assert.equal(componentSource.includes("document.getElementById('audio-player')"), false);

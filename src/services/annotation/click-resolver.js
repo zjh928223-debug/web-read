@@ -94,9 +94,12 @@ export function normalizeGeneratedAnnotationHit(item) {
         boundary: item.boundary || item.markedText,
         type: item.type,
         meaning: item.meaning,
+        simpleMeaning: item.simpleMeaning,
         memoryHint: item.memoryHint,
         provider: item.provider,
         source: item.source || item.provider,
+        sourceSentence: item.sourceSentence,
+        sourceId: item.sourceId,
         occurrenceKey: item.occurrenceKey,
         occurrenceGlobalStart: item.occurrenceGlobalStart,
         occurrenceGlobalEnd: item.occurrenceGlobalEnd

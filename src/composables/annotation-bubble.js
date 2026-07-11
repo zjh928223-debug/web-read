@@ -103,7 +103,9 @@
             boundary: stringifyField(data.boundary),
             type: stringifyField(data.type),
             meaning: stringifyField(data.meaning),
-            memoryHint: stringifyField(data.memoryHint)
+            simpleMeaning: stringifyField(data.simpleMeaning || data.simple_meaning),
+            memoryHint: stringifyField(data.memoryHint),
+            source: stringifyField(data.source || data.provider)
         };
     }
 
@@ -227,9 +229,27 @@
 
         bodyEl.append(
             createBoundaryField(currentAnnotation),
+            createPreviewField(currentAnnotation),
             createField('意思', currentAnnotation.meaning),
             createField('要记', currentAnnotation.memoryHint)
         );
+    }
+
+    function createPreviewField(annotation) {
+        if (!annotation || annotation.source !== 'preview-scan') return document.createDocumentFragment();
+        const row = document.createElement('div');
+        row.className = 'annotation-bubble__field annotation-bubble__field--source';
+
+        const labelEl = document.createElement('div');
+        labelEl.className = 'annotation-bubble__label';
+        labelEl.textContent = '来源：';
+
+        const valueEl = document.createElement('div');
+        valueEl.className = 'annotation-bubble__value';
+        valueEl.textContent = '预习';
+
+        row.append(labelEl, valueEl);
+        return row;
     }
 
     function createBoundaryField(annotation) {

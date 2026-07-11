@@ -64,11 +64,13 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   [
     "import { initGlassEffects } from './glass-effects.js'",
     "import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'",
+    "import { initVocabularyPreviewControls } from './vocabulary-preview-module.js'",
     "import { youtubeWorkflowClient } from './youtube-workflow-client.js'",
     "import { configureReaderPublicFacades } from './reader-public-facades.js'",
     'export function initReaderAppRuntime',
     'deps.annotationLightweightModule.initManualLightweightAnnotationControls({',
     'initAnnotationBackfillAiControls({',
+    'initVocabularyPreviewControls({',
     'deps.appHandlers.initExports({',
     'deps.appHandlers.initMarksImport({',
     'deps.controlsModule.init({',
@@ -115,6 +117,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       "const initAnnotationBackfillAiControls = globalThis.__readerAppRuntimeTest.initAnnotationBackfillAiControls;\n"
     )
     .replace(
+      "import { initVocabularyPreviewControls } from './vocabulary-preview-module.js'\n",
+      "const initVocabularyPreviewControls = globalThis.__readerAppRuntimeTest.initVocabularyPreviewControls;\n"
+    )
+    .replace(
       "import { youtubeWorkflowClient } from './youtube-workflow-client.js'\n",
       "const youtubeWorkflowClient = globalThis.__readerAppRuntimeTest.youtubeWorkflowClient;\n"
     )
@@ -126,6 +132,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const calls = {
     annotationLightweight: [],
     annotationBackfill: [],
+    vocabularyPreview: [],
     exports: [],
     marksImport: [],
     controls: [],
@@ -140,6 +147,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     initAnnotationBackfillAiControls(deps) {
       calls.annotationBackfill.push(deps);
       return { id: 'annotation-backfill-controller' };
+    },
+    initVocabularyPreviewControls(deps) {
+      calls.vocabularyPreview.push(deps);
+      return { id: 'vocabulary-preview-controller' };
     },
     youtubeWorkflowClient: { id: 'youtube-client' },
     configureReaderPublicFacades(deps) {
@@ -201,6 +212,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
     annotationBackfillAiBtn: { id: 'annotation-backfill-ai' },
+    previewVocabularyBtn: { id: 'preview-vocabulary' },
+    togglePreviewVocabularyBtn: { id: 'toggle-preview-vocabulary' },
+    settleArticleVocabularyBtn: { id: 'settle-article-vocabulary' },
     exportJsonBtn: { id: 'export-json' },
     exportMdAllBtn: { id: 'export-md' },
     importMarksBtn: { id: 'import-marks' },
@@ -215,6 +229,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(api, {});
   assert.equal(calls.annotationLightweight.length, 1);
   assert.equal(calls.annotationBackfill.length, 1);
+  assert.equal(calls.vocabularyPreview.length, 1);
   assert.equal(calls.exports.length, 1);
   assert.equal(calls.marksImport.length, 1);
   assert.equal(calls.controls.length, 1);
@@ -227,6 +242,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   calls.annotationBackfill[0].refreshAfterImport();
   assert.equal(calls.rendered, 'chunk');
   assert.equal(calls.annotationBackfill[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
+  assert.equal(calls.vocabularyPreview[0].previewButton, deps.previewVocabularyBtn);
+  assert.equal(calls.vocabularyPreview[0].togglePreviewButton, deps.togglePreviewVocabularyBtn);
+  assert.equal(calls.vocabularyPreview[0].settleButton, deps.settleArticleVocabularyBtn);
+  assert.equal(calls.vocabularyPreview[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
   deps.chunkState.isChunkMode = false;
   calls.annotationLightweight[0].refreshAfterImport();
   assert.equal(calls.rendered, 'transcript');

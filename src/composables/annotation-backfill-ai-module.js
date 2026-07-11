@@ -444,6 +444,12 @@ function getSrsSourceInfo(state, template) {
     ? state.currentAudioMeta
     : {};
   return {
+    sourceId: String(
+      meta.jobId
+      || template && template.articleId
+      || state && state.currentAudioKey
+      || ''
+    ).trim(),
     sourceTitle: normalizeSourceTitle(meta.title || meta.name || template && template.articleId),
     sourceUrl: String(meta.source_url || meta.sourceUrl || meta.url || meta.webUrl || meta.videoSource || '').trim(),
   };
@@ -508,6 +514,9 @@ function createAnnotationBackfillDialog(options = {}) {
   const onBuildSrsCandidatesFromExisting = typeof options.onBuildSrsCandidatesFromExisting === 'function'
     ? options.onBuildSrsCandidatesFromExisting
     : function () {};
+  const getSharedApiKey = typeof options.getSessionApiKey === 'function' ? options.getSessionApiKey : function () { return ''; };
+  const onApiKeyChange = typeof options.onApiKeyChange === 'function' ? options.onApiKeyChange : function () {};
+  const srsEnabled = options.srsEnabled === true;
   const initialModel = String(options.initialModel || DEFAULT_GEMINI_MODEL).trim() || DEFAULT_GEMINI_MODEL;
   let mounted = false;
   let open = false;
@@ -639,6 +648,7 @@ function createAnnotationBackfillDialog(options = {}) {
     });
     apiKeyInput.addEventListener('input', function () {
       latestValues.apiKey = String(apiKeyInput.value || '').trim();
+      if (latestValues.apiKey) onApiKeyChange(latestValues.apiKey);
     });
     form.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -682,6 +692,11 @@ function createAnnotationBackfillDialog(options = {}) {
   function openDialog(context, options = {}) {
     ensureMounted();
     if (context && context.model) updateContext(context);
+    const sharedApiKey = String(getSharedApiKey() || '').trim();
+    if (sharedApiKey) {
+      latestValues.apiKey = sharedApiKey;
+      if (apiKeyInput) apiKeyInput.value = sharedApiKey;
+    }
     if (options.reset !== false) {
       resetProgress();
       setStatus('填写模型和 API key 后开始。', 'idle');
@@ -727,6 +742,7 @@ function createAnnotationBackfillDialog(options = {}) {
     if (apiKey) {
       latestValues.apiKey = apiKey;
       if (apiKeyInput) apiKeyInput.value = apiKey;
+      onApiKeyChange(apiKey);
     }
   }
 
@@ -825,6 +841,10 @@ function createAnnotationBackfillDialog(options = {}) {
   }
 
   function renderSrsSummary() {
+    if (!srsEnabled) {
+      if (srsPanelEl) srsPanelEl.hidden = true;
+      return;
+    }
     const total = Number(srsSummary.wordCandidates || 0) + Number(srsSummary.phraseCandidates || 0);
     const hasPending = !!srsSummary.pending && total > 0;
     const canBuild = !!srsSummary.canBuildFromExisting;
@@ -926,6 +946,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
   const confirmRun = typeof deps.confirmRun === 'function'
     ? deps.confirmRun
     : (windowObject && typeof windowObject.confirm === 'function' ? windowObject.confirm.bind(windowObject) : function () { return true; });
+  const inlineSrsEnabled = deps.enableInlineSrs === true;
   const originalButtonText = button && String(button.textContent || '').trim()
     ? String(button.textContent).trim()
     : DEFAULT_BUTTON_TEXT;
@@ -955,6 +976,13 @@ export function createAnnotationBackfillAiController(deps = {}) {
     onRun: function (runOptions) {
       return run(runOptions);
     },
+    getSessionApiKey() {
+      return getSessionApiKey(windowObject);
+    },
+    onApiKeyChange(apiKey) {
+      persistSessionApiKey(windowObject, apiKey);
+    },
+    srsEnabled: inlineSrsEnabled,
   });
 
   function setButtonText(text) {
@@ -1005,6 +1033,10 @@ export function createAnnotationBackfillAiController(deps = {}) {
       const savedPayload = await loadSavedBackfillPayload(client, identity.jobId);
       const summary = buildAnnotationSummary(template, savedPayload, getSelectedRunId(windowObject, identity.jobId), getCurrentMarkedWordCount());
       dialog.updateAnnotationSummary(summary);
+      if (!inlineSrsEnabled) {
+        dialog.updateSrsSummary(createEmptySrsSummary());
+        return summary;
+      }
       await refreshSrsPendingSummary(identity, template, { canBuildFromExisting: summary.coveredCount > 0 });
       return summary;
     } catch (_error) {
@@ -1056,6 +1088,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
   }
 
   async function storeSrsCandidatesForRun(identity, template, requestTemplate, result) {
+    if (!inlineSrsEnabled) return null;
     const scopeKey = getSrsScopeKey(identity, template);
     if (!scopeKey || !srsPendingRepository || typeof srsPendingRepository.setPendingCandidates !== 'function') return null;
     const requestedTargetIds = getRequestTargetIds(requestTemplate);
@@ -1064,6 +1097,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
       template,
       result,
       requestedTargetIds,
+      sourceId: sourceInfo.sourceId,
       sourceTitle: sourceInfo.sourceTitle,
       sourceUrl: sourceInfo.sourceUrl,
     });
@@ -1085,6 +1119,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
   }
 
   async function addSrsCandidates(mode = 'all') {
+    if (!inlineSrsEnabled) return null;
     const identity = getCurrentIdentity(state);
     let template = null;
     try {
@@ -1128,6 +1163,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
   }
 
   async function skipSrsCandidates() {
+    if (!inlineSrsEnabled) return false;
     const identity = getCurrentIdentity(state);
     let template = null;
     try {
@@ -1147,6 +1183,7 @@ export function createAnnotationBackfillAiController(deps = {}) {
   }
 
   async function generateSrsCandidatesFromExistingAnnotations() {
+    if (!inlineSrsEnabled) return null;
     const identity = getCurrentIdentity(state);
     if (!identity.jobId) {
       refreshAvailability();

@@ -11,6 +11,10 @@ async function importVocabularyApi(repoRoot) {
     'vocabulary-repository.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
+    'preview-scan.js',
+    'article-srs-settlement.js',
+    'article-srs-settlement-progress.js',
+    'settlement-meaning-refinement.js',
     'srs-scheduler.js',
     'vocabulary-service.js',
     'index.js',
@@ -57,6 +61,11 @@ async function main() {
   assert.equal(api.REVIEW_RATINGS.EASY, 'easy');
   assert.equal(api.VOCABULARY_ENTRY_TYPES.WORD, 'word');
   assert.equal(api.VOCABULARY_ENTRY_TYPES.PHRASE, 'phrase');
+  assert.equal(api.VOCABULARY_TAGS.FOCUS, 'focus');
+  assert.equal(api.normalizeSrsCandidateText('reunions.'), 'reunions');
+  assert.equal(api.normalizeSrsCandidateText('shifts around,'), 'shifts around');
+  assert.equal(api.normalizeSrsCandidateText('crust, mantle,'), 'crust mantle');
+  assert.equal(api.normalizeSrsCandidateText('crust,mantle.'), 'crust mantle');
 
   const repository = api.createInMemoryVocabularyRepository();
   const service = api.createVocabularyService({
@@ -240,12 +249,16 @@ async function main() {
       sentence: 'The signal faded near the tunnel.',
       source_title: 'Article C',
       source_url: 'https://example.test/c',
+      source_id: 'article-c',
+      simple_meaning: 'reception',
     },
     createdAt,
   });
   const signalContexts = await contextRepository.getContextsForWord(signal.id);
   assert.equal(signalContexts.length, 1);
   assert.equal(signalContexts[0].meaning, null);
+  assert.equal(signalContexts[0].simple_meaning, 'reception');
+  assert.equal(signalContexts[0].source_id, 'article-c');
 
   await contextService.addWord({
     word: 'signal',
@@ -255,6 +268,8 @@ async function main() {
       sentence: 'The signal faded near the tunnel.',
       source_title: 'Article C',
       source_url: 'https://example.test/c',
+      source_id: 'article-c',
+      simple_meaning: 'reception',
     },
     createdAt: '2026-07-09T00:06:30.000Z',
   });
@@ -267,6 +282,8 @@ async function main() {
     context: {
       sentence: 'The signal faded near the tunnel.',
       meaning: 'In this sentence, signal means reception.',
+      simple_meaning: 'reception',
+      source_id: 'article-c',
       source_title: 'Article C',
       source_url: 'https://example.test/c',
     },
@@ -313,6 +330,7 @@ async function main() {
       targetId: 'target-word',
       markedText: 'Grill',
       meaning: 'In this sentence, grill means cook over heat.',
+      simpleMeaning: 'cook over heat',
     }, {
       targetId: 'target-phrase',
       markedText: 'take it for granted',
@@ -331,6 +349,7 @@ async function main() {
     template: candidateTemplate,
     result: candidateResult,
     requestedTargetIds: ['target-word', 'target-phrase', 'target-long'],
+    sourceId: 'article-srs',
     sourceTitle: 'Article SRS',
     sourceUrl: 'https://example.test/srs',
   });
@@ -341,6 +360,8 @@ async function main() {
   assert.equal(candidateBuild.excluded.length, 1, 'long text selections should be excluded from SRS candidates');
   assert.equal(candidateBuild.candidates[0].context.sentence, 'The chef will grill the fish.');
   assert.equal(candidateBuild.candidates[0].context.meaning, 'In this sentence, grill means cook over heat.');
+  assert.equal(candidateBuild.candidates[0].context.simple_meaning, 'cook over heat');
+  assert.equal(candidateBuild.candidates[0].context.source_id, 'article-srs');
   assert.equal(candidateBuild.candidates[0].context.source_title, 'Article SRS');
   assert.equal(candidateBuild.candidates[0].context.source_url, 'https://example.test/srs');
   assert.equal(candidateBuild.candidates[0].context.surrounding_text, 'Dinner starts soon. The chef will grill the fish. Guests are waiting.');
@@ -361,7 +382,13 @@ async function main() {
       lemma: 'fresh word',
       entry_type: 'phrase',
       language: 'en',
-      context: { sentence: 'A fresh word appears.', meaning: 'A new phrase meaning.' },
+      tags: ['focus', 'invalid-tag'],
+      context: {
+        sentence: 'A fresh word appears.',
+        meaning: 'A new phrase meaning.',
+        simple_meaning: 'fresh phrase',
+        source_id: 'article-fresh',
+      },
     }, {
       word: 'known phrase',
       lemma: 'known phrase',
@@ -380,8 +407,44 @@ async function main() {
   assert.equal(applyResult.added, 1);
   assert.equal(applyResult.knownContextAdded, 1);
   assert.equal(applyResult.ignoredSkipped, 1);
+  const freshWord = await candidateService.getWordByLemma('fresh word');
+  assert.deepEqual(freshWord.tags, ['focus'], 'supported vocabulary tags should be normalized and persisted');
+  const freshContexts = await candidateRepository.getContextsForWord(freshWord.id);
+  assert.equal(freshContexts[0].simple_meaning, 'fresh phrase');
+  assert.equal(freshContexts[0].source_id, 'article-fresh');
   assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('known phrase')).id)).length, 1);
   assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('ignored phrase')).id)).length, 0);
+
+  await candidateService.addWord({ word: 'relearn me', lemma: 'relearn me', entry_type: 'phrase', createdAt });
+  const relearnWord = await candidateService.getWordByLemma('relearn me');
+  await candidateService.markWordKnown(relearnWord.id, '2026-07-09T00:09:00.000Z');
+  const knownReviewState = await candidateRepository.getReviewState(relearnWord.id);
+  const relearnApply = await api.applySrsCandidatesToVocabulary({
+    vocabularyService: candidateService,
+    candidates: [{
+      word: 'relearn me',
+      lemma: 'relearn me',
+      entry_type: 'phrase',
+      language: 'en',
+      relearn: true,
+      tags: ['focus'],
+      context: {
+        sentence: 'Relearn me appears in a later article.',
+        meaning: 'The learner missed this phrase again.',
+        source_id: 'article-later',
+      },
+    }],
+    mode: 'all',
+  });
+  assert.equal(relearnApply.relearned, 1);
+  const relearnedWord = await candidateService.getWordByLemma('relearn me');
+  assert.equal(relearnedWord.status, 'learning');
+  assert.deepEqual(relearnedWord.tags, ['focus']);
+  const relearnedReviewState = await candidateRepository.getReviewState(relearnWord.id);
+  assert.equal(relearnedReviewState.state, 'new');
+  assert.equal(relearnedReviewState.reps, 0);
+  assert.equal(relearnedReviewState.scheduled_days, 0);
+  assert.notEqual(relearnedReviewState.due_at, knownReviewState.due_at, 'relearn should reset schedule without manually inflating FSRS fields');
 
   const pendingRepository = api.createInMemorySrsPendingCandidatesRepository();
   await pendingRepository.setPendingCandidates('article-srs', {

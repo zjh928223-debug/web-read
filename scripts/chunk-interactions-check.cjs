@@ -33,6 +33,8 @@ assert.ok(componentSource.includes('handleChunkWordClick({ word: word, event: ev
 assert.ok(componentSource.includes('handleChunkWordContextMenu({ word: word, event: event })'));
 assert.ok(componentSource.includes('handleChunkContextMenu({ event: event })'));
 assert.ok(componentSource.includes('handleChunkClick({ chunk: chunk, index: idx, event: event, chunkStore: chunkState })'));
+assert.ok(componentSource.includes('markedMap.has(idx)'), 'ChunkModeView should restore marked word styling after chunk mode rerenders');
+assert.ok(componentSource.includes('classes.marked = true'), 'ChunkModeView should render persisted marks as marked');
 
 [
   'window.forceUpdateUI',

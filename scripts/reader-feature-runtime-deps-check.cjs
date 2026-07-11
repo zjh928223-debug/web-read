@@ -96,6 +96,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     exportAnnotationLightweightBtn: { id: 'export-annotation' },
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
+    annotationBackfillAiBtn: { id: 'annotation-backfill-ai' },
+    previewVocabularyBtn: { id: 'preview-vocabulary' },
+    togglePreviewVocabularyBtn: { id: 'toggle-preview-vocabulary' },
+    settleArticleVocabularyBtn: { id: 'settle-article-vocabulary' },
     exportJsonBtn: { id: 'export-json' },
     exportMdAllBtn: { id: 'export-md' },
     importMarksBtn: { id: 'import-marks' },
@@ -131,6 +135,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(api.transcriptState, bootstrapRuntime.transcriptState);
   assert.equal(api.hotkeyStateApi, bootstrapRuntime.hotkeyStateApi);
   assert.equal(api.audioFileInput, domRefs.audioFileInput);
+  assert.equal(api.previewVocabularyBtn, domRefs.previewVocabularyBtn);
+  assert.equal(api.togglePreviewVocabularyBtn, domRefs.togglePreviewVocabularyBtn);
+  assert.equal(api.settleArticleVocabularyBtn, domRefs.settleArticleVocabularyBtn);
   assert.equal(api.validateMarksArray, runtimeDeps.validateMarksArray);
   assert.equal(api.buildVocabMatchMap, runtimeDeps.buildVocabMatchMapHelper);
   assert.equal(api.applyCurrentAudioMeta, notesSessionRuntime.applyCurrentAudioMeta);

@@ -12,6 +12,7 @@ import {
   normalizeLookupKey,
   normalizeNullableText,
   normalizeText,
+  normalizeVocabularyTags,
   toIsoString,
 } from './vocabulary-models.js';
 import { createIndexedDbVocabularyRepository } from './vocabulary-repository.js';
@@ -47,10 +48,13 @@ export function createVocabularyService(options = {}) {
           meaning: initialMeaning,
           note: normalizeNullableText(input.note),
           status: WORD_STATUSES.NEW,
+          tags: normalizeVocabularyTags(input.tags),
           created_at: createdAt,
           updated_at: createdAt,
         };
         snapshot.words.push(word);
+      } else if (mergeWordTags(word, input.tags)) {
+        word.updated_at = createdAt;
       }
 
       ensureReviewState(snapshot, word, createdAt, scheduler);
@@ -61,6 +65,10 @@ export function createVocabularyService(options = {}) {
 
   async function getWordByLemma(lemma, options = {}) {
     return repository.findWordByLemma(lemma, { language: normalizeLanguage(options.language) });
+  }
+
+  async function getContextsForWord(wordId) {
+    return repository.getContextsForWord(wordId);
   }
 
   async function getDueWords(now) {
@@ -147,14 +155,46 @@ export function createVocabularyService(options = {}) {
     });
   }
 
+  async function relearnWord(wordId, options = {}) {
+    const relearnedAtIso = toIsoString(options.relearnedAt || options.relearned_at || options.updatedAt || options.updated_at || nowProvider());
+    return repository.updateSnapshot((snapshot) => {
+      const word = findWordOrThrow(snapshot, wordId);
+      const reviewState = scheduler.createInitialReviewState(word.id, relearnedAtIso);
+      replaceReviewState(snapshot, reviewState);
+      word.status = WORD_STATUSES.LEARNING;
+      mergeWordTags(word, options.tags);
+      word.updated_at = relearnedAtIso;
+      return {
+        word,
+        reviewState,
+      };
+    });
+  }
+
   return {
     addWord,
     getWordByLemma,
+    getContextsForWord,
     getDueWords,
     reviewWord,
     markWordKnown,
     ignoreWord,
+    relearnWord,
   };
+}
+
+function mergeWordTags(word, tags) {
+  const nextTags = normalizeVocabularyTags(tags);
+  if (!nextTags.length) return false;
+  const current = normalizeVocabularyTags(word.tags);
+  let changed = false;
+  nextTags.forEach((tag) => {
+    if (current.includes(tag)) return;
+    current.push(tag);
+    changed = true;
+  });
+  if (changed) word.tags = current;
+  return changed;
 }
 
 function ensureReviewState(snapshot, word, now, scheduler) {
@@ -175,6 +215,8 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
     word_id: wordId,
     sentence,
     meaning: getContextMeaning(context),
+    simple_meaning: getContextSimpleMeaning(context),
+    source_id: normalizeNullableText(context.source_id || context.sourceId),
     source_title: normalizeNullableText(context.source_title || context.sourceTitle),
     source_url: normalizeNullableText(context.source_url || context.sourceUrl),
     surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),
@@ -184,6 +226,8 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
     existing.word_id === wordId
     && normalizeText(existing.sentence) === entry.sentence
     && normalizeNullableText(existing.meaning) === entry.meaning
+    && normalizeNullableText(existing.simple_meaning || existing.simpleMeaning) === entry.simple_meaning
+    && normalizeNullableText(existing.source_id || existing.sourceId) === entry.source_id
     && normalizeNullableText(existing.source_url || existing.sourceUrl) === entry.source_url
     && normalizeNullableText(existing.source_title || existing.sourceTitle) === entry.source_title
   ));
@@ -195,6 +239,11 @@ function addContextIfPresent(snapshot, wordId, context, createdAt) {
 function getContextMeaning(context) {
   if (!context || typeof context !== 'object') return null;
   return normalizeNullableText(context.meaning);
+}
+
+function getContextSimpleMeaning(context) {
+  if (!context || typeof context !== 'object') return null;
+  return normalizeNullableText(context.simple_meaning || context.simpleMeaning);
 }
 
 function findWordOrThrow(snapshot, wordId) {

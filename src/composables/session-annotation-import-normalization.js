@@ -88,6 +88,7 @@ export function normalizeManualLightweightImportedItem(raw, index, deps = {}) {
   const boundary = normalizeAnnotationTextValue(raw.boundary || raw.match_context || raw.context || raw.phrase);
   const type = normalizeAnnotationTextValue(raw.type || raw.category || raw.label || raw.tag);
   const meaning = normalizeAnnotationTextValue(raw.meaning || raw.means || raw.explanation || raw.definition || raw.cn || raw.zh);
+  const simpleMeaning = normalizeAnnotationTextValue(raw.simpleMeaning || raw.simple_meaning || raw.shortMeaning || raw.short_meaning);
   const memoryHint = normalizeAnnotationTextValue(raw.memoryHint || raw.memory_hint || raw.remember || raw.note || raw.not_meaning || raw.hint);
   const occurrenceIndexValue = Number(raw.occurrenceIndex != null ? raw.occurrenceIndex : raw.occurrence_index);
   const occurrenceIndex = Number.isInteger(occurrenceIndexValue) && occurrenceIndexValue >= 0 ? occurrenceIndexValue : null;
@@ -109,7 +110,8 @@ export function normalizeManualLightweightImportedItem(raw, index, deps = {}) {
     boundary,
     type,
     meaning,
+    simpleMeaning,
     memoryHint,
-    hasAnyBackfillField: !!(boundary || type || meaning || memoryHint)
+    hasAnyBackfillField: !!(boundary || type || meaning || simpleMeaning || memoryHint)
   };
 }

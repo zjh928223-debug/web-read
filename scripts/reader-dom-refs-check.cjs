@@ -48,7 +48,10 @@ assert.equal(
   'import-marks-btn',
   'export-json',
   'btn-export-annotation-lightweight',
-  'import-annotation-lightweight-file'
+  'import-annotation-lightweight-file',
+  'btn-preview-vocabulary',
+  'btn-toggle-preview-vocabulary',
+  'btn-settle-article-vocabulary'
 ].forEach((id) => {
   assert.equal(
     runtimeSource.includes(`document.getElementById('${id}')`),

@@ -1,11 +1,12 @@
 import { initGlassEffects } from './glass-effects.js'
 import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'
+import { initVocabularyPreviewControls } from './vocabulary-preview-module.js'
 import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 
 export function initReaderAppRuntime(deps = {}) {
-  var audioPlayer = (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
-    ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+  var audioPlayer = (typeof globalThis !== 'undefined' && globalThis.__mediaSource && typeof globalThis.__mediaSource.createActiveMediaProxy === 'function')
+    ? globalThis.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
     : deps.audioPlayer
   deps.annotationLightweightModule.initManualLightweightAnnotationControls({
     exportButton: deps.exportAnnotationLightweightBtn,
@@ -31,6 +32,18 @@ export function initReaderAppRuntime(deps = {}) {
       else deps.renderTranscript()
       deps.forceUpdateUI(audioPlayer.currentTime)
     },
+    showToast: deps.showToast,
+    showError: deps.showError,
+    windowObject: globalThis,
+    documentObject: globalThis.document
+  })
+
+  initVocabularyPreviewControls({
+    previewButton: deps.previewVocabularyBtn,
+    togglePreviewButton: deps.togglePreviewVocabularyBtn,
+    settleButton: deps.settleArticleVocabularyBtn,
+    state: deps.runtimeState,
+    client: youtubeWorkflowClient,
     showToast: deps.showToast,
     showError: deps.showError,
     windowObject: globalThis,

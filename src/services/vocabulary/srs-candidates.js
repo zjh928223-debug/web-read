@@ -21,7 +21,11 @@ function stripBoundaryPunctuation(value) {
 }
 
 export function normalizeSrsCandidateText(value) {
-  return stripBoundaryPunctuation(value).toLowerCase();
+  return stripBoundaryPunctuation(value)
+    .replace(/[,.，。]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 function getEnglishTokens(value) {
@@ -81,6 +85,7 @@ export function buildSrsCandidatesFromBackfillRun(options = {}) {
   const resultItems = Array.isArray(result.items) ? result.items : [];
   const sourceTitle = normalizeNullableText(options.sourceTitle || options.source_title);
   const sourceUrl = normalizeNullableText(options.sourceUrl || options.source_url);
+  const sourceId = normalizeNullableText(options.sourceId || options.source_id);
   const language = normalizeLanguage(options.language);
   const candidates = [];
   const excluded = [];
@@ -91,11 +96,13 @@ export function buildSrsCandidatesFromBackfillRun(options = {}) {
     const templateItem = templateByTargetId.get(targetId) || {};
     const rawText = normalizeText(resultItem.markedText || templateItem.markedText || resultItem.boundary);
     const classification = classifySrsCandidateText(rawText);
+    const normalizedText = classification.normalized;
     const base = {
       target_id: targetId,
       targetId,
-      marked_text: rawText,
-      lemma: classification.normalized,
+      marked_text: normalizedText,
+      markedText: normalizedText,
+      lemma: normalizedText,
       token_count: classification.tokenCount,
     };
     if (!classification.candidate) {
@@ -104,12 +111,14 @@ export function buildSrsCandidatesFromBackfillRun(options = {}) {
     }
     candidates.push({
       ...base,
-      word: classification.normalized,
+      word: normalizedText,
       entry_type: classification.entry_type,
       language,
       context: {
         sentence: normalizeText(templateItem.sourceSentence),
         meaning: normalizeNullableText(resultItem.meaning),
+        simple_meaning: normalizeNullableText(resultItem.simpleMeaning || resultItem.simple_meaning),
+        source_id: sourceId,
         source_title: sourceTitle,
         source_url: sourceUrl,
         surrounding_text: buildSurroundingText(templateItem),
@@ -172,12 +181,13 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
     existingContextAdded: 0,
     knownContextAdded: 0,
     ignoredSkipped: 0,
+    relearned: 0,
   };
 
   for (const candidate of selected) {
     if (!candidate || !candidate.lemma) continue;
     const existing = await vocabularyService.getWordByLemma(candidate.lemma, { language: candidate.language });
-    if (existing && existing.status === WORD_STATUSES.IGNORED) {
+    if (existing && existing.status === WORD_STATUSES.IGNORED && !candidate.relearn) {
       result.ignoredSkipped += 1;
       result.processed += 1;
       continue;
@@ -188,8 +198,13 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
       language: candidate.language,
       entry_type: candidate.entry_type,
       meaning: candidate.meaning,
+      tags: candidate.tags,
       context: candidate.context,
     });
+    if (existing && candidate.relearn && typeof vocabularyService.relearnWord === 'function') {
+      await vocabularyService.relearnWord(existing.id, { tags: candidate.tags });
+      result.relearned += 1;
+    }
     if (!existing) result.added += 1;
     else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
     else result.existingContextAdded += 1;

@@ -39,6 +39,10 @@ export function initReaderBootstrapRuntime(deps = {}) {
       if (controller && typeof controller.refreshAvailability === 'function') {
         controller.refreshAvailability();
       }
+      var previewController = globalObject.__vocabularyPreviewController;
+      if (previewController && typeof previewController.refreshAvailability === 'function') {
+        previewController.refreshAvailability();
+      }
     }
   });
 

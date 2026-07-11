@@ -7,9 +7,11 @@ async function main() {
   const scriptPath = path.join(repoRoot, 'scripts', 'start-youtube-reader.ps1');
   const openScriptPath = path.join(repoRoot, 'scripts', 'open-read-web.ps1');
   const stopScriptPath = path.join(repoRoot, 'scripts', 'stop-youtube-reader.ps1');
+  const latestReaderScriptPath = path.join(repoRoot, 'scripts', 'start-latest-reader.ps1');
   const source = fs.readFileSync(scriptPath, 'utf8');
   const openSource = fs.readFileSync(openScriptPath, 'utf8');
   const stopSource = fs.readFileSync(stopScriptPath, 'utf8');
+  const latestReaderSource = fs.readFileSync(latestReaderScriptPath, 'utf8');
 
   assert.ok(source.includes('http://127.0.0.1:8765/api/health'), 'startup script should check service health');
   assert.ok(source.includes('youtube_workflow.service:app'), 'startup script should launch the FastAPI app');
@@ -20,6 +22,15 @@ async function main() {
   assert.ok(source.includes('-WindowStyle Hidden'), 'background service/dev server windows should be hidden');
   assert.ok(openSource.includes('start-youtube-reader.ps1'), 'desktop shortcut entry should delegate to the full reader startup script');
   assert.ok(stopSource.includes('Get-NetTCPConnection') && stopSource.includes('Stop-Process'), 'stop script should stop the service listening on the workflow port');
+
+  const latestFrontendStart = latestReaderSource.indexOf('Start-Process -FilePath "powershell"');
+  const latestFrontendWait = latestReaderSource.indexOf('Wait-HttpOk -Url $ReaderUrl');
+  const latestBrowserOpen = latestReaderSource.indexOf('Start-Process $ReaderUrl');
+  const latestBackendWait = latestReaderSource.indexOf('Wait-HttpOk -Url $ServiceHealthUrl');
+  assert.ok(latestFrontendStart >= 0 && latestBackendWait >= 0 && latestFrontendStart < latestBackendWait,
+    'latest reader should start Vite before waiting for the backend so both cold starts overlap');
+  assert.ok(latestFrontendWait >= 0 && latestBrowserOpen > latestFrontendWait && latestBrowserOpen < latestBackendWait,
+    'latest reader should open the browser as soon as Vite is ready instead of waiting for the backend cold start');
 
   console.log('youtube workflow startup check passed');
 }

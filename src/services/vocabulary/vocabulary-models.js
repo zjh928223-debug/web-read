@@ -13,6 +13,10 @@ export const VOCABULARY_ENTRY_TYPES = Object.freeze({
   PHRASE: 'phrase',
 });
 
+export const VOCABULARY_TAGS = Object.freeze({
+  FOCUS: 'focus',
+});
+
 export const REVIEW_RATINGS = Object.freeze({
   AGAIN: 'again',
   HARD: 'hard',
@@ -29,6 +33,7 @@ export const REVIEW_STATES = Object.freeze({
 
 const VALID_WORD_STATUSES = new Set(Object.values(WORD_STATUSES));
 const VALID_VOCABULARY_ENTRY_TYPES = new Set(Object.values(VOCABULARY_ENTRY_TYPES));
+const VALID_VOCABULARY_TAGS = new Set(Object.values(VOCABULARY_TAGS));
 const VALID_REVIEW_RATINGS = new Set(Object.values(REVIEW_RATINGS));
 const VALID_REVIEW_STATES = new Set(Object.values(REVIEW_STATES));
 
@@ -82,6 +87,17 @@ export function normalizeText(value) {
 export function normalizeNullableText(value) {
   const normalized = normalizeText(value);
   return normalized || null;
+}
+
+export function normalizeVocabularyTags(tags) {
+  const values = Array.isArray(tags) ? tags : (tags ? [tags] : []);
+  const normalized = [];
+  values.forEach((tag) => {
+    const value = normalizeText(tag).toLowerCase();
+    if (!VALID_VOCABULARY_TAGS.has(value)) return;
+    if (!normalized.includes(value)) normalized.push(value);
+  });
+  return normalized;
 }
 
 export function assertValidRating(rating) {
@@ -144,6 +160,7 @@ function normalizeStoredWord(word) {
     meaning: normalizeNullableText(word.meaning),
     note: normalizeNullableText(word.note),
     status: VALID_WORD_STATUSES.has(word.status) ? word.status : WORD_STATUSES.NEW,
+    tags: normalizeVocabularyTags(word.tags),
     created_at: createdAt,
     updated_at: toIsoString(word.updated_at || word.updatedAt || createdAt),
   };
@@ -159,6 +176,8 @@ function normalizeStoredContext(context) {
     word_id: wordId,
     sentence,
     meaning: normalizeNullableText(context.meaning),
+    simple_meaning: normalizeNullableText(context.simple_meaning || context.simpleMeaning),
+    source_id: normalizeNullableText(context.source_id || context.sourceId),
     source_title: normalizeNullableText(context.source_title || context.sourceTitle),
     source_url: normalizeNullableText(context.source_url || context.sourceUrl),
     surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),

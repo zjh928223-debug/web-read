@@ -42,6 +42,9 @@ export function collectReaderDomRefs(doc = document) {
     exportAnnotationLightweightBtn: doc.getElementById('btn-export-annotation-lightweight'),
     importAnnotationLightweightInput: doc.getElementById('import-annotation-lightweight-file'),
     importAnnotationLightweightBtn: doc.getElementById('btn-import-annotation-lightweight'),
-    annotationBackfillAiBtn: doc.getElementById('btn-annotation-backfill-ai')
+    annotationBackfillAiBtn: doc.getElementById('btn-annotation-backfill-ai'),
+    previewVocabularyBtn: doc.getElementById('btn-preview-vocabulary'),
+    togglePreviewVocabularyBtn: doc.getElementById('btn-toggle-preview-vocabulary'),
+    settleArticleVocabularyBtn: doc.getElementById('btn-settle-article-vocabulary')
   };
 }

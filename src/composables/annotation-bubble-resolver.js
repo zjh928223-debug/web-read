@@ -45,7 +45,9 @@ export function initAnnotationBubbleResolver(options = {}) {
       boundary: pickAnnotationValue(data, ['boundary', 'match_context', 'context', 'phrase']) || clickedText,
       type: pickAnnotationValue(data, ['type', 'category', 'label', 'tag']),
       meaning: pickAnnotationValue(data, ['meaning', 'means', 'explanation', 'definition', 'cn', 'zh']),
-      memoryHint: pickAnnotationValue(data, ['memoryHint', 'memory_hint', 'remember', 'note', 'not_meaning', 'hint'])
+      simpleMeaning: pickAnnotationValue(data, ['simpleMeaning', 'simple_meaning', 'shortMeaning', 'short_meaning']),
+      memoryHint: pickAnnotationValue(data, ['memoryHint', 'memory_hint', 'remember', 'note', 'not_meaning', 'hint']),
+      source: pickAnnotationValue(data, ['source', 'provider'])
     };
   }
 

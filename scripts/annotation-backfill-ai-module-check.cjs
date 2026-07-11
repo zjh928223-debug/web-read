@@ -66,7 +66,7 @@ async function importModule(filePath) {
       path.join(tempComposables, 'annotation-backfill-ai-module.mjs'),
       rewriteSource(fs.readFileSync(filePath, 'utf8'))
     );
-    ['vocabulary-models.js', 'vocabulary-repository.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'srs-scheduler.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
+    ['vocabulary-models.js', 'vocabulary-repository.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'preview-scan.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
       const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
       if (fs.existsSync(sourcePath)) {
         fs.writeFileSync(path.join(tempVocabulary, file.replace(/\.js$/, '.mjs')), rewriteSource(fs.readFileSync(sourcePath, 'utf8')));
@@ -281,6 +281,7 @@ function createController(api, overrides = {}) {
     windowObject: overrides.windowObject || createWindowObject(),
     vocabularyService: overrides.vocabularyService,
     srsPendingRepository: overrides.srsPendingRepository,
+    enableInlineSrs: overrides.enableInlineSrs,
   });
   return { button, controller, imported, calls, notices, client, state };
 }
@@ -721,6 +722,7 @@ async function main() {
       result: createSrsResult(['target-word', 'target-phrase', 'target-long', 'target-old']),
       vocabularyService: srsDeps.vocabularyService,
       srsPendingRepository: srsDeps.srsPendingRepository,
+      enableInlineSrs: true,
     });
     await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
     assert.equal(calls.length, 1);
@@ -748,6 +750,24 @@ async function main() {
 
   {
     const srsDeps = createFakeSrsDeps();
+    const { controller } = createController(api, {
+      template: createSrsTemplate(),
+      state: {
+        currentAudioMeta: { source: 'youtube-workflow', jobId: 'job-1', name: 'Article SRS.audio' },
+        currentAudioKey: 'audio-1',
+      },
+      result: createSrsResult(['target-word', 'target-phrase']),
+      vocabularyService: srsDeps.vocabularyService,
+      srsPendingRepository: srsDeps.srsPendingRepository,
+    });
+    await controller.run({ model: 'gemini-2.5-flash', apiKey: 'SECRET-RUN-ONLY' });
+    assert.equal(srsDeps.pendingGroups.has('job-1'), false, 'AI explanation should not create inline SRS pending candidates by default');
+    assert.equal(srsDeps.added.length, 0, 'AI explanation should not write SRS entries by default');
+    assert.equal(controller.getStatusSnapshot().srsSummary.visible, false, 'inline SRS panel should remain hidden unless explicitly enabled');
+  }
+
+  {
+    const srsDeps = createFakeSrsDeps();
     const template = createSrsTemplate();
     const cached = createSrsResult(['target-word']);
     const { controller, calls } = createController(api, {
@@ -756,6 +776,7 @@ async function main() {
       result: createSrsResult(['target-word', 'target-phrase']),
       vocabularyService: srsDeps.vocabularyService,
       srsPendingRepository: srsDeps.srsPendingRepository,
+      enableInlineSrs: true,
       client: {
         getConfig: async () => ({ model: 'gemini-2.5-flash' }),
         credentialStatus: async () => ({ stored: true }),
@@ -787,6 +808,7 @@ async function main() {
       template,
       vocabularyService: srsDeps.vocabularyService,
       srsPendingRepository: srsDeps.srsPendingRepository,
+      enableInlineSrs: true,
       client: {
         getConfig: async () => ({ model: 'gemini-2.5-flash' }),
         credentialStatus: async () => ({ stored: true }),
@@ -832,6 +854,7 @@ async function main() {
       template: createSrsTemplate(),
       vocabularyService: srsDeps.vocabularyService,
       srsPendingRepository: srsDeps.srsPendingRepository,
+      enableInlineSrs: true,
     });
     await controller.openDialog();
     assert.equal(controller.getStatusSnapshot().srsSummary.visible, false, 'current article without saved AI explanations should not show the cold-start SRS entry');
