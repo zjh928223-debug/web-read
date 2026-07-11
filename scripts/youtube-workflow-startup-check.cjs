@@ -14,9 +14,10 @@ async function main() {
   assert.ok(source.includes('http://127.0.0.1:8765/api/health'), 'startup script should check service health');
   assert.ok(source.includes('youtube_workflow.service:app'), 'startup script should launch the FastAPI app');
   assert.ok(source.includes('npm run dev'), 'startup script should launch Vite dev server');
-  assert.ok(source.includes('http://127.0.0.1:5173'), 'startup script should open the reader');
+  assert.ok(source.includes('http://127.0.0.1:5174'), 'startup script should open the feature worktree reader');
   assert.ok(source.includes('Test-HttpOk'), 'startup script should avoid duplicate launches by probing health');
   assert.ok(source.includes('Wait-HttpOk'), 'startup script should wait for backend readiness before opening the reader');
+  assert.ok(source.includes('RequiredServiceVersion'), 'startup script should restart stale workflow services');
   assert.ok(source.includes('-WindowStyle Hidden'), 'background service/dev server windows should be hidden');
   assert.ok(openSource.includes('start-youtube-reader.ps1'), 'desktop shortcut entry should delegate to the full reader startup script');
   assert.ok(stopSource.includes('Get-NetTCPConnection') && stopSource.includes('Stop-Process'), 'stop script should stop the service listening on the workflow port');

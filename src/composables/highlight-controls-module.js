@@ -3,7 +3,9 @@ export function initHighlightControls(deps = {}) {
   var chunkState = deps.chunkState;
   var playbackState = deps.playbackState;
   var highlightModeBtn = deps.highlightModeBtn;
-  var audioPlayer = deps.audioPlayer;
+  var audioPlayer = (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+    ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+    : deps.audioPlayer;
 
   function getForceUpdateUI() {
     if (typeof deps.getForceUpdateUI === 'function') return deps.getForceUpdateUI();

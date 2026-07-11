@@ -2,9 +2,18 @@
   <Teleport to=".controls">
     <div class="youtube-reader-controls">
       <button type="button" class="small-btn" @click="openPanel">素材处理</button>
+      <label class="youtube-workflow-check youtube-video-preference">
+        <input :checked="videoPreferred" type="checkbox" @change="toggleVideoPreferred">
+        <span>视频优先</span>
+      </label>
       <button type="button" class="small-btn" :disabled="!canGoPrevious" @click="goQueue(-1)">上一篇</button>
       <button type="button" class="small-btn" :disabled="!canUseNext" @click="goQueue(1)">下一篇</button>
     </div>
+  </Teleport>
+
+  <Teleport to=".deprecated-file-entry-actions">
+    <button type="button" class="small-btn" @click="bindCurrentVideoSource">定位视频源</button>
+    <span v-if="videoBindNotice" class="youtube-workflow-hint" data-tone="warning">{{ videoBindNotice }}</span>
   </Teleport>
 
   <div class="youtube-workflow">
@@ -25,7 +34,7 @@
 
         <div v-if="!serviceOnline" class="youtube-workflow-alert">
           <strong>后台服务未启动</strong>
-          <span>启动命令：python -m uvicorn youtube_workflow.service:app --host 127.0.0.1 --port 8765</span>
+          <span>请使用桌面“网页阅读器”快捷方式启动，或运行 scripts\open-read-web.ps1</span>
         </div>
 
         <nav class="youtube-workflow-section-tabs" aria-label="素材处理视图">
@@ -231,12 +240,15 @@
               </button>
               <button v-if="job.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(job)">优先处理</button>
               <button v-if="job.status === 'failed'" type="button" class="small-btn" @click="retryJob(job, 'translating')">优先重试</button>
+              <button v-if="job.status === 'failed'" type="button" class="small-btn danger" @click="deleteQueueJob(job)">删除</button>
               <button v-if="!terminalStatuses.has(job.status)" type="button" class="small-btn" @click="cancelJob(job)">取消</button>
             </div>
           </article>
 
           <div class="youtube-secondary-actions">
+            <button type="button" class="small-btn danger" :disabled="!failedJobs.length" @click="confirmClearFailed">清理失败</button>
             <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
+            <span v-if="queueRecordsNotice" class="youtube-workflow-hint">{{ queueRecordsNotice }}</span>
             <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
           </div>
           </section>
@@ -302,6 +314,7 @@
               </select>
               <button type="button" class="small-btn" @click="refreshHistory">搜索</button>
             </div>
+            <p v-if="historyNotice" class="youtube-workflow-hint" data-tone="warning">{{ historyNotice }}</p>
 
             <div v-if="!historyJobs.length" class="youtube-workflow-empty">暂无历史记录</div>
 
@@ -332,6 +345,11 @@
         </section>
 
         <div class="youtube-workflow-panel-footer">
+          <label class="youtube-workflow-check youtube-video-preference">
+            <input :checked="videoPreferred" type="checkbox" @change="toggleVideoPreferred">
+            <span>视频优先</span>
+          </label>
+          <span v-if="videoNotice" class="youtube-workflow-hint" data-tone="warning">{{ videoNotice }}</span>
           <label class="youtube-workflow-check">
             <input v-model="showFloatingAfterClose" type="checkbox">
             <span>显示任务浮标</span>
@@ -438,6 +456,10 @@ const READER_SYNC_INTERVAL_MS = 15000
 const panelOpen = ref(false)
 const panelShrunk = ref(false)
 const serviceOnline = ref(false)
+const videoPreferred = ref(false)
+const videoAvailable = ref(false)
+const videoNotice = ref('')
+const videoBindNotice = ref('')
 const linkInput = ref('')
 const linkCards = ref([])
 const linkNotice = ref('')
@@ -469,8 +491,10 @@ const historyJobs = ref([])
 const historyOpen = ref(false)
 const historyQuery = ref('')
 const historyStatus = ref('')
+const historyNotice = ref('')
 const showFloatingAfterClose = ref(false)
 const cancelRecordsOpen = ref(false)
+const queueRecordsNotice = ref('')
 const cancelRecordsNotice = ref('')
 const switchModal = ref(null)
 const incompletePrompt = ref(null)
@@ -490,6 +514,8 @@ let linkSequence = 0
 let readerSessionId = ''
 let readerSessionStartedAt = ''
 let readerLastSyncAt = 0
+let mediaSourceUnsubscribe = null
+let playbackTrackingElement = null
 let markCountObserver = null
 let readerMarksSyncTimer = 0
 
@@ -518,6 +544,7 @@ const primaryActionText = computed(() => {
 })
 const readyJobs = computed(() => queueJobs.value.filter((job) => job.status === 'ready'))
 const canceledJobs = computed(() => queueJobs.value.filter((job) => job.status === 'canceled'))
+const failedJobs = computed(() => queueJobs.value.filter((job) => job.status === 'failed'))
 const currentReadyIndex = computed(() => readyJobs.value.findIndex((job) => job.jobId === currentJobId.value))
 const canGoPrevious = computed(() => readyJobs.value.length > 0 && currentReadyIndex.value > 0)
 const canUseNext = computed(() => readyJobs.value.length > 0)
@@ -557,7 +584,7 @@ const materialFloatTitle = computed(() => {
 })
 const materialFloatStatus = computed(() => {
   if (!queueJobs.value.length) return '暂无任务'
-  const failed = queueJobs.value.filter((job) => job.status === 'failed').length
+  const failed = failedJobs.value.length
   const ready = readyJobs.value.length
   const active = queueJobs.value.find((job) => !terminalStatuses.has(job.status))
   if (failed) return `${errorLabel(active && active.error && active.error.category)} · 可读 ${ready} · 失败 ${failed}`
@@ -594,6 +621,10 @@ watch(materialFloatingVisible, async (visible) => {
 
 onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
+  const mediaSource = getMediaSource()
+  if (mediaSource && typeof mediaSource.subscribe === 'function') {
+    mediaSourceUnsubscribe = mediaSource.subscribe(syncMediaSourceState)
+  }
   bindPlaybackTracking()
   bindMarkCountTracking()
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
@@ -608,6 +639,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('pagehide', handleBeforeUnload)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
+  if (mediaSourceUnsubscribe) mediaSourceUnsubscribe()
+  mediaSourceUnsubscribe = null
   unbindPlaybackTracking()
   unbindMarkCountTracking()
 })
@@ -615,6 +648,7 @@ onBeforeUnmount(() => {
 function makeLoader() {
   return createYoutubeWorkflowLoader({
     client: youtubeWorkflowClient,
+    mediaSource: getMediaSource(),
     saveToDB: window.saveToDB,
     applyCurrentAudioMeta(meta) {
       if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
@@ -631,6 +665,64 @@ function makeLoader() {
     resetChunkDisplay: resetChunkChineseDisplay,
     showToast: window.showToast
   })
+}
+
+function getMediaSource() {
+  return typeof window !== 'undefined' ? window.__mediaSource : null
+}
+
+function syncMediaSourceState(next) {
+  const state = next || (getMediaSource() && getMediaSource().getState && getMediaSource().getState()) || {}
+  videoPreferred.value = !!state.videoPreferred
+  videoAvailable.value = !!state.videoAvailable
+  videoNotice.value = String(state.notice || '')
+  rebindPlaybackTracking()
+}
+
+function toggleVideoPreferred(event) {
+  const checked = !!(event && event.target && event.target.checked)
+  const mediaSource = getMediaSource()
+  if (mediaSource && typeof mediaSource.setVideoPreferred === 'function') {
+    mediaSource.setVideoPreferred(checked)
+    syncMediaSourceState()
+  } else {
+    videoPreferred.value = false
+    videoNotice.value = '视频播放器未初始化'
+  }
+}
+
+async function bindCurrentVideoSource() {
+  ensureCurrentJobFromAudioMeta()
+  const jobId = currentJobId.value
+  if (!jobId) {
+    videoBindNotice.value = '请先打开一个素材'
+    return
+  }
+  try {
+    const picked = await youtubeWorkflowClient.pickVideoFile({})
+    if (!picked || !picked.selected || !picked.path) {
+      videoBindNotice.value = '未选择视频源'
+      return
+    }
+    const manifest = await youtubeWorkflowClient.bindVideoSource(jobId, {
+      videoPath: picked.path,
+      source: 'manual-external'
+    })
+    const title = manifest && manifest.title ? manifest.title : jobId
+    const mediaSource = getMediaSource()
+    if (mediaSource && typeof mediaSource.loadJobMedia === 'function') {
+      mediaSource.loadJobMedia({
+        jobId,
+        title,
+        hasVideo: true,
+        videoUrl: youtubeWorkflowClient.fileUrl(jobId, 'video'),
+        videoSource: 'manual-external'
+      })
+    }
+    videoBindNotice.value = '视频源已绑定'
+  } catch (error) {
+    videoBindNotice.value = error && error.message ? error.message : '视频源绑定失败'
+  }
 }
 
 async function checkHealth() {
@@ -902,6 +994,7 @@ async function toggleHistory() {
 }
 
 async function refreshHistory() {
+  await checkHealth()
   try {
     const items = await youtubeWorkflowClient.history({
       query: historyQuery.value,
@@ -909,8 +1002,10 @@ async function refreshHistory() {
       limit: 50
     })
     historyJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
+    serviceOnline.value = true
+    historyNotice.value = ''
   } catch (err) {
-    window.alert(err && err.message ? err.message : String(err))
+    historyNotice.value = err && err.message ? err.message : String(err)
   }
 }
 
@@ -1360,6 +1455,25 @@ async function confirmClearCanceled() {
   cancelRecordsOpen.value = false
 }
 
+async function deleteQueueJob(job) {
+  if (!job || job.status !== 'failed') return
+  if (!window.confirm('只删除这个失败任务记录，不会删除已生成素材。继续吗？')) return
+  await youtubeWorkflowClient.deleteJob(job.jobId)
+  queueJobs.value = queueJobs.value.filter((item) => item.jobId !== job.jobId)
+  queueRecordsNotice.value = ''
+}
+
+async function confirmClearFailed() {
+  if (!failedJobs.value.length) {
+    queueRecordsNotice.value = '当前没有失败任务'
+    return
+  }
+  if (!window.confirm('只清空失败任务记录，成功素材会保留。继续吗？')) return
+  await youtubeWorkflowClient.clearFailedJobs()
+  queueJobs.value = queueJobs.value.filter((job) => job.status !== 'failed')
+  queueRecordsNotice.value = ''
+}
+
 function showCancelRecords() {
   if (!canceledJobs.value.length) {
     cancelRecordsNotice.value = '当前没有取消记录'
@@ -1484,7 +1598,11 @@ function listenText(job) {
 }
 
 function getAudio() {
-  return document.getElementById('audio-player')
+  const fallback = document.getElementById('audio-player')
+  const mediaSource = getMediaSource()
+  return mediaSource && typeof mediaSource.getActiveMediaElement === 'function'
+    ? mediaSource.getActiveMediaElement(fallback)
+    : fallback
 }
 
 function startReaderSession(job) {
@@ -1501,21 +1619,28 @@ function startReaderSession(job) {
 function bindPlaybackTracking() {
   const audio = getAudio()
   if (!audio) return
-  audio.addEventListener('timeupdate', handleTimeUpdate)
-  audio.addEventListener('play', handlePlay)
-  audio.addEventListener('pause', handlePause)
-  audio.addEventListener('seeking', handleSeeking)
-  audio.addEventListener('ended', handleEnded)
+  if (playbackTrackingElement === audio) return
+  unbindPlaybackTracking()
+  playbackTrackingElement = audio
+  playbackTrackingElement.addEventListener('timeupdate', handleTimeUpdate)
+  playbackTrackingElement.addEventListener('play', handlePlay)
+  playbackTrackingElement.addEventListener('pause', handlePause)
+  playbackTrackingElement.addEventListener('seeking', handleSeeking)
+  playbackTrackingElement.addEventListener('ended', handleEnded)
+}
+
+function rebindPlaybackTracking() {
+  bindPlaybackTracking()
 }
 
 function unbindPlaybackTracking() {
-  const audio = getAudio()
-  if (!audio) return
-  audio.removeEventListener('timeupdate', handleTimeUpdate)
-  audio.removeEventListener('play', handlePlay)
-  audio.removeEventListener('pause', handlePause)
-  audio.removeEventListener('seeking', handleSeeking)
-  audio.removeEventListener('ended', handleEnded)
+  if (!playbackTrackingElement) return
+  playbackTrackingElement.removeEventListener('timeupdate', handleTimeUpdate)
+  playbackTrackingElement.removeEventListener('play', handlePlay)
+  playbackTrackingElement.removeEventListener('pause', handlePause)
+  playbackTrackingElement.removeEventListener('seeking', handleSeeking)
+  playbackTrackingElement.removeEventListener('ended', handleEnded)
+  playbackTrackingElement = null
 }
 
 function playbackState() {

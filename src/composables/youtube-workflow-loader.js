@@ -84,6 +84,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   const annotationLightweightModule = deps.annotationLightweightModule || (typeof window !== 'undefined' ? window.__annotationLightweightModule : null)
   const resetChunkDisplay = typeof deps.resetChunkDisplay === 'function' ? deps.resetChunkDisplay : function () {}
   const createObjectURL = deps.createObjectURL || (typeof URL !== 'undefined' ? URL.createObjectURL.bind(URL) : null)
+  const mediaSource = deps.mediaSource || (typeof window !== 'undefined' ? window.__mediaSource : null)
 
   async function restoreReaderMarks(jobId) {
     if (!client || typeof client.getReaderMarks !== 'function') return
@@ -137,6 +138,10 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     })
 
     const title = manifest.title || `youtube-${jobId}`
+    const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
+    const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
+    const hasVideo = !!manifestFiles.video
+    const videoUrl = hasVideo && typeof client.fileUrl === 'function' ? client.fileUrl(jobId, 'video') : ''
     const audioMeta = {
       name: `${title}.audio`,
       size: audioBlob.size || 0,
@@ -154,6 +159,18 @@ export function createYoutubeWorkflowLoader(deps = {}) {
 
     const audioPlayer = deps.audioPlayer || (typeof document !== 'undefined' ? document.getElementById('audio-player') : null)
     if (audioPlayer && createObjectURL) audioPlayer.src = createObjectURL(audioBlob)
+    if (mediaSource && typeof mediaSource.setAudioElement === 'function') {
+      mediaSource.setAudioElement(audioPlayer)
+    }
+    if (mediaSource && typeof mediaSource.loadJobMedia === 'function') {
+      mediaSource.loadJobMedia({
+        jobId,
+        title,
+        hasVideo,
+        videoUrl,
+        videoSource: manifestMedia.videoSource || ''
+      })
+    }
     processTranscript(validated.transcript)
     if (typeof deps.switchSentenceNotesDoc === 'function') {
       await deps.switchSentenceNotesDoc(validated.transcript)

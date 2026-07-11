@@ -7,7 +7,9 @@
   }
 
   function init(deps) {
-    var audioPlayer = deps.audioPlayer;
+    var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+      ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+      : deps.audioPlayer;
     var isInputLikeTargetFn = typeof deps.isInputLikeTarget === 'function' ? deps.isInputLikeTarget : isInputLikeTarget;
     var isChunkMode = deps.isChunkMode;
     var chunkCnHoldMode = deps.chunkCnHoldMode;

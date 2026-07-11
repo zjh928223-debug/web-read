@@ -5,6 +5,12 @@ import { initPlaybackRuntimeHelpers } from './playback-runtime-helpers.js'
 
 export function initReaderPlaybackRuntime(deps = {}) {
   var win = typeof deps.getWindow === 'function' ? deps.getWindow() : deps.window
+  function getActiveMediaElement() {
+    var mediaSource = win && win.__mediaSource
+    return mediaSource && typeof mediaSource.getActiveMediaElement === 'function'
+      ? mediaSource.getActiveMediaElement(deps.audioPlayer)
+      : deps.audioPlayer
+  }
   var annotationBubbleResolverApi = initAnnotationBubbleResolver({
     getWords() { return deps.transcriptState.words },
     markedMap: deps.markedMap,
@@ -46,7 +52,7 @@ export function initReaderPlaybackRuntime(deps = {}) {
   var handleForwardClick = win.handleForwardClick
 
   configureTranscriptInteractions({
-    getAudioPlayer() { return deps.audioPlayer },
+    getAudioPlayer() { return getActiveMediaElement() },
     forceUpdateUI,
     notifyAnnotationBubbleWordClick,
     isChunkMode() { return deps.chunkState.isChunkMode },
@@ -55,7 +61,7 @@ export function initReaderPlaybackRuntime(deps = {}) {
   })
 
   configureChunkInteractions({
-    getAudioPlayer() { return deps.audioPlayer },
+    getAudioPlayer() { return getActiveMediaElement() },
     getSelection: deps.getSelection,
     forceUpdateUI,
     notifyAnnotationBubbleWordClick

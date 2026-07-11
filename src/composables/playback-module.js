@@ -1,5 +1,7 @@
   function init(deps) {
-    var audioPlayer = deps.audioPlayer;
+    var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+      ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+      : deps.audioPlayer;
     var getCurrentSegmentIndexHelper = deps.getCurrentSegmentIndexHelper;
     var getSegmentCheckpointsHelper = deps.getSegmentCheckpointsHelper;
     var bsFindActiveHelper = deps.bsFindActiveHelper;

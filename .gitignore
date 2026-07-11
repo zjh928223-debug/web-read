@@ -10,6 +10,10 @@ node_modules/
 .playwright-artifacts/
 .playwright-deps/
 .codex/startup-logs/
+tools/subtitle-workflow/output/
+tools/subtitle-workflow/.workflow_state/
+tools/subtitle-workflow/.gemini_cache/
+tools/subtitle-workflow/**/__pycache__/
 output/*.log
 output/playwright/*.png
 output/playwright/*.json

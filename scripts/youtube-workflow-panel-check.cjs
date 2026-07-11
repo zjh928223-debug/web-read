@@ -97,6 +97,10 @@ async function main() {
   assert.ok(panelSource.includes('startPanelDrag') && panelSource.includes('startCapsuleDrag'), 'panel and capsule should be draggable');
   assert.ok(panelSource.includes('prioritizeJob') && panelSource.includes('retryJob'), 'queued and failed jobs should expose priority actions');
   assert.ok(panelSource.includes('clearCanceledJobs'), 'canceled records should be clearable from a secondary view');
+  assert.ok(panelSource.includes('failedJobs'), 'failed queue records should be counted separately from readable history');
+  assert.ok(panelSource.includes('deleteQueueJob') && panelSource.includes('deleteJob(job.jobId)'), 'failed queue rows should expose a single-record delete action');
+  assert.ok(panelSource.includes('confirmClearFailed') && panelSource.includes('clearFailedJobs'), 'failed queue records should have a bulk clear action');
+  assert.ok(panelSource.includes('bindCurrentVideoSource') && panelSource.includes('pickVideoFile') && panelSource.includes('bindVideoSource'), 'deprecated entry should let the current material bind a manual video source');
   assert.equal(panelSource.includes('<select v-model="geminiMode"'), false, 'mock/off/real mode selector should not be shown to users');
   assert.ok(panelSource.includes("const geminiMode = computed"), 'workflow mode should be computed from hidden dev controls');
   assert.ok(panelSource.includes("replacePolicy: 'ask'"), 'queue submission should not silently replace current content');

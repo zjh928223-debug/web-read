@@ -46,12 +46,16 @@ async function main() {
   await client.prioritizeJob('job-2');
   await client.redoJob('job-3');
   await client.retryJob('job-4', { stage: 'translating' });
+  await client.deleteJob('job-5');
   await client.clearCanceledJobs();
+  await client.clearFailedJobs();
   await client.pickImportFolder({ initialDir: 'D:/legacy-materials' });
+  await client.pickVideoFile({ initialDir: 'D:/legacy-materials/a' });
   await client.scanImportRoot({ rootPath: 'D:/legacy-materials' });
   await client.createImportJobs({ items: [{ audioPath: 'D:/legacy-materials/a.mp3', selected: true }], geminiMode: 'mock' });
   await client.getSession('job-1');
   await client.getFile('job-1', 'audio');
+  await client.bindVideoSource('job-1', { videoPath: 'D:/legacy-materials/a/a.mp4', source: 'manual' });
   await client.recent(5);
   await client.history({ query: 'alpha', status: 'ready', limit: 20 });
   await client.getHistory('job-1');
@@ -85,12 +89,16 @@ async function main() {
     'http://127.0.0.1:8765/api/jobs/job-2/prioritize',
     'http://127.0.0.1:8765/api/jobs/job-3/redo',
     'http://127.0.0.1:8765/api/jobs/job-4/retry',
+    'http://127.0.0.1:8765/api/jobs/job-5',
     'http://127.0.0.1:8765/api/jobs/clear-canceled',
+    'http://127.0.0.1:8765/api/jobs/clear-failed',
     'http://127.0.0.1:8765/api/import/pick-folder',
+    'http://127.0.0.1:8765/api/media/pick-video',
     'http://127.0.0.1:8765/api/import/scan',
     'http://127.0.0.1:8765/api/import/jobs',
     'http://127.0.0.1:8765/api/jobs/job-1/session',
     'http://127.0.0.1:8765/api/jobs/job-1/file/audio',
+    'http://127.0.0.1:8765/api/jobs/job-1/video-source',
     'http://127.0.0.1:8765/api/recent?limit=5',
     'http://127.0.0.1:8765/api/history?query=alpha&status=ready&limit=20',
     'http://127.0.0.1:8765/api/history/job-1',
@@ -114,19 +122,25 @@ async function main() {
   assert.equal(calls[13].options.method, 'POST');
   assert.equal(calls[14].options.method, 'POST');
   assert.equal(calls[15].options.method, 'POST');
-  assert.equal(calls[16].options.method, 'POST');
+  assert.equal(calls[16].options.method, 'DELETE');
   assert.equal(calls[17].options.method, 'POST');
   assert.equal(calls[18].options.method, 'POST');
   assert.equal(calls[19].options.method, 'POST');
-  assert.equal(JSON.parse(calls[19].options.body).geminiMode, 'mock');
-  assert.equal(calls[25].options.method, 'DELETE');
-  assert.equal(calls[27].options.method, 'POST');
-  assert.equal(JSON.parse(calls[27].options.body).event, 'progress');
-  assert.equal(calls[29].options.method, 'POST');
-  assert.equal(JSON.parse(calls[29].options.body).marks[0].word, 'workflow');
-  assert.equal(calls[30].options.method, 'POST');
-  assert.equal(JSON.parse(calls[30].options.body).template.articleId, 'article-1');
-  assert.equal(JSON.parse(calls[30].options.body).model, 'gemini-test');
+  assert.equal(calls[20].options.method, 'POST');
+  assert.equal(calls[21].options.method, 'POST');
+  assert.equal(calls[22].options.method, 'POST');
+  assert.equal(JSON.parse(calls[22].options.body).geminiMode, 'mock');
+  assert.equal(calls[25].options.method, 'POST');
+  assert.equal(JSON.parse(calls[25].options.body).videoPath, 'D:/legacy-materials/a/a.mp4');
+  assert.equal(calls[29].options.method, 'DELETE');
+  assert.equal(calls[31].options.method, 'POST');
+  assert.equal(JSON.parse(calls[31].options.body).event, 'progress');
+  assert.equal(calls[33].options.method, 'POST');
+  assert.equal(JSON.parse(calls[33].options.body).marks[0].word, 'workflow');
+  assert.equal(calls[34].options.method, 'POST');
+  assert.equal(JSON.parse(calls[34].options.body).template.articleId, 'article-1');
+  assert.equal(JSON.parse(calls[34].options.body).model, 'gemini-test');
+  assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video');
 
   console.log('youtube workflow client check passed');
 }
