@@ -63,6 +63,18 @@ function createPreviewState() {
   };
 }
 
+function createPreviewStateFromWords(tokens) {
+  return {
+    currentAudioKey: 'audio-preview-filter',
+    documentId: 'doc-preview-filter',
+    segments: [{
+      id: 'segment-filter',
+      text: tokens.join(' '),
+      words: tokens.map((word, globalIndex) => ({ word, globalIndex })),
+    }],
+  };
+}
+
 function createManualItem(targetId, markedText, meaning, extra = {}) {
   return {
     targetId,
@@ -123,6 +135,37 @@ async function main() {
   assert.equal(scan.summary.properNounCount, 1);
   assert.ok(scan.excluded.some((item) => item.reason === 'already_explained_current_article'));
   assert.ok(scan.excluded.some((item) => item.reason === 'vocabulary_learning'));
+
+  const lightweightFilterScan = await api.buildPreviewScan({
+    state: createPreviewStateFromWords([
+      'Bus',
+      'three',
+      'cars',
+      'hour',
+      'video',
+      "He'll",
+      'happened',
+      'recovering',
+      'seismic',
+      'devastating',
+      'slammed',
+      'into',
+      'Florida',
+    ]),
+    sourceId: 'article-lightweight-filter',
+    maxCount: 20,
+  });
+  const filteredLemmas = lightweightFilterScan.candidates.map((candidate) => candidate.lemma);
+  ['bus', 'three', 'car', 'hour', 'video', 'he', 'happen', 'recover'].forEach((lemma) => {
+    assert.equal(filteredLemmas.includes(lemma), false, `${lemma} should be filtered as common vocabulary`);
+  });
+  assert.ok(filteredLemmas.includes('seismic'), 'B2+ vocabulary should remain in preview candidates');
+  assert.ok(filteredLemmas.includes('devastating'), 'news-relevant vocabulary should remain in preview candidates');
+  assert.ok(filteredLemmas.includes('slam into'), 'allowlisted news expressions should remain in preview candidates');
+  assert.ok(
+    lightweightFilterScan.candidates.some((candidate) => candidate.lemma === 'florida' && candidate.group === api.PREVIEW_SCAN_GROUPS.PROPER_NOUN),
+    'proper nouns should remain in a separate preview group'
+  );
 
   const template = api.buildPreviewAnnotationTemplate({
     context: scan.context,

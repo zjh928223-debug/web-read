@@ -54,7 +54,8 @@ async function main() {
   );
 
   const annotationImportUi = await page.evaluate(() => ({
-    hasLightweightButton: !!document.getElementById('btn-import-annotation-lightweight'),
+    hasLightweightExportButton: !!document.getElementById('btn-export-annotation-lightweight'),
+    hasLightweightImportButton: !!document.getElementById('btn-import-annotation-lightweight'),
     hasLightweightInput: !!document.getElementById('import-annotation-lightweight-file'),
     hasGeneratedButton: !!document.getElementById('btn-import-annotation-generated'),
     hasGeneratedInput: !!document.getElementById('import-annotation-generated-file'),
@@ -143,13 +144,6 @@ async function main() {
       wordStart: word ? word.dataset.wordStart : ''
     };
   });
-
-  const exportDownload = await Promise.all([
-    page.waitForEvent('download', { timeout: 10000 }),
-    page.click('#btn-export-annotation-lightweight')
-  ]).then(async ([download]) => ({
-    suggestedFilename: download.suggestedFilename()
-  }));
 
   await page.click('#hotkey-backward-input');
   const hotkeyWaitingUi = await page.evaluate(() => {
@@ -468,7 +462,8 @@ async function main() {
     targetUrl,
     ok: consoleErrors.length === 0
       && pageErrors.length === 0
-      && annotationImportUi.hasLightweightButton === true
+      && annotationImportUi.hasLightweightExportButton === false
+      && annotationImportUi.hasLightweightImportButton === false
       && annotationImportUi.hasLightweightInput === true
       && annotationImportUi.hasGeneratedButton === false
       && annotationImportUi.hasGeneratedInput === false
@@ -493,7 +488,6 @@ async function main() {
       && normalInteraction.time >= 1.9
       && normalInteraction.wordStart === '2'
       && normalInteraction.marked === true
-      && /_annotation_light\.json$/.test(exportDownload.suggestedFilename)
       && hotkeyCustomization.backwardInput === 'z'
       && hotkeyCustomization.storedBackwardKey === 'z'
       && hotkeyCustomization.legacyBackwardKey === null
@@ -571,7 +565,6 @@ async function main() {
     defaultHighlightUi,
     removedFeatureUi,
     normalInteraction,
-    exportDownload,
     hotkeyWaitingUi,
     hotkeySingleKeyCapture,
     hotkeyCustomization,

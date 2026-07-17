@@ -13,6 +13,7 @@ const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
 const sessionAnnotationRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
   contextSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
@@ -47,7 +48,6 @@ assert.equal(
   'main-app-area',
   'import-marks-btn',
   'export-json',
-  'btn-export-annotation-lightweight',
   'import-annotation-lightweight-file',
   'btn-preview-vocabulary',
   'btn-toggle-preview-vocabulary',
@@ -62,6 +62,14 @@ assert.equal(
     domRefsSource.includes(`doc.getElementById('${id}')`),
     `reader-dom-refs should own static DOM id: ${id}`
   );
+});
+
+[
+  'btn-export-annotation-lightweight',
+  'btn-import-annotation-lightweight'
+].forEach((id) => {
+  assert.equal(indexSource.includes(`id="${id}"`), false, `index should not render retired lightweight button: ${id}`);
+  assert.equal(domRefsSource.includes(`doc.getElementById('${id}')`), false, `reader-dom-refs should not collect retired lightweight button: ${id}`);
 });
 
 [

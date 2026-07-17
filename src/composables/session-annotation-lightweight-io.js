@@ -19,6 +19,14 @@ function sanitizeFilenamePart(value, fallback = 'article') {
   return normalized || fallback;
 }
 
+function excludePreviewGeneratedItems(items) {
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const source = String(item && (item.source || item.provider || item.source_type || item.sourceType) || '').trim();
+    const targetId = String(item && (item.targetId || item.target_id) || '').trim();
+    return source !== 'preview-scan' && !targetId.startsWith('preview-');
+  });
+}
+
 export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
   function getManualLightweightAnnotationImportNormalizationDeps() {
     return {
@@ -114,7 +122,9 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     );
     await storage.saveBundle(scope, normalized.generated, normalized.status);
     await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')();
-    requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(normalized.generated && normalized.generated.items, {
+    requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems(
+      normalized.generated && normalized.generated.items
+    ), {
       sourceType: 'annotation-lightweight-import',
       replaceExisting: options.replaceExisting !== false
     });

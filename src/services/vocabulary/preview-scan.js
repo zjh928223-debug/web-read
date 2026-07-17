@@ -19,17 +19,33 @@ export const DEFAULT_PREVIEW_SCAN_MAX_OCCURRENCES_PER_LEMMA = 3;
 const BASIC_WORDS = new Set(`
 a about above across after again against all almost alone along already also although always am among an and another any anybody anyone
 anything are area areas around as ask asked asking at away back be became because become becomes been before began behind being best better
-between big both but by came can cannot case certain certainly change children come common could course day days did different do does done
+between big both bus but by came can cannot car case certain certainly change children come common could course day days did different do does done
 down during each early end enough even ever every everything example few find first for found from full further gave get gets give given
-go goes going good got great group had hand hard has have he head help her here high him his how however i if important in into is it its
+go goes going good got great group had hand hard has have he head help her here high him his how however hour i if important in into is it its
 itself just keep kind knew know known large last later least less let like likely line little long look made make makes man many may me mean
 means men might more most much must my need never new next no non not now number of off often old on once one only or other others our out
 over own part people place point possible present problem put quite rather really right said same saw say says second see seem seemed seems
 seen set several she should show small so some something still such sure take taken than that the their them then there these they thing
-things think this those though through time to together too took toward turn under until up upon us use used using very want wanted was way
+things think this those though three through time to together too took toward turn under until up upon us use used using very video want wanted was way
 we well went were what when where whether which while who whole why will with within without word words work world would year years yet you
-your
+your according bay edition following happen immediate inside moment recover situation sun
 `.trim().split(/\s+/));
+
+const FIXED_EXPRESSIONS = Object.freeze([
+  'slam into',
+  'crash into',
+  'collide with',
+  'plow into',
+  'ram into',
+]);
+const FIXED_EXPRESSION_PARTS = new Set(FIXED_EXPRESSIONS.flatMap((expression) => expression.split(' ')));
+
+const CONTRACTION_BASES = Object.freeze({
+  "can't": 'can',
+  cannot: 'can',
+  "won't": 'will',
+  "shan't": 'shall',
+});
 
 function getWordText(word) {
   return normalizeText(word && (word.word || word.text));
@@ -57,8 +73,37 @@ function stripBoundaryPunctuation(value) {
 
 export function normalizePreviewToken(value) {
   return stripBoundaryPunctuation(value)
-    .replace(/['’]s$/i, '')
+    .replace(/[’‘]/g, "'")
     .toLowerCase();
+}
+
+function stripDoubledFinalConsonant(value) {
+  if (!/([b-df-hj-np-tv-z])\1$/.test(value)) return value;
+  return value.slice(0, -1);
+}
+
+function derivePreviewLemma(value) {
+  const token = normalizePreviewToken(value);
+  if (!token) return '';
+  if (CONTRACTION_BASES[token]) return CONTRACTION_BASES[token];
+  if (/n't$/.test(token)) return token.slice(0, -3);
+  if (/'(?:ll|re|ve|d|m|s)$/.test(token)) return token.replace(/'(?:ll|re|ve|d|m|s)$/, '');
+  if (!/^[a-z]+$/.test(token) || token.length <= 3) return token;
+  if (/ies$/.test(token) && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (/(?:sses|shes|ches|xes|zes)$/.test(token)) return token.slice(0, -2);
+  if (/ing$/.test(token) && token.length > 5) return stripDoubledFinalConsonant(token.slice(0, -3));
+  if (/ied$/.test(token) && token.length > 4) return `${token.slice(0, -3)}y`;
+  if (/ed$/.test(token) && token.length > 4) return stripDoubledFinalConsonant(token.slice(0, -2));
+  if (/s$/.test(token) && !/(?:ss|us|is)$/.test(token) && token.length > 3) return token.slice(0, -1);
+  return token;
+}
+
+function getPreviewAggregationLemma(value) {
+  const token = normalizePreviewToken(value);
+  const derived = derivePreviewLemma(value);
+  if (!token || !derived) return '';
+  if (BASIC_WORDS.has(derived) || FIXED_EXPRESSION_PARTS.has(derived) || token.includes("'")) return derived;
+  return token;
 }
 
 function isEnglishWord(value) {
@@ -137,7 +182,7 @@ function buildGeneratedPreviewLookup(items = []) {
   const lookup = new Map();
   (Array.isArray(items) ? items : []).forEach((item) => {
     if (!isPreviewGeneratedItem(item)) return;
-    const lemma = normalizePreviewToken(item.markedText || item.marked_text || item.word || item.text);
+    const lemma = getPreviewAggregationLemma(item.markedText || item.marked_text || item.word || item.text);
     if (!lemma) return;
     if (!lookup.has(lemma)) lookup.set(lemma, []);
     lookup.get(lemma).push(item);
@@ -158,14 +203,22 @@ function isMarkedWord(globalIndex, markedMap) {
 
 function aggregatePreviewTokens(context, options = {}) {
   const markedMap = options.markedMap instanceof Map ? options.markedMap : new Map();
+  const skippedGlobalIndexes = options.skippedGlobalIndexes instanceof Set ? options.skippedGlobalIndexes : new Set();
   const byLemma = new Map();
   context.blocks.forEach((block, blockIndex) => {
     const words = Array.isArray(block.words) ? block.words : [];
     words.forEach((word, localIndex) => {
       const text = getWordText(word);
-      const lemma = normalizePreviewToken(text);
+      const normalizedToken = normalizePreviewToken(text);
+      const lemma = getPreviewAggregationLemma(text);
       const globalIndex = toInteger(word && word.globalIndex) ?? localIndex;
-      if (!lemma || !isEnglishWord(lemma) || isBasicWord(lemma) || isMarkedWord(globalIndex, markedMap)) return;
+      if (
+        !lemma
+        || !isEnglishWord(normalizedToken)
+        || isBasicWord(lemma)
+        || isMarkedWord(globalIndex, markedMap)
+        || skippedGlobalIndexes.has(globalIndex)
+      ) return;
       if (!byLemma.has(lemma)) {
         byLemma.set(lemma, {
           lemma,
@@ -175,13 +228,18 @@ function aggregatePreviewTokens(context, options = {}) {
           firstBlockIndex: blockIndex,
           firstGlobalIndex: globalIndex,
           titleCaseCount: 0,
+          titleCaseNonInitialCount: 0,
           lowerCaseCount: 0,
+          tokenCount: 1,
           occurrences: [],
         });
       }
       const entry = byLemma.get(lemma);
       entry.frequency += 1;
-      if (/^[A-Z][a-z]+/.test(text)) entry.titleCaseCount += 1;
+      if (/^[A-Z][a-z]+/.test(text)) {
+        entry.titleCaseCount += 1;
+        if (localIndex > 0) entry.titleCaseNonInitialCount += 1;
+      }
       if (/^[a-z]/.test(text)) entry.lowerCaseCount += 1;
       entry.occurrences.push({
         text,
@@ -196,17 +254,75 @@ function aggregatePreviewTokens(context, options = {}) {
   return Array.from(byLemma.values());
 }
 
+function aggregatePreviewPhrases(context, options = {}) {
+  const markedMap = options.markedMap instanceof Map ? options.markedMap : new Map();
+  const phrases = FIXED_EXPRESSIONS.map((expression) => ({
+    expression,
+    parts: expression.split(' '),
+  }));
+  const byLemma = new Map();
+  const claimedGlobalIndexes = new Set();
+
+  context.blocks.forEach((block, blockIndex) => {
+    const words = Array.isArray(block.words) ? block.words : [];
+    const normalizedWords = words.map((word) => derivePreviewLemma(getWordText(word)));
+    phrases.forEach(({ expression, parts }) => {
+      for (let localIndex = 0; localIndex <= words.length - parts.length; localIndex += 1) {
+        if (!parts.every((part, offset) => normalizedWords[localIndex + offset] === part)) continue;
+        const phraseWords = words.slice(localIndex, localIndex + parts.length);
+        const globalIndexes = phraseWords.map((word, offset) => toInteger(word && word.globalIndex) ?? localIndex + offset);
+        if (globalIndexes.some((index) => isMarkedWord(index, markedMap))) continue;
+        const markedText = phraseWords.map(getWordText).join(' ');
+        if (!byLemma.has(expression)) {
+          byLemma.set(expression, {
+            lemma: expression,
+            word: expression,
+            markedText,
+            frequency: 0,
+            firstBlockIndex: blockIndex,
+            firstGlobalIndex: globalIndexes[0],
+            titleCaseCount: 0,
+            titleCaseNonInitialCount: 0,
+            lowerCaseCount: 1,
+            tokenCount: parts.length,
+            occurrences: [],
+          });
+        }
+        const entry = byLemma.get(expression);
+        entry.frequency += 1;
+        entry.occurrences.push({
+          text: markedText,
+          blockId: block.id,
+          blockIndex,
+          sentence: block.text,
+          globalIndex: globalIndexes[0],
+          globalEndIndex: globalIndexes[globalIndexes.length - 1],
+          localIndex,
+        });
+        globalIndexes.forEach((index) => claimedGlobalIndexes.add(index));
+      }
+    });
+  });
+
+  return {
+    entries: Array.from(byLemma.values()),
+    claimedGlobalIndexes,
+  };
+}
+
 function scorePreviewEntry(entry) {
-  const lengthScore = Math.min(12, entry.lemma.length) * 0.35;
-  const frequencyScore = Math.min(5, entry.frequency) * 2.8;
-  const earlyScore = entry.firstBlockIndex <= 2 ? 2 : (entry.firstBlockIndex <= 5 ? 1 : 0);
+  const lengthScore = Math.min(12, entry.lemma.length) * 0.55;
+  const frequencyScore = Math.min(5, entry.frequency) * 0.8;
+  const earlyScore = entry.firstBlockIndex <= 2 ? 1.5 : (entry.firstBlockIndex <= 5 ? 0.75 : 0);
   const properNounScore = isLikelyProperNoun(entry) ? 1.2 : 0;
-  return frequencyScore + lengthScore + earlyScore + properNounScore;
+  const phraseScore = entry.tokenCount > 1 ? 4 : 0;
+  return frequencyScore + lengthScore + earlyScore + properNounScore + phraseScore;
 }
 
 function isLikelyProperNoun(entry) {
   if (!entry) return false;
   if (entry.titleCaseCount <= 0) return false;
+  if (entry.titleCaseNonInitialCount <= 0) return false;
   if (entry.lowerCaseCount > 0) return false;
   return entry.lemma.length > 2;
 }
@@ -226,17 +342,17 @@ function toPreviewCandidate(entry, context, options = {}) {
     lemma: entry.lemma,
     markedText: entry.markedText,
     marked_text: entry.markedText,
-    entry_type: VOCABULARY_ENTRY_TYPES.WORD,
+    entry_type: entry.tokenCount > 1 ? VOCABULARY_ENTRY_TYPES.PHRASE : VOCABULARY_ENTRY_TYPES.WORD,
     language: normalizeLanguage(options.language),
     frequency: entry.frequency,
     score: scorePreviewEntry(entry),
-    token_count: 1,
+    token_count: entry.tokenCount || 1,
     blockId: normalizeText(occurrence.blockId),
     sourceSentence: normalizeText(occurrence.sentence),
     sentenceBefore: '',
     sentenceAfter: '',
     occurrenceGlobalStart: occurrence.globalIndex,
-    occurrenceGlobalEnd: occurrence.globalIndex,
+    occurrenceGlobalEnd: toInteger(occurrence.globalEndIndex) ?? occurrence.globalIndex,
     occurrenceKey: createOccurrenceKey(occurrence.blockId, occurrence.globalIndex),
     occurrences: entry.occurrences.slice(0, DEFAULT_PREVIEW_SCAN_MAX_OCCURRENCES_PER_LEMMA),
     context: {
@@ -255,7 +371,14 @@ export async function buildPreviewScan(options = {}) {
   const generatedLookup = buildGeneratedPreviewLookup(options.generatedItems || options.generated_items || []);
   const targetCount = Math.max(1, Number(options.targetCount || DEFAULT_PREVIEW_SCAN_TARGET_COUNT));
   const maxCount = Math.max(targetCount, Number(options.maxCount || DEFAULT_PREVIEW_SCAN_MAX_COUNT));
-  const rawEntries = aggregatePreviewTokens(context, options)
+  const phraseAggregation = aggregatePreviewPhrases(context, options);
+  const rawEntries = [
+    ...phraseAggregation.entries,
+    ...aggregatePreviewTokens(context, {
+      ...options,
+      skippedGlobalIndexes: phraseAggregation.claimedGlobalIndexes,
+    }),
+  ]
     .map((entry) => ({ ...entry, score: scorePreviewEntry(entry) }))
     .sort((left, right) => right.score - left.score || right.frequency - left.frequency || left.lemma.localeCompare(right.lemma));
 
@@ -340,7 +463,11 @@ export function buildPreviewGeneratedItemsFromResult(options = {}) {
       blockId: candidate.blockId || 'preview-scan',
       markedText: normalizeText(item.markedText || candidate.markedText || candidate.lemma),
       boundary: normalizeText(item.boundary || candidate.markedText || candidate.lemma),
-      type: normalizeText(item.type || (candidate.is_proper_noun ? 'proper noun' : 'word')),
+      type: normalizeText(item.type || (
+        candidate.is_proper_noun
+          ? 'proper noun'
+          : (candidate.entry_type === VOCABULARY_ENTRY_TYPES.PHRASE ? 'phrase' : 'word')
+      )),
       meaning: normalizeText(item.meaning || item.explanation || item.definition),
       simpleMeaning,
       simple_meaning: simpleMeaning,

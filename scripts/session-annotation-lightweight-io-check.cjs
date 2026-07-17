@@ -39,6 +39,14 @@ async function main() {
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `lightweight IO module should contain ${pattern}`);
   });
+  assert.ok(
+    moduleSource.includes('function excludePreviewGeneratedItems(items)'),
+    'lightweight import should define the preview-item boundary'
+  );
+  assert.ok(
+    moduleSource.includes("'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems("),
+    'lightweight import should not rebuild reader marks from preview-scan items'
+  );
   ['window.', 'document.', 'localStorage'].forEach((pattern) => {
     assert.equal(moduleSource.includes(pattern), false, `lightweight IO module should use injected browser APIs, not ${pattern}`);
   });
