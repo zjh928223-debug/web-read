@@ -13,11 +13,11 @@ function toEntry(row) {
     definition: row.definition ?? null,
     translation: row.translation ?? null,
     pos: row.pos ?? null,
-    collins: row.collins ?? null,
+    collins: row.collins > 0 ? row.collins : null,
     oxford: Boolean(row.oxford),
     tags: row.tag ? row.tag.trim().split(/\s+/).filter(Boolean) : [],
-    bncRank: row.bnc ?? null,
-    frequencyRank: row.frq ?? null,
+    bncRank: row.bnc > 0 ? row.bnc : null,
+    frequencyRank: row.frq > 0 ? row.frq : null,
     exchange: row.exchange ?? null,
   };
 }

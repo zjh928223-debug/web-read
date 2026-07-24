@@ -107,6 +107,11 @@
     "verify:production-preview": "node scripts/production-preview-load-check.cjs",
     "verify:read26": "npm run verify:vite",
     "verify:vite": "node scripts/vite-verify.js",
+    "dictionary:build": "python src/dictionary/ecdict/scripts/build-ecdict-database.py",
+    "dictionary:lookup": "node --disable-warning=ExperimentalWarning scripts/ecdict-lookup.mjs",
+    "dictionary:test": "node --disable-warning=ExperimentalWarning --test src/dictionary/ecdict/tests/*.test.mjs",
+    "dictionary:benchmark": "node --disable-warning=ExperimentalWarning scripts/ecdict-benchmark.mjs",
+    "dictionary:clean": "node scripts/ecdict-clean.mjs",
     "test": "npm run verify:vite"
   },
   "keywords": [],

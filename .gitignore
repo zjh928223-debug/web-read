@@ -20,3 +20,4 @@ dist/
 vite-*.txt
 .vite-dev.*.log
 src/features/srs-review/srs-review.sample.local.json
+/data/dictionaries/

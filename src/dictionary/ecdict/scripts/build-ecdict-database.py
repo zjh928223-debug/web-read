@@ -139,6 +139,8 @@ def build_database(csv_path: Path, lemma_path: Path, database_path: Path) -> dic
     csv_path = csv_path.resolve(strict=True)
     lemma_path = lemma_path.resolve(strict=True)
     database_path = database_path.resolve()
+    if database_path in (csv_path, lemma_path):
+        raise ValueError("database output must not overwrite an ECDICT source file")
     database_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = database_path.with_name(f".{database_path.name}.{os.getpid()}.tmp")
     if temporary_path.exists():

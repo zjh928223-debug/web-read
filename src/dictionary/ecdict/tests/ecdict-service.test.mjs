@@ -140,6 +140,19 @@ test('handles the required word, phrase, empty, punctuation, and missing cases',
     (await service.lookup('longtime')).normalizedCandidates.map(({ word }) => word),
     ['long time', 'long-time'],
   );
+  for (const [form, lemma] of [
+    ['left', 'leave'],
+    ['saw', 'see'],
+    ['found', 'find'],
+  ]) {
+    const ambiguous = await service.lookup(form);
+    assert.equal(ambiguous.directMatch.word, form);
+    assert.ok(ambiguous.lemmaCandidates.some((candidate) => candidate.lemma === lemma));
+  }
+  const missingPhrase = await service.lookup('take for granted');
+  assert.equal(missingPhrase.directMatch, null);
+  assert.deepEqual(missingPhrase.normalizedCandidates, []);
+  assert.deepEqual(missingPhrase.lemmaCandidates, []);
   service.close();
 });
 
@@ -172,4 +185,19 @@ test('stays lazy while disabled and isolates unavailable or corrupt databases', 
     (await corrupt.lookup('look')).errorCode,
     'ECDICT_DATABASE_INVALID',
   );
+
+  const failing = createEcdictService({
+    enabled: true,
+    databasePath,
+    repositoryFactory() {
+      return {
+        findExact() {
+          throw new Error('synthetic query failure');
+        },
+        close() {},
+      };
+    },
+  });
+  assert.equal((await failing.lookup('look')).errorCode, 'ECDICT_QUERY_FAILED');
+  failing.close();
 });
