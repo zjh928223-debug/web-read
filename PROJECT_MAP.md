@@ -5,6 +5,7 @@
 ```text
 read-web/
 ├── index.html                         # Vite-served browser entry and legacy DOM shell
+├── srs-review.html                    # Standalone in-memory SRS review entry
 ├── src/composables/reader-runtime.js  # Thin runtime entry, about 28 lines
 ├── src/composables/reader-runtime-assembly.js # Remaining runtime assembly, about 51 lines
 ├── src/composables/session-init.js    # Thin session entry, about 7 lines
@@ -51,7 +52,13 @@ Cleanup rules:
 ```text
 src/
 ├── main.js
+├── srs-review-main.js                 # Standalone sample + in-memory repository mount
 ├── App.vue
+├── features/srs-review/
+│   ├── SrsReviewPage.vue              # Shared standalone/overlay review screen
+│   ├── useSrsReview.js                # Fixed due queue and guarded rating flow
+│   ├── srs-review-context.js          # Text context, transcript match, and audio fallback
+│   └── srs-review.css                 # Balanced two-column and narrow-screen layout
 ├── components/
 │   ├── ToastMessage.vue
 │   ├── TranscriptContainer.vue
@@ -202,11 +209,50 @@ ToastMessage.vue          # reactive toast
 
 Legacy DOM and module-bound compatibility handlers still exist and must remain compatible until the migration is completed.
 
+`App.vue` teleports the `今日复习` entry into `#srs-review-entry-root` and opens
+the shared `SrsReviewPage.vue` as a full-screen overlay using the default
+IndexedDB-backed vocabulary service. `srs-review.html` mounts the same component
+with a gitignored local snapshot and `createInMemoryVocabularyRepository()`, so
+standalone development never writes `vocabulary.srs.store.v1`.
+
+`useSrsReview.js` uses the local end-of-day cutoff and existing vocabulary
+`reviewLogs` to keep the daily total stable across reopenings. The page exposes
+those same logs through a compact date-grouped `复习记录` popover; the IndexedDB
+schema remains unchanged.
+
+The review action row exposes five levels (`1-5`). `reviewWordKnown()` handles
+the fifth `掌握` action atomically so its easy review log and known-state
+schedule cannot be split by a partial write.
+
+`SrsReviewPage.vue` renders `simple_meaning` before contextual meanings, owns
+the globally captured `R` word/source reread shortcut and invisible Space pause
+behavior, and wires arrow controls to the `viewIndex` history cursor in
+`useSrsReview.js`. Left-context words seek their transcript word timestamp or
+fall back to reading the remaining sentence, while retaining plain-text styling
+with a slight hover scale. The replay keycap edits a case-insensitive shortcut
+stored in localStorage. Context meanings and optional dictionary/general
+meanings remain separate. The reread control is a low-emphasis utility at the
+word-panel edge. Historical cards remain read-only while the scoring `index`
+continues to identify the next active card.
+
+`srs-review-meanings.js` batches review words missing a general meaning through
+the local `/api/dictionary/general-meanings` endpoint. That service combines
+Merriam-Webster Collegiate definitions with one Gemini batch translation, then
+`vocabulary-service.js` persists `general_meaning`, `dictionary_definition`,
+`dictionary_source`, and `dictionary_fetched_at` in the existing vocabulary
+snapshot. No IndexedDB schema migration is involved.
+
+Merriam parsing follows exact spelling cross-references and filters
+geographical/biographical names. The versioned dictionary source refreshes old
+parser results without touching manual meanings. The word panel renders general
+meanings as primary black text and contextual meanings as secondary gray text.
+
 ## Verification
 
 ```text
 npm run build        # Vite production build
 npm run verify:vite  # Vite dev server + Playwright load check
+npm run verify:srs-review # SRS due queue, ratings, duplicate guard, retry, states, fallback
 npm run verify:chunk-notes-state # Focused chunk note state helper check
 npm run verify:chunk-state # Focused chunk state adapter check
 npm run verify:cloze-state # Focused cloze state adapter check

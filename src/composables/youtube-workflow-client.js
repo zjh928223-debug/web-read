@@ -140,8 +140,11 @@ export function createYoutubeWorkflowClient(options = {}) {
     async getSession(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/session`)))
     },
-    async getFile(jobId, kind) {
-      const response = await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`))
+    async getFile(jobId, kind, options = {}) {
+      const response = await fetchImpl(
+        apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`),
+        options.signal ? { signal: options.signal } : undefined,
+      )
       if (!response.ok) throw new Error(`Unable to fetch ${kind}: ${response.status}`)
       return response.blob()
     },

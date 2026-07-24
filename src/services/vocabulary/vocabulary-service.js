@@ -46,6 +46,10 @@ export function createVocabularyService(options = {}) {
           language,
           phonetic: normalizeNullableText(input.phonetic),
           meaning: initialMeaning,
+          general_meaning: normalizeNullableText(input.general_meaning || input.generalMeaning),
+          dictionary_definition: normalizeNullableText(input.dictionary_definition || input.dictionaryDefinition),
+          dictionary_source: normalizeNullableText(input.dictionary_source || input.dictionarySource),
+          dictionary_fetched_at: null,
           note: normalizeNullableText(input.note),
           status: WORD_STATUSES.NEW,
           tags: normalizeVocabularyTags(input.tags),
@@ -71,6 +75,12 @@ export function createVocabularyService(options = {}) {
     return repository.getContextsForWord(wordId);
   }
 
+  async function getReviewLogs() {
+    if (typeof repository.getReviewLogs !== 'function') return [];
+    const logs = await repository.getReviewLogs();
+    return logs.sort((left, right) => compareIsoAsc(right.reviewed_at, left.reviewed_at));
+  }
+
   async function getDueWords(now) {
     const nowIso = toIsoString(now || nowProvider());
     const snapshot = await repository.loadSnapshot();
@@ -94,6 +104,14 @@ export function createVocabularyService(options = {}) {
 
   async function reviewWord(wordId, rating, reviewedAt) {
     assertValidRating(rating);
+    return commitReview(wordId, rating, reviewedAt, false);
+  }
+
+  async function reviewWordKnown(wordId, reviewedAt) {
+    return commitReview(wordId, REVIEW_RATINGS.EASY, reviewedAt, true);
+  }
+
+  async function commitReview(wordId, rating, reviewedAt, markKnown) {
     const reviewedAtIso = toIsoString(reviewedAt || nowProvider());
     return repository.updateSnapshot((snapshot) => {
       const word = findWordOrThrow(snapshot, wordId);
@@ -103,10 +121,14 @@ export function createVocabularyService(options = {}) {
       const currentState = ensureReviewState(snapshot, word, word.created_at, scheduler);
       const beforeState = cloneVocabularyValue(currentState);
       const scheduled = scheduler.schedule(currentState, rating, reviewedAtIso);
-      const afterState = scheduled.reviewState;
+      const afterState = markKnown
+        ? scheduler.createKnownReviewState(scheduled.reviewState, reviewedAtIso)
+        : scheduled.reviewState;
       replaceReviewState(snapshot, afterState);
 
-      word.status = resolveReviewedWordStatus(word.status, rating, afterState);
+      word.status = markKnown
+        ? WORD_STATUSES.KNOWN
+        : resolveReviewedWordStatus(word.status, rating, afterState);
       word.updated_at = reviewedAtIso;
 
       const reviewLog = {
@@ -171,15 +193,49 @@ export function createVocabularyService(options = {}) {
     });
   }
 
+  async function cacheGeneralMeanings(items, cachedAt) {
+    const cachedAtIso = toIsoString(cachedAt || nowProvider());
+    const updates = new Map(
+      (Array.isArray(items) ? items : [])
+        .map((item) => [
+          normalizeText(item?.word_id || item?.wordId),
+          {
+            generalMeaning: normalizeNullableText(item?.general_meaning || item?.generalMeaning),
+            dictionaryDefinition: normalizeNullableText(item?.dictionary_definition || item?.dictionaryDefinition),
+            dictionarySource: normalizeNullableText(item?.dictionary_source || item?.dictionarySource),
+          },
+        ])
+        .filter(([wordId, value]) => wordId && value.generalMeaning),
+    );
+    if (!updates.size) return [];
+    return repository.updateSnapshot((snapshot) => {
+      const changed = [];
+      snapshot.words.forEach((word) => {
+        const update = updates.get(word.id);
+        if (!update) return;
+        word.general_meaning = update.generalMeaning;
+        word.dictionary_definition = update.dictionaryDefinition;
+        word.dictionary_source = update.dictionarySource;
+        word.dictionary_fetched_at = cachedAtIso;
+        word.updated_at = cachedAtIso;
+        changed.push(word);
+      });
+      return changed;
+    });
+  }
+
   return {
     addWord,
     getWordByLemma,
     getContextsForWord,
+    getReviewLogs,
     getDueWords,
     reviewWord,
+    reviewWordKnown,
     markWordKnown,
     ignoreWord,
     relearnWord,
+    cacheGeneralMeanings,
   };
 }
 

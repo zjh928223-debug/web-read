@@ -132,6 +132,11 @@ export function createVocabularyRepository(storage) {
       .map(cloneVocabularyValue);
   }
 
+  async function getReviewLogs() {
+    const snapshot = await loadSnapshot();
+    return snapshot.reviewLogs.map(cloneVocabularyValue);
+  }
+
   return {
     loadSnapshot,
     saveSnapshot,
@@ -140,6 +145,7 @@ export function createVocabularyRepository(storage) {
     getWord,
     getReviewState,
     getContextsForWord,
+    getReviewLogs,
     getReviewLogsForWord,
   };
 }

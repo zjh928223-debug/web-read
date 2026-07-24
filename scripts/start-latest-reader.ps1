@@ -8,7 +8,7 @@ param(
   [string]$ServiceHealthUrl = "http://127.0.0.1:8765/api/health",
   [string]$ReaderUrl = "http://127.0.0.1:5173",
   [string]$PythonPath = "C:\Users\0\AppData\Local\Programs\Python\Python310\python.exe",
-  [string]$RequiredServiceVersion = "0.2.2",
+  [string]$RequiredServiceVersion = "0.2.3",
   [int]$StartupTimeoutSeconds = 45
 )
 

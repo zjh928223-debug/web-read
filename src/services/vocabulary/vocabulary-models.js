@@ -158,6 +158,12 @@ function normalizeStoredWord(word) {
     language: normalizeLanguage(word.language),
     phonetic: normalizeNullableText(word.phonetic),
     meaning: normalizeNullableText(word.meaning),
+    general_meaning: normalizeNullableText(word.general_meaning || word.generalMeaning),
+    dictionary_definition: normalizeNullableText(word.dictionary_definition || word.dictionaryDefinition),
+    dictionary_source: normalizeNullableText(word.dictionary_source || word.dictionarySource),
+    dictionary_fetched_at: word.dictionary_fetched_at || word.dictionaryFetchedAt
+      ? toIsoString(word.dictionary_fetched_at || word.dictionaryFetchedAt)
+      : null,
     note: normalizeNullableText(word.note),
     status: VALID_WORD_STATUSES.has(word.status) ? word.status : WORD_STATUSES.NEW,
     tags: normalizeVocabularyTags(word.tags),

@@ -6,6 +6,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 __tmp_*
+.tmp-srs-review-*/
+.tmp-empty-srs-cleanup/
 .tmp-annotation-backfill-*/
 node_modules/
 .playwright-artifacts/
@@ -17,3 +19,4 @@ output/playwright/*.json
 dist/
 vite-*.txt
 .vite-dev.*.log
+src/features/srs-review/srs-review.sample.local.json

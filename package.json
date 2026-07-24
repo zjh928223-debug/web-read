@@ -14,6 +14,7 @@
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",
     "verify:vocabulary-srs": "node scripts/vocabulary-srs-service-check.cjs",
     "verify:vocabulary-preview": "node scripts/vocabulary-preview-service-check.cjs",
+    "verify:srs-review": "node scripts/srs-review-check.cjs",
     "verify:annotation-lightweight-module": "node scripts/annotation-lightweight-module-check.cjs",
     "verify:annotation-backfill-ai": "node scripts/annotation-backfill-ai-module-check.cjs",
     "verify:keyboard-boundary": "node scripts/keyboard-module-boundary-check.cjs",

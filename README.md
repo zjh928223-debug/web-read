@@ -52,6 +52,7 @@ npm run build
 Useful URLs:
 
 - Dev server: `http://127.0.0.1:5173/`
+- Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 
 ## Scripts
@@ -61,6 +62,7 @@ npm run dev          # Vite dev server
 npm run build        # Vite production build
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
+npm run verify:srs-review # Standalone/live SRS review queue, rating, retry, and fallback check
 npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
 npm run verify:keyboard-boundary # Focused keyboard boundary helper check
 npm run verify:transcript-state # Focused transcript state adapter check
@@ -167,6 +169,8 @@ annotation-api-settings-ui.js
 src/
 |-- main.js                    # Vue mount + Pinia adapter binding
 |-- App.vue                    # Root component
+|-- srs-review-main.js         # Standalone in-memory SRS review entry
+|-- features/srs-review/       # Shared review page, queue, context/audio, and CSS
 |-- components/                # 5 Vue components
 |-- pinia-stores/              # 9 real Pinia stores
 |-- stores/                    # 9 legacy window compatibility stores
@@ -185,6 +189,56 @@ Version: 1
 Store: files
 Key path: id
 ```
+
+The vocabulary SRS snapshot remains in that existing store under
+`vocabulary.srs.store.v1`. The reader's `今日复习` overlay uses the normal
+IndexedDB-backed vocabulary service. The standalone `/srs-review.html` entry
+instead loads `src/features/srs-review/srs-review.sample.local.json` through an
+in-memory repository; that personal snapshot is gitignored and standalone
+ratings are discarded on reload.
+
+The live review page builds a stable local-day queue and combines remaining
+items with that day's existing `reviewLogs`, so reopening the page does not
+shrink the displayed daily total. Its `复习记录` popover groups the existing
+logs by local date and counts unique words; no additional store or DB migration
+is used.
+
+Review ratings use five visible levels with keyboard shortcuts `1-5`:
+`忘记`, `困难`, `一般`, `容易`, and `掌握`. The first four map to the native
+FSRS ratings; `掌握` records an easy review and atomically moves the word to
+the known schedule.
+
+The word panel prefers the concise context `simple_meaning` and omits the old
+hint row. Previous/next controls (also arrow keys) provide read-only review of
+completed cards without creating duplicate ratings. `R 重读单词和原句` starts
+the word/source sequence from the beginning by button or globally captured `R`.
+Space globally and silently pauses or resumes active review audio without
+adding pause UI. Every English word in the left context is clickable: timed
+transcripts seek the original audio to that word, while text-only contexts use
+an American system voice for the remaining sentence.
+
+Context words keep a plain-text appearance and only scale slightly on hover.
+The replay keycap can capture and persist a replacement single-character
+shortcut; letter matching is case-insensitive, while Space and `1-5` remain
+reserved. The low-emphasis reread control sits at the lower-right edge of the
+word panel instead of mixing with the word and meanings. Stored SRS meanings
+are labeled as contextual.
+
+When review opens, `srs-review-meanings.js` sends only words missing a
+`general_meaning` to the local workflow service in batches of at most 50. The
+service reads Merriam-Webster Collegiate `shortdef` values, translates the
+batch into concise Chinese with the saved Gemini credential, and returns both
+the English definition and Chinese general meaning. The vocabulary service
+writes these fields back into the existing `vocabulary.srs.store.v1` snapshot,
+so future review sessions reuse them without another dictionary request. This
+adds fields inside the existing row content and does not change IndexedDB
+version or object stores.
+
+Dictionary parsing follows spelling cross-references such as `centre -> center`
+and rejects geographical or biographical name entries. Versioned
+`dictionary_source` values invalidate only older Merriam/Gemini results.
+General meanings use primary black text; contextual meanings use muted gray
+text.
 
 Do not change this schema without an explicit migration plan.
 
