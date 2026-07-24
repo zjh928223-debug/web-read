@@ -1,5 +1,6 @@
 import json
 import io
+import hashlib
 import importlib.metadata
 import platform
 import subprocess
@@ -8,10 +9,12 @@ import threading
 import time
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.request import urlopen
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,8 +42,10 @@ from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore
 
 
-SERVICE_VERSION = "0.2.2"
+SERVICE_VERSION = "0.2.3"
 VIDEO_PROBE_CACHE_NAME = "video-probe-cache.json"
+DEFAULT_EDGE_TTS_VOICE = "en-US-AvaNeural"
+MERRIAM_GENERAL_MEANING_SOURCE = "merriam-webster-collegiate+gemini:v2"
 TERMINAL_STATUSES = {"ready", "failed", "canceled"}
 ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "validating", "ready", "failed", "canceled"}
 AUDIO_EXTENSIONS = {
@@ -111,6 +116,103 @@ def default_annotation_backfill_requester(cache_dir, model_name, system_prompt, 
         log_func=log_func,
         log_prefix=log_prefix,
     )
+
+
+def default_merriam_requester(word: str, api_key: str):
+    url = (
+        "https://www.dictionaryapi.com/api/v3/references/collegiate/json/"
+        f"{quote(word, safe='')}?key={quote(api_key, safe='')}"
+    )
+    with urlopen(url, timeout=8) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def default_edge_tts_requester(text: str, voice: str, output_path: Path) -> None:
+    import edge_tts
+
+    edge_tts.Communicate(text, voice, rate="-5%").save_sync(str(output_path))
+
+
+def build_merriam_audio_url(entries) -> str:
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        pronunciations = ((entry.get("hwi") or {}).get("prs") or [])
+        for pronunciation in pronunciations:
+            audio_id = str((((pronunciation or {}).get("sound") or {}).get("audio")) or "").strip()
+            if not audio_id:
+                continue
+            lowered = audio_id.lower()
+            if lowered.startswith("bix"):
+                subdirectory = "bix"
+            elif lowered.startswith("gg"):
+                subdirectory = "gg"
+            elif not audio_id[0].isalnum():
+                subdirectory = "number"
+            else:
+                subdirectory = lowered[0]
+            return (
+                "https://media.merriam-webster.com/audio/prons/en/us/mp3/"
+                f"{subdirectory}/{quote(audio_id, safe='')}.mp3"
+            )
+    return ""
+
+
+def build_merriam_definition(entries, lookup: str = "") -> str:
+    normalized_lookup = " ".join(str(lookup or "").split()).lower()
+    candidates = [
+        entry
+        for entry in entries if isinstance(entries, list)
+        if isinstance(entry, dict)
+        and (not normalized_lookup or merriam_entry_matches(entry, normalized_lookup))
+    ]
+    for entry in candidates:
+        functional_label = str(entry.get("fl") or "").strip().lower()
+        if "geographical name" in functional_label or "biographical name" in functional_label:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        short_definitions = entry.get("shortdef")
+        if not isinstance(short_definitions, list):
+            continue
+        definition = " ".join(str(value or "").strip() for value in short_definitions[:3]).strip()
+        if definition:
+            return definition
+    return ""
+
+
+def build_merriam_cross_reference(entries, lookup: str) -> str:
+    normalized_lookup = " ".join(str(lookup or "").split()).lower()
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or not merriam_entry_matches(entry, normalized_lookup):
+            continue
+        for cross_reference in entry.get("cxs") if isinstance(entry.get("cxs"), list) else []:
+            targets = cross_reference.get("cxtis") if isinstance(cross_reference, dict) else []
+            for target in targets if isinstance(targets, list) else []:
+                value = " ".join(str((target or {}).get("cxt") or "").replace("*", "").split()).lower()
+                if value and value != normalized_lookup:
+                    return value
+    return ""
+
+
+def merriam_entry_matches(entry: dict, lookup: str) -> bool:
+    meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
+    entry_id = str(meta.get("id") or "").split(":", 1)[0].strip().lower()
+    stems = {
+        " ".join(str(value or "").split()).lower()
+        for value in (meta.get("stems") if isinstance(meta.get("stems"), list) else [])
+    }
+    headword = " ".join(str(((entry.get("hwi") or {}).get("hw")) or "").replace("*", "").split()).lower()
+    return lookup == entry_id or lookup == headword or lookup in stems
+
+
+MERRIAM_GENERAL_MEANING_PROMPT = """
+You translate concise Merriam-Webster dictionary definitions into simplified Chinese for vocabulary review.
+Return only JSON: {"items":[{"word":"...","generalMeaning":"..."}]}.
+Keep each generalMeaning lexical, context-independent, natural, and preferably under 18 Chinese characters.
+Include the common senses represented by the supplied English definition, separated with Chinese punctuation when needed.
+Do not add examples, article context, explanations, markdown, or facts not present in the definition.
+""".strip()
 
 
 def parse_annotation_backfill_response(response_text: str, log_func=None) -> dict:
@@ -592,6 +694,9 @@ class JobManager:
         config: WorkflowConfig | None = None,
         runner_factory: Callable[[], object] | None = None,
         credential_store=None,
+        merriam_credential_store=None,
+        merriam_requester: Callable[[str, str], object] | None = None,
+        edge_tts_requester: Callable[[str, str, Path], None] | None = None,
         folder_picker: Callable[[str], str] | None = None,
         video_picker: Callable[[str], str] | None = None,
         annotation_backfill_requester: Callable[..., str] | None = None,
@@ -599,6 +704,30 @@ class JobManager:
         self.config = config or WorkflowConfig()
         self.runner_factory = runner_factory or (lambda: LocalWorkflowRunner(self.config))
         self.credential_store = credential_store or default_credential_store()
+        self.merriam_credential_store = merriam_credential_store or default_credential_store(
+            target_name="SubtitleWorkflow/MerriamWebsterDictionaryApiKey",
+            user_name="Merriam-Webster Dictionary API key",
+        )
+        self.merriam_requester = merriam_requester or default_merriam_requester
+        self.edge_tts_requester = edge_tts_requester or default_edge_tts_requester
+        self.edge_tts_voice = DEFAULT_EDGE_TTS_VOICE
+        self.edge_tts_cache_dir = self.config.state_dir / "edge-tts-cache"
+        self.edge_tts_metrics = {
+            "generated": 0,
+            "cacheHits": 0,
+            "failures": 0,
+        }
+        self.edge_tts_locks: dict[str, threading.Lock] = {}
+        self.merriam_pronunciation_cache: dict[str, dict] = {}
+        self.merriam_pronunciation_misses: set[str] = set()
+        self.merriam_entries_cache: dict[str, object] = {}
+        self.merriam_general_meaning_cache: dict[str, dict] = {}
+        self.merriam_metrics = {
+            "upstreamRequests": 0,
+            "cacheHits": 0,
+            "notFound": 0,
+            "failures": 0,
+        }
         self.folder_picker = folder_picker or open_system_folder_picker
         self.video_picker = video_picker or open_system_video_picker
         self.annotation_backfill_requester = annotation_backfill_requester or default_annotation_backfill_requester
@@ -1776,6 +1905,292 @@ class JobManager:
         self.append_service_log("gemini credential deleted")
         return self.credential_status()
 
+    def merriam_credential_status(self) -> dict:
+        try:
+            stored = bool(self.merriam_credential_store.has_secret())
+        except Exception:
+            stored = False
+        return {
+            "stored": stored,
+            "provider": getattr(self.merriam_credential_store, "provider", "unknown"),
+        }
+
+    def save_merriam_credential(self, payload: dict) -> dict:
+        api_key = str((payload or {}).get("apiKey") or (payload or {}).get("api_key") or "").strip()
+        if not api_key:
+            raise HTTPException(status_code=400, detail="apiKey is required")
+        try:
+            self.merriam_credential_store.set_secret(api_key)
+        except CredentialStoreError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        except Exception:
+            raise HTTPException(status_code=503, detail="failed to save system credential")
+        self.merriam_pronunciation_cache.clear()
+        self.merriam_pronunciation_misses.clear()
+        self.merriam_entries_cache.clear()
+        self.merriam_general_meaning_cache.clear()
+        self.append_service_log("merriam-webster credential saved")
+        return self.merriam_credential_status()
+
+    def delete_merriam_credential(self) -> dict:
+        try:
+            self.merriam_credential_store.delete_secret()
+        except Exception:
+            pass
+        self.merriam_pronunciation_cache.clear()
+        self.merriam_pronunciation_misses.clear()
+        self.merriam_entries_cache.clear()
+        self.merriam_general_meaning_cache.clear()
+        self.append_service_log("merriam-webster credential deleted")
+        return self.merriam_credential_status()
+
+    def merriam_pronunciation(self, word: str) -> dict:
+        lookup = " ".join(str(word or "").split()).lower()
+        if not lookup or len(lookup) > 100:
+            raise HTTPException(status_code=400, detail="word is required")
+        if lookup in self.merriam_pronunciation_cache:
+            self.merriam_metrics["cacheHits"] += 1
+            return self.merriam_pronunciation_cache[lookup]
+        if lookup in self.merriam_pronunciation_misses:
+            self.merriam_metrics["cacheHits"] += 1
+            raise HTTPException(status_code=404, detail="Merriam-Webster pronunciation not found")
+        entries = self._get_merriam_entries(lookup)
+        audio_url = build_merriam_audio_url(entries)
+        if not audio_url:
+            self.merriam_metrics["notFound"] += 1
+            self.merriam_pronunciation_misses.add(lookup)
+            raise HTTPException(status_code=404, detail="Merriam-Webster pronunciation not found")
+        result = {
+            "word": lookup,
+            "audioUrl": audio_url,
+            "source": "merriam-webster-collegiate",
+        }
+        self.merriam_pronunciation_cache[lookup] = result
+        return result
+
+    def _get_merriam_entries(self, lookup: str):
+        if lookup in self.merriam_entries_cache:
+            self.merriam_metrics["cacheHits"] += 1
+            return self.merriam_entries_cache[lookup]
+        try:
+            api_key = self.merriam_credential_store.get_secret()
+        except Exception:
+            api_key = ""
+        if not api_key:
+            raise HTTPException(status_code=503, detail="Merriam-Webster API key is not configured")
+        try:
+            self.merriam_metrics["upstreamRequests"] += 1
+            entries = self.merriam_requester(lookup, api_key)
+        except Exception:
+            self.merriam_metrics["failures"] += 1
+            raise HTTPException(status_code=502, detail="Merriam-Webster lookup failed")
+        self.merriam_entries_cache[lookup] = entries
+        return entries
+
+    def merriam_pronunciations(self, payload: dict) -> dict:
+        raw_words = (payload or {}).get("words")
+        if not isinstance(raw_words, list):
+            raise HTTPException(status_code=400, detail="words must be an array")
+        words = []
+        seen = set()
+        for value in raw_words:
+            word = " ".join(str(value or "").split()).lower()
+            if not word or len(word) > 100 or word in seen:
+                continue
+            seen.add(word)
+            words.append(word)
+            if len(words) >= 50:
+                break
+
+        def resolve(word):
+            try:
+                return self.merriam_pronunciation(word)
+            except HTTPException:
+                return {"word": word, "audioUrl": "", "source": ""}
+
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(words)))) as executor:
+            items = list(executor.map(resolve, words))
+        return {"items": items}
+
+    def merriam_pronunciation_status(self) -> dict:
+        return {
+            **self.merriam_metrics,
+            "cacheEntries": len(self.merriam_pronunciation_cache),
+            "negativeCacheEntries": len(self.merriam_pronunciation_misses),
+            "credentialStored": self.merriam_credential_status()["stored"],
+        }
+
+    def merriam_general_meanings(self, payload: dict) -> dict:
+        raw_words = (payload or {}).get("words")
+        if not isinstance(raw_words, list):
+            raise HTTPException(status_code=400, detail="words must be an array")
+        words = []
+        seen = set()
+        for value in raw_words:
+            word = " ".join(str(value or "").split()).lower()
+            if not word or len(word) > 100 or word in seen:
+                continue
+            seen.add(word)
+            words.append(word)
+            if len(words) >= 50:
+                break
+
+        cached = [self.merriam_general_meaning_cache[word] for word in words if word in self.merriam_general_meaning_cache]
+        missing = [word for word in words if word not in self.merriam_general_meaning_cache]
+
+        def resolve_definition(word):
+            try:
+                entries = self._get_merriam_entries(word)
+                definition = build_merriam_definition(entries, word)
+                cross_reference = build_merriam_cross_reference(entries, word) if not definition else ""
+                if cross_reference:
+                    definition = build_merriam_definition(
+                        self._get_merriam_entries(cross_reference),
+                        cross_reference,
+                    )
+            except HTTPException:
+                definition = ""
+            return {"word": word, "englishDefinition": definition}
+
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(missing)))) as executor:
+            definitions = [item for item in executor.map(resolve_definition, missing) if item["englishDefinition"]]
+
+        if definitions:
+            api_key = str((payload or {}).get("apiKey") or (payload or {}).get("api_key") or "").strip()
+            if not api_key:
+                try:
+                    api_key = self.credential_store.get_secret()
+                except Exception:
+                    api_key = ""
+            if not api_key:
+                raise HTTPException(status_code=503, detail="Gemini API key is required to translate dictionary definitions")
+            saved_config = self.store.load_config()
+            model = str((payload or {}).get("model") or saved_config.get("model") or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+            base_url = str(saved_config.get("baseUrl") or "").strip()
+            try:
+                response_text = self.annotation_backfill_requester(
+                    GEMINI_CACHE_DIR,
+                    model,
+                    MERRIAM_GENERAL_MEANING_PROMPT,
+                    {"items": definitions},
+                    extra_config={
+                        "api_key": api_key,
+                        "base_url": base_url,
+                        "response_mime_type": "application/json",
+                        "temperature": 0.1,
+                    },
+                    log_func=lambda message: self.append_service_log(f"dictionary-meaning: {message}"),
+                    log_prefix="dictionary-meaning",
+                )
+                translated = parse_annotation_backfill_response(response_text)
+            except Exception as exc:
+                raise HTTPException(status_code=502, detail=f"dictionary definition translation failed: {exc}")
+
+            translated_by_word = {
+                " ".join(str(item.get("word") or "").split()).lower(): str(item.get("generalMeaning") or "").strip()
+                for item in translated.get("items", [])
+                if isinstance(item, dict)
+            }
+            for definition in definitions:
+                word = definition["word"]
+                general_meaning = translated_by_word.get(word, "")
+                if not general_meaning:
+                    continue
+                item = {
+                    **definition,
+                    "generalMeaning": general_meaning,
+                    "source": MERRIAM_GENERAL_MEANING_SOURCE,
+                }
+                self.merriam_general_meaning_cache[word] = item
+
+        items_by_word = {
+            item["word"]: item
+            for item in [*cached, *self.merriam_general_meaning_cache.values()]
+        }
+        return {"items": [items_by_word[word] for word in words if word in items_by_word]}
+
+    def edge_tts_pronunciation(self, text: str) -> dict:
+        normalized = " ".join(str(text or "").split())
+        if not normalized or len(normalized) > 200:
+            raise HTTPException(status_code=400, detail="text must contain between 1 and 200 characters")
+        cache_id = hashlib.sha256(
+            f"{self.edge_tts_voice}\0{normalized}".encode("utf-8")
+        ).hexdigest()
+        output_path = self.edge_tts_cache_dir / f"{cache_id}.mp3"
+        with self.lock:
+            cache_lock = self.edge_tts_locks.setdefault(cache_id, threading.Lock())
+        with cache_lock:
+            if output_path.is_file() and output_path.stat().st_size > 0:
+                with self.lock:
+                    self.edge_tts_metrics["cacheHits"] += 1
+            else:
+                self.edge_tts_cache_dir.mkdir(parents=True, exist_ok=True)
+                temporary_path = self.edge_tts_cache_dir / f".{cache_id}.{uuid.uuid4().hex}.tmp"
+                try:
+                    self.edge_tts_requester(normalized, self.edge_tts_voice, temporary_path)
+                    if not temporary_path.is_file() or temporary_path.stat().st_size <= 0:
+                        raise RuntimeError("Edge TTS produced no audio")
+                    temporary_path.replace(output_path)
+                    with self.lock:
+                        self.edge_tts_metrics["generated"] += 1
+                except Exception:
+                    with self.lock:
+                        self.edge_tts_metrics["failures"] += 1
+                    temporary_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=502, detail="Edge TTS generation failed")
+        return {
+            "text": normalized,
+            "audioUrl": f"/api/tts/edge/audio/{cache_id}.mp3",
+            "source": "edge-tts",
+            "voice": self.edge_tts_voice,
+        }
+
+    def edge_tts_pronunciations(self, payload: dict) -> dict:
+        raw_values = (payload or {}).get("texts")
+        if not isinstance(raw_values, list):
+            raise HTTPException(status_code=400, detail="texts must be an array")
+        texts = []
+        seen = set()
+        for value in raw_values:
+            text = " ".join(str(value or "").split())
+            if not text or len(text) > 200 or text in seen:
+                continue
+            seen.add(text)
+            texts.append(text)
+            if len(texts) >= 50:
+                break
+
+        def resolve(text):
+            try:
+                return self.edge_tts_pronunciation(text)
+            except HTTPException:
+                return {"text": text, "audioUrl": "", "source": "", "voice": self.edge_tts_voice}
+
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(texts)))) as executor:
+            items = list(executor.map(resolve, texts))
+        return {"items": items}
+
+    def edge_tts_audio_path(self, cache_id: str) -> Path:
+        normalized = str(cache_id or "").lower()
+        if len(normalized) != 64 or any(character not in "0123456789abcdef" for character in normalized):
+            raise HTTPException(status_code=404, detail="Edge TTS audio not found")
+        audio_path = self.edge_tts_cache_dir / f"{normalized}.mp3"
+        if not audio_path.is_file() or audio_path.stat().st_size <= 0:
+            raise HTTPException(status_code=404, detail="Edge TTS audio not found")
+        return audio_path
+
+    def edge_tts_status(self) -> dict:
+        cache_entries = (
+            len(list(self.edge_tts_cache_dir.glob("*.mp3")))
+            if self.edge_tts_cache_dir.is_dir()
+            else 0
+        )
+        return {
+            **self.edge_tts_metrics,
+            "cacheEntries": cache_entries,
+            "voice": self.edge_tts_voice,
+        }
+
     def maintenance_status(self) -> dict:
         log_status = self.store.log_status()
         history = self.store.load_history()
@@ -2016,6 +2431,9 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
                 "videoPlayback": True,
                 "videoSourceBinding": True,
                 "failedQueueCleanup": True,
+                "merriamWebsterPronunciation": True,
+                "merriamWebsterGeneralMeanings": True,
+                "edgeTtsPronunciation": True,
             },
             "time": utc_now_iso(),
         }
@@ -2051,6 +2469,50 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     @app.delete("/api/credentials/gemini")
     def delete_gemini_credential():
         return manager.delete_credential()
+
+    @app.get("/api/credentials/merriam-webster/status")
+    def merriam_credential_status():
+        return manager.merriam_credential_status()
+
+    @app.post("/api/credentials/merriam-webster")
+    def save_merriam_credential(payload: dict):
+        return manager.save_merriam_credential(payload)
+
+    @app.delete("/api/credentials/merriam-webster")
+    def delete_merriam_credential():
+        return manager.delete_merriam_credential()
+
+    @app.get("/api/dictionary/pronunciation")
+    def dictionary_pronunciation(word: str = ""):
+        return manager.merriam_pronunciation(word)
+
+    @app.post("/api/dictionary/pronunciations")
+    def dictionary_pronunciations(payload: dict):
+        return manager.merriam_pronunciations(payload)
+
+    @app.get("/api/dictionary/pronunciation/status")
+    def dictionary_pronunciation_status():
+        return manager.merriam_pronunciation_status()
+
+    @app.post("/api/dictionary/general-meanings")
+    def dictionary_general_meanings(payload: dict):
+        return manager.merriam_general_meanings(payload)
+
+    @app.post("/api/tts/edge")
+    def edge_tts_pronunciation(payload: dict):
+        return manager.edge_tts_pronunciation((payload or {}).get("text"))
+
+    @app.post("/api/tts/edge/batch")
+    def edge_tts_pronunciations(payload: dict):
+        return manager.edge_tts_pronunciations(payload)
+
+    @app.get("/api/tts/edge/audio/{cache_id}.mp3")
+    def edge_tts_audio(cache_id: str):
+        return FileResponse(manager.edge_tts_audio_path(cache_id), media_type="audio/mpeg")
+
+    @app.get("/api/tts/edge/status")
+    def edge_tts_status():
+        return manager.edge_tts_status()
 
     @app.get("/api/maintenance")
     def maintenance():

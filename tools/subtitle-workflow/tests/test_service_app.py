@@ -402,6 +402,243 @@ class ServiceAppTests(unittest.TestCase):
             self.assertFalse(deleted.json()["stored"])
             self.assertFalse(credential_store.has_secret())
 
+    def test_merriam_pronunciation_uses_separate_credential_and_caches_lookup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gemini_store = MemoryCredentialStore()
+            merriam_store = MemoryCredentialStore()
+            requests = []
+
+            def merriam_requester(word, api_key):
+                requests.append((word, api_key))
+                return [{
+                    "meta": {"id": word},
+                    "hwi": {
+                        "prs": [{
+                            "sound": {"audio": "volumi02"},
+                        }],
+                    },
+                }]
+
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=gemini_store,
+                merriam_credential_store=merriam_store,
+                merriam_requester=merriam_requester,
+            )
+            client = TestClient(create_app(manager))
+
+            empty_status = client.get("/api/credentials/merriam-webster/status")
+            self.assertEqual(empty_status.status_code, 200)
+            self.assertFalse(empty_status.json()["stored"])
+
+            saved = client.post(
+                "/api/credentials/merriam-webster",
+                json={"apiKey": "SECRET-MERRIAM-KEY"},
+            )
+            self.assertEqual(saved.status_code, 200)
+            self.assertTrue(saved.json()["stored"])
+            self.assertNotIn("SECRET-MERRIAM-KEY", saved.text)
+            self.assertFalse(gemini_store.has_secret())
+
+            first = client.get("/api/dictionary/pronunciation?word=voluminous")
+            second = client.get("/api/dictionary/pronunciation?word=Voluminous")
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(
+                first.json()["audioUrl"],
+                "https://media.merriam-webster.com/audio/prons/en/us/mp3/v/volumi02.mp3",
+            )
+            self.assertEqual(first.json()["source"], "merriam-webster-collegiate")
+            self.assertNotIn("SECRET-MERRIAM-KEY", first.text)
+            self.assertEqual(requests, [("voluminous", "SECRET-MERRIAM-KEY")])
+            status = client.get("/api/dictionary/pronunciation/status")
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(status.json()["upstreamRequests"], 1)
+            self.assertEqual(status.json()["cacheHits"], 1)
+            self.assertEqual(status.json()["cacheEntries"], 1)
+            self.assertEqual(status.json()["notFound"], 0)
+
+            batch = client.post(
+                "/api/dictionary/pronunciations",
+                json={"words": ["alpha", "beta", "alpha"]},
+            )
+            self.assertEqual(batch.status_code, 200)
+            self.assertEqual([item["word"] for item in batch.json()["items"]], ["alpha", "beta"])
+            self.assertEqual(len(requests), 3)
+            batch_status = client.get("/api/dictionary/pronunciation/status").json()
+            self.assertEqual(batch_status["upstreamRequests"], 3)
+            self.assertEqual(batch_status["cacheEntries"], 3)
+
+    def test_merriam_general_meanings_batch_translates_and_reuses_cached_entries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gemini_store = MemoryCredentialStore()
+            merriam_store = MemoryCredentialStore()
+            merriam_requests = []
+            translation_requests = []
+
+            def merriam_requester(word, api_key):
+                merriam_requests.append((word, api_key))
+                return [{
+                    "meta": {"id": word},
+                    "shortdef": [f"common definition of {word}"],
+                }]
+
+            def translation_requester(cache_dir, model_name, system_prompt, payload_obj, **kwargs):
+                translation_requests.append(payload_obj)
+                return json.dumps({
+                    "items": [
+                        {"word": item["word"], "generalMeaning": f"{item['word']}通用义"}
+                        for item in payload_obj["items"]
+                    ],
+                })
+
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=gemini_store,
+                merriam_credential_store=merriam_store,
+                merriam_requester=merriam_requester,
+                annotation_backfill_requester=translation_requester,
+            )
+            client = TestClient(create_app(manager))
+            client.post("/api/credentials/gemini", json={"apiKey": "SECRET-GEMINI-KEY"})
+            client.post("/api/credentials/merriam-webster", json={"apiKey": "SECRET-MERRIAM-KEY"})
+
+            first = client.post(
+                "/api/dictionary/general-meanings",
+                json={"words": ["attend", "collision", "attend"]},
+            )
+            second = client.post(
+                "/api/dictionary/general-meanings",
+                json={"words": ["collision", "attend"]},
+            )
+
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(
+                [item["generalMeaning"] for item in first.json()["items"]],
+                ["attend通用义", "collision通用义"],
+            )
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(len(merriam_requests), 2)
+            self.assertEqual(len(translation_requests), 1)
+            self.assertEqual(
+                [item["word"] for item in translation_requests[0]["items"]],
+                ["attend", "collision"],
+            )
+
+    def test_merriam_general_meaning_follows_spelling_cross_reference_instead_of_geographic_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            gemini_store = MemoryCredentialStore()
+            merriam_store = MemoryCredentialStore()
+            requested_words = []
+
+            def merriam_requester(word, api_key):
+                requested_words.append(word)
+                if word == "centre":
+                    return [
+                        {
+                            "meta": {"id": "centre", "stems": ["center", "centre"]},
+                            "cxs": [{"cxl": "chiefly British spelling of", "cxtis": [{"cxt": "center"}]}],
+                            "shortdef": [],
+                        },
+                        {
+                            "meta": {"id": "Rockville Centre:g", "stems": ["Rockville Centre"]},
+                            "fl": "geographical name",
+                            "shortdef": ["village in southeastern New York"],
+                        },
+                    ]
+                return [{
+                    "meta": {"id": "center:1", "stems": ["center", "centers"]},
+                    "fl": "noun",
+                    "shortdef": ["the middle point, part, or place"],
+                }]
+
+            def translation_requester(cache_dir, model_name, system_prompt, payload_obj, **kwargs):
+                return json.dumps({
+                    "items": [{"word": "centre", "generalMeaning": "中心；中央"}],
+                })
+
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=gemini_store,
+                merriam_credential_store=merriam_store,
+                merriam_requester=merriam_requester,
+                annotation_backfill_requester=translation_requester,
+            )
+            client = TestClient(create_app(manager))
+            client.post("/api/credentials/gemini", json={"apiKey": "SECRET-GEMINI-KEY"})
+            client.post("/api/credentials/merriam-webster", json={"apiKey": "SECRET-MERRIAM-KEY"})
+
+            response = client.post(
+                "/api/dictionary/general-meanings",
+                json={"words": ["centre"]},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["items"][0]["englishDefinition"], "the middle point, part, or place")
+            self.assertEqual(response.json()["items"][0]["generalMeaning"], "中心；中央")
+            self.assertEqual(
+                response.json()["items"][0]["source"],
+                "merriam-webster-collegiate+gemini:v2",
+            )
+            self.assertEqual(requested_words, ["centre", "center"])
+
+    def test_edge_tts_generates_batches_and_serves_cached_audio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            requests = []
+
+            def edge_tts_requester(text, voice, output_path):
+                requests.append((text, voice))
+                output_path.write_bytes(f"audio:{text}".encode("utf-8"))
+
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                edge_tts_requester=edge_tts_requester,
+            )
+            client = TestClient(create_app(manager))
+
+            first = client.post("/api/tts/edge", json={"text": "appearing"})
+            second = client.post("/api/tts/edge", json={"text": " appearing "})
+            self.assertEqual(first.status_code, 200)
+            self.assertEqual(second.status_code, 200)
+            self.assertEqual(first.json()["audioUrl"], second.json()["audioUrl"])
+            self.assertEqual(first.json()["voice"], "en-US-AvaNeural")
+            self.assertEqual(requests, [("appearing", "en-US-AvaNeural")])
+
+            audio = client.get(first.json()["audioUrl"])
+            self.assertEqual(audio.status_code, 200)
+            self.assertEqual(audio.headers["content-type"], "audio/mpeg")
+            self.assertEqual(audio.content, b"audio:appearing")
+
+            batch = client.post(
+                "/api/tts/edge/batch",
+                json={"texts": ["appearing", "appeared in court", "appeared in court"]},
+            )
+            self.assertEqual(batch.status_code, 200)
+            self.assertEqual(
+                [item["text"] for item in batch.json()["items"]],
+                ["appearing", "appeared in court"],
+            )
+            self.assertEqual(
+                requests,
+                [
+                    ("appearing", "en-US-AvaNeural"),
+                    ("appeared in court", "en-US-AvaNeural"),
+                ],
+            )
+            status = client.get("/api/tts/edge/status").json()
+            self.assertEqual(status["generated"], 2)
+            self.assertEqual(status["cacheHits"], 2)
+            self.assertEqual(status["failures"], 0)
+            self.assertEqual(status["cacheEntries"], 2)
+
     def test_annotation_backfill_saves_template_prompt_result_and_returns_importable_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []

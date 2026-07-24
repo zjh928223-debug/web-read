@@ -63,8 +63,13 @@ if os.name == "nt":
     class WindowsCredentialStore:
         provider = "windows-credential-manager"
 
-        def __init__(self, target_name: str = "SubtitleWorkflow/GeminiApiKey"):
+        def __init__(
+            self,
+            target_name: str = "SubtitleWorkflow/GeminiApiKey",
+            user_name: str = "Gemini API key",
+        ):
             self.target_name = target_name
+            self.user_name = user_name
 
         def get_secret(self) -> str:
             credential = PCREDENTIALW()
@@ -91,7 +96,7 @@ if os.name == "nt":
             credential.CredentialBlobSize = len(blob)
             credential.CredentialBlob = ctypes.cast(blob_buffer, ctypes.POINTER(ctypes.c_ubyte))
             credential.Persist = CRED_PERSIST_LOCAL_MACHINE
-            credential.UserName = "Gemini API key"
+            credential.UserName = self.user_name
             if not advapi32.CredWriteW(ctypes.byref(credential), 0):
                 raise CredentialStoreError("failed to write Windows credential")
 
@@ -105,7 +110,10 @@ else:
     WindowsCredentialStore = UnavailableCredentialStore
 
 
-def default_credential_store():
+def default_credential_store(
+    target_name: str = "SubtitleWorkflow/GeminiApiKey",
+    user_name: str = "Gemini API key",
+):
     if os.name == "nt":
-        return WindowsCredentialStore()
+        return WindowsCredentialStore(target_name=target_name, user_name=user_name)
     return UnavailableCredentialStore()
