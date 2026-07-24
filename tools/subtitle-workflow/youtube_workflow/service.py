@@ -133,8 +133,15 @@ def default_edge_tts_requester(text: str, voice: str, output_path: Path) -> None
     edge_tts.Communicate(text, voice, rate="-5%").save_sync(str(output_path))
 
 
-def build_merriam_audio_url(entries) -> str:
-    for entry in entries if isinstance(entries, list) else []:
+def build_merriam_audio_url(entries, lookup: str = "") -> str:
+    normalized_lookup = " ".join(str(lookup or "").split()).lower()
+    candidates = [
+        entry
+        for entry in entries if isinstance(entries, list)
+        if isinstance(entry, dict)
+        and (not normalized_lookup or merriam_entry_matches(entry, normalized_lookup))
+    ]
+    for entry in candidates:
         if not isinstance(entry, dict):
             continue
         pronunciations = ((entry.get("hwi") or {}).get("prs") or [])
@@ -204,6 +211,23 @@ def merriam_entry_matches(entry: dict, lookup: str) -> bool:
     }
     headword = " ".join(str(((entry.get("hwi") or {}).get("hw")) or "").replace("*", "").split()).lower()
     return lookup == entry_id or lookup == headword or lookup in stems
+
+
+def build_merriam_audio_fallback_lookups(entries, lookup: str) -> list[str]:
+    normalized_lookup = " ".join(str(lookup or "").split()).lower()
+    fallbacks = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or not merriam_entry_matches(entry, normalized_lookup):
+            continue
+        meta = entry.get("meta") if isinstance(entry.get("meta"), dict) else {}
+        entry_id = str(meta.get("id") or "").split(":", 1)[0].strip().lower()
+        headword = " ".join(
+            str(((entry.get("hwi") or {}).get("hw")) or "").replace("*", "").split()
+        ).lower()
+        for candidate in (entry_id, headword):
+            if candidate and candidate != normalized_lookup and candidate not in fallbacks:
+                fallbacks.append(candidate)
+    return fallbacks
 
 
 MERRIAM_GENERAL_MEANING_PROMPT = """
@@ -1955,7 +1979,13 @@ class JobManager:
             self.merriam_metrics["cacheHits"] += 1
             raise HTTPException(status_code=404, detail="Merriam-Webster pronunciation not found")
         entries = self._get_merriam_entries(lookup)
-        audio_url = build_merriam_audio_url(entries)
+        audio_url = build_merriam_audio_url(entries, lookup)
+        if not audio_url:
+            for fallback_lookup in build_merriam_audio_fallback_lookups(entries, lookup):
+                fallback_entries = self._get_merriam_entries(fallback_lookup)
+                audio_url = build_merriam_audio_url(fallback_entries, fallback_lookup)
+                if audio_url:
+                    break
         if not audio_url:
             self.merriam_metrics["notFound"] += 1
             self.merriam_pronunciation_misses.add(lookup)

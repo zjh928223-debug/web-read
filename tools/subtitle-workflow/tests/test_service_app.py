@@ -471,6 +471,70 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(batch_status["upstreamRequests"], 3)
             self.assertEqual(batch_status["cacheEntries"], 3)
 
+    def test_merriam_pronunciation_ignores_audio_from_unrelated_first_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            merriam_store = MemoryCredentialStore()
+            requests = []
+
+            def merriam_requester(word, api_key):
+                requests.append(word)
+                self.assertEqual(api_key, "SECRET-MERRIAM-KEY")
+                if word == "manufacture":
+                    return [{
+                        "meta": {
+                            "id": "manufacture:2",
+                            "stems": ["manufacture", "manufacturing"],
+                        },
+                        "hwi": {
+                            "hw": "man*u*fac*ture",
+                            "prs": [{"sound": {"audio": "manufa02"}}],
+                        },
+                    }]
+                self.assertEqual(word, "manufacturing")
+                return [
+                    {
+                        "meta": {
+                            "id": "premanufacture",
+                            "stems": ["premanufactured", "premanufacturing"],
+                        },
+                        "hwi": {
+                            "hw": "pre*manufacture",
+                            "prs": [{"sound": {"audio": "premanufacture_1"}}],
+                        },
+                    },
+                    {
+                        "meta": {
+                            "id": "manufacture",
+                            "stems": ["manufactured", "manufactures", "manufacturing"],
+                        },
+                        "hwi": {
+                            "hw": "man*u*fac*ture",
+                        },
+                    },
+                ]
+
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                merriam_credential_store=merriam_store,
+                merriam_requester=merriam_requester,
+            )
+            client = TestClient(create_app(manager))
+            client.post(
+                "/api/credentials/merriam-webster",
+                json={"apiKey": "SECRET-MERRIAM-KEY"},
+            )
+
+            response = client.get("/api/dictionary/pronunciation?word=manufacturing")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json()["audioUrl"],
+                "https://media.merriam-webster.com/audio/prons/en/us/mp3/m/manufa02.mp3",
+            )
+            self.assertEqual(requests, ["manufacturing", "manufacture"])
+
     def test_merriam_general_meanings_batch_translates_and_reuses_cached_entries(self):
         with tempfile.TemporaryDirectory() as tmp:
             gemini_store = MemoryCredentialStore()
