@@ -40,10 +40,8 @@ export function bindLegacyControlHandlers() {
   bindClick('toggle-chunk-btn', 'toggleChunkMode')
   bindClick('btn-chunk-style', 'openChunkStyleModal')
   bindClick('btn-chunk-focus', 'toggleChunkFocusMode')
-  bindClick('btn-chunk-note-style', 'openChunkNoteStyleModal')
   bindClick('btn-close-chunk-style-modal', 'closeChunkStyleModal')
   bindClick('btn-toggle-shadow-manual', 'toggleChunkShadowManual')
-  bindClick('btn-close-chunk-note-style-modal', 'closeChunkNoteStyleModal')
 
   ;[
     'chunk-en-size-input',
@@ -53,16 +51,6 @@ export function bindLegacyControlHandlers() {
     'chunk-bg-color-input'
   ].forEach(function (id) {
     bindInput(id, 'updateChunkStyle')
-  })
-
-  ;[
-    'chunk-note-size-input',
-    'chunk-note-color-input',
-    'chunk-note-width-input',
-    'chunk-note-min-height-input',
-    'chunk-note-arrow-size-input'
-  ].forEach(function (id) {
-    bindInput(id, 'updateChunkNoteStyle')
   })
 }
 

@@ -12,6 +12,7 @@ export function normalizeAnnotationGenerationScope(scope) {
 export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
   const state = deps.state || {};
   const namespace = deps.namespace || {};
+  const markCountEl = deps.markCountEl || null;
   const getWindow = typeof deps.getWindow === 'function'
     ? deps.getWindow
     : function () { return globalThis; };
@@ -62,8 +63,37 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     }
   }
 
+  function emitReaderMarksChanged(markedCount) {
+    const windowObject = getWindow();
+    if (!windowObject || typeof windowObject.dispatchEvent !== 'function') return;
+    const CustomEventCtor = typeof windowObject.CustomEvent === 'function'
+      ? windowObject.CustomEvent
+      : (typeof CustomEvent === 'function' ? CustomEvent : null);
+    if (!CustomEventCtor) return;
+    try {
+      windowObject.dispatchEvent(new CustomEventCtor('reader-marks-changed', {
+        detail: {
+          markedCount,
+          scope: getAnnotationGenerationScope()
+        }
+      }));
+    } catch (_error) {}
+  }
+
+  function nextGeneratedIndexRefreshSeq() {
+    const currentSeq = Number(state.annotationGeneratedIndexRefreshSeq);
+    const nextSeq = Number.isFinite(currentSeq) ? currentSeq + 1 : 1;
+    state.annotationGeneratedIndexRefreshSeq = nextSeq;
+    return nextSeq;
+  }
+
+  function getGeneratedIndexRefreshSeq() {
+    const currentSeq = Number(state.annotationGeneratedIndexRefreshSeq);
+    return Number.isFinite(currentSeq) ? currentSeq : 0;
+  }
+
   function clearGeneratedAnnotationIndex() {
-    state.annotationGeneratedIndexRefreshSeq++;
+    nextGeneratedIndexRefreshSeq();
     state.annotationGeneratedIndexScopeKey = '';
     const store = typeof deps.getAnnotationGeneratedResultStore === 'function'
       ? deps.getAnnotationGeneratedResultStore()
@@ -93,7 +123,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
     const scope = getAnnotationGenerationScope();
     const scopeKey = getAnnotationGenerationScopeKey(scope);
-    const refreshSeq = ++state.annotationGeneratedIndexRefreshSeq;
+    const refreshSeq = nextGeneratedIndexRefreshSeq();
     emitDiagnostics('app.generated_index_refresh_start', {
       scope,
       scopeKey,
@@ -101,7 +131,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     });
 
     const bundle = await storage.loadBundle(scope);
-    if (refreshSeq !== state.annotationGeneratedIndexRefreshSeq || getAnnotationGenerationScopeKey() !== scopeKey) {
+    if (refreshSeq !== getGeneratedIndexRefreshSeq() || getAnnotationGenerationScopeKey() !== scopeKey) {
       emitDiagnostics('app.generated_index_refresh_stale', {
         scope,
         scopeKey,
@@ -157,7 +187,15 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
   }
 
   async function syncAnnotationGenerationEntryStatus() {
-    return undefined;
+    const markedMap = state.markedMap instanceof Map ? state.markedMap : null;
+    const count = markedMap ? markedMap.size : 0;
+    if (markCountEl) {
+      markCountEl.textContent = `已标记 ${count}`;
+      markCountEl.setAttribute('data-count', String(count));
+      markCountEl.setAttribute('title', `当前文章已标记 ${count} 个重点词`);
+    }
+    emitReaderMarksChanged(count);
+    return { markedCount: count };
   }
 
   return {

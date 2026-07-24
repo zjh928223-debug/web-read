@@ -7,15 +7,18 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-export-payload.js');
   const lightweightIoPath = path.join(repoRoot, 'src', 'composables', 'session-annotation-lightweight-io.js');
   const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const sessionAnnotationRuntimePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const lightweightIoSource = fs.readFileSync(lightweightIoPath, 'utf8');
   const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
+  const sessionAnnotationRuntimeSource = fs.readFileSync(sessionAnnotationRuntimePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && sessionAssemblySource.includes("from './session-annotation-lightweight-io.js';")
+      && sessionAssemblySource.includes("from './session-annotation-runtime.js';")
+      && sessionAnnotationRuntimeSource.includes("from './session-annotation-lightweight-io.js';")
       && lightweightIoSource.includes("from './session-annotation-export-payload.js';"),
     'session-init should reach annotation export payload builders through the lightweight IO runtime'
   );

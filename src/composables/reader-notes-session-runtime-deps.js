@@ -5,8 +5,6 @@ export function createReaderNotesSessionRuntimeDeps(deps) {
   var domRefs = runtimeContext.domRefs;
 
   return {
-    notesModule: globalObject.__notesModule,
-    chunkNoteLayout: globalObject.__chunkNoteLayout,
     transcriptState: bootstrapRuntime.transcriptState,
     chunkState: bootstrapRuntime.chunkState,
     clozeState: bootstrapRuntime.clozeState,
@@ -14,15 +12,6 @@ export function createReaderNotesSessionRuntimeDeps(deps) {
     saveToDB: bootstrapRuntime.saveToDB,
     audioIdentityApi: bootstrapRuntime.audioIdentityApi,
     isPlainObjectRecord: bootstrapRuntime.runtimeDeps.isPlainObjectRecord,
-    mainAppArea: domRefs.mainAppArea,
-    chunkNoteSvgLayer: domRefs.chunkNoteSvgLayer,
-    chunkNoteLayer: domRefs.chunkNoteLayer,
-    chunkNoteCtxMenu: domRefs.chunkNoteCtxMenu,
-    notePreviewSidebar: domRefs.notePreviewSidebar,
-    notePreviewEmpty: domRefs.notePreviewEmpty,
-    notePreviewList: domRefs.notePreviewList,
-    toggleNotePreviewBtn: domRefs.toggleNotePreviewBtn,
-    notePreviewResizeHandle: domRefs.notePreviewResizeHandle,
-    notePreviewResizeHandleY: domRefs.notePreviewResizeHandleY
+    mainAppArea: domRefs.mainAppArea
   };
 }

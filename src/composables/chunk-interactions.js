@@ -2,9 +2,7 @@ var runtime = {
   getAudioPlayer: null,
   getSelection: null,
   forceUpdateUI: null,
-  notifyAnnotationBubbleWordClick: null,
-  selectSentenceFromChunkTarget: null,
-  openChunkNoteContextFromEvent: null
+  notifyAnnotationBubbleWordClick: null
 };
 
 function getActiveSelection() {
@@ -28,22 +26,9 @@ function seekChunkTime(start) {
   }
 }
 
-function selectChunkSentence(target) {
-  if (target && typeof runtime.selectSentenceFromChunkTarget === 'function') {
-    runtime.selectSentenceFromChunkTarget(target);
-  }
-}
-
 function notifyAnnotation(target, options) {
   if (target && typeof runtime.notifyAnnotationBubbleWordClick === 'function') {
     return runtime.notifyAnnotationBubbleWordClick(target, options || {});
-  }
-  return false;
-}
-
-function openChunkNoteContext(event) {
-  if (event && typeof runtime.openChunkNoteContextFromEvent === 'function') {
-    return runtime.openChunkNoteContextFromEvent(event);
   }
   return false;
 }
@@ -67,7 +52,6 @@ export function handleChunkWordClick(options) {
     seekChunkTime(start);
   }
 
-  selectChunkSentence(target);
   notifyAnnotation(target);
 }
 
@@ -76,13 +60,6 @@ export function handleChunkWordContextMenu(options) {
   var event = opts.event || null;
   var target = opts.element || event && event.currentTarget || null;
   if (!event) return false;
-
-  var noteOpened = openChunkNoteContext(event);
-  if (noteOpened) {
-    event.preventDefault();
-    event.stopPropagation();
-    return true;
-  }
 
   var annotationOpened = notifyAnnotation(target, { forceShow: true });
   if (annotationOpened) {
@@ -93,14 +70,7 @@ export function handleChunkWordContextMenu(options) {
 }
 
 export function handleChunkContextMenu(options) {
-  var event = options && options.event || null;
-  if (!event) return false;
-  var opened = openChunkNoteContext(event);
-  if (opened) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  return opened;
+  return false;
 }
 
 export function handleChunkClick(options) {
@@ -120,7 +90,6 @@ export function handleChunkClick(options) {
   if (chunkStore && Number.isInteger(index)) {
     chunkStore.activeChunkIdx = index;
   }
-  selectChunkSentence(event && event.currentTarget);
 }
 
 export function configureChunkInteractions(deps) {
@@ -129,8 +98,6 @@ export function configureChunkInteractions(deps) {
     getAudioPlayer: source.getAudioPlayer || runtime.getAudioPlayer,
     getSelection: source.getSelection || runtime.getSelection,
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
-    notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
-    selectSentenceFromChunkTarget: source.selectSentenceFromChunkTarget || runtime.selectSentenceFromChunkTarget,
-    openChunkNoteContextFromEvent: source.openChunkNoteContextFromEvent || runtime.openChunkNoteContextFromEvent
+    notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick
   });
 }

@@ -3,8 +3,7 @@ var runtime = {
   forceUpdateUI: null,
   notifyAnnotationBubbleWordClick: null,
   isChunkMode: null,
-  hasActiveTextSelectionWithinChunk: null,
-  selectSentenceFromChunkTarget: null
+  hasActiveTextSelectionWithinChunk: null
 };
 
 var legacyTranscriptContainer = null;
@@ -85,13 +84,6 @@ function bindLegacyTranscriptContainer(container) {
       return;
     }
     handleTranscriptWordClick({ event: event, element: span });
-    if (
-      typeof runtime.isChunkMode === 'function' &&
-      runtime.isChunkMode() &&
-      typeof runtime.selectSentenceFromChunkTarget === 'function'
-    ) {
-      try { runtime.selectSentenceFromChunkTarget(span); } catch (err) {}
-    }
   }, true);
 }
 
@@ -102,8 +94,7 @@ export function configureTranscriptInteractions(deps) {
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
     notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
     isChunkMode: source.isChunkMode || runtime.isChunkMode,
-    hasActiveTextSelectionWithinChunk: source.hasActiveTextSelectionWithinChunk || runtime.hasActiveTextSelectionWithinChunk,
-    selectSentenceFromChunkTarget: source.selectSentenceFromChunkTarget || runtime.selectSentenceFromChunkTarget
+    hasActiveTextSelectionWithinChunk: source.hasActiveTextSelectionWithinChunk || runtime.hasActiveTextSelectionWithinChunk
   });
   if (source.legacyTranscriptContainer) {
     bindLegacyTranscriptContainer(source.legacyTranscriptContainer);

@@ -138,12 +138,6 @@ export function initAnnotationBubbleResolver(options = {}) {
       }
       return true;
     }
-    if (typeof bubble.clearAnnotation === 'function') {
-      bubble.clearAnnotation();
-    }
-    if (typeof bubble.hide === 'function') {
-      bubble.hide();
-    }
     return false;
   }
 

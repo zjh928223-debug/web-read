@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -12,7 +12,6 @@ async function main() {
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -54,7 +53,6 @@ async function main() {
   assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -101,8 +99,8 @@ async function main() {
       'function showToast() { return "toast"; }\nfunction showError() { return "error"; }\n'
     )
     .replace(
-      "import { syncAnnotationGenerationEntryStatus, initAnnotationApiSettingsUi } from './session-facades.js';\n",
-      'function syncAnnotationGenerationEntryStatus() { return "sync"; }\nfunction initAnnotationApiSettingsUi() { return "settings"; }\n'
+      "import { syncAnnotationGenerationEntryStatus } from './session-facades.js';\n",
+      'function syncAnnotationGenerationEntryStatus() { return "sync"; }\n'
     );
 
   globalThis.__assemblyCalls = [];
@@ -135,6 +133,11 @@ async function main() {
   assert.equal(globalThis.__assemblyCalls[3][1].runtimeState.id, 'runtime-state');
   assert.equal(globalThis.__assemblyCalls[3][1].renderTranscript(), 'transcript');
   assert.equal(globalThis.__assemblyCalls[3][1].renderChunkMode(), 'chunk');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(globalThis.__assemblyCalls[3][1], 'initAnnotationApiSettingsUi'),
+    false,
+    'reader-runtime-assembly should not pass retired annotation API settings facade'
+  );
   assert.equal(globalThis.__assemblyCalls[4][1].featureDeps, true);
   assert.equal(api.runtimeContext, globalThis.__runtimeContext);
   assert.equal(api.bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);

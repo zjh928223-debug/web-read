@@ -7,13 +7,16 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-restore-runtime.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const sessionLifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
+  const sessionLifecycleSource = fs.readFileSync(sessionLifecyclePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && sessionAssemblySource.includes("from './session-restore-runtime.js';"),
+      && sessionAssemblySource.includes("from './session-lifecycle-runtime.js';")
+      && sessionLifecycleSource.includes("from './session-restore-runtime.js';"),
     'session-init should reach session restore runtime through session-runtime-assembly'
   );
   assert.equal(
@@ -34,7 +37,6 @@ async function main() {
   const labels = {
     audio: {},
     transcript: {},
-    notes: {},
     visual: {}
   };
   const calls = [];
@@ -43,7 +45,6 @@ async function main() {
     audio: { name: 'clip.mp3', size: 10, lastModified: 20, type: 'audio/mpeg' },
     audioMeta: null,
     transcript: { segments: [{ id: 1 }] },
-    notes: { n: 1 },
     visual: { v: 1 },
     chunkData: [{ chunk: 1 }],
     marks: [{ globalIndex: '2', word: 'marked' }]
@@ -59,7 +60,6 @@ async function main() {
     audioPlayer: {},
     lblAudio: labels.audio,
     lblTranscript: labels.transcript,
-    lblNotes: labels.notes,
     lblVisual: labels.visual,
     async loadFromDB(key) {
       calls.push(['load', key]);
@@ -88,9 +88,6 @@ async function main() {
     },
     scheduleGeneratedAnnotationIndexRefresh() {
       calls.push(['scheduleGeneratedAnnotationIndexRefresh']);
-    },
-    processNotes(data) {
-      calls.push(['notes', data.n]);
     },
     processVisual(data) {
       calls.push(['visual', data.v]);
@@ -129,7 +126,6 @@ async function main() {
 
   assert.equal(labels.audio.loaded, 'Audio restored');
   assert.equal(labels.transcript.loaded, 'Transcript restored');
-  assert.equal(labels.notes.loaded, 'Notes restored');
   assert.equal(labels.visual.loaded, 'Visual restored');
   assert.equal(state.markedMap.get(2).word, 'marked');
   assert.ok(calls.some((call) => call[0] === 'audioMeta' && call[1] === 'clip.mp3'));

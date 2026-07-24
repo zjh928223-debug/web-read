@@ -1,30 +1,12 @@
 import { initGlassEffects } from './glass-effects.js'
-import { initChunkNoteTransfer } from './chunk-note-transfer-module.js'
+import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'
+import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 
 export function initReaderAppRuntime(deps = {}) {
-  var chunkNoteTransferApi = initChunkNoteTransfer({
-    importButton: deps.importChunkNotesBtn,
-    importInput: deps.importChunkNotesInput,
-    exportButton: deps.exportChunkNotesBtn,
-    getFirstFileFromEvent: deps.getFirstFileFromEvent,
-    readFileAsText: deps.readFileAsText,
-    applyImportedChunkNotes: function (data) { return deps.chunkNotesApi.applyImportedChunkNotes(data) },
-    saveChunkNotesNow: deps.chunkNotesApi.saveChunkNotesNow,
-    getHasAiChunkData: function () { return deps.chunkState.hasAiChunkData },
-    getIsChunkMode: function () { return deps.chunkState.isChunkMode },
-    enterChunkMode: function () { return deps.chunkControlsApi.toggleChunkMode(true) },
-    setChunkNoteVisible: deps.setChunkNoteVisible,
-    renderChunkMode: deps.renderChunkMode,
-    buildChunkNotesSnapshot: deps.chunkNotesApi.buildChunkNotesSnapshot,
-    getCurrentAudioFilenameBase: deps.audioIdentityApi.getCurrentAudioFilenameBase,
-    getChunkNotesFileState: function () { return deps.chunkNotesApi.getChunkNotesFileState() },
-    setChunkNotesFileState: function (fileState) { return deps.chunkNotesApi.setChunkNotesFileState(fileState) },
-    getCurrentAudioKey: function () { return deps.audioIdentityApi.currentAudioKey },
-    showToast: deps.showToast,
-    showError: deps.showError
-  })
-
+  var audioPlayer = (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+    ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
+    : deps.audioPlayer
   deps.annotationLightweightModule.initManualLightweightAnnotationControls({
     exportButton: deps.exportAnnotationLightweightBtn,
     importButton: deps.importAnnotationLightweightBtn,
@@ -33,10 +15,26 @@ export function initReaderAppRuntime(deps = {}) {
     refreshAfterImport: function () {
       if (deps.chunkState.isChunkMode) deps.renderChunkMode()
       else deps.renderTranscript()
-      deps.forceUpdateUI(deps.audioPlayer.currentTime)
+      deps.forceUpdateUI(audioPlayer.currentTime)
     },
     showToast: deps.showToast,
     showError: deps.showError
+  })
+
+  initAnnotationBackfillAiControls({
+    button: deps.annotationBackfillAiBtn,
+    state: deps.runtimeState,
+    annotationLightweightModule: deps.annotationLightweightModule,
+    client: youtubeWorkflowClient,
+    refreshAfterImport: function () {
+      if (deps.chunkState.isChunkMode) deps.renderChunkMode()
+      else deps.renderTranscript()
+      deps.forceUpdateUI(audioPlayer.currentTime)
+    },
+    showToast: deps.showToast,
+    showError: deps.showError,
+    windowObject: globalThis,
+    documentObject: globalThis.document
   })
 
   deps.appHandlers.initExports({
@@ -61,7 +59,7 @@ export function initReaderAppRuntime(deps = {}) {
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,
     forceUpdateUI: deps.forceUpdateUI,
-    audioPlayer: deps.audioPlayer,
+    audioPlayer: audioPlayer,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
     showToast: deps.showToast,
     showError: deps.showError
@@ -69,7 +67,7 @@ export function initReaderAppRuntime(deps = {}) {
 
   deps.controlsModule.init({
     state: deps.runtimeState,
-    audioPlayer: deps.audioPlayer,
+    audioPlayer: audioPlayer,
     bsFindActiveHelper: deps.bsFindActiveHelper,
     findChunkIndexByTime: deps.playbackRuntimeHelpersApi.findChunkIndexByTime,
     getCurrentSegmentIndexHelper: deps.getCurrentSegmentIndexHelper,
@@ -84,15 +82,13 @@ export function initReaderAppRuntime(deps = {}) {
   })
 
   configureReaderPublicFacades({
-    selectSentenceFromChunkTarget: deps.sentenceNotesApi.selectSentenceFromChunkTarget,
     buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId,
     loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
     setChunkNoteVisible: deps.setChunkNoteVisible,
     loadSentenceNotesForCurrentAudio: deps.loadSentenceNotesForCurrentAudio,
     switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
-    applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
-    openChunkNoteContextFromEvent: function (event) { return deps.chunkNotesApi.handleChunkSelectionContextMenu(event) }
+    applyCurrentAudioMeta: deps.applyCurrentAudioMeta
   })
 
-  return { chunkNoteTransferApi }
+  return {}
 }

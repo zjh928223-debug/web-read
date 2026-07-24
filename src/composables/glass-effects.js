@@ -1,9 +1,9 @@
-  function init(lockChunkDimensionsFn) {
-    var panelSelector = [
-      '.controls','.extra-controls','.transcript-header','#helper-panel',
-      '#style-editor-modal','#chunk-style-modal','#chunk-note-style-modal',
-      '#app-toast','#chunk-note-ctx-menu','.control-group','.hotkey-box'
-    ].join(', ');
+    function init(lockChunkDimensionsFn) {
+      var panelSelector = [
+        '.controls','.extra-controls','.transcript-header','#helper-panel',
+      '#style-editor-modal','#chunk-style-modal',
+      '#app-toast','.control-group','.hotkey-box'
+      ].join(', ');
 
     var buttonSelector = [
       'button','.file-btn','.mini-toggle','.style-btn-toggle'

@@ -29,7 +29,7 @@ export function startSessionRuntime(deps = {}) {
     if (localStorageApi.getItem('chunkGap')) documentObject.documentElement.style.setProperty('--chunk-gap', localStorageApi.getItem('chunkGap'));
     if (localStorageApi.getItem('chunkCnColor')) documentObject.documentElement.style.setProperty('--chunk-cn-color', localStorageApi.getItem('chunkCnColor'));
     if (localStorageApi.getItem('chunkBgColor')) documentObject.documentElement.style.setProperty('--chunk-active-bg', localStorageApi.getItem('chunkBgColor'));
-    deps.adjustChunkNoteArrowSizeByGap();
+    if (typeof deps.adjustChunkNoteArrowSizeByGap === 'function') deps.adjustChunkNoteArrowSizeByGap();
 
     if (state.chunkCnMode === 'focus') {
       const btn = documentObject.getElementById('btn-chunk-focus');
@@ -42,9 +42,6 @@ export function startSessionRuntime(deps = {}) {
     if (savedChunkVisible !== null) state.chunkCnVisible = savedChunkVisible === 'true';
     const savedHoldMode = localStorageApi.getItem('st.chunkCnHoldMode');
     if (savedHoldMode !== null) state.chunkCnHoldMode = savedHoldMode === 'true';
-    const savedNoteVisible = localStorageApi.getItem('chunkNoteVisible');
-    if (savedNoteVisible !== null) namespace.chunkNoteVisible = savedNoteVisible === 'true';
-    deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);
     deps.updateChunkCnHoldBtn();
 
     await deps.restoreSession();

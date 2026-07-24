@@ -1,4 +1,7 @@
 export function buildAudioKey(meta) {
+  const source = String((meta && meta.source) || '').trim();
+  const jobId = String((meta && meta.jobId) || '').trim();
+  if (source === 'youtube-workflow' && jobId) return `youtube-workflow::${jobId}`;
   const name = (meta && meta.name) ? meta.name : 'audio';
   const size = (meta && Number.isFinite(meta.size)) ? meta.size : 0;
   const modified = (meta && Number.isFinite(meta.lastModified)) ? meta.lastModified : 0;

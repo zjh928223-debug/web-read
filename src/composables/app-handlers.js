@@ -57,7 +57,9 @@
     var renderTranscript = config.renderTranscript;
     var renderChunkMode = config.renderChunkMode;
     var forceUpdateUI = config.forceUpdateUI;
-    var audioPlayer = config.audioPlayer;
+    var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+      ? window.__mediaSource.createActiveMediaProxy(config.audioPlayer)
+      : config.audioPlayer;
     var syncAnnotationGenerationEntryStatus = config.syncAnnotationGenerationEntryStatus;
     var showToast = config.showToast;
     var showError = config.showError;

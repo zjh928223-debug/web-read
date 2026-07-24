@@ -2,7 +2,7 @@
 
 Vite + Vue 3 + Pinia migration of a legacy browser-based language reading tool.
 
-The app provides audio playback, synchronized transcript reading, AI chunk mode, cloze quizzes, notes, and generated annotation workflows.
+The app provides audio playback, synchronized transcript reading, AI chunk mode, marks, lightweight annotation workflows, and annotation API settings.
 
 For the detailed current architecture and migration status, see `CURRENT_PROJECT_STATUS.md`.
 
@@ -19,7 +19,7 @@ src/composables/reader-runtime-assembly.js remaining runtime assembly
         ->
 src/composables/session-init.js thin session entry
         ->
-src/composables/session-runtime-assembly.js session startup/annotation assembly
+src/composables/session-runtime-assembly.js thin session runtime assembly
         ->
 window.__state / state adapters / Pinia bridge module compatibility
         ->
@@ -61,8 +61,6 @@ npm run dev          # Vite dev server
 npm run build        # Vite production build
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
-npm run verify:chunk-notes-state # Focused chunk note state helper check
-npm run verify:sentence-notes-state # Focused sentence note state helper check
 npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
 npm run verify:keyboard-boundary # Focused keyboard boundary helper check
 npm run verify:transcript-state # Focused transcript state adapter check
@@ -77,11 +75,14 @@ npm run verify:inline-handler-bindings # Focused remaining inline handler migrat
 npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
 npm run verify:session-state-provider # Focused session-init state provider check
 npm run verify:session-runtime-assembly # Focused thin session entry and session assembly guard
+npm run verify:session-runtime-deps # Focused session runtime dependency collection check
+npm run verify:session-lifecycle-runtime # Focused session lifecycle runtime assembly check
 npm run verify:session-annotation-services # Focused session annotation service helper check
 npm run verify:session-annotation-text # Focused session annotation text/context helper check
 npm run verify:session-annotation-export-payload # Focused annotation lightweight export payload check
 npm run verify:session-annotation-import-normalization # Focused annotation lightweight import normalization check
 npm run verify:session-annotation-bundle-merge # Focused annotation lightweight bundle merge check
+npm run verify:session-annotation-runtime # Focused session annotation runtime assembly check
 npm run verify:session-annotation-generated-index # Focused generated annotation index runtime check
 npm run verify:session-annotation-marks # Focused annotation marks rebuild/runtime check
 npm run verify:session-annotation-context # Focused annotation document context check
@@ -114,7 +115,6 @@ npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
 npm run verify:app-window-facades # Focused app.js duplicate window facade guard
 npm run verify:pinia-bridge-module # Focused Pinia bridge module check
 npm run verify:audio-store-facades # Focused DB compatibility facade check
-npm run verify:chunk-note-style-facades # Focused chunk note style facade check
 npm run verify:keyboard-facades # Focused keyboard helper facade check
 npm run verify:import-facades # Focused transcript/chunk import facade check
 npm run verify:chunk-controls-module # Focused AI chunk controls module check
@@ -125,20 +125,14 @@ npm run verify:style-editor-module # Focused style editor module check
 npm run verify:app-handlers # Focused app handlers module check
 npm run verify:marks-store # Focused marks store ownership check
 npm run verify:marks-state-module # Focused marks runtime state module check
-npm run verify:chunk-note-transfer # Focused chunk note import/export transfer check
-npm run verify:notes-wrapper-drain # Focused unused notes runtime wrapper check
 npm run verify:visual-vocab-module # Focused visual vocab state module check
 npm run verify:legacy-dom-drain # Focused removed legacy DOM lookup check
-npm run verify:sentence-wrapper-drain # Focused unused sentence note runtime wrapper check
 npm run verify:audio-identity-module # Focused audio identity state module check
 npm run verify:hotkey-state-module # Focused hotkey runtime state module check
 npm run verify:transcript-interactions # Focused normal transcript interaction check
 npm run verify:chunk-interactions # Focused AI chunk interaction check
-npm run verify:cloze-interactions # Focused cloze answer interaction check
 npm run verify:render-facades # Focused legacy render facade removal check
 npm run verify:script-order # Focused index.html script order guard
-npm run verify:chunk-note-layout-helpers # Focused chunk note layout helper module check
-npm run verify:chunk-note-layout-core # Focused chunk note layout core module check
 npm run verify:annotation-bubble # Focused annotation bubble module check
 npm run verify:annotation-api-settings-ui # Focused annotation API settings UI module check
 npm run verify:legacy-root-copy # Focused legacy root copy removal check
@@ -163,8 +157,6 @@ src/composables/session-init.js module
 The former root regular scripts now load through Vite module replacements and are no longer referenced by `index.html`:
 
 ```text
-chunk-note-layout-helpers.js
-chunk-note-layout-core.js
 annotation-bubble.js
 annotation-api-settings-ui.js
 ```
@@ -178,7 +170,7 @@ src/
 |-- components/                # 5 Vue components
 |-- pinia-stores/              # 9 real Pinia stores
 |-- stores/                    # 9 legacy window compatibility stores
-|-- composables/               # 75 moduleized legacy behavior chunks
+|-- composables/               # 78 moduleized legacy behavior chunks
 |-- utils/                     # 11 utility ES modules
 `-- services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -202,13 +194,15 @@ Do not change this schema without an explicit migration plan.
 - Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
 - Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
 - Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
-- Cloze answer draft/check interaction now goes through `src/composables/cloze-interactions.js`; the old cloze render/check facades remain only for legacy fallback cleanup.
-- `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js`, which owns the current Vue bridge render calls plus the legacy cloze fallback binding through explicit injections.
+- `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js`, which owns the current Vue bridge render calls.
 - Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
 - Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
 - Playback helper behavior now goes through `src/composables/playback-runtime-helpers.js`; focused reader runtime modules inject its API into playback and controls modules, including sentence-mode previous/next jumps.
 - `src/composables/session-init.js` is now a thin session entry that initializes `src/composables/session-runtime-assembly.js`.
-- `src/composables/session-runtime-assembly.js` composes session startup, restore, annotation context, marks rebuild, generated index refresh, lightweight annotation import/export, API settings, cleanup, and UI settings restore through focused modules.
+- `src/composables/session-runtime-assembly.js` sequences session runtime deps, annotation runtime setup, lifecycle startup/restore/UI setup, public session facade handler wiring, and API settings initialization.
+- `src/composables/session-runtime-deps.js` owns session runtime `window`/DOM/global dependency collection; it no longer installs temporary `window.__session_*` bridge facades.
+- `src/composables/session-annotation-runtime.js` composes generated index refresh, annotation context, marks rebuild, lightweight annotation import/export, API settings, and annotation facade support for session startup.
+- `src/composables/session-lifecycle-runtime.js` composes startup cleanup, persisted session restore, DB-ready startup orchestration, and UI settings restore for session startup.
 - `src/composables/session-annotation-services.js` owns annotation service/global lookup helpers and diagnostics emit for session startup and annotation import/export code.
 - `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
 - `src/composables/runtime-state-bindings.js` now owns the `runtimeState` getter/setter bindings that preserve current `st.*` compatibility for startup/session code.
@@ -216,7 +210,7 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/reader-runtime-context.js` owns startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
 - `src/composables/reader-feature-runtime.js` owns feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff.
 - `src/composables/reader-feature-runtime-deps.js` owns the large feature runtime dependency mapping from runtime context, bootstrap state, DOM refs, and notes/session wrappers.
-- `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; session annotation settings DOM setup is wired through `src/composables/session-runtime-assembly.js` and `src/composables/session-annotation-api-settings-runtime.js`.
+- `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; session annotation settings DOM setup is wired through `src/composables/session-annotation-runtime.js` and `src/composables/session-annotation-api-settings-runtime.js`.
 - `src/composables/reader-bootstrap-runtime.js` owns initial state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization for the runtime assembly.
 - `src/composables/reader-runtime-deps.js` owns runtime utility/global helper dependency collection for validation, import helpers, identity keys, playback indexes, chunk matching, and vocab matching.
 - `src/composables/reader-notes-session-runtime-deps.js` owns notes/session runtime dependency mapping from runtime context, bootstrap state, DOM refs, and legacy global module owners.
@@ -225,17 +219,17 @@ Do not change this schema without an explicit migration plan.
 - `src/composables/reader-session-runtime.js` owns the session-facing chunk/sentence note lifecycle wrappers and the `applyCurrentAudioMeta(...)` side-effect wrapper for the runtime assembly.
 - `src/composables/reader-interaction-runtime.js` owns render runtime configuration and reader playback runtime initialization for the runtime assembly.
 - `src/composables/reader-playback-runtime.js` owns annotation bubble resolver setup, playback helper setup, playback module initialization, and transcript/chunk interaction configuration.
-- `src/composables/reader-controls-runtime.js` owns highlight/chunk/theme control initialization, style editor initialization, and annotation settings UI initialization for the runtime assembly.
+- `src/composables/reader-controls-runtime.js` owns highlight/chunk/theme control initialization and style editor initialization for the runtime assembly.
 - `src/composables/reader-keyboard-runtime.js` owns keyboard module initialization and injects hotkey, mark, chunk-note, and panel-close dependencies.
-- `src/composables/reader-app-runtime.js` owns chunk note transfer, annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade initialization for the runtime assembly.
+- `src/composables/reader-app-runtime.js` owns annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade initialization for the runtime assembly.
 - `src/composables/reader-import-runtime.js` owns session facade/provider setup, visual vocab setup, runtime state bindings, chunk pipeline, and import handler initialization for the runtime assembly.
 - `src/composables/reader-runtime-helpers.js` owns reader focus restore, current-note toggling, and chunk-note export dialog access helpers used by import/keyboard callers.
 - Local audio identity and chunk note layout API aliases have been removed from `reader-runtime.js`; runtime assembly now injects those module APIs directly.
-- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining compatibility facade assignments previously made directly by root `app.js`.
+- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining public compatibility facade assignments previously made directly by root `app.js`; session runtime now injects session facade handlers directly instead of using `window.__session_*` bridge facades.
 - `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
 - Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
 - DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
-- Chunk note style compatibility facades now live in `src/composables/notes-module.js`.
+- Chunk note style compatibility facades have been removed with the chunk note UI.
 - `window.isInputLikeTarget` now lives in `src/composables/keyboard-module.js`.
 - `window.processTranscript` and `window.processChunkData` now live in `src/composables/import-module.js`.
 - Highlight mode controls and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`.
@@ -243,17 +237,16 @@ Do not change this schema without an explicit migration plan.
 - Theme control DOM bindings now live in `src/composables/theme-controls-module.js`; glass sizing setup and style editor parsing helpers are owned by `src/composables/glass-effects.js` and `src/composables/style-editor.js`.
 - Marks import button binding now lives in `src/composables/app-handlers.js`; marks toggle behavior remains owned by `src/stores/marks.js`.
 - Marks runtime state now lives in `src/composables/marks-state-module.js`; `session-init.js` still restores and rebuilds marks through the unchanged `st.markedMap` state field.
-- Chunk note import/export button binding, download/write handling, and export overwrite dialog now live in `src/composables/chunk-note-transfer-module.js`.
-- Unused chunk note runtime wrappers and thin keyboard/modal/layout/visual/save/snapshot/context-menu chunk note wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js`.
+- Chunk note import/export, cloze import/rendering, and the old notes/definition hotkey have been removed from the active runtime.
+- Chunk note runtime wrappers and thin keyboard/modal/layout/visual/save/snapshot/context-menu wrappers have been removed from the active runtime.
 - Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
 - Audio identity state and derived storage/doc-id helpers now live in `src/composables/audio-identity-module.js`; `src/composables/reader-session-runtime.js` owns the temporary `applyCurrentAudioMeta(...)` wrapper that preserves the chunk-note draft side effect, and `session-init.js` still calls that public contract unchanged.
 - Hotkey runtime state now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores persisted hotkeys through the unchanged `st.*Key` state fields.
 - No-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades have been removed and are guarded by `verify:state-facades`.
 - Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
-- Unused sentence note runtime wrappers and thin sentence interaction wrappers have been removed from `reader-runtime.js`; behavior remains owned by `src/composables/notes-module.js` while session restore entry points are kept.
-- Chunk note and sentence note subsystem runtime and shared note state now live behind `src/composables/notes-module.js` / `window.__notesState`.
-- Annotation lightweight import/export button glue lives in `src/composables/annotation-lightweight-module.js`; session-side payload/export/import/merge behavior now lives in `src/composables/session-annotation-*.js` and `src/composables/session-annotation-lightweight-io.js`.
+- Sentence note runtime wrappers and thin sentence interaction wrappers have been removed from the active runtime. Notes facades now resolve to no-op compatibility APIs while callers are drained.
+- Annotation lightweight import/export button glue lives in `src/composables/annotation-lightweight-module.js`; session-side payload/export/import/merge behavior now lives in `src/composables/session-annotation-*.js` and `src/composables/session-annotation-lightweight-io.js`, and its export/import handlers are injected explicitly.
 - Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.
-- Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; session initialization reaches it through `src/composables/session-annotation-api-settings-runtime.js`.
+- Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; session initialization reaches it directly through `src/composables/session-annotation-api-settings-runtime.js`.
 - `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
 - Former root regular scripts are no longer loaded by `index.html` and are no longer copied by Vite.

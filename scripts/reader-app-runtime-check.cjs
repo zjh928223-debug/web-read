@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -15,7 +15,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -64,17 +63,18 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     "import { initGlassEffects } from './glass-effects.js'",
-    "import { initChunkNoteTransfer } from './chunk-note-transfer-module.js'",
+    "import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'",
+    "import { youtubeWorkflowClient } from './youtube-workflow-client.js'",
     "import { configureReaderPublicFacades } from './reader-public-facades.js'",
     'export function initReaderAppRuntime',
-    'var chunkNoteTransferApi = initChunkNoteTransfer({',
     'deps.annotationLightweightModule.initManualLightweightAnnotationControls({',
+    'initAnnotationBackfillAiControls({',
     'deps.appHandlers.initExports({',
     'deps.appHandlers.initMarksImport({',
     'deps.controlsModule.init({',
     'initGlassEffects({',
     'configureReaderPublicFacades({',
-    'return { chunkNoteTransferApi }'
+    'return {}'
   ].forEach((pattern) => {
     assert.ok(
       moduleSource.includes(pattern),
@@ -84,6 +84,14 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   assert.equal(moduleSource.includes('window.'), false, 'reader-app-runtime should not read window globals');
   assert.equal(moduleSource.includes('document.'), false, 'reader-app-runtime should not read document globals');
+  [
+    "import { initChunkNoteTransfer } from './chunk-note-transfer-module.js'",
+    'initChunkNoteTransfer(',
+    'chunkNoteTransferApi',
+    'openChunkNoteContextFromEvent'
+  ].forEach((pattern) => {
+    assert.equal(moduleSource.includes(pattern), false, `retired chunk-note transfer wiring should stay removed: ${pattern}`);
+  });
 
   [
     'deps.processTranscript(transcriptData);',
@@ -103,8 +111,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       "const initGlassEffects = globalThis.__readerAppRuntimeTest.initGlassEffects;\n"
     )
     .replace(
-      "import { initChunkNoteTransfer } from './chunk-note-transfer-module.js'\n",
-      "const initChunkNoteTransfer = globalThis.__readerAppRuntimeTest.initChunkNoteTransfer;\n"
+      "import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-module.js'\n",
+      "const initAnnotationBackfillAiControls = globalThis.__readerAppRuntimeTest.initAnnotationBackfillAiControls;\n"
+    )
+    .replace(
+      "import { youtubeWorkflowClient } from './youtube-workflow-client.js'\n",
+      "const youtubeWorkflowClient = globalThis.__readerAppRuntimeTest.youtubeWorkflowClient;\n"
     )
     .replace(
       "import { configureReaderPublicFacades } from './reader-public-facades.js'\n",
@@ -112,8 +124,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     );
 
   const calls = {
-    transfer: [],
     annotationLightweight: [],
+    annotationBackfill: [],
     exports: [],
     marksImport: [],
     controls: [],
@@ -122,13 +134,14 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   };
 
   globalThis.__readerAppRuntimeTest = {
-    initChunkNoteTransfer(deps) {
-      calls.transfer.push(deps);
-      return { id: 'transfer-api' };
-    },
     initGlassEffects(deps) {
       calls.glass.push(deps);
     },
+    initAnnotationBackfillAiControls(deps) {
+      calls.annotationBackfill.push(deps);
+      return { id: 'annotation-backfill-controller' };
+    },
+    youtubeWorkflowClient: { id: 'youtube-client' },
     configureReaderPublicFacades(deps) {
       calls.publicFacades.push(deps);
     }
@@ -155,18 +168,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     marksStateApi: { markedMap },
     chunkControlsApi: { toggleChunkMode(value) { return value; } },
     chunkNotesApi: {
-      applyImportedChunkNotes(data) { return data; },
-      saveChunkNotesNow() {},
-      buildChunkNotesSnapshot() { return { notes: [] }; },
-      getChunkNotesFileState() { return { fileName: '' }; },
-      setChunkNotesFileState(fileState) { return fileState; },
       listChunkNotes() { return [{ id: 'note-1' }]; },
       getChunkNoteTagById(id) { return { id }; },
-      getChunkNoteContentBoxSize() { return { width: 1, height: 2 }; },
-      handleChunkSelectionContextMenu(event) { return event; }
-    },
-    sentenceNotesApi: {
-      selectSentenceFromChunkTarget() {}
+      getChunkNoteContentBoxSize() { return { width: 1, height: 2 }; }
     },
     audioIdentityApi: {
       currentAudioKey: 'audio-key',
@@ -193,12 +197,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     getCurrentSegmentIndexHelper() {},
     toggleFollowBtn: { id: 'follow' },
     mainAppArea: { id: 'main' },
-    importChunkNotesBtn: { id: 'import-chunk' },
-    importChunkNotesInput: { id: 'import-chunk-input' },
-    exportChunkNotesBtn: { id: 'export-chunk' },
     exportAnnotationLightweightBtn: { id: 'export-annotation' },
     importAnnotationLightweightBtn: { id: 'import-annotation' },
     importAnnotationLightweightInput: { id: 'import-annotation-input' },
+    annotationBackfillAiBtn: { id: 'annotation-backfill-ai' },
     exportJsonBtn: { id: 'export-json' },
     exportMdAllBtn: { id: 'export-md' },
     importMarksBtn: { id: 'import-marks' },
@@ -210,24 +212,21 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   const api = initReaderAppRuntime(deps);
 
-  assert.deepEqual(api.chunkNoteTransferApi, { id: 'transfer-api' });
-  assert.equal(calls.transfer.length, 1);
+  assert.deepEqual(api, {});
   assert.equal(calls.annotationLightweight.length, 1);
+  assert.equal(calls.annotationBackfill.length, 1);
   assert.equal(calls.exports.length, 1);
   assert.equal(calls.marksImport.length, 1);
   assert.equal(calls.controls.length, 1);
   assert.equal(calls.glass.length, 1);
   assert.equal(calls.publicFacades.length, 1);
 
-  assert.equal(calls.transfer[0].importButton, deps.importChunkNotesBtn);
-  assert.equal(calls.transfer[0].getIsChunkMode(), true);
-  assert.equal(calls.transfer[0].enterChunkMode(), true);
-  assert.equal(calls.transfer[0].getCurrentAudioKey(), 'audio-key');
-  assert.deepEqual(calls.transfer[0].applyImportedChunkNotes({ ok: true }), { ok: true });
-
   calls.annotationLightweight[0].refreshAfterImport();
   assert.equal(calls.rendered, 'chunk');
   assert.equal(calls.forcedTime, 12.5);
+  calls.annotationBackfill[0].refreshAfterImport();
+  assert.equal(calls.rendered, 'chunk');
+  assert.equal(calls.annotationBackfill[0].client, globalThis.__readerAppRuntimeTest.youtubeWorkflowClient);
   deps.chunkState.isChunkMode = false;
   calls.annotationLightweight[0].refreshAfterImport();
   assert.equal(calls.rendered, 'transcript');
@@ -240,7 +239,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.controls[0].findChunkIndexByTime(3), 3);
   assert.deepEqual(calls.glass[0].listChunkNotes(), [{ id: 'note-1' }]);
   assert.equal(calls.publicFacades[0].buildCurrentSentenceDocId(), 'doc-id');
-  assert.deepEqual(calls.publicFacades[0].openChunkNoteContextFromEvent({ type: 'ctx' }), { type: 'ctx' });
+  assert.equal(Object.prototype.hasOwnProperty.call(calls.publicFacades[0], 'openChunkNoteContextFromEvent'), false);
 
   delete globalThis.__readerAppRuntimeTest;
 

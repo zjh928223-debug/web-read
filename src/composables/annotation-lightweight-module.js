@@ -1,15 +1,41 @@
 // Annotation lightweight import/export DOM glue.
 (function () {
+  var runtimeHandlers = {
+    buildManualLightweightAnnotationTemplate: null,
+    exportManualLightweightAnnotations: null,
+    importManualLightweightAnnotations: null
+  };
+
+  function configureManualLightweightAnnotationRuntime(config) {
+    config = config || {};
+    runtimeHandlers.buildManualLightweightAnnotationTemplate = typeof config.buildManualLightweightAnnotationTemplate === 'function'
+      ? config.buildManualLightweightAnnotationTemplate
+      : null;
+    runtimeHandlers.exportManualLightweightAnnotations = typeof config.exportManualLightweightAnnotations === 'function'
+      ? config.exportManualLightweightAnnotations
+      : null;
+    runtimeHandlers.importManualLightweightAnnotations = typeof config.importManualLightweightAnnotations === 'function'
+      ? config.importManualLightweightAnnotations
+      : null;
+  }
+
+  function buildManualLightweightAnnotationTemplate() {
+    if (typeof runtimeHandlers.buildManualLightweightAnnotationTemplate === 'function') {
+      return runtimeHandlers.buildManualLightweightAnnotationTemplate();
+    }
+    throw new Error('Annotation lightweight template module is not ready');
+  }
+
   function exportManualLightweightAnnotations() {
-    if (typeof window.__session_exportManualLightweightAnnotations === 'function') {
-      return window.__session_exportManualLightweightAnnotations();
+    if (typeof runtimeHandlers.exportManualLightweightAnnotations === 'function') {
+      return runtimeHandlers.exportManualLightweightAnnotations();
     }
     throw new Error('Annotation lightweight export module is not ready');
   }
 
   async function importManualLightweightAnnotations(file) {
-    if (typeof window.__session_importManualLightweightAnnotations === 'function') {
-      return window.__session_importManualLightweightAnnotations(file);
+    if (typeof runtimeHandlers.importManualLightweightAnnotations === 'function') {
+      return runtimeHandlers.importManualLightweightAnnotations(file);
     }
     throw new Error('Annotation lightweight import module is not ready');
   }
@@ -74,6 +100,8 @@
   }
 
   window.__annotationLightweightModule = {
+    configureManualLightweightAnnotationRuntime: configureManualLightweightAnnotationRuntime,
+    buildManualLightweightAnnotationTemplate: buildManualLightweightAnnotationTemplate,
     exportManualLightweightAnnotations: exportManualLightweightAnnotations,
     importManualLightweightAnnotations: importManualLightweightAnnotations,
     buildImportSuccessMessage: buildImportSuccessMessage,

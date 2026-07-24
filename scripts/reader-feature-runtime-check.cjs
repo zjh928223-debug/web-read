@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -15,7 +15,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -105,8 +104,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'var interactionRuntime = initReaderInteractionRuntime({',
     'forceUpdateUI = interactionRuntime.forceUpdateUI;',
     'initReaderKeyboardRuntime({',
-    'var appRuntime = initReaderAppRuntime({',
-    'deps.setChunkNoteTransferApi(appRuntime.chunkNoteTransferApi);'
+    'var appRuntime = initReaderAppRuntime({'
   ].forEach((pattern) => {
     assert.ok(featureSource.includes(pattern), `reader-feature-runtime should own ${pattern}`);
   });
@@ -114,7 +112,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(featureSource.includes('document.'), false, 'reader-feature-runtime should not read document globals');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -142,7 +139,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     )
     .replace(
       "import { initReaderAppRuntime } from './reader-app-runtime.js';\n",
-      'function initReaderAppRuntime(deps) { globalThis.__featureCalls.push(["app", deps]); return { chunkNoteTransferApi: { transfer: true } }; }\n'
+      'function initReaderAppRuntime(deps) { globalThis.__featureCalls.push(["app", deps]); return {}; }\n'
     )
     .replace(
       "import { initReaderImportRuntime } from './reader-import-runtime.js';\n",
@@ -150,7 +147,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     );
 
   globalThis.__featureCalls = [];
-  const transferCalls = [];
   const chunkNotesApi = {
     ensureChunkNoteOverlayLayers() { globalThis.__featureCalls.push(['ensure-overlays']); },
     closeChunkNoteContextMenu() {},
@@ -160,7 +156,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     renderAllChunkNoteTags() {},
     scheduleChunkNoteConnectorRedraw() {},
     refreshAllChunkNoteVisuals() {},
-    handleChunkSelectionContextMenu() { return 'context'; },
     tryRestoreChunkNoteDraft() {}
   };
   const globalObject = {
@@ -169,8 +164,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     __themeStore: { id: 'theme-store' },
     __lockChunkNoteDimensionsForTheme: () => 'lock',
     __playbackModule: { id: 'playback-module' },
-    __buildClozeQuizMarkup: () => '<quiz>',
-    __clozeCheck: (index) => `check-${index}`,
     __keyboardModule: { id: 'keyboard-module' },
     __marksStore: { id: 'marks-store' },
     __annotationLightweightModule: { id: 'annotation-lightweight' },
@@ -193,11 +186,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     marksStateApi: { markedMap: new Map([[1, true]]) },
     chunkNotesApi,
     sentenceNotesApi: {
-      hasActiveTextSelectionWithinChunk() {},
-      selectSentenceFromChunkTarget() {}
+      hasActiveTextSelectionWithinChunk() {}
     },
-    notesState: {},
-    setChunkNoteTransferApi(api) { transferCalls.push(api); }
+    notesState: {}
   });
 
   assert.deepEqual(globalThis.__featureCalls.map((entry) => entry[0]), [
@@ -224,9 +215,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(keyboardDeps.chunkControlsApi, { chunk: true });
   assert.equal(appDeps.playbackRuntimeHelpersApi.helper, true);
   assert.equal(appDeps.forceUpdateUI, api.forceUpdateUI);
-  assert.deepEqual(transferCalls, [{ transfer: true }]);
   assert.equal(api.chunkControlsApi.chunk, true);
-  assert.equal(api.appRuntime.chunkNoteTransferApi.transfer, true);
+  assert.deepEqual(api.appRuntime, {});
 
   console.log('reader feature runtime check passed');
 }

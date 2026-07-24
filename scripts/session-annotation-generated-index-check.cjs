@@ -7,13 +7,16 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-generated-index.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const sessionAnnotationRuntimePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
+  const sessionAnnotationRuntimeSource = fs.readFileSync(sessionAnnotationRuntimePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && sessionAssemblySource.includes("from './session-annotation-generated-index.js';"),
+      && sessionAssemblySource.includes("from './session-annotation-runtime.js';")
+      && sessionAnnotationRuntimeSource.includes("from './session-annotation-generated-index.js';"),
     'session-init should reach generated index runtime through session-runtime-assembly'
   );
   [
@@ -48,6 +51,7 @@ async function main() {
 
   const state = {
     currentAudioKey: 'audio-1',
+    markedMap: new Map([[1, { word: 'one' }], [3, { word: 'two' }]]),
     annotationGeneratedIndexRefreshSeq: 0,
     annotationGeneratedIndexScopeKey: 'old'
   };
@@ -55,6 +59,20 @@ async function main() {
   const diagnostics = [];
   const warnings = [];
   const debug = [];
+  const markCountAttrs = {};
+  const dispatchedEvents = [];
+  class FakeCustomEvent {
+    constructor(type, options = {}) {
+      this.type = type;
+      this.detail = options.detail;
+    }
+  }
+  const markCountEl = {
+    textContent: '',
+    setAttribute(name, value) {
+      markCountAttrs[name] = value;
+    }
+  };
   let cleared = 0;
   let loadedScope = null;
   let indexed = null;
@@ -88,6 +106,10 @@ async function main() {
     getWindow() {
       return {
         ANNOTATION_DEBUG: false,
+        CustomEvent: FakeCustomEvent,
+        dispatchEvent(event) {
+          dispatchedEvents.push(event);
+        },
         localStorage: {
           getItem(key) {
             return key === 'annotation.debug' ? 'true' : '';
@@ -109,6 +131,7 @@ async function main() {
     getAnnotationGeneratedResultStore() {
       return store;
     },
+    markCountEl,
     emitAnnotationDiagnostics(event, payload) {
       diagnostics.push({ event, payload });
     }
@@ -125,9 +148,63 @@ async function main() {
   assert.equal(diagnostics.at(-1).event, 'app.generated_index_refresh_complete');
   assert.equal(debug[0].message, '[annotation-debug] app.generated_index_refresh');
 
+  let uninitializedIndexed = null;
+  const uninitializedState = {
+    currentAudioKey: 'audio-2',
+    markedMap: new Map()
+  };
+  const uninitializedRuntime = api.createSessionAnnotationGeneratedIndexRuntime({
+    state: uninitializedState,
+    namespace: { currentDocId: 'doc-2' },
+    getWindow() {
+      return {};
+    },
+    consoleApi: {
+      warn(message, payload) {
+        warnings.push({ message, payload });
+      },
+      debug() {}
+    },
+    getAnnotationGenerationStorage() {
+      return {
+        async loadBundle() {
+          return {
+            generated: { items: [{ targetId: 'uninitialized-seq' }] }
+          };
+        }
+      };
+    },
+    getAnnotationGeneratedResultStore() {
+      return {
+        clear() {},
+        indexBundle(generated, scope) {
+          uninitializedIndexed = { generated, scope };
+          return { itemCount: generated.items.length };
+        }
+      };
+    },
+    emitAnnotationDiagnostics(event, payload) {
+      diagnostics.push({ event, payload });
+    }
+  });
+  assert.deepEqual(await uninitializedRuntime.refreshGeneratedAnnotationIndexForCurrentDocument(), { itemCount: 1 });
+  assert.equal(uninitializedState.annotationGeneratedIndexRefreshSeq, 1);
+  assert.equal(uninitializedState.annotationGeneratedIndexScopeKey, 'audio-2::doc-2');
+  assert.equal(uninitializedIndexed.generated.items[0].targetId, 'uninitialized-seq');
+
   runtime.clearGeneratedAnnotationIndex();
   assert.equal(cleared, 1);
   assert.equal(state.annotationGeneratedIndexScopeKey, '');
+  assert.deepEqual(await runtime.syncAnnotationGenerationEntryStatus(), { markedCount: 2 });
+  assert.equal(markCountEl.textContent, '已标记 2');
+  assert.equal(markCountAttrs['data-count'], '2');
+  assert.equal(markCountAttrs.title, '当前文章已标记 2 个重点词');
+
+  assert.equal(dispatchedEvents.at(-1).type, 'reader-marks-changed');
+  assert.deepEqual(dispatchedEvents.at(-1).detail, {
+    markedCount: 2,
+    scope: { audioKey: 'audio-1', documentId: 'doc-1' }
+  });
 
   const missingRuntime = api.createSessionAnnotationGeneratedIndexRuntime({
     state: { currentAudioKey: 'a', annotationGeneratedIndexRefreshSeq: 0, annotationGeneratedIndexScopeKey: '' },

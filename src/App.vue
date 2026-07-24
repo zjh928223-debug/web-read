@@ -1,7 +1,8 @@
 <template>
   <div>
     <ToastMessage />
-    <ClozeQuizView />
+    <YouTubeWorkflowPanel />
+    <VideoPlayerFloat />
     <TranscriptContainer />
     <ChunkModeView />
     <span style="display:none" data-vue-mounted>1</span>
@@ -11,7 +12,8 @@
 <script setup>
 import { onMounted } from 'vue'
 import ToastMessage from './components/ToastMessage.vue'
-import ClozeQuizView from './components/ClozeQuizView.vue'
+import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
+import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
 import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
 
