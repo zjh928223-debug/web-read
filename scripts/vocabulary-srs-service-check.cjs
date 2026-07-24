@@ -185,6 +185,25 @@ async function main() {
   assert.equal(logs[0].before_state.state, 'new');
   assert.notEqual(logs[0].after_state.due_at, logs[0].before_state.due_at);
 
+  const mistakenWord = await service.addWord({
+    word: 'mistaken-entry',
+    lemma: 'mistaken-entry',
+    language: 'en',
+    context: {
+      sentence: 'This entry should be removed.',
+      source_id: 'mistaken-source',
+    },
+    createdAt,
+  });
+  await service.reviewWord(mistakenWord.id, 'good', '2026-07-09T00:02:30.000Z');
+  await service.deleteWord(mistakenWord.id);
+  const snapshotAfterDelete = await repository.loadSnapshot();
+  assert.equal(await repository.getWord(mistakenWord.id), null, 'deleted words should leave the vocabulary store');
+  assert.equal(await repository.getReviewState(mistakenWord.id), null, 'deleted words should leave the review queue');
+  assert.deepEqual(await repository.getContextsForWord(mistakenWord.id), [], 'deleted word contexts should be removed');
+  assert.deepEqual(await repository.getReviewLogsForWord(mistakenWord.id), [], 'deleted word review logs should be removed');
+  assert.equal(snapshotAfterDelete.words.some((word) => word.id === mistakenWord.id), false);
+
   await service.ignoreWord(first.id, '2026-07-09T00:03:00.000Z');
   const dueAfterIgnore = await service.getDueWords('2026-07-09T00:03:00.000Z');
   assert.equal(dueAfterIgnore.some((entry) => entry.word.id === first.id), false);

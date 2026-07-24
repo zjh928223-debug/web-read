@@ -135,6 +135,39 @@ async function run() {
     /\.srs-review-meaning-group\.is-contextual p\s*\{[^}]*color:\s*#7b8494/s,
     'context meanings should use a muted text color',
   )
+  assert.match(reviewPageSource, /srs-review-remove-word/, 'review cards should expose a subtle removal control')
+  assert.match(reviewPageSource, /srs-review-word-content/, 'word and meanings should share a vertically centered content group')
+  assert.match(reviewPageSource, /review\.removeCurrent\(\)/, 'the removal control should update the active review queue')
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-remove-word\s*\{[^}]*font-size:\s*11px/s,
+    'the removal control should remain visually quiet',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-header\s*\{[^}]*min-height:\s*54px/s,
+    'the review header should stay compact so the study content gets more height',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-actions button\s*\{[^}]*min-height:\s*44px/s,
+    'rating buttons should remain compact because keyboard shortcuts are the primary interaction',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-line h2\s*\{[^}]*font-size:\s*clamp\(38px,\s*3\.8vw,\s*54px\)/s,
+    'review words should use a readable size instead of dominating the definition panel',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-content\s*\{[^}]*margin-block:\s*auto/s,
+    'short word content should sit in the vertical center of its panel',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-passages\s*\{[^}]*align-content:\s*safe center/s,
+    'short source context should sit in the vertical center above the fixed audio controls',
+  )
 
   const now = '2026-07-23T00:00:00.000Z'
   const snapshot = createSyntheticSnapshot(now)
@@ -227,6 +260,17 @@ async function run() {
   assert.equal(review.reviewingPast.value, true)
   assert.equal(review.goNext(), true)
   assert.equal(review.completed.value, true)
+
+  const removalRepository = vocabulary.createInMemoryVocabularyRepository(createSyntheticSnapshot(now))
+  const removalService = vocabulary.createVocabularyService({ repository: removalRepository, now: () => new Date(now) })
+  const removalReview = reviewModule.useSrsReview(removalService, { now })
+  await removalReview.load()
+  const removedWordId = removalReview.current.value.word.id
+  assert.equal(await removalReview.removeCurrent(), true)
+  assert.equal(removalReview.total.value, 4, 'removing a mistaken entry should shrink the active queue')
+  assert.equal(removalReview.dailyTotal.value, 4, 'removing a mistaken entry should update today’s total')
+  assert.notEqual(removalReview.current.value.word.id, removedWordId, 'review should continue with the next word')
+  assert.equal(await removalRepository.getWord(removedWordId), null, 'removed review entries should be deleted permanently')
 
   let releaseReview
   let duplicateCalls = 0

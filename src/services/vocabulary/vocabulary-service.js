@@ -177,6 +177,17 @@ export function createVocabularyService(options = {}) {
     });
   }
 
+  async function deleteWord(wordId) {
+    return repository.updateSnapshot((snapshot) => {
+      const word = findWordOrThrow(snapshot, wordId);
+      snapshot.words = snapshot.words.filter((item) => item.id !== word.id);
+      snapshot.contexts = snapshot.contexts.filter((context) => context.word_id !== word.id);
+      snapshot.reviewStates = snapshot.reviewStates.filter((state) => state.word_id !== word.id);
+      snapshot.reviewLogs = snapshot.reviewLogs.filter((log) => log.word_id !== word.id);
+      return word;
+    });
+  }
+
   async function relearnWord(wordId, options = {}) {
     const relearnedAtIso = toIsoString(options.relearnedAt || options.relearned_at || options.updatedAt || options.updated_at || nowProvider());
     return repository.updateSnapshot((snapshot) => {
@@ -234,6 +245,7 @@ export function createVocabularyService(options = {}) {
     reviewWordKnown,
     markWordKnown,
     ignoreWord,
+    deleteWord,
     relearnWord,
     cacheGeneralMeanings,
   };

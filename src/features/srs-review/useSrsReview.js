@@ -111,6 +111,30 @@ export function useSrsReview(service, options = {}) {
     return submitAction(action)
   }
 
+  async function removeCurrent() {
+    if (pending.value || !current.value || typeof service.deleteWord !== 'function') return false
+    pending.value = true
+    error.value = ''
+    const removedIndex = viewIndex.value
+    const entry = current.value
+    try {
+      await service.deleteWord(entry.word.id)
+      queue.value.splice(removedIndex, 1)
+      reviewLogs.value = reviewLogs.value.filter((log) => (
+        String(log?.word_id || log?.wordId || '') !== String(entry.word.id)
+      ))
+      if (removedIndex < index.value) index.value -= 1
+      viewIndex.value = Math.min(removedIndex, queue.value.length)
+      dailyTotal.value = Math.max(completedBeforeOpen.value, dailyTotal.value - 1)
+      return true
+    } catch (cause) {
+      error.value = getErrorMessage(cause, '无法移除这个单词，请重试')
+      return false
+    } finally {
+      pending.value = false
+    }
+  }
+
   function goPrevious() {
     if (!canPrevious.value) return false
     viewIndex.value -= 1
@@ -144,6 +168,7 @@ export function useSrsReview(service, options = {}) {
     load,
     submitAction,
     submitRating,
+    removeCurrent,
     goPrevious,
     goNext,
   }

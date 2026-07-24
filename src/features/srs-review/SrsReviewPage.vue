@@ -138,38 +138,40 @@
         </article>
 
         <article class="srs-review-word-panel" aria-label="单词信息">
-          <div ref="wordLine" class="srs-review-word-line">
-            <button
-              class="srs-review-speaker"
-              type="button"
-              :disabled="!canSpeak"
-              :aria-label="`朗读 ${word.word}`"
-              @click="speakWord"
-            >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
-                <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-                <path d="M15 9.5a4 4 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" />
-              </svg>
-            </button>
-            <audio
-              ref="pronunciationAudio"
-              class="srs-review-pronunciation-audio"
-              :src="pronunciationUrl"
-              preload="auto"
-              @error="handlePronunciationError"
-            ></audio>
-            <h2 ref="wordHeading" :style="wordFontSize ? { fontSize: `${wordFontSize}px` } : undefined">{{ word.word }}</h2>
-          </div>
-          <p v-if="word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
-          <div class="srs-review-meanings">
-            <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
-              <h3>常用释义</h3>
-              <p>{{ generalMeaning }}</p>
-            </section>
-            <section v-if="meaning" class="srs-review-meaning-group is-contextual">
-              <h3>句中释义</h3>
-              <p>{{ meaning }}</p>
-            </section>
+          <div class="srs-review-word-content">
+            <div ref="wordLine" class="srs-review-word-line">
+              <button
+                class="srs-review-speaker"
+                type="button"
+                :disabled="!canSpeak"
+                :aria-label="`朗读 ${word.word}`"
+                @click="speakWord"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24">
+                  <path d="M11 5 6 9H3v6h3l5 4V5Z" />
+                  <path d="M15 9.5a4 4 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" />
+                </svg>
+              </button>
+              <audio
+                ref="pronunciationAudio"
+                class="srs-review-pronunciation-audio"
+                :src="pronunciationUrl"
+                preload="auto"
+                @error="handlePronunciationError"
+              ></audio>
+              <h2 ref="wordHeading" :style="wordFontSize ? { fontSize: `${wordFontSize}px` } : undefined">{{ word.word }}</h2>
+            </div>
+            <p v-if="word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
+            <div class="srs-review-meanings">
+              <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
+                <h3>常用释义</h3>
+                <p>{{ generalMeaning }}</p>
+              </section>
+              <section v-if="meaning" class="srs-review-meaning-group is-contextual">
+                <h3>句中释义</h3>
+                <p>{{ meaning }}</p>
+              </section>
+            </div>
           </div>
           <div class="srs-review-play-sequence-group">
             <button
@@ -195,6 +197,19 @@
               <kbd>{{ replayShortcutEditing ? '…' : replayShortcutDisplay }}</kbd>
             </button>
           </div>
+          <button
+            class="srs-review-remove-word"
+            type="button"
+            :disabled="review.pending.value"
+            :aria-label="`从 SRS 中移除 ${word.word}`"
+            title="移除误加入的单词"
+            @click="removeCurrentWord"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+            </svg>
+            <span>移除误收录</span>
+          </button>
         </article>
       </div>
 
@@ -439,6 +454,14 @@ function handleReviewShortcut(event) {
 
 function beginReplayShortcutEditing() {
   replayShortcutEditing.value = true
+}
+
+async function removeCurrentWord() {
+  if (review.pending.value || !review.current.value) return
+  const label = String(word.value.word || '').trim()
+  if (!window.confirm(`确定从 SRS 中移除“${label}”吗？`)) return
+  stopAndReleaseAudio()
+  await review.removeCurrent()
 }
 
 function loadReplayShortcut() {
