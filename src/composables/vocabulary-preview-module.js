@@ -22,6 +22,7 @@ import {
   scheduleGeneratedAnnotationIndexRefresh,
 } from './session-facades.js';
 import { getAnnotationGenerationStorage } from './session-annotation-services.js';
+import { formatDictionarySuggestion } from '../dictionary/ecdict/browser/dictionary-suggestion-view.mjs';
 
 const MODEL_STORAGE_KEY = 'annotationBackfillAi.model';
 const SESSION_API_KEY = '__annotationBackfillAiSessionApiKey';
@@ -180,6 +181,15 @@ function renderCandidateList(documentObject, container, candidates) {
       createElement(documentObject, 'strong', '', candidate.markedText || candidate.lemma),
       createElement(documentObject, 'span', 'vocabulary-preview-dialog__item-meta', candidate.group === 'proper_noun' ? '可能是专有名词' : `出现 ${candidate.frequency || 1} 次`)
     );
+    const dictionaryText = formatDictionarySuggestion(candidate.dictionarySuggestion);
+    if (dictionaryText) {
+      main.appendChild(createElement(
+        documentObject,
+        'span',
+        'vocabulary-preview-dialog__dictionary-suggestion',
+        dictionaryText
+      ));
+    }
     row.appendChild(main);
     container.appendChild(row);
   });
@@ -764,6 +774,7 @@ export function createVocabularyPreviewController(deps = {}) {
     || createIndexedDbArticleSrsSettlementProgressRepository();
   const showToast = typeof deps.showToast === 'function' ? deps.showToast : function () {};
   const showError = typeof deps.showError === 'function' ? deps.showError : function () {};
+  const dictionaryEnrichmentAdapter = deps.dictionaryEnrichmentAdapter || null;
   let previewVisible = false;
   let latestPreviewScan = null;
   const previewDialog = createPreviewDialog({
@@ -877,7 +888,7 @@ export function createVocabularyPreviewController(deps = {}) {
       const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
       const sourceInfo = getSourceInfo(state, scope);
       const context = buildStateContext(state, scope, sourceInfo);
-      latestPreviewScan = await buildPreviewScan({
+      const previewScan = await buildPreviewScan({
         context,
         markedMap: state.markedMap instanceof Map ? state.markedMap : new Map(),
         generatedItems: getGeneratedItemsFromBundle(bundle),
@@ -886,6 +897,13 @@ export function createVocabularyPreviewController(deps = {}) {
         sourceTitle: sourceInfo.sourceTitle,
         sourceUrl: sourceInfo.sourceUrl,
       });
+      const enrichedCandidates = dictionaryEnrichmentAdapter
+        ? await dictionaryEnrichmentAdapter.enrichCandidates(previewScan.candidates)
+        : previewScan.candidates;
+      latestPreviewScan = {
+        ...previewScan,
+        candidates: enrichedCandidates,
+      };
       previewDialog.open(latestPreviewScan);
       return latestPreviewScan;
     } catch (error) {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -19,11 +19,9 @@ test('defaults the ECDICT feature flag to disabled', () => {
   assert.equal(readEcdictConfig({ ECDICT_ENABLED: 'true' }).enabled, true);
 });
 
-test('has no integration import from current reader or SRS business entry points', () => {
+test('core vocabulary and scheduler modules do not import ECDICT', () => {
   const isolatedBusinessFiles = [
     'src/main.js',
-    'src/App.vue',
-    'src/srs-review-main.js',
     'src/services/vocabulary/vocabulary-models.js',
     'src/services/vocabulary/vocabulary-repository.js',
     'src/services/vocabulary/vocabulary-service.js',
@@ -32,6 +30,36 @@ test('has no integration import from current reader or SRS business entry points
   for (const relativePath of isolatedBusinessFiles) {
     const source = readFileSync(join(projectRoot, relativePath), 'utf8');
     assert.doesNotMatch(source, /dictionary[/\\]ecdict|from\s+['"][^'"]*ecdict/i, relativePath);
+  }
+});
+
+test('business modules never import ECDICT infrastructure or node:sqlite', () => {
+  const roots = [
+    join(projectRoot, 'src', 'services', 'vocabulary'),
+    join(projectRoot, 'src', 'features', 'srs-review'),
+    join(projectRoot, 'src', 'composables'),
+  ];
+  const files = roots.flatMap((root) => readdirSync(root, {
+    recursive: true,
+    withFileTypes: true,
+  }).filter((entry) => entry.isFile() && /\.(?:js|mjs|vue)$/.test(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name)));
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8');
+    assert.doesNotMatch(
+      source,
+      /ecdict-repository|sqlite-connection|application[/\\]ecdict-service|node:sqlite/i,
+      file,
+    );
+  }
+
+  for (const relativePath of ['src/App.vue', 'src/srs-review-main.js']) {
+    const source = readFileSync(join(projectRoot, relativePath), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /ecdict-repository|sqlite-connection|application[/\\]ecdict-service|node:sqlite/i,
+      relativePath,
+    );
   }
 });
 

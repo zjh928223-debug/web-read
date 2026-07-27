@@ -127,6 +127,14 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     .replace(
       "import { configureReaderPublicFacades } from './reader-public-facades.js'\n",
       "const configureReaderPublicFacades = globalThis.__readerAppRuntimeTest.configureReaderPublicFacades;\n"
+    )
+    .replace(
+      "import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'\n",
+      "const createOptionalLocalDictionaryClient = globalThis.__readerAppRuntimeTest.createOptionalLocalDictionaryClient;\n"
+    )
+    .replace(
+      "import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'\n",
+      "const createDictionaryEnrichmentAdapter = globalThis.__readerAppRuntimeTest.createDictionaryEnrichmentAdapter;\n"
     );
 
   const calls = {
@@ -141,6 +149,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   };
 
   globalThis.__readerAppRuntimeTest = {
+    createOptionalLocalDictionaryClient() {
+      return {};
+    },
+    createDictionaryEnrichmentAdapter() {
+      return {};
+    },
     initGlassEffects(deps) {
       calls.glass.push(deps);
     },

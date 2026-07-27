@@ -4021,6 +4021,19 @@ body {
       gap: 8px;
     }
 
+    .vocabulary-preview-dialog:not(.vocabulary-preview-dialog--settlement) .vocabulary-preview-dialog__item-main {
+      flex-wrap: wrap;
+    }
+
+    .vocabulary-preview-dialog__dictionary-suggestion {
+      flex-basis: 100%;
+      color: rgba(30, 64, 175, 0.82);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
     .vocabulary-preview-dialog__item-main strong {
       font-size: 14px;
       line-height: 1.3;

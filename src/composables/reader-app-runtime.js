@@ -3,6 +3,16 @@ import { initAnnotationBackfillAiControls } from './annotation-backfill-ai-modul
 import { initVocabularyPreviewControls } from './vocabulary-preview-module.js'
 import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
+import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
+import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'
+
+function createOptionalDictionaryEnrichmentAdapter() {
+  const client = createOptionalLocalDictionaryClient()
+  if (!client) return null
+  return createDictionaryEnrichmentAdapter({
+    client
+  })
+}
 
 export function initReaderAppRuntime(deps = {}) {
   var audioPlayer = (typeof globalThis !== 'undefined' && globalThis.__mediaSource && typeof globalThis.__mediaSource.createActiveMediaProxy === 'function')
@@ -47,7 +57,8 @@ export function initReaderAppRuntime(deps = {}) {
     showToast: deps.showToast,
     showError: deps.showError,
     windowObject: globalThis,
-    documentObject: globalThis.document
+    documentObject: globalThis.document,
+    dictionaryEnrichmentAdapter: createOptionalDictionaryEnrichmentAdapter()
   })
 
   deps.appHandlers.initExports({

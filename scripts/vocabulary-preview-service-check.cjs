@@ -167,19 +167,31 @@ async function main() {
     'proper nouns should remain in a separate preview group'
   );
 
+  const enrichedPreviewCandidates = scan.candidates.map((candidate, index) => index === 0 ? {
+    ...candidate,
+    dictionarySuggestion: {
+      available: true,
+      matchedBy: 'exact',
+      directMatch: { word: candidate.lemma, translation: 'must stay transient' },
+      normalizedCandidates: [],
+      lemmaCandidates: [],
+    },
+  } : candidate);
   const template = api.buildPreviewAnnotationTemplate({
     context: scan.context,
-    candidates: scan.candidates,
+    candidates: enrichedPreviewCandidates,
     articleId: 'article-preview',
   });
   assert.equal(template.source, api.PREVIEW_SCAN_SOURCE);
   assert.equal(template.items.length, scan.candidates.length);
   assert.equal(template.items.every((item) => item.previewSource === api.PREVIEW_SCAN_SOURCE), true);
+  assert.equal(JSON.stringify(template).includes('dictionarySuggestion'), false);
+  assert.equal(JSON.stringify(template).includes('must stay transient'), false);
 
   const seismicCandidate = scan.candidates.find((candidate) => candidate.lemma === 'seismic');
   const californiaCandidate = scan.candidates.find((candidate) => candidate.lemma === 'california');
   const generated = api.buildPreviewGeneratedItemsFromResult({
-    candidates: scan.candidates,
+    candidates: enrichedPreviewCandidates,
     result: {
       items: [{
         targetId: seismicCandidate.targetId,
@@ -198,6 +210,8 @@ async function main() {
       }],
     },
   });
+  assert.equal(JSON.stringify(generated).includes('dictionarySuggestion'), false);
+  assert.equal(JSON.stringify(generated).includes('must stay transient'), false);
   assert.deepEqual(generated.map((item) => item.targetId), [seismicCandidate.targetId, californiaCandidate.targetId]);
   assert.equal(generated[0].source, api.PREVIEW_SCAN_SOURCE);
   assert.equal(generated[0].simpleMeaning, 'earthquake-related');
