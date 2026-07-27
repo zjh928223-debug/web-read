@@ -1,6 +1,7 @@
 const pronunciationCache = new Map()
 const pronunciationSequenceCache = new Map()
 const DEFAULT_MERRIAM_BASE_URL = 'http://127.0.0.1:8765'
+const REQUIRED_PHRASE_EDGE_VOICE = 'en-US-AriaNeural'
 
 export async function resolveAmericanPronunciation(word, options = {}) {
   const lookup = String(word || '').trim().toLowerCase()
@@ -36,7 +37,11 @@ export async function prefetchAmericanPronunciations(values, options = {}) {
   const texts = [...new Set((Array.isArray(values) ? values : [])
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean))]
-    .filter((text) => !pronunciationCache.has(text))
+    .filter((text) => (
+      isSingleDictionaryWord(text)
+        ? !pronunciationCache.has(text)
+        : !pronunciationSequenceCache.has(text)
+    ))
     .slice(0, 20)
   if (!texts.length) return { requested: 0, resolved: 0 }
 
@@ -73,6 +78,9 @@ export async function prefetchAmericanPronunciations(values, options = {}) {
         const url = normalizeEdgeAudioUrl(item?.audioUrl, baseUrl)
         if (!text || !url || !unresolved.has(text)) continue
         pronunciationCache.set(text, Promise.resolve(url))
+        if (!isSingleDictionaryWord(text)) {
+          pronunciationSequenceCache.set(text, Promise.resolve([url]))
+        }
         unresolved.delete(text)
         resolved += 1
       }
@@ -81,6 +89,10 @@ export async function prefetchAmericanPronunciations(values, options = {}) {
   } catch (_error) {
     return { requested: texts.length, resolved }
   }
+}
+
+export function shouldUseSystemPronunciationFallback(value) {
+  return tokenizeDictionaryWords(value).length === 1
 }
 
 export function pickAmericanPronunciationUrl(entries) {
@@ -116,45 +128,11 @@ async function fetchAmericanPronunciationSequence(value, options) {
     return url ? [url] : []
   }
 
-  const exactMerriamUrl = await fetchMerriamPronunciation(value, options)
-  if (exactMerriamUrl) return [exactMerriamUrl]
-
-  const merriamByWord = await fetchMerriamPronunciationBatch(words, options)
-  const urls = []
-  for (const word of words) {
-    let url = merriamByWord.get(word) || ''
-    if (!url) url = await resolveAmericanPronunciation(word, options)
-    if (url) urls.push(url)
-  }
-  if (urls.length === words.length) return urls
-
-  const edgeUrl = await fetchEdgePronunciation(value, options)
-  return edgeUrl ? [edgeUrl] : urls
-}
-
-async function fetchMerriamPronunciationBatch(words, options) {
-  if (options.disableMerriam) return new Map()
-  const fetchImpl = options.merriamFetchImpl || options.fetchImpl || globalThis.fetch
-  if (typeof fetchImpl !== 'function') return new Map()
-  const baseUrl = String(options.merriamBaseUrl || DEFAULT_MERRIAM_BASE_URL).replace(/\/+$/, '')
-  try {
-    const response = await fetchImpl(`${baseUrl}/api/dictionary/pronunciations`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ words: [...new Set(words)].slice(0, 50) }),
-      signal: options.signal,
-    })
-    if (!response.ok) return new Map()
-    const payload = await response.json()
-    return new Map((Array.isArray(payload?.items) ? payload.items : [])
-      .map((item) => [
-        String(item?.word || '').trim().toLowerCase(),
-        normalizeMerriamAudioUrl(item?.audioUrl),
-      ])
-      .filter(([word, url]) => word && url))
-  } catch (_error) {
-    return new Map()
-  }
+  const edgeUrl = await fetchEdgePronunciation(value, {
+    ...options,
+    requiredVoice: REQUIRED_PHRASE_EDGE_VOICE,
+  })
+  return edgeUrl ? [edgeUrl] : []
 }
 
 async function fetchEdgePronunciation(text, options) {
@@ -171,6 +149,7 @@ async function fetchEdgePronunciation(text, options) {
     })
     if (!response.ok) return ''
     const payload = await response.json()
+    if (options.requiredVoice && payload?.voice !== options.requiredVoice) return ''
     return normalizeEdgeAudioUrl(payload?.audioUrl, baseUrl)
   } catch (_error) {
     return ''

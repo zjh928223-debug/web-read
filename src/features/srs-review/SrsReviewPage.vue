@@ -5,30 +5,9 @@
         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
         返回
       </button>
-      <div class="srs-review-heading">
-        <h1>今日复习</h1>
-        <p v-if="viewContext?.sourceTitle">来源：{{ viewContext.sourceTitle }}</p>
-      </div>
-      <div class="srs-review-summary">
+      <div class="srs-review-heading" aria-hidden="true"></div>
+      <div ref="historyContainer" class="srs-review-summary">
         <p class="srs-review-progress" aria-live="polite">{{ review.progress.value }}</p>
-        <div class="srs-review-navigation" aria-label="复习卡片切换">
-          <button
-            type="button"
-            :disabled="!review.canPrevious.value"
-            aria-label="上一张（左方向键或上方向键）"
-            @click="review.goPrevious"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
-          </button>
-          <button
-            type="button"
-            :disabled="!review.canNext.value"
-            aria-label="下一张（右方向键或下方向键）"
-            @click="review.goNext"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></svg>
-          </button>
-        </div>
         <button
           class="srs-review-history-toggle"
           type="button"
@@ -45,6 +24,33 @@
           aria-label="复习记录"
         >
           <h2>复习记录</h2>
+          <p class="srs-review-autoplay-note">进入新卡自动播放单词</p>
+          <div class="srs-review-shortcut-settings">
+            <div class="srs-review-playback-shortcut-setting">
+              <span>播放单词</span>
+              <button
+                type="button"
+                :class="{ 'is-editing': shortcutEditingTarget === 'word' }"
+                :aria-label="shortcutEditingTarget === 'word' ? '请按新的单词播放快捷键，按 Escape 取消' : `修改单词播放快捷键，当前为 ${wordShortcutDisplay}`"
+                @click="beginShortcutEditing('word')"
+              >
+                <kbd>{{ shortcutEditingTarget === 'word' ? '…' : wordShortcutDisplay }}</kbd>
+                <small>{{ shortcutEditingTarget === 'word' ? '等待按键' : '点击修改' }}</small>
+              </button>
+            </div>
+            <div class="srs-review-playback-shortcut-setting">
+              <span>播放原句</span>
+              <button
+                type="button"
+                :class="{ 'is-editing': shortcutEditingTarget === 'sentence' }"
+                :aria-label="shortcutEditingTarget === 'sentence' ? '请按新的原句播放快捷键，按 Escape 取消' : `修改原句播放快捷键，当前为 ${sentenceShortcutDisplay}`"
+                @click="beginShortcutEditing('sentence')"
+              >
+                <kbd>{{ shortcutEditingTarget === 'sentence' ? '…' : sentenceShortcutDisplay }}</kbd>
+                <small>{{ shortcutEditingTarget === 'sentence' ? '等待按键' : '点击修改' }}</small>
+              </button>
+            </div>
+          </div>
           <ul v-if="review.reviewHistory.value.length">
             <li v-for="item in review.reviewHistory.value" :key="item.date">
               <time :datetime="item.date">{{ item.label }}</time>
@@ -69,14 +75,23 @@
 
     <section v-else-if="review.empty.value" class="srs-review-state" aria-live="polite">
       <h2>今天没有待复习单词</h2>
+      <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
-      <h2>今日复习完成</h2>
+      <h2>本次复习完成</h2>
+      <p>共完成 {{ sessionCompletedCount }} 张</p>
+      <ul class="srs-review-completion-counts">
+        <li>Again 忘记：{{ review.sessionRatingCounts.value.again }}</li>
+        <li>Hard 困难：{{ review.sessionRatingCounts.value.hard }}</li>
+        <li>Good 一般：{{ review.sessionRatingCounts.value.good }}</li>
+        <li>Easy 容易：{{ review.sessionRatingCounts.value.easy }}</li>
+      </ul>
+      <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
     <template v-else-if="review.current.value">
-      <div class="srs-review-content">
+      <div :key="review.current.value.word.id" class="srs-review-content">
         <article class="srs-review-context" aria-label="原文语境">
           <div v-if="displayParagraphs.length" class="srs-review-passages">
             <p
@@ -142,8 +157,10 @@
             <div ref="wordLine" class="srs-review-word-line">
               <button
                 class="srs-review-speaker"
+                :class="{ 'is-playing': playbackPhase === 'word' }"
                 type="button"
                 :disabled="!canSpeak"
+                :aria-keyshortcuts="wordShortcutDisplay"
                 :aria-label="`朗读 ${word.word}`"
                 @click="speakWord"
               >
@@ -161,8 +178,8 @@
               ></audio>
               <h2 ref="wordHeading" :style="wordFontSize ? { fontSize: `${wordFontSize}px` } : undefined">{{ word.word }}</h2>
             </div>
-            <p v-if="word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
-            <div class="srs-review-meanings">
+            <p v-if="flowState.answerRevealed && word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
+            <div v-if="flowState.answerRevealed" class="srs-review-meanings">
               <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
                 <h3>常用释义</h3>
                 <p>{{ generalMeaning }}</p>
@@ -172,29 +189,36 @@
                 <p>{{ meaning }}</p>
               </section>
             </div>
+            <div v-else class="srs-review-answer-placeholder" aria-hidden="true">
+              <span v-if="word.phonetic">{{ word.phonetic }}</span>
+            </div>
           </div>
           <div class="srs-review-play-sequence-group">
             <button
               class="srs-review-play-sequence"
               type="button"
-              :aria-keyshortcuts="replayShortcutDisplay"
-              :disabled="!canPlaySequence"
-              @click="handleSequenceButton"
+              :aria-keyshortcuts="wordShortcutDisplay"
+              :disabled="!canSpeak || Boolean(playbackPhase)"
+              @click="speakWord"
             >
               <svg aria-hidden="true" viewBox="0 0 24 24">
                 <path class="is-play" d="m8 5 11 7-11 7V5Z" />
               </svg>
-              <span>重读单词和原句</span>
+              <span>播放单词</span>
+              <kbd>{{ wordShortcutDisplay }}</kbd>
             </button>
             <button
-              class="srs-review-replay-shortcut"
-              :class="{ 'is-editing': replayShortcutEditing }"
+              class="srs-review-play-sequence"
               type="button"
-              :aria-label="replayShortcutEditing ? '请按新的重读快捷键，按 Escape 取消' : `修改重读快捷键，当前为 ${replayShortcutDisplay}`"
-              :title="replayShortcutEditing ? '请按新按键；1-5 和空格不可使用' : '点击修改快捷键'"
-              @click="beginReplayShortcutEditing"
+              :aria-keyshortcuts="sentenceShortcutDisplay"
+              :disabled="!canPlaySentence || Boolean(playbackPhase)"
+              @click="playSentenceOnly"
             >
-              <kbd>{{ replayShortcutEditing ? '…' : replayShortcutDisplay }}</kbd>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path class="is-play" d="m8 5 11 7-11 7V5Z" />
+              </svg>
+              <span>播放原句</span>
+              <kbd>{{ sentenceShortcutDisplay }}</kbd>
             </button>
           </div>
           <button
@@ -214,19 +238,38 @@
       </div>
 
       <p v-if="review.error.value" class="srs-review-inline-error" role="alert">{{ review.error.value }}</p>
+      <p v-else-if="flowNotice" class="srs-review-inline-notice" aria-live="polite">{{ flowNotice }}</p>
 
       <footer class="srs-review-actions" aria-label="复习评价">
         <button
-          v-for="action in review.actions"
-          :key="action.shortcut"
+          v-if="!flowState.answerRevealed"
+          type="button"
+          class="srs-review-reveal"
+          aria-label="Space 显示答案"
+          aria-keyshortcuts="Space"
+          @click="revealAnswer"
+        >
+          <span>显示答案</span>
+        </button>
+        <template v-for="action in review.actions" :key="action.shortcut">
+          <button
+          v-if="action.tone === 'again' || flowState.answerRevealed"
           type="button"
           :class="`is-${action.tone}`"
           :aria-keyshortcuts="action.shortcut"
-          :disabled="review.pending.value || review.reviewingPast.value"
-          @click="review.submitAction(action)"
+          :disabled="review.pending.value || review.reviewingPast.value || flowState.ratingCommitted || flowState.transitioning"
+          @click="handleRating(action)"
         >
-          <kbd>{{ action.shortcut }}</kbd>
           <span>{{ action.label }}</span>
+        </button>
+        </template>
+        <button
+          v-if="flowState.ratingCommitted && flowState.committedTone === 'again'"
+          type="button"
+          class="srs-review-next"
+          @click="flow.handleSpace()"
+        >
+          <span>下一张</span>
         </button>
       </footer>
     </template>
@@ -234,7 +277,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   buildReviewContext,
   releaseReviewAudio,
@@ -244,9 +287,8 @@ import {
 } from './srs-review-context.js'
 import { calculateSingleLineFontSize } from './srs-review-layout.js'
 import { hydrateReviewGeneralMeanings } from './srs-review-meanings.js'
+import { createSrsReviewFlow } from './srs-review-flow.js'
 import {
-  getReviewNavigationDelta,
-  isPlaybackPauseKey,
   isReviewReplayKey,
   normalizeReviewReplayShortcut,
   runReviewPlaybackSequence,
@@ -254,6 +296,7 @@ import {
 import {
   prefetchAmericanPronunciations,
   resolveAmericanPronunciationSequence,
+  shouldUseSystemPronunciationFallback,
 } from './srs-review-pronunciation.js'
 import { getReviewActionForShortcut, useSrsReview } from './useSrsReview.js'
 
@@ -270,27 +313,53 @@ const audioPlaybackRange = ref(null)
 const pronunciationAudio = ref(null)
 const pronunciationUrl = ref('')
 const pronunciationUrls = ref([])
+const pronunciationLoading = ref(false)
 const sourceLoading = ref(false)
-const playbackPaused = ref(false)
 const historyOpen = ref(false)
-const replayShortcut = ref('r')
-const replayShortcutEditing = ref(false)
+const historyContainer = ref(null)
+const flowNotice = ref('')
+const wordShortcut = ref('r')
+const sentenceShortcut = ref('s')
+const shortcutEditingTarget = ref('')
+const playbackPhase = ref('')
 const wordLine = ref(null)
 const wordHeading = ref(null)
 const wordFontSize = ref(null)
 const audioId = `srs-review-audio-${Math.random().toString(36).slice(2)}`
 const historyId = `srs-review-history-${Math.random().toString(36).slice(2)}`
-const replayShortcutStorageKey = 'srs.review.replayShortcut.v1'
+const wordShortcutStorageKey = 'srs.review.wordShortcut.v1'
+const sentenceShortcutStorageKey = 'srs.review.playbackShortcut.v1'
 let audioRequest = 0
-let playbackRun = 0
 let cancelPronunciationWait = null
 let cancelSentenceReady = null
+let cancelTargetSentenceWait = null
 let wordResizeObserver = null
 let wordFitFrame = 0
 let wordFitKey = ''
 let sourceReadyPromise = Promise.resolve(null)
+let pronunciationReadyPromise = Promise.resolve([])
 let meaningAbortController = null
-const pausedPlaybackTargets = new Set()
+let sequencePlaybackRequest = -1
+let playbackStatusRequest = 0
+const flowState = reactive({
+  answerRevealed: false,
+  ratingCommitted: false,
+  transitioning: false,
+  committedTone: '',
+  advanced: false,
+})
+const flow = createSrsReviewFlow({
+  state: flowState,
+  submitAction: (action) => review.submitAction(action, { advance: false }),
+  playTargetSentence,
+  playWordAndTargetSentence,
+  stopAudio: stopCurrentPlayback,
+  advance: advanceReviewCard,
+  waitBeforeAdvance: waitForReviewTransition,
+  revealHint(message) {
+    flowNotice.value = message
+  },
+})
 
 const word = computed(() => review.current.value?.word || {})
 const viewContext = computed(() => buildReviewContext(review.current.value))
@@ -301,9 +370,14 @@ const displayParagraphs = computed(() => (
 ))
 const meaning = computed(() => resolveReviewMeaning(word.value, viewContext.value?.raw))
 const generalMeaning = computed(() => resolveReviewGeneralMeaning(word.value))
-const replayShortcutDisplay = computed(() => replayShortcut.value.toLocaleUpperCase('en-US'))
+const sessionCompletedCount = computed(() => Object.values(review.sessionRatingCounts.value)
+  .reduce((sum, count) => sum + Number(count || 0), 0))
+const wordShortcutDisplay = computed(() => wordShortcut.value.toLocaleUpperCase('en-US'))
+const sentenceShortcutDisplay = computed(() => sentenceShortcut.value.toLocaleUpperCase('en-US'))
 const canSpeak = computed(() => (
   Boolean(word.value.word) && (
+    pronunciationLoading.value
+    ||
     Boolean(pronunciationUrl.value)
     || (
       typeof window !== 'undefined'
@@ -312,11 +386,13 @@ const canSpeak = computed(() => (
     )
   )
 ))
-const canPlaySequence = computed(() => Boolean(review.current.value && (canSpeak.value || sourceLoading.value || audioState.value?.url)))
+const canPlaySentence = computed(() => Boolean(review.current.value && (sourceLoading.value || audioState.value?.url)))
 
 onMounted(async () => {
-  replayShortcut.value = loadReplayShortcut()
+  wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
+  sentenceShortcut.value = loadShortcut(sentenceShortcutStorageKey, 's', wordShortcut.value)
   window.addEventListener('keydown', handleReviewShortcut, true)
+  document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
   await review.load()
   meaningAbortController = new AbortController()
   void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
@@ -328,25 +404,32 @@ onMounted(async () => {
     wordResizeObserver.observe(wordLine.value)
   }
   fitWordHeading()
-  void prefetchAmericanPronunciations(
-    review.queue.value
-      .slice(1)
-      .map((entry) => entry?.word?.word)
-      .filter((value) => value && !/\s/.test(value)),
-  )
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleReviewShortcut, true)
+  document.removeEventListener('pointerdown', handleHistoryOutsidePointer, true)
   meaningAbortController?.abort()
   wordResizeObserver?.disconnect()
   if (wordFitFrame) cancelAnimationFrame(wordFitFrame)
   stopAndReleaseAudio()
 })
 
+function handleHistoryOutsidePointer(event) {
+  if (!historyOpen.value || historyContainer.value?.contains(event.target)) return
+  historyOpen.value = false
+  shortcutEditingTarget.value = ''
+}
+
 watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   const request = ++audioRequest
+  sequencePlaybackRequest = -1
+  playbackStatusRequest += 1
+  playbackPhase.value = ''
   stopAndReleaseAudio()
+  flow.resetCard()
+  flowNotice.value = ''
   if (!nextId) return
+  void prefetchUpcomingPronunciations()
   const context = viewContext.value?.raw
   sourceLoading.value = Boolean(context?.source_id || context?.sourceId)
   const sourcePromise = Promise.resolve(
@@ -364,27 +447,18 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
     return resolved
   })
   sourceReadyPromise = sourcePromise
-  const resolvedPronunciations = await resolveAmericanPronunciationSequence(word.value.word)
+  pronunciationLoading.value = true
+  const readyPromise = resolveAmericanPronunciationSequence(word.value.word)
+  pronunciationReadyPromise = readyPromise
+  const resolvedPronunciations = await readyPromise
   if (request !== audioRequest) return
+  pronunciationLoading.value = false
   pronunciationUrls.value = resolvedPronunciations
   pronunciationUrl.value = resolvedPronunciations[0] || ''
   await nextTick()
   fitWordHeading()
-  if (!previousId) {
-    await sourcePromise
-    return
-  }
-  const run = ++playbackRun
-  await runReviewPlaybackSequence({
-    isCurrent: () => request === audioRequest && run === playbackRun,
-    playWord: playWordPronunciation,
-    playSentence: async () => {
-      await sourcePromise
-      if (request !== audioRequest) return
-      await nextTick()
-      await playTargetSentence()
-    },
-  })
+  if (sequencePlaybackRequest !== request) void playWordWithStatus(request)
+  if (!previousId) await sourcePromise
 })
 
 watch(() => word.value.word, async () => {
@@ -404,56 +478,103 @@ function close() {
 }
 
 function handleReviewShortcut(event) {
-  if (isPlaybackPauseKey(event)) {
-    event.preventDefault()
-    event.stopPropagation()
-    if (!event.repeat) togglePlaybackPause()
-    return
-  }
-  if (replayShortcutEditing.value) {
+  if (shortcutEditingTarget.value) {
     event.preventDefault()
     event.stopPropagation()
     if (event.repeat) return
     if (event.key === 'Escape') {
-      replayShortcutEditing.value = false
+      shortcutEditingTarget.value = ''
       return
     }
     const nextShortcut = normalizeReviewReplayShortcut(event.key)
-    if (!nextShortcut) return
-    replayShortcut.value = nextShortcut
-    replayShortcutEditing.value = false
-    saveReplayShortcut(nextShortcut)
-    return
-  }
-  if (isReviewReplayKey(event, replayShortcut.value)) {
-    event.preventDefault()
-    event.stopPropagation()
-    if (!event.repeat && canPlaySequence.value) void playWordAndSentence()
+    const target = shortcutEditingTarget.value
+    const conflictingShortcut = target === 'word' ? sentenceShortcut.value : wordShortcut.value
+    if (!nextShortcut || nextShortcut === conflictingShortcut) return
+    if (target === 'word') {
+      wordShortcut.value = nextShortcut
+      saveShortcut(wordShortcutStorageKey, nextShortcut)
+    } else {
+      sentenceShortcut.value = nextShortcut
+      saveShortcut(sentenceShortcutStorageKey, nextShortcut)
+    }
+    shortcutEditingTarget.value = ''
     return
   }
   if (
     event.defaultPrevented
-    || event.repeat
     || event.altKey
     || event.ctrlKey
     || event.metaKey
     || isTypingTarget(event.target)
   ) return
-  const navigationDelta = getReviewNavigationDelta(event.key)
-  if (navigationDelta) {
-    const changed = navigationDelta < 0 ? review.goPrevious() : review.goNext()
-    if (changed) event.preventDefault()
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.repeat || review.pending.value || !review.current.value) return
+    if (event.key === 'ArrowLeft') {
+      review.goPrevious()
+      return
+    }
+    if (review.canNext.value) {
+      review.goNext()
+      return
+    }
+    if (flowState.ratingCommitted) void flow.handleSpace()
     return
   }
+  if (event.code === 'Space' || event.key === ' ') {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!event.repeat) {
+      flowNotice.value = ''
+      void flow.handleSpace()
+    }
+    return
+  }
+  if (isReviewReplayKey(event, wordShortcut.value)) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!event.repeat && canSpeak.value) void speakWord()
+    return
+  }
+  if (isReviewReplayKey(event, sentenceShortcut.value)) {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!event.repeat && canPlaySentence.value) void playSentenceOnly()
+    return
+  }
+  if (
+    event.repeat
+    || event.altKey
+    || event.ctrlKey
+    || event.metaKey
+  ) return
   if (review.pending.value || !review.current.value || review.reviewingPast.value) return
   const action = getReviewActionForShortcut(event.key)
   if (!action) return
   event.preventDefault()
-  void review.submitAction(action)
+  void handleRating(action)
 }
 
-function beginReplayShortcutEditing() {
-  replayShortcutEditing.value = true
+function handleRating(action) {
+  flowNotice.value = ''
+  return flow.rate(action)
+}
+
+function revealAnswer() {
+  flowNotice.value = ''
+  return flow.revealAnswer()
+}
+
+function advanceReviewCard() {
+  stopAndReleaseAudio()
+  return review.advanceCurrent()
+}
+
+function waitForReviewTransition({ delayMs = 1500 } = {}) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, Math.max(0, Number(delayMs) || 0))
+  })
 }
 
 async function removeCurrentWord() {
@@ -464,31 +585,34 @@ async function removeCurrentWord() {
   await review.removeCurrent()
 }
 
-function loadReplayShortcut() {
-  try {
-    return normalizeReviewReplayShortcut(window.localStorage.getItem(replayShortcutStorageKey)) || 'r'
-  } catch (_error) {
-    return 'r'
-  }
-}
-
-function saveReplayShortcut(shortcut) {
-  try {
-    window.localStorage.setItem(replayShortcutStorageKey, shortcut)
-  } catch (_error) {}
-}
-
 function isTypingTarget(target) {
   const tagName = String(target?.tagName || '').toLowerCase()
   return target?.isContentEditable || ['input', 'textarea', 'select'].includes(tagName)
 }
 
+function beginShortcutEditing(target) {
+  shortcutEditingTarget.value = target
+}
+
+function loadShortcut(storageKey, fallback, conflictingShortcut = '') {
+  try {
+    const stored = normalizeReviewReplayShortcut(window.localStorage.getItem(storageKey))
+    return stored && stored !== conflictingShortcut ? stored : fallback
+  } catch (_error) {
+    return fallback
+  }
+}
+
+function saveShortcut(storageKey, shortcut) {
+  try {
+    window.localStorage.setItem(storageKey, shortcut)
+  } catch (_error) {}
+}
+
 function stopAndReleaseAudio() {
-  playbackRun += 1
-  pausedPlaybackTargets.clear()
-  playbackPaused.value = false
   sourceReadyPromise = Promise.resolve(null)
   if (cancelSentenceReady) cancelSentenceReady()
+  if (cancelTargetSentenceWait) cancelTargetSentenceWait(false)
   if (audioElement.value) {
     audioElement.value.pause()
     audioElement.value.removeAttribute('src')
@@ -499,8 +623,15 @@ function stopAndReleaseAudio() {
   audioPlaybackRange.value = null
   sourceLoading.value = false
   stopPronunciation()
+  pronunciationLoading.value = false
   pronunciationUrl.value = ''
   pronunciationUrls.value = []
+}
+
+function stopCurrentPlayback() {
+  if (cancelTargetSentenceWait) cancelTargetSentenceWait(false)
+  if (audioElement.value) audioElement.value.pause()
+  stopPronunciation()
 }
 
 function fitWordHeading() {
@@ -535,6 +666,7 @@ function stopAtAudioEnd() {
   if (audioElement.value.currentTime >= range.end) {
     audioElement.value.pause()
     audioElement.value.currentTime = Math.max(0, Number(range.start || 0))
+    if (cancelTargetSentenceWait) cancelTargetSentenceWait(true)
   }
 }
 
@@ -572,88 +704,76 @@ async function playParagraphWord(paragraph, part) {
 }
 
 function beginManualPlayback() {
-  playbackRun += 1
-  pausedPlaybackTargets.clear()
-  playbackPaused.value = false
-  if (audioElement.value) audioElement.value.pause()
-  stopPronunciation()
+  stopCurrentPlayback()
 }
 
 async function speakWord() {
   if (!canSpeak.value) return
-  await playWordPronunciation()
-}
-
-async function handleSequenceButton() {
-  await playWordAndSentence()
-}
-
-async function playWordAndSentence() {
   const request = audioRequest
-  const run = ++playbackRun
-  pausedPlaybackTargets.clear()
-  playbackPaused.value = false
-  if (audioElement.value) audioElement.value.pause()
-  await runReviewPlaybackSequence({
-    isCurrent: () => request === audioRequest && run === playbackRun,
-    playWord: playWordPronunciation,
-    playSentence: async () => {
-      await sourceReadyPromise
-      if (request !== audioRequest) return
-      await nextTick()
-      await playTargetSentence()
-    },
-  })
+  sequencePlaybackRequest = request
+  beginManualPlayback()
+  await pronunciationReadyPromise
+  if (request !== audioRequest) return
+  await playWordWithStatus(request)
 }
 
-function togglePlaybackPause() {
-  if (playbackPaused.value) {
-    void resumePausedPlayback()
-    return true
+async function playSentenceOnly({ maxDurationMs = 12000 } = {}) {
+  const request = audioRequest
+  const statusRequest = ++playbackStatusRequest
+  sequencePlaybackRequest = request
+  beginManualPlayback()
+  playbackPhase.value = 'sentence'
+  try {
+    return await playTargetSentence({ maxDurationMs })
+  } finally {
+    if (request === audioRequest && statusRequest === playbackStatusRequest) {
+      playbackPhase.value = ''
+    }
   }
-  let paused = false
-  if (pronunciationAudio.value && !pronunciationAudio.value.paused) {
-    pronunciationAudio.value.pause()
-    pausedPlaybackTargets.add('word')
-    paused = true
-  }
-  if (audioElement.value && !audioElement.value.paused) {
-    audioElement.value.pause()
-    pausedPlaybackTargets.add('sentence')
-    paused = true
-  }
-  if (
-    typeof window !== 'undefined'
-    && 'speechSynthesis' in window
-    && window.speechSynthesis.speaking
-    && !window.speechSynthesis.paused
-  ) {
-    window.speechSynthesis.pause()
-    pausedPlaybackTargets.add('speech')
-    paused = true
-  }
-  playbackPaused.value = paused
-  return paused
 }
 
-async function resumePausedPlayback() {
-  const targets = new Set(pausedPlaybackTargets)
-  pausedPlaybackTargets.clear()
-  playbackPaused.value = false
-  if (targets.has('speech') && typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.resume()
+async function playWordAndTargetSentence({ maxDurationMs = 12000 } = {}) {
+  const request = audioRequest
+  const statusRequest = ++playbackStatusRequest
+  sequencePlaybackRequest = request
+  beginManualPlayback()
+  try {
+    playbackPhase.value = 'word'
+    await pronunciationReadyPromise
+    if (request !== audioRequest) return false
+    return await runReviewPlaybackSequence({
+      isCurrent: () => request === audioRequest,
+      playWord: playWordPronunciation,
+      playSentence: async () => {
+        playbackPhase.value = 'sentence'
+        await playTargetSentence({ maxDurationMs })
+      },
+    })
+  } finally {
+    if (statusRequest === playbackStatusRequest) playbackPhase.value = ''
   }
-  if (targets.has('word') && pronunciationAudio.value) {
-    try {
-      await pronunciationAudio.value.play()
-    } catch (_error) {}
+}
+
+async function playWordWithStatus(request = audioRequest) {
+  const statusRequest = ++playbackStatusRequest
+  playbackPhase.value = 'word'
+  try {
+    await playWordPronunciation()
+  } finally {
+    if (request === audioRequest && statusRequest === playbackStatusRequest) {
+      playbackPhase.value = ''
+    }
   }
-  if (targets.has('sentence') && audioElement.value) {
-    try {
-      await audioElement.value.play()
-    } catch (_error) {}
-  }
-  return targets.size > 0
+}
+
+function prefetchUpcomingPronunciations() {
+  const start = Math.max(0, Number(review.viewIndex.value || 0) + 1)
+  return prefetchAmericanPronunciations(
+    review.queue.value
+      .slice(start, start + 20)
+      .map((entry) => entry?.word?.word)
+      .filter(Boolean),
+  )
 }
 
 async function playWordPronunciation() {
@@ -680,7 +800,9 @@ async function playWordPronunciation() {
     pronunciationUrl.value = urls[0] || ''
     if (played) return
   }
-  await speakWithSystemVoice()
+  if (shouldUseSystemPronunciationFallback(word.value.word)) {
+    await speakWithSystemVoice()
+  }
 }
 
 function speakWithSystemVoice() {
@@ -733,17 +855,46 @@ function waitForPronunciationEnd(element) {
   })
 }
 
-async function playTargetSentence() {
+async function playTargetSentence({ maxDurationMs = 12000 } = {}) {
+  const request = audioRequest
+  await sourceReadyPromise
+  await nextTick()
   const element = audioElement.value
   const source = audioState.value
-  if (!element || !source?.url) return
+  if (request !== audioRequest || !element || !source?.url) return false
   await waitForSentenceMetadata(element)
-  if (element !== audioElement.value || source !== audioState.value) return
-  audioPlaybackRange.value = { start: source.start, end: source.end }
-  element.currentTime = Math.max(0, Number(source.start || 0))
-  try {
-    await element.play()
-  } catch (_error) {}
+  if (request !== audioRequest || element !== audioElement.value || source !== audioState.value) return false
+  stopCurrentPlayback()
+  const start = Math.max(0, Number(source.start || 0))
+  const durationLimit = Math.max(1, Number(maxDurationMs || 12000)) / 1000
+  const sourceEnd = Number(source.end)
+  const end = Number.isFinite(sourceEnd)
+    ? Math.min(sourceEnd, start + durationLimit)
+    : start + durationLimit
+  if (end <= start) return false
+  audioPlaybackRange.value = { start, end }
+  element.currentTime = start
+  return new Promise((resolve) => {
+    let settled = false
+    const timeout = window.setTimeout(() => finish(true), Math.max(1, Number(maxDurationMs || 12000)))
+    function finish(played) {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      element.removeEventListener('ended', handleEnded)
+      element.removeEventListener('error', handleError)
+      if (cancelTargetSentenceWait === finish) cancelTargetSentenceWait = null
+      element.pause()
+      if (element === audioElement.value) element.currentTime = start
+      resolve(Boolean(played))
+    }
+    const handleEnded = () => finish(true)
+    const handleError = () => finish(false)
+    element.addEventListener('ended', handleEnded)
+    element.addEventListener('error', handleError)
+    cancelTargetSentenceWait = finish
+    element.play().catch(() => finish(false))
+  })
 }
 
 function waitForSentenceMetadata(element) {
@@ -780,9 +931,6 @@ function voiceScore(voice) {
 }
 
 function stopPronunciation() {
-  pausedPlaybackTargets.delete('word')
-  pausedPlaybackTargets.delete('speech')
-  if (!pausedPlaybackTargets.size) playbackPaused.value = false
   if (cancelPronunciationWait) cancelPronunciationWait()
   if (pronunciationAudio.value) {
     pronunciationAudio.value.pause()

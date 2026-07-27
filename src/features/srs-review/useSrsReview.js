@@ -7,7 +7,6 @@ export const SRS_REVIEW_ACTIONS = Object.freeze([
   Object.freeze({ shortcut: '2', label: '困难', rating: REVIEW_RATINGS.HARD, tone: 'hard' }),
   Object.freeze({ shortcut: '3', label: '一般', rating: REVIEW_RATINGS.GOOD, tone: 'good' }),
   Object.freeze({ shortcut: '4', label: '容易', rating: REVIEW_RATINGS.EASY, tone: 'easy' }),
-  Object.freeze({ shortcut: '5', label: '掌握', rating: REVIEW_RATINGS.EASY, tone: 'mastered', mastered: true }),
 ])
 
 export function getReviewActionForShortcut(key) {
@@ -31,6 +30,8 @@ export function useSrsReview(service, options = {}) {
   const completedBeforeOpen = ref(0)
   const reviewLogs = ref([])
   const reviewDate = ref(resolveReviewDate(now))
+  const sessionRatingCounts = ref(createEmptyRatingCounts())
+  const committedWordIds = new Set()
 
   const current = computed(() => queue.value[viewIndex.value] || null)
   const total = computed(() => queue.value.length)
@@ -61,6 +62,8 @@ export function useSrsReview(service, options = {}) {
         typeof service.getReviewLogs === 'function' ? service.getReviewLogs() : [],
       ])
       reviewLogs.value = Array.isArray(logs) ? logs : []
+      sessionRatingCounts.value = createEmptyRatingCounts()
+      committedWordIds.clear()
       const reviewedToday = reviewedWordIdsForDay(reviewLogs.value, reviewDate.value)
       queue.value = diversifyReviewQueue(due).filter((entry) => (
         !reviewedToday.has(String(entry?.word?.id || ''))
@@ -78,24 +81,27 @@ export function useSrsReview(service, options = {}) {
     }
   }
 
-  async function submitAction(action) {
-    if (pending.value || !current.value || reviewingPast.value) return false
+  async function submitAction(action, submitOptions = {}) {
+    const entry = current.value
+    const wordId = String(entry?.word?.id || '')
+    if (pending.value || !entry || reviewingPast.value || committedWordIds.has(wordId)) return false
     if (!SRS_REVIEW_ACTIONS.includes(action)) {
       throw new Error('Unsupported SRS review action')
     }
 
     pending.value = true
     error.value = ''
-    const entry = current.value
     try {
-      const result = action.mastered && typeof service.reviewWordKnown === 'function'
-        ? await service.reviewWordKnown(entry.word.id)
-        : await service.reviewWord(entry.word.id, action.rating)
+      const result = await service.reviewWord(entry.word.id, action.rating)
       if (result?.reviewLog) {
         reviewLogs.value = [result.reviewLog, ...reviewLogs.value]
       }
-      index.value += 1
-      viewIndex.value = index.value
+      committedWordIds.add(wordId)
+      sessionRatingCounts.value = {
+        ...sessionRatingCounts.value,
+        [action.tone]: sessionRatingCounts.value[action.tone] + 1,
+      }
+      if (submitOptions.advance !== false) advanceCurrent()
       return true
     } catch (cause) {
       error.value = getErrorMessage(cause, '评价保存失败，请重试')
@@ -105,8 +111,16 @@ export function useSrsReview(service, options = {}) {
     }
   }
 
+  function advanceCurrent() {
+    const wordId = String(current.value?.word?.id || '')
+    if (!wordId || !committedWordIds.has(wordId) || reviewingPast.value) return false
+    index.value += 1
+    viewIndex.value = index.value
+    return true
+  }
+
   async function submitRating(rating) {
-    const action = SRS_REVIEW_ACTIONS.find((item) => item.rating === rating && !item.mastered)
+    const action = SRS_REVIEW_ACTIONS.find((item) => item.rating === rating)
     if (!action) throw new Error(`Unsupported SRS review rating: ${rating}`)
     return submitAction(action)
   }
@@ -164,10 +178,12 @@ export function useSrsReview(service, options = {}) {
     empty,
     progress,
     reviewHistory,
+    sessionRatingCounts,
     actions: SRS_REVIEW_ACTIONS,
     load,
     submitAction,
     submitRating,
+    advanceCurrent,
     removeCurrent,
     goPrevious,
     goNext,
@@ -176,6 +192,10 @@ export function useSrsReview(service, options = {}) {
 
 function getErrorMessage(error, fallback) {
   return error && error.message ? String(error.message) : fallback
+}
+
+function createEmptyRatingCounts() {
+  return { again: 0, hard: 0, good: 0, easy: 0 }
 }
 
 function resolveReviewDate(value) {

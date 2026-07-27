@@ -44,6 +44,10 @@ async function importProjectApis(repoRoot) {
       path.join(tempDir, 'srs-review-playback.mjs'),
     )
     writeModule(
+      path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-flow.js'),
+      path.join(tempDir, 'srs-review-flow.mjs'),
+    )
+    writeModule(
       path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-layout.js'),
       path.join(tempDir, 'srs-review-layout.mjs'),
     )
@@ -65,6 +69,7 @@ async function importProjectApis(repoRoot) {
       contextModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-context.mjs')).href),
       pronunciationModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-pronunciation.mjs')).href),
       playbackModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-playback.mjs')).href),
+      flowModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-flow.mjs')).href),
       layoutModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-layout.mjs')).href),
       meaningsModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-meanings.mjs')).href),
       queueModule: await import(pathToFileURL(path.join(tempDir, 'srs-review-queue.mjs')).href),
@@ -84,7 +89,7 @@ function writeModule(sourcePath, destinationPath, transform = (source) => source
 
 async function run() {
   const repoRoot = path.resolve(__dirname, '..')
-  const { vocabulary, reviewModule, contextModule, pronunciationModule, playbackModule, layoutModule, meaningsModule, queueModule } = await importProjectApis(repoRoot)
+  const { vocabulary, reviewModule, contextModule, pronunciationModule, playbackModule, flowModule, layoutModule, meaningsModule, queueModule } = await importProjectApis(repoRoot)
   const reviewPageSource = fs.readFileSync(
     path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),
     'utf8',
@@ -93,17 +98,52 @@ async function run() {
     path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review.css'),
     'utf8',
   )
-  assert.doesNotMatch(reviewPageSource, /\busageHint\b/, 'the separate usage hint panel should stay removed')
-  assert.match(reviewPageSource, /重读单词和原句/, 'the reread word-and-sentence control should remain visible')
+  assert.doesNotMatch(
+    reviewCssSource,
+    /font-family:\s*(?:Georgia|"Segoe UI")/,
+    'the review page should not retain mixed serif or Segoe UI typography',
+  )
+  assert.match(
+    reviewCssSource,
+    /:root\s*\{[^}]*font-family:\s*Arial,\s*sans-serif/s,
+    'all review typography should inherit Arial',
+  )
   assert.match(
     reviewPageSource,
-    /:aria-keyshortcuts="replayShortcutDisplay"/,
-    'the reread control should expose its configured shortcut',
+    /document\.addEventListener\('pointerdown', handleHistoryOutsidePointer, true\)/,
+    'the review history should listen for clicks outside its container',
   )
+  assert.match(
+    reviewPageSource,
+    /historyContainer\.value\?\.contains\(event\.target\)/,
+    'clicks inside the review history should not close it',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-shortcut-settings\s*\{[^}]*margin:\s*0 0 12px[^}]*\}/s,
+    'shortcut settings should use whitespace instead of divider lines',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-history li\s*\{[^}]*border-top:\s*0/s,
+    'history rows should not be separated by dense horizontal lines',
+  )
+  assert.doesNotMatch(reviewPageSource, /\busageHint\b/, 'the separate usage hint panel should stay removed')
   assert.doesNotMatch(
     reviewPageSource,
-    /空格暂停|继续播放/,
-    'Space pause/resume should remain an invisible keyboard behavior',
+    /viewContext\?\.sourceTitle/,
+    'the review header must not reveal the source article title',
+  )
+  assert.match(reviewPageSource, /Space 显示答案/, 'recall mode should expose the reveal-answer control')
+  assert.match(
+    reviewPageSource,
+    /v-if="flowState\.answerRevealed"/,
+    'Chinese meanings must not render before the answer is revealed',
+  )
+  assert.match(
+    reviewPageSource,
+    /action\.tone === 'again' \|\| flowState\.answerRevealed/,
+    'only Again should remain visible during recall',
   )
   assert.match(
     reviewPageSource,
@@ -126,8 +166,93 @@ async function run() {
     'context words should use plain inline text elements',
   )
   assert.match(reviewPageSource, /句中释义/, 'the stored context meaning should be labeled as contextual')
-  assert.match(reviewPageSource, /replayShortcutEditing/, 'the replay shortcut should be customizable in place')
-  assert.match(reviewPageSource, /localStorage/, 'the customized replay shortcut should persist locally')
+  assert.doesNotMatch(reviewPageSource, /replayShortcutEditing/, 'the MVP should not expose a second shortcut system')
+  assert.doesNotMatch(
+    reviewPageSource,
+    /autoPlayWord|srs\.review\.autoPlayWord/,
+    'word autoplay should be automatic rather than gated by a setting',
+  )
+  assert.match(
+    reviewPageSource,
+    /进入新卡自动播放单词/,
+    'the word autoplay setting should be visible and default to off',
+  )
+  assert.match(
+    reviewPageSource,
+    /runReviewPlaybackSequence/,
+    'manual target playback should play the word before the target sentence',
+  )
+  assert.match(
+    reviewPageSource,
+    /await pronunciationReadyPromise/,
+    'word-and-sentence playback must wait for the active word or phrase audio',
+  )
+  assert.match(
+    reviewPageSource,
+    /sequencePlaybackRequest/,
+    'manual playback should suppress the delayed automatic pronunciation for the same card',
+  )
+  assert.match(
+    reviewPageSource,
+    /prefetchUpcomingPronunciations/,
+    'review navigation should keep a rolling pronunciation prefetch window',
+  )
+  assert.match(reviewPageSource, /review\.goPrevious\(\)/, 'ArrowLeft should revisit the previous reviewed word')
+  assert.match(reviewPageSource, /review\.goNext\(\)/, 'ArrowRight should move forward through reviewed words')
+  assert.match(
+    reviewPageSource,
+    /srs\.review\.playbackShortcut\.v1/,
+    'the sentence playback shortcut should persist locally',
+  )
+  assert.match(
+    reviewPageSource,
+    /srs\.review\.wordShortcut\.v1/,
+    'the word playback shortcut should persist locally',
+  )
+  assert.match(
+    reviewPageSource,
+    /<span>播放单词<\/span>[\s\S]*<span>播放原句<\/span>/,
+    'word and sentence playback should use separate compact controls',
+  )
+  assert.doesNotMatch(
+    reviewPageSource,
+    /正在朗读(?:单词|短语|原句)/,
+    'playback status hints should not interrupt the review content',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-play-sequence\s*\{[^}]*background:\s*transparent[^}]*font-size:\s*11px[^}]*font-weight:\s*500/s,
+    'the target playback control should remain as quiet as the removal action',
+  )
+  for (const selector of [
+    '.srs-review-back',
+    '.srs-review-history-toggle',
+    '.srs-review-play-sequence',
+    '.srs-review-remove-word',
+  ]) {
+    const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const block = reviewCssSource.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, 's'))?.[0] || ''
+    assert.match(block, /min-height:\s*28px/, `${selector} should use the shared compact height`)
+    assert.match(
+      block,
+      /color:\s*rgba\(111,\s*123,\s*142,\s*\.68\)\s*!important/,
+      `${selector} should force a visibly muted gray text color`,
+    )
+    assert.match(block, /background:\s*transparent/, `${selector} should have no default fill`)
+    assert.match(block, /box-shadow:\s*none/, `${selector} should have no default shadow`)
+    assert.match(block, /font-size:\s*11px/, `${selector} should use the shared font size`)
+    assert.match(block, /font-weight:\s*500/, `${selector} should use the shared font weight`)
+  }
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-remove-word:hover:not\(:disabled\)\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*\.62\)[^}]*box-shadow:\s*0 4px 12px/s,
+    'the removal action should only gain its button surface on hover',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-back > \*,[\s\S]*\.srs-review-remove-word > \*\s*\{[^}]*color:\s*inherit\s*!important[^}]*-webkit-text-fill-color:\s*currentColor/s,
+    'auxiliary control labels, shortcut keys, and icons should inherit the muted button color',
+  )
   assert.match(reviewPageSource, /srs-review-meaning-group is-general/, 'general meanings should have a primary style hook')
   assert.match(reviewPageSource, /srs-review-meaning-group is-contextual/, 'context meanings should have a secondary style hook')
   assert.match(
@@ -178,7 +303,7 @@ async function run() {
   const review = reviewModule.useSrsReview(service, { now })
 
   await review.load()
-  assert.equal(review.total.value, 5, 'due queue should load all due words')
+  assert.equal(review.total.value, 4, 'due queue should load all due words')
   const meaningRequests = []
   const meaningResult = await meaningsModule.hydrateReviewGeneralMeanings(
     review.queue.value,
@@ -204,7 +329,7 @@ async function run() {
     },
   )
   assert.equal(meaningRequests.length, 1, 'review meanings should be fetched in a batch')
-  assert.equal(meaningResult.cached, 5, 'all missing review meanings should be cached')
+  assert.equal(meaningResult.cached, 4, 'all missing review meanings should be cached')
   assert.equal(
     (await repository.getWord('word-1')).general_meaning,
     'again-word-通用义',
@@ -216,21 +341,163 @@ async function run() {
     { fetchImpl: async () => { throw new Error('cached meanings must not be fetched again') } },
   )
   assert.equal(repeatedMeaningResult.requested, 0, 'permanent meanings should skip future API calls')
-  assert.equal(review.progress.value, '复习 1 / 5')
+  assert.equal(review.progress.value, '复习 1 / 4')
   assert.deepEqual(
-    review.actions.map(({ shortcut, label, rating, mastered }) => [shortcut, label, rating, Boolean(mastered)]),
+    review.actions.map(({ shortcut, label, rating }) => [shortcut, label, rating]),
     [
-      ['1', '忘记', vocabulary.REVIEW_RATINGS.AGAIN, false],
-      ['2', '困难', vocabulary.REVIEW_RATINGS.HARD, false],
-      ['3', '一般', vocabulary.REVIEW_RATINGS.GOOD, false],
-      ['4', '容易', vocabulary.REVIEW_RATINGS.EASY, false],
-      ['5', '掌握', vocabulary.REVIEW_RATINGS.EASY, true],
+      ['1', '忘记', vocabulary.REVIEW_RATINGS.AGAIN],
+      ['2', '困难', vocabulary.REVIEW_RATINGS.HARD],
+      ['3', '一般', vocabulary.REVIEW_RATINGS.GOOD],
+      ['4', '容易', vocabulary.REVIEW_RATINGS.EASY],
     ],
-    'five actions should map from weakest to strongest memory',
+    'the personal review flow should expose only the four FSRS ratings',
   )
   assert.equal(reviewModule.getReviewActionForShortcut('1').label, '忘记')
-  assert.equal(reviewModule.getReviewActionForShortcut('5').label, '掌握')
+  assert.equal(reviewModule.getReviewActionForShortcut('5'), null)
   assert.equal(reviewModule.getReviewActionForShortcut('0'), null)
+
+  const recallEvents = []
+  const recallFlow = flowModule.createSrsReviewFlow({
+    async submitAction(action) {
+      recallEvents.push(`submit:${action.tone}`)
+      return true
+    },
+    revealHint(message) {
+      recallEvents.push(`hint:${message}`)
+    },
+    playTargetSentence() {
+      recallEvents.push('play-sentence')
+    },
+    async waitBeforeAdvance({ delayMs, tone }) {
+      recallEvents.push(`wait:${tone}:${delayMs}`)
+    },
+    advance() {
+      recallEvents.push('advance')
+    },
+  })
+  assert.equal(recallFlow.answerRevealed, false, 'a new card should begin in recall mode')
+  assert.equal(
+    await recallFlow.rate(review.actions[1]),
+    false,
+    'Hard must be rejected until the answer is revealed',
+  )
+  assert.deepEqual(recallEvents, ['hint:请先显示答案'])
+  assert.equal(await recallFlow.handleSpace(), true, 'Space should reveal the answer')
+  assert.equal(recallFlow.answerRevealed, true)
+  assert.deepEqual(recallEvents, ['hint:请先显示答案'], 'revealing the answer must not autoplay audio')
+  assert.equal(await recallFlow.rate(review.actions[2]), true, 'Good should save after reveal')
+  assert.deepEqual(
+    recallEvents,
+    ['hint:请先显示答案', 'submit:good', 'wait:good:1500', 'advance'],
+    'Good should keep the answer visible briefly before advancing without sentence playback',
+  )
+  assert.equal(recallFlow.ratingCommitted, true)
+
+  const againEvents = []
+  const againFlow = flowModule.createSrsReviewFlow({
+    async submitAction(action) {
+      againEvents.push(`submit:${action.tone}`)
+      return true
+    },
+    async playWordAndTargetSentence({ maxDurationMs }) {
+      againEvents.push(`play-word-and-sentence:${maxDurationMs}`)
+      return true
+    },
+    async playTargetSentence({ maxDurationMs }) {
+      againEvents.push(`play-sentence:${maxDurationMs}`)
+      return true
+    },
+    stopAudio() {
+      againEvents.push('stop-audio')
+    },
+    advance() {
+      againEvents.push('advance')
+    },
+  })
+  assert.equal(await againFlow.rate(review.actions[0]), true, 'Again should be allowed before reveal')
+  assert.equal(againFlow.answerRevealed, true, 'Again should reveal the answer')
+  assert.deepEqual(
+    againEvents,
+    ['submit:again', 'play-word-and-sentence:12000'],
+    'Again should save once, play the word before the bounded target sentence, and stay on the card',
+  )
+  assert.equal(await againFlow.rate(review.actions[0]), false, 'a committed card must ignore duplicate ratings')
+  assert.equal(await againFlow.handleSpace(), true, 'Space should leave a committed Again card')
+  assert.deepEqual(
+    againEvents,
+    ['submit:again', 'play-word-and-sentence:12000', 'stop-audio', 'advance'],
+    'leaving an Again card should stop its audio before advancing',
+  )
+  againFlow.resetCard()
+  assert.equal(againFlow.answerRevealed, false)
+  assert.equal(againFlow.ratingCommitted, false)
+
+  const hardEvents = []
+  const hardFlow = flowModule.createSrsReviewFlow({
+    async submitAction(action) {
+      hardEvents.push(`submit:${action.tone}`)
+      return true
+    },
+    async playWordAndTargetSentence({ maxDurationMs }) {
+      hardEvents.push(`play-word-and-sentence:${maxDurationMs}`)
+      return true
+    },
+    async playTargetSentence({ maxDurationMs }) {
+      hardEvents.push(`play-sentence:${maxDurationMs}`)
+      return true
+    },
+    async waitBeforeAdvance({ delayMs, tone }) {
+      hardEvents.push(`wait:${tone}:${delayMs}`)
+    },
+    advance() {
+      hardEvents.push('advance')
+    },
+  })
+  hardFlow.revealAnswer()
+  assert.equal(await hardFlow.rate(review.actions[1]), true)
+  assert.deepEqual(
+    hardEvents,
+    ['submit:hard', 'play-word-and-sentence:12000', 'wait:hard:1500', 'advance'],
+    'Hard should play the word and bounded target sentence, then pause before advancing',
+  )
+
+  let finishHardPlayback
+  const skippedHardEvents = []
+  const skippedHardFlow = flowModule.createSrsReviewFlow({
+    async submitAction() {
+      skippedHardEvents.push('submit:hard')
+      return true
+    },
+    playTargetSentence() {
+      skippedHardEvents.push('play-sentence')
+      return new Promise((resolve) => { finishHardPlayback = resolve })
+    },
+    stopAudio() {
+      skippedHardEvents.push('stop-audio')
+    },
+    advance() {
+      skippedHardEvents.push('advance')
+      skippedHardFlow.resetCard()
+    },
+  })
+  skippedHardFlow.revealAnswer()
+  const hardSubmission = skippedHardFlow.rate(review.actions[1])
+  await Promise.resolve()
+  assert.equal(skippedHardFlow.ratingCommitted, true)
+  assert.equal(await skippedHardFlow.handleSpace(), true, 'Space should skip Hard sentence playback')
+  finishHardPlayback(true)
+  await hardSubmission
+  assert.deepEqual(
+    skippedHardEvents,
+    ['submit:hard', 'play-sentence', 'stop-audio', 'advance'],
+    'skipping Hard playback must advance exactly once',
+  )
+  assert.equal(
+    await skippedHardFlow.handleSpace(),
+    true,
+    'Space should reveal the answer on the new card after the previous playback is canceled',
+  )
+  assert.equal(skippedHardFlow.answerRevealed, true)
 
   for (const action of review.actions) {
     const currentId = review.current.value.word.id
@@ -251,9 +518,6 @@ async function run() {
       assert.equal(review.goNext(), true, 'right navigation should return to the active card')
       assert.equal(review.reviewingPast.value, false)
     }
-    if (action.mastered) {
-      assert.equal((await repository.getWord(currentId)).status, 'known')
-    }
   }
   assert.equal(review.completed.value, true, 'last successful rating should complete the session')
   assert.equal(review.goPrevious(), true, 'completed sessions should allow a final-card review')
@@ -267,8 +531,8 @@ async function run() {
   await removalReview.load()
   const removedWordId = removalReview.current.value.word.id
   assert.equal(await removalReview.removeCurrent(), true)
-  assert.equal(removalReview.total.value, 4, 'removing a mistaken entry should shrink the active queue')
-  assert.equal(removalReview.dailyTotal.value, 4, 'removing a mistaken entry should update today’s total')
+  assert.equal(removalReview.total.value, 3, 'removing a mistaken entry should shrink the active queue')
+  assert.equal(removalReview.dailyTotal.value, 3, 'removing a mistaken entry should update today’s total')
   assert.notEqual(removalReview.current.value.word.id, removedWordId, 'review should continue with the next word')
   assert.equal(await removalRepository.getWord(removedWordId), null, 'removed review entries should be deleted permanently')
 
@@ -290,6 +554,40 @@ async function run() {
   assert.equal(duplicateCalls, 1, 'duplicate click should not create a second review log')
   releaseReview()
   await firstSubmission
+
+  const deferredReview = reviewModule.useSrsReview({
+    async getDueWords() {
+      return [createDueEntry('deferred-word'), createDueEntry('next-word')]
+    },
+    async reviewWord(wordId, rating) {
+      return {
+        reviewLog: {
+          word_id: wordId,
+          rating,
+          reviewed_at: '2026-07-23T02:00:00.000Z',
+        },
+      }
+    },
+  }, { now })
+  await deferredReview.load()
+  assert.equal(
+    await deferredReview.submitAction(deferredReview.actions[0], { advance: false }),
+    true,
+    'the page should be able to save Again without leaving the card',
+  )
+  assert.equal(deferredReview.current.value.word.id, 'deferred-word')
+  assert.equal(
+    await deferredReview.submitAction(deferredReview.actions[0], { advance: false }),
+    false,
+    'a saved card should reject a second submission even before it advances',
+  )
+  assert.equal(deferredReview.advanceCurrent(), true)
+  assert.equal(deferredReview.current.value.word.id, 'next-word')
+  assert.deepEqual(
+    deferredReview.sessionRatingCounts.value,
+    { again: 1, hard: 0, good: 0, easy: 0 },
+    'the completion summary should count the four saved ratings',
+  )
 
   let dailyDueCutoff = ''
   const dailyReview = reviewModule.useSrsReview({
@@ -616,57 +914,70 @@ async function run() {
   })
   assert.equal(pronunciationRequests, 1, 'pronunciation lookup should be cached per word')
 
-  const phraseMerriamCalls = []
+  const phrasePronunciationCalls = []
+  const phraseEdgeAudioId = 'd'.repeat(64)
   assert.deepEqual(
     await pronunciationModule.resolveAmericanPronunciationSequence('brief court hearing', {
-      async merriamFetchImpl(url, init) {
-        phraseMerriamCalls.push([url, init?.method || 'GET', init?.body ? JSON.parse(init.body) : null])
-        if (!init?.method) return { ok: false, async json() { return {} } }
+      async merriamFetchImpl() {
+        throw new Error('phrases must not request Merriam pronunciation audio')
+      },
+      async edgeFetchImpl(url, init) {
+        phrasePronunciationCalls.push([url, init?.method || 'GET', JSON.parse(init.body)])
         return {
           ok: true,
           async json() {
             return {
-              items: [
-                {
-                  word: 'brief',
-                  audioUrl: 'https://media.merriam-webster.com/audio/prons/en/us/mp3/b/brief001.mp3',
-                },
-                {
-                  word: 'court',
-                  audioUrl: 'https://media.merriam-webster.com/audio/prons/en/us/mp3/c/court001.mp3',
-                },
-                {
-                  word: 'hearing',
-                  audioUrl: 'https://media.merriam-webster.com/audio/prons/en/us/mp3/h/hearin01.mp3',
-                },
-              ],
+              audioUrl: `/api/tts/edge/audio/${phraseEdgeAudioId}.mp3`,
+              voice: 'en-US-AriaNeural',
             }
           },
         }
       },
-      async edgeFetchImpl() {
-        throw new Error('Edge TTS should not run when every phrase token has Merriam audio')
-      },
     }),
     [
-      'https://media.merriam-webster.com/audio/prons/en/us/mp3/b/brief001.mp3',
-      'https://media.merriam-webster.com/audio/prons/en/us/mp3/c/court001.mp3',
-      'https://media.merriam-webster.com/audio/prons/en/us/mp3/h/hearin01.mp3',
+      `http://127.0.0.1:8765/api/tts/edge/audio/${phraseEdgeAudioId}.mp3`,
     ],
-    'short phrases should play Merriam recordings token by token before Edge TTS',
+    'phrases should use one complete Microsoft Aria Online Natural Edge recording',
   )
-  assert.deepEqual(phraseMerriamCalls, [
+  assert.deepEqual(phrasePronunciationCalls, [
     [
-      'http://127.0.0.1:8765/api/dictionary/pronunciation?word=brief%20court%20hearing',
-      'GET',
-      null,
-    ],
-    [
-      'http://127.0.0.1:8765/api/dictionary/pronunciations',
+      'http://127.0.0.1:8765/api/tts/edge',
       'POST',
-      { words: ['brief', 'court', 'hearing'] },
+      { text: 'brief court hearing' },
     ],
   ])
+
+  const nonAriaPhraseAudioId = 'e'.repeat(64)
+  assert.deepEqual(
+    await pronunciationModule.resolveAmericanPronunciationSequence('reject other neural voice', {
+      async merriamFetchImpl() {
+        throw new Error('phrases must not request Merriam pronunciation audio')
+      },
+      async edgeFetchImpl() {
+        return {
+          ok: true,
+          async json() {
+            return {
+              audioUrl: `/api/tts/edge/audio/${nonAriaPhraseAudioId}.mp3`,
+              voice: 'en-US-AvaNeural',
+            }
+          },
+        }
+      },
+    }),
+    [],
+    'phrases must reject Edge audio that is not Microsoft Aria Online Natural',
+  )
+  assert.equal(
+    pronunciationModule.shouldUseSystemPronunciationFallback('reject other neural voice'),
+    false,
+    'phrases must not fall back to a browser voice when Aria is unavailable',
+  )
+  assert.equal(
+    pronunciationModule.shouldUseSystemPronunciationFallback('experimentation'),
+    true,
+    'single words may retain the existing browser fallback',
+  )
 
   const edgeAudioId = 'a'.repeat(64)
   assert.equal(
@@ -689,6 +1000,50 @@ async function run() {
     }),
     `http://127.0.0.1:8765/api/tts/edge/audio/${edgeAudioId}.mp3`,
     'Edge neural speech should be used before browser speech when recorded audio is unavailable',
+  )
+
+  const experimentationAudioId = 'b'.repeat(64)
+  const experimentationRequests = []
+  assert.equal(
+    await pronunciationModule.resolveAmericanPronunciation('experimentation', {
+      async merriamFetchImpl(url) {
+        experimentationRequests.push(['merriam', url, null])
+        return { ok: false, async json() { return {} } }
+      },
+      async edgeFetchImpl(url, init) {
+        experimentationRequests.push(['edge', url, JSON.parse(init.body)])
+        return {
+          ok: true,
+          async json() {
+            return {
+              audioUrl: `/api/tts/edge/audio/${experimentationAudioId}.mp3`,
+              voice: 'en-US-AvaNeural',
+            }
+          },
+        }
+      },
+      async fetchImpl() {
+        throw new Error('free dictionary fallback should not run when Edge TTS succeeds')
+      },
+    }),
+    `http://127.0.0.1:8765/api/tts/edge/audio/${experimentationAudioId}.mp3`,
+    'a Merriam 404 should fall back to Edge TTS for the complete lookup',
+  )
+  assert.deepEqual(
+    experimentationRequests,
+    [
+      [
+        'merriam',
+        'http://127.0.0.1:8765/api/dictionary/pronunciation?word=experimentation',
+        null,
+      ],
+      [
+        'edge',
+        'http://127.0.0.1:8765/api/tts/edge',
+        { text: 'experimentation' },
+      ],
+    ],
+    'the frontend must not shorten experimentation to experiment during pronunciation fallback',
   )
 
   assert.equal(
@@ -775,6 +1130,15 @@ async function run() {
     }),
     `http://127.0.0.1:8765/api/tts/edge/audio/${prefetchedEdgeId}.mp3`,
   )
+  assert.deepEqual(
+    await pronunciationModule.resolveAmericanPronunciationSequence('appeared in test court', {
+      async fetchImpl() {
+        throw new Error('prefetched phrase sequence should not refetch')
+      },
+    }),
+    [`http://127.0.0.1:8765/api/tts/edge/audio/${prefetchedEdgeId}.mp3`],
+    'prefetched phrases should be immediately available to the review playback sequence',
+  )
 
   const playbackOrder = []
   assert.equal(
@@ -857,7 +1221,7 @@ async function run() {
 }
 
 function createSyntheticSnapshot(now) {
-  const words = ['again-word', 'hard-word', 'good-word', 'easy-word', 'mastered-word'].map((word, index) => ({
+  const words = ['again-word', 'hard-word', 'good-word', 'easy-word'].map((word, index) => ({
     id: `word-${index + 1}`,
     word,
     lemma: word,
