@@ -12,6 +12,7 @@
       <SrsReviewPage
         v-if="isSrsReviewOpen"
         :service="vocabularyService"
+        :dictionary-client="dictionaryClient"
         @close="isSrsReviewOpen = false"
       />
     </Teleport>
@@ -28,10 +29,12 @@ import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
 import SrsReviewPage from './features/srs-review/SrsReviewPage.vue'
 import { createVocabularyService } from './services/vocabulary/index.js'
+import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import './features/srs-review/srs-review.css'
 
 const isSrsReviewOpen = ref(false)
 const vocabularyService = createVocabularyService()
+const dictionaryClient = createOptionalLocalDictionaryClient()
 
 onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active (__USE_VUE_RENDERING=' + window.__USE_VUE_RENDERING + ')')

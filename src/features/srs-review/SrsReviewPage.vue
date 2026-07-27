@@ -188,6 +188,22 @@
                 <h3>句中释义</h3>
                 <p>{{ meaning }}</p>
               </section>
+              <section
+                v-if="dictionarySuggestionText"
+                class="srs-review-dictionary"
+                aria-label="本地词典 ECDICT"
+              >
+                <h3>本地词典 · ECDICT</h3>
+                <p>{{ dictionarySuggestionText }}</p>
+              </section>
+              <section
+                v-else-if="dictionaryState.unavailableVisible"
+                class="srs-review-dictionary is-unavailable"
+                aria-label="本地词典 ECDICT 暂不可用"
+              >
+                <h3>本地词典 · ECDICT</h3>
+                <p>ECDICT 暂不可用</p>
+              </section>
             </div>
             <div v-else class="srs-review-answer-placeholder" aria-hidden="true">
               <span v-if="word.phonetic">{{ word.phonetic }}</span>
@@ -289,6 +305,12 @@ import { calculateSingleLineFontSize } from './srs-review-layout.js'
 import { hydrateReviewGeneralMeanings } from './srs-review-meanings.js'
 import { createSrsReviewFlow } from './srs-review-flow.js'
 import {
+  createSrsReviewDictionaryAssistance,
+} from './srs-review-dictionary-assistance.mjs'
+import {
+  formatDictionarySuggestion,
+} from '../../dictionary/ecdict/browser/dictionary-suggestion-view.mjs'
+import {
   isReviewReplayKey,
   normalizeReviewReplayShortcut,
   runReviewPlaybackSequence,
@@ -303,6 +325,7 @@ import { getReviewActionForShortcut, useSrsReview } from './useSrsReview.js'
 const props = defineProps({
   service: { type: Object, required: true },
   standalone: { type: Boolean, default: false },
+  dictionaryClient: { type: Object, default: null },
 })
 const emit = defineEmits(['close'])
 
@@ -348,6 +371,22 @@ const flowState = reactive({
   committedTone: '',
   advanced: false,
 })
+const dictionaryState = reactive({
+  query: '',
+  result: null,
+  unavailable: false,
+  errorCode: null,
+  requestId: 0,
+  revealed: false,
+  visibleResult: null,
+  unavailableVisible: false,
+})
+const dictionaryAssistance = createSrsReviewDictionaryAssistance({
+  client: props.dictionaryClient,
+  onChange(snapshot) {
+    Object.assign(dictionaryState, snapshot)
+  },
+})
 const flow = createSrsReviewFlow({
   state: flowState,
   submitAction: (action) => review.submitAction(action, { advance: false }),
@@ -370,6 +409,10 @@ const displayParagraphs = computed(() => (
 ))
 const meaning = computed(() => resolveReviewMeaning(word.value, viewContext.value?.raw))
 const generalMeaning = computed(() => resolveReviewGeneralMeaning(word.value))
+const dictionarySuggestionText = computed(() => formatDictionarySuggestion(
+  dictionaryState.visibleResult,
+  { includeSource: false },
+))
 const sessionCompletedCount = computed(() => Object.values(review.sessionRatingCounts.value)
   .reduce((sum, count) => sum + Number(count || 0), 0))
 const wordShortcutDisplay = computed(() => wordShortcut.value.toLocaleUpperCase('en-US'))
@@ -411,6 +454,7 @@ onBeforeUnmount(() => {
   meaningAbortController?.abort()
   wordResizeObserver?.disconnect()
   if (wordFitFrame) cancelAnimationFrame(wordFitFrame)
+  dictionaryAssistance.dispose()
   stopAndReleaseAudio()
 })
 
@@ -428,6 +472,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   stopAndReleaseAudio()
   flow.resetCard()
   flowNotice.value = ''
+  void dictionaryAssistance.setCard(nextId ? word.value.word : '')
   if (!nextId) return
   void prefetchUpcomingPronunciations()
   const context = viewContext.value?.raw
@@ -465,6 +510,10 @@ watch(() => word.value.word, async () => {
   wordFontSize.value = null
   await nextTick()
   fitWordHeading()
+})
+
+watch(() => flowState.answerRevealed, (revealed) => {
+  dictionaryAssistance.setRevealed(revealed)
 })
 
 function close() {
