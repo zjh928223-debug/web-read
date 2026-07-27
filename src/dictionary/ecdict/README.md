@@ -1,8 +1,11 @@
 # ECDICT 独立本地词典模块
 
-这是第一阶段的隔离模块。它没有被 `src/main.js`、阅读器、词汇服务或 SRS
-入口导入，只能由独立 CLI 手动调用。默认 `ECDICT_ENABLED=false`；关闭时不会打开、
-探测或初始化词典数据库。
+ECDICT 的 Node SQLite service 仍与阅读器业务隔离，只读访问独立数据库。阅读器只导入
+browser client、`DictionaryEnrichmentAdapter` 和 formatter；当前已接入文章预习和复习答案区，
+但不会写入 SRS、复习记录、卡片或现有释义。默认 `ECDICT_ENABLED=false`。
+
+`vite.config.js` 可以静态加载 ECDICT plugin 模块；关闭开关时 plugin 不注册 endpoint，
+SQLite service 也不会初始化。启用后，SQLite service 只在第一次查询时延迟加载。
 
 ## 边界
 
@@ -69,6 +72,57 @@ $env:ECDICT_DATABASE_PATH = "data/dictionaries/ecdict.sqlite"
 npm run dictionary:lookup -- looked
 npm run dictionary:lookup -- "run into"
 ```
+
+## 第二阶段：本地预习候选接入
+
+第二阶段通过浏览器 client 和 `DictionaryEnrichmentAdapter` 把 ECDICT 结果附加到
+“当前文章预习”候选的瞬时 `dictionarySuggestion`。启用本地 Vite host：
+
+```powershell
+$env:ECDICT_ENABLED = "true"
+$env:ECDICT_DATABASE_PATH = "data/dictionaries/ecdict.sqlite"
+npm run dev
+```
+
+Vite dev/preview server 会提供：
+
+```text
+GET /api/dev/dictionary/ecdict?q=looked
+```
+
+预习列表会以独立的 `ECDICT` 行显示 direct、normalized 或 lemma 候选。多候选只展示
+歧义，不自动选择。endpoint 不可用、超时、缺库或损坏时，预习和 AI 操作继续沿用
+现有流程。
+
+以下边界仍然有效：
+
+- `dictionarySuggestion` 只存在于当前内存中的 preview scan；
+- 不进入 `buildPreviewAnnotationTemplate(...)` 或 AI prompt；
+- 不写入 annotation bundle、vocabulary repository、SRS、card 或 review record；
+- 不覆盖 `meaning`、`simple_meaning`、`context` 或 `memoryHint`；
+- `ECDICT_ENABLED=false` 时 browser client、endpoint 和 SQLite service 均不初始化。
+
+真实 endpoint smoke：
+
+```powershell
+$env:ECDICT_ENABLED = "true"
+$env:ECDICT_DATABASE_PATH = "data/dictionaries/ecdict.sqlite"
+npm run dictionary:endpoint-smoke
+```
+
+## 复习答案区辅助查询
+
+启用 ECDICT 后，overlay 与 standalone 复习入口会把同一个可选 browser client 注入
+`SrsReviewPage`。当前卡片出现时查询完整的 `word.word`（短语不拆分），结果只在答案揭示后
+显示于现有释义之后：
+
+- exact 显示词头及 translation，缺少 translation 时使用 definition；
+- normalized 与 lemma 分别显示候选类型、数量和词头，不自动消歧；
+- none 和 disabled 不显示词典区域；
+- endpoint unavailable 或请求失败只显示弱提示，不弹 toast，也不阻止评分、播放或翻页。
+
+成功结果只缓存在当前复习组件会话的内存 `Map` 中。失败与 unavailable 不缓存；结果不会进入
+`cacheGeneralMeanings(...)`、VocabularyRepository、card、review log 或 IndexedDB。
 
 关闭开关、缺库、损坏库或查询异常都会返回结构化的 `available: false` 与错误码，
 而不是向阅读器传播异常。CLI 在不可用时使用退出码 2。

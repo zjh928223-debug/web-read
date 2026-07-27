@@ -64,6 +64,18 @@ src/main.js     -> replaces selected window store methods with Pinia delegation
 
 Do not confuse `src/stores/` with real Pinia stores. The real Pinia definitions are under `src/pinia-stores/`.
 
+## ECDICT Boundary
+
+ECDICT lives under `src/dictionary/ecdict/`. Its Node SQLite service remains read-only and isolated
+from reader, vocabulary, and SRS repositories. Browser runtime code may import only the local HTTP
+client, enrichment adapter, and formatter. Article preview and the SRS answer-reveal area use those
+browser modules for transient suggestions. The review page receives its client through a prop and
+keeps only a session-memory cache; neither flow persists results or replaces existing meanings.
+
+`ECDICT_ENABLED` defaults to `false`. `vite.config.js` may statically import the plugin module, but the
+disabled plugin registers no endpoint and does not access the database. When enabled, the SQLite
+service loads lazily on the first query.
+
 ## Current Rendering State
 
 Vue rendering is enabled by default:

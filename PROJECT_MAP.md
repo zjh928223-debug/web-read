@@ -35,6 +35,20 @@ index.html
 
 The page no longer contains inline DOM event handlers. Remaining legacy controls are bound by `src/composables/legacy-control-bindings.js`, while focused composables own the remaining compatibility functions exposed on `window`.
 
+## ECDICT Boundary
+
+`src/dictionary/ecdict/` owns the optional local dictionary. Its Node SQLite service is read-only and
+separate from reader/SRS repositories. Browser code imports only
+`browser/local-dictionary-client.mjs`, `browser/optional-local-dictionary-client.mjs`,
+`application/dictionary-enrichment-adapter.mjs`, and `browser/dictionary-suggestion-view.mjs`.
+
+Article preview attaches transient dictionary suggestions through that adapter. Both SRS entry points
+inject the optional browser client into `SrsReviewPage`; its
+`srs-review-dictionary-assistance.mjs` controller queries full words/phrases, guards races, and exposes
+results only after answer reveal. Neither flow writes vocabulary, cards, SRS state, or review records.
+`vite.config.js` may load the plugin module, but a disabled feature flag registers no endpoint; the
+SQLite service loads only on the first enabled lookup.
+
 ## Cleanup Baseline
 
 `complete-appjs-decomposition` has been completed and archived under `openspec/changes/archive/2026-06-18-complete-appjs-decomposition/`. Current cleanup context comes from `CURRENT_PROJECT_STATUS.md` and the active spec at `openspec/specs/legacy-runtime-decomposition/spec.md`.

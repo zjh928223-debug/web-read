@@ -55,6 +55,18 @@ Useful URLs:
 - Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 
+## Optional Local Dictionary
+
+ECDICT is an optional, read-only local dictionary. The Node SQLite service remains isolated from
+reader and SRS business modules; browser code uses only the HTTP client, enrichment adapter, and
+formatter. It enriches article-preview candidates in memory and can show transient assistance after
+an SRS answer is revealed. It does not overwrite or persist vocabulary meanings, cards, or review
+records; disabled or unavailable dictionary access remains fail-open.
+
+`ECDICT_ENABLED` defaults to `false`. The Vite plugin module may load statically, but it registers no
+endpoint while disabled; when enabled, the SQLite service is loaded lazily on the first lookup. See
+`src/dictionary/ecdict/README.md` for setup and verification commands.
+
 ## Scripts
 
 ```bash
