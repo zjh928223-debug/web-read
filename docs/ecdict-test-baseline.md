@@ -71,8 +71,8 @@ verify:theme-controls-module
 字段隔离测试。真实 endpoint smoke 验证了 `looked`、`left`、`better`、`can't`、
 `cant`、`run into` 和无结果短语；结果保留 direct/normalized/lemma 候选。
 
-本阶段没有修改 IndexedDB version/object store、vocabulary models、SRS scheduler、
-card schema 或 review record，也没有运行任何用户数据迁移。
+本阶段没有修改 IndexedDB version/object store、Vocabulary Entry models、SRS scheduler
+或 review record，也没有运行任何用户数据迁移。
 
 ## 复习答案区接入验证
 
@@ -86,8 +86,8 @@ card schema 或 review record，也没有运行任何用户数据迁移。
 - 真实 Vite endpoint 与 149,233,664-byte 数据库查询通过。
 
 Playwright 人工复证了答案揭示前无 ECDICT 元素，揭示后显示 exact/lemma 候选；运行中关闭
-endpoint 后，Good 评分仍进入下一张卡，随后答案区仅显示“ECDICT 暂不可用”。真实 smoke
+endpoint 后，Good 评分仍进入下一个 Vocabulary Entry，随后答案区仅显示“ECDICT 暂不可用”。真实 smoke
 继续覆盖 `looked`、`left`、`better`、`can't`、`cant`、`run into` 和无结果短语。
 
-本次仍未修改 IndexedDB、vocabulary model、scheduler、card 或 review log，也未持久化任何
+本次仍未修改 IndexedDB、Vocabulary Entry model、scheduler 或 review log，也未持久化任何
 dictionary suggestion。

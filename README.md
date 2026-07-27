@@ -60,7 +60,7 @@ Useful URLs:
 ECDICT is an optional, read-only local dictionary. The Node SQLite service remains isolated from
 reader and SRS business modules; browser code uses only the HTTP client, enrichment adapter, and
 formatter. It enriches article-preview candidates in memory and can show transient assistance after
-an SRS answer is revealed. It does not overwrite or persist vocabulary meanings, cards, or review
+an SRS answer is revealed. It does not overwrite or persist Vocabulary Entry meanings or review
 records; disabled or unavailable dictionary access remains fail-open.
 
 `ECDICT_ENABLED` defaults to `false`. The Vite plugin module may load statically, but it registers no
@@ -222,7 +222,7 @@ the known schedule.
 
 The word panel prefers the concise context `simple_meaning` and omits the old
 hint row. Previous/next controls (also arrow keys) provide read-only review of
-completed cards without creating duplicate ratings. `R 重读单词和原句` starts
+completed Vocabulary Entries without creating duplicate ratings. `R 重读单词和原句` starts
 the word/source sequence from the beginning by button or globally captured `R`.
 Space globally and silently pauses or resumes active review audio without
 adding pause UI. Every English word in the left context is clickable: timed

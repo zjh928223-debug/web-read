@@ -45,7 +45,7 @@ separate from reader/SRS repositories. Browser code imports only
 Article preview attaches transient dictionary suggestions through that adapter. Both SRS entry points
 inject the optional browser client into `SrsReviewPage`; its
 `srs-review-dictionary-assistance.mjs` controller queries full words/phrases, guards races, and exposes
-results only after answer reveal. Neither flow writes vocabulary, cards, SRS state, or review records.
+results only after answer reveal. Neither flow writes Vocabulary Entries, SRS state, or review records.
 `vite.config.js` may load the plugin module, but a disabled feature flag registers no endpoint; the
 SQLite service loads only on the first enabled lookup.
 
@@ -246,8 +246,8 @@ fall back to reading the remaining sentence, while retaining plain-text styling
 with a slight hover scale. The replay keycap edits a case-insensitive shortcut
 stored in localStorage. Context meanings and optional dictionary/general
 meanings remain separate. The reread control is a low-emphasis utility at the
-word-panel edge. Historical cards remain read-only while the scoring `index`
-continues to identify the next active card.
+word-panel edge. Historical Vocabulary Entries remain read-only while the scoring `index`
+continues to identify the next active Vocabulary Entry.
 
 `srs-review-meanings.js` batches review words missing a general meaning through
 the local `/api/dictionary/general-meanings` endpoint. That service combines

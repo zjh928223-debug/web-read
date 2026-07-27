@@ -2,7 +2,7 @@
 
 ECDICT 的 Node SQLite service 仍与阅读器业务隔离，只读访问独立数据库。阅读器只导入
 browser client、`DictionaryEnrichmentAdapter` 和 formatter；当前已接入文章预习和复习答案区，
-但不会写入 SRS、复习记录、卡片或现有释义。默认 `ECDICT_ENABLED=false`。
+但不会写入 SRS、复习记录、Vocabulary Entry 或现有释义。默认 `ECDICT_ENABLED=false`。
 
 `vite.config.js` 可以静态加载 ECDICT plugin 模块；关闭开关时 plugin 不注册 endpoint，
 SQLite service 也不会初始化。启用后，SQLite service 只在第一次查询时延迟加载。
@@ -13,7 +13,7 @@ SQLite service 也不会初始化。启用后，SQLite service 只在第一次�
   `domain/types.ts`。
 - 运行时只读打开独立的 `ecdict.sqlite`，不导入或查询任何业务 repository。
 - 构建脚本只写 `ECDICT_DATABASE_PATH` 指定的词典文件，并以临时文件构建后原子替换。
-- 不扫描文章，不生成卡片，不调用 AI，不写入词汇/SRS 数据。
+- 不扫描文章，不生成 Vocabulary Entry，不调用 AI，不写入词汇/SRS 数据。
 - 短语仅进行完整字符串查询；无词条时返回 `none`。
 
 ## 环境要求
@@ -98,7 +98,7 @@ GET /api/dev/dictionary/ecdict?q=looked
 
 - `dictionarySuggestion` 只存在于当前内存中的 preview scan；
 - 不进入 `buildPreviewAnnotationTemplate(...)` 或 AI prompt；
-- 不写入 annotation bundle、vocabulary repository、SRS、card 或 review record；
+- 不写入 annotation bundle、vocabulary repository、SRS、Vocabulary Entry 或 review record；
 - 不覆盖 `meaning`、`simple_meaning`、`context` 或 `memoryHint`；
 - `ECDICT_ENABLED=false` 时 browser client、endpoint 和 SQLite service 均不初始化。
 
@@ -112,8 +112,8 @@ npm run dictionary:endpoint-smoke
 
 ## 复习答案区辅助查询
 
-启用 ECDICT 后，overlay 与 standalone 复习入口会把同一个可选 browser client 注入
-`SrsReviewPage`。当前卡片出现时查询完整的 `word.word`（短语不拆分），结果只在答案揭示后
+启用 ECDICT 后，overlay 与 standalone 复习入口会分别创建可选 browser client，并注入各自的
+`SrsReviewPage` 实例。当前 Vocabulary Entry 出现时查询完整的 `word.word`（短语不拆分），结果只在答案揭示后
 显示于现有释义之后：
 
 - exact 显示词头及 translation，缺少 translation 时使用 definition；
@@ -122,10 +122,11 @@ npm run dictionary:endpoint-smoke
 - endpoint unavailable 或请求失败只显示弱提示，不弹 toast，也不阻止评分、播放或翻页。
 
 成功结果只缓存在当前复习组件会话的内存 `Map` 中。失败与 unavailable 不缓存；结果不会进入
-`cacheGeneralMeanings(...)`、VocabularyRepository、card、review log 或 IndexedDB。
+`cacheGeneralMeanings(...)`、VocabularyRepository、Vocabulary Entry、review log 或 IndexedDB。
 
-关闭开关、缺库、损坏库或查询异常都会返回结构化的 `available: false` 与错误码，
-而不是向阅读器传播异常。CLI 在不可用时使用退出码 2。
+`ECDICT_ENABLED=false` 时不会创建 browser client、注册 endpoint 或发出查询请求。启用后，
+缺库、损坏库或查询异常由 endpoint 以结构化的 `available: false` 与错误码报告，browser
+adapter 会将失败隔离为 unavailable 状态，而不是向阅读器传播异常。CLI 在不可用时使用退出码 2。
 
 匹配优先级是 `exact → normalized → lemma → none`，但结果会同时保留可用候选：
 
