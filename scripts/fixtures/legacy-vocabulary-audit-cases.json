@@ -1,0 +1,188 @@
+{
+  "options": {
+    "policy_version": "legacy-audit.v1",
+    "source_snapshot_hmac_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "audited_at": "2026-07-27T08:00:00.000Z"
+  },
+  "snapshot": {
+    "schemaVersion": 1,
+    "words": [
+      {
+        "id": "compatible",
+        "lemma": "harbor",
+        "language": "en",
+        "meaning": "港口",
+        "status": "learning",
+        "created_at": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "needs-context",
+        "lemma": "meadow",
+        "language": "en",
+        "meaning": "草地",
+        "status": "new"
+      },
+      {
+        "id": "needs-sense",
+        "lemma": "notion",
+        "language": "en",
+        "status": "new"
+      },
+      {
+        "id": "duplicate-a",
+        "lemma": "bank",
+        "language": "en",
+        "meaning": "银行",
+        "status": "learning"
+      },
+      {
+        "id": "duplicate-b",
+        "lemma": "BANK",
+        "language": "en",
+        "meaning": "河岸",
+        "status": "learning"
+      },
+      {
+        "id": "ignored",
+        "lemma": "obsolete",
+        "language": "en",
+        "meaning": "过时的",
+        "status": "ignored"
+      },
+      {
+        "id": "deleted",
+        "lemma": "removed",
+        "language": "en",
+        "meaning": "已移除",
+        "status": "deleted",
+        "deleted_at": "2026-07-01T00:00:00.000Z"
+      },
+      {
+        "id": "bad-date",
+        "lemma": "timestamp",
+        "language": "en",
+        "meaning": "时间戳",
+        "status": "learning",
+        "updated_at": "not-a-date"
+      },
+      {
+        "id": "multiple-senses",
+        "lemma": "draft",
+        "language": "en",
+        "meaning": "草稿",
+        "status": "learning"
+      },
+      {
+        "id": "multiple-states",
+        "lemma": "ledger",
+        "language": "en",
+        "meaning": "账本",
+        "status": "learning"
+      }
+    ],
+    "contexts": [
+      {
+        "id": "context-compatible",
+        "word_id": "compatible",
+        "sentence": "The boat returned to the harbor.",
+        "meaning": "港口",
+        "created_at": "2026-01-01T00:00:00.000Z"
+      },
+      {
+        "id": "context-needs-sense",
+        "word_id": "needs-sense",
+        "sentence": "The notion spread quickly."
+      },
+      {
+        "id": "context-duplicate-a",
+        "word_id": "duplicate-a",
+        "sentence": "She went to the bank.",
+        "meaning": "银行"
+      },
+      {
+        "id": "context-duplicate-b",
+        "word_id": "duplicate-b",
+        "sentence": "They sat on the bank.",
+        "meaning": "河岸"
+      },
+      {
+        "id": "context-ignored",
+        "word_id": "ignored",
+        "sentence": "The term is obsolete.",
+        "meaning": "过时的"
+      },
+      {
+        "id": "context-deleted",
+        "word_id": "deleted",
+        "sentence": "This entry was removed.",
+        "meaning": "已移除"
+      },
+      {
+        "id": "context-bad-date",
+        "word_id": "bad-date",
+        "sentence": "The timestamp was recorded.",
+        "meaning": "时间戳"
+      },
+      {
+        "id": "context-multiple-senses-a",
+        "word_id": "multiple-senses",
+        "sentence": "I saved the first draft.",
+        "meaning": "草稿"
+      },
+      {
+        "id": "context-multiple-senses-b",
+        "word_id": "multiple-senses",
+        "sentence": "A cold draft entered the room.",
+        "meaning": "穿堂风"
+      },
+      {
+        "id": "context-multiple-states",
+        "word_id": "multiple-states",
+        "sentence": "The amount was recorded in the ledger.",
+        "meaning": "账本"
+      }
+    ],
+    "reviewStates": [
+      {
+        "word_id": "compatible",
+        "state": "new",
+        "due_at": "2026-07-28T00:00:00.000Z"
+      },
+      {
+        "word_id": "orphan-state",
+        "state": "learning",
+        "due_at": "2026-07-28T00:00:00.000Z"
+      },
+      {
+        "word_id": "multiple-states",
+        "state": "review",
+        "due_at": "2026-07-28T00:00:00.000Z"
+      },
+      {
+        "word_id": "multiple-states",
+        "state": "relearning",
+        "due_at": "2026-08-01T00:00:00.000Z"
+      }
+    ],
+    "reviewLogs": [
+      {
+        "id": "legacy-log",
+        "word_id": "compatible",
+        "rating": "good",
+        "reviewed_at": "2026-07-20T00:00:00.000Z"
+      },
+      {
+        "id": "bad-log-date",
+        "word_id": "bad-date",
+        "rating": "hard",
+        "reviewed_at": "not-a-date"
+      },
+      {
+        "id": "orphan-log",
+        "word_id": "orphan-log",
+        "rating": "again",
+        "reviewed_at": "2026-07-20T00:00:00.000Z"
+      }
+    ]
+  }
+}

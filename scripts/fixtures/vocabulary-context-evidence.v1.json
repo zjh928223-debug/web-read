@@ -1,0 +1,148 @@
+{
+  "schema_version": "context-evidence-fixtures.v1",
+  "items": [
+    {
+      "context_evidence_id": "context-article-1",
+      "learning_unit_id": "unit-shared-sense",
+      "sentence": "The lantern glowed beside the quiet path.",
+      "surrounding_text": "A traveler paused before continuing.",
+      "source_kind": "article",
+      "source_id": "article-local-1",
+      "source_title": "Imported Reading Sample",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "sentence_index": 4,
+        "paragraph_index": 1
+      },
+      "license_kind": "user_owned",
+      "ownership": "user",
+      "quality_status": "validated",
+      "quality_reason": "user_confirmed",
+      "created_at": "2026-07-20T08:00:00.000Z",
+      "validated_at": "2026-07-20T08:05:00.000Z",
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-subtitle-1",
+      "learning_unit_id": "unit-shared-sense",
+      "sentence": "Please leave the lantern near the door.",
+      "surrounding_text": null,
+      "source_kind": "subtitle",
+      "source_id": "subtitle-local-1",
+      "source_title": "Imported Subtitle Sample",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "start_ms": 12400,
+        "end_ms": 15300,
+        "track": "en"
+      },
+      "license_kind": "user_owned",
+      "ownership": "user",
+      "quality_status": "validated",
+      "quality_reason": "user_confirmed",
+      "created_at": "2026-07-21T08:00:00.000Z",
+      "validated_at": "2026-07-21T08:05:00.000Z",
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-local-exam-1",
+      "learning_unit_id": "unit-local-material",
+      "sentence": "A small bridge connected the two gardens.",
+      "surrounding_text": null,
+      "source_kind": "user_local_exam_material",
+      "source_id": "private-material-1",
+      "source_title": "Personal Practice Material",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "local_locator": "page-2-item-3"
+      },
+      "license_kind": "user_owned",
+      "ownership": "private",
+      "quality_status": "validated",
+      "quality_reason": "user_confirmed",
+      "created_at": "2026-07-22T08:00:00.000Z",
+      "validated_at": "2026-07-22T08:05:00.000Z",
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-open-corpus-1",
+      "learning_unit_id": "unit-open-source",
+      "sentence": "Clouds gathered above the western ridge.",
+      "surrounding_text": null,
+      "source_kind": "open_corpus",
+      "source_id": "open-corpus-sample",
+      "source_title": "Open Corpus Sample",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "record_id": "record-17"
+      },
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "quality_reason": "license_and_text_checked",
+      "created_at": "2026-07-23T08:00:00.000Z",
+      "validated_at": "2026-07-23T08:05:00.000Z",
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-dictionary-1",
+      "learning_unit_id": "unit-dictionary-source",
+      "sentence": "The engine produced a steady hum.",
+      "surrounding_text": null,
+      "source_kind": "dictionary_example",
+      "source_id": "dictionary-sample",
+      "source_title": "Dictionary Terms Sample",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "entry_id": "hum-verb-1"
+      },
+      "license_kind": "dictionary_terms",
+      "ownership": "third_party",
+      "quality_status": "validated",
+      "quality_reason": "terms_checked",
+      "created_at": "2026-07-24T08:00:00.000Z",
+      "validated_at": "2026-07-24T08:05:00.000Z",
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-ai-1",
+      "learning_unit_id": "unit-ai-candidate",
+      "sentence": "The painted kite drifted over the field.",
+      "surrounding_text": null,
+      "source_kind": "ai_candidate",
+      "source_id": null,
+      "source_title": null,
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "candidate_id": "offline-candidate-1"
+      },
+      "license_kind": "ai_generated",
+      "ownership": "user",
+      "quality_status": "pending",
+      "quality_reason": "awaiting_user_review",
+      "created_at": "2026-07-25T08:00:00.000Z",
+      "validated_at": null,
+      "extensions": {}
+    },
+    {
+      "context_evidence_id": "context-unknown-license-1",
+      "learning_unit_id": "unit-unknown-license",
+      "sentence": "A wooden box rested beneath the table.",
+      "surrounding_text": null,
+      "source_kind": "article",
+      "source_id": "unverified-import-1",
+      "source_title": "Unverified Imported Sample",
+      "source_locator": {
+        "locator_version": "source-locator.v1",
+        "sentence_index": 0
+      },
+      "license_kind": "unknown",
+      "ownership": "third_party",
+      "quality_status": "validated",
+      "quality_reason": "unverified_source",
+      "created_at": "2026-07-26T08:00:00.000Z",
+      "validated_at": null,
+      "extensions": {}
+    }
+  ]
+}

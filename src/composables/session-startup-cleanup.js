@@ -37,7 +37,6 @@ export function createSessionStartupCleanupRuntime(deps = {}) {
       localStorageApi.removeItem('st.isChunkMode');
       localStorageApi.removeItem('st.chunkCnVisible');
       localStorageApi.removeItem('st.chunkCnHoldMode');
-      localStorageApi.removeItem('chunkNoteVisible');
     } catch (e) {}
   }
 

@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -15,7 +15,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -74,18 +73,27 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   [
     'export function initReaderNotesRuntime',
     "import { initPiniaBridge } from './pinia-bridge-module.js'",
-    'var notesState = notesModule.getNotesState()',
+    'function createDisabledChunkNotesApi()',
+    'function createDisabledSentenceNotesApi()',
     'var bridgeToPinia = initPiniaBridge({',
-    'chunkNotesApi = notesModule.initChunkNotes({',
-    'var sentenceNotesApi = notesModule.initSentenceNotes({'
+    'chunkNotesApi: createDisabledChunkNotesApi()',
+    'sentenceNotesApi: createDisabledSentenceNotesApi()'
   ].forEach((pattern) => {
     assert.ok(notesRuntimeSource.includes(pattern), `reader-notes-runtime should own ${pattern}`);
+  });
+  [
+    'notesModule.getNotesState',
+    'notesModule.initChunkNotes',
+    'notesModule.initSentenceNotes',
+    'chunkNoteLayout',
+    'selectSentenceFromChunkTarget'
+  ].forEach((pattern) => {
+    assert.equal(notesRuntimeSource.includes(pattern), false, `retired notes runtime dependency should stay removed: ${pattern}`);
   });
   assert.equal(notesRuntimeSource.includes('window.'), false, 'reader-notes-runtime should not read or write window globals');
   assert.equal(notesRuntimeSource.includes('document.'), false, 'reader-notes-runtime should not read document globals');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -101,108 +109,34 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const encodedSource = Buffer.from(testableSource, 'utf8').toString('base64');
   const { initReaderNotesRuntime } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
-  const notesState = { chunkNoteVisible: true };
   const transcriptState = { getSnapshot: () => ({ segments: [] }) };
   const chunkState = { isChunkMode: false, hasAiChunkData: true, getSnapshot: () => ({ chunks: [] }) };
   const clozeState = { getSnapshot: () => ({ cards: [] }) };
-  const audioIdentityApi = {
-    currentAudioKey: 'audio-key',
-    getChunkNotesStorageKey: () => 'chunk-notes-key',
-    getChunkNoteDraftStorageKey: () => 'draft-key',
-    getSentenceNotesStorageKey: () => 'sentence-key',
-    getLegacySentenceNotesStorageKey: () => 'legacy-sentence-key',
-    buildCurrentSentenceDocId: () => 'sentence-doc-id'
-  };
-  const chunkNoteLayout = {
-    sanitizeChunkNoteFontSize: () => 16,
-    getChunkNoteMeasureFont: () => '16px sans-serif',
-    measureChunkNoteTextBox: () => ({ width: 1, height: 1 }),
-    applyChunkNoteAutoSize: () => undefined,
-    buildChunkNoteLayout: () => ({}),
-    canChunkNoteTextFitMinReadable: () => true,
-    makeSelectionNoteBaseId: () => 'base-id',
-    makeSelectionNoteId: () => 'note-id',
-    findNearestChunkWord: () => null
-  };
-
-  let chunkDeps = null;
-  let sentenceDeps = null;
-  const chunkApi = {
-    modalOpen: false,
-    saved: 0,
-    getChunkNoteModalEl() {
-      return this.modalOpen ? {} : null;
-    },
-    saveChunkNoteFromModal() {
-      this.saved += 1;
-    }
-  };
-  const sentenceApi = { sentence: true };
-  const notesModule = {
-    getNotesState() {
-      return notesState;
-    },
-    initChunkNotes(deps) {
-      chunkDeps = deps;
-      return chunkApi;
-    },
-    initSentenceNotes(deps) {
-      sentenceDeps = deps;
-      return sentenceApi;
-    }
-  };
 
   const api = initReaderNotesRuntime({
-    notesModule,
-    chunkNoteLayout,
     transcriptState,
     chunkState,
-    clozeState,
-    loadFromDB: () => 'loaded',
-    saveToDB: () => 'saved',
-    audioIdentityApi,
-    isPlainObjectRecord: (value) => value && typeof value === 'object',
-    mainAppArea: { id: 'main' },
-    chunkNoteSvgLayer: { id: 'svg' },
-    chunkNoteLayer: { id: 'layer' },
-    chunkNoteCtxMenu: { id: 'menu' },
-    notePreviewSidebar: { id: 'sidebar' },
-    notePreviewEmpty: { id: 'empty' },
-    notePreviewList: { id: 'list' },
-    toggleNotePreviewBtn: { id: 'toggle' },
-    notePreviewResizeHandle: { id: 'resize-x' },
-    notePreviewResizeHandleY: { id: 'resize-y' }
+    clozeState
   });
 
-  assert.equal(api.notesState, notesState);
-  assert.equal(api.chunkNotesApi, chunkApi);
-  assert.equal(api.sentenceNotesApi, sentenceApi);
+  assert.deepEqual(api.notesState, {
+    chunkNotesMap: {},
+    chunkNoteVisible: false,
+    sentenceNotesMap: {},
+    allSentenceNotesByDoc: {},
+    currentDocId: '',
+    selectedSentence: null
+  });
   assert.equal(typeof api.bridgeToPinia, 'function', 'notes runtime should return the Pinia bridge');
-
-  assert.equal(chunkDeps.state, notesState);
-  assert.equal(chunkDeps.getChunkNotesStorageKey(), 'chunk-notes-key');
-  assert.equal(chunkDeps.getChunkNoteDraftStorageKey(), 'draft-key');
-  assert.equal(chunkDeps.getIsChunkMode(), false);
-  assert.equal(chunkDeps.currentAudioKeyGetter(), 'audio-key');
-  assert.equal(chunkDeps.getHasAiChunkData(), true);
-  assert.equal(chunkDeps.sanitizeChunkNoteFontSize(), 16);
-  assert.equal(chunkDeps.chunkNoteCtxMenuEl.id, 'menu');
-
-  chunkDeps.saveOpenChunkNotePopover();
-  assert.equal(chunkApi.saved, 0, 'popover saver should no-op when modal is closed');
-  chunkApi.modalOpen = true;
-  chunkDeps.saveOpenChunkNotePopover();
-  assert.equal(chunkApi.saved, 1, 'popover saver should call module API when modal is open');
-
-  assert.equal(sentenceDeps.state, notesState);
-  assert.equal(sentenceDeps.getSentenceNotesStorageKey(), 'sentence-key');
-  assert.equal(sentenceDeps.getLegacySentenceNotesStorageKey(), 'legacy-sentence-key');
-  assert.equal(sentenceDeps.buildCurrentSentenceDocId(), 'sentence-doc-id');
-  assert.equal(sentenceDeps.getIsChunkMode(), false);
-  assert.equal(sentenceDeps.getHasAiChunkData(), true);
-  assert.equal(sentenceDeps.initialNotePreviewVisible, true);
-  assert.equal(sentenceDeps.initialNotePreviewWidth, 340);
-  assert.equal(sentenceDeps.initialNotePreviewHeight, 640);
+  assert.deepEqual(api.chunkNotesApi.listChunkNotes(), []);
+  assert.equal(api.chunkNotesApi.getChunkNoteTagById(), null);
+  assert.equal(api.chunkNotesApi.getChunkNoteContentBoxSize(), null);
+  assert.equal(api.chunkNotesApi.handleChunkSelectionContextMenu(), false);
+  assert.equal(api.chunkNotesApi.setChunkNoteVisible(), false);
+  assert.deepEqual(await api.chunkNotesApi.loadChunkNotesForCurrentAudio(), {});
+  assert.deepEqual(await api.sentenceNotesApi.loadSentenceNotesForCurrentAudio(), {});
+  assert.deepEqual(await api.sentenceNotesApi.switchSentenceNotesDoc(), {});
+  assert.equal(api.sentenceNotesApi.hasActiveTextSelectionWithinChunk(), false);
 
   console.log('reader notes runtime check passed');
 }

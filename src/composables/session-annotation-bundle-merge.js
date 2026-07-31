@@ -117,7 +117,9 @@ export function buildManualLightweightImportedBundle(parsed, scope, storage, dep
         boundary,
         type: item.type || normalizeAnnotationTextValue(existing.type),
         meaning: item.meaning || normalizeAnnotationTextValue(existing.meaning),
+        simpleMeaning: normalizeAnnotationTextValue(item.simpleMeaning || item.simple_meaning || existing.simpleMeaning || existing.simple_meaning),
         memoryHint: item.memoryHint || normalizeAnnotationTextValue(existing.memoryHint),
+        sourceSentence: normalizeAnnotationTextValue(item.sourceSentence || existing.sourceSentence || boundary),
         occurrenceKey: normalizeAnnotationTextValue(existing.occurrenceKey || target.occurrenceKey),
         occurrenceGlobalStart: Number.isInteger(Number(existing.occurrenceGlobalStart))
           ? Number(existing.occurrenceGlobalStart)

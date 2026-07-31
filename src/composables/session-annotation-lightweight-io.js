@@ -19,6 +19,14 @@ function sanitizeFilenamePart(value, fallback = 'article') {
   return normalized || fallback;
 }
 
+function excludePreviewGeneratedItems(items) {
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const source = String(item && (item.source || item.provider || item.source_type || item.sourceType) || '').trim();
+    const targetId = String(item && (item.targetId || item.target_id) || '').trim();
+    return source !== 'preview-scan' && !targetId.startsWith('preview-');
+  });
+}
+
 export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
   function getManualLightweightAnnotationImportNormalizationDeps() {
     return {
@@ -80,10 +88,14 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     };
   }
 
-  function exportManualLightweightAnnotations() {
-    const payload = buildManualLightweightAnnotationExportPayload(
+  function buildManualLightweightAnnotationTemplate() {
+    return buildManualLightweightAnnotationExportPayload(
       getManualLightweightAnnotationExportPayloadDeps()
     );
+  }
+
+  function exportManualLightweightAnnotations() {
+    const payload = buildManualLightweightAnnotationTemplate();
     const helper = deps.windowObject.ImportExportSharedHelpers || null;
     const audioBase = helper && typeof helper.getCurrentAudioFilenameBase === 'function'
       ? helper.getCurrentAudioFilenameBase(deps.state.currentAudioMeta, 'article')
@@ -94,7 +106,7 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     return payload;
   }
 
-  async function importManualLightweightAnnotations(file) {
+  async function importManualLightweightAnnotations(file, options = {}) {
     const storage = requireLightweightIoFunction(deps, 'getAnnotationGenerationStorage')();
     if (!storage || typeof storage.saveBundle !== 'function' || typeof storage.loadBundle !== 'function') {
       throw new Error('AnnotationGenerationStorage 不可用');
@@ -110,15 +122,18 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     );
     await storage.saveBundle(scope, normalized.generated, normalized.status);
     await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')();
-    requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(normalized.generated && normalized.generated.items, {
+    requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems(
+      normalized.generated && normalized.generated.items
+    ), {
       sourceType: 'annotation-lightweight-import',
-      replaceExisting: true
+      replaceExisting: options.replaceExisting !== false
     });
     await requireLightweightIoFunction(deps, 'syncAnnotationGenerationEntryStatus')();
     return normalized;
   }
 
   return {
+    buildManualLightweightAnnotationTemplate,
     exportManualLightweightAnnotations,
     importManualLightweightAnnotations,
     installAnnotationContextExport,

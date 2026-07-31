@@ -45,7 +45,9 @@ export function initAnnotationBubbleResolver(options = {}) {
       boundary: pickAnnotationValue(data, ['boundary', 'match_context', 'context', 'phrase']) || clickedText,
       type: pickAnnotationValue(data, ['type', 'category', 'label', 'tag']),
       meaning: pickAnnotationValue(data, ['meaning', 'means', 'explanation', 'definition', 'cn', 'zh']),
-      memoryHint: pickAnnotationValue(data, ['memoryHint', 'memory_hint', 'remember', 'note', 'not_meaning', 'hint'])
+      simpleMeaning: pickAnnotationValue(data, ['simpleMeaning', 'simple_meaning', 'shortMeaning', 'short_meaning']),
+      memoryHint: pickAnnotationValue(data, ['memoryHint', 'memory_hint', 'remember', 'note', 'not_meaning', 'hint']),
+      source: pickAnnotationValue(data, ['source', 'provider'])
     };
   }
 
@@ -71,11 +73,18 @@ export function initAnnotationBubbleResolver(options = {}) {
       return null;
     }
     const words = getWords();
+    const mark = markedMap && typeof markedMap.get === 'function'
+      ? markedMap.get(wordIndex)
+      : null;
+    const occurrenceKey = mark && mark.occurrenceKey;
+    const targetId = mark && mark.targetId;
     const result = resolver.resolveClick({
       span,
       wordIndex,
       words: Array.isArray(words) ? words : [],
-      generatedStore: store
+      generatedStore: store,
+      occurrenceKey,
+      targetId
     });
     emitAnnotationDebug('app.generated_click_resolve', {
       scope: getAnnotationGenerationScope(),
@@ -137,12 +146,6 @@ export function initAnnotationBubbleResolver(options = {}) {
         bubble.show();
       }
       return true;
-    }
-    if (typeof bubble.clearAnnotation === 'function') {
-      bubble.clearAnnotation();
-    }
-    if (typeof bubble.hide === 'function') {
-      bubble.hide();
     }
     return false;
   }

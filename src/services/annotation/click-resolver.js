@@ -38,20 +38,26 @@ export function resolveClick(options = {}) {
     if (!clickedTokens.length) return null;
 
     const wordWindow = buildWordWindow(words, wordIndex, 8);
+    const occurrenceKey = String(options.occurrenceKey || '').trim()
+        || getOccurrenceKeyFromWord(words[wordIndex]);
     const occurrenceCandidates = typeof store.queryByOccurrence === 'function'
         ? store.queryByOccurrence({
-            occurrenceKey: getOccurrenceKeyFromWord(words[wordIndex]),
+            occurrenceKey,
             wordIndex
         })
         : [];
+    const targetId = String(options.targetId || '').trim();
+    const resolvedCandidates = occurrenceCandidates.length > 1 && targetId
+        ? occurrenceCandidates.filter(item => String(item && item.targetId || '').trim() === targetId)
+        : occurrenceCandidates;
     emitAnnotationDebug('click.resolve_start', {
         wordIndex,
         clickedText,
         clickedTokens,
-        wordOccurrenceKey: getOccurrenceKeyFromWord(words[wordIndex]),
+        wordOccurrenceKey: occurrenceKey,
         occurrenceCandidateCount: occurrenceCandidates.length
     });
-    const exact = chooseBestCandidate(occurrenceCandidates, clickedTokens, wordWindow);
+    const exact = chooseBestCandidate(resolvedCandidates, clickedTokens, wordWindow);
     if (exact) {
         const hit = normalizeGeneratedAnnotationHit(exact.item);
         emitAnnotationDebug('click.resolve_hit', {
@@ -94,9 +100,12 @@ export function normalizeGeneratedAnnotationHit(item) {
         boundary: item.boundary || item.markedText,
         type: item.type,
         meaning: item.meaning,
+        simpleMeaning: item.simpleMeaning,
         memoryHint: item.memoryHint,
         provider: item.provider,
         source: item.source || item.provider,
+        sourceSentence: item.sourceSentence,
+        sourceId: item.sourceId,
         occurrenceKey: item.occurrenceKey,
         occurrenceGlobalStart: item.occurrenceGlobalStart,
         occurrenceGlobalEnd: item.occurrenceGlobalEnd

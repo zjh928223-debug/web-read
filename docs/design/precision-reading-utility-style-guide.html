@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Read-Web Precision Reading Utility Style Guide</title>
+  <style>
+    :root {
+      --pru-app-bg: #0b0c0f;
+      --pru-reader-bg: #f7f4ec;
+      --pru-reader-surface: #fffdf7;
+      --pru-reader-muted: #eee7d8;
+      --pru-ink: #24231f;
+      --pru-ink-muted: #6f6a5e;
+      --pru-paper-border: #e5dfd2;
+      --pru-shell-bg: rgba(7, 8, 10, 0.74);
+      --pru-shell-border: rgba(255, 255, 255, 0.12);
+      --pru-shell-surface: #111318;
+      --pru-shell-row: #151821;
+      --pru-shell-row-hover: #1b1f2a;
+      --pru-shell-text: #f4f4f1;
+      --pru-shell-muted: #9ca3af;
+      --pru-accent: #5e6ad2;
+      --pru-accent-hover: #7170ff;
+      --pru-success: #1f8a65;
+      --pru-warning: #d97706;
+      --pru-danger: #dc3f4d;
+      --pru-info: #2f80ed;
+      --pru-focus-ring: rgba(94, 106, 210, 0.36);
+      --pru-radius-control: 4px;
+      --pru-radius-row: 6px;
+      --pru-radius-panel: 8px;
+      --pru-radius-pill: 999px;
+      --pru-shadow-soft: 0 1px 2px rgba(18, 16, 12, 0.08), 0 8px 18px rgba(18, 16, 12, 0.08);
+      --pru-shadow-shell: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      --pru-ui-font: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --pru-reading-font: Georgia, "Noto Serif SC", "Songti SC", serif;
+      --pru-mono-font: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--pru-app-bg);
+      color: var(--pru-shell-text);
+      font-family: var(--pru-ui-font);
+      letter-spacing: 0;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: var(--pru-radius-panel);
+      background: rgba(17, 19, 24, 0.72);
+      box-shadow: var(--pru-shadow-shell);
+      backdrop-filter: blur(22px) saturate(1.35);
+    }
+
+    .kicker {
+      color: var(--pru-shell-muted);
+      font-size: 11px;
+      font-weight: 650;
+      text-transform: uppercase;
+    }
+
+    .topbar h1 {
+      margin: 2px 0 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .topbar p {
+      margin: 0;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+    }
+
+    .mode-link {
+      display: inline-flex;
+      align-items: center;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--pru-radius-control);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--pru-shell-text);
+      font-size: 12px;
+      font-weight: 650;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .mockup {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 16px;
+      min-height: 690px;
+      margin-bottom: 16px;
+    }
+
+    .reader-shell {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: var(--pru-radius-panel);
+      background: var(--pru-reader-bg);
+      color: var(--pru-ink);
+      box-shadow: var(--pru-shadow-soft);
+    }
+
+    .reader-toolbar,
+    .player {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-color: var(--pru-paper-border);
+      background: rgba(255, 253, 247, 0.86);
+      backdrop-filter: blur(14px);
+    }
+
+    .reader-toolbar {
+      border-bottom: 1px solid var(--pru-paper-border);
+    }
+
+    .reader-toolbar strong {
+      display: block;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .reader-toolbar span {
+      color: var(--pru-ink-muted);
+      font-size: 12px;
+    }
+
+    .reader-content {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 68ch) 1fr;
+      gap: 18px;
+      padding: 34px 34px 28px;
+      overflow: hidden;
+    }
+
+    .margin-marks {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      padding-top: 12px;
+    }
+
+    .mark {
+      width: 7px;
+      height: 34px;
+      border-radius: var(--pru-radius-pill);
+      background: rgba(94, 106, 210, 0.28);
+      border: 1px solid rgba(94, 106, 210, 0.38);
+    }
+
+    .article h2 {
+      margin: 0 0 18px;
+      color: var(--pru-ink);
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 650;
+    }
+
+    .article p {
+      margin: 0 0 18px;
+      color: #343128;
+      font-family: var(--pru-reading-font);
+      font-size: 18px;
+      line-height: 1.78;
+    }
+
+    .sentence-active {
+      border-radius: var(--pru-radius-row);
+      background: rgba(217, 119, 6, 0.12);
+      box-shadow: inset 3px 0 0 rgba(94, 106, 210, 0.55);
+      padding: 2px 4px;
+    }
+
+    .reader-note {
+      align-self: start;
+      margin-top: 46px;
+      padding: 12px;
+      border: 1px solid var(--pru-paper-border);
+      border-radius: var(--pru-radius-row);
+      background: rgba(255, 253, 247, 0.78);
+      color: var(--pru-ink-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .player {
+      border-top: 1px solid var(--pru-paper-border);
+    }
+
+    .player-main {
+      display: grid;
+      grid-template-columns: 36px minmax(160px, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+
+    .play-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: 1px solid rgba(36, 35, 31, 0.08);
+      border-radius: var(--pru-radius-control);
+      background: var(--pru-ink);
+      color: #fffdf7;
+      cursor: pointer;
+    }
+
+    .progress-line {
+      height: 6px;
+      overflow: hidden;
+      border-radius: var(--pru-radius-pill);
+      background: #e3dccd;
+    }
+
+    .progress-line span {
+      display: block;
+      width: 57%;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--pru-accent);
+    }
+
+    .time {
+      color: var(--pru-ink-muted);
+      font-family: var(--pru-mono-font);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .workflow {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--pru-shell-border);
+      border-radius: var(--pru-radius-panel);
+      background: var(--pru-shell-bg);
+      box-shadow: var(--pru-shadow-shell);
+      backdrop-filter: blur(24px) saturate(1.35);
+    }
+
+    .workflow-header {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .workflow-header h2 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+    }
+
+    .workflow-header p {
+      margin: 3px 0 0;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+    }
+
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: var(--pru-radius-control);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--pru-shell-text);
+      cursor: pointer;
+    }
+
+    .search {
+      width: 100%;
+      height: 36px;
+      margin-bottom: 10px;
+      padding: 0 11px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: var(--pru-radius-control);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--pru-shell-text);
+      outline: none;
+    }
+
+    .search:focus {
+      border-color: var(--pru-accent-hover);
+      box-shadow: 0 0 0 3px var(--pru-focus-ring);
+    }
+
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px;
+      margin-bottom: 12px;
+      padding: 3px;
+      border-radius: var(--pru-radius-row);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .tab {
+      height: 30px;
+      border: 0;
+      border-radius: var(--pru-radius-control);
+      background: transparent;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .tab.active {
+      background: var(--pru-shell-surface);
+      color: var(--pru-shell-text);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .row-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .material-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      min-height: 68px;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--pru-radius-row);
+      background: var(--pru-shell-row);
+    }
+
+    .material-row.active {
+      background: var(--pru-shell-row-hover);
+      box-shadow: inset 3px 0 0 var(--pru-accent);
+    }
+
+    .material-row.failed {
+      box-shadow: inset 3px 0 0 var(--pru-danger);
+    }
+
+    .material-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--pru-shell-text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .material-meta {
+      margin-top: 4px;
+      overflow: hidden;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .material-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: var(--pru-radius-pill);
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.warning {
+      background: rgba(217, 119, 6, 0.15);
+      color: #f0b35a;
+      border-color: rgba(217, 119, 6, 0.26);
+    }
+
+    .badge.success {
+      background: rgba(31, 138, 101, 0.16);
+      color: #72d5b1;
+      border-color: rgba(31, 138, 101, 0.30);
+    }
+
+    .badge.danger {
+      background: rgba(220, 63, 77, 0.16);
+      color: #ff9aa4;
+      border-color: rgba(220, 63, 77, 0.30);
+    }
+
+    .badge.neutral {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--pru-shell-muted);
+      border-color: rgba(255, 255, 255, 0.10);
+    }
+
+    .row-action {
+      align-self: center;
+      height: 32px;
+      padding: 0 10px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: var(--pru-radius-control);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--pru-shell-text);
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .dialog-demo {
+      margin-top: auto;
+      padding-top: 14px;
+    }
+
+    .dialog-card {
+      padding: 14px;
+      border: 1px solid var(--pru-paper-border);
+      border-radius: var(--pru-radius-panel);
+      background: var(--pru-reader-surface);
+      color: var(--pru-ink);
+      box-shadow: 0 16px 28px rgba(0, 0, 0, 0.22);
+    }
+
+    .dialog-card h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .dialog-card p {
+      margin: 0 0 14px;
+      color: var(--pru-ink-muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid transparent;
+      border-radius: var(--pru-radius-control);
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .button.primary {
+      background: var(--pru-accent);
+      color: white;
+    }
+
+    .button.secondary {
+      border-color: var(--pru-paper-border);
+      background: #f2eddf;
+      color: var(--pru-ink);
+    }
+
+    .button.ghost {
+      border-color: rgba(255, 255, 255, 0.10);
+      background: transparent;
+      color: var(--pru-shell-text);
+    }
+
+    .button.danger {
+      background: var(--pru-danger);
+      color: white;
+    }
+
+    .button:focus-visible,
+    .icon-button:focus-visible,
+    .row-action:focus-visible,
+    .tab:focus-visible,
+    .play-button:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--pru-focus-ring);
+    }
+
+    .spec-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 16px;
+    }
+
+    .section {
+      border: 1px solid var(--pru-shell-border);
+      border-radius: var(--pru-radius-panel);
+      background: rgba(17, 19, 24, 0.76);
+      box-shadow: var(--pru-shadow-shell);
+      padding: 16px;
+    }
+
+    .section h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      line-height: 1.3;
+    }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .swatch {
+      min-height: 92px;
+      padding: 9px;
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      border-radius: var(--pru-radius-row);
+      background: var(--color);
+      color: var(--text, #fff);
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 2px;
+    }
+
+    .swatch strong {
+      font-size: 12px;
+    }
+
+    .swatch span {
+      font-family: var(--pru-mono-font);
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    .components {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .sample-input {
+      height: 36px;
+      min-width: 210px;
+      padding: 0 11px;
+      border: 1px solid var(--pru-paper-border);
+      border-radius: var(--pru-radius-control);
+      background: var(--pru-reader-surface);
+      color: var(--pru-ink);
+      outline: none;
+    }
+
+    .radius-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .radius-sample {
+      min-height: 76px;
+      padding: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--pru-shell-row);
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+    }
+
+    .footer-note {
+      margin-top: 16px;
+      color: var(--pru-shell-muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 980px) {
+      .mockup,
+      .spec-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .reader-content {
+        grid-template-columns: 28px minmax(0, 1fr);
+        padding: 24px 18px;
+      }
+
+      .reader-note {
+        display: none;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .page {
+        padding: 14px;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .swatches,
+      .radius-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .player-main {
+        grid-template-columns: 36px 1fr;
+      }
+
+      .time {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <div class="kicker">Read-Web design system</div>
+        <h1>Precision Reading Utility</h1>
+      </div>
+      <p>Raycast shell + Linear rows + Notion paper + ElevenLabs player + Airtable library + Cursor/shadcn controls</p>
+      <a class="mode-link" href="./precision-reading-utility.md">Detailed spec</a>
+      <a class="mode-link" href="./precision-reading-utility-style-guide-light.html">Light mode</a>
+    </header>
+
+    <section class="mockup" aria-label="Application style composition">
+      <div class="reader-shell">
+        <div class="reader-toolbar">
+          <div>
+            <strong>Material: The Art of Focused Reading</strong>
+            <span>audio synced · 24 annotations · 57% complete</span>
+          </div>
+          <div class="components">
+            <button class="button secondary">Annotate</button>
+            <button class="button primary">Continue</button>
+          </div>
+        </div>
+
+        <div class="reader-content">
+          <aside class="margin-marks" aria-label="Annotation markers">
+            <span class="mark"></span>
+            <span class="mark"></span>
+            <span class="mark"></span>
+          </aside>
+
+          <article class="article">
+            <h2>Warm reading surface, precise tool chrome.</h2>
+            <p>The reading pane should feel calm and paper-like, with a generous measure, quiet margins, and no unnecessary interface chrome competing with the transcript.</p>
+            <p><span class="sentence-active">The active sentence uses a warm highlight with a precise accent edge, so synchronized playback remains visible without turning the page into a dashboard.</span></p>
+            <p>Annotations should be present but low-noise. Counts, marks, and generated context belong near the text only when they help the reader recover meaning quickly.</p>
+          </article>
+
+          <aside class="reader-note">
+            Annotation preview<br>
+            Subtle border, warm surface, short explanation. No nested glass and no oversized card styling.
+          </aside>
+        </div>
+
+        <div class="player">
+          <div class="player-main">
+            <button class="play-button" aria-label="Pause">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+                <rect x="4" y="3" width="2" height="9" rx="0.7" fill="currentColor"></rect>
+                <rect x="9" y="3" width="2" height="9" rx="0.7" fill="currentColor"></rect>
+              </svg>
+            </button>
+            <div class="progress-line" aria-label="Playback progress"><span></span></div>
+            <div class="time">18:42 / 32:10 · 1.1x</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="workflow" aria-label="Workflow drawer">
+        <div class="workflow-header">
+          <div>
+            <h2>Recent Reading</h2>
+            <p>Unfinished first, then finished, then not started.</p>
+          </div>
+          <button class="icon-button" aria-label="Close panel">
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" aria-hidden="true">
+              <path d="M4 4l7 7M11 4l-7 7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path>
+            </svg>
+          </button>
+        </div>
+
+        <input class="search" value="focus / transcript" aria-label="Search materials">
+
+        <div class="tabs" role="tablist" aria-label="Workflow tabs">
+          <button class="tab active" role="tab" aria-selected="true">Recent</button>
+          <button class="tab" role="tab" aria-selected="false">Queue</button>
+          <button class="tab" role="tab" aria-selected="false">Library</button>
+        </div>
+
+        <div class="row-list">
+          <div class="material-row active">
+            <div>
+              <div class="material-title">Designing for Long Listening Sessions</div>
+              <div class="material-meta">youtube.com/watch · folder/read-web-materials</div>
+              <div class="material-footer">
+                <span class="badge warning">unfinished</span>
+                <span class="badge neutral">57%</span>
+                <span class="badge neutral">12 marks</span>
+              </div>
+            </div>
+            <button class="row-action">Open</button>
+          </div>
+
+          <div class="material-row">
+            <div>
+              <div class="material-title">Reader Workflow Panel Review</div>
+              <div class="material-meta">local material · imported yesterday</div>
+              <div class="material-footer">
+                <span class="badge success">finished</span>
+                <span class="badge neutral">100%</span>
+              </div>
+            </div>
+            <button class="row-action">Replay</button>
+          </div>
+
+          <div class="material-row failed">
+            <div>
+              <div class="material-title">Old Subtitle Folder Migration</div>
+              <div class="material-meta">scan failed · subtitle file missing</div>
+              <div class="material-footer">
+                <span class="badge danger">failed</span>
+                <span class="badge neutral">retry available</span>
+              </div>
+            </div>
+            <button class="row-action">Retry</button>
+          </div>
+        </div>
+
+        <div class="dialog-demo">
+          <div class="dialog-card" role="dialog" aria-labelledby="dialog-title" aria-describedby="dialog-desc">
+            <h3 id="dialog-title">Switch material?</h3>
+            <p id="dialog-desc">The current reading progress has been recorded. Switching keeps the previous item in Recent Reading.</p>
+            <div class="dialog-actions">
+              <button class="button secondary">Cancel</button>
+              <button class="button primary">Switch</button>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="spec-grid" aria-label="Design tokens and components">
+      <div class="section">
+        <h2>Color Tokens</h2>
+        <div class="swatches">
+          <div class="swatch" style="--color:#f7f4ec;--text:#24231f"><strong>Reader bg</strong><span>#f7f4ec</span></div>
+          <div class="swatch" style="--color:#fffdf7;--text:#24231f"><strong>Paper surface</strong><span>#fffdf7</span></div>
+          <div class="swatch" style="--color:#24231f"><strong>Ink</strong><span>#24231f</span></div>
+          <div class="swatch" style="--color:#111318"><strong>Shell surface</strong><span>#111318</span></div>
+          <div class="swatch" style="--color:#5e6ad2"><strong>Accent</strong><span>#5e6ad2</span></div>
+          <div class="swatch" style="--color:#1f8a65"><strong>Success</strong><span>#1f8a65</span></div>
+          <div class="swatch" style="--color:#d97706"><strong>Warning</strong><span>#d97706</span></div>
+          <div class="swatch" style="--color:#dc3f4d"><strong>Danger</strong><span>#dc3f4d</span></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Radius Discipline</h2>
+        <div class="radius-grid">
+          <div class="radius-sample" style="border-radius:4px">Control<br>4px</div>
+          <div class="radius-sample" style="border-radius:6px">Row<br>6px</div>
+          <div class="radius-sample" style="border-radius:8px">Panel<br>8px</div>
+          <div class="radius-sample" style="border-radius:999px">Badge<br>999px</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Component States</h2>
+        <div class="components">
+          <button class="button primary">Primary</button>
+          <button class="button secondary">Secondary</button>
+          <button class="button ghost">Ghost</button>
+          <button class="button danger">Danger</button>
+          <input class="sample-input" value="Focused input model">
+          <span class="badge warning">unfinished</span>
+          <span class="badge success">finished</span>
+          <span class="badge danger">failed</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Implementation Guardrails</h2>
+        <p class="footer-note">Glass belongs to shells, not controls. Rows carry status. Reading text stays warm and high contrast. Buttons and inputs stay shadcn-like: 36px high, 4px radius, visible focus, semantic disabled and danger states.</p>
+      </div>
+    </section>
+
+    <p class="footer-note">This file is a visual design reference only. It does not change the Read-Web runtime, script order, IndexedDB schema, or workflow behavior.</p>
+  </main>
+</body>
+</html>

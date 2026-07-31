@@ -2,7 +2,9 @@ export function initPlaybackRuntimeHelpers(options) {
     var chunkState = options.chunkState;
     var transcriptState = options.transcriptState;
     var playbackState = options.playbackState;
-    var audioPlayer = options.audioPlayer;
+    var audioPlayer = (typeof window !== 'undefined' && window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
+        ? window.__mediaSource.createActiveMediaProxy(options.audioPlayer)
+        : options.audioPlayer;
     var mainAppArea = options.mainAppArea;
     var transcriptContainer = options.transcriptContainer;
     var findChunkIndexByTimeHelper = options.findChunkIndexByTimeHelper;

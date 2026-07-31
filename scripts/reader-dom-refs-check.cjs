@@ -11,7 +11,9 @@ const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composable
 const notesSessionDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
 const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-dom-refs.js'), 'utf8');
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
-const sessionApiSettingsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-api-settings-runtime.js'), 'utf8');
+const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
+const sessionAnnotationRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
+const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 assert.ok(
   contextSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),
@@ -42,17 +44,14 @@ assert.equal(
   'audio-file',
   'transcript-file',
   'visual-file',
-  'chunk-file',
-  'cloze-file',
   'hotkey-input',
-  'btn-import-chunk-notes',
-  'chunk-note-svg-layer',
   'main-app-area',
-  'toggle-note-preview-btn',
   'import-marks-btn',
   'export-json',
-  'btn-export-annotation-lightweight',
-  'import-annotation-lightweight-file'
+  'import-annotation-lightweight-file',
+  'btn-preview-vocabulary',
+  'btn-toggle-preview-vocabulary',
+  'btn-settle-article-vocabulary'
 ].forEach((id) => {
   assert.equal(
     runtimeSource.includes(`document.getElementById('${id}')`),
@@ -66,6 +65,27 @@ assert.equal(
 });
 
 [
+  'btn-export-annotation-lightweight',
+  'btn-import-annotation-lightweight'
+].forEach((id) => {
+  assert.equal(indexSource.includes(`id="${id}"`), false, `index should not render retired lightweight button: ${id}`);
+  assert.equal(domRefsSource.includes(`doc.getElementById('${id}')`), false, `reader-dom-refs should not collect retired lightweight button: ${id}`);
+});
+
+[
+  'chunk-file',
+  'cloze-file',
+  'btn-import-chunk-notes',
+  'chunk-note-svg-layer',
+  'chunk-note-layer',
+  'chunk-note-probe',
+  'chunk-note-ctx-menu',
+  'toggle-note-preview-btn',
+  'note-preview-sidebar',
+  'note-preview-resize-handle',
+  'note-preview-resize-handle-y',
+  'note-preview-empty',
+  'note-preview-list',
   'btn-import-sentence-notes',
   'import-sentence-notes-file',
   'btn-export-sentence-notes',
@@ -76,27 +96,25 @@ assert.equal(
     false,
     `reader-runtime should not keep no-consumer DOM lookup: ${id}`
   );
-});
-
-[
-  "document.getElementById('btn-annotation-api-settings')",
-  "document.getElementById('annotation-api-settings-panel')",
-  'window.__session_initAnnotationApiSettingsUi = initAnnotationApiSettingsUi;',
-  'initAnnotationApiSettingsUi();'
-].forEach((pattern) => {
-  assert.ok(
-    sessionAssemblySource.includes(pattern),
-    `session-runtime-assembly should keep annotation API settings DOM contract: ${pattern}`
+  assert.equal(
+    domRefsSource.includes(`doc.getElementById('${id}')`),
+    false,
+    `reader-dom-refs should not collect removed DOM id: ${id}`
   );
 });
 
-[
-  'function initAnnotationApiSettingsUi()',
-].forEach((pattern) => {
-  assert.ok(
-    sessionApiSettingsRuntimeSource.includes(pattern),
-    `session annotation API settings runtime should keep contract: ${pattern}`
-  );
-});
+assert.ok(
+  sessionAssemblySource.includes("from './session-annotation-runtime.js';") &&
+    sessionRuntimeDepsSource.includes("annotationMarkCountEl: getElement('annotation-mark-count')") &&
+    sessionAnnotationRuntimeSource.includes('markCountEl: domRefs.annotationMarkCountEl') &&
+    sessionAssemblySource.includes('initAnnotationApiSettingsUi();') === false,
+  'session runtime should expose mark count and omit retired annotation API settings wiring'
+);
+
+assert.equal(
+  sessionRuntimeDepsSource.includes('__session_initAnnotationApiSettingsUi'),
+  false,
+  'session-runtime-deps should not keep retired annotation API settings facade'
+);
 
 console.log('reader DOM refs check passed');

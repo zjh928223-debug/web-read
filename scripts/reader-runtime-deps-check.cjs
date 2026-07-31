@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,7 +17,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -55,8 +54,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'window.DataUtils',
-    'window.ClozeUtils',
-    'window.ClozeViewModelHelpers',
     'window.PlaybackIndexHelpers',
     'window.ChunkMatchingHelpers',
     'window.VocabMatchingHelpers',
@@ -75,10 +72,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'normalizeLooseKey',
     'getLooseProp',
     'looksLikeSegmentArray',
-    'normalizeClozeAnswer',
-    'escapeHtml',
-    'createInitialClozeAnswerState',
-    'buildClozeQuizViewModel',
     'clampHelper',
     'findExactMatchHelper',
     'adjustIndexHelper',
@@ -103,7 +96,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(depsSource.includes('document.'), false, 'dependency collector should not read document globals');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -125,10 +117,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
         return { type: 'transcript', value, segments };
       }
     },
-    ClozeUtils: {
-      validateClozeData: (value) => ({ type: 'cloze', value })
-    },
-    ClozeViewModelHelpers: {},
     PlaybackIndexHelpers: {
       findChunkIndexByTime: () => 'chunk-index',
       bsFindActive: () => 'active',
@@ -177,7 +165,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     segments: transcriptState.segments
   });
   assert.equal(calls[0].segments, transcriptState.segments, 'transcript validation should use injected transcript state');
-  assert.deepEqual(deps.validateClozeData({ cloze: true }), { type: 'cloze', value: { cloze: true } });
   assert.equal(deps.findChunkIndexByTimeHelper(), 'chunk-index');
   assert.equal(deps.bsFindActiveHelper(), 'active');
   assert.equal(deps.getCurrentSegmentIndexHelper(), 'segment-index');

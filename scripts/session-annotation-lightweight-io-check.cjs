@@ -7,13 +7,16 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-lightweight-io.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const sessionAnnotationRuntimePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
+  const sessionAnnotationRuntimeSource = fs.readFileSync(sessionAnnotationRuntimePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && sessionAssemblySource.includes("from './session-annotation-lightweight-io.js';"),
+      && sessionAssemblySource.includes("from './session-annotation-runtime.js';")
+      && sessionAnnotationRuntimeSource.includes("from './session-annotation-lightweight-io.js';"),
     'session-init should reach lightweight IO runtime through session-runtime-assembly'
   );
   [
@@ -23,7 +26,7 @@ async function main() {
     'function downloadJsonFile(payload, filename)',
     'function sanitizeFilenamePart(value',
     'function exportManualLightweightAnnotations()',
-    'async function importManualLightweightAnnotations(file)'
+    'async function importManualLightweightAnnotations(file, options = {})'
   ].forEach((pattern) => {
     assert.equal(sessionInitSource.includes(pattern), false, `session-init should not keep lightweight IO helper: ${pattern}`);
   });
@@ -31,10 +34,19 @@ async function main() {
     "from './session-annotation-export-payload.js';",
     "from './session-annotation-import-normalization.js';",
     "from './session-annotation-bundle-merge.js';",
-    'export function createSessionAnnotationLightweightIoRuntime'
+    'export function createSessionAnnotationLightweightIoRuntime',
+    'replaceExisting: options.replaceExisting !== false'
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `lightweight IO module should contain ${pattern}`);
   });
+  assert.ok(
+    moduleSource.includes('function excludePreviewGeneratedItems(items)'),
+    'lightweight import should define the preview-item boundary'
+  );
+  assert.ok(
+    moduleSource.includes("'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems("),
+    'lightweight import should not rebuild reader marks from preview-scan items'
+  );
   ['window.', 'document.', 'localStorage'].forEach((pattern) => {
     assert.equal(moduleSource.includes(pattern), false, `lightweight IO module should use injected browser APIs, not ${pattern}`);
   });

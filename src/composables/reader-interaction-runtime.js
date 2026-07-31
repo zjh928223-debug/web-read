@@ -4,9 +4,6 @@ import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
 export function initReaderInteractionRuntime(deps = {}) {
   configureRenderRuntime({
     bridgeToPinia: deps.bridgeToPinia,
-    getTranscriptContainer: deps.getTranscriptContainer,
-    getClozeMarkup: deps.getClozeMarkup,
-    checkCloze: deps.checkCloze,
     tryRestoreChunkNoteDraft: deps.tryRestoreChunkNoteDraft
   });
 
@@ -25,8 +22,6 @@ export function initReaderInteractionRuntime(deps = {}) {
     markedMap: deps.markedMap,
     vocabMatchMap: deps.vocabMatchMap,
     hasActiveTextSelectionWithinChunk: deps.hasActiveTextSelectionWithinChunk,
-    selectSentenceFromChunkTarget: deps.selectSentenceFromChunkTarget,
-    openChunkNoteContextFromEvent: deps.openChunkNoteContextFromEvent,
     getSelection: deps.getSelection,
     playbackModule: deps.playbackModule,
     getWindow: deps.getWindow

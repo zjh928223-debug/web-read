@@ -1,0 +1,200 @@
+{
+  "schema_version": "command-receipt-fingerprint-vectors.v1",
+  "contract_version": "vocabulary-learning-contracts.v1",
+  "canonical_json_version": "canonical_json.v1",
+  "fingerprint_algorithm": "sha256-utf8-canonical-json.v1",
+  "valid_vectors": {
+    "canonical_key_ordering": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "validated_anchor_id": "context-harbor-port",
+        "metadata": {
+          "retries": 0,
+          "policy_version": "acquisition-delay.v1"
+        },
+        "learning_unit_id": "unit-harbor-port",
+        "flags": [
+          "anchor_validated",
+          "answer_unrevealed"
+        ],
+        "attempt_id": "attempt-harbor-delayed"
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"attempt_id\":\"attempt-harbor-delayed\",\"flags\":[\"anchor_validated\",\"answer_unrevealed\"],\"learning_unit_id\":\"unit-harbor-port\",\"metadata\":{\"policy_version\":\"acquisition-delay.v1\",\"retries\":0},\"validated_anchor_id\":\"context-harbor-port\"}}",
+      "expected_fingerprint": "3c17213781f54ad90b127dfe685b635539abfe5525e21681954bc6de2bda054d"
+    },
+    "same_payload_reordered": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "attempt_id": "attempt-harbor-delayed",
+        "flags": [
+          "anchor_validated",
+          "answer_unrevealed"
+        ],
+        "learning_unit_id": "unit-harbor-port",
+        "metadata": {
+          "policy_version": "acquisition-delay.v1",
+          "retries": 0
+        },
+        "validated_anchor_id": "context-harbor-port"
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"attempt_id\":\"attempt-harbor-delayed\",\"flags\":[\"anchor_validated\",\"answer_unrevealed\"],\"learning_unit_id\":\"unit-harbor-port\",\"metadata\":{\"policy_version\":\"acquisition-delay.v1\",\"retries\":0},\"validated_anchor_id\":\"context-harbor-port\"}}",
+      "expected_fingerprint": "3c17213781f54ad90b127dfe685b635539abfe5525e21681954bc6de2bda054d"
+    },
+    "semantic_difference": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "learning_unit_id": "unit-harbor-port",
+        "attempt_id": "attempt-harbor-delayed",
+        "validated_anchor_id": "context-harbor-transfer",
+        "metadata": {
+          "policy_version": "acquisition-delay.v1",
+          "retries": 0
+        },
+        "flags": [
+          "anchor_validated",
+          "answer_unrevealed"
+        ]
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"attempt_id\":\"attempt-harbor-delayed\",\"flags\":[\"anchor_validated\",\"answer_unrevealed\"],\"learning_unit_id\":\"unit-harbor-port\",\"metadata\":{\"policy_version\":\"acquisition-delay.v1\",\"retries\":0},\"validated_anchor_id\":\"context-harbor-transfer\"}}",
+      "expected_fingerprint": "cfbe6158148eddae618173649e89b3e639dc5bc044603eff486481c3629da57b"
+    },
+    "missing_optional_property": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "learning_unit_id": "unit-harbor-port"
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"learning_unit_id\":\"unit-harbor-port\"}}",
+      "expected_fingerprint": "3d3e60282626703ecb4e764a0465385f972ab9cc65a59d4a16296487eb7ee70e"
+    },
+    "explicit_null_property": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "learning_unit_id": "unit-harbor-port",
+        "optional": null
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"learning_unit_id\":\"unit-harbor-port\",\"optional\":null}}",
+      "expected_fingerprint": "6c77a20bcc5e8ef59eeac6b4144b65a936565e079956eedcfb52dc04c35e0b15"
+    },
+    "unicode_code_point_ordering": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "\ud83d\ude00": "astral-grinning",
+        "\uE000": "bmp-private-use"
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"\uE000\":\"bmp-private-use\",\"\ud83d\ude00\":\"astral-grinning\"}}",
+      "expected_fingerprint": "e6e41954f9311a5dfe0f4f6877c98cdfbf5895032c673155d48b42e9598e2e4d"
+    },
+    "finite_number_boundaries": {
+      "command_type": "graduate_learning_unit",
+      "payload": {
+        "negative_zero": -0,
+        "ordinary_decimal": 123.456,
+        "tiny_exponent": 1e-7,
+        "large_exponent": 1e+21
+      },
+      "expected_canonical_envelope": "{\"command_type\":\"graduate_learning_unit\",\"contract_version\":\"vocabulary-learning-contracts.v1\",\"payload\":{\"large_exponent\":1e+21,\"negative_zero\":0,\"ordinary_decimal\":123.456,\"tiny_exponent\":1e-7}}",
+      "expected_fingerprint": "37b0915ccbd95438dc70b9f9705410b8cfae5d2f16632658e498707f6dbc3a4b"
+    }
+  },
+  "invalid_vectors": [
+    {
+      "name": "object_property_undefined",
+      "builder": "payload.optional=undefined",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "array_item_undefined",
+      "builder": "payload.items=[undefined]",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "nan",
+      "builder": "payload.value=NaN",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "positive_infinity",
+      "builder": "payload.value=Infinity",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "negative_infinity",
+      "builder": "payload.value=-Infinity",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "date",
+      "builder": "payload.value=new Date(0)",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    },
+    {
+      "name": "custom_prototype",
+      "builder": "payload=Object.create({inherited:true})",
+      "expected_error_code": "INVALID_FIELD_TYPE"
+    }
+  ],
+  "receipt_vectors": {
+    "committed": {
+      "id": "vocabulary.learning-command-receipt.v1:command-harbor-graduate",
+      "content": {
+        "schema_version": "command-receipt.v1",
+        "command_id": "command-harbor-graduate",
+        "command_type": "graduate_learning_unit",
+        "contract_version": "vocabulary-learning-contracts.v1",
+        "payload_fingerprint": "3c17213781f54ad90b127dfe685b635539abfe5525e21681954bc6de2bda054d",
+        "status": "committed",
+        "result": {
+          "schema_version": "graduation-result.v1",
+          "learning_unit_id": "unit-harbor-port",
+          "review_state_id": "review-state-harbor-port",
+          "event_id": "event-harbor-graduated"
+        },
+        "result_sha256": "fe0e4a8fa19637559ef3972dee92e2b8d154a33fa9ff1f9efce1906db7a90959",
+        "correlation_id": "correlation-harbor-graduate",
+        "touched_row_ids": [
+          "vocabulary.acquisition.store.v1",
+          "vocabulary.context-evidence.store.v1",
+          "vocabulary.learning-command-receipt.v1:command-harbor-graduate",
+          "vocabulary.learning-events.manifest.v1",
+          "vocabulary.learning-events.v1.2026-07.0001",
+          "vocabulary.review.store.v2"
+        ],
+        "event_ids": [
+          "event-harbor-graduated"
+        ],
+        "committed_at": "2026-07-21T08:00:02.000Z",
+        "extensions": {}
+      },
+      "timestamp": "2026-07-21T08:00:02.000Z"
+    },
+    "same_command_same_fingerprint": {
+      "command_id": "command-harbor-graduate",
+      "payload_fingerprint": "3c17213781f54ad90b127dfe685b635539abfe5525e21681954bc6de2bda054d",
+      "expected_action": "RETURN_STORED_RESULT",
+      "expected_result_return_mode": "DEEP_CLONE",
+      "expected_result": {
+        "schema_version": "graduation-result.v1",
+        "learning_unit_id": "unit-harbor-port",
+        "review_state_id": "review-state-harbor-port",
+        "event_id": "event-harbor-graduated"
+      },
+      "expected_result_sha256": "fe0e4a8fa19637559ef3972dee92e2b8d154a33fa9ff1f9efce1906db7a90959",
+      "expected_callback_invocations": 0,
+      "expected_new_event_count": 0,
+      "expected_initial_row_timestamp": "2026-07-21T08:00:02.000Z",
+      "expected_row_timestamp": "2026-07-21T08:00:02.000Z",
+      "expected_initial_committed_at": "2026-07-21T08:00:02.000Z",
+      "expected_committed_at": "2026-07-21T08:00:02.000Z"
+    },
+    "same_command_different_fingerprint": {
+      "command_id": "command-harbor-graduate",
+      "payload_fingerprint": "cfbe6158148eddae618173649e89b3e639dc5bc044603eff486481c3629da57b",
+      "expected_action": "ABORT",
+      "expected_error_code": "IDEMPOTENCY_CONFLICT",
+      "expected_business_rows_unchanged": true,
+      "expected_receipt_row_unchanged": true,
+      "expected_row_timestamp": "2026-07-21T08:00:02.000Z",
+      "expected_committed_at": "2026-07-21T08:00:02.000Z"
+    }
+  }
+}

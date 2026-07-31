@@ -33,7 +33,17 @@ export function initReaderBootstrapRuntime(deps = {}) {
     getSentenceNotesStorageKey: runtimeDeps.getSentenceNotesStorageKey,
     getLegacySentenceNotesStorageKey: runtimeDeps.getLegacySentenceNotesStorageKey,
     buildCurrentSentenceDocId: runtimeDeps.buildCurrentSentenceDocId,
-    getSegments: function () { return transcriptState.segments; }
+    getSegments: function () { return transcriptState.segments; },
+    onCurrentAudioMetaChange: function () {
+      var controller = globalObject.__annotationBackfillAiController;
+      if (controller && typeof controller.refreshAvailability === 'function') {
+        controller.refreshAvailability();
+      }
+      var previewController = globalObject.__vocabularyPreviewController;
+      if (previewController && typeof previewController.refreshAvailability === 'function') {
+        previewController.refreshAvailability();
+      }
+    }
   });
 
   return {

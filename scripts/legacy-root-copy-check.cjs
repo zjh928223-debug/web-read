@@ -13,8 +13,7 @@ const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   'copyFileSync',
   'chunk-note-layout-helpers.js',
   'chunk-note-layout-core.js',
-  'annotation-bubble.js',
-  'annotation-api-settings-ui.js'
+  'annotation-bubble.js'
 ].forEach((pattern) => {
   assert.equal(viteConfigSource.includes(pattern), false, `vite.config.js should not include ${pattern}`);
 });
@@ -22,8 +21,7 @@ const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 [
   'chunk-note-layout-helpers.js',
   'chunk-note-layout-core.js',
-  'annotation-bubble.js',
-  'annotation-api-settings-ui.js'
+  'annotation-bubble.js'
 ].forEach((scriptName) => {
   assert.equal(
     indexSource.includes(`<script src="${scriptName}"></script>`),

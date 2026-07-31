@@ -3,8 +3,7 @@ var runtime = {
   forceUpdateUI: null,
   notifyAnnotationBubbleWordClick: null,
   isChunkMode: null,
-  hasActiveTextSelectionWithinChunk: null,
-  selectSentenceFromChunkTarget: null
+  hasActiveTextSelectionWithinChunk: null
 };
 
 var legacyTranscriptContainer = null;
@@ -25,11 +24,12 @@ function getRuntimeAudioPlayer() {
   return typeof runtime.getAudioPlayer === 'function' ? runtime.getAudioPlayer() : null;
 }
 
-function seekTranscriptWord(start) {
+function seekTranscriptWord(start, wordIndex) {
   var audio = getRuntimeAudioPlayer();
   if (audio) audio.currentTime = start;
   if (typeof runtime.forceUpdateUI === 'function') {
-    runtime.forceUpdateUI(start);
+    var options = Number.isInteger(wordIndex) ? { wordIndex: wordIndex } : undefined;
+    runtime.forceUpdateUI(start, options);
   }
 }
 
@@ -53,7 +53,10 @@ export function handleTranscriptWordClick(options) {
     transcriptStore.currentWordIndex = index;
   }
   if (Number.isFinite(start)) {
-    seekTranscriptWord(start);
+    seekTranscriptWord(start, index);
+  }
+  if (transcriptStore && index !== -1) {
+    transcriptStore.currentWordIndex = index;
   }
   notifyWordClick(element);
 }
@@ -85,13 +88,6 @@ function bindLegacyTranscriptContainer(container) {
       return;
     }
     handleTranscriptWordClick({ event: event, element: span });
-    if (
-      typeof runtime.isChunkMode === 'function' &&
-      runtime.isChunkMode() &&
-      typeof runtime.selectSentenceFromChunkTarget === 'function'
-    ) {
-      try { runtime.selectSentenceFromChunkTarget(span); } catch (err) {}
-    }
   }, true);
 }
 
@@ -102,8 +98,7 @@ export function configureTranscriptInteractions(deps) {
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
     notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
     isChunkMode: source.isChunkMode || runtime.isChunkMode,
-    hasActiveTextSelectionWithinChunk: source.hasActiveTextSelectionWithinChunk || runtime.hasActiveTextSelectionWithinChunk,
-    selectSentenceFromChunkTarget: source.selectSentenceFromChunkTarget || runtime.selectSentenceFromChunkTarget
+    hasActiveTextSelectionWithinChunk: source.hasActiveTextSelectionWithinChunk || runtime.hasActiveTextSelectionWithinChunk
   });
   if (source.legacyTranscriptContainer) {
     bindLegacyTranscriptContainer(source.legacyTranscriptContainer);

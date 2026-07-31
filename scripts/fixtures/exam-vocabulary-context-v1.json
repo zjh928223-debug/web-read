@@ -1,0 +1,61 @@
+{
+  "schema_version": "exam-vocabulary-context-fixture.v1",
+  "fixture_policy": {
+    "content_origin": "repository-authored synthetic sentences",
+    "redistribution": "permitted for automated verification",
+    "contains_user_data": false,
+    "contains_exam_originals": false
+  },
+  "user_context_documents": [
+    {
+      "source_kind": "article",
+      "source_id": "fixture-article-v1",
+      "source_title": "Synthetic materials note",
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "sentences": [
+        {
+          "sentence": "A resilient coating protected the sample during the test.",
+          "sentence_index": 0,
+          "surrounding_text": "The note describes a synthetic laboratory trial."
+        }
+      ]
+    },
+    {
+      "source_kind": "subtitle",
+      "source_id": "fixture-subtitle-v1",
+      "source_title": "Synthetic workshop captions",
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "segments": [
+        {
+          "sentence": "The operator checks every reading twice.",
+          "start_ms": 1000,
+          "end_ms": 4200
+        }
+      ]
+    },
+    {
+      "source_kind": "user_local_exam_material",
+      "source_id": "fixture-local-material-v1",
+      "source_title": "Synthetic local practice sheet",
+      "sentences": [
+        {
+          "sentence": "Careful notes make the method resilient to small changes.",
+          "local_locator": "page:1:item:1"
+        }
+      ]
+    }
+  ],
+  "licensed_corpus_record": {
+    "sentence": "Technicians calibrate the sensor before each trial.",
+    "surrounding_text": "This repository-authored sentence is used only as a licensed test fixture.",
+    "source_id": "fixture-open-corpus-v1",
+    "source_title": "Synthetic open corpus",
+    "record_id": "record-calibrate-1",
+    "license_reference": "repository-authored-fixture-permission-v1",
+    "ownership": "public"
+  }
+}

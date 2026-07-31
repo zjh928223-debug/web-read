@@ -40,11 +40,28 @@ export default {
     const ts = useTranscriptStore()
     const chunk = useChunkStore()
 
+    function isMarkedWord(idx) {
+      if (idx == null || typeof window === 'undefined') return false
+      var state = window.__state
+      return !!(
+        state
+        && state.markedMap
+        && typeof state.markedMap.has === 'function'
+        && state.markedMap.has(idx)
+      )
+    }
+
     function wordClasses(word) {
       var idx = word.globalIndex
       var classes = {}
       if (idx != null && ts.highlightMode === 1 && idx === ts.activeWordIdx) {
         classes['word-highlight'] = true
+      }
+      if (isMarkedWord(idx)) {
+        classes.marked = true
+      }
+      if (idx != null && Array.isArray(ts.previewVocabularyWordIndexes) && ts.previewVocabularyWordIndexes.includes(idx)) {
+        classes['preview-vocabulary-word'] = true
       }
       return classes
     }

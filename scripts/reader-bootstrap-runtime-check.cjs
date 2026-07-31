@@ -1,4 +1,4 @@
-const assert = require('node:assert/strict');
+﻿const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,7 +17,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
-  'session-annotation-api-settings-runtime.js',
   'session-annotation-context.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
@@ -123,11 +122,15 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   ].forEach((pattern) => {
     assert.ok(moduleSource.includes(pattern), `reader-bootstrap-runtime should own ${pattern}`);
   });
+  assert.ok(
+    moduleSource.includes('globalObject.__vocabularyPreviewController') &&
+      moduleSource.includes('previewController.refreshAvailability();'),
+    'reader-bootstrap-runtime should refresh vocabulary preview controls when the current article changes'
+  );
   assert.equal(moduleSource.includes('window.'), false, 'reader-bootstrap-runtime should receive window through explicit deps');
   assert.equal(moduleSource.includes('document.'), false, 'reader-bootstrap-runtime should not read document globals');
 
   [
-    'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
     'applyCurrentAudioMeta(audioMeta);',
     'await deps.loadChunkNotesForCurrentAudio();',
     'await deps.loadSentenceNotesForCurrentAudio();',
@@ -215,6 +218,18 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(api.marksStateApi.markedMap.get(1), true);
   assert.equal(globalThis.__hotkeyInitCount, 1);
   assert.equal(globalThis.__marksInitCount, 1);
+  fakeWindow.__annotationBackfillAiController = {
+    refreshAvailability() {
+      calls.push(['refresh-annotation-backfill']);
+    }
+  };
+  fakeWindow.__vocabularyPreviewController = {
+    refreshAvailability() {
+      calls.push(['refresh-vocabulary-preview']);
+    }
+  };
+  globalThis.__audioIdentityInput.onCurrentAudioMetaChange();
+  assert.deepEqual(calls.slice(-2), [['refresh-annotation-backfill'], ['refresh-vocabulary-preview']]);
 
   console.log('reader bootstrap runtime check passed');
 }

@@ -14,7 +14,6 @@ export function initReaderControlsRuntime(deps = {}) {
 
   var chunkControlsApi = initChunkControls({
     state: deps.chunkState,
-    chunkFileInput: deps.chunkFileInput,
     toggleChunkBtn: deps.toggleChunkBtn,
     chunkCnHoldBtn: deps.chunkCnHoldBtn,
     audioPlayer: deps.audioPlayer,
@@ -49,8 +48,6 @@ export function initReaderControlsRuntime(deps = {}) {
     refreshAllChunkNoteVisuals: deps.refreshAllChunkNoteVisuals,
     getLockChunkNoteDimensionsForTheme: deps.getLockChunkNoteDimensionsForTheme
   })
-
-  deps.initAnnotationApiSettingsUi()
 
   return {
     highlightControlsApi,

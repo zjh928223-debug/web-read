@@ -1,0 +1,141 @@
+{
+  "answers": [
+    {
+      "word": "enhance",
+      "form": "enhance",
+      "pos": "verb",
+      "meaning": "improve",
+      "zh": "提升",
+      "phonetic": "/ɪnˈhæns/",
+      "sentence": "Small refinements can enhance overall performance during routine practice.",
+      "source": "fixture-C19-T1-RP1-05"
+    },
+    {
+      "word": "readily",
+      "form": "readily",
+      "pos": "adverb",
+      "meaning": "easily",
+      "zh": "容易地",
+      "phonetic": "/ˈredɪli/",
+      "sentence": "The reference cards were readily accessible beside the desk.",
+      "source": "fixture-C19-T1-RP1-02"
+    },
+    {
+      "word": "thorough",
+      "form": "thorough",
+      "pos": "adjective",
+      "meaning": "complete and careful",
+      "zh": "全面细致的",
+      "phonetic": "/ˈθɜːroʊ/",
+      "sentence": "A thorough rehearsal process exposed several small mistakes.",
+      "source": "fixture-C19-T1-RP1-01"
+    },
+    {
+      "word": "subtle",
+      "form": "subtle",
+      "pos": "adjective",
+      "meaning": "not obvious",
+      "zh": "不易察觉的",
+      "phonetic": "/ˈsʌtl/",
+      "sentence": "A subtle tonal difference escaped most listeners.",
+      "source": "fixture-C19-T1-RP1-03"
+    },
+    {
+      "word": "attribute",
+      "form": "attributed",
+      "pos": "verb",
+      "meaning": "regard as caused by",
+      "zh": "归因于",
+      "phonetic": "/əˈtrɪbjuːt/",
+      "sentence": "The improvement was attributed to consistent daily practice.",
+      "source": "fixture-C19-T1-RP1-04"
+    },
+    {
+      "word": "decoy",
+      "form": "decoy",
+      "pos": "noun",
+      "meaning": "a distraction",
+      "zh": "诱饵",
+      "sentence": "This matching source entry must not enter the pilot.",
+      "source": "fixture-C19-T1-RP1-99"
+    }
+  ],
+  "microReadingSchema": "passage-preview.micro-reading.v1",
+  "microReadings": [
+    {
+      "lemma": "thorough",
+      "targetMeaningZh": "全面细致的",
+      "focusPhraseEn": "a thorough rehearsal",
+      "focusPhraseZh": "一次全面细致的排练",
+      "focusChunks": [
+        { "en": "A thorough rehearsal process", "zh": "一次全面细致的排练过程", "containsTarget": true },
+        { "en": "exposed several small mistakes.", "zh": "暴露了几个小错误。", "containsTarget": false }
+      ],
+      "paragraphChunks": [
+        { "en": "The team prepared for a routine demonstration.", "zh": "团队为一次常规演示做准备。", "containsTarget": false },
+        { "en": "A thorough rehearsal process", "zh": "一次全面细致的排练过程", "containsTarget": true },
+        { "en": "exposed several small mistakes before the event.", "zh": "在活动前暴露了几个小错误。", "containsTarget": false }
+      ]
+    },
+    {
+      "lemma": "readily",
+      "targetMeaningZh": "容易地",
+      "focusPhraseEn": "readily accessible",
+      "focusPhraseZh": "容易获取的",
+      "focusChunks": [
+        { "en": "The reference cards were readily accessible", "zh": "参考卡片很容易拿到", "containsTarget": true },
+        { "en": "beside the desk.", "zh": "就在书桌旁。", "containsTarget": false }
+      ],
+      "paragraphChunks": [
+        { "en": "The learner arranged the materials before practice.", "zh": "学习者在练习前整理了材料。", "containsTarget": false },
+        { "en": "The reference cards were readily accessible", "zh": "参考卡片很容易拿到", "containsTarget": true },
+        { "en": "beside the desk throughout the session.", "zh": "整个练习期间都放在书桌旁。", "containsTarget": false }
+      ]
+    },
+    {
+      "lemma": "subtle",
+      "targetMeaningZh": "不易察觉的",
+      "focusPhraseEn": "a subtle difference",
+      "focusPhraseZh": "细微的差别",
+      "focusChunks": [
+        { "en": "A subtle tonal difference", "zh": "一个细微的音色差别", "containsTarget": true },
+        { "en": "escaped most listeners.", "zh": "没有被大多数听众察觉。", "containsTarget": false }
+      ],
+      "paragraphChunks": [
+        { "en": "Two recordings sounded almost identical at first.", "zh": "两段录音起初听起来几乎相同。", "containsTarget": false },
+        { "en": "A subtle tonal difference", "zh": "一个细微的音色差别", "containsTarget": true },
+        { "en": "escaped most listeners during the comparison.", "zh": "在比较时没有被大多数听众察觉。", "containsTarget": false }
+      ]
+    },
+    {
+      "lemma": "attribute",
+      "targetMeaningZh": "归因于",
+      "focusPhraseEn": "be attributed to",
+      "focusPhraseZh": "被归因于",
+      "focusChunks": [
+        { "en": "The improvement was attributed to", "zh": "这种进步被归因于", "containsTarget": true },
+        { "en": "consistent daily practice.", "zh": "持续的每日练习。", "containsTarget": false }
+      ],
+      "paragraphChunks": [
+        { "en": "The results became more stable over several weeks.", "zh": "几周后结果变得更加稳定。", "containsTarget": false },
+        { "en": "The improvement was attributed to", "zh": "这种进步被归因于", "containsTarget": true },
+        { "en": "consistent daily practice rather than new equipment.", "zh": "持续的每日练习，而不是新设备。", "containsTarget": false }
+      ]
+    },
+    {
+      "lemma": "enhance",
+      "targetMeaningZh": "提升",
+      "focusPhraseEn": "enhance overall performance",
+      "focusPhraseZh": "提升整体表现",
+      "focusChunks": [
+        { "en": "Small refinements can enhance", "zh": "小幅改进能够提升", "containsTarget": true },
+        { "en": "overall performance during routine practice.", "zh": "常规练习中的整体表现。", "containsTarget": false }
+      ],
+      "paragraphChunks": [
+        { "en": "The instructor changed only a few details.", "zh": "教练只调整了几个细节。", "containsTarget": false },
+        { "en": "Small refinements can enhance", "zh": "小幅改进能够提升", "containsTarget": true },
+        { "en": "overall performance during routine practice.", "zh": "常规练习中的整体表现。", "containsTarget": false }
+      ]
+    }
+  ]
+}

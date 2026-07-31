@@ -13,14 +13,6 @@ export function configureReaderPublicFacades(api = {}) {
   return publicApi;
 }
 
-export function selectSentenceFromChunkTarget() {
-  return callPublicApi('selectSentenceFromChunkTarget', arguments);
-}
-
-export function openChunkNoteContextFromEvent() {
-  return callPublicApi('openChunkNoteContextFromEvent', arguments);
-}
-
 export function buildCurrentSentenceDocId() {
   return callPublicApi('buildCurrentSentenceDocId', arguments);
 }
@@ -46,8 +38,6 @@ export function applyCurrentAudioMeta() {
 }
 
 function installReaderPublicFacades() {
-  window.selectSentenceFromChunkTarget = selectSentenceFromChunkTarget;
-  window.openChunkNoteContextFromEvent = openChunkNoteContextFromEvent;
   window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
   window.loadChunkNotesForCurrentAudio = loadChunkNotesForCurrentAudio;
   window.setChunkNoteVisible = setChunkNoteVisible;
