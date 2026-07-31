@@ -7,14 +7,41 @@ async function importProjectApis(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-srs-review-${process.pid}-`))
   try {
     const vocabularyDir = path.join(repoRoot, 'src', 'services', 'vocabulary')
+    const ieltsPoolConfig = JSON.parse(fs.readFileSync(
+      path.join(repoRoot, 'config', 'ielts-learning-pools.json'),
+      'utf8',
+    ))
+    fs.writeFileSync(
+      path.join(tempDir, 'ielts-learning-pools-config.mjs'),
+      `export default ${JSON.stringify(ieltsPoolConfig)}\n`,
+    )
     for (const entry of fs.readdirSync(vocabularyDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith('.js')) continue
       writeModule(
         path.join(vocabularyDir, entry.name),
         path.join(tempDir, `vocab-${entry.name.replace(/\.js$/, '.mjs')}`),
-        (source) => source.replace(/from\s+(['"])\.\/([^'"]+)\.js\1/g, "from './vocab-$2.mjs'"),
+        (source) => source
+          .replace(/from\s+(['"])\.\/([^'"]+)\.js\1/g, "from './vocab-$2.mjs'")
+          .replace(
+            /from\s+['"]\.\.\/\.\.\/\.\.\/config\/ielts-learning-pools\.json['"]/,
+            "from './ielts-learning-pools-config.mjs'",
+          )
+          .replace(/from\s+['"]\.\.\/\.\.\/features\/srs-review\/srs-review-policy\.js['"]/, "from './srs-review-policy.mjs'")
+          .replace(/from\s+['"]\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js['"]/, "from './srs-session-planner.mjs'"),
       )
     }
+    writeModule(
+      path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-policy.js'),
+      path.join(tempDir, 'srs-review-policy.mjs'),
+    )
+    writeModule(
+      path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-session-planner.js'),
+      path.join(tempDir, 'srs-session-planner.mjs'),
+      (source) => source.replace(
+        /from\s+['"]\.\/srs-review-policy\.js['"]/,
+        "from './srs-review-policy.mjs'",
+      ),
+    )
     fs.writeFileSync(
       path.join(tempDir, 'vue-stub.mjs'),
       'export const ref = (value) => ({ value });\nexport const computed = (getter) => ({ get value() { return getter(); } });\n',
@@ -25,7 +52,9 @@ async function importProjectApis(repoRoot) {
       (source) => source
         .replace(/from\s+['"]vue['"]/, "from './vue-stub.mjs'")
         .replace(/from\s+['"]\.\.\/\.\.\/services\/vocabulary\/index\.js['"]/, "from './vocab-index.mjs'")
-        .replace(/from\s+['"]\.\/srs-review-queue\.js['"]/, "from './srs-review-queue.mjs'"),
+        .replace(/from\s+['"]\.\/srs-review-queue\.js['"]/, "from './srs-review-queue.mjs'")
+        .replace(/from\s+['"]\.\/srs-review-prompt\.js['"]/, "from './srs-review-prompt.mjs'")
+        .replace(/from\s+['"]\.\/srs-review-source-selector\.js['"]/, "from './srs-review-source-selector.mjs'"),
     )
     writeModule(
       path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-context.js'),
@@ -58,6 +87,14 @@ async function importProjectApis(repoRoot) {
     writeModule(
       path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-queue.js'),
       path.join(tempDir, 'srs-review-queue.mjs'),
+    )
+    writeModule(
+      path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-prompt.js'),
+      path.join(tempDir, 'srs-review-prompt.mjs'),
+    )
+    writeModule(
+      path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-source-selector.js'),
+      path.join(tempDir, 'srs-review-source-selector.mjs'),
     )
     writeModule(
       path.join(repoRoot, 'src', 'composables', 'youtube-workflow-client.js'),
@@ -285,13 +322,58 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-word-content\s*\{[^}]*margin-block:\s*auto/s,
-    'short word content should sit in the vertical center of its panel',
+    /\.srs-review-word-line h2\s*\{[^}]*padding-bottom:\s*\.12em/s,
+    'review word headings should reserve enough space for Arial descenders',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-content\s*\{[^}]*grid-template-rows:\s*clamp\(170px,\s*25vh,\s*220px\)\s+minmax\(0,\s*1fr\)[^}]*height:\s*100%[^}]*padding-left:\s*clamp\(32px,\s*4vw,\s*56px\)/s,
+    'the English word and meanings should keep a stable, raised anchor closer to the sentence panel',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-line\s*\{[^}]*align-self:\s*end[^}]*margin-bottom:\s*42px[^}]*justify-content:\s*flex-start/s,
+    'the English word should stay close to the meanings below it and share their left alignment',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-answer-area\s*\{[^}]*padding:\s*0\s+0\s+14px\s+62px/s,
+    'answer meanings should align with the English word after its speaker control',
+  )
+  assert.match(
+    reviewPageSource,
+    /class="srs-review-answer-area"/,
+    'answer content should be isolated from the fixed English word row',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-answer-area\s*\{[^}]*min-height:\s*0[^}]*overflow:\s*visible/s,
+    'answer content should remain fully visible without an internal scrollbar',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-meanings\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)[^}]*margin:\s*0/s,
+    'desktop meanings should use the available horizontal space',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-dictionary\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s,
+    'ECDICT assistance should span the full meaning width',
+  )
+  assert.doesNotMatch(
+    reviewCssSource,
+    /@keyframes\s+srs-review-card-enter\s*\{[^}]*transform:\s*translateY/s,
+    'card transitions should not move the review surface vertically',
   )
   assert.match(
     reviewCssSource,
     /\.srs-review-passages\s*\{[^}]*align-content:\s*safe center/s,
     'short source context should sit in the vertical center above the fixed audio controls',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-context\s*\{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)\s+86px/s,
+    'the source audio row should keep a stable height while each card loads',
   )
 
   const now = '2026-07-23T00:00:00.000Z'

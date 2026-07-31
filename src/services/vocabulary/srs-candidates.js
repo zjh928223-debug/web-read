@@ -165,8 +165,17 @@ export function getRemainingSrsCandidatesAfterApply(candidates = [], mode = SRS_
 
 export async function applySrsCandidatesToVocabulary(options = {}) {
   const vocabularyService = options.vocabularyService;
-  if (!vocabularyService || typeof vocabularyService.getWordByLemma !== 'function' || typeof vocabularyService.addWord !== 'function') {
+  if (!vocabularyService
+    || typeof vocabularyService.getWordByLemma !== 'function') {
     throw new Error('SRS candidate application requires a vocabulary service');
+  }
+  const acquisitionEnabled = typeof vocabularyService.isAcquisitionEnabled === 'function'
+    && vocabularyService.isAcquisitionEnabled();
+  if (acquisitionEnabled && typeof vocabularyService.queueVocabularyAcquisition !== 'function') {
+    throw new Error('SRS candidate application requires the acquisition service when enabled');
+  }
+  if (!acquisitionEnabled && typeof vocabularyService.addWordLegacy !== 'function') {
+    throw new Error('SRS candidate application requires the explicit legacy adapter when acquisition is disabled');
   }
   const mode = options.mode === SRS_ADD_MODES.WORDS_ONLY || options.mode === VOCABULARY_ENTRY_TYPES.WORD
     ? SRS_ADD_MODES.WORDS_ONLY
@@ -192,7 +201,7 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
       result.processed += 1;
       continue;
     }
-    await vocabularyService.addWord({
+    const wordInput = {
       word: candidate.word || candidate.lemma,
       lemma: candidate.lemma,
       language: candidate.language,
@@ -200,10 +209,20 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
       meaning: candidate.meaning,
       tags: candidate.tags,
       context: candidate.context,
-    });
-    if (existing && candidate.relearn && typeof vocabularyService.relearnWord === 'function') {
-      await vocabularyService.relearnWord(existing.id, { tags: candidate.tags });
-      result.relearned += 1;
+      target_id: candidate.target_id || candidate.targetId,
+      preserve_existing_metadata: !!existing,
+    };
+    if (acquisitionEnabled) {
+      await vocabularyService.queueVocabularyAcquisition(wordInput);
+    } else {
+      await vocabularyService.addWordLegacy({
+        ...wordInput,
+        legacyCaller: 'srs-candidates:feature-flag-fallback',
+      });
+      if (existing && candidate.relearn && typeof vocabularyService.relearnWord === 'function') {
+        await vocabularyService.relearnWord(existing.id, { tags: candidate.tags });
+        result.relearned += 1;
+      }
     }
     if (!existing) result.added += 1;
     else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;

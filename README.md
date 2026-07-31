@@ -52,6 +52,7 @@ npm run build
 Useful URLs:
 
 - Dev server: `http://127.0.0.1:5173/`
+- Passage Preview: open the `待预习` overlay from the main reader
 - Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 
@@ -75,6 +76,9 @@ npm run build        # Vite production build
 npm run verify:vite  # Playwright load check against the current root entry
 npm run verify:vocab-matching # Focused vocab matching helper check
 npm run verify:srs-review # Standalone/live SRS review queue, rating, retry, and fallback check
+npm run verify:srs-review-ui-v2 # Acquisition-aware review policy and UI check
+npm run verify:passage-preview # Passage Preview unit, live Aria, and browser checks
+npm run verify:vocabulary-acquisition-service # Acquisition lifecycle service check
 npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
 npm run verify:keyboard-boundary # Focused keyboard boundary helper check
 npm run verify:transcript-state # Focused transcript state adapter check
@@ -182,11 +186,14 @@ src/
 |-- main.js                    # Vue mount + Pinia adapter binding
 |-- App.vue                    # Root component
 |-- srs-review-main.js         # Standalone in-memory SRS review entry
+|-- features/passage-preview/  # Isolated five-word local preview overlay
 |-- features/srs-review/       # Shared review page, queue, context/audio, and CSS
 |-- components/                # 5 Vue components
 |-- pinia-stores/              # 9 real Pinia stores
 |-- stores/                    # 9 legacy window compatibility stores
 |-- composables/               # 78 moduleized legacy behavior chunks
+|-- services/pronunciation/    # Strict Aria pronunciation client + Vite endpoint
+|-- services/vocabulary/       # Vocabulary, acquisition, events, review policy, and UoW
 |-- utils/                     # 11 utility ES modules
 `-- services/annotation/       # 14 annotation pipeline ES modules
 ```
@@ -215,10 +222,9 @@ shrink the displayed daily total. Its `复习记录` popover groups the existing
 logs by local date and counts unique words; no additional store or DB migration
 is used.
 
-Review ratings use five visible levels with keyboard shortcuts `1-5`:
-`忘记`, `困难`, `一般`, `容易`, and `掌握`. The first four map to the native
-FSRS ratings; `掌握` records an easy review and atomically moves the word to
-the known schedule.
+Review ratings use the four native FSRS levels with keyboard shortcuts `1-4`:
+`忘记`, `困难`, `一般`, and `容易`. Recall mode exposes only `忘记` until the
+answer is revealed; the other ratings become available after reveal.
 
 The word panel prefers the concise context `simple_meaning` and omits the old
 hint row. Previous/next controls (also arrow keys) provide read-only review of
@@ -231,7 +237,7 @@ an American system voice for the remaining sentence.
 
 Context words keep a plain-text appearance and only scale slightly on hover.
 The replay keycap can capture and persist a replacement single-character
-shortcut; letter matching is case-insensitive, while Space and `1-5` remain
+shortcut; letter matching is case-insensitive, while Space and `1-4` remain
 reserved. The low-emphasis reread control sits at the lower-right edge of the
 word panel instead of mixing with the word and meanings. Stored SRS meanings
 are labeled as contextual.
@@ -245,6 +251,19 @@ writes these fields back into the existing `vocabulary.srs.store.v1` snapshot,
 so future review sessions reuse them without another dictionary request. This
 adds fields inside the existing row content and does not change IndexedDB
 version or object stores.
+
+Vocabulary acquisition and SRS review are now separate lifecycles. New candidates
+enter versioned acquisition rows first; only an explicit, transaction-backed
+graduation creates a review state. Learning attempts, review attempts, command
+receipts, and the session ledger are stored as named or sharded rows inside the
+existing `files` object store. Legacy implicit card creation remains behind a
+flag-off compatibility adapter while callers migrate.
+
+Passage Preview is an isolated local five-word vertical slice. It imports a
+user-selected result package, keeps copyrighted source text in browser-local
+storage, never creates a review state, and uses strict Microsoft Aria playback.
+The Vite endpoint generates `en-US-AriaNeural` audio on demand; it does not read
+preview data or change IndexedDB.
 
 Dictionary parsing follows spelling cross-references such as `centre -> center`
 and rejects geographical or biographical name entries. Versioned

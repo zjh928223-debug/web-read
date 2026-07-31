@@ -1,6 +1,6 @@
 # Read-Web Current Project Status
 
-Last scanned: 2026-07-27
+Last scanned: 2026-07-31
 
 This document records the current state of the `E:\read-web` project from the actual file tree and entry files. It should be treated as the primary current-status document when it conflicts with older migration notes.
 
@@ -33,6 +33,9 @@ Current user-facing features include:
 - lightweight annotation template export/import
 - annotation API settings UI
 - optional ECDICT suggestions in article preview
+- isolated five-word Passage Preview with local import and strict Aria playback
+- acquisition-first vocabulary learning with explicit graduation into SRS
+- four-level SRS review policy, session ledger, and learning-event persistence
 
 ECDICT is an isolated, read-only local dictionary module. The browser side uses only its HTTP client,
 preview enrichment adapter, and formatter; it does not import the SQLite repository or Node service.
@@ -41,6 +44,13 @@ Entries, SRS state, or review records. Review queries use an injected browser cl
 success caching and race protection; disabled or unavailable lookup does not affect reveal, rating,
 playback, or navigation. `ECDICT_ENABLED` defaults to `false`: while disabled the Vite plugin
 registers no endpoint, and while enabled the SQLite service is loaded lazily on the first query.
+
+Vocabulary learning now has separate acquisition and review lifecycles under
+`src/services/vocabulary/`. New candidates are stored as acquisition rows; only explicit graduation
+creates a review state. Context evidence, append-only events, command receipts, and review session
+ledgers remain named/sharded records inside the existing `SeekPlayerDB` version 1 `files` store.
+Passage Preview is an isolated local UI slice mounted by `App.vue`; its source text stays in browser
+storage and its Aria endpoint does not access preview, vocabulary, or SRS data.
 
 Recently removed user-facing features:
 

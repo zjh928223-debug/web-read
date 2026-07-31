@@ -15,6 +15,18 @@ async function importVocabularyApi(repoRoot) {
     'article-srs-settlement-progress.js',
     'settlement-meaning-refinement.js',
     'srs-scheduler.js',
+    'vocabulary-learning-models.js',
+    'vocabulary-acquisition-repository.js',
+    'vocabulary-context-evidence.js',
+    'vocabulary-learning-events.js',
+    'legacy-vocabulary-audit.js',
+    'vocabulary-learning-uow.js',
+    'vocabulary-acquisition-service.js',
+    'srs-review-session-ledger.js',
+    'srs-review-service-v2.js',
+    'exam-vocabulary-importer.js',
+    'exam-vocabulary-context-matcher.js',
+    'legacy-vocabulary-reassessment.js',
     'vocabulary-service.js',
     'index.js',
   ];
@@ -24,9 +36,20 @@ async function importVocabularyApi(repoRoot) {
     files.forEach((file) => {
       const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
         .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
-        .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"');
+        .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
+        .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'")
+        .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js'/g, "from './srs-session-planner.mjs'");
       fs.writeFileSync(path.join(tempDir, file.replace(/\.js$/, '.mjs')), source);
     });
+    fs.writeFileSync(
+      path.join(tempDir, 'srs-review-policy.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-policy.js'), 'utf8'),
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'srs-session-planner.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-session-planner.js'), 'utf8')
+        .replace(/from '\.\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'"),
+    );
     return await import(`${pathToFileURL(path.join(tempDir, 'index.mjs')).href}#${Date.now()}`);
   } finally {
     const resolvedTemp = path.resolve(tempDir);
@@ -659,7 +682,7 @@ async function main() {
   ]);
 
   const fallbackOnlyVocabulary = await createService(api);
-  await fallbackOnlyVocabulary.service.addWord({
+  await fallbackOnlyVocabulary.service.addWordLegacy({
     word: 'fallbackterm',
     lemma: 'fallbackterm',
     context: {
@@ -676,7 +699,7 @@ async function main() {
   assert.equal(fallbackOnlySettlement.candidates.length, 1, 'legacy inference must require explicit source_id instead of URL/title fallback');
 
   const knownPreview = await createService(api);
-  const knownWord = await knownPreview.service.addWord({ word: 'knownterm', lemma: 'knownterm', createdAt: '2026-07-08T00:00:00.000Z' });
+  const knownWord = await knownPreview.service.addWordLegacy({ word: 'knownterm', lemma: 'knownterm', createdAt: '2026-07-08T00:00:00.000Z' });
   await knownPreview.service.markWordKnown(knownWord.id, '2026-07-08T01:00:00.000Z');
   const knownPreviewSettlement = await api.buildArticleSrsSettlement({
     items: [{
@@ -690,7 +713,7 @@ async function main() {
   assert.equal(knownPreviewSettlement.excluded[0].reason, 'known_preview');
 
   const knownManual = await createService(api);
-  const knownManualWord = await knownManual.service.addWord({ word: 'knownterm', lemma: 'knownterm', createdAt: '2026-07-08T00:00:00.000Z' });
+  const knownManualWord = await knownManual.service.addWordLegacy({ word: 'knownterm', lemma: 'knownterm', createdAt: '2026-07-08T00:00:00.000Z' });
   await knownManual.service.markWordKnown(knownManualWord.id, '2026-07-08T01:00:00.000Z');
   const knownRelearnSettlement = await api.buildArticleSrsSettlement({
     items: [createManualItem('manual-known', 'knownterm', 'I forgot this known word in context.')],
@@ -701,9 +724,9 @@ async function main() {
   assert.equal(knownRelearnSettlement.candidates[0].relearn, true);
 
   const knownFocus = await createService(api);
-  const knownFocusWord = await knownFocus.service.addWord({ word: 'focusknown', lemma: 'focusknown', createdAt: '2026-07-08T00:00:00.000Z' });
+  const knownFocusWord = await knownFocus.service.addWordLegacy({ word: 'focusknown', lemma: 'focusknown', createdAt: '2026-07-08T00:00:00.000Z' });
   await knownFocus.service.markWordKnown(knownFocusWord.id, '2026-07-08T01:00:00.000Z');
-  await knownFocus.service.addWord({
+  await knownFocus.service.addWordLegacy({
     word: 'focusknown',
     lemma: 'focusknown',
     context: { sentence: 'Focusknown appeared in another article.', meaning: 'Missed before.', source_id: 'article-known-b' },
@@ -718,7 +741,7 @@ async function main() {
   assert.deepEqual(knownFocusSettlement.candidates[0].tags, ['focus']);
 
   const ignoredManual = await createService(api);
-  const ignoredWord = await ignoredManual.service.addWord({ word: 'ignoredterm', lemma: 'ignoredterm', createdAt: '2026-07-08T00:00:00.000Z' });
+  const ignoredWord = await ignoredManual.service.addWordLegacy({ word: 'ignoredterm', lemma: 'ignoredterm', createdAt: '2026-07-08T00:00:00.000Z' });
   await ignoredManual.service.ignoreWord(ignoredWord.id, '2026-07-08T01:00:00.000Z');
   const ignoredFirstSettlement = await api.buildArticleSrsSettlement({
     items: [createManualItem('manual-ignored', 'ignoredterm', 'I marked this ignored word again.')],
@@ -737,9 +760,9 @@ async function main() {
   assert.equal((await ignoredManual.service.getWordByLemma('ignoredterm')).status, 'ignored');
 
   const ignoredRelearn = await createService(api);
-  const ignoredRelearnWord = await ignoredRelearn.service.addWord({ word: 'ignoredterm', lemma: 'ignoredterm', createdAt: '2026-07-08T00:00:00.000Z' });
+  const ignoredRelearnWord = await ignoredRelearn.service.addWordLegacy({ word: 'ignoredterm', lemma: 'ignoredterm', createdAt: '2026-07-08T00:00:00.000Z' });
   await ignoredRelearn.service.ignoreWord(ignoredRelearnWord.id, '2026-07-08T01:00:00.000Z');
-  await ignoredRelearn.service.addWord({
+  await ignoredRelearn.service.addWordLegacy({
     word: 'ignoredterm',
     lemma: 'ignoredterm',
     context: { sentence: 'Ignoredterm appeared after ignore.', meaning: 'Missed once.', source_id: 'article-ignored-b' },
@@ -754,15 +777,15 @@ async function main() {
   assert.equal(ignoredRelearnSettlement.candidates[0].eligible, true);
 
   const ignoredFocus = await createService(api);
-  const ignoredFocusWord = await ignoredFocus.service.addWord({ word: 'ignoredfocus', lemma: 'ignoredfocus', createdAt: '2026-07-08T00:00:00.000Z' });
+  const ignoredFocusWord = await ignoredFocus.service.addWordLegacy({ word: 'ignoredfocus', lemma: 'ignoredfocus', createdAt: '2026-07-08T00:00:00.000Z' });
   await ignoredFocus.service.ignoreWord(ignoredFocusWord.id, '2026-07-08T01:00:00.000Z');
-  await ignoredFocus.service.addWord({
+  await ignoredFocus.service.addWordLegacy({
     word: 'ignoredfocus',
     lemma: 'ignoredfocus',
     context: { sentence: 'Ignoredfocus appeared in article B.', meaning: 'Missed once.', source_id: 'article-b' },
     createdAt: '2026-07-09T00:00:00.000Z',
   });
-  await ignoredFocus.service.addWord({
+  await ignoredFocus.service.addWordLegacy({
     word: 'ignoredfocus',
     lemma: 'ignoredfocus',
     context: { sentence: 'Ignoredfocus appeared in article C.', meaning: 'Missed twice.', source_id: 'article-c' },

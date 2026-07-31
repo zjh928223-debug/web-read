@@ -1,0 +1,180 @@
+{
+  "schema_version": "legacy-reassessment-fixture.v1",
+  "synthetic_only": true,
+  "audit_manifest": {
+    "schema_version": "legacy-audit-manifest.v1",
+    "policy_version": "legacy-audit-policy.v1",
+    "source_snapshot_hmac_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "audited_at": "2026-07-20T00:00:00.000Z",
+    "items": [
+      {
+        "legacy_word_id": "word-bad-reference",
+        "classification": "conflicting",
+        "reason_codes": ["ORPHAN_REVIEW_STATE"],
+        "is_legacy": true,
+        "training_eligible": false
+      },
+      {
+        "legacy_word_id": "word-polysemy-conflict",
+        "classification": "conflicting",
+        "reason_codes": ["MULTIPLE_TARGET_SENSES"],
+        "is_legacy": true,
+        "training_eligible": false
+      },
+      {
+        "legacy_word_id": "word-needs-sense",
+        "classification": "needs_sense",
+        "reason_codes": ["MISSING_TARGET_SENSE"],
+        "is_legacy": true,
+        "training_eligible": false
+      },
+      {
+        "legacy_word_id": "word-needs-context",
+        "classification": "needs_context",
+        "reason_codes": ["MISSING_CONTEXT"],
+        "is_legacy": true,
+        "training_eligible": false
+      },
+      {
+        "legacy_word_id": "word-compatible",
+        "classification": "compatible",
+        "reason_codes": [],
+        "is_legacy": true,
+        "training_eligible": false
+      },
+      {
+        "legacy_word_id": "word-z-unselected",
+        "classification": "compatible",
+        "reason_codes": [],
+        "is_legacy": true,
+        "training_eligible": false
+      }
+    ]
+  },
+  "legacy_records": {
+    "word-bad-reference": {
+      "word": null,
+      "contexts": [],
+      "review_state": {
+        "word_id": "missing-word",
+        "state": "review",
+        "due_at": "2026-07-01T00:00:00.000Z"
+      },
+      "review_logs": [
+        {
+          "log_id": "legacy-log-bad-reference",
+          "word_id": "missing-word",
+          "rating": "good",
+          "reviewed_at": "2026-06-01T00:00:00.000Z"
+        }
+      ]
+    },
+    "word-polysemy-conflict": {
+      "word": {
+        "id": "word-polysemy-conflict",
+        "lemma": "bank"
+      },
+      "contexts": [
+        {
+          "context_id": "legacy-context-bank-1",
+          "simple_meaning": "financial institution"
+        },
+        {
+          "context_id": "legacy-context-bank-2",
+          "simple_meaning": "river edge"
+        }
+      ],
+      "review_state": {
+        "word_id": "word-polysemy-conflict",
+        "state": "review",
+        "due_at": "2026-07-02T00:00:00.000Z"
+      },
+      "review_logs": [
+        {
+          "log_id": "legacy-log-polysemy",
+          "word_id": "word-polysemy-conflict",
+          "rating": "hard",
+          "reviewed_at": "2026-06-02T00:00:00.000Z"
+        }
+      ]
+    },
+    "word-needs-sense": {
+      "word": {
+        "id": "word-needs-sense",
+        "lemma": "draft"
+      },
+      "contexts": [
+        {
+          "context_id": "legacy-context-draft",
+          "sentence": "A synthetic editor prepared a draft."
+        }
+      ],
+      "review_state": {
+        "word_id": "word-needs-sense",
+        "state": "learning",
+        "due_at": "2026-07-03T00:00:00.000Z"
+      },
+      "review_logs": []
+    },
+    "word-needs-context": {
+      "word": {
+        "id": "word-needs-context",
+        "lemma": "steady",
+        "meaning": "stable"
+      },
+      "contexts": [],
+      "review_state": {
+        "word_id": "word-needs-context",
+        "state": "review",
+        "due_at": "2026-07-04T00:00:00.000Z"
+      },
+      "review_logs": []
+    },
+    "word-compatible": {
+      "word": {
+        "id": "word-compatible",
+        "lemma": "calm",
+        "meaning": "peaceful"
+      },
+      "contexts": [
+        {
+          "context_id": "legacy-context-calm",
+          "sentence": "The synthetic room remained calm."
+        }
+      ],
+      "review_state": {
+        "word_id": "word-compatible",
+        "state": "review",
+        "due_at": "2026-08-15T00:00:00.000Z",
+        "stability": 8
+      },
+      "review_logs": [
+        {
+          "log_id": "legacy-log-compatible",
+          "word_id": "word-compatible",
+          "rating": "easy",
+          "reviewed_at": "2026-07-15T00:00:00.000Z"
+        }
+      ]
+    },
+    "word-z-unselected": {
+      "word": {
+        "id": "word-z-unselected",
+        "lemma": "later",
+        "meaning": "afterward"
+      },
+      "contexts": [
+        {
+          "context_id": "legacy-context-later",
+          "sentence": "A synthetic task can wait until later."
+        }
+      ],
+      "review_state": {
+        "word_id": "word-z-unselected",
+        "state": "review",
+        "due_at": "2027-01-01T00:00:00.000Z"
+      },
+      "review_logs": []
+    }
+  }
+}

@@ -287,6 +287,16 @@ body {
       transition: background-color 0.3s, color 0.3s;
 }
 
+.learning-entry-group {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.passage-preview-file-input {
+  display: none;
+}
+
 .youtube-reader-controls {
   display: inline-flex;
   gap: 8px;

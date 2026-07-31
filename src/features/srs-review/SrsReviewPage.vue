@@ -62,6 +62,21 @@
       </div>
     </header>
 
+    <section
+      v-if="review.sessionLedger.value && !review.loading.value && review.current.value"
+      class="srs-review-session-meta"
+      aria-label="本次复习计划"
+    >
+      <span><strong>模式</strong>{{ review.modeLabel.value }}</span>
+      <span><strong>预算</strong>{{ review.budgetMinutes.value }} 分钟</span>
+      <span><strong>预计剩余</strong>{{ review.estimatedRemainingLabel.value }}</span>
+      <span><strong>Backlog</strong>{{ review.backlogLabel.value }}</span>
+      <span v-if="review.current.value"><strong>答题条件</strong>{{ promptModeLabel }}</span>
+      <span v-if="review.revisitReason.value" class="is-revisit">
+        <strong>重访原因</strong>{{ review.revisitReason.value }}
+      </span>
+    </section>
+
     <section v-if="review.loading.value" class="srs-review-state" aria-live="polite">
       <span class="srs-review-spinner" aria-hidden="true"></span>
       <p>正在准备今日复习…</p>
@@ -93,6 +108,20 @@
     <template v-else-if="review.current.value">
       <div :key="review.current.value.word.id" class="srs-review-content">
         <article class="srs-review-context" aria-label="原文语境">
+          <div
+            v-if="review.contextCueLevel.value === 'none'"
+            class="srs-review-context-gate"
+            aria-live="polite"
+          >
+            <p>当前为仅单词模式，原句尚未显示。</p>
+            <button
+              type="button"
+              :disabled="!hasTargetContext"
+              @click="revealTargetSentence"
+            >
+              {{ hasTargetContext ? '显示目标句' : '暂无可显示的目标句' }}
+            </button>
+          </div>
           <div v-if="displayParagraphs.length" class="srs-review-passages">
             <p
               v-for="(paragraph, paragraphIndex) in displayParagraphs"
@@ -131,8 +160,17 @@
               >{{ part.text }}</span><template v-else>{{ part.text }}</template></template></template>
             </p>
           </div>
+          <div
+            v-if="review.contextCueLevel.value === 'target_sentence' && hasSurroundingContext"
+            class="srs-review-context-gate is-followup"
+          >
+            <button type="button" @click="revealSurroundingContext">显示周边语境</button>
+          </div>
 
-          <div v-if="sourceLoading || audioState?.url" class="srs-review-audio">
+          <div
+            v-if="review.contextCueLevel.value !== 'none' && (sourceLoading || audioState?.url)"
+            class="srs-review-audio"
+          >
             <label :for="audioId">原文音频</label>
             <div v-if="sourceLoading" class="srs-review-audio-loading" role="status">
               <span class="srs-review-spinner" aria-hidden="true"></span>
@@ -178,35 +216,37 @@
               ></audio>
               <h2 ref="wordHeading" :style="wordFontSize ? { fontSize: `${wordFontSize}px` } : undefined">{{ word.word }}</h2>
             </div>
-            <p v-if="flowState.answerRevealed && word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
-            <div v-if="flowState.answerRevealed" class="srs-review-meanings">
-              <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
-                <h3>常用释义</h3>
-                <p>{{ generalMeaning }}</p>
-              </section>
-              <section v-if="meaning" class="srs-review-meaning-group is-contextual">
-                <h3>句中释义</h3>
-                <p>{{ meaning }}</p>
-              </section>
-              <section
-                v-if="dictionarySuggestionText"
-                class="srs-review-dictionary"
-                aria-label="本地词典 ECDICT"
-              >
-                <h3>本地词典 · ECDICT</h3>
-                <p>{{ dictionarySuggestionText }}</p>
-              </section>
-              <section
-                v-else-if="dictionaryState.unavailableVisible"
-                class="srs-review-dictionary is-unavailable"
-                aria-label="本地词典 ECDICT 暂不可用"
-              >
-                <h3>本地词典 · ECDICT</h3>
-                <p>ECDICT 暂不可用</p>
-              </section>
-            </div>
-            <div v-else class="srs-review-answer-placeholder" aria-hidden="true">
-              <span v-if="word.phonetic">{{ word.phonetic }}</span>
+            <div class="srs-review-answer-area">
+              <p v-if="flowState.answerRevealed && word.phonetic" class="srs-review-phonetic">{{ word.phonetic }}</p>
+              <div v-if="flowState.answerRevealed" class="srs-review-meanings">
+                <section v-if="generalMeaning" class="srs-review-meaning-group is-general">
+                  <h3>常用释义</h3>
+                  <p>{{ generalMeaning }}</p>
+                </section>
+                <section v-if="meaning" class="srs-review-meaning-group is-contextual">
+                  <h3>句中释义</h3>
+                  <p>{{ meaning }}</p>
+                </section>
+                <section
+                  v-if="dictionarySuggestionText"
+                  class="srs-review-dictionary"
+                  aria-label="本地词典 ECDICT"
+                >
+                  <h3>本地词典 · ECDICT</h3>
+                  <p>{{ dictionarySuggestionText }}</p>
+                </section>
+                <section
+                  v-else-if="dictionaryState.unavailableVisible"
+                  class="srs-review-dictionary is-unavailable"
+                  aria-label="本地词典 ECDICT 暂不可用"
+                >
+                  <h3>本地词典 · ECDICT</h3>
+                  <p>ECDICT 暂不可用</p>
+                </section>
+              </div>
+              <div v-else class="srs-review-answer-placeholder" aria-hidden="true">
+                <span v-if="word.phonetic">{{ word.phonetic }}</span>
+              </div>
             </div>
           </div>
           <div class="srs-review-play-sequence-group">
@@ -240,9 +280,9 @@
           <button
             class="srs-review-remove-word"
             type="button"
-            :disabled="review.pending.value"
+            :disabled="review.pending.value || !review.canRemoveCurrent.value"
             :aria-label="`从 SRS 中移除 ${word.word}`"
-            title="移除误加入的单词"
+            :title="review.canRemoveCurrent.value ? '移除误加入的单词' : review.removeUnavailableReason.value"
             @click="removeCurrentWord"
           >
             <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -250,10 +290,19 @@
             </svg>
             <span>移除误收录</span>
           </button>
+          <p
+            v-if="review.removeUnavailableReason.value"
+            class="srs-review-management-note"
+          >{{ review.removeUnavailableReason.value }}</p>
         </article>
       </div>
 
       <p v-if="review.error.value" class="srs-review-inline-error" role="alert">{{ review.error.value }}</p>
+      <p
+        v-else-if="review.currentEligibilityLabel.value"
+        class="srs-review-inline-notice"
+        aria-live="polite"
+      >{{ review.currentEligibilityLabel.value }}</p>
       <p v-else-if="flowNotice" class="srs-review-inline-notice" aria-live="polite">{{ flowNotice }}</p>
 
       <footer class="srs-review-actions" aria-label="复习评价">
@@ -273,7 +322,7 @@
           type="button"
           :class="`is-${action.tone}`"
           :aria-keyshortcuts="action.shortcut"
-          :disabled="review.pending.value || review.reviewingPast.value || flowState.ratingCommitted || flowState.transitioning"
+          :disabled="review.pending.value || review.reviewingPast.value || !review.currentEligible.value || flowState.ratingCommitted || flowState.transitioning"
           @click="handleRating(action)"
         >
           <span>{{ action.label }}</span>
@@ -304,6 +353,10 @@ import {
 import { calculateSingleLineFontSize } from './srs-review-layout.js'
 import { hydrateReviewGeneralMeanings } from './srs-review-meanings.js'
 import { createSrsReviewFlow } from './srs-review-flow.js'
+import {
+  hasSurroundingReviewContext,
+  visibleReviewParagraphs,
+} from './srs-review-prompt.js'
 import {
   createSrsReviewDictionaryAssistance,
 } from './srs-review-dictionary-assistance.mjs'
@@ -389,7 +442,10 @@ const dictionaryAssistance = createSrsReviewDictionaryAssistance({
 })
 const flow = createSrsReviewFlow({
   state: flowState,
-  submitAction: (action) => review.submitAction(action, { advance: false }),
+  submitAction: (action, metadata) => review.submitAction(action, {
+    advance: false,
+    answerRevealedBeforeRating: metadata?.answerRevealedBeforeRating === true,
+  }),
   playTargetSentence,
   playWordAndTargetSentence,
   stopAudio: stopCurrentPlayback,
@@ -402,11 +458,17 @@ const flow = createSrsReviewFlow({
 
 const word = computed(() => review.current.value?.word || {})
 const viewContext = computed(() => buildReviewContext(review.current.value))
-const displayParagraphs = computed(() => (
+const availableParagraphs = computed(() => (
   audioState.value?.paragraphs?.length
     ? audioState.value.paragraphs
     : (viewContext.value?.paragraphs || [])
 ))
+const displayParagraphs = computed(() => visibleReviewParagraphs(
+  availableParagraphs.value,
+  review.contextCueLevel.value,
+))
+const hasTargetContext = computed(() => availableParagraphs.value.some((paragraph) => paragraph?.target))
+const hasSurroundingContext = computed(() => hasSurroundingReviewContext(availableParagraphs.value))
 const meaning = computed(() => resolveReviewMeaning(word.value, viewContext.value?.raw))
 const generalMeaning = computed(() => resolveReviewGeneralMeaning(word.value))
 const dictionarySuggestionText = computed(() => formatDictionarySuggestion(
@@ -429,7 +491,16 @@ const canSpeak = computed(() => (
     )
   )
 ))
-const canPlaySentence = computed(() => Boolean(review.current.value && (sourceLoading.value || audioState.value?.url)))
+const canPlaySentence = computed(() => Boolean(
+  review.contextCueLevel.value !== 'none'
+  && review.current.value
+  && (sourceLoading.value || audioState.value?.url),
+))
+const promptModeLabel = computed(() => ({
+  word_only: '仅单词',
+  original_context: '原语境',
+  transfer_context: '迁移语境',
+}[review.current.value?.promptMode] || '仅单词'))
 
 onMounted(async () => {
   wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
@@ -615,6 +686,16 @@ function revealAnswer() {
   return flow.revealAnswer()
 }
 
+function revealTargetSentence() {
+  flowNotice.value = ''
+  return review.showTargetSentence()
+}
+
+function revealSurroundingContext() {
+  flowNotice.value = ''
+  return review.showSurroundingContext()
+}
+
 function advanceReviewCard() {
   stopAndReleaseAudio()
   return review.advanceCurrent()
@@ -628,6 +709,10 @@ function waitForReviewTransition({ delayMs = 1500 } = {}) {
 
 async function removeCurrentWord() {
   if (review.pending.value || !review.current.value) return
+  if (!review.canRemoveCurrent.value) {
+    flowNotice.value = review.removeUnavailableReason.value
+    return
+  }
   const label = String(word.value.word || '').trim()
   if (!window.confirm(`确定从 SRS 中移除“${label}”吗？`)) return
   stopAndReleaseAudio()

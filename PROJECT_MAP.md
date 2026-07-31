@@ -49,6 +49,14 @@ results only after answer reveal. Neither flow writes Vocabulary Entries, SRS st
 `vite.config.js` may load the plugin module, but a disabled feature flag registers no endpoint; the
 SQLite service loads only on the first enabled lookup.
 
+## Vocabulary Learning Boundary
+
+`src/services/vocabulary/` separates candidate acquisition from scheduled review. Acquisition rows,
+context evidence, append-only learning events, command receipts, review session ledgers, and the
+graduation unit of work all reuse `SeekPlayerDB` version 1 and its existing `files` store. A new
+candidate does not receive a `ReviewState` until explicit graduation succeeds. The old implicit
+card-creation path remains only as a feature-flag fallback while remaining callers migrate.
+
 ## Cleanup Baseline
 
 `complete-appjs-decomposition` has been completed and archived under `openspec/changes/archive/2026-06-18-complete-appjs-decomposition/`. Current cleanup context comes from `CURRENT_PROJECT_STATUS.md` and the active spec at `openspec/specs/legacy-runtime-decomposition/spec.md`.
@@ -234,9 +242,8 @@ standalone development never writes `vocabulary.srs.store.v1`.
 those same logs through a compact date-grouped `复习记录` popover; the IndexedDB
 schema remains unchanged.
 
-The review action row exposes five levels (`1-5`). `reviewWordKnown()` handles
-the fifth `掌握` action atomically so its easy review log and known-state
-schedule cannot be split by a partial write.
+The review action row exposes the four native FSRS levels (`1-4`). Recall starts
+with `忘记` available; `困难`, `一般`, and `容易` unlock after answer reveal.
 
 `SrsReviewPage.vue` renders `simple_meaning` before contextual meanings, owns
 the globally captured `R` word/source reread shortcut and invisible Space pause
@@ -260,6 +267,12 @@ Merriam parsing follows exact spelling cross-references and filters
 geographical/biographical names. The versioned dictionary source refreshes old
 parser results without touching manual meanings. The word panel renders general
 meanings as primary black text and contextual meanings as secondary gray text.
+
+`App.vue` also opens `features/passage-preview/PassagePreviewPage.vue` from the
+`待预习` entry. The overlay imports a user-local five-word package, stores its
+micro-reading state separately from reader chunk state, and never writes a
+`ReviewState`. `services/pronunciation/` prefers the exact Microsoft Aria system
+voice and falls back to the same-origin `en-US-AriaNeural` Vite endpoint.
 
 ## Verification
 

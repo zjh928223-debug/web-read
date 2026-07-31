@@ -11,8 +11,10 @@ __tmp_*
 .tmp-annotation-backfill-*/
 node_modules/
 .playwright-artifacts/
+.playwright-cli/
 .playwright-deps/
 .codex/startup-logs/
+.codex-vite-*.log
 output/*.log
 output/playwright/*.png
 output/playwright/*.json

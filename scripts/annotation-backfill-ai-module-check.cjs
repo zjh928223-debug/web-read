@@ -56,22 +56,44 @@ async function importModule(filePath) {
   try {
     const tempComposables = path.join(tempDir, 'src', 'composables');
     const tempVocabulary = path.join(tempDir, 'src', 'services', 'vocabulary');
+    const tempReviewFeatures = path.join(tempDir, 'src', 'features', 'srs-review');
     fs.mkdirSync(tempComposables, { recursive: true });
     fs.mkdirSync(tempVocabulary, { recursive: true });
+    fs.mkdirSync(tempReviewFeatures, { recursive: true });
     const rewriteSource = (source) => source
       .replace(/from '\.\.\/services\/vocabulary\/([^']+)\.js'/g, "from '../services/vocabulary/$1.mjs'")
       .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
-      .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"');
+      .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
+      .replace(/from ['"]\.\.\/\.\.\/\.\.\/config\/ielts-learning-pools\.json['"]/g, "from './ielts-learning-pools-config.mjs'")
+      .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-review-policy\.js'/g, "from '../../features/srs-review/srs-review-policy.mjs'")
+      .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js'/g, "from '../../features/srs-review/srs-session-planner.mjs'");
     fs.writeFileSync(
       path.join(tempComposables, 'annotation-backfill-ai-module.mjs'),
       rewriteSource(fs.readFileSync(filePath, 'utf8'))
     );
-    ['vocabulary-models.js', 'vocabulary-repository.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'preview-scan.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
+    ['vocabulary-models.js', 'vocabulary-repository.js', 'srs-candidates.js', 'srs-pending-candidates.js', 'preview-scan.js', 'article-srs-settlement.js', 'article-srs-settlement-progress.js', 'settlement-meaning-refinement.js', 'srs-scheduler.js', 'ielts-learning-pools.js', 'vocabulary-learning-models.js', 'vocabulary-acquisition-repository.js', 'vocabulary-context-evidence.js', 'vocabulary-learning-events.js', 'legacy-vocabulary-audit.js', 'vocabulary-learning-uow.js', 'vocabulary-acquisition-service.js', 'srs-review-session-ledger.js', 'srs-review-service-v2.js', 'exam-vocabulary-importer.js', 'exam-vocabulary-context-matcher.js', 'legacy-vocabulary-reassessment.js', 'vocabulary-service.js', 'index.js'].forEach((file) => {
       const sourcePath = path.join(repoRoot, 'src', 'services', 'vocabulary', file);
       if (fs.existsSync(sourcePath)) {
         fs.writeFileSync(path.join(tempVocabulary, file.replace(/\.js$/, '.mjs')), rewriteSource(fs.readFileSync(sourcePath, 'utf8')));
       }
     });
+    const ieltsPoolConfig = JSON.parse(fs.readFileSync(
+      path.join(repoRoot, 'config', 'ielts-learning-pools.json'),
+      'utf8',
+    ));
+    fs.writeFileSync(
+      path.join(tempVocabulary, 'ielts-learning-pools-config.mjs'),
+      `export default ${JSON.stringify(ieltsPoolConfig)}\n`,
+    );
+    fs.writeFileSync(
+      path.join(tempReviewFeatures, 'srs-review-policy.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-policy.js'), 'utf8'),
+    );
+    fs.writeFileSync(
+      path.join(tempReviewFeatures, 'srs-session-planner.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-session-planner.js'), 'utf8')
+        .replace(/from '\.\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'"),
+    );
     return await import(`${pathToFileURL(path.join(tempComposables, 'annotation-backfill-ai-module.mjs')).href}#${Date.now()}`);
   } finally {
     const resolvedTemp = path.resolve(tempDir);
@@ -209,13 +231,19 @@ function createFakeSrsDeps(existingByLemma = {}) {
     async getWordByLemma(lemma) {
       return existingByLemma[lemma] || null;
     },
-    async addWord(input) {
+    isAcquisitionEnabled() {
+      return false;
+    },
+    async addWordLegacy(input) {
       added.push(input);
       return existingByLemma[input.lemma] || {
         id: `word-${input.lemma}`,
         lemma: input.lemma,
         status: 'new',
       };
+    },
+    async upsertVocabularyEntry(input) {
+      return this.addWordLegacy(input);
     },
   };
   const srsPendingRepository = {

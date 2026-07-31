@@ -73,11 +73,18 @@ export function initAnnotationBubbleResolver(options = {}) {
       return null;
     }
     const words = getWords();
+    const mark = markedMap && typeof markedMap.get === 'function'
+      ? markedMap.get(wordIndex)
+      : null;
+    const occurrenceKey = mark && mark.occurrenceKey;
+    const targetId = mark && mark.targetId;
     const result = resolver.resolveClick({
       span,
       wordIndex,
       words: Array.isArray(words) ? words : [],
-      generatedStore: store
+      generatedStore: store,
+      occurrenceKey,
+      targetId
     });
     emitAnnotationDebug('app.generated_click_resolve', {
       scope: getAnnotationGenerationScope(),

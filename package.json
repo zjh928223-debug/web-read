@@ -14,7 +14,16 @@
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",
     "verify:vocabulary-srs": "node scripts/vocabulary-srs-service-check.cjs",
     "verify:vocabulary-preview": "node scripts/vocabulary-preview-service-check.cjs",
+    "verify:ielts-learning-pools": "node scripts/ielts-learning-pools-check.cjs",
+    "verify:vocabulary-acquisition-service": "node scripts/vocabulary-acquisition-service-check.cjs",
+    "verify:vocabulary-learning-uow-browser": "node scripts/vocabulary-learning-uow-browser-check.cjs",
+    "verify:vocabulary-article-acquisition": "node scripts/vocabulary-article-acquisition-check.cjs",
+    "verify:vocabulary-add-word-boundary": "node scripts/vocabulary-add-word-boundary-check.cjs",
     "verify:srs-review": "node scripts/srs-review-check.cjs",
+    "verify:srs-review-ui-v2": "node scripts/srs-review-ui-v2-check.cjs",
+    "verify:passage-preview": "node scripts/passage-preview-verify.cjs",
+    "verify:passage-preview:unit": "node scripts/passage-preview-check.cjs",
+    "preview:build-package": "node scripts/build-passage-preview-package.cjs",
     "verify:annotation-lightweight-module": "node scripts/annotation-lightweight-module-check.cjs",
     "verify:annotation-backfill-ai": "node scripts/annotation-backfill-ai-module-check.cjs",
     "verify:keyboard-boundary": "node scripts/keyboard-module-boundary-check.cjs",
@@ -126,6 +135,7 @@
     "vite": "^8.0.14"
   },
   "dependencies": {
+    "node-edge-tts": "^1.2.10",
     "pinia": "^3.0.4",
     "ts-fsrs": "^5.4.1",
     "vue": "^3.5.34"

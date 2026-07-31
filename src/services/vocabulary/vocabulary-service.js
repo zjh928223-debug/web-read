@@ -17,13 +17,37 @@ import {
 } from './vocabulary-models.js';
 import { createIndexedDbVocabularyRepository } from './vocabulary-repository.js';
 import { createSrsScheduler } from './srs-scheduler.js';
+import {
+  deriveTargetSenseKey,
+} from './vocabulary-learning-models.js';
+import {
+  createIndexedDbAcquisitionRepository,
+} from './vocabulary-acquisition-repository.js';
+import {
+  createVocabularyAcquisitionService,
+} from './vocabulary-acquisition-service.js';
+import {
+  canonicalJson,
+  sha256Utf8,
+} from './vocabulary-learning-uow.js';
+
+export const VOCABULARY_LEGACY_ADD_WORD_COMPATIBILITY = 'legacy-add-word.v1';
 
 export function createVocabularyService(options = {}) {
   const repository = options.repository || createIndexedDbVocabularyRepository(options.repositoryOptions || {});
   const scheduler = options.scheduler || createSrsScheduler(options.schedulerOptions || {});
   const nowProvider = typeof options.now === 'function' ? options.now : () => new Date();
+  const acquisitionEnabled = resolveAcquisitionFeatureFlag(options);
+  const acquisitionRepository = options.acquisitionRepository
+    || createIndexedDbAcquisitionRepository(options.acquisitionRepositoryOptions || {});
+  const acquisitionService = options.acquisitionService || createVocabularyAcquisitionService({
+    enabled: acquisitionEnabled,
+    runUnitOfWork: options.runVocabularyLearningUnitOfWork,
+    now: () => toIsoString(nowProvider()),
+  });
+  const legacyCompatibilityCalls = [];
 
-  async function addWord(input = {}) {
+  function normalizeWordInput(input = {}) {
     const createdAt = toIsoString(input.createdAt || input.created_at || nowProvider());
     const wordText = normalizeText(input.word);
     const lemma = normalizeLemma(input.lemma || wordText);
@@ -33,38 +57,170 @@ export function createVocabularyService(options = {}) {
     if (!wordText) throw new Error('Vocabulary word is required');
     if (!lemma) throw new Error('Vocabulary lemma is required');
     if (!lookupKey) throw new Error('Vocabulary lookup key is required');
+    return {
+      createdAt,
+      wordText,
+      lemma,
+      lookupKey,
+      language,
+      initialMeaning,
+    };
+  }
 
+  async function upsertVocabularyEntry(input = {}) {
+    const normalized = normalizeWordInput(input);
     return repository.updateSnapshot((snapshot) => {
-      let word = snapshot.words.find((item) => item.lookup_key === lookupKey && item.language === language);
-      if (!word) {
-        word = {
-          id: createVocabularyId('vocab_word'),
-          word: wordText,
-          lemma,
-          lookup_key: lookupKey,
-          entry_type: normalizeVocabularyEntryType(input.entry_type || input.entryType),
-          language,
-          phonetic: normalizeNullableText(input.phonetic),
-          meaning: initialMeaning,
-          general_meaning: normalizeNullableText(input.general_meaning || input.generalMeaning),
-          dictionary_definition: normalizeNullableText(input.dictionary_definition || input.dictionaryDefinition),
-          dictionary_source: normalizeNullableText(input.dictionary_source || input.dictionarySource),
-          dictionary_fetched_at: null,
-          note: normalizeNullableText(input.note),
-          status: WORD_STATUSES.NEW,
-          tags: normalizeVocabularyTags(input.tags),
-          created_at: createdAt,
-          updated_at: createdAt,
-        };
-        snapshot.words.push(word);
-      } else if (mergeWordTags(word, input.tags)) {
-        word.updated_at = createdAt;
-      }
-
-      ensureReviewState(snapshot, word, createdAt, scheduler);
-      addContextIfPresent(snapshot, word.id, input.context, createdAt);
+      const word = upsertWordInSnapshot(snapshot, input, normalized);
+      addContextIfPresent(snapshot, word.id, input.context, normalized.createdAt);
       return word;
     });
+  }
+
+  function traceLegacyCompatibility(operation, input) {
+    const trace = Object.freeze({
+      compatibility: VOCABULARY_LEGACY_ADD_WORD_COMPATIBILITY,
+      operation,
+      caller: normalizeText(input && (input.legacyCaller || input.legacy_caller)) || 'unspecified',
+      called_at: toIsoString(nowProvider()),
+    });
+    legacyCompatibilityCalls.push(trace);
+    if (typeof options.onLegacyAddWordCall === 'function') {
+      options.onLegacyAddWordCall(trace);
+    }
+  }
+
+  async function addWordLegacy(input = {}) {
+    traceLegacyCompatibility('addWordLegacy', input);
+    const normalized = normalizeWordInput(input);
+    return repository.updateSnapshot((snapshot) => {
+      const word = upsertWordInSnapshot(snapshot, input, normalized);
+      ensureReviewState(snapshot, word, normalized.createdAt, scheduler);
+      addContextIfPresent(snapshot, word.id, input.context, normalized.createdAt);
+      return word;
+    });
+  }
+
+  async function addWord(input = {}) {
+    traceLegacyCompatibility('addWord', input);
+    return addWordLegacyWithoutTrace(input);
+  }
+
+  async function addWordLegacyWithoutTrace(input = {}) {
+    const normalized = normalizeWordInput(input);
+    return repository.updateSnapshot((snapshot) => {
+      const word = upsertWordInSnapshot(snapshot, input, normalized);
+      ensureReviewState(snapshot, word, normalized.createdAt, scheduler);
+      addContextIfPresent(snapshot, word.id, input.context, normalized.createdAt);
+      return word;
+    });
+  }
+
+  async function queueVocabularyAcquisition(input = {}) {
+    if (!acquisitionEnabled) {
+      throw new Error('Vocabulary acquisition writes are disabled');
+    }
+    const normalized = normalizeWordInput(input);
+    const word = await upsertVocabularyEntry({ ...input, context: null });
+    const targetSense = createTargetSense(input, normalized);
+    const targetSenseKey = deriveTargetSenseKey(targetSense);
+    const existingBySense = await acquisitionRepository.findActiveByWordAndSense(
+      word.id,
+      targetSenseKey,
+    );
+    const identity = createAcquisitionIdentity(word, input, targetSenseKey);
+    let unit = existingBySense
+      || await acquisitionRepository.getLearningUnit(identity.learningUnitId);
+    let state = unit
+      ? await acquisitionRepository.getState(unit.learning_unit_id)
+      : null;
+
+    if (!unit) {
+      await acquisitionService.queueCandidate(createAcquisitionCommand(
+        identity,
+        'queue',
+        normalized.createdAt,
+        {
+          learning_unit: {
+            schema_version: 'learning-unit.v1',
+            learning_unit_id: identity.learningUnitId,
+            word_id: word.id,
+            normalized_form: normalized.lemma,
+            language: normalized.language,
+            target_sense_id: null,
+            target_sense_key: null,
+            target_sense: null,
+            created_at: normalized.createdAt,
+            updated_at: normalized.createdAt,
+            archived_at: null,
+            revision: 0,
+            extensions: {
+              source: 'article-settlement',
+            },
+          },
+          event_id: identity.queueEventId,
+        },
+      ));
+      unit = await acquisitionRepository.getLearningUnit(identity.learningUnitId);
+      state = await acquisitionRepository.getState(identity.learningUnitId);
+    }
+
+    if (state?.status === 'candidate' && unit?.target_sense_id === null) {
+      await acquisitionService.selectTargetSense(createAcquisitionCommand(
+        identity,
+        'sense',
+        unit.created_at,
+        {
+          learning_unit_id: unit.learning_unit_id,
+          target_sense_id: identity.targetSenseId,
+          target_sense: targetSense,
+          occurred_at: unit.created_at,
+          event_id: identity.senseEventId,
+        },
+      ));
+      unit = await acquisitionRepository.getLearningUnit(unit.learning_unit_id);
+      state = await acquisitionRepository.getState(unit.learning_unit_id);
+    }
+
+    if (state?.status === 'candidate') {
+      await acquisitionService.introduceCandidate(createAcquisitionCommand(
+        identity,
+        'introduce',
+        unit.created_at,
+        {
+          learning_unit_id: unit.learning_unit_id,
+          episode_id: identity.episodeId,
+          occurred_at: unit.created_at,
+        },
+      ));
+      state = await acquisitionRepository.getState(unit.learning_unit_id);
+    }
+
+    if ((state?.status === 'introduced' || state?.status === 'acquiring')
+      && !state.context_evidence_ids.includes(identity.evidenceId)) {
+      const evidence = createArticleContextEvidence(input, unit, identity, unit.created_at);
+      if (evidence) {
+        await acquisitionService.attachContextEvidence(createAcquisitionCommand(
+          identity,
+          'context',
+          unit.created_at,
+          {
+            context_evidence: evidence,
+            occurred_at: unit.created_at,
+            event_id: identity.contextEventId,
+          },
+        ));
+        state = await acquisitionRepository.getState(unit.learning_unit_id);
+      }
+    }
+
+    const storedWord = await upsertVocabularyEntry(input);
+    return {
+      word: storedWord,
+      learningUnit: unit,
+      acquisitionState: state,
+      alreadyGraduated: state?.status === 'graduated',
+      created: !existingBySense,
+    };
   }
 
   async function getWordByLemma(lemma, options = {}) {
@@ -237,6 +393,11 @@ export function createVocabularyService(options = {}) {
 
   return {
     addWord,
+    addWordLegacy,
+    upsertVocabularyEntry,
+    queueVocabularyAcquisition,
+    isAcquisitionEnabled: () => acquisitionEnabled,
+    getLegacyCompatibilityCalls: () => legacyCompatibilityCalls.map((item) => ({ ...item })),
     getWordByLemma,
     getContextsForWord,
     getReviewLogs,
@@ -248,6 +409,132 @@ export function createVocabularyService(options = {}) {
     deleteWord,
     relearnWord,
     cacheGeneralMeanings,
+  };
+}
+
+function upsertWordInSnapshot(snapshot, input, normalized) {
+  let word = snapshot.words.find((item) => (
+    item.lookup_key === normalized.lookupKey
+    && item.language === normalized.language
+  ));
+  if (!word) {
+    word = {
+      id: createVocabularyId('vocab_word'),
+      word: normalized.wordText,
+      lemma: normalized.lemma,
+      lookup_key: normalized.lookupKey,
+      entry_type: normalizeVocabularyEntryType(input.entry_type || input.entryType),
+      language: normalized.language,
+      phonetic: normalizeNullableText(input.phonetic),
+      meaning: normalized.initialMeaning,
+      general_meaning: normalizeNullableText(input.general_meaning || input.generalMeaning),
+      dictionary_definition: normalizeNullableText(input.dictionary_definition || input.dictionaryDefinition),
+      dictionary_source: normalizeNullableText(input.dictionary_source || input.dictionarySource),
+      dictionary_fetched_at: null,
+      note: normalizeNullableText(input.note),
+      status: WORD_STATUSES.NEW,
+      tags: normalizeVocabularyTags(input.tags),
+      created_at: normalized.createdAt,
+      updated_at: normalized.createdAt,
+    };
+    snapshot.words.push(word);
+  } else if (input.preserve_existing_metadata !== true && mergeWordTags(word, input.tags)) {
+    word.updated_at = normalized.createdAt;
+  }
+  return word;
+}
+
+function resolveAcquisitionFeatureFlag(options) {
+  const configured = options.acquisitionEnabled
+    ?? options.featureFlags?.VOCABULARY_ACQUISITION_ENABLED
+    ?? globalThis.__READ_WEB_FEATURE_FLAGS__?.VOCABULARY_ACQUISITION_ENABLED
+    ?? false;
+  return configured === true || configured === 'true';
+}
+
+function createTargetSense(input, normalized) {
+  const gloss = normalizeNullableText(input.meaning)
+    || getContextMeaning(input.context)
+    || normalized.lemma;
+  return {
+    gloss,
+    normalized_gloss: gloss.normalize('NFKC').trim().replace(/\s+/g, ' ').toLowerCase(),
+    part_of_speech: normalizeNullableText(input.part_of_speech || input.partOfSpeech),
+    definition: normalizeNullableText(input.definition),
+    language: normalized.language,
+  };
+}
+
+function createStableIntegrationId(prefix, value) {
+  return `${prefix}:${sha256Utf8(canonicalJson(value)).slice(0, 32)}`;
+}
+
+function createAcquisitionIdentity(word, input, targetSenseKey) {
+  const context = input.context || {};
+  const seed = {
+    word_id: word.id,
+    target_sense_key: targetSenseKey,
+    source_id: normalizeNullableText(context.source_id || context.sourceId),
+    target_id: normalizeNullableText(input.target_id || input.targetId),
+  };
+  const root = createStableIntegrationId('article-acquisition', seed);
+  return {
+    learningUnitId: `${root}:unit`,
+    targetSenseId: `${root}:sense`,
+    episodeId: `${root}:episode`,
+    evidenceId: `${root}:context`,
+    queueEventId: `${root}:queued`,
+    senseEventId: `${root}:sense-selected`,
+    contextEventId: `${root}:context-attached`,
+    commandId: (step) => `${root}:${step}`,
+    correlationId: root,
+  };
+}
+
+function createAcquisitionCommand(identity, step, occurredAt, payload) {
+  return {
+    command_id: identity.commandId(step),
+    correlation_id: identity.correlationId,
+    event_partition: occurredAt.slice(0, 7),
+    payload,
+  };
+}
+
+function createArticleContextEvidence(input, unit, identity, createdAt) {
+  const context = input.context;
+  const sentence = normalizeText(context && context.sentence);
+  if (!sentence) return null;
+  const sourceId = normalizeNullableText(context.source_id || context.sourceId)
+    || createStableIntegrationId('article-source', {
+      source_title: normalizeNullableText(context.source_title || context.sourceTitle),
+      source_url: normalizeNullableText(context.source_url || context.sourceUrl),
+    });
+  const sourceTitle = normalizeNullableText(context.source_title || context.sourceTitle)
+    || sourceId;
+  const sentenceIndex = Number(context.sentence_index ?? context.sentenceIndex ?? 0);
+  return {
+    schema_version: 'context-evidence.v1',
+    context_evidence_id: identity.evidenceId,
+    learning_unit_id: unit.learning_unit_id,
+    sentence,
+    surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),
+    source_kind: 'article',
+    source_id: sourceId,
+    source_title: sourceTitle,
+    source_locator: {
+      locator_version: 'source-locator.v1',
+      sentence_index: Number.isInteger(sentenceIndex) && sentenceIndex >= 0 ? sentenceIndex : 0,
+    },
+    license_kind: 'unknown',
+    ownership: 'third_party',
+    quality_status: 'pending',
+    quality_reason: 'awaiting_source_validation',
+    created_at: createdAt,
+    validated_at: null,
+    revision: 0,
+    extensions: {
+      source_url: normalizeNullableText(context.source_url || context.sourceUrl),
+    },
   };
 }
 

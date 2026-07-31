@@ -1,0 +1,143 @@
+{
+  "planning": {
+    "now": "2026-07-27T10:00:00.000Z",
+    "local_day": "2026-07-27",
+    "timezone": "UTC",
+    "session_id": "session-plan-1",
+    "policy": {
+      "schema_version": "review-policy.v1",
+      "policy_version": "review-policy.v1:test-balanced",
+      "mode": "balanced",
+      "budget_ms": 108000,
+      "default_attempt_ms": 36000,
+      "balanced_revisit_delay_ms": 900000,
+      "balanced_max_revisits_per_local_day": 1
+    },
+    "candidates": [
+      {
+        "learning_unit_id": "unit-acquisition",
+        "queue_kind": "acquisition",
+        "due_at": null,
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "new acquisition capacity"
+      },
+      {
+        "learning_unit_id": "unit-reassessment",
+        "queue_kind": "reassessment",
+        "due_at": null,
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "legacy reassessment capacity"
+      },
+      {
+        "learning_unit_id": "unit-revisit",
+        "queue_kind": "revisit",
+        "due_at": "2026-07-27T10:15:00.000Z",
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "balanced revisit"
+      },
+      {
+        "learning_unit_id": "unit-due-later",
+        "queue_kind": "due_review",
+        "due_at": "2026-07-27T09:30:00.000Z",
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "due review"
+      },
+      {
+        "learning_unit_id": "unit-relearning",
+        "queue_kind": "relearning",
+        "due_at": "2026-07-27T10:05:00.000Z",
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "scheduler relearning step"
+      },
+      {
+        "learning_unit_id": "unit-due-earlier",
+        "queue_kind": "due_review",
+        "due_at": "2026-07-27T09:00:00.000Z",
+        "estimated_duration_ms": 36000,
+        "enqueue_reason": "overdue review"
+      }
+    ]
+  },
+  "speed_events": [
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-1",
+      "occurred_at": "2026-07-27T10:01:00.000Z",
+      "duration_ms": 31000,
+      "active_duration_ms": 30000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-2",
+      "occurred_at": "2026-07-27T10:02:00.000Z",
+      "duration_ms": 32000,
+      "active_duration_ms": 31000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "acquisition_attempt_recorded",
+      "attempt_id": "attempt-3",
+      "occurred_at": "2026-07-27T10:03:00.000Z",
+      "duration_ms": 33000,
+      "active_duration_ms": 32000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-4",
+      "occurred_at": "2026-07-27T10:04:00.000Z",
+      "duration_ms": 34000,
+      "active_duration_ms": 33000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-5",
+      "occurred_at": "2026-07-27T10:05:00.000Z",
+      "duration_ms": 35000,
+      "active_duration_ms": 34000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-outlier",
+      "occurred_at": "2026-07-27T10:06:00.000Z",
+      "duration_ms": 601000,
+      "active_duration_ms": 600000,
+      "training_eligible": true,
+      "is_legacy": false,
+      "exclusion_reasons": []
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-background",
+      "occurred_at": "2026-07-27T10:07:00.000Z",
+      "duration_ms": 900000,
+      "active_duration_ms": 30000,
+      "training_eligible": false,
+      "is_legacy": false,
+      "exclusion_reasons": ["ACTIVE_DURATION_UNRELIABLE"]
+    },
+    {
+      "event_type": "review_attempt_recorded",
+      "attempt_id": "attempt-legacy",
+      "occurred_at": "2026-07-27T10:08:00.000Z",
+      "duration_ms": 30000,
+      "active_duration_ms": 29000,
+      "training_eligible": true,
+      "is_legacy": true,
+      "exclusion_reasons": []
+    }
+  ]
+}

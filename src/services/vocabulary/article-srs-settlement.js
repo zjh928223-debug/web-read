@@ -316,10 +316,13 @@ export function selectArticleSrsSettlementCandidates(options = {}) {
 }
 
 async function recordContextOnly(vocabularyService, candidate) {
-  if (!vocabularyService || typeof vocabularyService.addWord !== 'function' || !candidate || !candidate.existing_word_id) {
+  if (!vocabularyService
+    || typeof vocabularyService.upsertVocabularyEntry !== 'function'
+    || !candidate
+    || !candidate.existing_word_id) {
     return false;
   }
-  await vocabularyService.addWord({
+  await vocabularyService.upsertVocabularyEntry({
     word: candidate.word || candidate.lemma,
     lemma: candidate.lemma,
     language: candidate.language,

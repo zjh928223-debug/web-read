@@ -16,6 +16,18 @@ async function importVocabularyApi(repoRoot) {
     'article-srs-settlement-progress.js',
     'settlement-meaning-refinement.js',
     'srs-scheduler.js',
+    'vocabulary-learning-models.js',
+    'vocabulary-acquisition-repository.js',
+    'vocabulary-context-evidence.js',
+    'vocabulary-learning-events.js',
+    'legacy-vocabulary-audit.js',
+    'vocabulary-learning-uow.js',
+    'vocabulary-acquisition-service.js',
+    'srs-review-session-ledger.js',
+    'srs-review-service-v2.js',
+    'exam-vocabulary-importer.js',
+    'exam-vocabulary-context-matcher.js',
+    'legacy-vocabulary-reassessment.js',
     'vocabulary-service.js',
     'index.js',
   ];
@@ -29,9 +41,20 @@ async function importVocabularyApi(repoRoot) {
     files.forEach((file) => {
       const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
         .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
-        .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"');
+        .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
+        .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'")
+        .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js'/g, "from './srs-session-planner.mjs'");
       fs.writeFileSync(path.join(tempDir, file.replace(/\.js$/, '.mjs')), source);
     });
+    fs.writeFileSync(
+      path.join(tempDir, 'srs-review-policy.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-policy.js'), 'utf8'),
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'srs-session-planner.mjs'),
+      fs.readFileSync(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-session-planner.js'), 'utf8')
+        .replace(/from '\.\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'"),
+    );
 
     return await import(`${pathToFileURL(path.join(tempDir, 'index.mjs')).href}#${Date.now()}`);
   } finally {
@@ -74,7 +97,7 @@ async function main() {
   });
 
   const createdAt = '2026-07-09T00:00:00.000Z';
-  const first = await service.addWord({
+  const first = await service.addWordLegacy({
     word: 'Running',
     lemma: 'Run',
     language: 'en',
@@ -96,7 +119,7 @@ async function main() {
   assert.equal(firstReviewState.reps, 0);
   assert.equal(firstReviewState.state, 'new');
 
-  const duplicate = await service.addWord({
+  const duplicate = await service.addWordLegacy({
     word: 'run',
     lemma: 'RUN',
     language: 'en',
@@ -122,13 +145,13 @@ async function main() {
   const lookup = await service.getWordByLemma('RUN', { language: 'en' });
   assert.equal(lookup.id, first.id);
 
-  const properNoun = await service.addWord({
+  const properNoun = await service.addWordLegacy({
     word: 'US',
     lemma: 'US',
     language: 'en',
     createdAt,
   });
-  const properNounDuplicate = await service.addWord({
+  const properNounDuplicate = await service.addWordLegacy({
     word: 'us',
     lemma: 'us',
     language: 'en',
@@ -138,7 +161,7 @@ async function main() {
   assert.equal(properNoun.lemma, 'US', 'lemma should preserve canonical casing for proper nouns and abbreviations');
   assert.equal(properNoun.lookup_key, 'us');
 
-  const phrase = await service.addWord({
+  const phrase = await service.addWordLegacy({
     word: 'United   States',
     lemma: 'United States',
     language: 'en',
@@ -164,7 +187,7 @@ async function main() {
   });
   assert.equal((await legacyRepository.getWord('legacy-word-1')).entry_type, 'word', 'legacy vocabulary entries should default to word');
 
-  const futureWord = await service.addWord({
+  const futureWord = await service.addWordLegacy({
     word: 'Durable',
     lemma: 'durable',
     language: 'en',
@@ -185,7 +208,7 @@ async function main() {
   assert.equal(logs[0].before_state.state, 'new');
   assert.notEqual(logs[0].after_state.due_at, logs[0].before_state.due_at);
 
-  const mistakenWord = await service.addWord({
+  const mistakenWord = await service.addWordLegacy({
     word: 'mistaken-entry',
     lemma: 'mistaken-entry',
     language: 'en',
@@ -219,7 +242,7 @@ async function main() {
     repository: contextRepository,
     scheduler: api.createSrsScheduler({ enable_fuzz: false }),
   });
-  const chargeFirst = await contextService.addWord({
+  const chargeFirst = await contextService.addWordLegacy({
     word: 'charge',
     lemma: 'charge',
     language: 'en',
@@ -236,7 +259,7 @@ async function main() {
   assert.equal(chargeContextsAfterFirstAdd.length, 1);
   assert.equal(chargeContextsAfterFirstAdd[0].meaning, 'In this sentence, charge means to ask someone to pay.');
 
-  const chargeSecond = await contextService.addWord({
+  const chargeSecond = await contextService.addWordLegacy({
     word: 'charged',
     lemma: 'charge',
     language: 'en',
@@ -260,7 +283,7 @@ async function main() {
     ]
   );
 
-  const signal = await contextService.addWord({
+  const signal = await contextService.addWordLegacy({
     word: 'signal',
     lemma: 'signal',
     language: 'en',
@@ -279,7 +302,7 @@ async function main() {
   assert.equal(signalContexts[0].simple_meaning, 'reception');
   assert.equal(signalContexts[0].source_id, 'article-c');
 
-  await contextService.addWord({
+  await contextService.addWordLegacy({
     word: 'signal',
     lemma: 'signal',
     language: 'en',
@@ -294,7 +317,7 @@ async function main() {
   });
   assert.equal((await contextRepository.getContextsForWord(signal.id)).length, 1, 'identical context should not be appended twice');
 
-  await contextService.addWord({
+  await contextService.addWordLegacy({
     word: 'signal',
     lemma: 'signal',
     language: 'en',
@@ -315,7 +338,7 @@ async function main() {
   assert.deepEqual(await contextRepository.getContextsForWord(chargeFirst.id), contextsBeforeReview);
 
   for (const rating of ['again', 'hard', 'good', 'easy']) {
-    const word = await service.addWord({
+    const word = await service.addWordLegacy({
       word: `sample-${rating}`,
       lemma: `sample-${rating}`,
       language: 'en',
@@ -390,9 +413,9 @@ async function main() {
     repository: candidateRepository,
     scheduler: api.createSrsScheduler({ enable_fuzz: false }),
   });
-  await candidateService.addWord({ word: 'known phrase', lemma: 'known phrase', entry_type: 'phrase', createdAt });
+  await candidateService.addWordLegacy({ word: 'known phrase', lemma: 'known phrase', entry_type: 'phrase', createdAt });
   await candidateService.markWordKnown((await candidateService.getWordByLemma('known phrase')).id, '2026-07-09T00:07:00.000Z');
-  await candidateService.addWord({ word: 'ignored phrase', lemma: 'ignored phrase', entry_type: 'phrase', createdAt });
+  await candidateService.addWordLegacy({ word: 'ignored phrase', lemma: 'ignored phrase', entry_type: 'phrase', createdAt });
   await candidateService.ignoreWord((await candidateService.getWordByLemma('ignored phrase')).id, '2026-07-09T00:08:00.000Z');
   const applyResult = await api.applySrsCandidatesToVocabulary({
     vocabularyService: candidateService,
@@ -434,7 +457,7 @@ async function main() {
   assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('known phrase')).id)).length, 1);
   assert.equal((await candidateRepository.getContextsForWord((await candidateService.getWordByLemma('ignored phrase')).id)).length, 0);
 
-  await candidateService.addWord({ word: 'relearn me', lemma: 'relearn me', entry_type: 'phrase', createdAt });
+  await candidateService.addWordLegacy({ word: 'relearn me', lemma: 'relearn me', entry_type: 'phrase', createdAt });
   const relearnWord = await candidateService.getWordByLemma('relearn me');
   await candidateService.markWordKnown(relearnWord.id, '2026-07-09T00:09:00.000Z');
   const knownReviewState = await candidateRepository.getReviewState(relearnWord.id);

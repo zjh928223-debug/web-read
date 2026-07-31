@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
+import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 
 export default defineConfig(() => {
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
@@ -13,6 +14,7 @@ export default defineConfig(() => {
   return {
   plugins: [
     vue(),
+    createAriaEdgeTtsVitePlugin(),
     createEcdictVitePlugin({
       enabled: ecdictEnabled,
       databasePath: process.env.ECDICT_DATABASE_PATH,

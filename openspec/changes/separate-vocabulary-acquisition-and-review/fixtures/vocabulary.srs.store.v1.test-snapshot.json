@@ -1,0 +1,95 @@
+{
+  "id": "vocabulary.srs.store.v1",
+  "content": {
+    "schemaVersion": 1,
+    "words": [
+      {
+        "id": "word_fixture_001",
+        "word": "anchor",
+        "lemma": "anchor",
+        "lookup_key": "anchor",
+        "entry_type": "word",
+        "language": "en",
+        "meaning": "synthetic meaning",
+        "status": "learning",
+        "tags": ["focus"],
+        "created_at": "2026-07-01T08:00:00.000Z",
+        "updated_at": "2026-07-02T08:00:00.000Z"
+      },
+      {
+        "id": "word_fixture_002",
+        "word": "transfer",
+        "lemma": "transfer",
+        "lookup_key": "transfer",
+        "entry_type": "word",
+        "language": "en",
+        "meaning": "synthetic transfer meaning",
+        "status": "known",
+        "tags": [],
+        "created_at": "2026-07-03T08:00:00.000Z",
+        "updated_at": "2026-07-04T08:00:00.000Z"
+      }
+    ],
+    "contexts": [
+      {
+        "id": "context_fixture_001",
+        "word_id": "word_fixture_001",
+        "sentence": "The fixture sentence anchors a deterministic test.",
+        "meaning": "Synthetic fixture meaning.",
+        "simple_meaning": "Synthetic anchor.",
+        "source_id": "fixture_document_001",
+        "source_title": "Synthetic P0 fixture",
+        "source_url": null,
+        "surrounding_text": "Synthetic content only.",
+        "created_at": "2026-07-01T08:05:00.000Z"
+      }
+    ],
+    "reviewStates": [
+      {
+        "word_id": "word_fixture_001",
+        "due_at": "2026-07-28T08:00:00.000Z",
+        "stability": 1.25,
+        "difficulty": 5.5,
+        "elapsed_days": 1,
+        "scheduled_days": 2,
+        "reps": 1,
+        "lapses": 0,
+        "state": "learning",
+        "last_review_at": "2026-07-26T08:00:00.000Z",
+        "learning_steps": 1,
+        "private_note": "must never appear in sanitized output"
+      },
+      {
+        "word_id": "word_fixture_002",
+        "due_at": "2026-08-03T08:00:00.000Z",
+        "stability": 8,
+        "difficulty": 4,
+        "elapsed_days": 7,
+        "scheduled_days": 8,
+        "reps": 4,
+        "lapses": 1,
+        "state": "review",
+        "last_review_at": "2026-07-26T08:00:00.000Z",
+        "learning_steps": 0
+      }
+    ],
+    "reviewLogs": [
+      {
+        "id": "review_log_fixture_001",
+        "word_id": "word_fixture_002",
+        "rating": "good",
+        "reviewed_at": "2026-07-26T08:00:00.000Z",
+        "before_state": {
+          "state": "review",
+          "due_at": "2026-07-26T08:00:00.000Z",
+          "secret_hint": "must never appear in sanitized output"
+        },
+        "after_state": {
+          "state": "review",
+          "due_at": "2026-08-03T08:00:00.000Z"
+        }
+      }
+    ]
+  },
+  "timestamp": 1785139200000
+}

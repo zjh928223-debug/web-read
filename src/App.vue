@@ -6,14 +6,29 @@
     <TranscriptContainer />
     <ChunkModeView />
     <Teleport to="#srs-review-entry-root">
-      <button class="small-btn" type="button" title="复习当前已到期的单词" @click="isSrsReviewOpen = true">今日复习</button>
+      <span class="learning-entry-group">
+        <button class="small-btn" type="button" title="复习当前已到期的单词" @click="isSrsReviewOpen = true">今日复习</button>
+        <button class="small-btn" type="button" title="预习本地导入的 Passage 1 词汇" @click="openPassagePreview">待预习</button>
+        <input
+          ref="passagePreviewFileInput"
+          class="passage-preview-file-input"
+          type="file"
+          accept="application/json,.json"
+          @change="importPassagePreviewFile"
+        />
+      </span>
     </Teleport>
     <Teleport to="body">
       <SrsReviewPage
         v-if="isSrsReviewOpen"
-        :service="vocabularyService"
+        :service="srsReviewUiService"
         :dictionary-client="dictionaryClient"
         @close="isSrsReviewOpen = false"
+      />
+      <PassagePreviewPage
+        v-if="isPassagePreviewOpen && passagePreviewItems.length"
+        :items="passagePreviewItems"
+        @close="isPassagePreviewOpen = false"
       />
     </Teleport>
     <span style="display:none" data-vue-mounted>1</span>
@@ -28,15 +43,64 @@ import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
 import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
 import SrsReviewPage from './features/srs-review/SrsReviewPage.vue'
+import { createSrsReviewUiService } from './features/srs-review/srs-review-ui-service.js'
+import { createSrsReviewSourceSelector } from './features/srs-review/srs-review-source-selector.js'
+import PassagePreviewPage from './features/passage-preview/PassagePreviewPage.vue'
+import {
+  importPassageOnePreview,
+  validatePassagePreviewItems,
+} from './features/passage-preview/passage-preview-import.js'
+import {
+  hasLegacyPassagePreviewData,
+  loadPassagePreviewData,
+  savePassagePreviewData,
+} from './features/passage-preview/passage-preview-storage.js'
 import { createVocabularyService } from './services/vocabulary/index.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import './features/srs-review/srs-review.css'
+import './features/passage-preview/passage-preview.css'
 
 const isSrsReviewOpen = ref(false)
+const isPassagePreviewOpen = ref(false)
+const passagePreviewFileInput = ref(null)
+const passagePreviewItems = ref(loadPassagePreviewData())
 const vocabularyService = createVocabularyService()
+const srsReviewV2Service = createSrsReviewUiService({
+  managementService: vocabularyService,
+})
+const srsReviewUiService = createSrsReviewSourceSelector({
+  v2Service: srsReviewV2Service,
+  legacyService: vocabularyService,
+  v2Enabled: import.meta.env.VITE_SRS_REVIEW_V2_ENABLED,
+})
 const dictionaryClient = createOptionalLocalDictionaryClient()
 
 onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active (__USE_VUE_RENDERING=' + window.__USE_VUE_RENDERING + ')')
 })
+
+function openPassagePreview() {
+  if (validatePassagePreviewItems(passagePreviewItems.value)) {
+    isPassagePreviewOpen.value = true
+    return
+  }
+  if (hasLegacyPassagePreviewData()) {
+    window.alert('已有预习进度会保留。请重新导入包含微阅读数据的新版五词包。')
+  }
+  passagePreviewFileInput.value?.click()
+}
+
+async function importPassagePreviewFile(event) {
+  const file = event.target?.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    const items = importPassageOnePreview(JSON.parse(await file.text()))
+    savePassagePreviewData(items)
+    passagePreviewItems.value = items
+    isPassagePreviewOpen.value = true
+  } catch (error) {
+    window.alert(error?.message || '预习结果导入失败。')
+  }
+}
 </script>
