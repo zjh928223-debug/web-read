@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "ielts-learning-pools.v1",
+  "updatedAt": "2026-07-31",
+  "pools": {
+    "fullLearning": {
+      "label": "完整学习池",
+      "books": [5, 6, 7, 8, 9, 10, 11, 15, 16, 17, 18, 19, 20, 21],
+      "requiredContent": [
+        "questions",
+        "answers",
+        "recording_scripts",
+        "audio",
+        "reading",
+        "writing",
+        "speaking"
+      ]
+    },
+    "readingVocabulary": {
+      "label": "阅读词汇池",
+      "books": [4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+      "requiredContent": [
+        "reading_passages",
+        "vocabulary_candidates"
+      ]
+    }
+  },
+  "excluded": {
+    "12": {
+      "pools": ["fullLearning", "readingVocabulary"],
+      "reason": "source_identity_mismatch_tests_5_to_8"
+    },
+    "4": {
+      "pools": ["fullLearning"],
+      "reason": "missing_answer_and_recording_script_sections"
+    },
+    "13": {
+      "pools": ["fullLearning"],
+      "reason": "test_3_listening_questions_1_to_16_missing"
+    },
+    "14": {
+      "pools": ["fullLearning"],
+      "reason": "test_3_listening_opening_question_page_missing"
+    }
+  }
+}
