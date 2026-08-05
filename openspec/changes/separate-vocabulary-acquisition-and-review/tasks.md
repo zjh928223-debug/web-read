@@ -163,3 +163,11 @@
 - [x] 17.3 新增独立 Vue 诊断页，支持会话选择、刷新、变化项选择、空状态和错误状态；页面只读且不得提供发布、改队、改 due date 或修改评分的操作。
 - [x] 17.4 增加 Vite 多页入口和复习页“模型观察”入口，沿用现有 SRS 蓝灰视觉体系并支持窄屏布局。
 - [x] 17.5 增加 focused verification 与浏览器验收，覆盖报告重建、默认关闭、队列不变、真实 IndexedDB schema guard、桌面/移动端渲染、build 和 Vite 加载。
+
+## 18. Wave B3：Shadow 开关与报告补建
+
+- [x] 18.1 增加版本化的本地 Shadow 设置，默认关闭，并让复习服务在运行时动态读取。
+- [x] 18.2 在诊断页增加明确的启用控件与状态说明，用于后续 V2 复习观察。
+- [x] 18.3 为已有的当日 V2 SessionLedger 增加仅写派生报告的补建路径，不修改 ledger、ReviewState、due date、rating 或 IndexedDB schema。
+- [x] 18.4 在没有 V2 Session 时明确说明旧版限制，不从 legacy review log 伪造报告。
+- [x] 18.5 增加 focused verification、浏览器验收、README 文档，并运行受影响的 build/Vite 检查。

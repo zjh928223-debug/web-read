@@ -62,6 +62,9 @@ import {
 } from './features/passage-preview/passage-preview-storage.js'
 import { createVocabularyService } from './services/vocabulary/index.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
+import {
+  createPersonalizationShadowSettings,
+} from './services/vocabulary/personalization/personalization-shadow-settings.js'
 import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
 
@@ -70,8 +73,10 @@ const isPassagePreviewOpen = ref(false)
 const passagePreviewFileInput = ref(null)
 const passagePreviewItems = ref(loadPassagePreviewData())
 const vocabularyService = createVocabularyService()
+const personalizationShadowSettings = createPersonalizationShadowSettings()
 const srsReviewV2Service = createSrsReviewUiService({
   managementService: vocabularyService,
+  personalizationShadowEnabled: () => personalizationShadowSettings.isEnabled(),
 })
 const srsReviewUiService = createSrsReviewSourceSelector({
   v2Service: srsReviewV2Service,

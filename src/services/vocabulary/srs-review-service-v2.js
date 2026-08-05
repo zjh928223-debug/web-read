@@ -123,7 +123,10 @@ function assertDependencies(options) {
 }
 
 function personalizationShadowEnabled(options) {
-  const configured = options.personalizationShadowEnabled
+  const configuredOption = typeof options.personalizationShadowEnabled === 'function'
+    ? options.personalizationShadowEnabled()
+    : options.personalizationShadowEnabled;
+  const configured = configuredOption
     ?? options.featureFlags?.[PERSONALIZATION_SHADOW_FEATURE_FLAG]
     ?? globalThis.__READ_WEB_FEATURE_FLAGS__?.[PERSONALIZATION_SHADOW_FEATURE_FLAG]
     ?? false;

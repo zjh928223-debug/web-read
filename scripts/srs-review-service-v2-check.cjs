@@ -772,6 +772,22 @@ async function main() {
     await disabled.service.flushPersonalizationShadow();
     assert.deepEqual(disabledLedger, baselineLedger);
     assert.equal(disabledCalls, 0);
+
+    let dynamicEnabled = false;
+    let dynamicCalls = 0;
+    const dynamic = harness(api, {
+      pairs,
+      reviewStates: states,
+      personalizationShadowRunner: async () => { dynamicCalls += 1; },
+      personalizationShadowEnabled: () => dynamicEnabled,
+    });
+    await dynamic.start('session-shadow-dynamic-off');
+    await dynamic.service.flushPersonalizationShadow();
+    assert.equal(dynamicCalls, 0);
+    dynamicEnabled = true;
+    await dynamic.start('session-shadow-dynamic-on');
+    await dynamic.service.flushPersonalizationShadow();
+    assert.equal(dynamicCalls, 1, 'runtime setting must enable the next new V2 session');
   }
 
   console.log('P7 SRS review service V2/session ledger checks passed');

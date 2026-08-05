@@ -8,7 +8,7 @@
       </div>
       <div class="shadow-header-actions">
         <button type="button" class="shadow-button is-quiet" @click="goBack">返回复习</button>
-        <button type="button" class="shadow-button" :disabled="loading" @click="loadReports">
+        <button type="button" class="shadow-button" :disabled="loading" @click="loadAll">
           {{ loading ? '刷新中…' : '刷新' }}
         </button>
       </div>
@@ -16,21 +16,49 @@
 
     <section class="shadow-status" :class="{ 'is-on': shadowEnabled }" aria-live="polite">
       <span class="shadow-status-dot" aria-hidden="true"></span>
-      <div>
+      <div class="shadow-status-copy">
         <strong>Shadow 模式{{ shadowEnabled ? '已开启' : '已关闭' }}</strong>
-        <p>{{ shadowEnabled ? '系统正在记录模型建议，但正式队列仍由原有规则决定。' : '开启后才会生成新的诊断报告；此页不会修改任何学习数据。' }}</p>
+        <p>{{ shadowEnabled ? '之后新建的 V2 复习会话会自动记录模型建议；正式队列仍由原有规则决定。' : '开启后，之后新建的 V2 复习会话才会自动生成诊断报告。' }}</p>
+        <p v-if="currentStatus?.v2_session_available" class="shadow-session-state">
+          已找到今天的 V2 复习会话，可以安全补建报告。
+        </p>
+        <p v-else-if="currentStatus" class="shadow-session-state is-warning">
+          今天还没有 V2 复习会话。若“今日复习”走的是旧版数据，当前不能生成 Shadow 报告；系统不会用旧日志伪造结果。
+        </p>
+        <p v-if="actionMessage" class="shadow-action-message">{{ actionMessage }}</p>
+      </div>
+      <div class="shadow-status-actions">
+        <button
+          type="button"
+          class="shadow-switch"
+          role="switch"
+          :aria-checked="shadowEnabled"
+          :disabled="settingSaving"
+          @click="toggleShadow"
+        >
+          <span aria-hidden="true"></span>
+          {{ shadowEnabled ? '停止后续观察' : '开始模型观察' }}
+        </button>
+        <button
+          type="button"
+          class="shadow-button is-quiet"
+          :disabled="rebuilding || !currentStatus?.v2_session_available"
+          @click="rebuildCurrentReport"
+        >
+          {{ rebuilding ? '补建中…' : '补建今天报告' }}
+        </button>
       </div>
     </section>
 
     <section v-if="error" class="shadow-state" role="alert">
       <h2>暂时无法读取诊断报告</h2>
       <p>{{ error }}</p>
-      <button type="button" class="shadow-button" @click="loadReports">重试</button>
+      <button type="button" class="shadow-button" @click="loadAll">重试</button>
     </section>
 
     <section v-else-if="!loading && diagnostic.sessions.length === 0" class="shadow-state">
       <h2>还没有 Shadow 报告</h2>
-      <p>完成一次启用 Shadow 模式的复习后，这里会显示正式安排与模型建议的差异。</p>
+      <p>开启模型观察后，新建一次 V2 今日复习会话；如果会话已经存在，也可以使用上方“补建今天报告”。</p>
     </section>
 
     <template v-else-if="currentSession">
@@ -173,12 +201,18 @@ import { buildPersonalizationShadowDiagnostics } from './personalization-shadow-
 
 const props = defineProps({
   reportRepository: { type: Object, required: true },
-  shadowEnabled: { type: Boolean, default: false },
+  settingsService: { type: Object, required: true },
+  controlService: { type: Object, required: true },
 });
 
 const reports = ref([]);
 const loading = ref(true);
 const error = ref('');
+const shadowEnabled = ref(props.settingsService.isEnabled());
+const currentStatus = ref(null);
+const settingSaving = ref(false);
+const rebuilding = ref(false);
+const actionMessage = ref('');
 const selectedSessionId = ref('');
 const selectedUnitId = ref('');
 const diagnostic = computed(() => buildPersonalizationShadowDiagnostics(reports.value));
@@ -210,6 +244,54 @@ async function loadReports() {
   }
 }
 
+async function loadStatus() {
+  currentStatus.value = await props.controlService.getCurrentStatus();
+}
+
+async function loadAll() {
+  loading.value = true;
+  error.value = '';
+  try {
+    await Promise.all([loadReports(), loadStatus()]);
+  } catch (cause) {
+    error.value = cause?.message || '未知读取错误';
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function toggleShadow() {
+  settingSaving.value = true;
+  actionMessage.value = '';
+  try {
+    shadowEnabled.value = props.settingsService.setEnabled(!shadowEnabled.value).enabled;
+    actionMessage.value = shadowEnabled.value
+      ? '已开启。下一次新建 V2 复习会话时会自动生成报告。'
+      : '已关闭。已有报告会保留，正式复习数据不受影响。';
+  } finally {
+    settingSaving.value = false;
+  }
+}
+
+async function rebuildCurrentReport() {
+  rebuilding.value = true;
+  actionMessage.value = '';
+  try {
+    const result = await props.controlService.rebuildCurrentReport();
+    if (result.status === 'no_v2_session') {
+      actionMessage.value = '今天没有可补建的 V2 复习会话。';
+      await loadStatus();
+      return;
+    }
+    actionMessage.value = '今天的 Shadow 报告已补建；正式队列和复习状态没有改变。';
+    await Promise.all([loadReports(), loadStatus()]);
+  } catch (cause) {
+    actionMessage.value = cause?.message || '补建报告失败';
+  } finally {
+    rebuilding.value = false;
+  }
+}
+
 function connectorY(position, total) {
   return total > 0 ? ((position - 0.5) / total) * 100 : 0;
 }
@@ -219,6 +301,5 @@ function goBack() {
   else window.location.assign('/');
 }
 
-onMounted(loadReports);
+onMounted(loadAll);
 </script>
-

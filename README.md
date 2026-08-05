@@ -316,8 +316,9 @@ bounded adaptive control only after enough cross-day evidence exists. The
 detailed ownership, interfaces, rollout gates, and parallel task prompts are in
 [`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md).
 
-Wave B shadow integration is available behind
-`VOCABULARY_PERSONALIZATION_SHADOW_ENABLED` and defaults to off. When enabled,
+Wave B shadow integration defaults to off. The **模型观察** page now owns a
+versioned local **开始模型观察** switch; the review service reads that setting
+dynamically whenever it creates a new V2 session. When enabled,
 it reads immutable `LearningEvent` and acquisition snapshots only after the
 formal review ledger has been persisted, builds a comparison report in the
 background, and stores the rebuildable report in the existing `files` object
@@ -330,8 +331,13 @@ The read-only diagnostics page is available at
 It reads the latest reports from the same derived-cache row and explains queue
 movement, weak-skill evidence, presentation preference, and insufficient-data
 states. It intentionally exposes no publish, reorder, rating, or due-date write
-action. Add `?demo=1` for the deterministic visual/QA fixture; normal use reads
-only the local IndexedDB reports.
+action. If today's V2 ledger already exists, **补建今天报告** reconstructs only
+the derived Shadow report from that frozen ledger and append-only events. It
+does not write the ledger, ReviewState, due dates, ratings, or database schema.
+If today's review uses only the legacy data source, the page reports that no V2
+session is available instead of fabricating a report from legacy logs. Add
+`?demo=1` for the deterministic visual/QA fixture; normal use reads local
+IndexedDB reports and the local Shadow setting.
 
 Do not change this schema without an explicit migration plan.
 
