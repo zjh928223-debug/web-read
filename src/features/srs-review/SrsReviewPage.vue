@@ -8,6 +8,14 @@
       <div class="srs-review-heading" aria-hidden="true"></div>
       <div ref="historyContainer" class="srs-review-summary">
         <p class="srs-review-progress" aria-live="polite">{{ review.progress.value }}</p>
+        <a
+          class="srs-review-shadow-link"
+          href="/personalization-shadow.html"
+          target="_blank"
+          rel="noopener"
+        >
+          模型观察
+        </a>
         <button
           class="srs-review-history-toggle"
           type="button"

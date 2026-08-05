@@ -47,6 +47,7 @@ function pair(id, partOfSpeech) {
   return {
     learning_unit: {
       learning_unit_id: id,
+      normalized_form: id.replace('unit-', ''),
       target_sense: { part_of_speech: partOfSpeech },
       extensions: {},
     },
@@ -149,12 +150,18 @@ assert.deepEqual(
 );
 assert.ok(report.diagnostics.skill_evidence_count >= 2);
 assert.equal(report.diagnostics.preference_event_excluded_count, 0);
+assert.equal(report.model_snapshot.schema_version, 'personalization-shadow-model-snapshot.v1');
+assert.equal(report.model_snapshot.unit_labels['unit-verb'], 'verb');
+assert.equal(report.model_snapshot.recent_presentations['unit-noun'], 'original_context');
+assert.ok(report.model_snapshot.skill_profile.estimates.length > 0);
 assert.deepEqual(await reportRepository.getBySessionId(input.session_id), report);
+assert.deepEqual(await reportRepository.list({ limit: 1 }), [report]);
 
 const replay = await shadowService.run(clone(input));
 assert.deepEqual(replay, report, 'same snapshots must rebuild the same shadow report');
 await reportRepository.clear();
 assert.equal(await reportRepository.getBySessionId(input.session_id), null);
+assert.deepEqual(await reportRepository.list(), []);
 
 const coldInput = clone(input);
 coldInput.session_id = 'session-shadow-cold';

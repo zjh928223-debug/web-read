@@ -174,7 +174,8 @@ audio {
   color: #b45309;
 }
 
-.srs-review-history-toggle {
+.srs-review-history-toggle,
+.srs-review-shadow-link {
   min-height: 28px;
   padding: 6px 8px;
   border: 1px solid transparent;
@@ -187,9 +188,11 @@ audio {
   font-weight: 500;
   cursor: pointer;
   transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  text-decoration: none;
 }
 
-.srs-review-history-toggle:hover {
+.srs-review-history-toggle:hover,
+.srs-review-shadow-link:hover {
   border-color: rgba(218, 224, 234, .72);
   color: rgba(92, 105, 124, .94) !important;
   background: rgba(255, 255, 255, .62);
@@ -198,6 +201,7 @@ audio {
 
 .srs-review-back:focus-visible,
 .srs-review-history-toggle:focus-visible,
+.srs-review-shadow-link:focus-visible,
 .srs-review-play-sequence:focus-visible,
 .srs-review-remove-word:focus-visible {
   outline-color: rgba(97, 113, 139, .24);
@@ -206,6 +210,7 @@ audio {
 
 .srs-review-back > *,
 .srs-review-history-toggle > *,
+.srs-review-shadow-link > *,
 .srs-review-play-sequence > *,
 .srs-review-remove-word > * {
   color: inherit !important;

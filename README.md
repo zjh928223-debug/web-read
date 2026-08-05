@@ -325,6 +325,14 @@ store row `vocabulary.personalization.shadow-reports.v1`. Shadow output and
 failures never change the returned ledger, FSRS due dates, ratings, or review
 state.
 
+The read-only diagnostics page is available at
+`/personalization-shadow.html` and from the review header's **模型观察** link.
+It reads the latest reports from the same derived-cache row and explains queue
+movement, weak-skill evidence, presentation preference, and insufficient-data
+states. It intentionally exposes no publish, reorder, rating, or due-date write
+action. Add `?demo=1` for the deterministic visual/QA fixture; normal use reads
+only the local IndexedDB reports.
+
 Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas

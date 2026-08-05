@@ -26,6 +26,7 @@
     "verify:vocabulary-personalization-preference": "node scripts/verify-vocabulary-personalization-preference.mjs",
     "verify:vocabulary-personalization-curriculum": "node scripts/verify-vocabulary-personalization-curriculum.mjs",
     "verify:vocabulary-personalization-shadow": "node scripts/verify-vocabulary-personalization-shadow.mjs",
+    "verify:personalization-shadow-diagnostics": "node scripts/personalization-shadow-diagnostics-check.mjs",
     "verify:vocabulary-personalization": "npm run verify:vocabulary-personalization-content && npm run verify:vocabulary-personalization-skills && npm run verify:vocabulary-personalization-preference && npm run verify:vocabulary-personalization-curriculum && npm run verify:vocabulary-personalization-shadow",
     "verify:passage-preview": "node scripts/passage-preview-verify.cjs",
     "verify:passage-preview:unit": "node scripts/passage-preview-check.cjs",

@@ -155,3 +155,11 @@
 - [x] 16.4 将 shadow 报告作为可重建派生缓存保存在现有 `files` object store 的独立 row；保持 `SeekPlayerDB` version 1 与现有 schema 不变。
 - [x] 16.5 在 `SrsReviewServiceV2.startReviewSession()` 增加默认关闭、故障隔离的 shadow hook；无论 shadow 成功或失败，调用方收到的正式 ledger 必须完全一致。
 - [x] 16.6 增加 focused verification、统一 package scripts、无运行时 AI/无 schema 升级 guard，并通过相关回归、build 与 Vite 验证。
+
+## 17. Wave B2：只读 shadow 诊断页
+
+- [x] 17.1 扩展 shadow 派生报告，保存可重建的 skill/preference 模型快照与学习单元显示标签，并为报告 repository 增加只读最近报告查询。
+- [x] 17.2 新增纯诊断 view-model，将正式队列、shadow 建议、位置变化、技能证据、偏好证据和数据不足状态转换为可解释展示数据。
+- [x] 17.3 新增独立 Vue 诊断页，支持会话选择、刷新、变化项选择、空状态和错误状态；页面只读且不得提供发布、改队、改 due date 或修改评分的操作。
+- [x] 17.4 增加 Vite 多页入口和复习页“模型观察”入口，沿用现有 SRS 蓝灰视觉体系并支持窄屏布局。
+- [x] 17.5 增加 focused verification 与浏览器验收，覆盖报告重建、默认关闭、队列不变、真实 IndexedDB schema guard、桌面/移动端渲染、build 和 Vite 加载。

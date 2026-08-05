@@ -76,6 +76,14 @@ export function normalizePersonalizationShadowReport(input) {
     diagnostics: clone(isPlainObject(input.diagnostics) ? input.diagnostics : {}),
     comparison: clone(input.comparison),
     shadow_plan: clone(input.shadow_plan),
+    model_snapshot: clone(isPlainObject(input.model_snapshot) ? input.model_snapshot : {
+      schema_version: 'personalization-shadow-model-snapshot.v1',
+      skill_profile: null,
+      presentation_preference: null,
+      presentation_rankings: null,
+      unit_labels: {},
+      recent_presentations: {},
+    }),
   };
 }
 
@@ -112,6 +120,23 @@ function createRepository(load, save) {
       const id = requiredText(sessionId, 'session_id');
       return clone((await load()).by_session_id[id] ?? null);
     },
+    async list(options = {}) {
+      if (!isPlainObject(options)
+        || Object.keys(options).some((key) => key !== 'limit')) {
+        fail('INVALID_FIELD_TYPE', 'Only limit may be configured', { field: 'options' });
+      }
+      const limit = options.limit === undefined ? 50 : options.limit;
+      if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+        fail('INVALID_FIELD_TYPE', 'limit must be an integer between 1 and 200', {
+          field: 'options.limit',
+        });
+      }
+      return Object.values((await load()).by_session_id)
+        .sort((left, right) => right.generated_at.localeCompare(left.generated_at)
+          || left.session_id.localeCompare(right.session_id))
+        .slice(0, limit)
+        .map(clone);
+    },
     async put(report) {
       const normalized = normalizePersonalizationShadowReport(report);
       const store = await load();
@@ -137,7 +162,15 @@ export function createInMemoryPersonalizationShadowReportRepository(seed = []) {
     async (next) => { store = clone(next); },
   );
   return {
-    getBySessionId: repository.getBySessionId,
+    getBySessionId(sessionId) {
+      return queue.then(
+        () => repository.getBySessionId(sessionId),
+        () => repository.getBySessionId(sessionId),
+      );
+    },
+    list(options) {
+      return queue.then(() => repository.list(options), () => repository.list(options));
+    },
     put(report) {
       const operation = queue.then(() => repository.put(report), () => repository.put(report));
       queue = operation.catch(() => undefined);
@@ -251,6 +284,9 @@ export function createIndexedDbPersonalizationShadowReportRepository(options = {
   return {
     getBySessionId(sessionId) {
       return run('readonly', (store) => repositoryForStore(store).getBySessionId(sessionId));
+    },
+    list(options) {
+      return run('readonly', (store) => repositoryForStore(store).list(options));
     },
     put(report) {
       return run('readwrite', (store) => repositoryForStore(store).put(report));

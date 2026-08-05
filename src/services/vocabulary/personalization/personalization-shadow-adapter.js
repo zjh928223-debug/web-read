@@ -113,6 +113,7 @@ function buildUnitMetadata(acquisitionSnapshot) {
     const graduated = state.status === 'graduated';
     return [learningUnitId, {
       learning_unit_id: learningUnitId,
+      display_label: text(unit.normalized_form) ?? learningUnitId,
       skill_tags: pairSkillTags(source),
       allowed_presentations: explicitPresentations.length > 0
         ? explicitPresentations
@@ -205,12 +206,14 @@ export function buildPersonalizationShadowInput(input) {
     unit_metadata: unitMetadata,
   });
   const variantsSeenByUnit = new Map();
+  const recentPresentationByUnit = new Map();
   for (const event of adaptedEvents.preference_events) {
     const unitId = text(event.learning_unit_id);
     const variant = text(event.presentation_variant);
     if (!unitId || !variant) continue;
     if (!variantsSeenByUnit.has(unitId)) variantsSeenByUnit.set(unitId, new Set());
     variantsSeenByUnit.get(unitId).add(variant);
+    recentPresentationByUnit.set(unitId, variant);
   }
 
   const candidates = input.candidates.map((rawCandidate, index) => {
@@ -257,6 +260,11 @@ export function buildPersonalizationShadowInput(input) {
     as_of: text(input.now) ?? text(baselineLedger.created_at),
     time_budget_ms: baselineLedger.budget_ms,
     baseline_ledger: clone(baselineLedger),
+    unit_labels: Object.fromEntries(Object.entries(unitMetadata).map(([unitId, metadata]) => [
+      unitId,
+      text(metadata.display_label) ?? unitId,
+    ])),
+    recent_presentations: Object.fromEntries(recentPresentationByUnit),
     candidates,
     skill_events: adaptedEvents.skill_events,
     preference_events: adaptedEvents.preference_events,

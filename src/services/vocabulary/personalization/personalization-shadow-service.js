@@ -139,6 +139,14 @@ export function createPersonalizationShadowService(options = {}) {
       },
       comparison: compareShadowPlanWithBaseline(input.baseline_ledger, shadowPlan),
       shadow_plan: shadowPlan,
+      model_snapshot: {
+        schema_version: 'personalization-shadow-model-snapshot.v1',
+        skill_profile: skillProfile,
+        presentation_preference: preferenceEstimate,
+        presentation_rankings: presentationRankings,
+        unit_labels: input.unit_labels,
+        recent_presentations: input.recent_presentations,
+      },
     });
     if (reportRepository) await reportRepository.put(report);
     return report;
