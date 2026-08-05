@@ -9,6 +9,11 @@
       <span class="learning-entry-group">
         <button class="small-btn" type="button" title="复习当前已到期的单词" @click="isSrsReviewOpen = true">今日复习</button>
         <button class="small-btn" type="button" title="预习本地导入的 Passage 1 词汇" @click="openPassagePreview">待预习</button>
+        <a
+          class="small-btn learning-model-entry"
+          href="/personalization-shadow.html"
+          title="查看正式复习队列与个性化模型建议的只读对照"
+        >模型观察</a>
         <input
           ref="passagePreviewFileInput"
           class="passage-preview-file-input"

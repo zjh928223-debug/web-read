@@ -66,6 +66,9 @@ try {
     'utf8',
   );
   assert.match(reviewPage, /href="\/personalization-shadow\.html"/u);
+  const appPage = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
+  assert.match(appPage, /class="small-btn learning-model-entry"/u);
+  assert.match(appPage, /href="\/personalization-shadow\.html"/u);
   const html = fs.readFileSync(path.join(repoRoot, 'personalization-shadow.html'), 'utf8');
   assert.match(html, /src="\/src\/personalization-shadow-main\.js"/u);
 

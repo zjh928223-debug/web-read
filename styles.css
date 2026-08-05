@@ -293,6 +293,14 @@ body {
   align-items: center;
 }
 
+.learning-model-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
 .passage-preview-file-input {
   display: none;
 }
