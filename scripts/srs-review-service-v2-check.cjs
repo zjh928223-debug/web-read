@@ -199,6 +199,9 @@ function harness(api, {
   budgetMs = 60 * 60 * 1000,
   mode = 'balanced',
   useDefaultScheduler = false,
+  personalizationShadowRunner = null,
+  personalizationShadowEnabled = false,
+  onPersonalizationShadowError = undefined,
 } = {}) {
   let clock = NOW;
   const runner = api.uow.createInMemoryVocabularyLearningUnitOfWorkRunner({
@@ -234,6 +237,9 @@ function harness(api, {
     scheduler: useDefaultScheduler ? undefined : deterministicScheduler(),
     schedulerVersion: useDefaultScheduler ? 'ts-fsrs.v5.4.1' : 'deterministic-scheduler.v1',
     runUnitOfWork: runner.run,
+    personalizationShadowRunner,
+    personalizationShadowEnabled,
+    onPersonalizationShadowError,
     now: () => clock,
   };
   const service = api.service.createSrsReviewServiceV2(serviceOptions);
@@ -720,6 +726,52 @@ async function main() {
       events: [{ ...sameDayEvent, occurred_at: '2026-07-27T01:00:00.000Z' }],
     });
     assert.equal((await crossDay.start('session-cross-day')).entries.length, 1);
+  }
+
+  {
+    const pairs = [unit('one'), unit('two')];
+    const states = [reviewState('one'), reviewState('two')];
+    const baseline = harness(api, { pairs, reviewStates: states });
+    const baselineLedger = await baseline.start('session-shadow-isolation');
+
+    let shadowCalls = 0;
+    let shadowErrors = 0;
+    const isolated = harness(api, {
+      pairs,
+      reviewStates: states,
+      personalizationShadowEnabled: true,
+      personalizationShadowRunner: async (input) => {
+        shadowCalls += 1;
+        input.baseline_ledger.entries.reverse();
+        throw Object.assign(new Error('synthetic shadow failure'), { code: 'SHADOW_FAILED' });
+      },
+      onPersonalizationShadowError(error, context) {
+        shadowErrors += 1;
+        assert.equal(error.code, 'SHADOW_FAILED');
+        assert.equal(context.session_id, 'session-shadow-isolation');
+      },
+    });
+    const isolatedLedger = await isolated.start('session-shadow-isolation');
+    assert.deepEqual(isolatedLedger, baselineLedger);
+    await isolated.service.flushPersonalizationShadow();
+    assert.equal(shadowCalls, 1);
+    assert.equal(shadowErrors, 1);
+    assert.deepEqual(
+      await isolated.ledgerRepository.getBySessionId('session-shadow-isolation'),
+      baselineLedger,
+    );
+
+    let disabledCalls = 0;
+    const disabled = harness(api, {
+      pairs,
+      reviewStates: states,
+      personalizationShadowRunner: async () => { disabledCalls += 1; },
+      personalizationShadowEnabled: false,
+    });
+    const disabledLedger = await disabled.start('session-shadow-isolation');
+    await disabled.service.flushPersonalizationShadow();
+    assert.deepEqual(disabledLedger, baselineLedger);
+    assert.equal(disabledCalls, 0);
   }
 
   console.log('P7 SRS review service V2/session ledger checks passed');

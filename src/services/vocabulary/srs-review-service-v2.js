@@ -18,6 +18,8 @@ import { normalizeReviewSessionLedger } from './srs-review-session-ledger.js';
 export const SRS_REVIEW_SERVICE_V2_VERSION = 'srs-review-service.v2';
 export const SRS_REVIEW_ATTEMPT_COMMAND_TYPE = 'record_review_attempt.v2';
 
+const PERSONALIZATION_SHADOW_FEATURE_FLAG = 'VOCABULARY_PERSONALIZATION_SHADOW_ENABLED';
+
 const RATINGS = new Set(['again', 'hard', 'good', 'easy']);
 const PROMPT_MODES = new Set(['word_only', 'original_context', 'transfer_context']);
 const CUE_LEVELS = new Set([
@@ -104,6 +106,28 @@ function assertDependencies(options) {
       });
     }
   }
+  const shadowRunner = options.personalizationShadowRunner;
+  if (shadowRunner !== undefined && shadowRunner !== null
+    && typeof shadowRunner !== 'function'
+    && typeof shadowRunner.run !== 'function') {
+    fail('INVALID_FIELD_TYPE', 'personalizationShadowRunner must be a function or expose run()', {
+      field: 'personalizationShadowRunner',
+    });
+  }
+  if (options.onPersonalizationShadowError !== undefined
+    && typeof options.onPersonalizationShadowError !== 'function') {
+    fail('INVALID_FIELD_TYPE', 'onPersonalizationShadowError must be a function', {
+      field: 'onPersonalizationShadowError',
+    });
+  }
+}
+
+function personalizationShadowEnabled(options) {
+  const configured = options.personalizationShadowEnabled
+    ?? options.featureFlags?.[PERSONALIZATION_SHADOW_FEATURE_FLAG]
+    ?? globalThis.__READ_WEB_FEATURE_FLAGS__?.[PERSONALIZATION_SHADOW_FEATURE_FLAG]
+    ?? false;
+  return configured === true || configured === 'true';
 }
 
 function normalizeStartInput(input, now) {
@@ -435,6 +459,32 @@ export function createSrsReviewServiceV2(options = {}) {
   const runUnitOfWork = options.runUnitOfWork ?? runVocabularyLearningUnitOfWork;
   const now = options.now ?? (() => new Date().toISOString());
   const locks = new Map();
+  const shadowTasks = new Set();
+
+  function schedulePersonalizationShadow(input) {
+    if (!personalizationShadowEnabled(options) || !options.personalizationShadowRunner) return;
+    const runner = typeof options.personalizationShadowRunner === 'function'
+      ? options.personalizationShadowRunner
+      : options.personalizationShadowRunner.run.bind(options.personalizationShadowRunner);
+    const task = Promise.resolve()
+      .then(async () => runner(clone({
+        ...input,
+        events: await eventRepository.query({}),
+      })))
+      .catch((shadowError) => {
+        try {
+          options.onPersonalizationShadowError?.(shadowError, {
+            session_id: input.session_id,
+          });
+        } catch { /* shadow diagnostics must never affect the review session */ }
+      })
+      .finally(() => shadowTasks.delete(task));
+    shadowTasks.add(task);
+  }
+
+  async function flushPersonalizationShadow() {
+    await Promise.all([...shadowTasks]);
+  }
 
   const serialize = (sessionId, operation) => {
     const prior = locks.get(sessionId) ?? Promise.resolve();
@@ -543,7 +593,15 @@ export function createSrsReviewServiceV2(options = {}) {
         attempt_results_by_id: {},
         active_duration_ms: 0,
       };
-      return ledgerRepository.put(normalizeReviewSessionLedger(planned), null);
+      const persisted = await ledgerRepository.put(normalizeReviewSessionLedger(planned), null);
+      schedulePersonalizationShadow({
+        session_id: input.session_id,
+        now: input.now,
+        candidates,
+        acquisition_snapshot: snapshot,
+        baseline_ledger: persisted,
+      });
+      return persisted;
     });
   }
 
@@ -773,5 +831,6 @@ export function createSrsReviewServiceV2(options = {}) {
     recordReviewAttempt,
     resumeReviewSession,
     completeReviewSession,
+    flushPersonalizationShadow,
   };
 }

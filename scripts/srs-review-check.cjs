@@ -30,6 +30,20 @@ async function importProjectApis(repoRoot) {
           .replace(/from\s+['"]\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js['"]/, "from './srs-session-planner.mjs'"),
       )
     }
+    const personalizationDir = path.join(vocabularyDir, 'personalization')
+    const personalizationTempDir = path.join(tempDir, 'vocab-personalization')
+    fs.mkdirSync(personalizationTempDir)
+    for (const entry of fs.readdirSync(personalizationDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.js')) continue
+      writeModule(
+        path.join(personalizationDir, entry.name),
+        path.join(personalizationTempDir, entry.name.replace(/\.js$/, '.mjs')),
+        (source) => source.replace(
+          /from\s+(['"])\.\/([^'"]+)\.js\1/g,
+          "from './$2.mjs'",
+        ),
+      )
+    }
     writeModule(
       path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-policy.js'),
       path.join(tempDir, 'srs-review-policy.mjs'),

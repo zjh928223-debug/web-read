@@ -146,3 +146,12 @@
 - [ ] 15.4 验证无 IndexedDB version/object store 变化，无受版权保护例句进入仓库，无 AI 运行时硬依赖。
 - [ ] 15.5 全部调用方迁移后删除 legacy 隐式建卡 adapter，并增加永久 guard 防止重新引入。
 - [ ] 15.6 在真实使用观察期结束后，记录 `once_daily`、`balanced`、`intensive` 的耗时与跨日效果，再决定是否调整默认 mode。
+
+## 16. Wave B：个性化学习指导 shadow 集成
+
+- [x] 16.1 建立 personalization 统一导出与版本化适配边界，统一 plain-object、错误码和未知字段处理，不让四个独立模块直接依赖运行时仓库。
+- [x] 16.2 实现只读 `LearningEvent` 适配器，从现有合格事件重建 skill/preference 输入；缺失 skill tag 或 presentation metadata 时必须显式降级，不得猜测为知识缺陷。
+- [x] 16.3 实现 shadow planner：在现有固定 `SessionLedger` 旁生成个性化计划与逐项差异报告，只观察、不改队列、不改 due date、不创建 `ReviewState`。
+- [x] 16.4 将 shadow 报告作为可重建派生缓存保存在现有 `files` object store 的独立 row；保持 `SeekPlayerDB` version 1 与现有 schema 不变。
+- [x] 16.5 在 `SrsReviewServiceV2.startReviewSession()` 增加默认关闭、故障隔离的 shadow hook；无论 shadow 成功或失败，调用方收到的正式 ledger 必须完全一致。
+- [x] 16.6 增加 focused verification、统一 package scripts、无运行时 AI/无 schema 升级 guard，并通过相关回归、build 与 Vite 验证。

@@ -21,3 +21,4 @@ export * from './exam-vocabulary-importer.js';
 export * from './exam-vocabulary-context-matcher.js';
 export * from './legacy-vocabulary-reassessment.js';
 export * from './ielts-learning-pools.js';
+export * from './personalization/index.js';

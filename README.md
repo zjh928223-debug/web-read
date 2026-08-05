@@ -316,6 +316,15 @@ bounded adaptive control only after enough cross-day evidence exists. The
 detailed ownership, interfaces, rollout gates, and parallel task prompts are in
 [`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md).
 
+Wave B shadow integration is available behind
+`VOCABULARY_PERSONALIZATION_SHADOW_ENABLED` and defaults to off. When enabled,
+it reads immutable `LearningEvent` and acquisition snapshots only after the
+formal review ledger has been persisted, builds a comparison report in the
+background, and stores the rebuildable report in the existing `files` object
+store row `vocabulary.personalization.shadow-reports.v1`. Shadow output and
+failures never change the returned ledger, FSRS due dates, ratings, or review
+state.
+
 Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas
