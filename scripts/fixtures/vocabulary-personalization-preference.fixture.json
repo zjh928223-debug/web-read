@@ -1,0 +1,411 @@
+{
+  "schema_version": "vocabulary-personalization-preference-fixtures.v1",
+  "variants": [
+    "minimal_sentence",
+    "word_only",
+    "audio_first",
+    "cloze",
+    "original_context",
+    {
+      "variant_id": "custom_tactile",
+      "features": {
+        "modality": "haptic",
+        "context_level": "minimal",
+        "interaction": "custom_recall",
+        "sentence_difficulty_band": "easy",
+        "cue_density": "low"
+      }
+    }
+  ],
+  "scenarios": {
+    "empty_history": {
+      "events": [],
+      "allowed_presentations": [
+        "original_context",
+        "minimal_sentence",
+        "custom_tactile"
+      ]
+    },
+    "clear_preference": {
+      "events": [
+        {
+          "event_id": "audio-1",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "rating": "good",
+          "active_duration_ms": 4200,
+          "active_replay_count": 1
+        },
+        {
+          "event_id": "audio-2",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "rating": "easy",
+          "active_duration_ms": 5200,
+          "active_replay_count": 2
+        },
+        {
+          "event_id": "audio-3",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "rating": "good",
+          "active_duration_ms": 3800,
+          "active_replay_count": 1
+        },
+        {
+          "event_id": "word-1",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "answer_revealed_before_rating": true,
+          "reveal_delay_ms": 200,
+          "active_duration_ms": 1500
+        },
+        {
+          "event_id": "word-2",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "answer_revealed_before_rating": true,
+          "reveal_delay_ms": 300,
+          "active_duration_ms": 1600
+        },
+        {
+          "event_id": "word-3",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "rating": "hard",
+          "active_duration_ms": 1400
+        }
+      ],
+      "allowed_presentations": [
+        "word_only",
+        "audio_first",
+        "cloze"
+      ]
+    },
+    "knowledge_failure_confounded": {
+      "events": [
+        {
+          "event_id": "failure-1",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "failure",
+          "rating": "again",
+          "answer_revealed_before_rating": true,
+          "reveal_delay_ms": 50,
+          "active_duration_ms": 2400
+        },
+        {
+          "event_id": "failure-2",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "failure",
+          "rating": "again",
+          "active_duration_ms": 3000
+        }
+      ],
+      "allowed_presentations": ["word_only"]
+    },
+    "invalid_content_confounded": {
+      "events": [
+        {
+          "event_id": "invalid-1",
+          "training_eligible": true,
+          "presentation_variant": "original_context",
+          "skipped": true,
+          "sentence_quality": "invalid",
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "invalid-2",
+          "training_eligible": true,
+          "presentation_variant": "original_context",
+          "skipped": true,
+          "content_valid": false,
+          "knowledge_outcome": "success"
+        }
+      ],
+      "allowed_presentations": ["original_context"]
+    },
+    "abnormal_duration": {
+      "events": [
+        {
+          "event_id": "abnormal-1",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "rating": "good",
+          "active_duration_ms": 999999999,
+          "timing_anomaly": true
+        }
+      ],
+      "allowed_presentations": ["audio_first"]
+    },
+    "reliable_duration_markers": {
+      "events": [
+        {
+          "event_id": "reliable-snake",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000,
+          "active_duration_reliable": true
+        },
+        {
+          "event_id": "reliable-camel",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "activeDurationMs": 4000,
+          "activeDurationReliable": true
+        },
+        {
+          "event_id": "unreliable-snake",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000,
+          "active_duration_reliable": false
+        },
+        {
+          "event_id": "unreliable-camel",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "activeDurationMs": 4000,
+          "activeDurationReliable": false
+        },
+        {
+          "event_id": "explicit-anomaly-marker",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "activeDurationMs": 4000,
+          "activeDurationReliable": true,
+          "durationAnomaly": true
+        }
+      ],
+      "allowed_presentations": ["audio_first"]
+    },
+    "training_ineligible": {
+      "events": [
+        {
+          "event_id": "training-false-snake",
+          "presentation_variant": "word_only",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "training_eligible": false,
+          "active_duration_ms": 4000
+        },
+        {
+          "event_id": "training-false-camel",
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "trainingEligible": false,
+          "activeDurationMs": 4000
+        },
+        {
+          "event_id": "training-exclusion-snake",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "exclusion_reasons": ["ACTIVE_DURATION_UNRELIABLE"],
+          "active_duration_ms": 4000
+        },
+        {
+          "event_id": "training-exclusion-camel",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "exclusionReasons": ["IMPORTED_EVENT"],
+          "activeDurationMs": 4000
+        },
+        {
+          "event_id": "training-missing-marker",
+          "presentation_variant": "word_only",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000
+        }
+      ],
+      "allowed_presentations": ["word_only"]
+    },
+    "unknown_knowledge_skip": {
+      "events": [
+        {
+          "event_id": "unknown-skip-explicit",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "unknown",
+          "answer_revealed_before_rating": true,
+          "reveal_delay_ms": 100
+        },
+        {
+          "event_id": "unknown-skip-missing",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "answer_revealed_before_rating": true,
+          "reveal_delay_ms": 100,
+          "rating": "hard"
+        },
+        {
+          "event_id": "unknown-skip-partial",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "partial",
+          "active_duration_ms": 4000
+        }
+      ],
+      "allowed_presentations": ["word_only"]
+    },
+    "isolated_negative_preference": {
+      "events": [
+        {
+          "event_id": "isolated-word-skip-1",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "isolated-word-skip-2",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "isolated-word-skip-3",
+          "training_eligible": true,
+          "presentation_variant": "word_only",
+          "skipped": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "isolated-audio-complete-1",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "isolated-audio-complete-2",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        },
+        {
+          "event_id": "isolated-audio-complete-3",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success"
+        }
+      ],
+      "allowed_presentations": ["word_only", "audio_first"]
+    },
+    "duplicate_event_id": {
+      "events": [
+        {
+          "event_id": "duplicate-completion",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000
+        },
+        {
+          "event_id": "duplicate-completion",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000
+        },
+        {
+          "event_id": "unique-completion",
+          "training_eligible": true,
+          "presentation_variant": "audio_first",
+          "completed": true,
+          "content_valid": true,
+          "knowledge_outcome": "success",
+          "active_duration_ms": 4000
+        }
+      ],
+      "allowed_presentations": ["audio_first"]
+    },
+    "all_unseen_subset": {
+      "events": [],
+      "allowed_presentations": [
+        {
+          "variant_id": "custom_tactile",
+          "features": {
+            "modality": "haptic",
+            "context_level": "minimal",
+            "interaction": "custom_recall",
+            "sentence_difficulty_band": "easy",
+            "cue_density": "low"
+          }
+        },
+        "cloze",
+        "word_only"
+      ]
+    }
+  }
+}

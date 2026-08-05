@@ -1,0 +1,417 @@
+{
+  "schema_version": "vocabulary-personalization-content-fixtures.v1",
+  "primary_sense": {
+    "empty": {},
+    "pos_unknown": {
+      "lemma": "run",
+      "pos": "unknown",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "run-verb-01", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "run-verb-01", "rank": 1 }
+      ]
+    },
+    "two_way_consensus": {
+      "lemma": "run",
+      "pos": "verb",
+      "candidates": [
+        { "sense_key": "run-verb-01", "definition": "move at a faster pace", "learner_dictionary": { "rank": 1 }, "wordnet_mfs": { "rank": 1 } },
+        { "sense_key": "run-verb-02", "definition": "operate", "learner_dictionary": { "rank": 2 }, "wordnet_mfs": { "rank": 2 } }
+      ],
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "run-verb-01", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "run-verb-01", "rank": 1 }
+      ]
+    },
+    "two_one_majority": {
+      "lemma": "set",
+      "pos": "verb",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "set-verb-01", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "set-verb-01", "rank": 1 },
+        { "source": "general_or_exam_corpus", "sense_key": "set-verb-02", "score": 0.9 }
+      ]
+    },
+    "three_way_disagreement": {
+      "lemma": "set",
+      "pos": "verb",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "set-verb-01", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "set-verb-02", "rank": 1 },
+        { "source": "general_or_exam_corpus", "sense_key": "set-verb-03", "score": 0.9 }
+      ]
+    },
+    "ecdict_only": {
+      "lemma": "bright",
+      "pos": "adjective",
+      "ecdict_frequency": 9821
+    },
+    "internal_tie_bank_a_b": {
+      "lemma": "bank",
+      "pos": "noun",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "bank-a", "rank": 1 },
+        { "source": "learner_dictionary", "sense_key": "bank-b", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "bank-a", "rank": 1 },
+        { "source": "general_or_exam_corpus", "sense_key": "bank-b", "rank": 1 }
+      ]
+    },
+    "internal_tie_score": {
+      "lemma": "bank",
+      "pos": "noun",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "bank-a", "score": 0.8 },
+        { "source": "learner_dictionary", "sense_key": "bank-b", "score": 0.8 },
+        { "source": "wordnet_mfs", "sense_key": "bank-a", "score": 0.8 },
+        { "source": "general_or_exam_corpus", "sense_key": "bank-b", "score": 0.8 }
+      ]
+    },
+    "duplicate_evidence": {
+      "lemma": "bank",
+      "pos": "noun",
+      "evidence": [
+        { "source": "learner_dictionary", "sense_key": "bank-a", "rank": 1 },
+        { "source": "learner_dictionary", "sense_key": "bank-a", "rank": 1 },
+        { "source": "wordnet_mfs", "sense_key": "bank-a", "rank": 1 },
+        { "source": "general_or_exam_corpus", "sense_key": "bank-b", "score": 0.9 }
+      ]
+    }
+  },
+  "sentence_sources": {
+    "open_validated": {
+      "sentence": "The calm river carried leaves.",
+      "source_kind": "open_corpus",
+      "source_id": "open-record-1",
+      "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-1" },
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "content_status": "authentic"
+    },
+    "unknown_license": {
+      "sentence": "The quiet room held a chair.",
+      "source_kind": "article",
+      "source_id": "article-record-1"
+    },
+    "source_kind_only": {
+      "sentence": "The open sample changed.",
+      "source_kind": "open_corpus",
+      "source_id": "open-record-no-license"
+    },
+    "pending_open": {
+      "sentence": "The open sample changed.",
+      "source_kind": "open_corpus",
+      "source_id": "open-record-pending",
+      "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-pending" },
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "pending",
+      "content_status": "authentic"
+    },
+    "ai_generated": {
+      "sentence": "The calm river carried a small boat.",
+      "source_kind": "ai_candidate",
+      "source_id": "ai-candidate-1",
+      "license_kind": "ai_generated",
+      "ownership": "user"
+    },
+    "ai_generated_serialized_flag": {
+      "sentence": "The calm river carried a small boat.",
+      "source_kind": "open_corpus",
+      "source_id": "open-record-generated-flag",
+      "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-generated-flag" },
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "content_status": "authentic",
+      "generated": "true"
+    },
+    "ai_generated_ambiguous_flag": {
+      "sentence": "The calm river carried a small boat.",
+      "source_kind": "open_corpus",
+      "source_id": "open-record-ambiguous-flag",
+      "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-ambiguous-flag" },
+      "license_kind": "licensed_open",
+      "ownership": "public",
+      "quality_status": "validated",
+      "content_status": "authentic",
+      "generated": "maybe"
+    },
+    "local_exam": {
+      "sentence": "The private sample changed after testing.",
+      "source_kind": "user_local_exam_material",
+      "source_id": "local-material-1",
+      "source_locator": { "locator_version": "source-locator.v1", "local_locator": "page-2-item-3" },
+      "license_kind": "user_owned",
+      "ownership": "private",
+      "quality_status": "validated",
+      "content_status": "authentic"
+    }
+  },
+  "ranking": {
+    "target_sense_key": "calm-1",
+    "first_preview_candidates": [
+      {
+        "candidate_id": "open-short",
+        "sentence": "The calm river carried leaves.",
+        "target_sense_key": "calm-1",
+        "source": {
+          "source_kind": "open_corpus",
+          "source_id": "open-record-1",
+          "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-1" },
+          "license_kind": "licensed_open",
+          "ownership": "public",
+          "quality_status": "validated",
+          "content_status": "authentic"
+        },
+        "word_count": 5,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.95
+      },
+      {
+        "candidate_id": "too-long",
+        "sentence": "The calm river, which crossed the wide valley after the storm, carried leaves toward the distant town.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+          "source_id": "open-record-2",
+          "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-2" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 18,
+        "clause_depth": 2,
+        "structure_difficulty": 3,
+        "non_target_unknown_ratio": 0.1,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      },
+      {
+        "candidate_id": "unknown-license",
+        "sentence": "The calm river carried stones.",
+        "target_sense_key": "calm-1",
+        "source_kind": "article",
+        "source_id": "article-record-1",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 5,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.9
+      },
+      {
+        "candidate_id": "generated-helper",
+        "sentence": "The calm river carried a small boat.",
+        "target_sense_key": "calm-1",
+        "source_kind": "ai_candidate",
+        "source_id": "ai-candidate-1",
+        "word_count": 7,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.9
+      },
+      {
+        "candidate_id": "pending-anchor",
+        "sentence": "The calm river carried a branch.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-record-pending-candidate",
+        "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-pending-candidate" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "pending",
+        "content_status": "authentic",
+        "word_count": 5,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.9
+      },
+      {
+        "candidate_id": "local-exam",
+        "sentence": "The private sample changed after testing.",
+        "target_sense_key": "calm-1",
+        "source_kind": "user_local_exam_material",
+        "source_id": "local-material-1",
+        "license_kind": "user_owned",
+        "ownership": "private",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 6,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      },
+      {
+        "candidate_id": "too-many-unknowns",
+        "sentence": "The calm river carried leaves.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+          "source_id": "open-record-3",
+          "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-3" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 5,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.9,
+        "independent_comprehensibility": true,
+        "naturalness": 0.7
+      },
+      {
+        "candidate_id": "context-dependent",
+        "sentence": "It changed after that.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+          "source_id": "open-record-4",
+          "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-record-4" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 4,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": false,
+        "naturalness": 0.7
+      }
+    ],
+    "all_invalid_candidates": [
+      {
+        "candidate_id": "invalid-license",
+        "sentence": "The calm river carried stones.",
+        "target_sense_key": "calm-1",
+        "source_kind": "article",
+        "source_id": "article-record-2",
+        "quality_status": "validated",
+        "content_status": "authentic"
+      },
+      {
+        "candidate_id": "invalid-sense",
+        "sentence": "The calm river carried leaves.",
+        "target_sense_key": "other-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-record-5",
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic"
+      },
+      {
+        "candidate_id": "invalid-generated",
+        "sentence": "The calm river carried a boat.",
+        "target_sense_key": "calm-1",
+        "source_kind": "ai_candidate",
+        "source_id": "ai-candidate-2"
+      }
+    ],
+    "tie_break_candidates": [
+      {
+        "candidate_id": "candidate-b",
+        "sentence": "A quiet river moved.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-tie-b",
+        "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-tie-b" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 4,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      },
+      {
+        "candidate_id": "candidate-a",
+        "sentence": "A calm river moved.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-tie-a",
+        "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-tie-a" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 4,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      }
+    ],
+    "late_transfer_candidates": [
+      {
+        "candidate_id": "local-late-transfer",
+        "sentence": "The private sample changed after testing.",
+        "target_sense_key": "calm-1",
+        "source_kind": "user_local_exam_material",
+        "source_id": "local-material-1",
+        "source_locator": { "locator_version": "source-locator.v1", "local_locator": "page-2-item-3" },
+        "license_kind": "user_owned",
+        "ownership": "private",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 6,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      }
+    ],
+    "duplicate_id_candidates": [
+      {
+        "candidate_id": "duplicate-open",
+        "sentence": "A calm river moved.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-duplicate-a",
+        "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-duplicate-a" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 4,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      },
+      {
+        "candidate_id": "duplicate-open",
+        "sentence": "A calm river moved.",
+        "target_sense_key": "calm-1",
+        "source_kind": "open_corpus",
+        "source_id": "open-duplicate-b",
+        "source_locator": { "locator_version": "source-locator.v1", "record_id": "open-duplicate-b" },
+        "license_kind": "licensed_open",
+        "ownership": "public",
+        "quality_status": "validated",
+        "content_status": "authentic",
+        "word_count": 4,
+        "clause_depth": 0,
+        "structure_difficulty": 0,
+        "non_target_unknown_ratio": 0.05,
+        "independent_comprehensibility": true,
+        "naturalness": 0.8
+      }
+    ]
+  }
+}

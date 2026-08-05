@@ -271,6 +271,51 @@ and rejects geographical or biographical name entries. Versioned
 General meanings use primary black text; contextual meanings use muted gray
 text.
 
+## Personalized Vocabulary Learning Direction
+
+The next vocabulary layer treats the learner as a model that is updated from
+observed learning behavior, but it deliberately separates memory, knowledge
+needs, and presentation preference:
+
+- Preview is a single low-pressure exposure. It presents the word form, one
+  primary sense, and one understandable validated sentence. It does not try to
+  create same-day repetition or require immediate recall.
+- FSRS remains the per-`LearningUnit` memory scheduler after graduation. A
+  `LearningUnit` is a word plus one target sense, not an undifferentiated list
+  of every dictionary meaning.
+- A skill estimator derives weak areas such as part of speech, inflection,
+  derivation, irregular forms, primary/secondary senses, collocation, and
+  context transfer from append-only events.
+- A constrained curriculum planner decides what must be learned. Weak,
+  important skills receive coverage even when the learner dislikes them or
+  often skips them.
+- A preference model ranks only the presentation form, such as a minimal
+  sentence, audio-first prompt, cloze, or later original context. It may make a
+  required item easier to approach, but it may not remove required content.
+
+Primary-sense selection is evidence based and deterministic. It combines a
+learner-dictionary ordering, WordNet most-frequent-sense evidence, and
+general/exam-corpus evidence, records disagreement, and leaves uncertain cases
+unresolved. Whole-word frequency from ECDICT is useful metadata but cannot by
+itself select a sense. Sentence candidates are provenance-first: user-owned
+articles and subtitles plus redistributable open corpora are preferred. AI may
+retrieve, rank, simplify a display gloss, or explain an example, but generated
+text is not labeled as an authentic source sentence and the original evidence
+is immutable.
+
+Raw `LearningEvent` records remain the source of truth. Skill estimates,
+preference estimates, reports, and plans are disposable derived state that can
+be rebuilt when an algorithm changes. Every decision carries algorithm and
+content versions; replacements first run in historical replay and shadow mode,
+then behind a feature flag with a deterministic fallback. A new model must not
+silently rewrite FSRS ratings, history, or all existing due dates.
+
+The rollout is intentionally progressive: deterministic contracts and
+baselines first, diagnostic and preference models in shadow mode second, and
+bounded adaptive control only after enough cross-day evidence exists. The
+detailed ownership, interfaces, rollout gates, and parallel task prompts are in
+[`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md).
+
 Do not change this schema without an explicit migration plan.
 
 ## Current High-Risk Areas

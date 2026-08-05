@@ -1,0 +1,908 @@
+{
+  "base": {
+    "as_of": "2026-08-05T00:00:00.000Z",
+    "time_budget_ms": 60000,
+    "policy": {
+      "schema_version": "curriculum-policy.v1",
+      "policy_version": "curriculum-policy.v1:fixture",
+      "planner_version": "curriculum-planner.v1:fixture",
+      "same_day_max_items": 4,
+      "per_learning_unit_same_day_max_items": 1,
+      "weak_skill_quotas": {
+        "morphology.inflection": 1,
+        "pos.verb": 1
+      },
+      "max_preference_weight": 0.1,
+      "weights": {
+        "memory_urgency": 0.3,
+        "skill_gap": 0.35,
+        "importance": 0.25,
+        "novelty_fatigue": 0.1,
+        "presentation_preference": 0.8
+      }
+    },
+    "skill_profile": {
+      "schema_version": "skill-profile.v1",
+      "estimator_version": "skill-estimator.v1:fixture",
+      "estimates": [
+        {
+          "skill_id": "morphology.inflection",
+          "mastery_mean": 0.2,
+          "uncertainty": 0.1,
+          "eligible_evidence_count": 8,
+          "importance": 0.8,
+          "is_weak": true
+        },
+        {
+          "skill_id": "pos.verb",
+          "mastery_mean": 0.25,
+          "uncertainty": 0.15,
+          "eligible_evidence_count": 7,
+          "importance": 0.9,
+          "is_weak": true
+        },
+        {
+          "skill_id": "sense.primary",
+          "mastery_mean": 0.9,
+          "uncertainty": 0.05,
+          "eligible_evidence_count": 18,
+          "importance": 0.5
+        }
+      ]
+    },
+    "presentation_rankings": {
+      "schema_version": "presentation-ranking.v1",
+      "ranking_version": "presentation-ranker.v1:fixture",
+      "by_learning_unit": {
+        "unit-optional-important": [
+          { "variant_id": "audio", "score": 0.99 },
+          { "variant_id": "context", "score": 0.4 }
+        ],
+        "unit-weak-morphology": [
+          { "variant_id": "video", "score": 0.99 },
+          { "variant_id": "context", "score": 0.65 },
+          { "variant_id": "word", "score": 0.2 }
+        ],
+        "unit-weak-verb": [
+          { "variant_id": "flash", "score": 0.98 },
+          { "variant_id": "context", "score": 0.55 }
+        ]
+      }
+    },
+    "same_day_ledger": {
+      "schema_version": "same-day-ledger.v1",
+      "local_day": "2026-08-05",
+      "entries": [
+        {
+          "learning_unit_id": "unit-existing-mature",
+          "is_mature": true,
+          "occurred_at": "2026-08-05T00:01:00.000Z"
+        }
+      ]
+    },
+    "candidates": [
+      {
+        "learning_unit_id": "unit-weak-verb",
+        "due_at": "2026-08-04T23:00:00.000Z",
+        "memory_priority": 0.65,
+        "skill_tags": ["pos.verb"],
+        "importance": 0.45,
+        "estimated_duration_ms": 30000,
+        "allowed_presentations": ["context", "word"],
+        "content_status": "available",
+        "novelty": 0.8,
+        "fatigue": 0.1
+      },
+      {
+        "learning_unit_id": "unit-weak-morphology",
+        "due_at": "2026-08-04T22:00:00.000Z",
+        "memory_priority": 0.55,
+        "skill_tags": ["morphology.inflection"],
+        "importance": 0.35,
+        "estimated_duration_ms": 25000,
+        "allowed_presentations": ["context", "word"],
+        "content_status": "available",
+        "novelty": 0.7,
+        "fatigue": 0.1
+      },
+      {
+        "learning_unit_id": "unit-optional-important",
+        "due_at": "2026-08-04T21:00:00.000Z",
+        "memory_priority": 0.6,
+        "skill_tags": ["sense.primary"],
+        "importance": 0.98,
+        "estimated_duration_ms": 30000,
+        "allowed_presentations": ["context", "audio"],
+        "content_status": "available",
+        "novelty": 0.9,
+        "fatigue": 0.05
+      },
+      {
+        "learning_unit_id": "unit-mature",
+        "due_at": "2026-08-04T20:00:00.000Z",
+        "memory_priority": 0.9,
+        "skill_tags": ["sense.primary"],
+        "importance": 0.9,
+        "estimated_duration_ms": 10000,
+        "allowed_presentations": ["audio"],
+        "content_status": "available",
+        "maturity": "mature"
+      },
+      {
+        "learning_unit_id": "unit-not-due",
+        "due_at": "2026-08-06T00:00:00.000Z",
+        "eligible": false,
+        "memory_priority": 1,
+        "skill_tags": ["pos.verb"],
+        "importance": 1,
+        "estimated_duration_ms": 1000,
+        "allowed_presentations": ["context"],
+        "content_status": "available"
+      },
+      {
+        "learning_unit_id": "unit-invalid-content",
+        "due_at": "2026-08-04T19:00:00.000Z",
+        "memory_priority": 1,
+        "skill_tags": ["pos.verb"],
+        "importance": 1,
+        "estimated_duration_ms": 1000,
+        "allowed_presentations": ["context"],
+        "content_status": "pending"
+      },
+      {
+        "learning_unit_id": "unit-not-eligible",
+        "due_at": null,
+        "eligible": false,
+        "memory_priority": 0.5,
+        "skill_tags": ["pos.verb"],
+        "importance": 0.5,
+        "estimated_duration_ms": 1000,
+        "allowed_presentations": ["context"],
+        "content_status": "available"
+      }
+    ]
+  },
+  "scenarios": {
+    "budget": {
+      "time_budget_ms": 30000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:budget",
+        "weak_skill_quotas": []
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-long",
+          "due_at": "2026-08-04T20:00:00.000Z",
+          "eligible": true,
+          "memory_priority": 1,
+          "skill_tags": [],
+          "importance": 1,
+          "estimated_duration_ms": 40000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-short",
+          "due_at": "2026-08-04T21:00:00.000Z",
+          "eligible": true,
+          "memory_priority": 0.5,
+          "skill_tags": [],
+          "importance": 0.2,
+          "estimated_duration_ms": 10000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "due_priority_competition": {
+      "time_budget_ms": 100,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:due-priority",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": []
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-due-review",
+          "is_due": true,
+          "queue_kind": "due_review",
+          "memory_priority": 0.1,
+          "skill_tags": [],
+          "importance": 0.1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-high-acquisition",
+          "eligible": true,
+          "queue_kind": "acquisition",
+          "memory_priority": 1,
+          "skill_tags": [],
+          "importance": 1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "queue_priority_order": {
+      "as_of": "2026-08-05T00:15:00.000Z",
+      "time_budget_ms": 300,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:queue-order",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": []
+      },
+      "same_day_ledger": {
+        "local_day": "2026-08-05",
+        "entries": [
+          {
+            "learning_unit_id": "unit-relearning",
+            "entry_kind": "attempt",
+            "occurred_at": "2026-08-05T00:00:00.000Z"
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-acquisition",
+          "eligible": true,
+          "queue_kind": "acquisition",
+          "importance": 1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-reassessment",
+          "eligible": true,
+          "queue_kind": "reassessment",
+          "importance": 0.1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-relearning",
+          "eligible": true,
+          "queue_kind": "relearning",
+          "importance": 0.1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-due-order",
+          "is_due": true,
+          "queue_kind": "due_review",
+          "importance": 0.1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "quota_conflict": {
+      "time_budget_ms": 1000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:quota-conflict",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": {
+          "skill.alpha": 1,
+          "skill.beta": 1
+        }
+      },
+      "skill_profile": {
+        "estimator_version": "skill-estimator.v1:quota-conflict",
+        "estimates": [
+          { "skill_id": "skill.alpha", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 2, "is_weak": true },
+          { "skill_id": "skill.beta", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 2, "is_weak": true }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-alpha",
+          "eligible": true,
+          "skill_tags": ["skill.alpha"],
+          "importance": 0.5,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-beta",
+          "eligible": true,
+          "skill_tags": ["skill.beta"],
+          "importance": 0.5,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "quota_search_counterexample": {
+      "time_budget_ms": 100,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:quota-search",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": {
+          "skill.A": 2,
+          "skill.B": 1
+        }
+      },
+      "skill_profile": {
+        "estimator_version": "skill-estimator.v1:quota-search",
+        "estimates": [
+          { "skill_id": "skill.A", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 3, "is_weak": true },
+          { "skill_id": "skill.B", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 3, "is_weak": true }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-AB",
+          "eligible": true,
+          "skill_tags": ["skill.A", "skill.B"],
+          "importance": 1,
+          "estimated_duration_ms": 80,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-A1",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "importance": 0.5,
+          "estimated_duration_ms": 40,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-A2",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "importance": 0.5,
+          "estimated_duration_ms": 40,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-B1",
+          "eligible": true,
+          "skill_tags": ["skill.B"],
+          "importance": 0.5,
+          "estimated_duration_ms": 20,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "quota_search_25th_unique": {
+      "time_budget_ms": 1,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:quota-search-25th",
+        "same_day_max_items": 100,
+        "weak_skill_quotas": {
+          "skill.A": 1,
+          "skill.B": 1
+        }
+      },
+      "skill_profile": {
+        "estimator_version": "skill-estimator.v1:quota-search-25th",
+        "estimates": [
+          { "skill_id": "skill.A", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 3, "is_weak": true },
+          { "skill_id": "skill.B", "mastery_mean": 0.2, "uncertainty": 0.1, "eligible_evidence_count": 3, "is_weak": true }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-coverage-01",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-02",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-03",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-04",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-05",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-06",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-07",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-08",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-09",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-10",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-11",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-12",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-13",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-14",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-15",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-16",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-17",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-18",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-19",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-20",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-21",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-22",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-23",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-24",
+          "eligible": true,
+          "skill_tags": ["skill.A"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-coverage-25",
+          "eligible": true,
+          "skill_tags": ["skill.A", "skill.B"],
+          "estimated_duration_ms": 1,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "ranker_score_not_preference": {
+      "time_budget_ms": 100,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:ranker-score-boundary",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": [],
+        "weights": {
+          "memory_urgency": 0,
+          "skill_gap": 0,
+          "importance": 1,
+          "novelty_fatigue": 0,
+          "presentation_preference": 0.1
+        }
+      },
+      "presentation_rankings": {
+        "ranking_version": "presentation-ranker.v1:composite",
+        "by_learning_unit": {
+          "unit-low-content": [
+            { "variant_id": "context", "score": 0.99 }
+          ],
+          "unit-high-content": [
+            { "variant_id": "context", "base_score": 0.01 }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-low-content",
+          "eligible": true,
+          "importance": 0.1,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-high-content",
+          "eligible": true,
+          "importance": 0.9,
+          "estimated_duration_ms": 100,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "cold_start_uncertain": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:cold-start",
+        "weak_skill_quotas": []
+      },
+      "skill_profile": {
+        "estimator_version": "skill-estimator.v1:cold-start",
+        "estimates": [
+          {
+            "skill_id": "skill.cold",
+            "mastery_mean": 0.05,
+            "uncertainty": 0.98,
+            "eligible_evidence_count": 0,
+            "is_weak": true
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-cold-start",
+          "eligible": true,
+          "skill_tags": ["skill.cold"],
+          "importance": 0.8,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "eligible_overrides_not_due": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:eligible-overrides-not-due",
+        "weak_skill_quotas": []
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-explicitly-eligible",
+          "eligible": true,
+          "is_due": false,
+          "due_at": "2026-08-06T00:00:00.000Z",
+          "skill_tags": [],
+          "importance": 0.5,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "signed_preference": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:signed-preference",
+        "weak_skill_quotas": [],
+        "max_preference_weight": 0.2,
+        "weights": {
+          "memory_urgency": 0,
+          "skill_gap": 0,
+          "importance": 0,
+          "novelty_fatigue": 0,
+          "presentation_preference": 0.2
+        }
+      },
+      "presentation_rankings": {
+        "ranking_version": "presentation-ranker.v1:signed",
+        "by_learning_unit": {
+          "unit-disliked-context": [
+            { "variant_id": "context", "preference_score": -0.75 }
+          ]
+        }
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-disliked-context",
+          "eligible": true,
+          "skill_tags": [],
+          "importance": 0,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "all_invalid_content": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:invalid-content",
+        "weak_skill_quotas": []
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-invalid-a",
+          "eligible": true,
+          "skill_tags": [],
+          "importance": 0.5,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "pending"
+        },
+        {
+          "learning_unit_id": "unit-invalid-b",
+          "eligible": true,
+          "skill_tags": [],
+          "importance": 0.5,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "rejected"
+        }
+      ]
+    },
+    "single_weak_candidate_invalid": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:single-weak-invalid",
+        "weak_skill_quotas": { "pos.verb": 1 }
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-only-verb",
+          "eligible": true,
+          "skill_tags": ["pos.verb"],
+          "importance": 0.9,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "missing"
+        }
+      ]
+    },
+    "same_day_revisit_allowed": {
+      "as_of": "2026-08-05T00:15:00.000Z",
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:revisit-allowed",
+        "same_day_max_items": 5,
+        "same_day_revisit_max_per_learning_unit": 1,
+        "weak_skill_quotas": []
+      },
+      "same_day_ledger": {
+        "local_day": "2026-08-05",
+        "entries": [
+          {
+            "learning_unit_id": "unit-current-revisit",
+            "entry_kind": "attempt",
+            "occurred_at": "2026-08-05T00:00:00.000Z"
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-current-revisit",
+          "eligible": true,
+          "queue_kind": "revisit",
+          "skill_tags": [],
+          "importance": 1,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "same_day_revisit_limit": {
+      "as_of": "2026-08-05T00:30:00.000Z",
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:revisit-limit",
+        "same_day_max_items": 5,
+        "same_day_revisit_max_per_learning_unit": 1,
+        "weak_skill_quotas": []
+      },
+      "same_day_ledger": {
+        "local_day": "2026-08-05",
+        "entries": [
+          {
+            "learning_unit_id": "unit-current-revisit",
+            "entry_kind": "attempt",
+            "is_mature": true,
+            "occurred_at": "2026-08-05T00:00:00.000Z"
+          },
+          {
+            "learning_unit_id": "unit-current-revisit",
+            "entry_kind": "revisit",
+            "is_mature": true,
+            "occurred_at": "2026-08-05T00:15:00.000Z"
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-current-revisit",
+          "eligible": true,
+          "maturity": "mature",
+          "queue_kind": "revisit",
+          "skill_tags": [],
+          "importance": 1,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "mature_other_unit_allowed": {
+      "time_budget_ms": 10000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:mature-other-unit",
+        "same_day_max_items": 5,
+        "same_day_revisit_max_per_learning_unit": 1,
+        "weak_skill_quotas": []
+      },
+      "same_day_ledger": {
+        "local_day": "2026-08-05",
+        "entries": [
+          { "learning_unit_id": "unit-previous-mature", "is_mature": true }
+        ]
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-current-mature",
+          "eligible": true,
+          "maturity": "mature",
+          "skill_tags": [],
+          "importance": 1,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    },
+    "tie_break": {
+      "time_budget_ms": 1000,
+      "policy": {
+        "policy_version": "curriculum-policy.v1:tie-break",
+        "same_day_max_items": 10,
+        "weak_skill_quotas": [],
+        "weights": {
+          "memory_urgency": 0,
+          "skill_gap": 0,
+          "importance": 0,
+          "novelty_fatigue": 0,
+          "presentation_preference": 0
+        }
+      },
+      "candidates": [
+        {
+          "learning_unit_id": "unit-tie-b",
+          "eligible": true,
+          "skill_tags": [],
+          "importance": 0,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        },
+        {
+          "learning_unit_id": "unit-tie-a",
+          "eligible": true,
+          "skill_tags": [],
+          "importance": 0,
+          "estimated_duration_ms": 1000,
+          "allowed_presentations": ["context"],
+          "content_status": "available"
+        }
+      ]
+    }
+  }
+}

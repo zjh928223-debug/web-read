@@ -1,0 +1,325 @@
+{
+  "schema_version": "vocabulary-personalization-skills.fixture.v1",
+  "events": {
+    "mixed": [
+      {
+        "event_id": "evt-success-verb",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-verb-1",
+        "occurred_at": "2026-07-01T08:00:00Z",
+        "skill_tags": ["pos.verb", "morphology.inflection"],
+        "rating": "good",
+        "prompt_mode": "word_only",
+        "cue_level": "none",
+        "active_duration_ms": 1800,
+        "duration_ms": 2200
+      },
+      {
+        "event_id": "evt-partial-verb",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-verb-2",
+        "occurred_at": "2026-07-02T08:00:00Z",
+        "skill_tags": ["pos.verb"],
+        "rating": "hard",
+        "prompt_mode": "original_context",
+        "cue_level": "target_sentence",
+        "active_duration_ms": 2400,
+        "duration_ms": 2600
+      },
+      {
+        "event_id": "evt-failure-verb",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-verb-3",
+        "occurred_at": "2026-07-03T08:00:00Z",
+        "skill_tags": ["pos.verb"],
+        "rating": "again",
+        "prompt_mode": "transfer_context",
+        "cue_level": "none",
+        "active_duration_ms": 3000,
+        "duration_ms": 3400
+      },
+      {
+        "event_id": "evt-skip-verb",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-verb-4",
+        "occurred_at": "2026-07-04T08:00:00Z",
+        "skill_tags": ["pos.verb"],
+        "skipped": true,
+        "presentation_variant": "dense",
+        "presentation_disliked": true,
+        "prompt_mode": "transfer_context",
+        "cue_level": "none"
+      },
+      {
+        "event_id": "evt-success-noun",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-noun-1",
+        "occurred_at": "2026-07-04T09:00:00Z",
+        "skill_tags": ["pos.noun", "sense.primary"],
+        "outcome": "success",
+        "prompt_mode": "original_context",
+        "cue_level": "target_sentence",
+        "active_duration_ms": 2100,
+        "duration_ms": 2300
+      },
+      {
+        "event_id": "evt-success-noun-2",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-noun-2",
+        "occurred_at": "2026-07-05T09:00:00Z",
+        "skill_tags": ["pos.noun", "sense.primary"],
+        "outcome": "success",
+        "prompt_mode": "word_only",
+        "cue_level": "none",
+        "active_duration_ms": 1900,
+        "duration_ms": 2200
+      },
+      {
+        "event_id": "evt-success-noun-3",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-noun-3",
+        "occurred_at": "2026-07-06T09:00:00Z",
+        "skill_tags": ["pos.noun"],
+        "outcome": "success",
+        "prompt_mode": "word_only",
+        "cue_level": "none",
+        "active_duration_ms": 2000,
+        "duration_ms": 2400
+      }
+    ],
+    "quality_signals": [
+      {
+        "event_id": "evt-answer-revealed",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-answer",
+        "occurred_at": "2026-07-07T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "answer_revealed_before_rating": true,
+        "prompt_mode": "original_context",
+        "cue_level": "translation",
+        "active_duration_ms": 2200,
+        "duration_ms": 2500
+      },
+      {
+        "event_id": "evt-strong-cue",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-cue",
+        "occurred_at": "2026-07-08T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "answer_revealed_before_rating": false,
+        "prompt_mode": "original_context",
+        "cue_level": "strong",
+        "active_duration_ms": 2300,
+        "duration_ms": 2500
+      },
+      {
+        "event_id": "evt-legacy",
+        "learning_unit_id": "unit-adj-legacy",
+        "occurred_at": "2026-07-09T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "is_legacy": true,
+        "training_eligible": false,
+        "active_duration_ms": 2000,
+        "duration_ms": 2400
+      },
+      {
+        "event_id": "evt-long-duration",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-long",
+        "occurred_at": "2026-07-10T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "active_duration_ms": 1800001,
+        "duration_ms": 1800001
+      },
+      {
+        "event_id": "evt-inconsistent-duration",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-invalid-duration",
+        "occurred_at": "2026-07-11T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "again",
+        "active_duration_ms": 4000,
+        "duration_ms": 1000
+      },
+      {
+        "event_id": "evt-content-difficulty",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-difficult-content",
+        "occurred_at": "2026-07-12T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "again",
+        "content_difficulty": "high",
+        "presentation_variant": "long_context",
+        "presentation_feedback": "too_hard_presentation",
+        "active_duration_ms": 2600,
+        "duration_ms": 2900
+      },
+      {
+        "event_id": "evt-unreliable-duration",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-unreliable-duration",
+        "occurred_at": "2026-07-13T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "active_duration_ms": 120000,
+        "duration_ms": 120000,
+        "active_duration_reliable": false
+      },
+      {
+        "event_id": "evt-training-ineligible",
+        "learning_unit_id": "unit-adj-training-ineligible",
+        "occurred_at": "2026-07-17T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "training_eligible": false,
+        "exclusion_reasons": ["PROMPT_MODE_MISSING"]
+      },
+      {
+        "event_id": "evt-training-exclusion",
+        "training_eligible": true,
+        "learning_unit_id": "unit-adj-training-exclusion",
+        "occurred_at": "2026-07-18T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "exclusion_reasons": ["IMPORTED_EVENT"]
+      },
+      {
+        "event_id": "evt-invalid-content",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-adj-invalid-content",
+        "occurred_at": "2026-07-19T08:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "again",
+        "content_valid": false
+      },
+      {
+        "event_id": "evt-training-eligibility-missing",
+        "learning_unit_id": "unit-adj-training-eligibility-missing",
+        "occurred_at": "2026-07-19T09:00:00Z",
+        "skill_tags": ["pos.adjective"],
+        "rating": "good",
+        "exclusion_reasons": []
+      }
+    ],
+    "duplicates": {
+      "exact": [
+        {
+          "event_id": "evt-dedupe-exact",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "learning_unit_id": "unit-dedupe-exact",
+          "occurred_at": "2026-07-20T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "good"
+        },
+        {
+          "event_id": "evt-dedupe-exact",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "learning_unit_id": "unit-dedupe-exact",
+          "occurred_at": "2026-07-20T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "good"
+        }
+      ],
+      "conflict": [
+        {
+          "event_id": "evt-dedupe-conflict",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "learning_unit_id": "unit-dedupe-conflict",
+          "occurred_at": "2026-07-21T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "good"
+        },
+        {
+          "event_id": "evt-dedupe-conflict",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "learning_unit_id": "unit-dedupe-conflict",
+          "occurred_at": "2026-07-21T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "again"
+        }
+      ],
+      "missing_id": [
+        {
+          "learning_unit_id": "unit-missing-id-1",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "occurred_at": "2026-07-22T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "good"
+        },
+        {
+          "learning_unit_id": "unit-missing-id-2",
+          "training_eligible": true,
+          "exclusion_reasons": [],
+          "occurred_at": "2026-07-23T08:00:00Z",
+          "skill_tags": ["pos.adverb"],
+          "rating": "good"
+        }
+      ]
+    },
+    "identity": [
+      {
+        "event_id": "evt-word-only-sense-a",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "word_id": "word-shared",
+        "target_sense_key": "sense-a",
+        "occurred_at": "2026-07-24T08:00:00Z",
+        "skill_tags": ["sense.primary"],
+        "rating": "good"
+      },
+      {
+        "event_id": "evt-word-only-sense-b",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "word_id": "word-shared",
+        "target_sense_key": "sense-b",
+        "occurred_at": "2026-07-25T08:00:00Z",
+        "skill_tags": ["sense.secondary"],
+        "rating": "good"
+      }
+    ],
+    "unknown_and_custom": [
+      {
+        "event_id": "evt-unknown-skill",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-unknown-1",
+        "occurred_at": "2026-07-14T08:00:00Z",
+        "skill_tags": ["syntax.future_dimension"],
+        "rating": "success"
+      },
+      {
+        "event_id": "evt-known-and-unknown",
+        "training_eligible": true,
+        "exclusion_reasons": [],
+        "learning_unit_id": "unit-known-unknown-1",
+        "occurred_at": "2026-07-15T08:00:00Z",
+        "skill_tags": ["pos.adverb", "syntax.future_dimension"],
+        "rating": "good"
+      }
+    ]
+  }
+}
