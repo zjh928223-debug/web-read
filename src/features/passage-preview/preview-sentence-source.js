@@ -4,6 +4,7 @@ import {
 } from '../../services/vocabulary/personalization/sentence-source-registry.js'
 import { createWordnikSentenceSourceProvider } from '../../services/vocabulary/personalization/wordnik-sentence-source.js'
 import { findRealPreviewSentence } from './tatoeba-preview-sentence.js'
+import { findWordnikPreviewSentence } from './wordnik-preview-sentence.js'
 
 export { REAL_SENTENCE_STATUS }
 
@@ -16,10 +17,14 @@ export function createPreviewSentenceSourceRegistry(options = {}) {
         enabled: options.tatoebaEnabled !== false,
         priority: 100,
         transport: 'same-origin-api',
-        persistence: 'none',
+        persistence: 'local-preview',
         findPreviewSentence: options.tatoebaResolver || findRealPreviewSentence,
       },
-      createWordnikSentenceSourceProvider(options.wordnik),
+      createWordnikSentenceSourceProvider({
+        enabled: options.wordnik?.enabled !== false,
+        resolver: options.wordnik?.resolver || findWordnikPreviewSentence,
+        priority: options.wordnik?.priority,
+      }),
     ],
   })
 }

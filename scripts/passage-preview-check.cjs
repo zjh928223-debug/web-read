@@ -32,6 +32,7 @@ async function run() {
   await verifySentenceSourceRegistry()
   await verifyRealSentenceSelection()
   await verifyRealSentenceEndpoint()
+  await verifyWordnikSentenceEndpoint()
   await verifyStrictSystemAria(pronunciation)
   await verifyStrictLocalAriaFallback(pronunciation)
   await verifyNonAriaRejection(pronunciation)
@@ -75,6 +76,7 @@ function verifyNoReviewOrDictionaryCoupling() {
   const sourceAdapter = read('src/features/passage-preview/tatoeba-preview-sentence.js')
   const sourceComposition = read('src/features/passage-preview/preview-sentence-source.js')
   const wordnikPort = read('src/services/vocabulary/personalization/wordnik-sentence-source.js')
+  const wordnikAdapter = read('src/features/passage-preview/wordnik-preview-sentence.js')
   assert.match(sourceAdapter, /rankSentenceCandidates/)
   assert.match(sourceAdapter, /target_sense_match/)
   assert.match(sourceAdapter, /CC BY 2\.0 FR/)
@@ -82,6 +84,10 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.doesNotMatch(componentSource, /from '\.\/tatoeba-preview-sentence\.js'/)
   assert.match(sourceComposition, /createWordnikSentenceSourceProvider/)
   assert.doesNotMatch(wordnikPort, /\bfetch\b|localStorage|indexedDB|repository|api\.wordnik\.com/i)
+  assert.match(wordnikAdapter, /WORDNIK_PREVIEW_ENDPOINT/)
+  assert.doesNotMatch(wordnikAdapter, /localStorage|indexedDB|savePassagePreviewData/i)
+  assert.match(componentSource, /result\.persistence !== 'none'/)
+  assert.match(componentSource, /Powered by Wordnik/)
 }
 
 function verifyProgressPersistence(storageModule, items) {
@@ -373,7 +379,7 @@ async function verifySentenceSourceRegistry() {
   const defaults = modules.composition.listPreviewSentenceSources()
   assert.deepEqual(defaults.map(({ id, enabled }) => ({ id, enabled })), [
     { id: 'tatoeba', enabled: true },
-    { id: 'wordnik', enabled: false },
+    { id: 'wordnik', enabled: true },
   ])
 
   let disabledWordnikCalls = 0
@@ -405,7 +411,44 @@ async function verifySentenceSourceRegistry() {
   })
   const selected = await enabledRegistry.findPreviewSentence({ word: 'fixture' })
   assert.equal(selected.providerId, 'wordnik')
+  assert.equal(selected.persistence, 'none')
   assert.equal(selected.sentence, 'This is a Wordnik fixture.')
+
+  let fetchCount = 0
+  const direct = await modules.wordnikAdapter.findWordnikPreviewSentence({
+    word: 'suspicion',
+    primaryMeaningZh: '怀疑',
+    targetSenseKey: 'suspicion:n:01',
+  }, {
+    fetchImpl: async () => {
+      fetchCount += 1
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [{
+              id: '77',
+              sentence: 'Her suspicion grew.',
+              providerName: 'fixture-provider',
+              wordUrl: 'https://www.wordnik.com/words/suspicion',
+            }],
+          }
+        },
+      }
+    },
+  })
+  assert.equal(direct.status, 'ready')
+  assert.equal(direct.translationZh, '')
+  assert.equal(direct.source.name, 'Wordnik')
+  assert.match(direct.source.url, /wordnik\.com\/words\/suspicion/)
+  assert.match(direct.source.poweredByLogoUrl, /wordnik_badge_a2\.png$/)
+  await modules.wordnikAdapter.findWordnikPreviewSentence({
+    word: 'suspicion',
+    primaryMeaningZh: '怀疑',
+    targetSenseKey: 'suspicion:n:01',
+  }, { fetchImpl: async () => assert.fail('formatted Wordnik result should use session memory') })
+  assert.equal(fetchCount, 1)
+  modules.wordnikAdapter.clearWordnikPreviewSessionCache()
 
   assert.throws(() => modules.registry.createSentenceSourceRegistry({
     providers: [
@@ -464,6 +507,86 @@ async function verifyRealSentenceEndpoint() {
   assert.match(upstreamUrls[0], /trans%3Alang=cmn/)
 }
 
+async function verifyWordnikSentenceEndpoint() {
+  const plugin = await import(pathToFileURL(path.join(
+    projectRoot,
+    'src/services/vocabulary/wordnik-sentence-vite-plugin.mjs',
+  )))
+
+  let fetchCount = 0
+  const missingKeyResponse = createJsonResponse()
+  await plugin.handleWordnikSentenceRequest(
+    { method: 'GET', url: `${plugin.WORDNIK_SENTENCE_ENDPOINT}?word=suspicion` },
+    missingKeyResponse,
+    () => assert.fail('Wordnik endpoint should handle the request'),
+    { fetchImpl: async () => { fetchCount += 1 } },
+  )
+  assert.equal(missingKeyResponse.statusCode, 503)
+  assert.equal(missingKeyResponse.json.code, 'WORDNIK_NOT_CONFIGURED')
+  assert.equal(fetchCount, 0)
+
+  let currentTime = 1_000_000
+  const budget = plugin.createWordnikHourlyBudget({ limit: 1, now: () => currentTime })
+  const response = createJsonResponse()
+  let upstreamUrl = ''
+  let upstreamApiKey = ''
+  await plugin.handleWordnikSentenceRequest(
+    { method: 'GET', url: `${plugin.WORDNIK_SENTENCE_ENDPOINT}?word=suspicion&limit=2` },
+    response,
+    () => assert.fail('Wordnik endpoint should handle the request'),
+    {
+      apiKey: 'fixture-secret',
+      budget,
+      fetchImpl: async (url, options) => {
+        fetchCount += 1
+        upstreamUrl = String(url)
+        upstreamApiKey = options.headers.api_key
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: (name) => ({
+            'x-ratelimit-remaining-hour': '99',
+            'x-ratelimit-remaining-minute': '4',
+          })[name] || null },
+          async json() {
+            return {
+              examples: [{
+                exampleId: 77,
+                text: 'Her suspicion grew.',
+                title: 'Fixture title',
+                provider: { name: 'Fixture provider' },
+                url: 'https://example.test/original',
+              }],
+            }
+          },
+        }
+      },
+    },
+  )
+  assert.equal(response.statusCode, 200)
+  assert.equal(response.headers['cache-control'], 'no-store')
+  assert.equal(response.json.items[0].id, '77')
+  assert.equal(response.json.items[0].sentence, 'Her suspicion grew.')
+  assert.equal(response.json.remainingHour, 99)
+  assert.equal(response.json.remainingMinute, 4)
+  assert.match(upstreamUrl, /api\.wordnik\.com\/v4\/word\.json\/suspicion\/examples/)
+  assert.doesNotMatch(upstreamUrl, /fixture-secret/)
+  assert.equal(upstreamApiKey, 'fixture-secret')
+
+  const limitedResponse = createJsonResponse()
+  await plugin.handleWordnikSentenceRequest(
+    { method: 'GET', url: `${plugin.WORDNIK_SENTENCE_ENDPOINT}?word=example` },
+    limitedResponse,
+    () => assert.fail('Wordnik endpoint should handle the request'),
+    { apiKey: 'fixture-secret', budget, fetchImpl: async () => { fetchCount += 1 } },
+  )
+  assert.equal(limitedResponse.statusCode, 429)
+  assert.equal(limitedResponse.json.code, 'WORDNIK_LOCAL_BUDGET_EXHAUSTED')
+  assert.equal(fetchCount, 1)
+  currentTime += 60 * 60 * 1000 + 1
+  assert.equal(budget.tryTake(), true, 'local budget should reopen after the rolling hour')
+}
+
 async function importSource(relativePath) {
   const source = read(relativePath)
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
@@ -503,6 +626,7 @@ async function importPreviewSentenceSources() {
   const wordnikPath = path.join(tempDir, 'wordnik-sentence-source.mjs')
   const rankingPath = path.join(tempDir, 'sentence-candidate-ranking.mjs')
   const tatoebaPath = path.join(tempDir, 'tatoeba-preview-sentence.mjs')
+  const wordnikAdapterPath = path.join(tempDir, 'wordnik-preview-sentence.mjs')
   const compositionPath = path.join(tempDir, 'preview-sentence-source.mjs')
 
   await fsPromises.writeFile(registryPath, read('src/services/vocabulary/personalization/sentence-source-registry.js'), 'utf8')
@@ -512,14 +636,19 @@ async function importPreviewSentenceSources() {
   await fsPromises.writeFile(tatoebaPath, read('src/features/passage-preview/tatoeba-preview-sentence.js')
     .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
     .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
+  await fsPromises.writeFile(wordnikAdapterPath, read('src/features/passage-preview/wordnik-preview-sentence.js')
+    .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
+    .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
   await fsPromises.writeFile(compositionPath, read('src/features/passage-preview/preview-sentence-source.js')
     .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs')
     .replace('../../services/vocabulary/personalization/wordnik-sentence-source.js', './wordnik-sentence-source.mjs')
-    .replace('./tatoeba-preview-sentence.js', './tatoeba-preview-sentence.mjs'), 'utf8')
+    .replace('./tatoeba-preview-sentence.js', './tatoeba-preview-sentence.mjs')
+    .replace('./wordnik-preview-sentence.js', './wordnik-preview-sentence.mjs'), 'utf8')
 
   return {
     composition: await import(`${pathToFileURL(compositionPath).href}?v=${Date.now()}`),
     registry: await import(`${pathToFileURL(registryPath).href}?v=${Date.now()}`),
+    wordnikAdapter: await import(`${pathToFileURL(wordnikAdapterPath).href}?v=${Date.now()}`),
   }
 }
 

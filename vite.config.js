@@ -1,12 +1,14 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
+import { createWordnikSentenceVitePlugin } from './src/services/vocabulary/wordnik-sentence-vite-plugin.mjs'
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
   const ecdictServiceUrl = pathToFileURL(resolve(
     __dirname,
@@ -17,6 +19,9 @@ export default defineConfig(() => {
     vue(),
     createAriaEdgeTtsVitePlugin(),
     createTatoebaSentenceVitePlugin(),
+    createWordnikSentenceVitePlugin({
+      apiKey: process.env.WORDNIK_API_KEY || env.WORDNIK_API_KEY,
+    }),
     createEcdictVitePlugin({
       enabled: ecdictEnabled,
       databasePath: process.env.ECDICT_DATABASE_PATH,

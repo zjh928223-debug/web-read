@@ -87,15 +87,26 @@
 - **AND** 页面显示语料名称、许可、作者或句子记录链接
 - **AND** 页面只显示这一条句子，不追加同日第二、第三个重复语境
 
-#### Scenario: Wordnik 预留来源默认关闭
-- **WHEN** 系统使用默认首次接触配置
-- **THEN** 来源注册表包含可识别的 Wordnik provider slot，但其状态为 disabled
-- **AND** 该 slot 不发起网络请求、不读取 API key、不写入本地缓存或 IndexedDB
+#### Scenario: Tatoeba 无合格句时调用 Wordnik
+- **WHEN** Tatoeba 未返回符合首次接触约束的句子且服务端已配置 `WORDNIK_API_KEY`
+- **THEN** 来源注册表调用 Wordnik provider 并通过同源服务端端点请求 `/examples`
+- **AND** API key 不得进入浏览器 bundle、请求 URL、响应、日志或本地持久化数据
+- **AND** Wordnik 候选仍须通过词形、来源和首次接触难度约束
 
-#### Scenario: 后续注入 Wordnik resolver
-- **WHEN** 未来显式启用 Wordnik 并注入符合 provider contract 的 resolver
-- **THEN** 预习 UI 与句子排序调用方无需改写即可接收统一真实句结果
-- **AND** Wordnik 结果仍必须满足目标义项、来源、许可和首次接触难度约束
+#### Scenario: Wordnik 无密钥或额度不足
+- **WHEN** `WORDNIK_API_KEY` 未配置、本地每小时 80 次安全预算耗尽或官方 rate-limit 响应拒绝请求
+- **THEN** Wordnik provider 返回 unavailable，页面继续使用既有无句安全状态
+- **AND** 系统不得自动重试、绕过配额或改用 AI/考试长句
+
+#### Scenario: Wordnik 结果只在会话内暂存
+- **WHEN** 当前页面会话已为同一词和目标义取得格式化 Wordnik 例句
+- **THEN** 往返导航可复用该格式化结果而不再次调用 API
+- **AND** 原始或格式化 Wordnik 数据均不得写入 localStorage、IndexedDB 或独立本地语料仓库
+
+#### Scenario: Wordnik 没有中文整句翻译
+- **WHEN** 页面展示 Wordnik 例句
+- **THEN** 页面明确说明整句中文翻译暂缺，不得把左侧主要义伪装成整句翻译
+- **AND** 页面链接到该词的 Wordnik 页面并显示官方未缩放的 `Powered by Wordnik` badge
 
 #### Scenario: 只有剑雅长句匹配
 - **WHEN** 目标词在用户本地考试材料中存在，但句子不符合首次接触难度或来源策略

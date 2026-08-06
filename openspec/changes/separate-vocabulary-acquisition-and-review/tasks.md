@@ -185,3 +185,11 @@
 - [x] 20.1 增加版本化真实句 provider registry 与默认关闭的 Wordnik 注入入口；占位入口不得包含 endpoint、API key、fetch 或持久化行为。
 - [x] 20.2 将首次接触页从直接调用 Tatoeba 改为调用通用来源选择器，同时保持 Tatoeba 为默认启用来源和现有安全回退行为。
 - [x] 20.3 增加 focused verification，覆盖默认 provider 顺序、Wordnik disabled 零调用、显式 resolver 注入、重复 provider 拒绝及无网络/缓存/IndexedDB 耦合。
+
+## 21. Wave C3：Wordnik 真实调用
+
+- [x] 21.1 新增 Wordnik Vite/Node 同源代理，从 `WORDNIK_API_KEY` 服务端环境读取密钥，请求官方 `/examples`，规范化例句与来源定位，并保证响应和日志不泄露密钥。
+- [x] 21.2 增加每小时 80 次本地安全预算、官方 rate-limit header 读取、无密钥/限额/上游失败安全回退与 no-store 响应；不得自动重试或绕过限制。
+- [x] 21.3 实现 Wordnik 预习 adapter，将其作为 Tatoeba 之后的补充来源，执行首次接触短句排序并仅使用会话内格式化缓存，不写 localStorage、IndexedDB 或语料仓库。
+- [x] 21.4 在 Wordnik 结果中显示无中文整句翻译提示、具体 word 链接和官方原尺寸 `Powered by Wordnik` badge，满足 attribution 要求。
+- [x] 21.5 增加 focused verification 与浏览器回归，覆盖密钥缺失零上游调用、密钥只走 header、配额保护、会话复用、来源回退、无持久化、生产构建和 Vite 加载。

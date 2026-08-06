@@ -52,7 +52,9 @@ npm run build
 Useful URLs:
 
 - Dev server: `http://127.0.0.1:5173/`
-- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short authentic sentence. The sentence is selected through a versioned source registry; the current default provider uses Tatoeba text with sentence ID, author link, and `CC BY 2.0 FR` attribution. A Wordnik provider slot is reserved but disabled and inert until a resolver is explicitly supplied. If no sense-matched sentence passes the preview limits, the page shows no sentence instead of generating one with AI or falling back to a long IELTS paragraph.
+- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short authentic sentence. The versioned source registry tries Tatoeba first, then Wordnik when Tatoeba has no eligible sentence. Tatoeba retains sentence ID, author link, and `CC BY 2.0 FR` attribution. Wordnik uses a server-only key, an 80-call/hour local safety budget, session-memory reuse, exact-word attribution, and no persistent cache; because its examples have no Chinese sentence translation, the UI says so explicitly. If no source passes the limits, the page shows no sentence instead of generating one with AI or falling back to a long IELTS paragraph.
+
+To enable Wordnik locally, create the ignored file `.env.local` with `WORDNIK_API_KEY=your_key`, then restart `npm run dev`. The key is read only by the Vite/Node proxy and is never exposed to browser code. Without the key, Wordnik safely reports unavailable and the rest of the preview continues normally.
 - Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 

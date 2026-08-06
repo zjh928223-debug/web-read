@@ -40,7 +40,7 @@ export function createSentenceSourceRegistry({ providers = [] } = {}) {
         result = { status: REAL_SENTENCE_STATUS.ERROR, message: `${provider.label} sentence source failed.` }
       }
       if (result?.status === REAL_SENTENCE_STATUS.READY) {
-        return { ...result, providerId: provider.id }
+        return { ...result, providerId: provider.id, persistence: provider.persistence || 'none' }
       }
       if (result?.status === REAL_SENTENCE_STATUS.ERROR || fallback.status !== REAL_SENTENCE_STATUS.ERROR) {
         fallback = result || fallback

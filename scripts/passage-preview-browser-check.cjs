@@ -11,6 +11,7 @@ async function run() {
   const context = await browser.newContext()
   const page = await context.newPage()
   const errors = []
+  let wordnikRequests = 0
   page.on('pageerror', (error) => errors.push(error.message))
 
   try {
@@ -23,7 +24,7 @@ async function run() {
         contentType: 'application/json',
         body: JSON.stringify({
           schemaVersion: 'tatoeba-real-sentences.v1',
-          items: [{
+          items: word === 'decoy' ? [] : [{
             id: `fixture-${word}`,
             sentence: `Learners can ${word} this simple example.`,
             translationZh: `学习者可以通过这个简单例子理解“${meanings[word] || '释义'}”。`,
@@ -31,6 +32,24 @@ async function run() {
             translationOwner: 'fixture-translator',
             license: 'CC BY 2.0 FR',
             url: `https://tatoeba.org/en/sentences/show/fixture-${word}`,
+          }],
+        }),
+      })
+    })
+    await page.route('**/api/vocabulary/wordnik-examples**', async (route) => {
+      wordnikRequests += 1
+      const word = new URL(route.request().url()).searchParams.get('word')
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schemaVersion: 'wordnik-real-sentences.v1',
+          source: 'Wordnik',
+          sourceUrl: `https://www.wordnik.com/words/${word}`,
+          items: [{
+            id: `wordnik-${word}`,
+            sentence: `This ${word} seemed harmless.`,
+            providerName: 'fixture-provider',
+            wordUrl: `https://www.wordnik.com/words/${word}`,
           }],
         }),
       })
@@ -94,6 +113,11 @@ async function run() {
     for (let index = 2; index <= 6; index += 1) {
       await page.getByRole('button', { name: '看看这个词怎么用' }).click()
       await page.locator('.passage-preview-real-sentence').waitFor()
+      if (index === 6) {
+        await page.getByText(/Wordnik #wordnik-decoy/).waitFor()
+        await page.getByText(/Wordnik 暂不提供整句中文翻译/).waitFor()
+        assert.equal(await page.locator('img[alt="Powered by Wordnik"][width="132"][height="18"]').count(), 1)
+      }
       const actionName = index === 6 ? '完成首次接触' : '下一词'
       await page.getByRole('button', { name: actionName }).click()
     }
@@ -103,6 +127,12 @@ async function run() {
     assert.equal(after.reviewStateCount, before.reviewStateCount)
     assert.equal(after.dbVersion, before.dbVersion)
     assert.deepEqual(after.storeNames, before.storeNames)
+    assert.equal(wordnikRequests, 1)
+    const persistedWordnik = await page.evaluate(() => {
+      const envelope = JSON.parse(localStorage.getItem('vocabulary.passage-preview.data.v2') || '{}')
+      return envelope.items?.find((item) => item.word === 'decoy')?.realSentence || null
+    })
+    assert.equal(persistedWordnik, null)
 
     await page.locator('.passage-preview-complete').getByRole('button', { name: '返回阅读器' }).click()
     await page.getByRole('button', { name: '今日复习' }).click()

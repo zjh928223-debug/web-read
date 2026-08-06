@@ -17,7 +17,7 @@
 - 不提升 `SeekPlayerDB` 版本、不新增 object store；新增记录继续通过现有 `files` store 的命名键保存。系统不内置或再分发受版权保护的 IELTS 例句。
 - 将原五词本地预习试点扩展为通用首次接触覆盖层：本地词批次只显示一个主要义与至多一条通过义项、来源和难度校验的短真实句；开放语料保留句子 ID、作者、许可和原始链接。剑雅长句只用于后期语境迁移，AI 不生成默认例句；本轮仍不执行至少 24 小时延迟检查、graduation 或 FSRS 建卡。
 
-- 为真实短句来源增加版本化 provider registry；当前默认启用 Tatoeba，并预留默认关闭的 Wordnik 注入入口。预留入口本身不得请求网络、读取密钥或持久化内容，未来接入不得要求改写预习 UI 与排序流程。
+- 为真实短句来源增加版本化 provider registry；当前先查询 Tatoeba，再以 Wordnik API 作为补充来源。Wordnik 密钥只由 Vite/Node 同源代理从 `WORDNIK_API_KEY` 读取，浏览器不得接触密钥；调用使用每小时 80 次本地安全预算和官方剩余额度，无密钥或额度不足时安全回退，格式化结果只允许会话内暂存，不写入 localStorage 或 IndexedDB。
 
 ## Capabilities
 

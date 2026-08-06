@@ -77,13 +77,26 @@
                   </svg>
                 </button>
               </div>
-              <p class="passage-preview-sentence-translation">{{ realSentence.translationZh }}</p>
+              <p v-if="realSentence.translationZh" class="passage-preview-sentence-translation">{{ realSentence.translationZh }}</p>
+              <p v-else class="passage-preview-sentence-translation passage-preview-sentence-translation--missing">
+                Wordnik 暂不提供整句中文翻译；当前目标主要义见左侧。
+              </p>
               <p class="passage-preview-attribution">
-                真人开放语料 ·
+                真实例句来源 ·
                 <a :href="realSentence.source.url" target="_blank" rel="noreferrer">{{ realSentence.source.name }} #{{ realSentence.source.recordId }}</a>
                 · {{ realSentence.source.license }}
-                <template v-if="realSentence.source.owner"> · 作者 {{ realSentence.source.owner }}</template>
+                <template v-if="realSentence.source.owner"> · {{ realSentence.source.ownerLabel || '作者' }} {{ realSentence.source.owner }}</template>
               </p>
+              <a
+                v-if="realSentence.source.poweredByLogoUrl"
+                class="passage-preview-wordnik-badge"
+                :href="realSentence.source.url"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Powered by Wordnik"
+              >
+                <img :src="realSentence.source.poweredByLogoUrl" width="132" height="18" alt="Powered by Wordnik">
+              </a>
             </section>
             <div v-else class="passage-preview-sentence-state passage-preview-sentence-state--empty" role="status">
               <p>{{ sentenceMessage || '暂未找到合格真实短句。' }}</p>
@@ -169,7 +182,7 @@ async function loadSentence() {
   sentenceMessage.value = result.message || ''
   if (result.status === REAL_SENTENCE_STATUS.READY) {
     loadedSentence.value = result
-    emit('item-enriched', { id: current.value.id, realSentence: result })
+    if (result.persistence !== 'none') emit('item-enriched', { id: current.value.id, realSentence: result })
   }
 }
 
