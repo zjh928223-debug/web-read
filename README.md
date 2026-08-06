@@ -52,7 +52,7 @@ npm run build
 Useful URLs:
 
 - Dev server: `http://127.0.0.1:5173/`
-- Passage Preview: open the `待预习` overlay from the main reader
+- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short authentic sentence. The sentence is selected from traceable user/open sources; the current open-corpus adapter uses Tatoeba text with sentence ID, author link, and `CC BY 2.0 FR` attribution. If no sense-matched sentence passes the preview limits, the page shows no sentence instead of generating one with AI or falling back to a long IELTS paragraph.
 - Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 

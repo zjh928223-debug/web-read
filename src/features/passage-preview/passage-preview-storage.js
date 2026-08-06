@@ -35,7 +35,7 @@ export function loadPassagePreviewProgress(storage = globalThis.localStorage) {
     status: ['not_started', 'in_progress', 'completed'].includes(saved.status)
       ? saved.status
       : initial.status,
-    currentIndex: Math.max(0, Math.min(4, Number(saved.currentIndex) || 0)),
+    currentIndex: Math.max(0, Number(saved.currentIndex) || 0),
     revealed: normalizeBooleanMap(saved.revealed),
     contextExpanded: normalizeBooleanMap(saved.contextExpanded || saved.sentenceExpanded),
     startedAt: normalizeIso(saved.startedAt),

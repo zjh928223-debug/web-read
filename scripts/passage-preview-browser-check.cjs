@@ -14,6 +14,27 @@ async function run() {
   page.on('pageerror', (error) => errors.push(error.message))
 
   try {
+    await page.route('**/api/vocabulary/real-sentences**', async (route) => {
+      const word = new URL(route.request().url()).searchParams.get('word')
+      const meanings = {
+        enhance: '提升', readily: '容易', thorough: '全面细致', subtle: '不易察觉', attribute: '归因', decoy: '诱饵',
+      }
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schemaVersion: 'tatoeba-real-sentences.v1',
+          items: [{
+            id: `fixture-${word}`,
+            sentence: `Learners can ${word} this simple example.`,
+            translationZh: `学习者可以通过这个简单例子理解“${meanings[word] || '释义'}”。`,
+            owner: 'fixture-author',
+            translationOwner: 'fixture-translator',
+            license: 'CC BY 2.0 FR',
+            url: `https://tatoeba.org/en/sentences/show/fixture-${word}`,
+          }],
+        }),
+      })
+    })
     await page.addInitScript(() => {
       const spoken = []
       class PreviewUtterance {
@@ -41,55 +62,42 @@ async function run() {
 
     await page.locator('.passage-preview-file-input').setInputFiles(fixturePath)
     await page.locator('.passage-preview-page').waitFor()
-    await assertInitialCardIsHidden(page, '预习 1 / 5')
-    await page.waitForFunction(() => window.__passagePreviewSpoken?.[0] === 'thorough')
+    await assertInitialCardIsHidden(page, '预习 1 / 6')
+    await page.waitForFunction(() => window.__passagePreviewSpoken?.[0] === 'enhance')
 
-    await page.getByRole('button', { name: '显示学习内容' }).click()
-    await page.locator('.passage-preview-phrase').waitFor()
-    assert.equal(await page.locator('.passage-preview-translation').count(), 0)
+    await page.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await page.locator('.passage-preview-real-sentence').waitFor()
+    await page.getByText('主要义建议', { exact: true }).waitFor()
+    await page.getByText(/Tatoeba #fixture-enhance/).waitFor()
     assert.equal(await page.locator('.passage-preview-chunks.is-paragraph').count(), 0)
-
-    await page.keyboard.down('c')
-    await page.locator('.passage-preview-translation').first().waitFor()
-    await page.keyboard.up('c')
-    await page.waitForFunction(() => document.querySelectorAll('.passage-preview-translation').length === 0)
-
-    await page.keyboard.press('v')
-    await page.locator('.passage-preview-chunks.is-paragraph').waitFor()
-    await page.keyboard.press('v')
-    assert.equal(await page.locator('.passage-preview-chunks.is-paragraph').count(), 0)
-
-    await page.locator('.passage-preview-shortcut-settings button').first().click()
-    await page.keyboard.press('z')
-    await page.keyboard.down('z')
-    await page.locator('.passage-preview-translation').first().waitFor()
-    await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-    await page.waitForFunction(() => document.querySelectorAll('.passage-preview-translation').length === 0)
-    await page.keyboard.up('z')
-
-    const spokenBeforeContext = await page.evaluate(() => window.__passagePreviewSpoken.length)
-    await page.getByRole('button', { name: '朗读语境' }).click()
-    await page.locator('.passage-preview-chunks li.is-reading').waitFor()
-    await page.waitForFunction(
-      (count) => window.__passagePreviewSpoken.length >= count + 2,
-      spokenBeforeContext,
-    )
+    assert.equal(await page.getByText('查看完整语境', { exact: true }).count(), 0)
+    await page.setViewportSize({ width: 390, height: 844 })
+    const mobileLayout = await page.evaluate(() => {
+      const word = document.querySelector('.passage-preview-word-panel')?.getBoundingClientRect()
+      const contextPanel = document.querySelector('.passage-preview-context')?.getBoundingClientRect()
+      return {
+        noHorizontalOverflow: document.documentElement.scrollWidth <= window.innerWidth,
+        stacked: Boolean(word && contextPanel && contextPanel.top >= word.top + word.height - 1),
+      }
+    })
+    assert.deepEqual(mobileLayout, { noHorizontalOverflow: true, stacked: true })
+    await page.setViewportSize({ width: 1280, height: 800 })
 
     await page.getByRole('button', { name: '下一词' }).click()
-    await assertInitialCardIsHidden(page, '预习 2 / 5')
+    await assertInitialCardIsHidden(page, '预习 2 / 6')
     await page.waitForFunction(() => window.__passagePreviewSpoken.includes('readily'))
 
     await page.reload({ waitUntil: 'networkidle' })
     await page.getByRole('button', { name: '待预习' }).click()
-    await assertInitialCardIsHidden(page, '预习 2 / 5')
+    await assertInitialCardIsHidden(page, '预习 2 / 6')
 
-    for (let index = 2; index <= 5; index += 1) {
-      await page.getByRole('button', { name: '显示学习内容' }).click()
-      await page.locator('.passage-preview-phrase').waitFor()
-      const actionName = index === 5 ? '完成预习' : '下一词'
+    for (let index = 2; index <= 6; index += 1) {
+      await page.getByRole('button', { name: '看看这个词怎么用' }).click()
+      await page.locator('.passage-preview-real-sentence').waitFor()
+      const actionName = index === 6 ? '完成首次接触' : '下一词'
       await page.getByRole('button', { name: actionName }).click()
     }
-    await page.getByText('5词预习完成', { exact: true }).waitFor()
+    await page.getByText('6词首次接触完成', { exact: true }).waitFor()
 
     const after = await readVocabularyState(page)
     assert.equal(after.reviewStateCount, before.reviewStateCount)
@@ -101,7 +109,7 @@ async function run() {
     await page.locator('.srs-review-page:not(.passage-preview-page)').waitFor()
 
     assert.deepEqual(errors, [], `browser errors: ${errors.join('; ')}`)
-    console.log('Passage 1 preview browser verification passed.')
+    console.log('First-contact vocabulary preview browser verification passed.')
   } finally {
     await context.close()
     await browser.close()
@@ -110,10 +118,9 @@ async function run() {
 
 async function assertInitialCardIsHidden(page, progressText) {
   await page.getByText(progressText, { exact: true }).waitFor()
-  assert.equal(await page.locator('.passage-preview-phrase').count(), 0)
+  assert.equal(await page.locator('.passage-preview-real-sentence').count(), 0)
   assert.equal(await page.locator('.passage-preview-meaning').count(), 0)
-  assert.equal(await page.locator('.passage-preview-chunks').count(), 0)
-  assert.equal(await page.locator('.passage-preview-translation').count(), 0)
+  assert.equal(await page.locator('.passage-preview-sentence-translation').count(), 0)
 }
 
 async function readVocabularyState(page) {

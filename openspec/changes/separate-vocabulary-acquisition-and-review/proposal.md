@@ -15,7 +15,7 @@
 - 真实例句优先来自用户导入文章/字幕、用户合法持有并本地导入的考试材料、许可明确的开放语料或允许使用的词典示例；AI 仅可作为可选、缓存、可审查的离线补位，不在答题时强制调用。
 - **BREAKING**：在迁移所有调用方后，通用 `addWord()` 不再隐式创建 FSRS 状态；创建 `ReviewState` 的唯一业务入口为 graduation/reassessment 通过操作。迁移期间保留显式标记的兼容适配器。
 - 不提升 `SeekPlayerDB` 版本、不新增 object store；新增记录继续通过现有 `files` store 的命名键保存。系统不内置或再分发受版权保护的 IELTS 例句。
-- 在完整 acquisition 产品实施前，增加一个共享现有复习视觉体系的五词本地预习试点：仅从用户选择的熟悉度 JSON 与本地微阅读数据中按 lemma 合并 `C19-T1-RP1-` 的五个固定词，完成首次揭示式预习、微型阅读、按住显示中文、预习自动 Aria 美式发音与刷新恢复；本试点不执行至少 24 小时延迟检查、graduation、FSRS 建卡或 ECDICT 查询。
+- 将原五词本地预习试点扩展为通用首次接触覆盖层：本地词批次只显示一个主要义与至多一条通过义项、来源和难度校验的短真实句；开放语料保留句子 ID、作者、许可和原始链接。剑雅长句只用于后期语境迁移，AI 不生成默认例句；本轮仍不执行至少 24 小时延迟检查、graduation 或 FSRS 建卡。
 
 ## Capabilities
 
@@ -32,7 +32,7 @@
 ## Impact
 
 - 主要影响 `src/services/vocabulary/`、`src/features/srs-review/`、文章标注结算与新增的考试词表导入流程。
-- 五词试点额外影响 reader 顶部入口、独立的 passage-preview 组件/纯函数、隔离的文字微阅读适配与可复用的严格 Aria 美式发音服务；不复用依赖全局字幕/时间戳/reader 状态的 `processChunkData` 或 `ChunkModeView`，也不改变既有“今日复习”数据源与交互。
+- 通用首次接触覆盖层额外影响 reader 顶部入口、独立的 passage-preview 组件/纯函数、真实句源 Vite 适配与可复用的严格 Aria 美式发音服务；不复用依赖全局字幕/时间戳/reader 状态的 `processChunkData` 或 `ChunkModeView`，也不改变既有“今日复习”数据源与交互。
 - 需要为 acquisition 状态、词义项、例句来源、reassessment、学习事件和策略版本增加 repository/service 层，但保持 IndexedDB schema version 1 和现有 `files` object store。
 - `vocabulary-service.addWord()`、`article-srs-settlement` 及复习队列调用方需要分阶段迁移；兼容层在全部调用方迁移和验证后删除。
 - 新增纯函数单元验证、repository 合约验证、端到端 graduation/review 验证、旧数据演练与数据导出验证。

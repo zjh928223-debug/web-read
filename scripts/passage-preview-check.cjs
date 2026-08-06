@@ -10,31 +10,27 @@ const fixturePath = path.join(__dirname, 'fixtures', 'passage-preview-result.fix
 
 async function run() {
   const payload = JSON.parse(fs.readFileSync(fixturePath, 'utf8'))
-  const importer = await importSource('src/features/passage-preview/passage-preview-import.js')
+  const importer = await importPassagePreviewImporter()
   const storageModule = await importSource('src/features/passage-preview/passage-preview-storage.js')
-  const shortcutModule = await importSource('src/features/passage-preview/passage-preview-shortcuts.js')
   const pronunciation = await importSource('src/services/pronunciation/aria-american-pronunciation.js')
   const items = importer.importPassageOnePreview(payload)
 
-  assert.deepEqual(items.map((item) => item.word), importer.PASSAGE_ONE_TARGET_WORDS)
-  assert.equal(new Set(items.map((item) => item.word)).size, 5)
-  assert.ok(items.every((item) => item.source.includes(importer.PASSAGE_ONE_SOURCE_MARKER)))
+  assert.equal(items.length, 6, 'generic preview should keep words outside the former five-word pilot')
+  assert.equal(new Set(items.map((item) => item.word)).size, 6)
   assert.ok(items.every((item) => (
-    item.pos
-    && item.meaning
-    && item.targetMeaningZh
-    && item.focusPhraseEn
-    && item.focusPhraseZh
-    && item.focusChunks.some((chunk) => chunk.containsTarget)
-    && item.paragraphChunks.some((chunk) => chunk.containsTarget)
+    item.primaryMeaningZh
+    && item.primarySenseStatus
+    && item.targetSenseKey
+    && !item.focusChunks
+    && !item.paragraphChunks
   )))
   assert.equal(importer.validatePassagePreviewItems(items), true)
 
-  verifyExactWordLock(importer, payload)
-  verifyOptionalPrivateSource(importer)
+  verifyGenericBatch(importer)
   verifyNoReviewOrDictionaryCoupling()
   verifyProgressPersistence(storageModule, items)
-  verifyIsolatedShortcuts(shortcutModule)
+  await verifyRealSentenceSelection()
+  await verifyRealSentenceEndpoint()
   await verifyStrictSystemAria(pronunciation)
   await verifyStrictLocalAriaFallback(pronunciation)
   await verifyNonAriaRejection(pronunciation)
@@ -43,72 +39,22 @@ async function run() {
   await verifyActiveAudioCancellation(pronunciation)
   await verifyEdgeTtsService()
 
-  console.log('Passage 1 preview focused verification passed.')
+  console.log('First-contact vocabulary preview focused verification passed.')
 }
 
-function verifyExactWordLock(importer, payload) {
-  const duplicate = {
-    ...payload.answers.find((answer) => answer.word === 'thorough'),
-    source: 'duplicate-C19-T1-RP1-77',
-    sentence: 'A second thorough entry must not become a sixth preview item.',
-  }
-  const deduplicated = importer.importPassageOnePreview({
-    ...payload,
-    answers: [duplicate, ...payload.answers],
+function verifyGenericBatch(importer) {
+  const items = importer.importVocabularyPreview({
+    title: '通用批次',
+    answers: Array.from({ length: 50 }, (_, index) => ({
+      word: `word${index}`,
+      zh: index === 0 ? '怀疑，觉察，嫌疑' : `释义${index}`,
+      source: `batch-${index}`,
+    })),
   })
-  assert.equal(deduplicated.length, 5)
-  assert.equal(deduplicated.filter((item) => item.word === 'thorough').length, 1)
-
-  const arbitraryFive = payload.answers
-    .filter((answer) => answer.word !== 'enhance')
-    .concat({
-      word: 'replacement',
-      form: 'replacement',
-      pos: 'noun',
-      meaning: 'substitute',
-      zh: '替代物',
-      sentence: 'An arbitrary replacement must not satisfy the pilot.',
-      source: 'fixture-C19-T1-RP1-06',
-    })
-  assert.throws(
-    () => importer.importPassageOnePreview({ ...payload, answers: arbitraryFive }),
-    /enhance/,
-  )
-}
-
-function verifyOptionalPrivateSource(importer) {
-  const privatePath = process.env.PASSAGE_PREVIEW_RESULT_PATH
-  if (!privatePath) return
-  assert.ok(fs.existsSync(privatePath), `private vocabulary result is missing: ${privatePath}`)
-  const privateItems = importer.importPassageOnePreview(
-    JSON.parse(fs.readFileSync(privatePath, 'utf8')),
-  )
-  assert.deepEqual(privateItems.map((item) => item.word), importer.PASSAGE_ONE_TARGET_WORDS)
-
-  const repositoryTextFiles = collectTextFiles([
-    'src',
-    'scripts',
-    'openspec/changes/separate-vocabulary-acquisition-and-review',
-    'package.json',
-    'index.html',
-    'styles.css',
-  ])
-  for (const filePath of repositoryTextFiles) {
-    const relativePath = path.relative(projectRoot, filePath).replaceAll('\\', '/')
-    const source = fs.readFileSync(filePath, 'utf8')
-    for (const privateText of privateItems.flatMap((item) => [
-      item.targetMeaningZh,
-      item.focusPhraseEn,
-      item.focusPhraseZh,
-      ...item.focusChunks.flatMap((chunk) => [chunk.en, chunk.zh]),
-      ...item.paragraphChunks.flatMap((chunk) => [chunk.en, chunk.zh]),
-    ])) {
-      assert.ok(
-        !source.includes(privateText),
-        `private sentence or phrase must not be embedded in repository source: ${relativePath}`,
-      )
-    }
-  }
+  assert.equal(items.length, 50)
+  assert.equal(items[0].primaryMeaningZh, '怀疑')
+  assert.equal(items[0].primarySenseStatus, 'suggested')
+  assert.equal(items[0].batchTitle, '通用批次')
 }
 
 function verifyNoReviewOrDictionaryCoupling() {
@@ -117,21 +63,24 @@ function verifyNoReviewOrDictionaryCoupling() {
   const appSource = read('src/App.vue')
   assert.doesNotMatch(importerSource, /ReviewState|addWord|createInitialReviewState|indexedDB/i)
   assert.doesNotMatch(componentSource, /ECDICT|again|hard|good|easy|processChunkData|ChunkModeView/i)
-  assert.match(componentSource, /v-if="!isRevealed"[\s\S]*显示学习内容/)
-  assert.match(componentSource, /按住显示中文/)
-  assert.match(componentSource, /查看完整语境/)
-  assert.match(componentSource, /AI 美式朗读/)
+  assert.match(componentSource, /v-if="!isRevealed"[\s\S]*看看这个词怎么用/)
+  assert.match(componentSource, /简短真实语境/)
+  assert.match(componentSource, /不会用 AI 现编句或剑雅长段落自动代替/)
+  assert.doesNotMatch(componentSource, /完整语境|focusChunks|paragraphChunks/)
   assert.match(componentSource, /watch\([\s\S]*speakWord\(\)/)
-  assert.match(componentSource, /document\.visibilityState/)
   assert.match(componentSource, /progress\.status = 'completed'/)
   assert.match(componentSource, /progress\.completedAt = new Date\(\)\.toISOString\(\)/)
   assert.match(appSource, /今日复习[\s\S]*待预习/)
+  const sourceAdapter = read('src/features/passage-preview/tatoeba-preview-sentence.js')
+  assert.match(sourceAdapter, /rankSentenceCandidates/)
+  assert.match(sourceAdapter, /target_sense_match/)
+  assert.match(sourceAdapter, /CC BY 2\.0 FR/)
 }
 
 function verifyProgressPersistence(storageModule, items) {
   const memoryStorage = createMemoryStorage()
   storageModule.savePassagePreviewData(items, memoryStorage)
-  assert.equal(storageModule.loadPassagePreviewData(memoryStorage).length, 5)
+  assert.equal(storageModule.loadPassagePreviewData(memoryStorage).length, 6)
   const progress = {
     status: 'in_progress',
     currentIndex: 3,
@@ -142,6 +91,8 @@ function verifyProgressPersistence(storageModule, items) {
   }
   storageModule.savePassagePreviewProgress(progress, memoryStorage)
   assert.deepEqual(storageModule.loadPassagePreviewProgress(memoryStorage), progress)
+  storageModule.savePassagePreviewProgress({ ...progress, currentIndex: 49 }, memoryStorage)
+  assert.equal(storageModule.loadPassagePreviewProgress(memoryStorage).currentIndex, 49)
 
   const legacyStorage = createMemoryStorage()
   legacyStorage.setItem(storageModule.LEGACY_PASSAGE_PREVIEW_DATA_KEY, JSON.stringify(items))
@@ -157,20 +108,6 @@ function verifyProgressPersistence(storageModule, items) {
   const migrated = storageModule.loadPassagePreviewProgress(legacyStorage)
   assert.equal(migrated.currentIndex, 2)
   assert.equal(migrated.contextExpanded[items[2].id], true)
-}
-
-function verifyIsolatedShortcuts(shortcutModule) {
-  const storage = createMemoryStorage()
-  storage.setItem('st.chunkCnKey', 'x')
-  assert.deepEqual(shortcutModule.loadPassagePreviewShortcuts(storage), {
-    translation: 'x',
-    context: 'v',
-  })
-  shortcutModule.savePassagePreviewShortcut('translation', 'z', storage)
-  assert.equal(storage.getItem('st.chunkCnKey'), 'x')
-  assert.equal(shortcutModule.loadPassagePreviewShortcuts(storage).translation, 'z')
-  assert.equal(shortcutModule.isEditableKeyboardTarget({ tagName: 'INPUT' }), true)
-  assert.equal(shortcutModule.shortcutFromKeyboardEvent({ key: 'Z' }), 'z')
 }
 
 async function verifyStrictSystemAria(pronunciation) {
@@ -386,9 +323,129 @@ async function verifyEdgeTtsService() {
   }
 }
 
+async function verifyRealSentenceSelection() {
+  const adapter = await importTatoebaPreviewAdapter()
+  const result = await adapter.findRealPreviewSentence({
+    lemma: 'suspicion',
+    primaryMeaningZh: '怀疑',
+    targetSenseKey: 'suspicion:n:01',
+  }, {
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          items: [{
+            id: '12576498',
+            sentence: 'I have a suspicion.',
+            translationZh: '我有一点怀疑。',
+            owner: 'fixture-author',
+            license: 'CC BY 2.0 FR',
+            url: 'https://tatoeba.org/en/sentences/show/12576498',
+          }, {
+            id: '2',
+            sentence: 'Suspicion can spread.',
+            translationZh: '消息会传播。',
+            owner: 'fixture-author',
+            license: 'CC BY 2.0 FR',
+            url: 'https://tatoeba.org/en/sentences/show/2',
+          }],
+        }
+      },
+    }),
+  })
+  assert.equal(result.status, adapter.REAL_SENTENCE_STATUS.READY)
+  assert.equal(result.sentence, 'I have a suspicion.')
+  assert.equal(result.source.recordId, '12576498')
+  assert.equal(result.source.license, 'CC BY 2.0 FR')
+  assert.equal(adapter.hasMeaningOverlap('怀疑，嫌疑', '我的怀疑没有根据。'), true)
+  assert.equal(adapter.hasMeaningOverlap('河岸', '我去了银行。'), false)
+}
+
+async function verifyRealSentenceEndpoint() {
+  const plugin = await import(pathToFileURL(path.join(
+    projectRoot,
+    'src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs',
+  )))
+  const upstreamUrls = []
+  const response = createJsonResponse()
+  await plugin.handleTatoebaSentenceRequest(
+    { method: 'GET', url: `${plugin.TATOEBA_SENTENCE_ENDPOINT}?word=suspicion&limit=2` },
+    response,
+    () => assert.fail('real sentence endpoint should handle the request'),
+    {
+      fetchImpl: async (url) => {
+        upstreamUrls.push(String(url))
+        return {
+          ok: true,
+          async json() {
+            return {
+              data: [{
+                id: 1,
+                text: 'I have a suspicion.',
+                lang: 'eng',
+                license: 'CC BY 2.0 FR',
+                owner: 'fixture-author',
+                is_unapproved: false,
+                translations: [{
+                  id: 11,
+                  text: '我有一点怀疑。',
+                  lang: 'cmn',
+                  script: 'Hans',
+                  license: 'CC BY 2.0 FR',
+                  owner: 'fixture-translator',
+                  is_unapproved: false,
+                  is_direct: true,
+                }],
+              }],
+            }
+          },
+        }
+      },
+    },
+  )
+  assert.equal(response.statusCode, 200)
+  assert.equal(response.json.items[0].id, '1')
+  assert.equal(response.json.items[0].translationZh, '我有一点怀疑。')
+  assert.match(upstreamUrls[0], /api\.tatoeba\.org/)
+  assert.match(upstreamUrls[0], /trans%3Alang=cmn/)
+}
+
 async function importSource(relativePath) {
   const source = read(relativePath)
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
+}
+
+async function importPassagePreviewImporter() {
+  const tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'read-web-preview-importer-'))
+  const policySource = read('src/services/vocabulary/personalization/primary-sense-policy.js')
+  const importerSource = read('src/features/passage-preview/passage-preview-import.js')
+    .replace('../../services/vocabulary/personalization/primary-sense-policy.js', './primary-sense-policy.mjs')
+  const policyPath = path.join(tempDir, 'primary-sense-policy.mjs')
+  const importerPath = path.join(tempDir, 'passage-preview-import.mjs')
+  await fsPromises.writeFile(policyPath, policySource, 'utf8')
+  await fsPromises.writeFile(importerPath, importerSource, 'utf8')
+  return import(`${pathToFileURL(importerPath).href}?v=${Date.now()}`)
+}
+
+async function importTatoebaPreviewAdapter() {
+  const tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'read-web-preview-sentence-'))
+  const rankingSource = read('src/services/vocabulary/personalization/sentence-candidate-ranking.js')
+  const adapterSource = read('src/features/passage-preview/tatoeba-preview-sentence.js')
+    .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
+  const rankingPath = path.join(tempDir, 'sentence-candidate-ranking.mjs')
+  const adapterPath = path.join(tempDir, 'tatoeba-preview-sentence.mjs')
+  await fsPromises.writeFile(rankingPath, rankingSource, 'utf8')
+  await fsPromises.writeFile(adapterPath, adapterSource, 'utf8')
+  return import(`${pathToFileURL(adapterPath).href}?v=${Date.now()}`)
+}
+
+function createJsonResponse() {
+  return {
+    statusCode: 0,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value },
+    end(value) { this.json = JSON.parse(value) },
+  }
 }
 
 function read(relativePath) {

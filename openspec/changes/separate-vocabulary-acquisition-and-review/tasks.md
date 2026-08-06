@@ -171,3 +171,11 @@
 - [x] 18.3 为已有的当日 V2 SessionLedger 增加仅写派生报告的补建路径，不修改 ledger、ReviewState、due date、rating 或 IndexedDB schema。
 - [x] 18.4 在没有 V2 Session 时明确说明旧版限制，不从 legacy review log 伪造报告。
 - [x] 18.5 增加 focused verification、浏览器验收、README 文档，并运行受影响的 build/Vite 检查。
+
+## 19. Wave C：通用首次接触预习与真实句源
+
+- [x] 19.1 将五词专用 importer 扩展为通用批次 importer；旧五词包继续兼容，但新批次不再限制固定 lemma 或固定数量。
+- [x] 19.2 接入可追溯的开放真人语料适配器；候选必须保留句子 ID、作者、许可和原始链接，AI 生成不得作为默认来源。
+- [x] 19.3 将已有主要义项共识器与真实句排序器接到预习链路；主要义项未达成共识时必须标为建议，句义未验证时不得展示为合格语境。
+- [x] 19.4 将预习覆盖层改为“单词 + 单一主要义 + 一条短真实句”；移除默认完整剑雅段落与同日重复语境，考试原句只保留给后期语境迁移。
+- [x] 19.5 增加来源失败、安全回退、动态批次数量、刷新恢复、桌面/窄屏和无 ReviewState/无 IndexedDB schema 变化的 focused verification。

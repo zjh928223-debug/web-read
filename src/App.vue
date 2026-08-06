@@ -8,7 +8,7 @@
     <Teleport to="#srs-review-entry-root">
       <span class="learning-entry-group">
         <button class="small-btn" type="button" title="复习当前已到期的单词" @click="isSrsReviewOpen = true">今日复习</button>
-        <button class="small-btn" type="button" title="预习本地导入的 Passage 1 词汇" @click="openPassagePreview">待预习</button>
+        <button class="small-btn" type="button" title="首次接触：一个主要义和一条可追溯真实短句" @click="openPassagePreview">待预习</button>
         <a
           class="small-btn learning-model-entry"
           href="/personalization-shadow.html"
@@ -33,6 +33,7 @@
       <PassagePreviewPage
         v-if="isPassagePreviewOpen && passagePreviewItems.length"
         :items="passagePreviewItems"
+        @item-enriched="saveEnrichedPreviewItem"
         @close="isPassagePreviewOpen = false"
       />
     </Teleport>
@@ -52,13 +53,15 @@ import { createSrsReviewUiService } from './features/srs-review/srs-review-ui-se
 import { createSrsReviewSourceSelector } from './features/srs-review/srs-review-source-selector.js'
 import PassagePreviewPage from './features/passage-preview/PassagePreviewPage.vue'
 import {
-  importPassageOnePreview,
+  importVocabularyPreview,
   validatePassagePreviewItems,
 } from './features/passage-preview/passage-preview-import.js'
 import {
+  createInitialPassagePreviewProgress,
   hasLegacyPassagePreviewData,
   loadPassagePreviewData,
   savePassagePreviewData,
+  savePassagePreviewProgress,
 } from './features/passage-preview/passage-preview-storage.js'
 import { createVocabularyService } from './services/vocabulary/index.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
@@ -94,8 +97,20 @@ function openPassagePreview() {
     isPassagePreviewOpen.value = true
     return
   }
+  if (passagePreviewItems.value.length) {
+    try {
+      const migrated = importVocabularyPreview({
+        title: '首次接触',
+        answers: passagePreviewItems.value,
+      })
+      savePassagePreviewData(migrated)
+      passagePreviewItems.value = migrated
+      isPassagePreviewOpen.value = true
+      return
+    } catch (_error) {}
+  }
   if (hasLegacyPassagePreviewData()) {
-    window.alert('已有预习进度会保留。请重新导入包含微阅读数据的新版五词包。')
+    window.alert('已有旧版预习进度会保留。请导入新版首次接触词包。')
   }
   passagePreviewFileInput.value?.click()
 }
@@ -105,12 +120,21 @@ async function importPassagePreviewFile(event) {
   event.target.value = ''
   if (!file) return
   try {
-    const items = importPassageOnePreview(JSON.parse(await file.text()))
+    const items = importVocabularyPreview(JSON.parse(await file.text()))
     savePassagePreviewData(items)
+    savePassagePreviewProgress(createInitialPassagePreviewProgress())
     passagePreviewItems.value = items
     isPassagePreviewOpen.value = true
   } catch (error) {
     window.alert(error?.message || '预习结果导入失败。')
   }
+}
+
+function saveEnrichedPreviewItem({ id, realSentence }) {
+  if (!id || !realSentence) return
+  passagePreviewItems.value = passagePreviewItems.value.map((item) => (
+    item.id === id ? { ...item, realSentence } : item
+  ))
+  savePassagePreviewData(passagePreviewItems.value)
 }
 </script>

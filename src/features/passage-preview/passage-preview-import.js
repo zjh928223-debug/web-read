@@ -1,6 +1,9 @@
+import { resolvePrimarySense } from '../../services/vocabulary/personalization/primary-sense-policy.js'
+
 export const PASSAGE_ONE_SOURCE_MARKER = 'C19-T1-RP1-'
 export const PASSAGE_ONE_PREVIEW_SIZE = 5
 export const PASSAGE_PREVIEW_MICRO_READING_SCHEMA = 'passage-preview.micro-reading.v1'
+export const FIRST_CONTACT_PREVIEW_SCHEMA = 'vocabulary-preview.first-contact.v1'
 export const PASSAGE_ONE_TARGET_WORDS = Object.freeze([
   'thorough',
   'readily',
@@ -9,139 +12,147 @@ export const PASSAGE_ONE_TARGET_WORDS = Object.freeze([
   'enhance',
 ])
 
-export function importPassageOnePreview(payload) {
-  const answersByLemma = collectFamiliarityAnswers(payload?.answers)
-  const readingsByLemma = collectMicroReadings(payload)
-  const missing = PASSAGE_ONE_TARGET_WORDS.filter(
-    (lemma) => !answersByLemma.has(lemma) || !readingsByLemma.has(lemma),
-  )
-  if (missing.length) {
-    throw new Error(`Passage 1 预习文件缺少指定词或微阅读数据：${missing.join('、')}。请重新导入新版五词包。`)
-  }
-
-  return PASSAGE_ONE_TARGET_WORDS.map((lemma) => {
-    const answer = answersByLemma.get(lemma)
-    const reading = readingsByLemma.get(lemma)
-    return {
-      schemaVersion: PASSAGE_PREVIEW_MICRO_READING_SCHEMA,
-      id: `${answer.source}:${lemma}`,
+export function importVocabularyPreview(payload = {}) {
+  const rawItems = Array.isArray(payload?.items) && payload.schemaVersion === FIRST_CONTACT_PREVIEW_SCHEMA
+    ? payload.items
+    : collectAnswerItems(payload)
+  if (!rawItems.length) throw new Error('预习文件中没有可用单词。')
+  const batchTitle = normalizeText(payload.batchTitle || payload.title) || `${rawItems.length}词首次接触`
+  const seen = new Set()
+  const items = []
+  rawItems.forEach((input, index) => {
+    const lemma = normalizeText(input?.lemma || input?.word).toLowerCase()
+    if (!lemma || seen.has(lemma)) return
+    seen.add(lemma)
+    const primary = resolveImportedPrimarySense(input, lemma)
+    if (!primary.meaningZh) return
+    items.push({
+      schemaVersion: FIRST_CONTACT_PREVIEW_SCHEMA,
+      id: normalizeText(input?.id) || `${normalizeText(input?.source) || 'preview'}:${lemma}:${index}`,
       lemma,
-      word: lemma,
-      form: normalizeImportedForm(answer.form, lemma),
-      pos: normalizeText(answer.pos),
-      meaning: normalizeText(answer.meaning),
-      phonetic: normalizeText(answer.phonetic || answer.usPhonetic),
-      source: answer.source,
-      targetMeaningZh: reading.targetMeaningZh,
-      focusPhraseEn: reading.focusPhraseEn,
-      focusPhraseZh: reading.focusPhraseZh,
-      focusChunks: reading.focusChunks,
-      paragraphChunks: reading.paragraphChunks,
-    }
+      word: normalizeText(input?.word || input?.lemma) || lemma,
+      form: normalizeImportedForm(input?.form, lemma),
+      pos: normalizeText(input?.pos || input?.partOfSpeech),
+      phonetic: normalizeText(input?.phonetic || input?.usPhonetic),
+      source: normalizeText(input?.source),
+      batchTitle,
+      primaryMeaningZh: primary.meaningZh,
+      primarySenseStatus: primary.status,
+      primarySenseReason: primary.reason,
+      targetSenseKey: primary.targetSenseKey,
+      realSentence: normalizeRealSentence(input?.realSentence, lemma),
+    })
   })
+  if (!items.length) throw new Error('预习文件缺少可用的单一中文主要义。')
+  return items
+}
+
+// Compatibility name retained for the previous five-word caller.
+export function importPassageOnePreview(payload) {
+  return importVocabularyPreview(payload)
 }
 
 export function validatePassagePreviewItems(items) {
-  if (!Array.isArray(items) || items.length !== PASSAGE_ONE_PREVIEW_SIZE) return false
-  return PASSAGE_ONE_TARGET_WORDS.every((lemma, index) => {
-    const item = items[index]
-    return item?.lemma === lemma
-      && item?.schemaVersion === PASSAGE_PREVIEW_MICRO_READING_SCHEMA
-      && isValidChunkList(item.focusChunks, true)
-      && isValidChunkList(item.paragraphChunks, true)
-      && Boolean(normalizeText(item.targetMeaningZh))
-      && Boolean(normalizeText(item.focusPhraseEn))
-      && Boolean(normalizeText(item.focusPhraseZh))
-  })
+  return Array.isArray(items)
+    && items.length > 0
+    && items.every((item) => (
+      item?.schemaVersion === FIRST_CONTACT_PREVIEW_SCHEMA
+      && Boolean(normalizeText(item.id))
+      && Boolean(normalizeText(item.lemma || item.word))
+      && Boolean(normalizeText(item.primaryMeaningZh))
+    ))
 }
 
-function collectFamiliarityAnswers(answers) {
-  const targetWords = new Set(PASSAGE_ONE_TARGET_WORDS)
-  const result = new Map()
-  for (const answer of Array.isArray(answers) ? answers : []) {
-    const source = normalizeText(answer?.source)
-    if (!source.includes(PASSAGE_ONE_SOURCE_MARKER)) continue
+function collectAnswerItems(payload) {
+  const answers = Array.isArray(payload?.answers) ? payload.answers : []
+  if (payload?.microReadingSchema !== PASSAGE_PREVIEW_MICRO_READING_SCHEMA) return answers
+  const readings = new Map((Array.isArray(payload?.microReadings) ? payload.microReadings : []).map((item) => [
+    normalizeText(item?.lemma).toLowerCase(),
+    item,
+  ]))
+  return answers.map((answer) => {
     const lemma = normalizeText(answer?.lemma || answer?.word).toLowerCase()
-    if (!targetWords.has(lemma) || result.has(lemma)) continue
-    result.set(lemma, { ...answer, source })
-  }
-  return result
-}
-
-function collectMicroReadings(payload) {
-  if (payload?.microReadingSchema !== PASSAGE_PREVIEW_MICRO_READING_SCHEMA) {
-    throw new Error(`微阅读 schema 必须为 ${PASSAGE_PREVIEW_MICRO_READING_SCHEMA}。`)
-  }
-  const targetWords = new Set(PASSAGE_ONE_TARGET_WORDS)
-  const result = new Map()
-  for (const input of Array.isArray(payload?.microReadings) ? payload.microReadings : []) {
-    const lemma = normalizeText(input?.lemma).toLowerCase()
-    if (!targetWords.has(lemma) || result.has(lemma)) continue
-    const reading = {
-      targetMeaningZh: requiredText(input?.targetMeaningZh, lemma, 'targetMeaningZh'),
-      focusPhraseEn: requiredText(input?.focusPhraseEn, lemma, 'focusPhraseEn'),
-      focusPhraseZh: requiredText(input?.focusPhraseZh, lemma, 'focusPhraseZh'),
-      focusChunks: normalizeChunks(input?.focusChunks, lemma, 'focusChunks'),
-      paragraphChunks: normalizeChunks(input?.paragraphChunks, lemma, 'paragraphChunks'),
+    const reading = readings.get(lemma)
+    return {
+      ...answer,
+      primaryMeaningZh: reading?.targetMeaningZh || answer?.primaryMeaningZh || answer?.zh,
     }
-    if (!reading.focusChunks.some((chunk) => chunk.containsTarget)) {
-      throw new Error(`${lemma} 的 focusChunks 必须标记 containsTarget。`)
-    }
-    if (!reading.paragraphChunks.some((chunk) => chunk.containsTarget)) {
-      throw new Error(`${lemma} 的 paragraphChunks 必须标记 containsTarget。`)
-    }
-    result.set(lemma, reading)
-  }
-  return result
-}
-
-function normalizeChunks(value, lemma, field) {
-  if (!Array.isArray(value) || !value.length) {
-    throw new Error(`${lemma} 的 ${field} 必须是非空语义块数组。`)
-  }
-  return value.map((chunk, index) => ({
-    en: requiredText(chunk?.en, lemma, `${field}[${index}].en`),
-    zh: requiredText(chunk?.zh, lemma, `${field}[${index}].zh`),
-    containsTarget: chunk?.containsTarget === true,
-  }))
-}
-
-function isValidChunkList(value, requireTarget) {
-  return Array.isArray(value)
-    && value.length > 0
-    && (!requireTarget || value.some((chunk) => chunk?.containsTarget === true))
-    && value.every((chunk) => normalizeText(chunk?.en) && normalizeText(chunk?.zh))
-}
-
-function requiredText(value, lemma, field) {
-  const normalized = normalizeText(value)
-  if (!normalized) throw new Error(`${lemma} 的 ${field} 不能为空。`)
-  return normalized
-}
-
-export function extractPreviewPhrase({ sentence, word, form, pos } = {}) {
-  const tokens = tokenizeEnglish(sentence)
-  const lemma = normalizeText(word).toLowerCase()
-  const importedForm = normalizeImportedForm(form, lemma).toLowerCase()
-  const targetIndex = tokens.findIndex((token) => {
-    const normalized = token.toLowerCase()
-    return normalized === importedForm
-      || normalized === lemma
-      || normalized.startsWith(lemma)
-      || lemma.startsWith(normalized)
   })
-  if (targetIndex < 0) return importedForm || lemma
+}
 
-  const target = tokens[targetIndex]
-  const previous = tokens[targetIndex - 1]?.toLowerCase()
-  const next = tokens[targetIndex + 1]?.toLowerCase()
-  const afterNext = tokens[targetIndex + 2]?.toLowerCase()
-  if (previous === 'so' && next === 'as' && afterNext === 'to') {
-    return tokens.slice(targetIndex - 1, targetIndex + 5).join(' ')
+function resolveImportedPrimarySense(input, lemma) {
+  const evidenceInput = input?.primarySenseEvidence || input?.senseEvidence
+  if (evidenceInput && typeof evidenceInput === 'object') {
+    const result = resolvePrimarySense({
+      lemma,
+      pos: input?.pos || input?.partOfSpeech,
+      ...evidenceInput,
+    })
+    if (result.status === 'resolved' && result.primary_sense_key) {
+      const selected = (Array.isArray(evidenceInput.candidates) ? evidenceInput.candidates : [])
+        .find((candidate) => normalizeText(candidate?.sense_key || candidate?.id) === result.primary_sense_key)
+      const meaningZh = selectOneMeaning(
+        selected?.meaningZh || selected?.meaning_zh || selected?.meaning || selected?.gloss,
+      )
+      if (meaningZh) {
+        return {
+          meaningZh,
+          status: 'resolved',
+          reason: '两个以上独立义项证据达成一致',
+          targetSenseKey: result.primary_sense_key,
+        }
+      }
+    }
   }
-  if (isBeAuxiliary(previous) && next === 'to') return `be ${target} ${tokens[targetIndex + 1]}`
-  const trailingCount = normalizeText(pos).toLowerCase().startsWith('adv') ? 1 : 2
-  return tokens.slice(targetIndex, targetIndex + trailingCount + 1).join(' ')
+
+  const explicit = input?.primaryMeaningZh
+    || input?.targetMeaningZh
+    || input?.simpleMeaningZh
+    || input?.simple_meaning
+    || input?.zh
+    || input?.translation
+    || input?.meaning
+  const meaningZh = selectOneMeaning(explicit)
+  return {
+    meaningZh,
+    status: input?.primarySenseStatus === 'resolved' ? 'resolved' : 'suggested',
+    reason: input?.primarySenseStatus === 'resolved'
+      ? '导入数据已确认主要义'
+      : '证据不足，暂取精简释义的第一项；不是词频比例结论',
+    targetSenseKey: normalizeText(input?.targetSenseKey) || `preview:${lemma}:${meaningZh}`,
+  }
+}
+
+function selectOneMeaning(value) {
+  const normalized = normalizeText(value)
+    .replace(/^\[[^\]]+\]\s*/u, '')
+    .replace(/^(?:n|v|adj|adv|noun|verb|adjective|adverb)\.?\s*/iu, '')
+  if (!normalized) return ''
+  return normalizeText(normalized.split(/[;；\n]|[,，](?=\s*[^（(]{1,12}(?:[,，;；]|$))/u)[0])
+    .replace(/[；;，,。]+$/u, '')
+}
+
+function normalizeRealSentence(value, lemma) {
+  if (!value || typeof value !== 'object') return null
+  const sentence = normalizeText(value.sentence)
+  const translationZh = normalizeText(value.translationZh)
+  const source = value.source && typeof value.source === 'object' ? value.source : null
+  if (!sentence || !translationZh || !source?.name || !source?.url || !source?.license) return null
+  if (!['article', 'subtitle', 'open_corpus', 'dictionary_example'].includes(source.kind)) return null
+  if (/\b(?:ai|generated)\b/iu.test(`${source.kind} ${source.name} ${source.license}`)) return null
+  if ((sentence.match(/[A-Za-z]+(?:['’][A-Za-z]+)*/g) || []).length > 16) return null
+  const escaped = String(lemma || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  if (!escaped || !new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence)) return null
+  return { sentence, translationZh, source: { ...source } }
+}
+
+export function extractPreviewPhrase({ sentence, word, form } = {}) {
+  const text = normalizeText(sentence)
+  const target = normalizeImportedForm(form, word)
+  if (!text || !target) return target
+  const words = text.match(/[A-Za-z]+(?:['’][A-Za-z]+)*/g) || []
+  const index = words.findIndex((token) => token.toLowerCase().startsWith(target.toLowerCase()))
+  return index < 0 ? target : words.slice(Math.max(0, index - 1), index + 3).join(' ')
 }
 
 function normalizeImportedForm(value, fallback) {
@@ -149,14 +160,6 @@ function normalizeImportedForm(value, fallback) {
   return withoutCount || normalizeText(fallback)
 }
 
-function tokenizeEnglish(value) {
-  return String(value || '').match(/[A-Za-z]+(?:['’][A-Za-z]+)*/g) || []
-}
-
-function isBeAuxiliary(value) {
-  return ['am', 'are', 'is', 'was', 'were', 'be', 'been', 'being'].includes(value)
-}
-
 function normalizeText(value) {
-  return String(value ?? '').replace(/\s+/g, ' ').trim()
+  return String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim()
 }

@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
+import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
 
 export default defineConfig(() => {
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
@@ -15,6 +16,7 @@ export default defineConfig(() => {
   plugins: [
     vue(),
     createAriaEdgeTtsVitePlugin(),
+    createTatoebaSentenceVitePlugin(),
     createEcdictVitePlugin({
       enabled: ecdictEnabled,
       databasePath: process.env.ECDICT_DATABASE_PATH,

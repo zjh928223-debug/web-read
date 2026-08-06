@@ -24,17 +24,17 @@
 - 用时间预算生成每日计划，而不是以固定 100 词作为硬目标。
 - 建立可审计的原始事件数据，为日后个性化 FSRS 参数与策略比较提供可靠输入。
 - 为多对话并行实施划出明确模块、依赖、文件所有权和合并门槛。
-- 用用户本地 JSON 驱动一个可真实使用的 Passage 1 五词预习试点，复用现有复习页的覆盖层视觉结构，用真实交互验证 acquisition 的首次引入体验。
+- 用用户本地词批次驱动通用首次接触覆盖层，复用现有复习页视觉结构，并以可追溯短真实句验证 acquisition 的首次引入体验。
 
 **Non-Goals:**
 
-- 除下述五词共享视觉试点外，本次不要求实现新的 acquisition 页面体系、视觉稿或重做现有复习页面；试点不得自然扩张为完整预习产品。
+- 本次只实现首次接触覆盖层，不实现完整 acquisition 管理页面或重做现有复习页面。
 - 本次不在线训练模型，不自动发布个性化参数，也不保证首次上线就改变 FSRS 默认参数。
 - 本次不提供考试词表或版权例句内容，只提供本地导入、来源记录和筛选能力。
 - 本次不把孤立释义回忆设为 graduation 的硬门槛。
 - 本次不让 AI 成为例句生成或正常复习的运行时依赖。
 - 本次不改动 IndexedDB 数据库版本和 object store。
-- 五词试点的本轮补充优化只实现共享复习视觉体系中的微型阅读、按住显示中文和预习自动 Aria 发音。至少 24 小时延迟检查、graduation、创建 `ReviewState`、FSRS 接入、其他 Passage 或剑 4–18 扩展均属于后续第二轮，本轮不得实现。延迟检查未来仍使用手动发音，不继承本轮预习自动播放规则。
+- 本轮只实现通用首次接触、真实句筛选与预习自动 Aria 发音。至少 24 小时延迟检查、graduation、创建 `ReviewState` 与 FSRS 接入仍属于后续轮次。延迟检查未来仍使用手动发音，不继承本轮预习自动播放规则。
 
 ## Decisions
 
@@ -300,22 +300,19 @@ P6 不得仅依据 P1+P2 启动；P3 的 transaction-bound event adapter 是 gra
 P6 同时实现 review repository，必须等待 P6 的共享 repository/UoW 合并。每个任务先合并上游，再运行自己的 focused verification；每个 wave 结束后统一运行
 `npm run build` 与 `npm run verify:vite`。
 
-### 14. Passage 1 五词试点是一个隔离的本地 UI 垂直切片
+### 14. 通用首次接触是一个隔离的 UI 垂直切片
 
-该试点允许在完整 acquisition repository/service 波次之前落地，但必须保持隔离：
+该覆盖层允许在完整 acquisition 管理页面之前落地，但必须保持隔离：
 
-- 微阅读使用独立、无时间戳的本地数据适配：熟悉度结果与 `passage-preview.micro-reading.v1` 按 lemma 合并，严格包含 `targetMeaningZh`、`focusPhraseEn`、`focusPhraseZh`、`focusChunks[{en, zh, containsTarget}]` 和可选 `paragraphChunks`。运行时不调用 AI，不挂载 `processChunkData` 或 `ChunkModeView`。版权语料仅存在于用户本地导入包；仓库 fixture 只使用合成文本。
-- 中文块状态与 reader 的 AI chunk 状态隔离。预习快捷键可以首次读取现有 AI 切分中文快捷键作为默认肌肉记忆，但随后使用独立 storage key；keydown/keyup、页面按钮、blur、visibilitychange、切词、关闭与刷新都必须保证按住状态复位。
-
+- importer 接受任意数量的 `answers[]` 或 `vocabulary-preview.first-contact.v1 items[]`，按 lemma 去重，并将多释义输入降为一个明确标注的主要义或主要义建议。已有 `primary-sense-policy.v1` 达成多来源共识时才标为 resolved；否则不得宣称词频比例。
 - 入口位于“今日复习”附近，以覆盖层打开，并复用复习页的两栏卡片、页头与底部操作区视觉语言；不得修改“今日复习”的队列、评分、自动播放或历史行为。
-- 用户通过浏览器文件选择器主动导入熟悉度结果 JSON。importer 只接受 `answers` 中 `source` 包含 `C19-T1-RP1-` 且 lemma 为 `thorough`、`readily`、`subtle`、`attribute`、`enhance` 的项目；按 lemma 去重后必须五词齐全，并按该固定顺序返回。词性、目标义、中文、原句和来源均来自该文件。
-- 完整原句与派生短语只进入浏览器本地存储。发布包、源码、测试 fixture、OpenSpec 和公共导出不得包含这些原句或五条目标短语。
-- 短语由通用的本地语境抽取规则派生，不按五个 lemma 硬编码文本映射。
-- 状态仅为 `not_started`、`in_progress`、`completed`，保存当前位置、每词学习内容揭示状态和完整原句折叠状态。它不复用或写入 SRS repository，不创建 `ReviewState`。
-- 卡片首态只显示单词与“先自己尝试发音”；学习内容揭示后才显示可用音标、精简中文目标义、派生短语和默认折叠的完整原句。
+- 真实句候选优先来自用户文章/字幕和许可开放语料；当前开放适配器通过同源 Vite endpoint 查询 Tatoeba，只接收已批准、带简体中文翻译和 `CC BY 2.0 FR` 的记录，并保存句子 ID、作者及链接。候选必须通过 `sentence-candidate-ranking.v1` 的 `first_preview` 义项、来源和难度硬约束。
+- 用户本地考试原句不得用于 `first_preview`；其定位只保留给 `late_context_transfer`。没有合格候选时显示无句状态，AI 不得现编默认替代句。
+- 状态仅为 `not_started`、`in_progress`、`completed`，保存动态批次当前位置与每词学习内容揭示状态。它不复用或写入 SRS repository，不创建 `ReviewState`。
+- 卡片首态只显示单词；学习内容揭示后显示可用音标、一个中文主要义和至多一条带中文翻译与 attribution 的短真实句。同日不追加第二或第三条重复语境。
 - 发音服务优先严格匹配系统语音 `Microsoft Aria Online (Natural) - English (United States)`；不可用时只请求 Vite dev/preview 提供的同源 `/api/tts/edge`，该端点用 `node-edge-tts` 合成并声明 `en-US-AriaNeural`。客户端不得接受其他英语语音；两者都不可用时显示“Aria美式发音暂不可用”。
-- 每个预习词进入时自动播放一次，用户点击可以重播；切词、完成、关闭覆盖层、blur 或 visibilitychange 必须取消等待 voice、fetch 与尚未完成的播放请求，防止旧词延迟播放。该严格服务设计为可供后续 review 调用，但本试点不改变现有 review 发音策略。
-- 本试点不依赖 ECDICT 或 AI API；新增的 Vite/Node 端点只负责按需生成 Aria 音频，不接触预习数据、IndexedDB 或 SRS。
+- 每个预习词进入时自动播放一次，用户点击可以重播；切词、完成或关闭覆盖层必须取消等待 voice、真实句 fetch 与尚未完成的播放请求，防止旧词延迟显示或播放。该严格服务设计为可供后续 review 调用，但本覆盖层不改变现有 review 发音策略。
+- 本覆盖层不依赖 ECDICT 或 AI API；新增的 Vite/Node 端点分别负责按需生成 Aria 音频和代理许可开放短句，不接触 IndexedDB 或 SRS。
 
 ## Risks / Trade-offs
 
