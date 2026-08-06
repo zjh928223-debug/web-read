@@ -117,7 +117,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { createAriaAmericanPronunciationService } from '../../services/pronunciation/aria-american-pronunciation.js'
-import { findRealPreviewSentence, REAL_SENTENCE_STATUS } from './tatoeba-preview-sentence.js'
+import { findPreviewSentence, REAL_SENTENCE_STATUS } from './preview-sentence-source.js'
 import { loadPassagePreviewProgress, savePassagePreviewProgress } from './passage-preview-storage.js'
 
 const props = defineProps({ items: { type: Array, required: true } })
@@ -161,7 +161,7 @@ async function loadSentence() {
   sentenceLoading.value = true
   sentenceMessage.value = ''
   sentenceStatus.value = ''
-  const result = await findRealPreviewSentence(current.value, { signal: sentenceAbortController.signal })
+  const result = await findPreviewSentence(current.value, { signal: sentenceAbortController.signal })
     .catch((error) => error?.name === 'AbortError' ? null : ({ status: 'error', message: '真实短句加载失败。' }))
   if (!result || request !== sentenceRequest) return
   sentenceLoading.value = false

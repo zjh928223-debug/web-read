@@ -271,9 +271,11 @@ meanings as primary black text and contextual meanings as secondary gray text.
 `App.vue` also opens `features/passage-preview/PassagePreviewPage.vue` from the
 `待预习` entry. The overlay accepts general local word batches, reduces each item
 to one primary-meaning suggestion, and requests at most one sense-matched short
-authentic sentence through `tatoeba-preview-sentence.js`. The same-origin Vite
-adapter preserves Tatoeba sentence IDs, author links, and license attribution;
-failed source or sense checks resolve to a no-sentence state and never to an AI
+authentic sentence through `preview-sentence-source.js` and the versioned
+sentence-source registry. The same-origin Vite adapter preserves Tatoeba
+sentence IDs, author links, and license attribution. A default-disabled Wordnik
+provider slot accepts a future injected resolver without owning fetch, secrets,
+or persistence. Failed source or sense checks resolve to a no-sentence state and never to an AI
 sentence or long IELTS fallback. Preview state remains separate from reader
 chunk state and never writes a `ReviewState`. `services/pronunciation/` prefers
 the exact Microsoft Aria system voice and falls back to the same-origin

@@ -87,6 +87,16 @@
 - **AND** 页面显示语料名称、许可、作者或句子记录链接
 - **AND** 页面只显示这一条句子，不追加同日第二、第三个重复语境
 
+#### Scenario: Wordnik 预留来源默认关闭
+- **WHEN** 系统使用默认首次接触配置
+- **THEN** 来源注册表包含可识别的 Wordnik provider slot，但其状态为 disabled
+- **AND** 该 slot 不发起网络请求、不读取 API key、不写入本地缓存或 IndexedDB
+
+#### Scenario: 后续注入 Wordnik resolver
+- **WHEN** 未来显式启用 Wordnik 并注入符合 provider contract 的 resolver
+- **THEN** 预习 UI 与句子排序调用方无需改写即可接收统一真实句结果
+- **AND** Wordnik 结果仍必须满足目标义项、来源、许可和首次接触难度约束
+
 #### Scenario: 只有剑雅长句匹配
 - **WHEN** 目标词在用户本地考试材料中存在，但句子不符合首次接触难度或来源策略
 - **THEN** 系统不在首次接触页展示该考试原句或完整段落

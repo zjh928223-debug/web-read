@@ -179,3 +179,9 @@
 - [x] 19.3 将已有主要义项共识器与真实句排序器接到预习链路；主要义项未达成共识时必须标为建议，句义未验证时不得展示为合格语境。
 - [x] 19.4 将预习覆盖层改为“单词 + 单一主要义 + 一条短真实句”；移除默认完整剑雅段落与同日重复语境，考试原句只保留给后期语境迁移。
 - [x] 19.5 增加来源失败、安全回退、动态批次数量、刷新恢复、桌面/窄屏和无 ReviewState/无 IndexedDB schema 变化的 focused verification。
+
+## 20. Wave C2：真实句来源扩展边界
+
+- [x] 20.1 增加版本化真实句 provider registry 与默认关闭的 Wordnik 注入入口；占位入口不得包含 endpoint、API key、fetch 或持久化行为。
+- [x] 20.2 将首次接触页从直接调用 Tatoeba 改为调用通用来源选择器，同时保持 Tatoeba 为默认启用来源和现有安全回退行为。
+- [x] 20.3 增加 focused verification，覆盖默认 provider 顺序、Wordnik disabled 零调用、显式 resolver 注入、重复 provider 拒绝及无网络/缓存/IndexedDB 耦合。

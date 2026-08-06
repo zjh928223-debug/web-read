@@ -2,12 +2,9 @@ import {
   rankSentenceCandidates,
   SENTENCE_RANKING_USE_CASES,
 } from '../../services/vocabulary/personalization/sentence-candidate-ranking.js'
+import { REAL_SENTENCE_STATUS } from '../../services/vocabulary/personalization/sentence-source-registry.js'
 
-export const REAL_SENTENCE_STATUS = Object.freeze({
-  READY: 'ready',
-  UNAVAILABLE: 'unavailable',
-  ERROR: 'error',
-})
+export { REAL_SENTENCE_STATUS }
 
 export async function findRealPreviewSentence(item, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch

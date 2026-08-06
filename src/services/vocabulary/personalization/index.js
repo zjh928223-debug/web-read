@@ -1,5 +1,7 @@
 export * from './primary-sense-policy.js';
 export * from './sentence-source-policy.js';
+export * from './sentence-source-registry.js';
+export * from './wordnik-sentence-source.js';
 export * from './sentence-candidate-ranking.js';
 export * from './skill-taxonomy.js';
 export * from './skill-evidence.js';

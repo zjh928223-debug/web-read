@@ -29,6 +29,7 @@ async function run() {
   verifyGenericBatch(importer)
   verifyNoReviewOrDictionaryCoupling()
   verifyProgressPersistence(storageModule, items)
+  await verifySentenceSourceRegistry()
   await verifyRealSentenceSelection()
   await verifyRealSentenceEndpoint()
   await verifyStrictSystemAria(pronunciation)
@@ -72,9 +73,15 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /progress\.completedAt = new Date\(\)\.toISOString\(\)/)
   assert.match(appSource, /今日复习[\s\S]*待预习/)
   const sourceAdapter = read('src/features/passage-preview/tatoeba-preview-sentence.js')
+  const sourceComposition = read('src/features/passage-preview/preview-sentence-source.js')
+  const wordnikPort = read('src/services/vocabulary/personalization/wordnik-sentence-source.js')
   assert.match(sourceAdapter, /rankSentenceCandidates/)
   assert.match(sourceAdapter, /target_sense_match/)
   assert.match(sourceAdapter, /CC BY 2\.0 FR/)
+  assert.match(componentSource, /from '\.\/preview-sentence-source\.js'/)
+  assert.doesNotMatch(componentSource, /from '\.\/tatoeba-preview-sentence\.js'/)
+  assert.match(sourceComposition, /createWordnikSentenceSourceProvider/)
+  assert.doesNotMatch(wordnikPort, /\bfetch\b|localStorage|indexedDB|repository|api\.wordnik\.com/i)
 }
 
 function verifyProgressPersistence(storageModule, items) {
@@ -361,6 +368,53 @@ async function verifyRealSentenceSelection() {
   assert.equal(adapter.hasMeaningOverlap('河岸', '我去了银行。'), false)
 }
 
+async function verifySentenceSourceRegistry() {
+  const modules = await importPreviewSentenceSources()
+  const defaults = modules.composition.listPreviewSentenceSources()
+  assert.deepEqual(defaults.map(({ id, enabled }) => ({ id, enabled })), [
+    { id: 'tatoeba', enabled: true },
+    { id: 'wordnik', enabled: false },
+  ])
+
+  let disabledWordnikCalls = 0
+  const disabledRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
+    wordnik: {
+      enabled: false,
+      resolver: async () => {
+        disabledWordnikCalls += 1
+        return { status: 'ready' }
+      },
+    },
+  })
+  const unavailable = await disabledRegistry.findPreviewSentence({ word: 'example' })
+  assert.equal(unavailable.status, 'unavailable')
+  assert.equal(disabledWordnikCalls, 0, 'disabled Wordnik port must remain inert')
+
+  const enabledRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
+    wordnik: {
+      enabled: true,
+      resolver: async () => ({
+        status: 'ready',
+        sentence: 'This is a Wordnik fixture.',
+        translationZh: 'fixture',
+        source: { name: 'Wordnik', recordId: 'fixture', license: 'fixture', url: '#' },
+      }),
+    },
+  })
+  const selected = await enabledRegistry.findPreviewSentence({ word: 'fixture' })
+  assert.equal(selected.providerId, 'wordnik')
+  assert.equal(selected.sentence, 'This is a Wordnik fixture.')
+
+  assert.throws(() => modules.registry.createSentenceSourceRegistry({
+    providers: [
+      { id: 'duplicate', enabled: true, findPreviewSentence: async () => ({ status: 'unavailable' }) },
+      { id: 'duplicate', enabled: true, findPreviewSentence: async () => ({ status: 'unavailable' }) },
+    ],
+  }), /Duplicate sentence source provider/)
+}
+
 async function verifyRealSentenceEndpoint() {
   const plugin = await import(pathToFileURL(path.join(
     projectRoot,
@@ -430,13 +484,43 @@ async function importPassagePreviewImporter() {
 async function importTatoebaPreviewAdapter() {
   const tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'read-web-preview-sentence-'))
   const rankingSource = read('src/services/vocabulary/personalization/sentence-candidate-ranking.js')
+  const registrySource = read('src/services/vocabulary/personalization/sentence-source-registry.js')
   const adapterSource = read('src/features/passage-preview/tatoeba-preview-sentence.js')
     .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
+    .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs')
   const rankingPath = path.join(tempDir, 'sentence-candidate-ranking.mjs')
+  const registryPath = path.join(tempDir, 'sentence-source-registry.mjs')
   const adapterPath = path.join(tempDir, 'tatoeba-preview-sentence.mjs')
   await fsPromises.writeFile(rankingPath, rankingSource, 'utf8')
+  await fsPromises.writeFile(registryPath, registrySource, 'utf8')
   await fsPromises.writeFile(adapterPath, adapterSource, 'utf8')
   return import(`${pathToFileURL(adapterPath).href}?v=${Date.now()}`)
+}
+
+async function importPreviewSentenceSources() {
+  const tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'read-web-sentence-sources-'))
+  const registryPath = path.join(tempDir, 'sentence-source-registry.mjs')
+  const wordnikPath = path.join(tempDir, 'wordnik-sentence-source.mjs')
+  const rankingPath = path.join(tempDir, 'sentence-candidate-ranking.mjs')
+  const tatoebaPath = path.join(tempDir, 'tatoeba-preview-sentence.mjs')
+  const compositionPath = path.join(tempDir, 'preview-sentence-source.mjs')
+
+  await fsPromises.writeFile(registryPath, read('src/services/vocabulary/personalization/sentence-source-registry.js'), 'utf8')
+  await fsPromises.writeFile(wordnikPath, read('src/services/vocabulary/personalization/wordnik-sentence-source.js')
+    .replace('./sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
+  await fsPromises.writeFile(rankingPath, read('src/services/vocabulary/personalization/sentence-candidate-ranking.js'), 'utf8')
+  await fsPromises.writeFile(tatoebaPath, read('src/features/passage-preview/tatoeba-preview-sentence.js')
+    .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
+    .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
+  await fsPromises.writeFile(compositionPath, read('src/features/passage-preview/preview-sentence-source.js')
+    .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs')
+    .replace('../../services/vocabulary/personalization/wordnik-sentence-source.js', './wordnik-sentence-source.mjs')
+    .replace('./tatoeba-preview-sentence.js', './tatoeba-preview-sentence.mjs'), 'utf8')
+
+  return {
+    composition: await import(`${pathToFileURL(compositionPath).href}?v=${Date.now()}`),
+    registry: await import(`${pathToFileURL(registryPath).href}?v=${Date.now()}`),
+  }
 }
 
 function createJsonResponse() {

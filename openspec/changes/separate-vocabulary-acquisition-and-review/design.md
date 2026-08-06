@@ -307,6 +307,7 @@ P6 同时实现 review repository，必须等待 P6 的共享 repository/UoW 合
 - importer 接受任意数量的 `answers[]` 或 `vocabulary-preview.first-contact.v1 items[]`，按 lemma 去重，并将多释义输入降为一个明确标注的主要义或主要义建议。已有 `primary-sense-policy.v1` 达成多来源共识时才标为 resolved；否则不得宣称词频比例。
 - 入口位于“今日复习”附近，以覆盖层打开，并复用复习页的两栏卡片、页头与底部操作区视觉语言；不得修改“今日复习”的队列、评分、自动播放或历史行为。
 - 真实句候选优先来自用户文章/字幕和许可开放语料；当前开放适配器通过同源 Vite endpoint 查询 Tatoeba，只接收已批准、带简体中文翻译和 `CC BY 2.0 FR` 的记录，并保存句子 ID、作者及链接。候选必须通过 `sentence-candidate-ranking.v1` 的 `first_preview` 义项、来源和难度硬约束。
+- 预习 UI 只依赖 `sentence-source-registry.v1`，不直接绑定具体语料服务。Tatoeba 是当前默认启用 provider；Wordnik 仅保留默认关闭、resolver 注入式的 provider slot。该 slot 本轮不包含 endpoint、API key、fetch 或持久化逻辑；未来启用时仍必须返回统一的句子、翻译、来源、许可与定位结果，并继续经过既有筛选策略。
 - 用户本地考试原句不得用于 `first_preview`；其定位只保留给 `late_context_transfer`。没有合格候选时显示无句状态，AI 不得现编默认替代句。
 - 状态仅为 `not_started`、`in_progress`、`completed`，保存动态批次当前位置与每词学习内容揭示状态。它不复用或写入 SRS repository，不创建 `ReviewState`。
 - 卡片首态只显示单词；学习内容揭示后显示可用音标、一个中文主要义和至多一条带中文翻译与 attribution 的短真实句。同日不追加第二或第三条重复语境。
