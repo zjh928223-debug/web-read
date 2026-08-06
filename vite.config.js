@@ -6,6 +6,7 @@ import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
 import { createWordnikSentenceVitePlugin } from './src/services/vocabulary/wordnik-sentence-vite-plugin.mjs'
+import { createLocalSentenceVitePlugin } from './src/dictionary/local-sentences/local-sentence-vite-plugin.mjs'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -18,6 +19,9 @@ export default defineConfig(({ mode }) => {
   plugins: [
     vue(),
     createAriaEdgeTtsVitePlugin(),
+    createLocalSentenceVitePlugin({
+      databasePath: process.env.LOCAL_SENTENCE_DATABASE_PATH,
+    }),
     createTatoebaSentenceVitePlugin(),
     createWordnikSentenceVitePlugin({
       apiKey: process.env.WORDNIK_API_KEY || env.WORDNIK_API_KEY,

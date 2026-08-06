@@ -5,12 +5,22 @@ import {
 import { createWordnikSentenceSourceProvider } from '../../services/vocabulary/personalization/wordnik-sentence-source.js'
 import { findRealPreviewSentence } from './tatoeba-preview-sentence.js'
 import { findWordnikPreviewSentence } from './wordnik-preview-sentence.js'
+import { findLocalWarehousePreviewSentence } from './local-warehouse-preview-sentence.js'
 
 export { REAL_SENTENCE_STATUS }
 
 export function createPreviewSentenceSourceRegistry(options = {}) {
   return createSentenceSourceRegistry({
     providers: [
+      {
+        id: 'local-warehouse',
+        label: '本地例句仓库',
+        enabled: options.localWarehouseEnabled !== false,
+        priority: 50,
+        transport: 'same-origin-local-sqlite',
+        persistence: 'none',
+        findPreviewSentence: options.localWarehouseResolver || findLocalWarehousePreviewSentence,
+      },
       {
         id: 'tatoeba',
         label: 'Tatoeba',

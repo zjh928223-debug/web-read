@@ -55,7 +55,7 @@
           <p v-if="!isRevealed" class="passage-preview-hidden-note">先看一眼词形；点击后只学习一个主要义和一条短句。</p>
           <div v-else class="passage-preview-context-body">
             <div v-if="sentenceLoading" class="passage-preview-sentence-state" role="status">
-              正在从可追溯开放语料中筛选短句…
+              正在从本地例句仓库和可追溯语料中筛选短句…
             </div>
             <section v-else-if="realSentence" class="passage-preview-real-sentence">
               <div class="passage-preview-sentence-line">
@@ -79,12 +79,14 @@
               </div>
               <p v-if="realSentence.translationZh" class="passage-preview-sentence-translation">{{ realSentence.translationZh }}</p>
               <p v-else class="passage-preview-sentence-translation passage-preview-sentence-translation--missing">
-                Wordnik 暂不提供整句中文翻译；当前目标主要义见左侧。
+                {{ missingTranslationMessage }}
               </p>
               <p class="passage-preview-attribution">
-                真实例句来源 ·
-                <a :href="realSentence.source.url" target="_blank" rel="noreferrer">{{ realSentence.source.name }} #{{ realSentence.source.recordId }}</a>
+                {{ sourceKindLabel }} ·
+                <a v-if="realSentence.source.url" :href="realSentence.source.url" target="_blank" rel="noreferrer">{{ realSentence.source.name }} #{{ realSentence.source.recordId }}</a>
+                <span v-else>{{ realSentence.source.name }} #{{ realSentence.source.recordId }}</span>
                 · {{ realSentence.source.license }}
+                <template v-if="realSentence.source.ref"> · {{ realSentence.source.ref }}</template>
                 <template v-if="realSentence.source.owner"> · {{ realSentence.source.ownerLabel || '作者' }} {{ realSentence.source.owner }}</template>
               </p>
               <a
@@ -155,7 +157,18 @@ const current = computed(() => props.items[currentIndex.value] || {})
 const batchTitle = computed(() => current.value.batchTitle || `${props.items.length}词首次接触`)
 const isRevealed = computed(() => progress.revealed[current.value.id] === true)
 const realSentence = computed(() => current.value.realSentence || loadedSentence.value)
-const highlightedSentence = computed(() => splitTarget(realSentence.value?.sentence, current.value.lemma || current.value.word))
+const highlightedSentence = computed(() => splitTarget(
+  realSentence.value?.sentence,
+  realSentence.value?.matchedLemma || current.value.lemma || current.value.word,
+))
+const missingTranslationMessage = computed(() => realSentence.value?.source?.name === 'Wordnik'
+  ? 'Wordnik 暂不提供整句中文翻译；当前目标主要义见左侧。'
+  : '该本地英文例句暂无整句中文翻译；当前目标主要义见左侧。')
+const sourceKindLabel = computed(() => realSentence.value?.source?.kind === 'authentic_excerpt'
+  ? '真实出版摘句来源'
+  : realSentence.value?.providerId === 'local-warehouse'
+    ? '本地词典例句来源'
+    : '真实例句来源')
 
 function revealLearningContent() {
   progress.revealed[current.value.id] = true

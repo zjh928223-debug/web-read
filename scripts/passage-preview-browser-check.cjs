@@ -15,6 +15,16 @@ async function run() {
   page.on('pageerror', (error) => errors.push(error.message))
 
   try {
+    await page.route('**/api/vocabulary/local-sentences**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          available: false,
+          errorCode: 'LOCAL_SENTENCE_DATABASE_MISSING',
+          items: [],
+        }),
+      })
+    })
     await page.route('**/api/vocabulary/real-sentences**', async (route) => {
       const word = new URL(route.request().url()).searchParams.get('word')
       const meanings = {

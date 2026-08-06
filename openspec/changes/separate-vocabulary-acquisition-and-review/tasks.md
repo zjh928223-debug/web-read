@@ -199,3 +199,11 @@
 - [x] 22.1 在来源注册表保留每个已启用 provider 的尝试结果；全部失败时汇总 Tatoeba 与 Wordnik 状态，不得只暴露最后一个 provider。
 - [x] 22.2 删除首次接触页的剑雅原句迁移说明及其专用样式，不改变无 AI、无考试长句自动回退规则。
 - [x] 22.3 更新 focused verification 与架构文档，明确当前自动在线来源、导入句来源和尚未接通的自动本地搜索边界。
+
+## 23. Wave C5：本地 MDX 例句与音频仓库
+
+- [x] 23.1 新增可重复运行的本地仓库构建器，解析 Vocabulary.com、LDOCE、Open English WordNet 与可选 Kaikki，建立 lemma/词形/句子/义项/来源索引；原文件和生成库保持 Git 忽略。
+- [x] 23.2 新增只读 SQLite 服务、Vite 同源端点和首次接触 provider；本地来源排在 Tatoeba、Wordnik 之前，并支持变化词形回退到 lemma。
+- [x] 23.3 调整首次接触来源与缺翻译文案，区分词典例句、真实出版摘句和在线语料，不把所有无翻译句误称为 Wordnik。
+- [x] 23.4 下载并记录首批文本词典；为大体积 MDD 音频保留可续传下载与后续索引入口，音频下载不阻塞文字链路。
+- [x] 23.5 增加合成 fixture 与真实本地冒烟检查，覆盖 `sanctuaries`、`propping`、`gauges`、本地优先、在线回退、无 IndexedDB schema 变化和无受限内容进入 Git/构建产物。

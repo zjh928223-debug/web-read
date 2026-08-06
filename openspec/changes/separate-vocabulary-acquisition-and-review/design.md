@@ -318,6 +318,13 @@ P6 同时实现 review repository，必须等待 P6 的共享 repository/UoW 合
 
 ## Risks / Trade-offs
 
+### 本地例句与音频仓库（Wave C5）
+
+首次接触的来源顺序调整为：本地只读仓库 → Tatoeba → Wordnik。本地仓库由独立构建脚本从用户本机的 MDX、Open English WordNet 和可选 Kaikki JSONL 生成 SQLite；运行时 Vite 插件只读打开该库，不写 `localStorage`、IndexedDB 或语料源文件。
+
+文本首批使用 Vocabulary.com 的带出版物来源用例与 LDOCE 的义项例句；其他学习型词典用于扩大覆盖率和交叉验证。MDD 音频作为同一仓库的可选后续索引，不阻塞文字例句链路。受再分发限制的原文件、抽取文本、音频与 SQLite 均位于 `/data/dictionaries/` 并保持 Git 忽略，仓库只提交解析器、schema、来源 manifest 模板和合成测试数据。
+
+候选排序先满足词形/lemma、句长和目标词明确出现，再按词典义项顺序、来源类型和结构难度排序。资源数量只提高覆盖率；UI 仍只展示一个主要义和一条句子。
 - [一词多义使数据模型和 UI 复杂] → repository 允许多个 active target senses 并以 `(word_id, target_sense_key)` 唯一；初期 UI 可一次只编辑一个义项。
 - [同日 revisit 可能提高短期正确率而非长期保持] → 三种策略可切换，分析使用跨日 retention 指标，不用同日正确率单独决策。
 - [一次/日可能违背 scheduler short steps] → 明确这是产品 queue policy，不篡改 FSRS rating；通过 policy_version 和实验报告评估代价。

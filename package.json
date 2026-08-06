@@ -31,6 +31,8 @@
     "verify:vocabulary-personalization": "npm run verify:vocabulary-personalization-content && npm run verify:vocabulary-personalization-skills && npm run verify:vocabulary-personalization-preference && npm run verify:vocabulary-personalization-curriculum && npm run verify:vocabulary-personalization-shadow",
     "verify:passage-preview": "node scripts/passage-preview-verify.cjs",
     "verify:passage-preview:unit": "node scripts/passage-preview-check.cjs",
+    "verify:local-sentences": "node --disable-warning=ExperimentalWarning scripts/local-sentence-warehouse-check.mjs",
+    "sentences:build": "python scripts/build-local-sentence-warehouse.py",
     "preview:build-package": "node scripts/build-passage-preview-package.cjs",
     "verify:annotation-lightweight-module": "node scripts/annotation-lightweight-module-check.cjs",
     "verify:annotation-backfill-ai": "node scripts/annotation-backfill-ai-module-check.cjs",

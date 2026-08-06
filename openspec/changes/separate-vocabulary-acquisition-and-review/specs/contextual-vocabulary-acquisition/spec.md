@@ -224,6 +224,29 @@
 - **THEN** 系统缓存生成结果并标记来源为 AI
 - **AND** 该句子必须经过确认后才能变成 validated `ContextEvidence`
 
+### Requirement: 首次接触必须优先使用本地可追溯例句仓库
+系统 MUST 在首次接触页优先查询用户本机的只读例句仓库，并仅在本地仓库没有合格候选时依次尝试在线开放语料和 Wordnik。仓库 MUST 支持词形到 lemma 的查询，保留词典、出版物或语料来源信息，并与 `SeekPlayerDB` 完全隔离。
+
+#### Scenario: 变化词形命中本地 lemma
+- **WHEN** 首次接触项为 `sanctuaries`、`propping` 或 `gauges`
+- **THEN** 本地仓库分别查询 `sanctuary`、`prop` 或 `gauge` 的候选句
+- **AND** 只返回明确包含目标词形或可验证词族形式的短句
+
+#### Scenario: 本地仓库命中
+- **WHEN** 本地仓库返回符合主要义、长度和可理解性边界的候选句
+- **THEN** 页面显示该句及其具体来源和本地使用说明
+- **AND** 本次查询不得调用 Tatoeba 或 Wordnik
+
+#### Scenario: 本地仓库缺失或无候选
+- **WHEN** 本地数据库尚未构建或当前词没有合格本地候选
+- **THEN** provider registry 继续尝试 Tatoeba 和 Wordnik
+- **AND** 页面汇总每个已启用来源的状态，不用 AI 现编句或剑雅长段落补位
+
+#### Scenario: 本地商业词典材料
+- **WHEN** 用户将本地持有的 MDX/MDD 词典构建为例句或音频索引
+- **THEN** 原文件、抽取内容和生成数据库只保存在被 Git 忽略的本地数据目录
+- **AND** 发布包、fixture、导出模板和公共数据集不得包含这些内容
+
 ### Requirement: graduation 必须具有幂等性和事务性
 系统 MUST 保证同一 `LearningUnit` 的重复 graduation 请求不会创建重复 `ReviewState`，且 acquisition 状态、review 状态和 graduation 事件必须全部提交或全部回滚。
 

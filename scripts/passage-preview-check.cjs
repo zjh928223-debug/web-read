@@ -85,6 +85,8 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /from '\.\/preview-sentence-source\.js'/)
   assert.doesNotMatch(componentSource, /from '\.\/tatoeba-preview-sentence\.js'/)
   assert.match(sourceComposition, /createWordnikSentenceSourceProvider/)
+  assert.match(sourceComposition, /findLocalWarehousePreviewSentence/)
+  assert.match(componentSource, /该本地英文例句暂无整句中文翻译/)
   assert.doesNotMatch(wordnikPort, /\bfetch\b|localStorage|indexedDB|repository|api\.wordnik\.com/i)
   assert.match(wordnikAdapter, /WORDNIK_PREVIEW_ENDPOINT/)
   assert.doesNotMatch(wordnikAdapter, /localStorage|indexedDB|savePassagePreviewData/i)
@@ -380,12 +382,14 @@ async function verifySentenceSourceRegistry() {
   const modules = await importPreviewSentenceSources()
   const defaults = modules.composition.listPreviewSentenceSources()
   assert.deepEqual(defaults.map(({ id, enabled }) => ({ id, enabled })), [
+    { id: 'local-warehouse', enabled: true },
     { id: 'tatoeba', enabled: true },
     { id: 'wordnik', enabled: true },
   ])
 
   let disabledWordnikCalls = 0
   const disabledRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    localWarehouseResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
     tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
     wordnik: {
       enabled: false,
@@ -400,6 +404,7 @@ async function verifySentenceSourceRegistry() {
   assert.equal(disabledWordnikCalls, 0, 'disabled Wordnik port must remain inert')
 
   const exhaustedRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    localWarehouseResolver: async () => ({ status: 'unavailable', message: '本地例句仓库尚未构建' }),
     tatoebaResolver: async () => ({ status: 'unavailable', message: '暂未找到与主要义匹配的合格真实短句' }),
     wordnik: {
       enabled: true,
@@ -409,13 +414,16 @@ async function verifySentenceSourceRegistry() {
   const exhausted = await exhaustedRegistry.findPreviewSentence({ word: 'example' })
   assert.equal(exhausted.status, 'unavailable')
   assert.deepEqual(exhausted.sourceAttempts.map(({ providerId, status }) => ({ providerId, status })), [
+    { providerId: 'local-warehouse', status: 'unavailable' },
     { providerId: 'tatoeba', status: 'unavailable' },
     { providerId: 'wordnik', status: 'unavailable' },
   ])
   assert.match(exhausted.message, /Tatoeba：暂未找到与主要义匹配的合格真实短句/)
+  assert.match(exhausted.message, /本地例句仓库：尚未构建/)
   assert.match(exhausted.message, /Wordnik：API Key 尚未配置/)
 
   const enabledRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    localWarehouseResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
     tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
     wordnik: {
       enabled: true,
@@ -431,6 +439,20 @@ async function verifySentenceSourceRegistry() {
   assert.equal(selected.providerId, 'wordnik')
   assert.equal(selected.persistence, 'none')
   assert.equal(selected.sentence, 'This is a Wordnik fixture.')
+
+  let downstreamCalls = 0
+  const localFirstRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    localWarehouseResolver: async () => ({
+      status: 'ready',
+      sentence: 'The park is a wildlife sanctuary.',
+      source: { name: 'Longman', recordId: 'fixture', license: 'local', url: '#' },
+    }),
+    tatoebaResolver: async () => { downstreamCalls += 1; return { status: 'ready' } },
+    wordnik: { enabled: true, resolver: async () => { downstreamCalls += 1; return { status: 'ready' } } },
+  })
+  const localSelected = await localFirstRegistry.findPreviewSentence({ word: 'sanctuaries' })
+  assert.equal(localSelected.providerId, 'local-warehouse')
+  assert.equal(downstreamCalls, 0, 'a local hit must not call online providers')
 
   let fetchCount = 0
   const direct = await modules.wordnikAdapter.findWordnikPreviewSentence({
@@ -645,6 +667,7 @@ async function importPreviewSentenceSources() {
   const rankingPath = path.join(tempDir, 'sentence-candidate-ranking.mjs')
   const tatoebaPath = path.join(tempDir, 'tatoeba-preview-sentence.mjs')
   const wordnikAdapterPath = path.join(tempDir, 'wordnik-preview-sentence.mjs')
+  const localAdapterPath = path.join(tempDir, 'local-warehouse-preview-sentence.mjs')
   const compositionPath = path.join(tempDir, 'preview-sentence-source.mjs')
 
   await fsPromises.writeFile(registryPath, read('src/services/vocabulary/personalization/sentence-source-registry.js'), 'utf8')
@@ -657,11 +680,14 @@ async function importPreviewSentenceSources() {
   await fsPromises.writeFile(wordnikAdapterPath, read('src/features/passage-preview/wordnik-preview-sentence.js')
     .replace('../../services/vocabulary/personalization/sentence-candidate-ranking.js', './sentence-candidate-ranking.mjs')
     .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
+  await fsPromises.writeFile(localAdapterPath, read('src/features/passage-preview/local-warehouse-preview-sentence.js')
+    .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs'), 'utf8')
   await fsPromises.writeFile(compositionPath, read('src/features/passage-preview/preview-sentence-source.js')
     .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs')
     .replace('../../services/vocabulary/personalization/wordnik-sentence-source.js', './wordnik-sentence-source.mjs')
     .replace('./tatoeba-preview-sentence.js', './tatoeba-preview-sentence.mjs')
-    .replace('./wordnik-preview-sentence.js', './wordnik-preview-sentence.mjs'), 'utf8')
+    .replace('./wordnik-preview-sentence.js', './wordnik-preview-sentence.mjs')
+    .replace('./local-warehouse-preview-sentence.js', './local-warehouse-preview-sentence.mjs'), 'utf8')
 
   return {
     composition: await import(`${pathToFileURL(compositionPath).href}?v=${Date.now()}`),
