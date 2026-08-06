@@ -31,6 +31,7 @@ export function createSentenceSourceRegistry({ providers = [] } = {}) {
     if (!enabledProviders.length) return unavailable('No real-sentence source is enabled.')
 
     let fallback = unavailable('No enabled source returned a suitable real sentence.')
+    const attempts = []
     for (const provider of enabledProviders) {
       let result
       try {
@@ -39,14 +40,24 @@ export function createSentenceSourceRegistry({ providers = [] } = {}) {
         if (error?.name === 'AbortError') throw error
         result = { status: REAL_SENTENCE_STATUS.ERROR, message: `${provider.label} sentence source failed.` }
       }
+      attempts.push(sourceAttempt(provider, result))
       if (result?.status === REAL_SENTENCE_STATUS.READY) {
-        return { ...result, providerId: provider.id, persistence: provider.persistence || 'none' }
+        return {
+          ...result,
+          providerId: provider.id,
+          persistence: provider.persistence || 'none',
+          sourceAttempts: attempts,
+        }
       }
       if (result?.status === REAL_SENTENCE_STATUS.ERROR || fallback.status !== REAL_SENTENCE_STATUS.ERROR) {
         fallback = result || fallback
       }
     }
-    return fallback
+    return {
+      ...fallback,
+      message: summarizeSourceAttempts(attempts) || fallback.message,
+      sourceAttempts: attempts,
+    }
   }
 
   function orderedProviders() {
@@ -87,4 +98,24 @@ function normalizeId(value) {
 
 function unavailable(message) {
   return { status: REAL_SENTENCE_STATUS.UNAVAILABLE, message }
+}
+
+function sourceAttempt(provider, result) {
+  return Object.freeze({
+    providerId: provider.id,
+    label: provider.label,
+    status: result?.status || REAL_SENTENCE_STATUS.ERROR,
+    message: String(result?.message || '未返回合格真实短句。').trim(),
+  })
+}
+
+function summarizeSourceAttempts(attempts) {
+  return attempts.map((attempt) => {
+    const message = attempt.message.replace(new RegExp(`^${escapeRegExp(attempt.label)}\\s*`, 'iu'), '')
+    return `${attempt.label}：${message}`
+  }).join('；')
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 }

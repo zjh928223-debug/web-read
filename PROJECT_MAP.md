@@ -272,7 +272,13 @@ meanings as primary black text and contextual meanings as secondary gray text.
 `待预习` entry. The overlay accepts general local word batches, reduces each item
 to one primary-meaning suggestion, and requests at most one sense-matched short
 authentic sentence through `preview-sentence-source.js` and the versioned
-sentence-source registry. The same-origin Vite adapter preserves Tatoeba
+sentence-source registry. The only currently connected automatic online
+providers are Tatoeba followed by Wordnik; an exhausted lookup retains every
+provider attempt so the UI does not hide an earlier Tatoeba miss behind the
+last Wordnik status. Imported preview rows may already contain a traceable
+`realSentence` from an article, subtitle, open corpus, or dictionary-example
+workflow, but those source classes do not yet have automatic local-search
+adapters. The same-origin Vite adapter preserves Tatoeba
 sentence IDs, author links, and license attribution. A server-side Wordnik
 provider is the second source: it reads `WORDNIK_API_KEY` outside the browser,
 uses an 80-call/hour local safety budget, retains only formatted session-memory

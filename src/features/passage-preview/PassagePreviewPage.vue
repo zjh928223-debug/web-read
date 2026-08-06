@@ -103,9 +103,6 @@
               <small>不会用 AI 现编句或剑雅长段落自动代替。</small>
               <button v-if="sentenceStatus === 'error'" type="button" @click="loadSentence">重试真实句源</button>
             </div>
-            <aside class="passage-preview-later-note">
-              剑雅原句已退出首次接触；等这个义项更熟悉后，再由复习模型安排原文迁移。
-            </aside>
           </div>
         </article>
       </div>

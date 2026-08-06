@@ -193,3 +193,9 @@
 - [x] 21.3 实现 Wordnik 预习 adapter，将其作为 Tatoeba 之后的补充来源，执行首次接触短句排序并仅使用会话内格式化缓存，不写 localStorage、IndexedDB 或语料仓库。
 - [x] 21.4 在 Wordnik 结果中显示无中文整句翻译提示、具体 word 链接和官方原尺寸 `Powered by Wordnik` badge，满足 attribution 要求。
 - [x] 21.5 增加 focused verification 与浏览器回归，覆盖密钥缺失零上游调用、密钥只走 header、配额保护、会话复用、来源回退、无持久化、生产构建和 Vite 加载。
+
+## 22. Wave C4：真实句来源状态透明度
+
+- [x] 22.1 在来源注册表保留每个已启用 provider 的尝试结果；全部失败时汇总 Tatoeba 与 Wordnik 状态，不得只暴露最后一个 provider。
+- [x] 22.2 删除首次接触页的剑雅原句迁移说明及其专用样式，不改变无 AI、无考试长句自动回退规则。
+- [x] 22.3 更新 focused verification 与架构文档，明确当前自动在线来源、导入句来源和尚未接通的自动本地搜索边界。

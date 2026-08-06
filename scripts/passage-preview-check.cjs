@@ -68,6 +68,8 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /v-if="!isRevealed"[\s\S]*看看这个词怎么用/)
   assert.match(componentSource, /简短真实语境/)
   assert.match(componentSource, /不会用 AI 现编句或剑雅长段落自动代替/)
+  assert.doesNotMatch(componentSource, /剑雅原句已退出首次接触|复习模型安排原文迁移/)
+  assert.doesNotMatch(read('src/features/passage-preview/passage-preview.css'), /passage-preview-later-note/)
   assert.doesNotMatch(componentSource, /完整语境|focusChunks|paragraphChunks/)
   assert.match(componentSource, /watch\([\s\S]*speakWord\(\)/)
   assert.match(componentSource, /progress\.status = 'completed'/)
@@ -396,6 +398,22 @@ async function verifySentenceSourceRegistry() {
   const unavailable = await disabledRegistry.findPreviewSentence({ word: 'example' })
   assert.equal(unavailable.status, 'unavailable')
   assert.equal(disabledWordnikCalls, 0, 'disabled Wordnik port must remain inert')
+
+  const exhaustedRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    tatoebaResolver: async () => ({ status: 'unavailable', message: '暂未找到与主要义匹配的合格真实短句' }),
+    wordnik: {
+      enabled: true,
+      resolver: async () => ({ status: 'unavailable', message: 'Wordnik API Key 尚未配置。' }),
+    },
+  })
+  const exhausted = await exhaustedRegistry.findPreviewSentence({ word: 'example' })
+  assert.equal(exhausted.status, 'unavailable')
+  assert.deepEqual(exhausted.sourceAttempts.map(({ providerId, status }) => ({ providerId, status })), [
+    { providerId: 'tatoeba', status: 'unavailable' },
+    { providerId: 'wordnik', status: 'unavailable' },
+  ])
+  assert.match(exhausted.message, /Tatoeba：暂未找到与主要义匹配的合格真实短句/)
+  assert.match(exhausted.message, /Wordnik：API Key 尚未配置/)
 
   const enabledRegistry = modules.composition.createPreviewSentenceSourceRegistry({
     tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),

@@ -118,6 +118,11 @@
 - **THEN** 页面只显示单词与一个主要义
 - **AND** 页面明确提示“暂未找到合格真实短句”，不得静默生成 AI 句子或回退到考试长段落
 
+#### Scenario: 多个已启用来源均未返回合格句
+- **WHEN** 来源注册表依次尝试多个已启用 provider 且最终没有合格真实短句
+- **THEN** 结果保留每个已尝试 provider 的标识、状态与提示
+- **AND** 页面不得只显示最后一个 provider 的失败而隐藏之前已经尝试的来源
+
 #### Scenario: 主要义项证据不足
 - **WHEN** learner dictionary、WordNet MFS 与 general/exam corpus 未达到主要义项共识门槛
 - **THEN** 系统将第一条精简释义标记为“主要义建议”而不是已确定主要义

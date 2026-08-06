@@ -213,8 +213,7 @@
   margin: 0;
 }
 
-.passage-preview-sentence-state--empty small,
-.passage-preview-later-note {
+.passage-preview-sentence-state--empty small {
   color: #8a94a5;
   font-size: 12px;
   line-height: 1.65;
@@ -229,11 +228,6 @@
   background: #fff;
   color: #315897;
   cursor: pointer;
-}
-
-.passage-preview-later-note {
-  padding-top: 18px;
-  border-top: 1px solid rgba(218, 224, 234, .78);
 }
 
 .passage-preview-actions {
