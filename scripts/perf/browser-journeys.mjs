@@ -10,6 +10,7 @@ const baseOrigin = new URL(baseUrl).origin
 const outputDirectory = path.resolve(process.env.READ_WEB_PERF_OUTPUT || path.join(repoRoot, 'output', 'performance'))
 const fixturePath = path.join(repoRoot, 'scripts', 'fixtures', 'performance-browser-journeys.v1.json')
 const previewFixturePath = path.join(repoRoot, 'scripts', 'fixtures', 'passage-preview-result.fixture.json')
+const srsFixtureText = await readFile(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review.sample.local.json'), 'utf8')
 const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
 const fixedJourneyOrder = Object.freeze([
   'cold-start',
@@ -21,6 +22,11 @@ const fixedJourneyOrder = Object.freeze([
   'srs-review',
 ])
 const requestedJourneys = parseRequestedJourneys(process.env.READ_WEB_PERF_JOURNEYS)
+const forcedFailureJourney = String(process.env.READ_WEB_PERF_FORCE_FAILURE || '').trim()
+const realHostApiPrefixes = String(process.env.READ_WEB_PERF_REAL_HOST_APIS || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean)
 
 function parseRequestedJourneys(value) {
   const names = String(value || fixedJourneyOrder.join(','))
@@ -134,9 +140,19 @@ async function installNetworkIsolation(context, artifact) {
   await context.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    if (url.origin === baseOrigin && realHostApiPrefixes.some((prefix) => url.pathname === prefix)) {
+      artifact.isolation.realHostApiRequests += 1
+      artifact.isolation.realHostApiPaths.push(url.pathname)
+      await route.continue()
+      return
+    }
     if (url.pathname.startsWith('/api/') || url.origin !== baseOrigin && url.pathname.includes('/api/')) {
       artifact.isolation.mockedApiRequests += 1
       await mockApi(route)
+      return
+    }
+    if (url.pathname === '/src/features/srs-review/srs-review.sample.local.json') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: srsFixtureText })
       return
     }
     if (url.origin === baseOrigin || url.protocol === 'data:' || url.protocol === 'blob:') {
@@ -308,7 +324,14 @@ const artifact = {
   capturedAt: new Date().toISOString(),
   baseUrl,
   fixture: { schema: fixture.schema, version: fixture.version, path: path.relative(repoRoot, fixturePath) },
-  isolation: { mode: 'browser-route-fixtures', mockedApiRequests: 0, blockedExternalRequests: 0, realExternalRequests: 0 },
+  isolation: {
+    mode: realHostApiPrefixes.length ? 'browser-route-fixtures-with-real-host-api' : 'browser-route-fixtures',
+    mockedApiRequests: 0,
+    realHostApiRequests: 0,
+    realHostApiPaths: [],
+    blockedExternalRequests: 0,
+    realExternalRequests: 0,
+  },
   requestedJourneys,
   journeys: [],
   measures: [],
@@ -388,6 +411,7 @@ try {
     if (!journey) throw new Error(`Unknown journey: ${name}`)
     const startedAt = performance.now()
     try {
+      if (forcedFailureJourney === name) throw new Error(`Forced journey failure: ${name}`)
       const metrics = await journey({ page, measure, sample })
       const runtime = await page.evaluate(() => window.__readWebPerformance || { longTasks: [], rejections: [] })
       artifact.longTasks.push(...(runtime.longTasks || []).map((entry) => ({ journey: name, ...entry })))
@@ -399,10 +423,12 @@ try {
       failed = true
       artifact.errors.push({ journey: name, type: 'journey', text: error.stack || error.message })
       artifact.journeys.push({ name, durationMs: performance.now() - startedAt, status: 'failed' })
-      throw error
+      await page.screenshot({ path: path.join(outputDirectory, `browser-journeys-${name}-failure.png`), fullPage: true })
     }
   }
-} catch {
+} catch (error) {
+  failed = true
+  artifact.errors.push({ journey: activeJourney, type: 'harness', text: error.stack || error.message })
   await page.screenshot({ path: path.join(outputDirectory, 'browser-journeys-failure.png'), fullPage: true })
 } finally {
   artifact.summary = {

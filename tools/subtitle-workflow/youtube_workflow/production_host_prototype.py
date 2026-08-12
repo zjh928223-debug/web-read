@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import argparse
+from hashlib import sha256
 from http.cookies import SimpleCookie
 from ipaddress import ip_address
+import json
+import os
 from pathlib import Path
 import secrets
+import sys
 from time import perf_counter
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
@@ -217,6 +223,11 @@ def create_local_app_host(
     access_token: str | None = None,
     workflow_access_token: str | None = None,
     capability_access_token: str | None = None,
+    release_id: str = "",
+    profile_id: str = "",
+    instance_id: str = "",
+    release_manifest_identity: dict | None = None,
+    config_compatibility: dict | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -230,13 +241,20 @@ def create_local_app_host(
         LocalCapabilityProxy(capability_base_url, capability_token) if capability_base_url else None
     )
     boot_started_at = perf_counter() if started_at is None else started_at
+    manifest_identity = dict(release_manifest_identity or {})
+    compatible_config = dict(config_compatibility or {})
     app = FastAPI(title="Read-Web Local App Host")
 
     @app.get("/api/app/health")
     def app_health():
         return {
-            "status": "ok",
+            "status": "ready" if (root / "index.html").is_file() else "degraded",
             "service": "read-web-local-app-host",
+            "releaseId": str(release_id),
+            "profileId": str(profile_id),
+            "instanceId": str(instance_id),
+            "manifest": manifest_identity,
+            "configCompatibility": compatible_config,
             "distReady": (root / "index.html").is_file(),
             "startupMs": round(max(0.0, (perf_counter() - boot_started_at) * 1000), 3),
         }
@@ -267,3 +285,64 @@ def create_local_app_host(
 
 
 create_production_host = create_local_app_host
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the Read-Web production Local App Host")
+    parser.add_argument("--dist", type=Path, required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, required=True)
+    parser.add_argument("--release-id", required=True)
+    parser.add_argument("--profile-id", required=True)
+    parser.add_argument("--instance-id", required=True)
+    parser.add_argument("--release-manifest", type=Path, required=True)
+    parser.add_argument("--config-schema-version", type=int, required=True)
+    parser.add_argument("--capability-base-url", default="")
+    args = parser.parse_args(argv)
+    if not _is_loopback_host(args.host):
+        parser.error("production host only supports an explicit loopback bind")
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
+    dist = args.dist.resolve()
+    if not (dist / "index.html").is_file():
+        parser.error(f"built dist/index.html is required: {dist}")
+    token = str(os.environ.get("READ_WEB_SERVICE_TOKEN", "")).strip()
+    if not token:
+        parser.error("READ_WEB_SERVICE_TOKEN is required through the process environment")
+    manifest_path = args.release_manifest.resolve()
+    try:
+        manifest_bytes = manifest_path.read_bytes()
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
+        release = manifest["release"]
+        manifest_identity = {
+            "sha256": sha256(manifest_bytes).hexdigest(),
+            "schemaVersion": int(manifest["schemaVersion"]),
+            "gitSha": str(release["gitSha"]),
+            "frontendVersion": str(release["frontendVersion"]),
+        }
+    except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        parser.error(f"valid release manifest is required: {error}")
+    if args.config_schema_version < 1:
+        parser.error("config schema version must be positive")
+    app = create_local_app_host(
+        dist_dir=dist,
+        capability_base_url=args.capability_base_url,
+        bind_host=args.host,
+        access_token=token,
+        workflow_access_token=token,
+        release_id=args.release_id,
+        profile_id=args.profile_id,
+        instance_id=args.instance_id,
+        release_manifest_identity=manifest_identity,
+        config_compatibility={
+            "schemaVersion": args.config_schema_version,
+            "minimum": args.config_schema_version,
+            "maximum": args.config_schema_version,
+        },
+    )
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -7,14 +7,16 @@ import subprocess
 import os
 import urllib.error
 import urllib.request
+from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import uvicorn
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
-from youtube_workflow.production_host_prototype import create_local_app_host
+from youtube_workflow.production_host_prototype import create_local_app_host, main
 from youtube_workflow.service import JobManager, create_app as create_service_app
 
 
@@ -122,6 +124,12 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                     workflow_app=workflow,
                     access_token="prototype-test-token",
                     workflow_access_token="prototype-test-token",
+                    release_manifest_identity={
+                        "sha256": "a" * 64,
+                        "gitSha": "fixture-git-sha",
+                        "frontendVersion": "1.0.0",
+                    },
+                    config_compatibility={"schemaVersion": 1, "minimum": 1, "maximum": 1},
                 ),
                 base_url="http://127.0.0.1",
                 headers={"X-Read-Web-Token": "prototype-test-token"},
@@ -130,6 +138,12 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 self.assertEqual(host_health.status_code, 200)
                 self.assertTrue(host_health.json()["distReady"])
                 self.assertGreaterEqual(host_health.json()["startupMs"], 0)
+                self.assertEqual(host_health.json()["manifest"]["sha256"], "a" * 64)
+                self.assertEqual(host_health.json()["manifest"]["gitSha"], "fixture-git-sha")
+                self.assertEqual(
+                    host_health.json()["configCompatibility"],
+                    {"schemaVersion": 1, "minimum": 1, "maximum": 1},
+                )
                 self.assertEqual(client.get("/api/health").json()["service"], "subtitle-workflow")
                 self.assertEqual(client.get("/api/api/health").status_code, 404)
                 self.assertIn("window.reader", client.get("/assets/reader.js").text)
@@ -153,6 +167,36 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 self.assertEqual(len(ranged.content), 4)
                 self.assertTrue(ranged.headers["content-range"].startswith("bytes 2-5/"))
                 self.assertEqual(client.head(f"/api/jobs/{job_id}/media/audio").status_code, 200)
+
+    def test_cli_token_is_environment_only_and_health_binds_release_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dist = root / "dist"
+            dist.mkdir()
+            (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+            manifest = root / "release-manifest.json"
+            manifest_bytes = json.dumps({
+                "schemaVersion": 1,
+                "release": {"gitSha": "manifest-git-sha", "frontendVersion": "1.0.0"},
+            }, sort_keys=True).encode("utf-8")
+            manifest.write_bytes(manifest_bytes)
+            arguments = [
+                "--dist", str(dist), "--port", "49123", "--release-id", "release-fixture",
+                "--profile-id", "profile-fixture", "--instance-id", "instance-fixture",
+                "--release-manifest", str(manifest), "--config-schema-version", "1",
+            ]
+            with self.assertRaises(SystemExit):
+                main([*arguments, "--access-token", "must-not-enter-argv"])
+            with patch.dict(os.environ, {"READ_WEB_SERVICE_TOKEN": "environment-token"}), patch(
+                "youtube_workflow.production_host_prototype.uvicorn.run"
+            ) as run_server:
+                self.assertEqual(main(arguments), 0)
+            app = run_server.call_args.args[0]
+            with TestClient(app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["manifest"]["sha256"], sha256(manifest_bytes).hexdigest())
+                self.assertEqual(health["manifest"]["gitSha"], "manifest-git-sha")
+                self.assertEqual(health["configCompatibility"]["schemaVersion"], 1)
 
     def test_capability_routes_are_owned_separately_from_workflow_and_static(self):
         with tempfile.TemporaryDirectory() as tmp:

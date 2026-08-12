@@ -28,6 +28,7 @@ const included = [
       READ_WEB_URL: `http://127.0.0.1:${isolatedPorts.preview}/`,
     },
   }),
+  command('independent production host lifecycle and browser journeys', process.execPath, ['scripts/production-host-lifecycle-check.mjs']),
   command('Python backend suite', pythonCommand, ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'], {
     cwd: workflowRoot,
   }),
@@ -35,7 +36,6 @@ const included = [
 
 const excluded = [
   ['ports 5173/8765', 'reserved for the current daily installation and never started or stopped by this gate'],
-  ['workflow service process', 'the current suite uses in-process FastAPI adapters; isolated 8766 host coverage is pending'],
   ['live TTS, dictionary, AI, and YouTube checks', 'may use network, credentials, paid APIs, or external media'],
   ['performance and long-duration journeys', 'planned for verify-release after budgets and fixtures exist'],
   ['clean-room install, secret/license/SBOM, backup/restore, and rollback drill', 'planned for verify-release'],
