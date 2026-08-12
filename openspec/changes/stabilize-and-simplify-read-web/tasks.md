@@ -37,9 +37,9 @@
 
 ## 5. Reader Session 与大媒体流式化
 
-- [ ] 5.1 建立 `ReaderSessionLoad` generation token、AbortController、single-flight 和 typed load state
+- [x] 5.1 建立 `ReaderSessionLoad` generation token、AbortController、single-flight 和 typed load state
 - [ ] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
-- [ ] 5.3 确保导入失败保留旧 session，且 UI load error 不得回写为 workflow job failed
+- [x] 5.3 确保导入失败保留旧 session，且 UI load error 不得回写为 workflow job failed
 - [x] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
 - [ ] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算
 - [x] 5.6 建立 `MediaResourceOwner`，在 replace/dispose 时可靠释放 Object URL、media src 和相关资源
@@ -51,7 +51,7 @@
 - [ ] 6.1 建立 playback 单一 store/controller，禁止 legacy DOM 与 Pinia 对等双写
 - [x] 6.2 用事件驱动播放更新替代永久无条件 rAF，暂停和不可见时停止调度
 - [x] 6.3 将 active word/chunk 更新限制在必要 DOM 或虚拟窗口，避免整个 transcript 重渲染
-- [ ] 6.4 将播放器 rejection 映射为 playing/blocked/no-source/error 并提供可见恢复动作
+- [x] 6.4 将播放器 rejection 映射为 playing/blocked/no-source/error 并提供可见恢复动作
 - [x] 6.5 优化 glass effects，移除 whole-body 永久 observer 或限定根节点和批处理范围
 - [ ] 6.6 验证 1k/10k transcript、连续 100 次 word/chunk/seek 的 p95、Long Task 与 listener 数预算
 
@@ -82,12 +82,12 @@
 ## 9. 生命周期、错误反馈与可访问性
 
 - [x] 9.1 建立 `LifecycleScope`，统一注册 listener、timer、rAF、observer、Object URL 和 disposer
-- [ ] 9.2 让 reader/session/runtime init 返回 disposer，并加入 init-twice/unmount/reinit 不增长测试
+- [x] 9.2 让 reader/session/runtime init 返回 disposer，并加入 init-twice/unmount/reinit 不增长测试
 - [ ] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
 - [ ] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics
 - [ ] 9.5 扫描并移除关键路径空 `catch`/floating promise，只保留有记录的明确 best-effort 策略
 - [ ] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
-- [ ] 9.7 修复 Passage Preview translation controller 代际捕获，并为快速替换/abort 补回归
+- [x] 9.7 修复 Passage Preview translation controller 代际捕获，并为快速替换/abort 补回归
 - [ ] 9.8 建立 offline、timeout、late response、double-click 和 screen-reader 状态 journey
 
 ## 10. Legacy Runtime 收敛

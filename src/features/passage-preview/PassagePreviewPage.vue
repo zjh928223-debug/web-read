@@ -199,6 +199,7 @@ import { findAiPreviewSentence } from './passage-preview-ai-sentence.js'
 import { findPreviewSentence, REAL_SENTENCE_STATUS, resolvePreviewContextSentence } from './preview-sentence-source.js'
 import { loadPassagePreviewProgress, savePassagePreviewProgress } from './passage-preview-storage.js'
 import { sentenceTranslationKey, translateSentenceBatches } from './sentence-translation.js'
+import { createTranslationGenerationQueue } from './translation-generation-queue.js'
 import { validatePreviewSentenceResult } from './preview-sentence-target-validation.mjs'
 import {
   DEFAULT_PASSAGE_PREVIEW_SHORTCUTS,
@@ -242,8 +243,12 @@ const shortcutActions = PASSAGE_PREVIEW_SHORTCUT_ACTIONS
 const shortcuts = reactive(loadPassagePreviewShortcuts())
 let sentenceRequest = 0
 let sentenceAbortController = null
-let translationAbortController = null
-let translationQueue = Promise.resolve()
+const translationQueue = createTranslationGenerationQueue({
+  translate: translateSentenceBatches,
+  apply(translated) {
+    for (const item of translated) sentenceTranslations[sentenceTranslationKey(item.sentence)] = item.translationZh
+  },
+})
 
 Object.assign(sentenceTranslations, props.preloadedTranslations)
 
@@ -329,16 +334,7 @@ async function loadSentence() {
 }
 
 function queueTranslations(items) {
-  translationAbortController?.abort()
-  translationAbortController = new AbortController()
-  translationQueue = translationQueue.then(async () => {
-    const translated = await translateSentenceBatches(items, { signal: translationAbortController.signal })
-    for (const item of translated) sentenceTranslations[sentenceTranslationKey(item.sentence)] = item.translationZh
-  }).catch((error) => {
-    if (error?.name !== 'AbortError') return undefined
-    return undefined
-  })
-  return translationQueue
+  return translationQueue.enqueue(items)
 }
 
 async function translateCurrentAfterPrefetch(item) {
@@ -607,7 +603,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keyup', handleShortcutKeyup, true)
   window.removeEventListener('blur', handlePreviewWindowBlur)
   document.removeEventListener('visibilitychange', handlePreviewVisibilityChange)
-  translationAbortController?.abort()
+  translationQueue.dispose()
   resetTransientState()
 })
 </script>

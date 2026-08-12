@@ -82,6 +82,43 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   const annotationLightweightModule = deps.annotationLightweightModule || (typeof window !== 'undefined' ? window.__annotationLightweightModule : null)
   const resetChunkDisplay = typeof deps.resetChunkDisplay === 'function' ? deps.resetChunkDisplay : function () {}
   const mediaSource = deps.mediaSource || (typeof window !== 'undefined' ? window.__mediaSource : null)
+  let generation = 0
+  let activeLoad = null
+  let loadState = { status: 'idle', generation: 0, jobId: '', error: null }
+
+  function getLoadState() {
+    return {
+      status: loadState.status,
+      generation: loadState.generation,
+      jobId: loadState.jobId,
+      error: loadState.error ? { ...loadState.error } : null,
+    }
+  }
+
+  function isCurrentLoad(load) {
+    return activeLoad === load && generation === load.generation && !load.controller.signal.aborted
+  }
+
+  function supersededResult(load) {
+    return { status: 'superseded', jobId: load.jobId, generation: load.generation }
+  }
+
+  function typedLoadError(error) {
+    return {
+      code: 'READER_SESSION_LOAD_FAILED',
+      name: error && error.name ? String(error.name) : 'Error',
+      message: error && error.message ? String(error.message) : String(error),
+    }
+  }
+
+  function cancelLoad() {
+    if (!activeLoad) return false
+    const load = activeLoad
+    load.controller.abort('reader session load canceled')
+    activeLoad = null
+    loadState = { status: 'aborted', generation: load.generation, jobId: load.jobId, error: null }
+    return true
+  }
 
   async function restoreReaderMarks(jobId) {
     if (!client || typeof client.getReaderMarks !== 'function') return
@@ -120,70 +157,104 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     if (typeof processTranscript !== 'function') throw new Error('processTranscript is not available')
     if (typeof processChunkData !== 'function') throw new Error('processChunkData is not available')
 
-    const manifest = await client.getSession(jobId)
-    if (typeof client.fileUrl !== 'function') throw new Error('workflow media URL is not available')
-    const audioUrl = client.fileUrl(jobId, 'audio')
-    const [transcriptBlob, chunkBlob] = await Promise.all([
-      client.getFile(jobId, 'transcript'),
-      client.getFile(jobId, 'chunkData'),
-    ])
-    const [transcriptRaw, chunkRaw] = await Promise.all([
-      blobToJson(transcriptBlob, 'transcript'),
-      blobToJson(chunkBlob, 'chunkData'),
-    ])
-    const validated = validateGeneratedSession({
-      audioUrl,
-      transcript: transcriptRaw,
-      chunkData: chunkRaw,
-      validateTranscriptData: deps.validateTranscriptData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateTranscriptData : null),
-      validateChunkData: deps.validateChunkData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateChunkData : null)
-    })
-
-    const title = manifest.title || `youtube-${jobId}`
-    const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
-    const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
-    const hasVideo = !!manifestFiles.video
-    const videoUrl = hasVideo && typeof client.fileUrl === 'function' ? client.fileUrl(jobId, 'video') : ''
-    const audioMeta = {
-      name: `${title}.audio`,
-      size: 0,
-      lastModified: Date.now(),
-      type: 'application/octet-stream',
-      source: 'youtube-workflow',
+    if (activeLoad) activeLoad.controller.abort('superseded by a newer reader session load')
+    const load = {
       jobId,
-      streamUrl: audioUrl,
+      generation: ++generation,
+      controller: new AbortController(),
     }
+    activeLoad = load
+    loadState = { status: 'loading', generation: load.generation, jobId, error: null }
 
-    applyCurrentAudioMeta(audioMeta)
-    await Promise.resolve(saveToDB('audioMeta', audioMeta))
-    await Promise.resolve(saveToDB('transcript', validated.transcript))
-    await Promise.resolve(saveToDB('chunkData', validated.chunkData))
-
-    const audioPlayer = deps.audioPlayer || (typeof document !== 'undefined' ? document.getElementById('audio-player') : null)
-    if (audioPlayer) audioPlayer.src = audioUrl
-    if (mediaSource && typeof mediaSource.setAudioElement === 'function') {
-      mediaSource.setAudioElement(audioPlayer)
-    }
-    if (mediaSource && typeof mediaSource.loadJobMedia === 'function') {
-      mediaSource.loadJobMedia({
-        jobId,
-        title,
-        hasVideo,
-        videoUrl,
-        videoSource: manifestMedia.videoSource || ''
+    try {
+      const requestOptions = { signal: load.controller.signal }
+      const manifest = await client.getSession(jobId, requestOptions)
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      if (typeof client.fileUrl !== 'function') throw new Error('workflow media URL is not available')
+      const audioUrl = client.fileUrl(jobId, 'audio')
+      const [transcriptBlob, chunkBlob] = await Promise.all([
+        client.getFile(jobId, 'transcript', requestOptions),
+        client.getFile(jobId, 'chunkData', requestOptions),
+      ])
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      const [transcriptRaw, chunkRaw] = await Promise.all([
+        blobToJson(transcriptBlob, 'transcript'),
+        blobToJson(chunkBlob, 'chunkData'),
+      ])
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      const validated = validateGeneratedSession({
+        audioUrl,
+        transcript: transcriptRaw,
+        chunkData: chunkRaw,
+        validateTranscriptData: deps.validateTranscriptData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateTranscriptData : null),
+        validateChunkData: deps.validateChunkData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateChunkData : null)
       })
+      if (!isCurrentLoad(load)) return supersededResult(load)
+
+      const title = manifest.title || `youtube-${jobId}`
+      const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
+      const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
+      const hasVideo = !!manifestFiles.video
+      const videoUrl = hasVideo && typeof client.fileUrl === 'function' ? client.fileUrl(jobId, 'video') : ''
+      const audioMeta = {
+        name: `${title}.audio`,
+        size: 0,
+        lastModified: Date.now(),
+        type: 'application/octet-stream',
+        source: 'youtube-workflow',
+        jobId,
+        streamUrl: audioUrl,
+      }
+
+      await Promise.all([
+        Promise.resolve(saveToDB('audioMeta', audioMeta)),
+        Promise.resolve(saveToDB('transcript', validated.transcript)),
+        Promise.resolve(saveToDB('chunkData', validated.chunkData)),
+      ])
+      if (!isCurrentLoad(load)) return supersededResult(load)
+
+      applyCurrentAudioMeta(audioMeta)
+      const audioPlayer = deps.audioPlayer || (typeof document !== 'undefined' ? document.getElementById('audio-player') : null)
+      if (audioPlayer) audioPlayer.src = audioUrl
+      if (mediaSource && typeof mediaSource.setAudioElement === 'function') {
+        mediaSource.setAudioElement(audioPlayer)
+      }
+      if (mediaSource && typeof mediaSource.loadJobMedia === 'function') {
+        mediaSource.loadJobMedia({
+          jobId,
+          title,
+          hasVideo,
+          videoUrl,
+          videoSource: manifestMedia.videoSource || ''
+        })
+      }
+      processTranscript(validated.transcript)
+      processChunkData(validated.chunkData)
+      if (typeof deps.switchSentenceNotesDoc === 'function') {
+        await deps.switchSentenceNotesDoc(validated.transcript)
+      }
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      await restoreReaderMarks(jobId)
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      await restoreAnnotationBackfillResult(jobId)
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      resetChunkDisplay()
+      if (typeof deps.showToast === 'function') deps.showToast('YouTube result loaded', 'success')
+      loadState = { status: 'loaded', generation: load.generation, jobId, error: null }
+      return { status: 'loaded', jobId, manifest, generation: load.generation }
+    } catch (error) {
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      loadState = {
+        status: 'error',
+        generation: load.generation,
+        jobId,
+        error: typedLoadError(error),
+      }
+      throw error
+    } finally {
+      if (activeLoad === load) activeLoad = null
     }
-    processTranscript(validated.transcript)
-    if (typeof deps.switchSentenceNotesDoc === 'function') {
-      await deps.switchSentenceNotesDoc(validated.transcript)
-    }
-    processChunkData(validated.chunkData)
-    await restoreReaderMarks(jobId)
-    await restoreAnnotationBackfillResult(jobId)
-    resetChunkDisplay()
-    if (typeof deps.showToast === 'function') deps.showToast('YouTube result loaded', 'success')
-    return { status: 'loaded', jobId, manifest }
   }
 
-  return { loadJobIntoReader, validateGeneratedSession }
+  return { loadJobIntoReader, validateGeneratedSession, getLoadState, cancelLoad }
 }

@@ -11,8 +11,19 @@ import {
 import {
     configureSessionFacades
 } from './session-facades.js';
+import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';
+
+var activeSessionRuntimeAssembly = null;
 
 export function initSessionRuntimeAssembly(env = {}) {
+    if (activeSessionRuntimeAssembly) activeSessionRuntimeAssembly.dispose();
+    const lifecycle = createLifecycleScope();
+    function own(runtime) {
+      if (runtime && typeof runtime.dispose === 'function') {
+        lifecycle.add(function () { runtime.dispose(); });
+      }
+      return runtime;
+    }
     const runtimeDeps = createSessionRuntimeDeps(env);
     const documentObject = runtimeDeps.documentObject;
     const windowObject = runtimeDeps.windowObject;
@@ -29,6 +40,7 @@ export function initSessionRuntimeAssembly(env = {}) {
         domRefs,
         globals
     });
+    own(annotationRuntime);
     const clearGeneratedAnnotationIndex = annotationRuntime.clearGeneratedAnnotationIndex;
     const getAnnotationGenerationScope = annotationRuntime.getAnnotationGenerationScope;
     const scheduleGeneratedAnnotationIndexRefresh = annotationRuntime.scheduleGeneratedAnnotationIndexRefresh;
@@ -44,6 +56,7 @@ export function initSessionRuntimeAssembly(env = {}) {
         globals,
         annotationRuntime
       });
+      own(lifecycleRuntime);
 
 
       configureSessionFacades({
@@ -56,4 +69,17 @@ export function initSessionRuntimeAssembly(env = {}) {
         scheduleGeneratedAnnotationIndexRefresh,
         syncAnnotationGenerationEntryStatus
       });
+
+      const assembly = {
+        runtimeDeps,
+        annotationRuntime,
+        lifecycleRuntime,
+        ready: lifecycleRuntime && lifecycleRuntime.ready,
+        dispose: function () {
+          lifecycle.dispose();
+          if (activeSessionRuntimeAssembly === assembly) activeSessionRuntimeAssembly = null;
+        }
+      };
+      activeSessionRuntimeAssembly = assembly;
+      return assembly;
 }

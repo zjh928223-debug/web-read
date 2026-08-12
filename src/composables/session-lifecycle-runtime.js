@@ -11,8 +11,16 @@ import {
 import {
     startSessionRuntime
 } from './session-startup-runtime.js';
+import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';
 
 export function startSessionLifecycleRuntime(deps = {}) {
+    const lifecycle = createLifecycleScope();
+    function own(runtime) {
+        if (runtime && typeof runtime.dispose === 'function') {
+            lifecycle.add(function () { runtime.dispose(); });
+        }
+        return runtime;
+    }
     const state = deps.state;
     const namespace = deps.namespace;
     const runtimeDeps = deps.runtimeDeps;
@@ -31,6 +39,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
         emitAnnotationDiagnostics: annotationRuntime.emitAnnotationDiagnostics,
         getAnnotationGenerationScope: annotationRuntime.getAnnotationGenerationScope
     });
+    own(startupCleanupRuntime);
 
     const sessionRestoreRuntime = createSessionRestoreRuntime({
         state,
@@ -59,8 +68,9 @@ export function startSessionLifecycleRuntime(deps = {}) {
         getAnnotationGenerationScope: annotationRuntime.getAnnotationGenerationScope,
         emitAnnotationDiagnostics: annotationRuntime.emitAnnotationDiagnostics
     });
+    own(sessionRestoreRuntime);
 
-    startSessionRuntime({
+    const startupRuntime = startSessionRuntime({
         state,
         namespace,
         localStorageApi: runtimeDeps.localStorageApi,
@@ -74,6 +84,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
         updateChunkCnHoldBtn: globals.updateChunkCnHoldBtn,
         restoreSession: sessionRestoreRuntime.restoreSession
     });
+    own(startupRuntime);
 
     restoreSessionUiSettings({
         state,
@@ -93,6 +104,8 @@ export function startSessionLifecycleRuntime(deps = {}) {
     return {
         clearPersistedChunkSession: startupCleanupRuntime.clearPersistedChunkSession,
         clearPersistedReaderContentOnStartup: startupCleanupRuntime.clearPersistedReaderContentOnStartup,
-        restoreSession: sessionRestoreRuntime.restoreSession
+        restoreSession: sessionRestoreRuntime.restoreSession,
+        ready: startupRuntime && startupRuntime.ready,
+        dispose: lifecycle.dispose
     };
 }

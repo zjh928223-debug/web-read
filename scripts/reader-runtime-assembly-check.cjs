@@ -45,7 +45,7 @@ async function main() {
     'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
     'var featureRuntime = initReaderFeatureRuntime({',
     'notesSessionRuntime: notesSessionRuntime',
-    'return {'
+    'var assembly = {'
   ].forEach((pattern) => {
     assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should own ${pattern}`);
   });
@@ -88,7 +88,7 @@ async function main() {
     )
     .replace(
       "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';\n",
-      'function initReaderFeatureRuntime(deps) { globalThis.__assemblyCalls.push(["feature", deps]); return { feature: true, deps }; }\n'
+      'function initReaderFeatureRuntime(deps) { const feature = { feature: true, deps, dispose() { globalThis.__assemblyCalls.push(["dispose-feature", feature]); } }; globalThis.__assemblyCalls.push(["feature", deps]); return feature; }\n'
     )
     .replace(
       "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';\n",
@@ -101,6 +101,10 @@ async function main() {
     .replace(
       "import { syncAnnotationGenerationEntryStatus } from './session-facades.js';\n",
       'function syncAnnotationGenerationEntryStatus() { return "sync"; }\n'
+    )
+    .replace(
+      "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';\n",
+      'function createLifecycleScope() { const disposers = []; let disposed = false; return { add(disposer) { disposers.push(disposer); }, dispose() { if (disposed) return; disposed = true; for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index](); } }; }\n'
     );
 
   globalThis.__assemblyCalls = [];
@@ -143,6 +147,14 @@ async function main() {
   assert.equal(api.bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);
   assert.equal(api.notesSessionRuntime, globalThis.__notesSessionRuntime);
   assert.equal(api.featureRuntime.feature, true);
+  assert.equal(typeof api.dispose, 'function');
+  const secondApi = initReaderRuntimeAssembly({ getWindow: () => fakeWindow });
+  assert.equal(globalThis.__assemblyCalls.filter((entry) => entry[0] === 'dispose-feature').length, 1);
+  api.dispose();
+  assert.equal(globalThis.__assemblyCalls.filter((entry) => entry[0] === 'dispose-feature').length, 1);
+  secondApi.dispose();
+  secondApi.dispose();
+  assert.equal(globalThis.__assemblyCalls.filter((entry) => entry[0] === 'dispose-feature').length, 2);
 
   console.log('reader runtime assembly check passed');
 }

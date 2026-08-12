@@ -612,6 +612,7 @@ let markCountObserver = null
 let readerMarksSyncTimer = 0
 let playbackTrackedMedia = null
 let unsubscribeMediaSourceTracking = null
+let readerSessionLoader = null
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
@@ -785,6 +786,8 @@ onBeforeUnmount(() => {
   stopPolling()
   jobPollingScheduler?.dispose()
   jobPollingScheduler = null
+  readerSessionLoader?.cancelLoad()
+  readerSessionLoader = null
   syncReaderMarks()
   syncReaderActivity('close')
   window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -795,7 +798,7 @@ onBeforeUnmount(() => {
 })
 
 function makeLoader() {
-  return createYoutubeWorkflowLoader({
+  return readerSessionLoader ||= createYoutubeWorkflowLoader({
     client: youtubeWorkflowClient,
     saveToDB: window.saveToDB,
     applyCurrentAudioMeta(meta) {
@@ -1386,6 +1389,7 @@ async function loadJob(job) {
       await syncReaderActivity('switch')
     }
     const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
+    if (!result || result.status !== 'loaded') return
     currentJobId.value = job.jobId
     loadedReadyJobs.add(job.jobId)
     startReaderSession(job)
@@ -1395,12 +1399,9 @@ async function loadJob(job) {
     if (audio) audio.pause()
     hidePanelAfterLoad()
   } catch (err) {
-    updateJob({
-      ...job,
-      status: 'failed',
-      stage: 'failed',
-      error: { category: 'output', message: err && err.message ? err.message : String(err) }
-    })
+    if (typeof window.showToast === 'function') {
+      window.showToast('材料加载失败，请检查本地服务后重试。', 'error')
+    }
   }
 }
 

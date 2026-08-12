@@ -5,6 +5,7 @@ import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { configureReaderPublicFacades } from './reader-public-facades.js'
 import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'
+import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'
 
 function createOptionalDictionaryEnrichmentAdapter() {
   const client = createOptionalLocalDictionaryClient()
@@ -15,6 +16,7 @@ function createOptionalDictionaryEnrichmentAdapter() {
 }
 
 export function initReaderAppRuntime(deps = {}) {
+  const lifecycle = createLifecycleScope()
   var audioPlayer = (typeof globalThis !== 'undefined' && globalThis.__mediaSource && typeof globalThis.__mediaSource.createActiveMediaProxy === 'function')
     ? globalThis.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
     : deps.audioPlayer
@@ -89,7 +91,7 @@ export function initReaderAppRuntime(deps = {}) {
     showError: deps.showError
   })
 
-  deps.controlsModule.init({
+  const controlsController = deps.controlsModule.init({
     state: deps.runtimeState,
     audioPlayer: audioPlayer,
     bsFindActiveHelper: deps.bsFindActiveHelper,
@@ -98,12 +100,16 @@ export function initReaderAppRuntime(deps = {}) {
     toggleFollowBtn: deps.toggleFollowBtn,
     mainAppArea: deps.mainAppArea
   })
+  if (controlsController && typeof controlsController.dispose === 'function') {
+    lifecycle.add(function () { controlsController.dispose() })
+  }
 
-  initGlassEffects({
+  const disposeGlassEffects = initGlassEffects({
     listChunkNotes: function () { return deps.chunkNotesApi.listChunkNotes() },
     getChunkNoteTagById: deps.chunkNotesApi.getChunkNoteTagById,
     getChunkNoteContentBoxSize: deps.chunkNotesApi.getChunkNoteContentBoxSize
   })
+  if (typeof disposeGlassEffects === 'function') lifecycle.add(disposeGlassEffects)
 
   configureReaderPublicFacades({
     buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId,
@@ -114,5 +120,7 @@ export function initReaderAppRuntime(deps = {}) {
     applyCurrentAudioMeta: deps.applyCurrentAudioMeta
   })
 
-  return {}
+  return {
+    dispose: lifecycle.dispose
+  }
 }

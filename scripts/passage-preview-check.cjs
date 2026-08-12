@@ -123,6 +123,8 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /brandingRequired/)
   assert.match(componentSource, /width="50"/)
   assert.match(componentSource, /translateSentenceBatches/)
+  assert.match(componentSource, /createTranslationGenerationQueue/)
+  assert.doesNotMatch(componentSource, /translateSentenceBatches\(items, \{ signal: translationAbortController\.signal \}\)/)
   assert.match(componentSource, /passagePreviewActionForKeyboardEvent/)
   assert.match(componentSource, /action === 'revealContent'/)
   assert.match(componentSource, /passage-preview-header-meta/)

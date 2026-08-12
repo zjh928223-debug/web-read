@@ -3,8 +3,16 @@ import { initReaderControlsRuntime } from './reader-controls-runtime.js';
 import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';
 import { initReaderAppRuntime } from './reader-app-runtime.js';
 import { initReaderImportRuntime } from './reader-import-runtime.js';
+import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';
 
 export function initReaderFeatureRuntime(deps = {}) {
+  var lifecycle = createLifecycleScope();
+  function own(runtime) {
+    if (runtime && typeof runtime.dispose === 'function') {
+      lifecycle.add(function () { runtime.dispose(); });
+    }
+    return runtime;
+  }
   var globalObject = deps.globalObject || globalThis;
   var chunkControlsApi = null;
   var forceUpdateUI;
@@ -52,6 +60,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     findExactMatchRangeHelper: deps.findExactMatchRangeHelper,
     buildVocabMatchMap: deps.buildVocabMatchMap
   });
+  own(importRuntime);
   var visualVocabApi = importRuntime.visualVocabApi;
 
   deps.chunkNotesApi.ensureChunkNoteOverlayLayers();
@@ -86,6 +95,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     refreshAllChunkNoteVisuals: deps.chunkNotesApi.refreshAllChunkNoteVisuals,
     getLockChunkNoteDimensionsForTheme: function () { return globalObject.__lockChunkNoteDimensionsForTheme; }
   });
+  own(controlsRuntime);
   chunkControlsApi = controlsRuntime.chunkControlsApi;
 
   var interactionRuntime = initReaderInteractionRuntime({
@@ -109,13 +119,14 @@ export function initReaderFeatureRuntime(deps = {}) {
     bridgeToPinia: deps.bridgeToPinia,
     tryRestoreChunkNoteDraft: deps.chunkNotesApi.tryRestoreChunkNoteDraft
   });
+  own(interactionRuntime);
   var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
   forceUpdateUI = interactionRuntime.forceUpdateUI;
   var toggleAnnotationBubble = interactionRuntime.toggleAnnotationBubble;
   var handleBackwardClick = interactionRuntime.handleBackwardClick;
   var handleForwardClick = interactionRuntime.handleForwardClick;
 
-  initReaderKeyboardRuntime({
+  var keyboardRuntime = initReaderKeyboardRuntime({
     keyboardModule: globalObject.__keyboardModule,
     marksStore: globalObject.__marksStore,
     themeStore: globalObject.__themeStore,
@@ -143,6 +154,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     themeCustomPanel: deps.themeCustomPanel,
     themeControlsEl: deps.themeControlsEl
   });
+  own(keyboardRuntime);
 
   var appRuntime = initReaderAppRuntime({
     annotationLightweightModule: globalObject.__annotationLightweightModule,
@@ -189,6 +201,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     showToast: deps.showToast,
     showError: deps.showError
   });
+  own(appRuntime);
 
   return {
     importRuntime: importRuntime,
@@ -198,6 +211,8 @@ export function initReaderFeatureRuntime(deps = {}) {
     interactionRuntime: interactionRuntime,
     playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
     forceUpdateUI: forceUpdateUI,
-    appRuntime: appRuntime
+    keyboardRuntime: keyboardRuntime,
+    appRuntime: appRuntime,
+    dispose: lifecycle.dispose
   };
 }

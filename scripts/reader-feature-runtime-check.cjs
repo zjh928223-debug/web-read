@@ -139,11 +139,15 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     )
     .replace(
       "import { initReaderAppRuntime } from './reader-app-runtime.js';\n",
-      'function initReaderAppRuntime(deps) { globalThis.__featureCalls.push(["app", deps]); return {}; }\n'
+      'function initReaderAppRuntime(deps) { globalThis.__featureCalls.push(["app", deps]); return { dispose() { globalThis.__featureCalls.push(["dispose-app"]); } }; }\n'
     )
     .replace(
       "import { initReaderImportRuntime } from './reader-import-runtime.js';\n",
       'function initReaderImportRuntime(deps) { globalThis.__featureCalls.push(["import", deps]); return { visualVocabApi: { vocabMatchMap: new Map([[1, "vocab"]]) } }; }\n'
+    )
+    .replace(
+      "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';\n",
+      'function createLifecycleScope() { const disposers = []; let disposed = false; return { add(disposer) { disposers.push(disposer); }, dispose() { if (disposed) return; disposed = true; for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index](); } }; }\n'
     );
 
   globalThis.__featureCalls = [];
@@ -216,7 +220,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(appDeps.playbackRuntimeHelpersApi.helper, true);
   assert.equal(appDeps.forceUpdateUI, api.forceUpdateUI);
   assert.equal(api.chunkControlsApi.chunk, true);
-  assert.deepEqual(api.appRuntime, {});
+  assert.equal(typeof api.appRuntime.dispose, 'function');
+  api.dispose();
+  api.dispose();
+  assert.equal(globalThis.__featureCalls.filter((entry) => entry[0] === 'dispose-app').length, 1);
 
   console.log('reader feature runtime check passed');
 }

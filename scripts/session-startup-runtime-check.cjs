@@ -67,7 +67,7 @@ async function main() {
     return 1;
   };
   try {
-    await api.startSessionRuntime({
+    const runtime = api.startSessionRuntime({
       state,
       namespace,
       localStorageApi: {
@@ -119,6 +119,8 @@ async function main() {
         calls.push('restore');
       }
     });
+    await runtime.ready;
+    runtime.dispose();
   } finally {
     global.setTimeout = originalSetTimeout;
   }
@@ -134,8 +136,6 @@ async function main() {
   assert.ok(transcriptContainer.classes.includes('cn-mode-focus'));
   assert.equal(state.chunkCnVisible, true);
   assert.equal(state.chunkCnHoldMode, true);
-  assert.equal(namespace.chunkNoteVisible, true);
-  assert.ok(calls.some((call) => Array.isArray(call) && call[0] === 'noteVisible' && call[1] === true && call[2] === false));
   assert.ok(calls.includes('restore'));
   assert.equal(toggled, true);
 

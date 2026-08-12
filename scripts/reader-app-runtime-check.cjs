@@ -76,7 +76,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'deps.controlsModule.init({',
     'initGlassEffects({',
     'configureReaderPublicFacades({',
-    'return {}'
+    'dispose: lifecycle.dispose'
   ].forEach((pattern) => {
     assert.ok(
       moduleSource.includes(pattern),
@@ -135,6 +135,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     .replace(
       "import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'\n",
       "const createDictionaryEnrichmentAdapter = globalThis.__readerAppRuntimeTest.createDictionaryEnrichmentAdapter;\n"
+    )
+    .replace(
+      "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'\n",
+      "const createLifecycleScope = globalThis.__readerAppRuntimeTest.createLifecycleScope;\n"
     );
 
   const calls = {
@@ -145,10 +149,23 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     marksImport: [],
     controls: [],
     glass: [],
-    publicFacades: []
+    publicFacades: [],
+    disposed: []
   };
 
   globalThis.__readerAppRuntimeTest = {
+    createLifecycleScope() {
+      const disposers = [];
+      let disposed = false;
+      return {
+        add(disposer) { disposers.push(disposer); },
+        dispose() {
+          if (disposed) return;
+          disposed = true;
+          for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]();
+        }
+      };
+    },
     createOptionalLocalDictionaryClient() {
       return {};
     },
@@ -157,6 +174,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     },
     initGlassEffects(deps) {
       calls.glass.push(deps);
+      return () => calls.disposed.push('glass');
     },
     initAnnotationBackfillAiControls(deps) {
       calls.annotationBackfill.push(deps);
@@ -185,7 +203,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       initMarksImport(config) { calls.marksImport.push(config); }
     },
     controlsModule: {
-      init(config) { calls.controls.push(config); }
+      init(config) {
+        calls.controls.push(config);
+        return { dispose() { calls.disposed.push('controls'); } };
+      }
     },
     runtimeState: { id: 'runtime' },
     transcriptState: { segments: [{ id: 1 }], words: [{ word: 'one' }] },
@@ -240,7 +261,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   const api = initReaderAppRuntime(deps);
 
-  assert.deepEqual(api, {});
+  assert.equal(typeof api.dispose, 'function');
   assert.equal(calls.annotationLightweight.length, 1);
   assert.equal(calls.annotationBackfill.length, 1);
   assert.equal(calls.vocabularyPreview.length, 1);
@@ -273,6 +294,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(calls.glass[0].listChunkNotes(), [{ id: 'note-1' }]);
   assert.equal(calls.publicFacades[0].buildCurrentSentenceDocId(), 'doc-id');
   assert.equal(Object.prototype.hasOwnProperty.call(calls.publicFacades[0], 'openChunkNoteContextFromEvent'), false);
+  api.dispose();
+  api.dispose();
+  assert.deepEqual(calls.disposed, ['glass', 'controls']);
 
   delete globalThis.__readerAppRuntimeTest;
 

@@ -5,8 +5,12 @@ export function startSessionRuntime(deps = {}) {
   const documentObject = deps.documentObject;
   const windowObject = deps.windowObject;
 
-  return deps.initDB().then(async () => {
+  let disposed = false;
+  let restoreChunkModeTimer = null;
+  const ready = deps.initDB().then(async () => {
+    if (disposed) return;
     await deps.clearPersistedReaderContentOnStartup();
+    if (disposed) return;
 
     const savedManualStates = localStorageApi.getItem('st.manualChunkStates');
     if (savedManualStates) {
@@ -45,11 +49,24 @@ export function startSessionRuntime(deps = {}) {
     deps.updateChunkCnHoldBtn();
 
     await deps.restoreSession();
+    if (disposed) return;
 
     if (savedChunkMode) {
-      setTimeout(() => {
+      restoreChunkModeTimer = setTimeout(() => {
+        restoreChunkModeTimer = null;
+        if (disposed) return;
         if (state.chunkItems.length > 0 && state.hasAiChunkData) windowObject.toggleChunkMode(true);
       }, 500);
     }
   });
+
+  return {
+    ready,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      if (restoreChunkModeTimer !== null) clearTimeout(restoreChunkModeTimer);
+      restoreChunkModeTimer = null;
+    }
+  };
 }

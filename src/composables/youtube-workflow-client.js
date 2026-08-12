@@ -149,8 +149,11 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
-    async getSession(jobId) {
-      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/session`)))
+    async getSession(jobId, options = {}) {
+      return readJsonResponse(await fetchImpl(
+        apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/session`),
+        options.signal ? { signal: options.signal } : undefined,
+      ))
     },
     async getFile(jobId, kind, options = {}) {
       const response = await fetchImpl(

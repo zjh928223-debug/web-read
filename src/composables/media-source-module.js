@@ -125,14 +125,51 @@
     try { element.pause() } catch (_err) {}
   }
 
+  function playbackResult(status, recovery) {
+    return { status: status, recovery: recovery || null }
+  }
+
+  function hasPlayableSource(element) {
+    if (!element) return false
+    return !!String(element.currentSrc || element.src || '').trim()
+  }
+
+  function presentPlaybackResult(result) {
+    if (!result || result.status === 'playing') return result
+    var showToast = typeof window.showToast === 'function' ? window.showToast : null
+    if (!showToast) return result
+    if (result.status === 'blocked') {
+      showToast('浏览器阻止了自动播放，请点击播放按钮重试。', 'warning')
+    } else if (result.status === 'no-source') {
+      showToast('当前没有可播放的媒体，请先加载音频或视频素材。', 'warning')
+    } else {
+      showToast('媒体播放失败，请重新加载素材后重试。', 'error')
+    }
+    return result
+  }
+
+  function classifyPlaybackFailure(error, element) {
+    if (!hasPlayableSource(element)) return playbackResult('no-source', 'load-media')
+    var name = String(error && error.name || '')
+    if (name === 'NotAllowedError' || name === 'SecurityError') {
+      return playbackResult('blocked', 'click-to-retry')
+    }
+    return playbackResult('error', 'reload-media')
+  }
+
   function playElement(element) {
-    if (!element || typeof element.play !== 'function') return null
+    if (!element || typeof element.play !== 'function' || !hasPlayableSource(element)) {
+      return Promise.resolve(presentPlaybackResult(playbackResult('no-source', 'load-media')))
+    }
     try {
       var result = element.play()
-      if (result && typeof result.catch === 'function') result.catch(function () {})
-      return result
-    } catch (_err) {
-      return null
+      return Promise.resolve(result).then(function () {
+        return playbackResult('playing')
+      }, function (error) {
+        return presentPlaybackResult(classifyPlaybackFailure(error, element))
+      })
+    } catch (error) {
+      return Promise.resolve(presentPlaybackResult(classifyPlaybackFailure(error, element)))
     }
   }
 
