@@ -18,7 +18,7 @@
 
 ## 3. 正式本地 Production Host
 
-- [ ] 3.1 原型比较 FastAPI 单 host 与 Node sidecar，记录启动时间、Range、现有本地 endpoints 和维护成本
+- [x] 3.1 原型比较 FastAPI 单 host 与 Node sidecar，记录启动时间、Range、现有本地 endpoints 和维护成本
 - [ ] 3.2 实现 Local App Host 托管 `dist`、SPA fallback、健康/版本端点和现有字典/TTS/翻译能力
 - [ ] 3.3 实现 Host/Origin/短期 token 校验并强制拒绝非 loopback bind
 - [ ] 3.4 实现 launcher 的端口占用检查、PID ownership、ready timeout、重复实例检测和失败清理
