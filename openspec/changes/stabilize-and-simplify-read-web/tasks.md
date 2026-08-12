@@ -11,7 +11,7 @@
 
 - [x] 2.1 新增版本化 performance budgets 配置并从旧版/next 实测值生成初始门槛
 - [x] 2.2 建立统一 Playwright fixture，采集 navigation、action latency、Long Task、console/page/unhandled/request/HTTP errors
-- [ ] 2.3 为冷启动、材料打开、play/pause/seek、连续 word/chunk、Material、Preview 和 SRS 建立固定 journeys
+- [x] 2.3 为冷启动、材料打开、play/pause/seek、连续 word/chunk、Material、Preview 和 SRS 建立固定 journeys
 - [x] 2.4 新增 backend HTTP benchmark，覆盖 health、jobs snapshot、history、activity/marks 和缓存命中路由
 - [x] 2.5 为 FastAPI 增加 requestId、route/status/duration/bytes 与 Server-Timing 聚合诊断
 - [ ] 2.6 为失败 journey 保存 trace、截图、JSON，并实现 baseline diff 和 release budget gate
@@ -19,7 +19,7 @@
 ## 3. 正式本地 Production Host
 
 - [x] 3.1 原型比较 FastAPI 单 host 与 Node sidecar，记录启动时间、Range、现有本地 endpoints 和维护成本
-- [ ] 3.2 实现 Local App Host 托管 `dist`、SPA fallback、健康/版本端点和现有字典/TTS/翻译能力
+- [x] 3.2 实现 Local App Host 托管 `dist`、SPA fallback、健康/版本端点和现有字典/TTS/翻译能力
 - [ ] 3.3 实现 Host/Origin/短期 token 校验并强制拒绝非 loopback bind
 - [ ] 3.4 实现 launcher 的端口占用检查、PID ownership、ready timeout、重复实例检测和失败清理
 - [ ] 3.5 验证独立 production host 不依赖 Vite dev/preview，所有关键 endpoints 和 browser journeys 通过
@@ -86,7 +86,7 @@
 - [x] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
 - [x] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics
 - [x] 9.5 扫描并移除关键路径空 `catch`/floating promise，只保留有记录的明确 best-effort 策略
-- [ ] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
+- [x] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
 - [x] 9.7 修复 Passage Preview translation controller 代际捕获，并为快速替换/abort 补回归
 - [ ] 9.8 建立 offline、timeout、late response、double-click 和 screen-reader 状态 journey
 
@@ -102,7 +102,7 @@
 
 ## 11. 仓库、供应链与文档清理
 
-- [ ] 11.1 添加 `engines`、`packageManager`、`.node-version`、Python lock 和版本诊断
+- [x] 11.1 添加 `engines`、`packageManager`、`.node-version`、Python lock 和版本诊断
 - [ ] 11.2 将 setup 改为 `npm ci` 与锁定 Python 安装，验证全新目录可重复构建
 - [x] 11.3 分类 package 外孤儿 scripts 为 release gate、dev tool 或 archive/delete，并移除旧 read26/start 脚本
 - [x] 11.4 untrack 生成 dist 与个人 local settings，完善 `.gitignore`、`.env.example`、`.editorconfig` 和 `.gitattributes`

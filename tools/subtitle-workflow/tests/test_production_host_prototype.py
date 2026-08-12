@@ -2,6 +2,8 @@ import tempfile
 import time
 import unittest
 import threading
+import json
+import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -136,6 +138,56 @@ class ProductionHostPrototypeTests(unittest.TestCase):
         finally:
             server.should_exit = True
             thread.join(3)
+
+    def test_real_node_capability_host_owns_all_nine_routes_through_local_app_host(self):
+        repository_root = Path(__file__).resolve().parents[3]
+        process = subprocess.Popen(
+            ["node", "tools/local-capability-host.mjs", "--port", "0"],
+            cwd=repository_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        try:
+            ready = json.loads(process.stdout.readline())
+            self.assertEqual(ready["status"], "ready")
+            with tempfile.TemporaryDirectory() as tmp:
+                dist = Path(tmp)
+                (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+                with TestClient(create_local_app_host(
+                    dist_dir=dist,
+                    workflow_app=FastAPI(),
+                    capability_base_url=f"http://127.0.0.1:{ready['port']}",
+                )) as client:
+                    capabilities = client.get("/api/app/capabilities")
+                    self.assertEqual(capabilities.status_code, 200)
+                    self.assertEqual(len(capabilities.json()["endpoints"]), 9)
+                    ecdict = client.get("/api/dev/dictionary/ecdict?q=flow")
+                    self.assertEqual(ecdict.status_code, 404)
+                    dictionary = client.get("/api/vocabulary/local-sentences?word=flow")
+                    self.assertEqual(dictionary.status_code, 200)
+                    self.assertIn(
+                        dictionary.json()["errorCode"],
+                        {"LOCAL_SENTENCE_DATABASE_MISSING", "LOCAL_SENTENCE_QUERY_FAILED"},
+                    )
+                    tts = client.post("/api/tts/edge", json={"text": ""})
+                    self.assertEqual(tts.status_code, 400)
+                    translations = client.post(
+                        "/api/vocabulary/sentence-translations",
+                        json={"items": [{}] * 1000},
+                    )
+                    self.assertEqual(translations.status_code, 400)
+                    self.assertEqual(translations.json()["errorCode"], "SENTENCE_TRANSLATION_BATCH_INVALID")
+        finally:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
 
 
 if __name__ == "__main__":

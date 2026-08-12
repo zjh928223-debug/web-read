@@ -1,0 +1,21 @@
+{
+  "schema": "read-web.performance-browser-fixture",
+  "version": 1,
+  "reader": {
+    "segmentCount": 12,
+    "wordsPerSegment": 8,
+    "wordDurationSeconds": 0.1,
+    "audioDurationSeconds": 12,
+    "seekTargetSeconds": 4.2
+  },
+  "interactions": {
+    "wordUpdates": 40,
+    "chunkUpdates": 24
+  },
+  "materialWorkflow": {
+    "jobs": [],
+    "revision": 1
+  },
+  "previewFixture": "passage-preview-result.fixture.json",
+  "srsFixture": "src/features/srs-review/srs-review.sample.local.json"
+}

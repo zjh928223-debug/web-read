@@ -17,6 +17,7 @@ import {
   getPreviewWordIndexesFromGeneratedItems,
   selectArticleSrsSettlementCandidates,
 } from '../services/vocabulary/index.js';
+import { createDialogController } from '../services/runtime/dialog-controller.js';
 import {
   getAnnotationGenerationScope,
   scheduleGeneratedAnnotationIndexRefresh,
@@ -224,6 +225,8 @@ function renderCandidateList(documentObject, container, candidates) {
 
 function createPreviewDialog(options = {}) {
   const documentObject = options.documentObject;
+  const dialogController = createDialogController({ documentObject });
+  let busy = false;
   const onRun = options.onRun;
   const initialModel = options.initialModel || DEFAULT_MODEL;
   const getSharedApiKey = typeof options.getSessionApiKey === 'function' ? options.getSessionApiKey : function () { return ''; };
@@ -248,6 +251,7 @@ function createPreviewDialog(options = {}) {
     root.hidden = true;
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', '当前文章预习');
 
     const header = createElement(documentObject, 'div', 'vocabulary-preview-dialog__header');
     const titleWrap = createElement(documentObject, 'div', 'vocabulary-preview-dialog__title-wrap');
@@ -273,6 +277,9 @@ function createPreviewDialog(options = {}) {
     keyLabel.append(createElement(documentObject, 'span', 'vocabulary-preview-dialog__label', 'Gemini API key'), apiKeyInput);
 
     statusEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__status');
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.setAttribute('aria-atomic', 'true');
     const dictionaryHint = createElement(
       documentObject,
       'p',
@@ -309,9 +316,11 @@ function createPreviewDialog(options = {}) {
     };
   }
 
-  function setBusy(busy) {
-    if (modelInput) modelInput.disabled = !!busy;
-    if (apiKeyInput) apiKeyInput.disabled = !!busy;
+  function setBusy(nextBusy) {
+    busy = !!nextBusy;
+    dialogController.setBusy(busy);
+    if (modelInput) modelInput.disabled = busy;
+    if (apiKeyInput) apiKeyInput.disabled = busy;
     if (runButton) {
       runButton.disabled = !!busy || !(latestScan && latestScan.candidates && latestScan.candidates.length);
       runButton.textContent = busy ? '解释中...' : '生成 AI 解释';
@@ -335,14 +344,31 @@ function createPreviewDialog(options = {}) {
     setBusy(false);
     root.hidden = false;
     backdrop.hidden = false;
+    dialogController.open(root, {
+      initialFocus: modelInput,
+      statusElement: statusEl,
+      isPending: () => busy,
+      onRequestClose: close,
+    });
   }
 
   function close() {
     if (root) root.hidden = true;
     if (backdrop) backdrop.hidden = true;
+    dialogController.close();
   }
 
-  return { open, close, setBusy, setStatus, getValues };
+  return {
+    open,
+    close,
+    setBusy,
+    setStatus,
+    getValues,
+    dispose() {
+      close();
+      dialogController.dispose();
+    },
+  };
 }
 
 function getSettlementEntryKindLabel(candidate) {
@@ -486,6 +512,7 @@ function renderSettlementList(documentObject, container, candidates, removedIds,
 
 function createSettlementDialog(options = {}) {
   const documentObject = options.documentObject;
+  const dialogController = createDialogController({ documentObject });
   const windowObject = options.windowObject || documentObject.defaultView || globalThis;
   const onApply = options.onApply;
   const onSkip = options.onSkip;
@@ -621,6 +648,7 @@ function createSettlementDialog(options = {}) {
     root.hidden = true;
     root.setAttribute('role', 'dialog');
     root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', '整理本篇生词');
 
     const header = createElement(documentObject, 'div', 'vocabulary-preview-dialog__header');
     const titleWrap = createElement(documentObject, 'div', 'vocabulary-preview-dialog__title-wrap');
@@ -632,6 +660,9 @@ function createSettlementDialog(options = {}) {
     closeButton.type = 'button';
     header.append(titleWrap, closeButton);
     statusEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__status');
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.setAttribute('aria-atomic', 'true');
     listEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__list');
     const footer = createElement(documentObject, 'div', 'vocabulary-preview-dialog__footer');
     refineButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', 'AI 精简释义');
@@ -792,6 +823,12 @@ function createSettlementDialog(options = {}) {
     }
     root.hidden = false;
     backdrop.hidden = false;
+    dialogController.open(root, {
+      initialFocus: closeButton,
+      statusElement: statusEl,
+      isPending: () => busy,
+      onRequestClose: close,
+    });
   }
 
   function open(nextSettlement) {
@@ -808,6 +845,12 @@ function createSettlementDialog(options = {}) {
     render();
     root.hidden = false;
     backdrop.hidden = false;
+    dialogController.open(root, {
+      initialFocus: closeButton,
+      statusElement: statusEl,
+      isPending: () => busy,
+      onRequestClose: close,
+    });
     const prefetchTexts = (settlement.candidates || [])
       .map((candidate) => normalizeText(candidate && (candidate.markedText || candidate.lemma)))
       .filter(Boolean);
@@ -823,10 +866,12 @@ function createSettlementDialog(options = {}) {
     expandedMeaningIds = new Set();
     if (root) root.hidden = true;
     if (backdrop) backdrop.hidden = true;
+    dialogController.close();
   }
 
   function setBusy(nextBusy) {
     busy = !!nextBusy;
+    dialogController.setBusy(busy);
     if (refineButton) refineButton.textContent = busy ? '精简中...' : 'AI 精简释义';
     render();
   }
@@ -917,7 +962,17 @@ function createSettlementDialog(options = {}) {
     }
   }
 
-  return { open, openLoading, close, setStatus, setSpeakingState: updateSpeakingState };
+  return {
+    open,
+    openLoading,
+    close,
+    setStatus,
+    setSpeakingState: updateSpeakingState,
+    dispose() {
+      close();
+      dialogController.dispose();
+    },
+  };
 }
 
 export function createVocabularyPreviewController(deps = {}) {
@@ -1394,6 +1449,10 @@ export function createVocabularyPreviewController(deps = {}) {
         previewVisible,
         latestPreviewSummary: latestPreviewScan && latestPreviewScan.summary || null,
       };
+    },
+    dispose() {
+      previewDialog.dispose();
+      settlementDialog.dispose();
     },
   };
 }

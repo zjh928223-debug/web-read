@@ -37,7 +37,7 @@ export function initReaderAppRuntime(deps = {}) {
     showError: deps.showError
   })
 
-  initAnnotationBackfillAiControls({
+  const annotationBackfillController = initAnnotationBackfillAiControls({
     button: deps.annotationBackfillAiBtn,
     state: deps.runtimeState,
     annotationLightweightModule: deps.annotationLightweightModule,
@@ -52,8 +52,11 @@ export function initReaderAppRuntime(deps = {}) {
     windowObject: globalThis,
     documentObject: globalThis.document
   })
+  if (annotationBackfillController && typeof annotationBackfillController.dispose === 'function') {
+    lifecycle.add(function () { annotationBackfillController.dispose() })
+  }
 
-  initVocabularyPreviewControls({
+  const vocabularyPreviewController = initVocabularyPreviewControls({
     previewButton: deps.previewVocabularyBtn,
     togglePreviewButton: deps.togglePreviewVocabularyBtn,
     settleButton: deps.settleArticleVocabularyBtn,
@@ -65,6 +68,9 @@ export function initReaderAppRuntime(deps = {}) {
     documentObject: globalThis.document,
     dictionaryEnrichmentAdapter: createOptionalDictionaryEnrichmentAdapter()
   })
+  if (vocabularyPreviewController && typeof vocabularyPreviewController.dispose === 'function') {
+    lifecycle.add(function () { vocabularyPreviewController.dispose() })
+  }
 
   deps.appHandlers.initExports({
     exportJsonBtn: deps.exportJsonBtn,

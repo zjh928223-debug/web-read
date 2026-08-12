@@ -11,6 +11,7 @@ from .service import create_app as create_workflow_app
 
 
 CAPABILITY_ROUTE_PREFIXES = (
+    "/api/app/capabilities",
     "/api/tts/edge",
     "/api/vocabulary/local-sentences",
     "/api/vocabulary/sentence-translations",

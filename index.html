@@ -125,12 +125,12 @@
     </div>
   </div>
 
-  <div class="modal-backdrop" id="modal-backdrop"></div>
+  <div class="modal-backdrop" id="modal-backdrop" aria-hidden="true"></div>
 
-  <div id="chunk-style-modal">
+  <div id="chunk-style-modal" role="dialog" aria-modal="true" aria-labelledby="chunk-style-modal-title" tabindex="-1">
       <div class="modal-header">
-          <span class="modal-title">AI切分模式样式</span>
-          <span id="btn-close-chunk-style-modal" class="close-modal">&times;</span>
+          <span class="modal-title" id="chunk-style-modal-title">AI切分模式样式</span>
+          <button type="button" id="btn-close-chunk-style-modal" class="close-modal" aria-label="关闭 AI切分模式样式">&times;</button>
       </div>
       
       <div class="style-section">

@@ -2,9 +2,9 @@
 #
 # These exact versions are known to work together on CPython 3.10.10.  Keep
 # them exact: an unconstrained `pip install` previously made two machines run
-# different service implementations.  This file is not yet a hash-locked
-# transitive dependency lock; the release clean-room task will generate and
-# verify that lock from this reviewed baseline.
+# different service implementations. Install production/service environments
+# from requirements-service.lock instead; this file is the reviewed input used
+# when intentionally regenerating that Windows CPython 3.10 lock.
 fastapi==0.138.0
 uvicorn[standard]==0.49.0
 

@@ -9,6 +9,7 @@ const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'pyth
 
 const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
+  command('Python dependency lock', pythonCommand, ['tools/subtitle-workflow/scripts/verify_python_lock.py']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),
   command('best-effort failure policy', process.execPath, ['scripts/best-effort-check.mjs']),

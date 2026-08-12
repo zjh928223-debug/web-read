@@ -139,6 +139,7 @@
       @pointerdown.self="closeShortcutSettings"
     >
       <section
+        ref="shortcutDialogRoot"
         class="passage-preview-shortcut-dialog"
         role="dialog"
         aria-modal="true"
@@ -149,7 +150,7 @@
             <p>首次接触</p>
             <h2 id="passage-preview-shortcut-title">快捷键设置</h2>
           </div>
-          <button type="button" aria-label="关闭快捷键设置" @click="closeShortcutSettings">×</button>
+          <button ref="shortcutDialogInitialFocus" type="button" aria-label="关闭快捷键设置" @click="closeShortcutSettings">×</button>
         </header>
         <p class="passage-preview-shortcut-intro">点击一个动作，再按下新的按键。每个动作必须使用不同按键。</p>
         <div class="passage-preview-translation-mode-row">
@@ -193,7 +194,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { createDialogController } from '../../services/runtime/dialog-controller.js'
 import { createAriaAmericanPronunciationService } from '../../services/pronunciation/aria-american-pronunciation.js'
 import { findAiPreviewSentence } from './passage-preview-ai-sentence.js'
 import { findPreviewSentence, REAL_SENTENCE_STATUS, resolvePreviewContextSentence } from './preview-sentence-source.js'
@@ -237,6 +239,9 @@ const translationDisplayMode = ref(loadPassagePreviewTranslationDisplayMode())
 const sentenceTranslationVisible = ref(translationDisplayMode.value === TRANSLATION_DISPLAY_MODES.PERSISTENT)
 const translationHoldActive = ref(false)
 const shortcutSettingsOpen = ref(false)
+const shortcutDialogRoot = ref(null)
+const shortcutDialogInitialFocus = ref(null)
+const shortcutDialogController = createDialogController()
 const shortcutEditingAction = ref('')
 const shortcutNotice = ref('')
 const shortcutActions = PASSAGE_PREVIEW_SHORTCUT_ACTIONS
@@ -598,7 +603,21 @@ watch(() => current.value.id, () => {
   if (isRevealed.value) void loadSentence()
 }, { immediate: true })
 
+watch(shortcutSettingsOpen, async (open) => {
+  if (!open) {
+    shortcutDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!shortcutDialogRoot.value) return
+  shortcutDialogController.open(shortcutDialogRoot.value, {
+    initialFocus: shortcutDialogInitialFocus.value,
+    onRequestClose: closeShortcutSettings,
+  })
+})
+
 onBeforeUnmount(() => {
+  shortcutDialogController.dispose()
   window.removeEventListener('keydown', handleShortcutKeydown, true)
   window.removeEventListener('keyup', handleShortcutKeyup, true)
   window.removeEventListener('blur', handlePreviewWindowBlur)

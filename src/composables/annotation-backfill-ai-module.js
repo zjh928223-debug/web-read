@@ -7,6 +7,7 @@ import {
   getRemainingSrsCandidatesAfterApply,
   summarizeSrsCandidates,
 } from '../services/vocabulary/index.js';
+import { createDialogController } from '../services/runtime/dialog-controller.js';
 
 const DEFAULT_BUTTON_TEXT = 'AI解释标注';
 const RECOMMENDED_ANNOTATION_MODEL = 'gemini-3.1-flash-lite';
@@ -506,6 +507,7 @@ function createElement(documentObject, tagName, className, textContent) {
 
 function createAnnotationBackfillDialog(options = {}) {
   const documentObject = options.documentObject || null;
+  const dialogController = createDialogController({ documentObject });
   const onRun = typeof options.onRun === 'function' ? options.onRun : function () {};
   const onSelectRecord = typeof options.onSelectRecord === 'function' ? options.onSelectRecord : function () {};
   const onModelChange = typeof options.onModelChange === 'function' ? options.onModelChange : function () {};
@@ -609,6 +611,9 @@ function createAnnotationBackfillDialog(options = {}) {
     });
 
     statusEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__status', '填写模型和 API key 后开始。');
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.setAttribute('aria-atomic', 'true');
     const recordsSection = createElement(documentObject, 'div', 'annotation-backfill-dialog__records');
     const recordsTitle = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-title', '当前文章标注');
     recordsEl = createElement(documentObject, 'div', 'annotation-backfill-dialog__records-list');
@@ -706,11 +711,19 @@ function createAnnotationBackfillDialog(options = {}) {
     }
     setBusy(false);
     setOpenState(true);
-    if (modelInput) modelInput.focus();
+    if (rootEl) {
+      dialogController.open(rootEl, {
+        initialFocus: modelInput,
+        statusElement: statusEl,
+        isPending: () => busy,
+        onRequestClose: closeDialog,
+      });
+    }
   }
 
   function closeDialog() {
     setOpenState(false);
+    dialogController.close();
   }
 
   function updateContext(context = {}) {
@@ -748,6 +761,7 @@ function createAnnotationBackfillDialog(options = {}) {
 
   function setBusy(nextBusy) {
     busy = !!nextBusy;
+    dialogController.setBusy(busy);
     if (modelInput) modelInput.disabled = busy;
     if (apiKeyInput) apiKeyInput.disabled = busy;
     if (cancelButton) cancelButton.disabled = busy;
@@ -925,6 +939,10 @@ function createAnnotationBackfillDialog(options = {}) {
     updateSrsSummary,
     resetProgress,
     getStatusSnapshot,
+    dispose() {
+      setOpenState(false);
+      dialogController.dispose();
+    },
     isOpen() {
       return open;
     },
@@ -1505,6 +1523,9 @@ export function createAnnotationBackfillAiController(deps = {}) {
     refreshAvailability,
     isRunning() {
       return running;
+    },
+    dispose() {
+      dialog.dispose();
     },
   };
 }

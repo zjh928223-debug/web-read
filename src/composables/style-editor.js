@@ -1,3 +1,5 @@
+  import { createDialogController } from '../services/runtime/dialog-controller.js';
+
   function safeParseLocalJSON(key, fallbackValue) {
     try {
       var raw = localStorage.getItem(key);
@@ -12,6 +14,7 @@
   function init(deps) {
     var getIsChunkMode = deps.getIsChunkMode;
     var updateShadowBtnText = deps.updateShadowBtnText;
+    var chunkStyleDialogController = createDialogController();
 
     var styleSettings = {
       word: { prefix: '--v-word-', label: 'Word (单词)' },
@@ -129,6 +132,7 @@
       var modal = document.getElementById('chunk-style-modal');
       if (backdrop) backdrop.style.display = 'block';
       if (modal) modal.style.display = 'block';
+      if (backdrop) backdrop.setAttribute('aria-hidden', 'false');
       var styles = getComputedStyle(document.documentElement);
       var enSize = styles.getPropertyValue('--chunk-en-size').trim().replace('px', '');
       var cnSize = styles.getPropertyValue('--chunk-cn-size').trim().replace('px', '');
@@ -147,6 +151,12 @@
       if (cnCol) cnCol.value = cnColor;
       if (bgCol) bgCol.value = bgColor;
       if (typeof updateShadowBtnText === 'function') updateShadowBtnText();
+      if (modal) {
+        chunkStyleDialogController.open(modal, {
+          initialFocus: document.getElementById('btn-close-chunk-style-modal'),
+          onRequestClose: closeChunkStyleModal
+        });
+      }
     }
 
     function closeChunkStyleModal() {
@@ -154,6 +164,8 @@
       var modal = document.getElementById('chunk-style-modal');
       if (backdrop) backdrop.style.display = 'none';
       if (modal) modal.style.display = 'none';
+      if (backdrop) backdrop.setAttribute('aria-hidden', 'true');
+      chunkStyleDialogController.close();
     }
 
     function updateChunkStyle() {
@@ -196,6 +208,10 @@
         initStyleEditor();
       };
     }
+
+    return function disposeStyleEditor() {
+      chunkStyleDialogController.dispose();
+    };
   }
 
   window.__styleEditor = { init: init };
