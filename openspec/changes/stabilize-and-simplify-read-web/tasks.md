@@ -63,7 +63,7 @@
 - [x] 7.4 将每行日志全量保存改为阶段 checkpoint 与 100–250ms coalesced persistence
 - [x] 7.5 实现 crash recovery 状态机，损坏 jobs/history 必须 quarantine/backup recovery 而非清空覆盖
 - [x] 7.6 建立 `ProcessSupervisor`，使用 lock、try/finally、进程树 terminate/kill timeout 和真实终态确认
-- [ ] 7.7 将 AI/backfill 改为 202 background job，增加 deadline、cancel、retry+jitter 和分资源限流
+- [x] 7.7 将 AI/backfill 改为 202 background job，增加 deadline、cancel、retry+jitter 和分资源限流
 - [x] 7.8 修复 rate limiter 锁内 sleep 与缓存原子性，隔离空/截断 cache 文件
 - [x] 7.9 建立统一 `NativePicker` 的稳定 owner、cancel/error/timeout/kill 与前端 Abort/retry
 - [ ] 7.10 为 1/10/50 active jobs、上游 timeout/503、取消、重启和 picker 焦点变化建立压力测试

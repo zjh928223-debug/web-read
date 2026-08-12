@@ -171,6 +171,160 @@ class MemoryCredentialStore:
 
 
 class ServiceAppTests(unittest.TestCase):
+    def test_annotation_backfill_returns_202_and_exposes_background_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            provider_started = Event()
+            provider_release = Event()
+
+            def controlled_requester(_cache_dir, _model, _prompt, payload, **_kwargs):
+                provider_started.set()
+                provider_release.wait(2)
+                return json.dumps({"items": payload["items"]})
+
+            credential_store = MemoryCredentialStore()
+            credential_store.set_secret("SECRET")
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=credential_store,
+                annotation_backfill_requester=controlled_requester,
+            )
+            with TestClient(create_app(manager)) as client:
+                created = client.post("/api/jobs", json={"url": "https://example.com/background", "geminiMode": "mock"}).json()
+                ready = self._wait_ready(client, created["jobId"])
+                response = client.post(
+                    f"/api/jobs/{ready['jobId']}/annotation-backfill",
+                    json={"template": {"items": [{"targetId": "one"}]}, "model": "gemini-test"},
+                )
+                self.assertEqual(response.status_code, 202)
+                operation = response.json()
+                self.assertIn(operation["status"], {"queued", "running"})
+                self.assertTrue(operation["operationId"])
+                self.assertTrue(operation["statusUrl"].endswith(operation["operationId"]))
+                self.assertTrue(provider_started.wait(1))
+                provider_release.set()
+                completed = self._wait_backfill_operation(client, ready["jobId"], operation["operationId"], "ready")
+                self.assertEqual(completed["result"]["items"][0]["targetId"], "one")
+
+    def test_annotation_backfill_cancel_and_deadline_finish_while_provider_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            releases = [Event(), Event()]
+            started = [Event(), Event()]
+            call_index = [0]
+
+            def blocked_requester(*_args, **_kwargs):
+                index = call_index[0]
+                call_index[0] += 1
+                started[index].set()
+                releases[index].wait(2)
+                return json.dumps({"items": []})
+
+            credential_store = MemoryCredentialStore()
+            credential_store.set_secret("SECRET")
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=credential_store,
+                annotation_backfill_requester=blocked_requester,
+            )
+            try:
+                with TestClient(create_app(manager)) as client:
+                    created = client.post("/api/jobs", json={"url": "https://example.com/cancel", "geminiMode": "mock"}).json()
+                    ready = self._wait_ready(client, created["jobId"])
+                    payload = {"template": {"items": [{"targetId": "one"}]}, "model": "gemini-test"}
+                    cancel_operation = client.post(
+                        f"/api/jobs/{ready['jobId']}/annotation-backfill", json=payload
+                    ).json()
+                    self.assertTrue(started[0].wait(1))
+                    canceled = client.post(cancel_operation["cancelUrl"])
+                    self.assertEqual(canceled.status_code, 200)
+                    self.assertEqual(self._wait_backfill_operation(
+                        client, ready["jobId"], cancel_operation["operationId"], "canceled"
+                    )["error"]["category"], "canceled")
+                    releases[0].set()
+
+                    deadline_operation = client.post(
+                        f"/api/jobs/{ready['jobId']}/annotation-backfill",
+                        json={**payload, "deadlineSeconds": 0.05},
+                    ).json()
+                    self.assertTrue(started[1].wait(1))
+                    failed = self._wait_backfill_operation(
+                        client, ready["jobId"], deadline_operation["operationId"], "failed"
+                    )
+                    self.assertEqual(failed["error"]["category"], "timeout")
+                    self.assertTrue(failed["error"]["retryable"])
+            finally:
+                for release in releases:
+                    release.set()
+                manager.close()
+
+    def test_annotation_backfill_limits_same_model_but_isolates_different_models_and_jitters_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            active = {}
+            maximum = {}
+            lock = threading.Lock()
+            releases = {"model-a": Event(), "model-b": Event()}
+            all_started = Event()
+            retry_times = []
+
+            def requester(_cache_dir, model, _prompt, payload, **_kwargs):
+                with lock:
+                    active[model] = active.get(model, 0) + 1
+                    maximum[model] = max(maximum.get(model, 0), active[model])
+                    if active.get("model-a") and active.get("model-b"):
+                        all_started.set()
+                if payload.get("retryProbe") and not retry_times:
+                    retry_times.append(time.monotonic())
+                    raise RuntimeError("503 temporarily unavailable")
+                releases[model].wait(2)
+                with lock:
+                    active[model] -= 1
+                return json.dumps({"items": payload.get("items", [])})
+
+            credential_store = MemoryCredentialStore()
+            credential_store.set_secret("SECRET")
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=credential_store,
+                annotation_backfill_requester=requester,
+                annotation_retry_jitter=lambda delay: delay * 0.5,
+            )
+            try:
+                with TestClient(create_app(manager)) as client:
+                    created = client.post("/api/jobs", json={"url": "https://example.com/resources", "geminiMode": "mock"}).json()
+                    ready = self._wait_ready(client, created["jobId"])
+                    template = {"items": [{"targetId": "one"}]}
+                    first_a = client.post(f"/api/jobs/{ready['jobId']}/annotation-backfill", json={"template": template, "model": "model-a"}).json()
+                    second_a = client.post(f"/api/jobs/{ready['jobId']}/annotation-backfill", json={"template": template, "model": "model-a"}).json()
+                    first_b = client.post(f"/api/jobs/{ready['jobId']}/annotation-backfill", json={"template": template, "model": "model-b"}).json()
+                    self.assertTrue(all_started.wait(1), "different model resource did not run concurrently")
+                    self.assertEqual(maximum.get("model-a"), 1)
+                    releases["model-a"].set()
+                    releases["model-b"].set()
+                    for operation in (first_a, second_a, first_b):
+                        self._wait_backfill_operation(client, ready["jobId"], operation["operationId"], "ready")
+
+                    retry_started = time.monotonic()
+                    retry = client.post(
+                        f"/api/jobs/{ready['jobId']}/annotation-backfill",
+                        json={
+                            "template": {"items": [{"targetId": "retry"}], "retryProbe": True},
+                            "model": "model-a",
+                            "retryDelaySeconds": 0.04,
+                            "maxRetries": 1,
+                        },
+                    ).json()
+                    self._wait_backfill_operation(client, ready["jobId"], retry["operationId"], "ready")
+                    self.assertGreaterEqual(time.monotonic() - retry_started, 0.055)
+            finally:
+                for release in releases.values():
+                    release.set()
+                manager.close()
+
     def test_loopback_security_allows_health_but_protects_application_api(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
@@ -1022,21 +1176,18 @@ class ServiceAppTests(unittest.TestCase):
                 "items": [{"targetId": "target-1", "markedText": "workflow"}],
             }
 
-            response = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": template, "model": "gemini-test", "apiKey": "SECRET-RUN-ONLY"},
+            body = self._run_backfill(
+                client, ready["jobId"],
+                {"template": template, "model": "gemini-test", "apiKey": "SECRET-RUN-ONLY"},
             )
-
-            self.assertEqual(response.status_code, 200)
-            body = response.json()
             self.assertEqual(body["status"], "ready")
             self.assertEqual(body["result"]["items"][0]["targetId"], "target-1")
             self.assertEqual(body["itemCount"], 1)
             self.assertEqual(body["metadata"]["model"], "gemini-test")
             self.assertEqual(body["metadata"]["itemCount"], 1)
             self.assertEqual(body["metadata"]["templateItemCount"], 1)
-            self.assertNotIn("SECRET-ANNOTATION-BACKFILL", response.text)
-            self.assertNotIn("SECRET-RUN-ONLY", response.text)
+            self.assertNotIn("SECRET-ANNOTATION-BACKFILL", json.dumps(body))
+            self.assertNotIn("SECRET-RUN-ONLY", json.dumps(body))
             self.assertEqual(calls[0]["model"], "gemini-test")
             self.assertEqual(calls[0]["payload"], template)
             self.assertEqual(calls[0]["extra"]["api_key"], "SECRET-RUN-ONLY")
@@ -1103,24 +1254,18 @@ class ServiceAppTests(unittest.TestCase):
                 "articleId": "article-1",
                 "items": [{"targetId": "target-1", "markedText": "workflow"}],
             }
-            first = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": first_template, "model": "gemini-test"},
-            )
-            self.assertEqual(first.status_code, 200)
+            first = self._run_backfill(client, ready["jobId"], {"template": first_template, "model": "gemini-test"})
 
             second_template = {
                 "schemaVersion": 1,
                 "articleId": "article-1",
                 "items": [{"targetId": "target-2", "markedText": "memory"}],
             }
-            second = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": second_template, "model": "gemini-test", "mergeWithLatest": True},
+            second = self._run_backfill(
+                client, ready["jobId"],
+                {"template": second_template, "model": "gemini-test", "mergeWithLatest": True},
             )
-
-            self.assertEqual(second.status_code, 200)
-            merged = second.json()["result"]
+            merged = second["result"]
             self.assertEqual([item["targetId"] for item in merged["items"]], ["target-1", "target-2"])
             self.assertEqual(calls[1]["payload"], second_template)
             output_dir = Path(client.get(f"/api/jobs/{ready['jobId']}/session").json()["outputDir"])
@@ -1129,10 +1274,10 @@ class ServiceAppTests(unittest.TestCase):
             latest = client.get(f"/api/jobs/{ready['jobId']}/annotation-backfill/latest").json()
             self.assertGreaterEqual(len(latest["history"]), 2)
             first_run = client.get(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill/runs/{first.json()['metadata']['runId']}"
+                f"/api/jobs/{ready['jobId']}/annotation-backfill/runs/{first['metadata']['runId']}"
             )
             second_run = client.get(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill/runs/{second.json()['metadata']['runId']}"
+                f"/api/jobs/{ready['jobId']}/annotation-backfill/runs/{second['metadata']['runId']}"
             )
             self.assertEqual(first_run.status_code, 200)
             self.assertEqual(second_run.status_code, 200)
@@ -1192,13 +1337,10 @@ class ServiceAppTests(unittest.TestCase):
                 ],
             }
 
-            response = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": template, "model": "gemini-test", "apiKey": "SECRET-RUN-ONLY", "batchSize": 25},
+            body = self._run_backfill(
+                client, ready["jobId"],
+                {"template": template, "model": "gemini-test", "apiKey": "SECRET-RUN-ONLY", "batchSize": 25},
             )
-
-            self.assertEqual(response.status_code, 200)
-            body = response.json()
             self.assertEqual([len(call["items"]) for call in calls], [25, 25, 11])
             self.assertTrue(calls[0]["articleText"].endswith(sentences[24]))
             self.assertNotIn(sentences[25], calls[0]["articleText"])
@@ -1253,15 +1395,10 @@ class ServiceAppTests(unittest.TestCase):
                 ],
             }
 
-            response = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": template, "model": "gemini-test"},
-            )
-
-            self.assertEqual(response.status_code, 200)
+            response = self._run_backfill(client, ready["jobId"], {"template": template, "model": "gemini-test"})
             self.assertEqual([len(batch) for batch in calls], [15, 8])
-            self.assertEqual(response.json()["metadata"]["batchSize"], 15)
-            self.assertEqual(response.json()["metadata"]["batchCount"], 2)
+            self.assertEqual(response["metadata"]["batchSize"], 15)
+            self.assertEqual(response["metadata"]["batchCount"], 2)
 
     def test_srs_meaning_refinement_uses_single_request_without_overwriting_annotation_latest(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1313,12 +1450,8 @@ class ServiceAppTests(unittest.TestCase):
                 "articleId": "article-normal",
                 "items": [{"targetId": "target-normal", "markedText": "workflow"}],
             }
-            normal = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": normal_template, "model": "gemini-test"},
-            )
-            self.assertEqual(normal.status_code, 200)
-            self.assertEqual(normal.json()["metadata"]["purpose"], "annotation_backfill")
+            normal = self._run_backfill(client, ready["jobId"], {"template": normal_template, "model": "gemini-test"})
+            self.assertEqual(normal["metadata"]["purpose"], "annotation_backfill")
 
             calls.clear()
             refinement_template = {
@@ -1334,20 +1467,16 @@ class ServiceAppTests(unittest.TestCase):
                     for index in range(61)
                 ],
             }
-            refinement = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={
+            body = self._run_backfill(
+                client, ready["jobId"], {
                     "template": refinement_template,
                     "model": "gemini-test",
                     "purpose": "srs_meaning_refinement",
                     "singleRequest": True,
                     "maxApiCalls": 1,
                     "batchSize": 10,
-                },
+                }
             )
-
-            self.assertEqual(refinement.status_code, 200)
-            body = refinement.json()
             self.assertEqual(len(calls), 1)
             self.assertEqual(len(calls[0]["items"]), 61)
             self.assertIn("simpleMeaning", calls[0]["prompt"])
@@ -1408,15 +1537,12 @@ class ServiceAppTests(unittest.TestCase):
                 "items": [{"targetId": "target-1", "markedText": "workflow"}],
             }
 
-            response = client.post(
-                f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": template, "model": "gemini-test", "retryDelaySeconds": 0},
+            response = self._run_backfill(
+                client, ready["jobId"], {"template": template, "model": "gemini-test", "retryDelaySeconds": 0}
             )
-
-            self.assertEqual(response.status_code, 200)
             self.assertEqual(len(calls), 2)
-            self.assertEqual(response.json()["result"]["items"][0]["targetId"], "target-1")
-            self.assertEqual(response.json()["metadata"]["retryCount"], 1)
+            self.assertEqual(response["result"]["items"][0]["targetId"], "target-1")
+            self.assertEqual(response["metadata"]["retryCount"], 1)
 
     def test_annotation_backfill_keeps_template_and_prompt_when_gemini_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1445,11 +1571,13 @@ class ServiceAppTests(unittest.TestCase):
 
             response = client.post(
                 f"/api/jobs/{ready['jobId']}/annotation-backfill",
-                json={"template": template},
+                json={"template": template, "maxRetries": 0},
             )
 
-            self.assertEqual(response.status_code, 502)
-            self.assertNotIn("SECRET-ANNOTATION-BACKFILL", response.text)
+            self.assertEqual(response.status_code, 202)
+            operation = response.json()
+            failed = self._wait_backfill_operation(client, ready["jobId"], operation["operationId"], "failed")
+            self.assertNotIn("SECRET-ANNOTATION-BACKFILL", json.dumps(failed))
             output_dir = Path(client.get(f"/api/jobs/{ready['jobId']}/session").json()["outputDir"])
             backfill_dir = output_dir / "_workflow" / "annotation-backfill"
             self.assertEqual(json.loads((backfill_dir / "latest-template.json").read_text(encoding="utf-8")), template)
@@ -2338,6 +2466,25 @@ class ServiceAppTests(unittest.TestCase):
                 return last
             time.sleep(0.02)
         self.fail(f"job {job_id} did not reach stage {stage}: {last}")
+
+    def _wait_backfill_operation(self, client, job_id, operation_id, status):
+        deadline = time.time() + 2
+        last = None
+        while time.time() < deadline:
+            response = client.get(f"/api/jobs/{job_id}/annotation-backfill/operations/{operation_id}")
+            self.assertEqual(response.status_code, 200, response.text)
+            last = response.json()
+            if last["status"] == status:
+                return last
+            time.sleep(0.01)
+        self.fail(f"backfill operation {operation_id} did not reach {status}: {last}")
+
+    def _run_backfill(self, client, job_id, payload):
+        accepted = client.post(f"/api/jobs/{job_id}/annotation-backfill", json=payload)
+        self.assertEqual(accepted.status_code, 202, accepted.text)
+        operation = accepted.json()
+        completed = self._wait_backfill_operation(client, job_id, operation["operationId"], "ready")
+        return completed["response"]
 
 
 if __name__ == "__main__":

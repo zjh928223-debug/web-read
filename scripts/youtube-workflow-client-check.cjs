@@ -18,11 +18,19 @@ async function main() {
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options });
+    const isBackfillCreate = url.endsWith('/api/jobs/job-1/annotation-backfill') && options.method === 'POST';
+    const isBackfillStatus = url.endsWith('/api/jobs/job-1/annotation-backfill/operations/operation-1');
     return {
       ok: true,
       status: 200,
       headers: new Map(),
-      async json() { return { url, ok: true }; },
+      async json() {
+        if (isBackfillCreate) {
+          return { operationId: 'operation-1', status: 'queued', statusUrl: '/api/jobs/job-1/annotation-backfill/operations/operation-1' };
+        }
+        if (isBackfillStatus) return { operationId: 'operation-1', status: 'ready', response: { result: { items: [] } } };
+        return { url, ok: true };
+      },
       async blob() { return new Blob(['audio']); },
     };
   };
@@ -112,6 +120,7 @@ async function main() {
     'http://127.0.0.1:8765/api/jobs/job-1/reader-marks',
     'http://127.0.0.1:8765/api/jobs/job-1/reader-marks',
     'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill',
+    'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill/operations/operation-1',
     'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill/latest',
     'http://127.0.0.1:8765/api/jobs/job-1/annotation-backfill/runs/run-1',
     'http://127.0.0.1:8765/api/jobs/job-1/quality',

@@ -254,12 +254,31 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
-    async runAnnotationBackfill(jobId, payload = {}) {
+    async startAnnotationBackfill(jobId, payload = {}, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/annotation-backfill`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
+        body: JSON.stringify(payload || {}),
+        ...(options.signal ? { signal: options.signal } : {})
       }))
+    },
+    async getAnnotationBackfillOperation(jobId, operationId, options = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/annotation-backfill/operations/${encodeURIComponent(operationId)}`), options.signal ? { signal: options.signal } : undefined))
+    },
+    async cancelAnnotationBackfillOperation(jobId, operationId) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/annotation-backfill/operations/${encodeURIComponent(operationId)}/cancel`), { method: 'POST' }))
+    },
+    async runAnnotationBackfill(jobId, payload = {}, options = {}) {
+      const signal = options.signal
+      const operation = await this.startAnnotationBackfill(jobId, payload, { signal })
+      while (operation.status === 'queued' || operation.status === 'running' || operation.status === 'retrying') {
+        await abortableDelay(250, signal)
+        Object.assign(operation, await this.getAnnotationBackfillOperation(jobId, operation.operationId, { signal }))
+      }
+      if (operation.status === 'ready') return operation.response || { result: operation.result }
+      const error = new Error(operation.error?.message || `Annotation backfill ${operation.status}`)
+      error.code = operation.error?.category || operation.status
+      throw error
     },
     async getAnnotationBackfillResult(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/annotation-backfill/latest`)))
@@ -274,6 +293,22 @@ export function createYoutubeWorkflowClient(options = {}) {
       return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`)
     }
   }
+}
+
+function abortableDelay(milliseconds, signal) {
+  if (!signal) return new Promise(resolve => setTimeout(resolve, milliseconds))
+  if (signal.aborted) return Promise.reject(signal.reason || new DOMException('Aborted', 'AbortError'))
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, milliseconds)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason || new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 export const youtubeWorkflowClient = createYoutubeWorkflowClient()

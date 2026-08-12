@@ -4,6 +4,7 @@ import hashlib
 import importlib.metadata
 import os
 import platform
+import random
 import secrets
 import subprocess
 import sys
@@ -112,6 +113,10 @@ Do not introduce article background, world knowledge, named entities, chemicals,
 Do not generate boundary, type, memoryHint, article explanation, markdown, or any extra text.
 If an item is a proper noun, temporary term, or unsuitable for SRS, return an empty simpleMeaning for that targetId.
 """.strip()
+
+
+class AnnotationBackfillCanceled(RuntimeError):
+    pass
 
 
 def default_annotation_backfill_requester(cache_dir, model_name, system_prompt, payload_obj, extra_config=None, log_func=None, log_prefix="Gemini"):
@@ -818,6 +823,7 @@ class JobManager:
         folder_picker: Callable[[str], str] | None = None,
         video_picker: Callable[[str], str] | None = None,
         annotation_backfill_requester: Callable[..., str] | None = None,
+        annotation_retry_jitter: Callable[[float], float] | None = None,
         persistence_delay_seconds: float = 0.2,
         event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
     ):
@@ -851,6 +857,12 @@ class JobManager:
         self.folder_picker = folder_picker or open_system_folder_picker
         self.video_picker = video_picker or open_system_video_picker
         self.annotation_backfill_requester = annotation_backfill_requester or default_annotation_backfill_requester
+        self.annotation_retry_jitter = annotation_retry_jitter or (lambda delay: random.uniform(0.0, max(0.0, delay * 0.25)))
+        self.annotation_backfill_operations: dict[str, dict] = {}
+        self.annotation_backfill_threads: dict[str, threading.Thread] = {}
+        self.annotation_backfill_lock = threading.RLock()
+        self.annotation_backfill_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="annotation-ai")
+        self.annotation_resource_slots: dict[str, threading.BoundedSemaphore] = {}
         self.jobs: dict[str, JobRecord] = {}
         self.event_limit = max(20, int(event_limit))
         self.persistence_delay_seconds = max(0.01, float(persistence_delay_seconds))
@@ -1476,6 +1488,7 @@ class JobManager:
     def close(self) -> None:
         persistence_timer = None
         worker_thread = None
+        backfill_threads = []
         with self.lock:
             self._persistence_closed = True
             persistence_timer = self._persistence_timer
@@ -1486,12 +1499,21 @@ class JobManager:
                 if record.status not in TERMINAL_STATUSES:
                     record.cancel_event.set()
             worker_thread = self.worker_thread
+        with self.annotation_backfill_lock:
+            for operation in self.annotation_backfill_operations.values():
+                if operation["status"] in {"queued", "running", "retrying"}:
+                    operation["cancelEvent"].set()
+            backfill_threads = list(self.annotation_backfill_threads.values())
 
         current_thread = threading.current_thread()
         if persistence_timer is not None and persistence_timer is not current_thread:
             persistence_timer.join()
         if worker_thread is not None and worker_thread is not current_thread:
             worker_thread.join()
+        for thread in backfill_threads:
+            if thread is not current_thread:
+                thread.join()
+        self.annotation_backfill_executor.shutdown(wait=True, cancel_futures=True)
 
         with self.lock:
             self._flush_persistence_locked()
@@ -1902,6 +1924,9 @@ class JobManager:
         request_templates = [template] if is_srs_refinement else split_annotation_backfill_template(template, batch_size)
         max_retries = 0 if is_srs_refinement else normalize_annotation_backfill_retry_count(payload.get("maxRetries"))
         retry_delay_seconds = normalize_annotation_backfill_retry_delay(payload.get("retryDelaySeconds"))
+        operation_control = payload.get("_operationControl") if isinstance(payload.get("_operationControl"), dict) else {}
+        cancel_event = operation_control.get("cancelEvent")
+        deadline = operation_control.get("deadline")
         retry_count = 0
 
         def log_annotation_backfill(message: str) -> None:
@@ -1917,6 +1942,10 @@ class JobManager:
                         f"request batch {batch_index}/{len(request_templates)} items={len(batch_items)}"
                     )
                 for attempt_index in range(max_retries + 1):
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise AnnotationBackfillCanceled("annotation backfill canceled")
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise TimeoutError("annotation backfill deadline exceeded")
                     try:
                         response_text = self.annotation_backfill_requester(
                             GEMINI_CACHE_DIR,
@@ -1928,10 +1957,15 @@ class JobManager:
                                 "base_url": base_url,
                                 "response_mime_type": "application/json",
                                 "temperature": 0.1,
+                                "deadline": time.time() + max(0.0, deadline - time.monotonic()) if deadline else None,
                             },
                             log_func=log_annotation_backfill,
                             log_prefix="annotation-backfill",
                         )
+                        if cancel_event is not None and cancel_event.is_set():
+                            raise AnnotationBackfillCanceled("annotation backfill canceled")
+                        if deadline is not None and time.monotonic() >= deadline:
+                            raise TimeoutError("annotation backfill deadline exceeded")
                         break
                     except Exception as exc:
                         if attempt_index >= max_retries or not is_transient_annotation_backfill_error(exc):
@@ -1943,7 +1977,12 @@ class JobManager:
                             f"retry {attempt_index + 1}/{max_retries}: {safe_detail}"
                         )
                         if retry_delay_seconds > 0:
-                            time.sleep(retry_delay_seconds * (2 ** attempt_index))
+                            retry_wait = retry_delay_seconds * (2 ** attempt_index)
+                            retry_wait += self.annotation_retry_jitter(retry_wait)
+                            if cancel_event is not None and cancel_event.wait(retry_wait):
+                                raise AnnotationBackfillCanceled("annotation backfill canceled")
+                            if cancel_event is None:
+                                time.sleep(retry_wait)
                 try:
                     batch_result = parse_annotation_backfill_response(response_text, log_func=log_annotation_backfill)
                 except Exception as exc:
@@ -1959,6 +1998,8 @@ class JobManager:
                     raise HTTPException(status_code=502, detail=safe_detail)
                 result = merge_annotation_backfill_results(result, batch_result)
         except Exception as exc:
+            if isinstance(exc, (AnnotationBackfillCanceled, TimeoutError)):
+                raise
             if isinstance(exc, HTTPException):
                 raise exc
             safe_detail = redact_text(str(exc), [api_key])
@@ -2005,6 +2046,139 @@ class JobManager:
             "metadata": metadata,
             "result": result,
         }
+
+    def start_annotation_backfill(self, job_id: str, payload: dict | None = None) -> dict:
+        payload = dict(payload or {})
+        template = payload.get("template")
+        if not isinstance(template, dict) or not isinstance(template.get("items"), list):
+            raise HTTPException(status_code=400, detail="template with items array is required")
+        self._manifest_for_job(job_id)
+        operation_id = uuid.uuid4().hex[:16]
+        now = utc_now_iso()
+        operation = {
+            "operationId": operation_id,
+            "jobId": job_id,
+            "status": "queued",
+            "createdAt": now,
+            "updatedAt": now,
+            "result": None,
+            "error": None,
+            "cancelEvent": threading.Event(),
+        }
+        try:
+            deadline_seconds = float(payload.get("deadlineSeconds", 120.0))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="deadlineSeconds must be numeric")
+        deadline_seconds = max(0.01, min(deadline_seconds, 900.0))
+        operation["deadlineAt"] = time.monotonic() + deadline_seconds
+        model = str(payload.get("model") or DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        operation["resourceKey"] = f"gemini:{model.lower()}"
+        thread = threading.Thread(
+            target=self._run_annotation_backfill_operation,
+            args=(operation_id, payload),
+            daemon=True,
+        )
+        with self.annotation_backfill_lock:
+            self.annotation_backfill_operations[operation_id] = operation
+            self.annotation_backfill_threads[operation_id] = thread
+        thread.start()
+        return self._public_annotation_backfill_operation(operation)
+
+    def _run_annotation_backfill_operation(self, operation_id: str, payload: dict) -> None:
+        with self.annotation_backfill_lock:
+            operation = self.annotation_backfill_operations[operation_id]
+            operation["status"] = "running"
+            operation["updatedAt"] = utc_now_iso()
+        try:
+            controlled_payload = dict(payload)
+            controlled_payload["_operationControl"] = {
+                "cancelEvent": operation["cancelEvent"],
+                "deadline": operation["deadlineAt"],
+            }
+            slot = self._annotation_resource_slot(operation["resourceKey"])
+            while not slot.acquire(timeout=0.01):
+                if operation["cancelEvent"].is_set():
+                    raise AnnotationBackfillCanceled("annotation backfill canceled")
+                if time.monotonic() >= operation["deadlineAt"]:
+                    raise TimeoutError("annotation backfill deadline exceeded")
+            try:
+                provider_future = self.annotation_backfill_executor.submit(
+                    self.run_annotation_backfill, operation["jobId"], controlled_payload
+                )
+                while not provider_future.done():
+                    if operation["cancelEvent"].wait(0.01):
+                        raise AnnotationBackfillCanceled("annotation backfill canceled")
+                    if time.monotonic() >= operation["deadlineAt"]:
+                        raise TimeoutError("annotation backfill deadline exceeded")
+                result = provider_future.result()
+            finally:
+                if 'provider_future' not in locals() or provider_future.done():
+                    slot.release()
+                else:
+                    provider_future.add_done_callback(lambda _future: slot.release())
+        except Exception as exc:
+            safe_detail = str(exc.detail) if isinstance(exc, HTTPException) else str(exc)
+            if isinstance(exc, AnnotationBackfillCanceled):
+                status = "canceled"
+                category = "canceled"
+                retryable = True
+            elif isinstance(exc, TimeoutError):
+                status = "failed"
+                category = "timeout"
+                retryable = True
+            else:
+                status = "failed"
+                category = "upstream"
+                retryable = True
+            with self.annotation_backfill_lock:
+                operation["status"] = status
+                operation["error"] = {"category": category, "message": safe_detail, "retryable": retryable}
+                operation["updatedAt"] = utc_now_iso()
+        else:
+            with self.annotation_backfill_lock:
+                operation["status"] = "ready"
+                operation["result"] = result.get("result")
+                operation["response"] = result
+                operation["updatedAt"] = utc_now_iso()
+        finally:
+            with self.annotation_backfill_lock:
+                self.annotation_backfill_threads.pop(operation_id, None)
+
+    def _annotation_resource_slot(self, resource_key: str) -> threading.BoundedSemaphore:
+        with self.annotation_backfill_lock:
+            return self.annotation_resource_slots.setdefault(resource_key, threading.BoundedSemaphore(1))
+
+    def get_annotation_backfill_operation(self, job_id: str, operation_id: str) -> dict:
+        with self.annotation_backfill_lock:
+            operation = self.annotation_backfill_operations.get(operation_id)
+            if operation is None or operation["jobId"] != job_id:
+                raise HTTPException(status_code=404, detail="annotation backfill operation not found")
+            return self._public_annotation_backfill_operation(operation)
+
+    def cancel_annotation_backfill_operation(self, job_id: str, operation_id: str) -> dict:
+        with self.annotation_backfill_lock:
+            operation = self.annotation_backfill_operations.get(operation_id)
+            if operation is None or operation["jobId"] != job_id:
+                raise HTTPException(status_code=404, detail="annotation backfill operation not found")
+            operation["cancelEvent"].set()
+            if operation["status"] == "queued":
+                operation["status"] = "canceled"
+                operation["error"] = {"category": "canceled", "message": "annotation backfill canceled", "retryable": True}
+                operation["updatedAt"] = utc_now_iso()
+            return self._public_annotation_backfill_operation(operation)
+
+    def _public_annotation_backfill_operation(self, operation: dict) -> dict:
+        result = {
+            key: value for key, value in operation.items()
+            if key not in {"cancelEvent", "response", "deadlineAt"} and value is not None
+        }
+        result["statusUrl"] = (
+            f"/api/jobs/{operation['jobId']}/annotation-backfill/operations/{operation['operationId']}"
+        )
+        result["cancelUrl"] = result["statusUrl"] + "/cancel"
+        if operation.get("response") is not None:
+            result["response"] = operation["response"]
+        return result
 
     def get_annotation_backfill_result(self, job_id: str) -> dict:
         manifest = self._manifest_for_job(job_id)
@@ -2988,9 +3162,17 @@ def create_app(
     def job_quality(job_id: str):
         return manager.quality_report(job_id)
 
-    @app.post("/api/jobs/{job_id}/annotation-backfill")
+    @app.post("/api/jobs/{job_id}/annotation-backfill", status_code=202)
     def job_annotation_backfill(job_id: str, payload: dict | None = None):
-        return manager.run_annotation_backfill(job_id, payload)
+        return manager.start_annotation_backfill(job_id, payload)
+
+    @app.get("/api/jobs/{job_id}/annotation-backfill/operations/{operation_id}")
+    def job_annotation_backfill_operation(job_id: str, operation_id: str):
+        return manager.get_annotation_backfill_operation(job_id, operation_id)
+
+    @app.post("/api/jobs/{job_id}/annotation-backfill/operations/{operation_id}/cancel")
+    def cancel_job_annotation_backfill_operation(job_id: str, operation_id: str):
+        return manager.cancel_annotation_backfill_operation(job_id, operation_id)
 
     @app.get("/api/jobs/{job_id}/annotation-backfill/latest")
     def job_annotation_backfill_latest(job_id: str):
