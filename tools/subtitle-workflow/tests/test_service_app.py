@@ -6,13 +6,14 @@ import threading
 import time
 import unittest
 import zipfile
+import subprocess
 from pathlib import Path
 from threading import Event
 
 from fastapi.testclient import TestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
-from youtube_workflow.service import JobManager, create_app
+from youtube_workflow.service import JobManager, NativePicker, NativePickerError, create_app
 
 
 class WaitingRunner:
@@ -1365,6 +1366,104 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(video_response.status_code, 200)
             self.assertTrue(video_response.json()["selected"])
             self.assertEqual(Path(video_response.json()["path"]), selected_video)
+
+    def test_native_picker_uses_one_stable_owner_and_reports_cancel(self):
+        calls = []
+
+        class FakeProcess:
+            returncode = 0
+
+            def communicate(self, timeout=None):
+                calls.append(("communicate", timeout))
+                return ('{"status":"canceled","path":""}\n', "")
+
+            def kill(self):
+                calls.append(("kill", None))
+
+        def process_factory(command, **kwargs):
+            calls.append(("command", command, kwargs))
+            return FakeProcess()
+
+        picker = NativePicker(process_factory=process_factory, timeout_seconds=7)
+        result = picker.pick("folder", "")
+
+        self.assertEqual(result.status, "canceled")
+        self.assertEqual(result.path, "")
+        command_text = calls[0][1][-1]
+        self.assertNotIn("GetForegroundWindow", command_text)
+        self.assertIn("Read-Web Native Picker", command_text)
+        self.assertIn("FolderBrowserDialog", command_text)
+        self.assertEqual(calls[1], ("communicate", 7))
+
+    def test_native_picker_kills_its_process_after_timeout(self):
+        events = []
+
+        class TimedOutProcess:
+            returncode = None
+
+            def communicate(self, timeout=None):
+                events.append(("communicate", timeout))
+                if timeout is not None:
+                    raise subprocess.TimeoutExpired("powershell", timeout)
+                self.returncode = -9
+                return ("", "")
+
+            def kill(self):
+                events.append(("kill", None))
+
+        picker = NativePicker(process_factory=lambda *_args, **_kwargs: TimedOutProcess(), timeout_seconds=0.01)
+
+        with self.assertRaises(NativePickerError) as raised:
+            picker.pick("video", "")
+
+        self.assertEqual(raised.exception.code, "native-picker-timeout")
+        self.assertEqual(events, [("communicate", 0.01), ("kill", None), ("communicate", None)])
+
+    def test_native_picker_serializes_folder_and_video_operations(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        class WaitingProcess:
+            returncode = 0
+
+            def communicate(self, timeout=None):
+                started.set()
+                release.wait(1)
+                return ('{"status":"canceled","path":""}', "")
+
+            def kill(self):
+                release.set()
+
+        picker = NativePicker(process_factory=lambda *_args, **_kwargs: WaitingProcess(), timeout_seconds=2)
+        first = threading.Thread(target=lambda: picker.pick("folder", ""))
+        first.start()
+        self.assertTrue(started.wait(1))
+        try:
+            with self.assertRaises(NativePickerError) as raised:
+                picker.pick("video", "")
+            self.assertEqual(raised.exception.code, "native-picker-busy")
+        finally:
+            release.set()
+            first.join(1)
+        self.assertFalse(first.is_alive())
+
+    def test_native_picker_endpoint_preserves_shape_and_adds_typed_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                folder_picker=lambda _initial_dir: "",
+                video_picker=lambda _initial_dir: "",
+            )
+            client = TestClient(create_app(manager))
+
+            folder = client.post("/api/import/pick-folder", json={})
+            video = client.post("/api/media/pick-video", json={})
+            self.assertEqual(folder.status_code, 200)
+            self.assertEqual(folder.json(), {"selected": False, "path": "", "status": "canceled"})
+            self.assertEqual(video.status_code, 200)
+            self.assertEqual(video.json(), {"selected": False, "path": "", "status": "canceled"})
 
     def test_bind_video_source_adds_video_file_endpoint_to_ready_job(self):
         with tempfile.TemporaryDirectory() as tmp:

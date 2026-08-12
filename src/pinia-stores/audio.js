@@ -26,8 +26,8 @@ export const useAudioStore = defineStore('audio', () => {
   }
 
   function saveToDB(id, data) {
+    if (!_db) return initDB().then(function () { return saveToDB(id, data) })
     return new Promise(function (resolve, reject) {
-      if (!_db) { reject(new Error('Audio database is not initialized')); return }
       var tx = _db.transaction([STORE_NAME], 'readwrite')
       var store = tx.objectStore(STORE_NAME)
       var request = store.put({ id: id, content: data, timestamp: new Date().getTime() })

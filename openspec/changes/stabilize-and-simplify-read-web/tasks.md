@@ -81,7 +81,7 @@
 
 ## 9. 生命周期、错误反馈与可访问性
 
-- [ ] 9.1 建立 `LifecycleScope`，统一注册 listener、timer、rAF、observer、Object URL 和 disposer
+- [x] 9.1 建立 `LifecycleScope`，统一注册 listener、timer、rAF、observer、Object URL 和 disposer
 - [ ] 9.2 让 reader/session/runtime init 返回 disposer，并加入 init-twice/unmount/reinit 不增长测试
 - [ ] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
 - [ ] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics

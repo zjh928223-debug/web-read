@@ -23,8 +23,8 @@
   }
 
   function saveToDB(id, data) {
+    if (!_db) return initDB().then(function () { return saveToDB(id, data); });
     return new Promise(function (resolve, reject) {
-      if (!_db) { reject(new Error('Audio database is not initialized')); return; }
       var transaction = _db.transaction([STORE_NAME], 'readwrite');
       var store = transaction.objectStore(STORE_NAME);
       var request = store.put({ id: id, content: data, timestamp: new Date().getTime() });

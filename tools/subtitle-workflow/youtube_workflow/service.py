@@ -10,6 +10,7 @@ import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Callable
@@ -472,114 +473,72 @@ def redact_payload(value, secrets: list[str]):
     return text
 
 
-def open_system_folder_picker(initial_dir: str = "") -> str:
-    escaped_initial = str(initial_dir or "").replace("'", "''")
-    script = f"""
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-
-public class ForegroundWindow : IWin32Window {{
-    private readonly IntPtr _handle;
-    public ForegroundWindow(IntPtr handle) {{ _handle = handle; }}
-    public IntPtr Handle {{ get {{ return _handle; }} }}
-}}
-
-public static class NativeMethods {{
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}}
-'@ -ReferencedAssemblies System.Windows.Forms
-[System.Windows.Forms.Application]::EnableVisualStyles()
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ownedByForeground = $false
-$foreground = [NativeMethods]::GetForegroundWindow()
-if ($foreground -ne [IntPtr]::Zero) {{
-  [NativeMethods]::ShowWindow($foreground, 5) | Out-Null
-  [NativeMethods]::SetForegroundWindow($foreground) | Out-Null
-  $owner = New-Object ForegroundWindow($foreground)
-  $ownedByForeground = $true
-}} else {{
-  $owner = New-Object System.Windows.Forms.Form
-  $owner.Text = 'Select legacy material folder'
-  $owner.StartPosition = 'CenterScreen'
-  $owner.Width = 360
-  $owner.Height = 120
-  $owner.ShowInTaskbar = $true
-  $owner.TopMost = $true
-  $owner.Opacity = 0.01
-  $owner.Show()
-  $owner.Activate()
-}}
-$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-$dialog.Description = 'Select legacy material folder'
-$dialog.ShowNewFolderButton = $false
-$initial = '{escaped_initial}'
-if ($initial -and (Test-Path -LiteralPath $initial)) {{
-  $dialog.SelectedPath = $initial
-}}
-try {{
-  $result = $dialog.ShowDialog($owner)
-  if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
-    Write-Output $dialog.SelectedPath
-  }}
-}} finally {{
-  $dialog.Dispose()
-  if (-not $ownedByForeground -and $owner -ne $null) {{
-    $owner.Close()
-    $owner.Dispose()
-  }}
-}}
-"""
-    completed = subprocess.run(
-        ["powershell", "-NoProfile", "-STA", "-Command", script],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if completed.returncode != 0:
-        raise RuntimeError((completed.stderr or completed.stdout or "folder picker failed").strip())
-    return (completed.stdout or "").strip()
+@dataclass(frozen=True)
+class NativePickerResult:
+    status: str
+    path: str = ""
 
 
-def open_system_video_picker(initial_dir: str = "") -> str:
-    escaped_initial = str(initial_dir or "").replace("'", "''")
-    script = f"""
+class NativePickerError(RuntimeError):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class NativePicker:
+    def __init__(self, process_factory=None, timeout_seconds: float = 120):
+        self.process_factory = process_factory or subprocess.Popen
+        self.timeout_seconds = timeout_seconds
+        self._operation_lock = threading.Lock()
+
+    def pick(self, picker_kind: str, initial_dir: str = "") -> NativePickerResult:
+        if picker_kind not in {"folder", "video"}:
+            raise NativePickerError("native-picker-invalid-kind", "unsupported picker kind")
+        if not self._operation_lock.acquire(blocking=False):
+            raise NativePickerError("native-picker-busy", "another picker is already open")
+        try:
+            return self._run(picker_kind, initial_dir)
+        finally:
+            self._operation_lock.release()
+
+    def _run(self, picker_kind: str, initial_dir: str) -> NativePickerResult:
+        escaped_initial = str(initial_dir or "").replace("'", "''")
+        script = f"""
 Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $owner = New-Object System.Windows.Forms.Form
-$owner.Text = 'Select video source'
+$owner.Text = 'Read-Web Native Picker'
 $owner.StartPosition = 'CenterScreen'
-$owner.Width = 320
-$owner.Height = 100
-$owner.ShowInTaskbar = $false
+$owner.Width = 360
+$owner.Height = 120
+$owner.ShowInTaskbar = $true
 $owner.TopMost = $true
 $owner.Opacity = 0.01
 $owner.Show()
 $owner.Activate()
 $owner.BringToFront()
-$dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Select video source'
-$dialog.Filter = 'Video files (*.mp4;*.webm;*.mkv;*.mov;*.m4v;*.wmv)|*.mp4;*.webm;*.mkv;*.mov;*.m4v;*.wmv|All files (*.*)|*.*'
-$dialog.Multiselect = $false
+$kind = '{picker_kind}'
 $initial = '{escaped_initial}'
-if ($initial -and (Test-Path -LiteralPath $initial)) {{
-  $dialog.InitialDirectory = $initial
+if ($kind -eq 'folder') {{
+  $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+  $dialog.Description = 'Select legacy material folder'
+  $dialog.ShowNewFolderButton = $false
+  if ($initial -and (Test-Path -LiteralPath $initial)) {{ $dialog.SelectedPath = $initial }}
+}} else {{
+  $dialog = New-Object System.Windows.Forms.OpenFileDialog
+  $dialog.Title = 'Select video source'
+  $dialog.Filter = 'Video files (*.mp4;*.webm;*.mkv;*.mov;*.m4v;*.wmv)|*.mp4;*.webm;*.mkv;*.mov;*.m4v;*.wmv|All files (*.*)|*.*'
+  $dialog.Multiselect = $false
+  if ($initial -and (Test-Path -LiteralPath $initial)) {{ $dialog.InitialDirectory = $initial }}
 }}
 try {{
   $result = $dialog.ShowDialog($owner)
   if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
-    Write-Output $dialog.FileName
+    $selected = if ($kind -eq 'folder') {{ $dialog.SelectedPath }} else {{ $dialog.FileName }}
+    @{{ status = 'selected'; path = $selected }} | ConvertTo-Json -Compress
+  }} else {{
+    @{{ status = 'canceled'; path = '' }} | ConvertTo-Json -Compress
   }}
 }} finally {{
   $dialog.Dispose()
@@ -587,16 +546,45 @@ try {{
   $owner.Dispose()
 }}
 """
-    completed = subprocess.run(
-        ["powershell", "-NoProfile", "-STA", "-Command", script],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if completed.returncode != 0:
-        raise RuntimeError((completed.stderr or completed.stdout or "video picker failed").strip())
-    return (completed.stdout or "").strip()
+        process = self.process_factory(
+            ["powershell", "-NoProfile", "-STA", "-Command", script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise NativePickerError("native-picker-timeout", "native picker timed out")
+        if process.returncode != 0:
+            detail = (stderr or stdout or "native picker failed").strip()
+            raise NativePickerError("native-picker-error", detail)
+        lines = [line.strip() for line in (stdout or "").splitlines() if line.strip()]
+        try:
+            payload = json.loads(lines[-1]) if lines else {"status": "canceled", "path": ""}
+        except (IndexError, json.JSONDecodeError):
+            raise NativePickerError("native-picker-error", "native picker returned invalid output")
+        status = str(payload.get("status") or "").strip()
+        path = str(payload.get("path") or "").strip()
+        if status not in {"selected", "canceled"}:
+            raise NativePickerError("native-picker-error", "native picker returned invalid status")
+        return NativePickerResult(status=status, path=path if status == "selected" else "")
+
+
+_native_picker = NativePicker()
+
+
+def open_system_folder_picker(initial_dir: str = "") -> str:
+    return _native_picker.pick("folder", initial_dir).path
+
+
+def open_system_video_picker(initial_dir: str = "") -> str:
+    return _native_picker.pick("video", initial_dir).path
 
 
 class JobRecord:
@@ -801,27 +789,33 @@ class JobManager:
         initial_dir = str((payload or {}).get("initialDir") or (payload or {}).get("initialPath") or "").strip()
         try:
             selected_path = self.folder_picker(initial_dir)
+        except NativePickerError as exc:
+            status_code = 409 if exc.code == "native-picker-busy" else 504 if exc.code == "native-picker-timeout" else 503
+            raise HTTPException(status_code=status_code, detail={"code": exc.code, "message": str(exc)})
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc))
         if not selected_path:
-            return {"selected": False, "path": ""}
+            return {"selected": False, "path": "", "status": "canceled"}
         path = Path(selected_path)
         if not path.exists() or not path.is_dir():
             raise HTTPException(status_code=404, detail="selected folder not found")
-        return {"selected": True, "path": str(path)}
+        return {"selected": True, "path": str(path), "status": "selected"}
 
     def pick_video_file(self, payload: dict | None = None) -> dict:
         initial_dir = str((payload or {}).get("initialDir") or (payload or {}).get("initialPath") or "").strip()
         try:
             selected_path = self.video_picker(initial_dir)
+        except NativePickerError as exc:
+            status_code = 409 if exc.code == "native-picker-busy" else 504 if exc.code == "native-picker-timeout" else 503
+            raise HTTPException(status_code=status_code, detail={"code": exc.code, "message": str(exc)})
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc))
         if not selected_path:
-            return {"selected": False, "path": ""}
+            return {"selected": False, "path": "", "status": "canceled"}
         path = Path(selected_path)
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail="selected video file not found")
-        return {"selected": True, "path": str(path)}
+        return {"selected": True, "path": str(path), "status": "selected"}
 
     def scan_import_root(self, payload: dict) -> dict:
         root_path = str((payload or {}).get("rootPath") or (payload or {}).get("path") or "").strip()
