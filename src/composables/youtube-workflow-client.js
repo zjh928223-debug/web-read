@@ -269,8 +269,10 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
-    async getReaderMarks(jobId) {
-      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)))
+    async getReaderMarks(jobId, options = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
+        signal: options.signal,
+      }))
     },
     async saveReaderMarks(jobId, payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {

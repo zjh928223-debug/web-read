@@ -1,7 +1,7 @@
 import { createApplicationPersistence } from './application-persistence.js'
 
-const SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'readerSession'])
-const READER_SESSION_SCHEMA_VERSION = 2
+const SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
+const READER_SESSION_SCHEMA_VERSION = 3
 
 function canonicalJson(value) {
   if (value === null || typeof value !== 'object') return JSON.stringify(value)
@@ -30,6 +30,7 @@ async function sessionChecksum(session) {
     audioMeta: session.audioMeta,
     transcript: session.transcript,
     chunkData: session.chunkData,
+    marks: session.marks,
   })
 }
 
@@ -70,15 +71,17 @@ function validateSession(session) {
   if (!session || typeof session !== 'object') throw new TypeError('reader session is required')
   if (typeof session.contentId !== 'string' || !session.contentId) throw new TypeError('reader session contentId is required')
   if (typeof session.revision !== 'string' || !session.revision) throw new TypeError('reader session revision is required')
-  for (const key of ['audioMeta', 'transcript', 'chunkData']) {
+  for (const key of ['audioMeta', 'transcript', 'chunkData', 'marks']) {
     if (session[key] === undefined) throw new TypeError(`reader session ${key} is required`)
   }
+  if (!Array.isArray(session.marks)) throw new TypeError('reader session marks must be an array')
 }
 
 function hasValidCommittedPayload(byId) {
   const audioMeta = byId.get('audioMeta')?.content
   const transcript = byId.get('transcript')?.content
   const chunkData = byId.get('chunkData')?.content
+  const marks = byId.get('marks')?.content
   const validAudioMeta = !!audioMeta && typeof audioMeta === 'object' && !Array.isArray(audioMeta)
   const validTranscript = !!transcript
     && typeof transcript === 'object'
@@ -86,7 +89,7 @@ function hasValidCommittedPayload(byId) {
   const validChunkData = Array.isArray(chunkData)
     || !!(chunkData && typeof chunkData === 'object'
       && (Array.isArray(chunkData.s) || Array.isArray(chunkData.items)))
-  return validAudioMeta && validTranscript && validChunkData
+  return validAudioMeta && validTranscript && validChunkData && Array.isArray(marks)
 }
 
 export function createReaderSessionPersistence(options = {}) {
@@ -145,6 +148,7 @@ export function createReaderSessionPersistence(options = {}) {
       { id: 'audioMeta', content: session.audioMeta, ...common },
       { id: 'transcript', content: session.transcript, ...common },
       { id: 'chunkData', content: session.chunkData, ...common },
+      { id: 'marks', content: session.marks, ...common },
       {
         id: 'readerSession',
         content: {
@@ -158,12 +162,12 @@ export function createReaderSessionPersistence(options = {}) {
       },
     ]
     await persistence.putMany('readerSessionRow', rows, options)
-    return rows[3].content
+    return rows[4].content
   }
 
   async function loadCommitted() {
-    const ids = ['audioMeta', 'transcript', 'chunkData', 'readerSession']
-    const rows = await persistence.getMany('readableSessionRow', ids)
+    const allIds = ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession']
+    const rows = await persistence.getMany('readableSessionRow', allIds)
     const byId = new Map(rows.filter(Boolean).map((row) => [row.id, row]))
     const manifestRow = byId.get('readerSession')
     if (!manifestRow) return { status: 'legacy', session: null }
@@ -177,7 +181,7 @@ export function createReaderSessionPersistence(options = {}) {
         error: { code: 'READER_SESSION_CORRUPT', message: 'Stored reader session manifest is invalid' },
       }
     }
-    if (manifest?.schemaVersion !== 1 && manifest?.schemaVersion !== READER_SESSION_SCHEMA_VERSION) {
+    if (![1, 2, READER_SESSION_SCHEMA_VERSION].includes(manifest?.schemaVersion)) {
       const quarantineRecord = await quarantine(rows, 'unsupported-schema', {
         schemaVersion: manifest?.schemaVersion ?? null,
       })
@@ -194,6 +198,9 @@ export function createReaderSessionPersistence(options = {}) {
     }
     const contentId = String(manifestRow.contentId || manifest?.contentId || '')
     const revision = String(manifestRow.revision || manifest?.revision || '')
+    const ids = manifest.schemaVersion === READER_SESSION_SCHEMA_VERSION
+      ? allIds
+      : allIds.filter((id) => id !== 'marks')
     const complete = ids.every((id) => byId.has(id))
     const manifestMatchesRow = manifest
       && manifest.contentId === contentId
@@ -202,7 +209,9 @@ export function createReaderSessionPersistence(options = {}) {
       && contentId
       && revision
       && manifestMatchesRow
-      && hasValidCommittedPayload(byId)
+      && (manifest.schemaVersion === READER_SESSION_SCHEMA_VERSION
+        ? hasValidCommittedPayload(byId)
+        : hasValidCommittedPayload(new Map([...byId, ['marks', { content: [] }]])))
       && ids.every((id) => {
       const row = byId.get(id)
       return row.contentId === contentId && row.revision === revision
@@ -222,6 +231,9 @@ export function createReaderSessionPersistence(options = {}) {
       audioMeta: byId.get('audioMeta').content,
       transcript: byId.get('transcript').content,
       chunkData: byId.get('chunkData').content,
+      ...(manifest.schemaVersion === READER_SESSION_SCHEMA_VERSION
+        ? { marks: byId.get('marks').content }
+        : {}),
     }
     if (manifest.schemaVersion === READER_SESSION_SCHEMA_VERSION) {
       const expectedChecksum = manifest.checksum

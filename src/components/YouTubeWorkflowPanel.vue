@@ -2288,14 +2288,14 @@ function syncMarkedWordVisuals(marks) {
   })
 }
 
-async function applyReaderMarks(marks) {
+async function applyReaderMarks(marks, options = {}) {
   const state = window.__state
   if (!state || !(state.markedMap instanceof Map)) return
   const normalized = normalizeReaderMarks(marks)
   state.markedMap.clear()
   normalized.forEach((mark) => state.markedMap.set(mark.globalIndex, mark))
   syncMarkedWordVisuals(normalized)
-  if (typeof window.saveToDB === 'function') window.saveToDB('marks', normalized)
+  if (options.persist !== false && typeof window.saveToDB === 'function') await window.saveToDB('marks', normalized)
   if (typeof window.syncAnnotationGenerationEntryStatus === 'function') await window.syncAnnotationGenerationEntryStatus()
   if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
 }

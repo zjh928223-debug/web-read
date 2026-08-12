@@ -31,6 +31,12 @@ const client = {
   mediaUrl(jobId, kind) {
     return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`
   },
+  async probeMediaRange() {
+    return { status: 206, contentRange: 'bytes 0-0/16', acceptRanges: 'bytes' }
+  },
+  async getReaderMarks() {
+    return { marks: [] }
+  },
   fileUrl(_jobId, kind) {
     assert.fail(`large ${kind} media must not use the generic file endpoint`)
   },

@@ -120,12 +120,11 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     return true
   }
 
-  async function restoreReaderMarks(jobId) {
-    if (!client || typeof client.getReaderMarks !== 'function') return
-    if (typeof deps.applyReaderMarks !== 'function') return
-    const payload = await client.getReaderMarks(jobId)
-    const marks = payload && Array.isArray(payload.marks) ? payload.marks : []
-    await deps.applyReaderMarks(marks)
+  async function prepareReaderMarks(jobId, requestOptions) {
+    if (!client || typeof client.getReaderMarks !== 'function') return []
+    const payload = await client.getReaderMarks(jobId, requestOptions)
+    if (!payload || !Array.isArray(payload.marks)) throw new Error('reader marks response must contain marks')
+    return payload.marks
   }
 
   async function restoreAnnotationBackfillResult(jobId) {
@@ -170,14 +169,14 @@ export function createYoutubeWorkflowLoader(deps = {}) {
 
     try {
       const requestOptions = { signal: load.controller.signal }
-      const manifest = await client.getSession(jobId, requestOptions)
-      if (!isCurrentLoad(load)) return supersededResult(load)
       if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
       if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
       const audioUrl = client.mediaUrl(jobId, 'audio')
-      const [transcriptBlob, chunkBlob] = await Promise.all([
+      const [manifest, transcriptBlob, chunkBlob, marks] = await Promise.all([
+        client.getSession(jobId, requestOptions),
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
+        prepareReaderMarks(jobId, requestOptions),
         client.probeMediaRange(jobId, 'audio', requestOptions),
       ])
       if (!isCurrentLoad(load)) return supersededResult(load)
@@ -218,6 +217,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         audioMeta,
         transcript: validated.transcript,
         chunkData: validated.chunkData,
+        marks,
       }, requestOptions)
       if (!isCurrentLoad(load)) return supersededResult(load)
 
@@ -239,7 +239,9 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       processTranscript(validated.transcript)
       processChunkData(validated.chunkData)
       if (!isCurrentLoad(load)) return supersededResult(load)
-      await restoreReaderMarks(jobId)
+      if (typeof deps.applyReaderMarks === 'function') {
+        await deps.applyReaderMarks(marks, { persist: false, contentId, revision })
+      }
       if (!isCurrentLoad(load)) return supersededResult(load)
       await restoreAnnotationBackfillResult(jobId)
       if (!isCurrentLoad(load)) return supersededResult(load)

@@ -40,6 +40,10 @@ const client = {
     const payload = kind === 'transcript' ? transcript(jobId) : chunks(jobId)
     return Promise.resolve(new Blob([JSON.stringify(payload)], { type: 'application/json' }))
   },
+  getReaderMarks(jobId, options = {}) {
+    assert.equal(options.signal, sessionSignals.get(jobId), 'marks prepare must share the generation AbortSignal')
+    return Promise.resolve({ marks: [{ globalIndex: 0, word: jobId }] })
+  },
   mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}` },
   probeMediaRange(_jobId, _kind, options = {}) {
     assert.ok(options.signal, 'Range probe must share the generation AbortSignal')

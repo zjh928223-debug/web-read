@@ -45,8 +45,9 @@ async function main() {
       if (kind === 'transcript') return new Blob([JSON.stringify(makeTranscript())], { type: 'application/json' });
       return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 2, en: 'Hello world', zh: '你好' }] }] })], { type: 'application/json' });
     },
-    async getReaderMarks(jobId) {
+    async getReaderMarks(jobId, options = {}) {
       calls.push(['readerMarks', jobId]);
+      assert.ok(options.signal, 'marks prepare must share the reader load AbortSignal');
       return { marks: [{ globalIndex: 1, word: 'world', sourceType: 'manual-mark' }] };
     },
     async getAnnotationBackfillResult(jobId) {
@@ -82,7 +83,7 @@ async function main() {
     applyCurrentAudioMeta: (meta) => calls.push(['audioMeta', meta.name]),
     processTranscript: (data) => calls.push(['transcript', data.segments.length]),
     processChunkData: (data) => calls.push(['chunkData', data.s.length]),
-    applyReaderMarks: async (marks) => calls.push(['applyReaderMarks', marks.length]),
+    applyReaderMarks: async (marks, options) => calls.push(['applyReaderMarks', marks.length, options]),
     mediaSource: {
       setAudioElement(element) {
         mediaCalls.push(['setAudioElement', !!element]);
@@ -110,10 +111,12 @@ async function main() {
   assert.equal(sessionCommits[0].contentId, 'youtube-workflow:job-1');
   assert.equal(sessionCommits[0].revision, 'youtube-workflow:job-1:1');
   assert.equal(sessionCommits[0].audioMeta.jobId, 'job-1');
+  assert.equal(sessionCommits[0].marks.length, 1);
   assert.ok(calls.some((call) => call[0] === 'transcript'));
   assert.ok(calls.some((call) => call[0] === 'chunkData'));
   assert.ok(calls.some((call) => call[0] === 'readerMarks' && call[1] === 'job-1'));
   assert.ok(calls.some((call) => call[0] === 'applyReaderMarks' && call[1] === 1));
+  assert.ok(calls.some((call) => call[0] === 'applyReaderMarks' && call[2]?.persist === false));
   assert.ok(calls.some((call) => call[0] === 'annotationBackfillResult' && call[1] === 'job-1'));
   assert.ok(calls.some((call) => call[0] === 'importAnnotationBackfillResult' && call[1] === 1 && call[3] === false), 'loader should import saved annotation backfill result without replacing existing reader marks or calling Gemini again');
   assert.ok(calls.some((call) => call[0] === 'resetChunkDisplay'), 'loader should reset AI chunk Chinese visibility after loading generated chunk data');

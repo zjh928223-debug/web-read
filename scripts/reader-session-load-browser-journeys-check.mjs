@@ -35,6 +35,8 @@ const server = http.createServer(async (request, response) => {
         : { s: [{ chunks: [{ a: 0, b: 1, en: jobId }] }] }
       return sendJson(response, 200, body)
     }
+    const marksMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/reader-marks$/)
+    if (marksMatch) return sendJson(response, 200, { marks: [] })
     const mediaMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/media\/audio$/)
     if (mediaMatch) {
       const jobId = decodeURIComponent(mediaMatch[1])
@@ -111,6 +113,7 @@ try {
         audioMeta: { jobId: label, streamUrl: `${baseUrl}/${label}` },
         transcript: { segments: [{ words: [{ word: label }] }] },
         chunkData: { s: [{ chunks: [{ a: 0, b: 1, en: label }] }] },
+        marks: [],
       }
     }
   }, origin)

@@ -26,12 +26,12 @@ const oldSession = fixture('old-content', 'revision-old')
 await persistence.commit(oldSession)
 assertConsistent(fake.rows, oldSession)
 assert.deepEqual(await persistence.loadCommitted(), { status: 'committed', session: oldSession })
-assert.equal(fake.rows.get('readerSession').content.schemaVersion, 2, 'new commits must use the versioned reader-session envelope')
+assert.equal(fake.rows.get('readerSession').content.schemaVersion, 3, 'new commits must use the versioned reader-session envelope')
 assert.match(fake.rows.get('readerSession').content.checksum, /^sha256:[a-f0-9]{64}$/)
 assert.equal(fake.rows.get('readerSession').checksum, fake.rows.get('readerSession').content.checksum)
 
 const currentV2Rows = cloneRows(fake.rows)
-for (const id of ['audioMeta', 'transcript', 'chunkData', 'readerSession']) {
+for (const id of ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession']) {
   const legacyRow = structuredClone(fake.rows.get(id))
   delete legacyRow.checksum
   if (id === 'readerSession') {
@@ -40,9 +40,10 @@ for (const id of ['audioMeta', 'transcript', 'chunkData', 'readerSession']) {
   }
   fake.rows.set(id, legacyRow)
 }
+const { marks: _legacyMarks, ...legacyCompatibleSession } = oldSession
 assert.deepEqual(
   await persistence.loadCommitted(),
-  { status: 'committed', session: oldSession },
+  { status: 'committed', session: legacyCompatibleSession },
   'known v1 envelopes must remain readable without rewriting the source rows',
 )
 replaceRows(fake.rows, currentV2Rows)
@@ -191,12 +192,13 @@ function fixture(contentId, revision) {
     audioMeta: { jobId: contentId, streamUrl: `http://workflow.test/${contentId}/audio` },
     transcript: { segments: [{ words: [{ word: contentId }] }] },
     chunkData: { s: [{ chunks: [{ en: contentId }] }] },
+    marks: [{ globalIndex: 0, word: contentId }],
   }
 }
 
 function assertConsistent(rows, expected) {
   const checksums = new Set()
-  for (const id of ['audioMeta', 'transcript', 'chunkData', 'readerSession']) {
+  for (const id of ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession']) {
     const row = rows.get(id)
     assert.equal(row.revision, expected.revision, `${id} revision must match the committed session`)
     assert.equal(row.contentId, expected.contentId, `${id} contentId must match the committed session`)
@@ -206,7 +208,8 @@ function assertConsistent(rows, expected) {
   assert.deepEqual(rows.get('audioMeta').content, expected.audioMeta)
   assert.deepEqual(rows.get('transcript').content, expected.transcript)
   assert.deepEqual(rows.get('chunkData').content, expected.chunkData)
-  assert.equal(rows.get('readerSession').content.schemaVersion, 2)
+  assert.deepEqual(rows.get('marks').content, expected.marks)
+  assert.equal(rows.get('readerSession').content.schemaVersion, 3)
   assert.equal(rows.get('readerSession').content.checksum, rows.get('readerSession').checksum)
   assert.equal(checksums.size, 1, 'all committed rows must bind to the same session checksum')
 }

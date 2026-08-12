@@ -72,7 +72,9 @@ export function createSessionRestoreRuntime(deps = {}) {
       ? committedSession.chunkData
       : await deps.loadFromDB('chunkData');
     const visualData = await deps.loadFromDB('visual');
-    const marksData = await deps.loadFromDB('marks');
+    const marksData = source === 'committed' && Array.isArray(committedSession.marks)
+      ? committedSession.marks
+      : await deps.loadFromDB('marks');
 
     if (streamUrl) {
       deps.audioPlayer.src = streamUrl;
