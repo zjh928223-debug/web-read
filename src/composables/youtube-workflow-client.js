@@ -1,5 +1,6 @@
 const DEFAULT_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
   || 'http://127.0.0.1:8765'
+const DEFAULT_ACCESS_TOKEN = import.meta.env?.VITE_READ_WEB_SERVICE_TOKEN || ''
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '')
@@ -19,10 +20,24 @@ async function readJsonResponse(response) {
 
 export function createYoutubeWorkflowClient(options = {}) {
   const baseUrl = trimTrailingSlash(options.baseUrl || DEFAULT_BASE_URL)
-  const fetchImpl = options.fetchImpl || fetch
+  const rawFetch = options.fetchImpl || fetch
+  const accessToken = String(options.accessToken ?? DEFAULT_ACCESS_TOKEN).trim()
+
+  function authorizedFetch(url, init = {}) {
+    if (!accessToken) return rawFetch(url, init)
+    const headers = { ...(init.headers || {}), 'X-Read-Web-Token': accessToken }
+    return rawFetch(url, { ...init, headers })
+  }
+  const fetchImpl = authorizedFetch
 
   function apiUrl(path) {
     return `${baseUrl}${path}`
+  }
+
+  function capabilityUrl(path) {
+    const url = new URL(apiUrl(path))
+    if (accessToken) url.searchParams.set('access_token', accessToken)
+    return url.href
   }
 
   return {
@@ -164,7 +179,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       return response.blob()
     },
     fileUrl(jobId, kind) {
-      return apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`)
+      return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`)
     },
     async bindVideoSource(jobId, payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/video-source`), {
@@ -234,7 +249,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/quality`)))
     },
     eventsUrl(jobId) {
-      return apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`)
+      return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`)
     }
   }
 }

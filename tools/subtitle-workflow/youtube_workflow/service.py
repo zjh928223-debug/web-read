@@ -2,7 +2,9 @@ import json
 import io
 import hashlib
 import importlib.metadata
+import os
 import platform
+import secrets
 import subprocess
 import sys
 import threading
@@ -17,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import urlopen
+from ipaddress import ip_address
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -2512,8 +2515,30 @@ class JobManager:
             self._record_changed(record)
 
 
-def create_app(manager: JobManager | None = None) -> FastAPI:
+def _is_loopback_host(value: str) -> bool:
+    host = str(value or "").strip().lower()
+    if host.startswith("[") and "]" in host:
+        host = host[1:host.index("]")]
+    elif ":" in host:
+        host = host.rsplit(":", 1)[0]
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_allowed_loopback_origin(value: str) -> bool:
+    if not value:
+        return True
+    parsed = urlsplit(value)
+    return parsed.scheme in {"http", "https"} and _is_loopback_host(parsed.netloc)
+
+
+def create_app(manager: JobManager | None = None, access_token: str | None = None) -> FastAPI:
     manager = manager or JobManager()
+    access_token = str(access_token or os.getenv("READ_WEB_SERVICE_TOKEN") or "").strip()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -2523,6 +2548,20 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             manager.close()
 
     app = FastAPI(title="SubtitleWorkflow Local Service", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def enforce_loopback_security(request, call_next):
+        if not _is_loopback_host(request.headers.get("host", "")):
+            return Response(status_code=400, content="invalid host")
+        if not _is_allowed_loopback_origin(request.headers.get("origin", "")):
+            return Response(status_code=403, content="origin not allowed")
+        is_health = request.url.path == "/api/health"
+        supplied_token = request.headers.get("x-read-web-token", "")
+        if request.method in {"GET", "HEAD"} and not supplied_token:
+            supplied_token = request.query_params.get("access_token", "")
+        if access_token and not is_health and not secrets.compare_digest(supplied_token, access_token):
+            return Response(status_code=401, content="access token required")
+        return await call_next(request)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -2535,7 +2574,7 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         ],
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["content-type"],
+        allow_headers=["content-type", "x-read-web-token"],
     )
 
     @app.get("/api/health")

@@ -10,14 +10,24 @@ import subprocess
 from pathlib import Path
 from threading import Event
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient as FastApiTestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
 from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app as create_service_app
 
 
+TEST_ACCESS_TOKEN = "test-read-web-access-token"
+
+
+class TestClient(FastApiTestClient):
+    def __init__(self, app, **kwargs):
+        headers = dict(kwargs.pop("headers", {}) or {})
+        headers.setdefault("X-Read-Web-Token", TEST_ACCESS_TOKEN)
+        super().__init__(app, base_url=kwargs.pop("base_url", "http://127.0.0.1"), headers=headers, **kwargs)
+
+
 def create_app(manager):
-    app = create_service_app(manager)
+    app = create_service_app(manager, access_token=TEST_ACCESS_TOKEN)
     app.state.test_job_manager = manager
     return app
 
@@ -159,6 +169,41 @@ class MemoryCredentialStore:
 
 
 class ServiceAppTests(unittest.TestCase):
+    def test_loopback_security_allows_health_but_protects_application_api(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            app = create_service_app(manager, access_token=TEST_ACCESS_TOKEN)
+
+            with FastApiTestClient(app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/health")
+                self.assertEqual(health.status_code, 200)
+                self.assertNotIn(TEST_ACCESS_TOKEN, health.text)
+
+                missing_token = client.get("/api/config")
+                self.assertEqual(missing_token.status_code, 401)
+
+                authorized = client.get("/api/config", headers={"X-Read-Web-Token": TEST_ACCESS_TOKEN})
+                self.assertEqual(authorized.status_code, 200)
+
+                media_without_capability = client.get("/api/jobs/missing/media/audio")
+                self.assertEqual(media_without_capability.status_code, 401)
+                media_with_capability = client.get(
+                    "/api/jobs/missing/media/audio",
+                    params={"access_token": TEST_ACCESS_TOKEN},
+                )
+                self.assertEqual(media_with_capability.status_code, 404)
+
+                hostile_origin = client.get(
+                    "/api/config",
+                    headers={"X-Read-Web-Token": TEST_ACCESS_TOKEN, "Origin": "https://attacker.example"},
+                )
+                self.assertEqual(hostile_origin.status_code, 403)
+
+            with FastApiTestClient(app, base_url="http://attacker.example") as hostile_host:
+                rejected = hostile_host.get("/api/health")
+                self.assertEqual(rejected.status_code, 400)
+
     def test_job_record_keeps_bounded_events_and_public_last_twenty(self):
         record = JobRecord(
             "bounded-events",

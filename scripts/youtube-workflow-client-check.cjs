@@ -23,7 +23,11 @@ async function main() {
       async blob() { return new Blob(['audio']); },
     };
   };
-  const client = api.createYoutubeWorkflowClient({ baseUrl: 'http://127.0.0.1:8765', fetchImpl });
+  const client = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    fetchImpl,
+    accessToken: 'test-client-token',
+  });
 
   await client.health();
   await client.diagnostics();
@@ -134,7 +138,9 @@ async function main() {
   assert.equal(calls[32].options.method, 'POST');
   assert.equal(JSON.parse(calls[32].options.body).template.articleId, 'article-1');
   assert.equal(JSON.parse(calls[32].options.body).model, 'gemini-test');
-  assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video');
+  assert.ok(calls.every((call) => call.options.headers['X-Read-Web-Token'] === 'test-client-token'));
+  assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video?access_token=test-client-token');
+  assert.equal(client.eventsUrl('job-1'), 'http://127.0.0.1:8765/api/jobs/job-1/events?access_token=test-client-token');
 
   console.log('youtube workflow client check passed');
 }
