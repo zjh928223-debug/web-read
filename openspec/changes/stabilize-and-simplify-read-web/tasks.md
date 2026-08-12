@@ -1,11 +1,11 @@
 ## 1. 冻结基线与建立安全护栏
 
-- [ ] 1.1 记录 `E:\read-web-next` baseline 的 git SHA、5174/8766 配置、工具版本和旧版 5173/8765 健康状态
-- [ ] 1.2 固定 Node LTS、npm、Python 与 Python dependencies，补齐 yt-dlp、WhisperX、ffmpeg 和 `google.genai` 的安装/探测清单
+- [x] 1.1 记录 `E:\read-web-next` baseline 的 git SHA、5174/8766 配置、工具版本和旧版 5173/8765 健康状态
+- [x] 1.2 固定 Node LTS、npm、Python 与 Python dependencies，补齐 yt-dlp、WhisperX、ffmpeg 和 `google.genai` 的安装/探测清单
 - [ ] 1.3 将 launcher、Python 和 Vite 中的端口、路径、代理、模型与工具解析收口到版本化 RuntimeConfig
 - [ ] 1.4 建立 `verify:fast`、`verify:full`、`verify:release` 入口并明确每层覆盖范围
 - [ ] 1.5 建立 clean-room `npm ci`、隔离 Python environment、frontend build 和 backend test 验证
-- [ ] 1.6 建立 baseline Release Manifest 草案并为每个产物记录 SHA/checksum
+- [x] 1.6 建立 baseline Release Manifest 草案并为每个产物记录 SHA/checksum
 
 ## 2. 性能与错误可观测性
 

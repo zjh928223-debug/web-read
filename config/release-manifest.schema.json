@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "read-web-release-manifest-v1",
+  "title": "Read-Web local release manifest",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "release", "runtime", "dataCompatibility", "artifacts"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "release": {
+      "type": "object",
+      "required": ["application", "frontendVersion", "backendVersion", "gitSha", "gitBranch", "dirty"]
+    },
+    "runtime": { "type": "object" },
+    "dataCompatibility": { "type": "object" },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string" },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "missing": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

@@ -21,6 +21,8 @@ node_modules/
 output/*.log
 output/playwright/*.png
 output/playwright/*.json
+output/baselines/
+output/release/
 dist/
 vite-*.txt
 .vite-dev.*.log

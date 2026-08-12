@@ -3,12 +3,19 @@
   "version": "1.0.0",
   "description": "Vite/Vue reader with audio sync, AI chunking, and annotation tooling",
   "main": "src/main.js",
+  "packageManager": "npm@11.8.0",
+  "engines": {
+    "node": "24.13.1",
+    "npm": "11.8.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite --host 127.0.0.1 --port 4173",
     "preview:vite": "vite --host 127.0.0.1 --port 4173",
     "verify": "npm run verify:vite",
+    "verify:toolchain": "node scripts/verify-toolchain.mjs",
+    "release:manifest": "node scripts/generate-release-manifest.mjs",
     "verify:playback": "node scripts/read-web-playback-check.cjs",
     "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",

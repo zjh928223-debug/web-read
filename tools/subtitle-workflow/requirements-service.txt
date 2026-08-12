@@ -1,3 +1,14 @@
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.30,<1.0
-edge-tts>=7.2,<8.0
+# Direct Python runtime dependency baseline for the local workflow service.
+#
+# These exact versions are known to work together on CPython 3.10.10.  Keep
+# them exact: an unconstrained `pip install` previously made two machines run
+# different service implementations.  This file is not yet a hash-locked
+# transitive dependency lock; the release clean-room task will generate and
+# verify that lock from this reviewed baseline.
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
+
+# Optional-at-startup feature dependencies.  They are installed with the
+# service so the corresponding endpoints do not fail only when first used.
+edge-tts==7.2.8
+google-genai==1.68.0
