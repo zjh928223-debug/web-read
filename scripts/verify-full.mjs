@@ -30,6 +30,7 @@ const included = [
   }),
   command('independent production host lifecycle and browser journeys', process.execPath, ['scripts/production-host-lifecycle-check.mjs']),
   command('reader session load browser fault journeys', process.execPath, ['scripts/reader-session-load-browser-journeys-check.mjs']),
+  command('accessible request state browser journeys', process.execPath, ['scripts/accessible-request-state-browser-journeys-check.mjs']),
   command('Python backend suite', pythonCommand, ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'], {
     cwd: workflowRoot,
   }),

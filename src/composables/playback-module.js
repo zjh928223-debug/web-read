@@ -13,18 +13,12 @@
     var jumpNextSentence = deps.jumpNextSentence;
     var state = deps.state;
 
-    function syncPlaybackStores(activeWordIdx, activeSegIdx, activeChunkIdx) {
+    function publishPlaybackProjection(activeWordIdx, activeSegIdx) {
       var ps = window.__piniaStores;
-      var st = state;
       if (!ps) return;
       if (ps.transcript) {
-        ps.transcript.currentWordIndex = st.currentWordIndex;
-        ps.transcript.highlightMode = st.highlightMode;
         ps.transcript.activeWordIdx = activeWordIdx;
         ps.transcript.activeSegIdx = activeSegIdx;
-      }
-      if (ps.chunk) {
-        ps.chunk.activeChunkIdx = activeChunkIdx;
       }
     }
 
@@ -74,7 +68,7 @@
           st.lastActiveChunkIndex = -1;
         }
 
-        syncPlaybackStores(st.highlightMode === 1 && wordIndex !== -1 ? wordIndex : -1, -1, chunkIdx);
+        publishPlaybackProjection(st.highlightMode === 1 && wordIndex !== -1 ? wordIndex : -1, -1);
         return;
       }
 
@@ -93,11 +87,11 @@
             followPlaybackTarget(lineDiv);
             st.lastActiveSegIndex = segIdx;
           }
-          syncPlaybackStores(-1, segIdx, -1);
+          publishPlaybackProjection(-1, segIdx);
         } else {
           st.activeSentenceEl = swapActiveClass(null, st.activeSentenceEl, 'sentence-active');
           st.lastActiveSegIndex = -1;
-          syncPlaybackStores(-1, -1, -1);
+          publishPlaybackProjection(-1, -1);
         }
         return;
       }
@@ -108,10 +102,10 @@
         var span = getWordElement(wordIndex);
         st.activeWordHighlightEl = swapActiveClass(span, st.activeWordHighlightEl, 'word-highlight');
         followPlaybackTarget(span);
-        syncPlaybackStores(wordIndex, -1, -1);
+        publishPlaybackProjection(wordIndex, -1);
       } else {
         st.activeWordHighlightEl = swapActiveClass(null, st.activeWordHighlightEl, 'word-highlight');
-        syncPlaybackStores(-1, -1, -1);
+        publishPlaybackProjection(-1, -1);
       }
       st.lastActiveSegIndex = -1;
     }

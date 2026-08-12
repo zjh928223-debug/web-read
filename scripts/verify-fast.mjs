@@ -15,6 +15,7 @@ const included = [
   command('best-effort failure policy', process.execPath, ['scripts/best-effort-check.mjs']),
   command('supply-chain contract', process.execPath, ['scripts/supply-chain-gate.mjs']),
   command('playback helper behavior', process.execPath, ['scripts/playback-runtime-helpers-check.cjs']),
+  command('playback single-owner boundary', process.execPath, ['scripts/playback-single-owner-check.cjs']),
   command('annotation resolver behavior', process.execPath, ['scripts/annotation-bubble-resolver-check.cjs']),
   command('annotation bundle merge behavior', process.execPath, ['scripts/session-annotation-bundle-merge-check.cjs']),
   command('vocabulary acquisition behavior', process.execPath, ['scripts/vocabulary-acquisition-service-check.cjs']),

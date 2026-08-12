@@ -48,7 +48,7 @@
 
 ## 6. Playback 与学习交互热路径
 
-- [ ] 6.1 建立 playback 单一 store/controller，禁止 legacy DOM 与 Pinia 对等双写
+- [x] 6.1 建立 playback 单一 store/controller，禁止 legacy DOM 与 Pinia 对等双写
 - [x] 6.2 用事件驱动播放更新替代永久无条件 rAF，暂停和不可见时停止调度
 - [x] 6.3 将 active word/chunk 更新限制在必要 DOM 或虚拟窗口，避免整个 transcript 重渲染
 - [x] 6.4 将播放器 rejection 映射为 playing/blocked/no-source/error 并提供可见恢复动作
@@ -88,7 +88,7 @@
 - [x] 9.5 扫描并移除关键路径空 `catch`/floating promise，只保留有记录的明确 best-effort 策略
 - [x] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
 - [x] 9.7 修复 Passage Preview translation controller 代际捕获，并为快速替换/abort 补回归
-- [ ] 9.8 建立 offline、timeout、late response、double-click 和 screen-reader 状态 journey
+- [x] 9.8 建立 offline、timeout、late response、double-click 和 screen-reader 状态 journey
 
 ## 10. Legacy Runtime 收敛
 

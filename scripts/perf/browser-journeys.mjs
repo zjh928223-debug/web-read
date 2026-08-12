@@ -182,7 +182,8 @@ async function loadReaderMaterial(page) {
     audio.muted = true
     audio.load()
   }, { material: readerMaterial, source: audioDataUrl })
-  await page.locator(`#word-${readerMaterial.wordCount - 1}`).waitFor()
+  const lastWordIndex = readerMaterial.wordCount - 1
+  await page.locator(`#word-${lastWordIndex}, #chunk-word-${lastWordIndex}`).first().waitFor({ state: 'attached' })
 }
 
 const journeys = {

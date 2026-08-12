@@ -29,6 +29,8 @@
     "verify:performance:budget-gate": "node scripts/perf/performance-budget-gate.mjs",
     "verify:performance:budget-gate-unit": "node scripts/perf/performance-budget-gate-check.mjs",
     "verify:performance:playback-active-word": "node scripts/playback-active-word-performance-check.mjs",
+    "verify:playback-single-owner": "node scripts/playback-single-owner-check.cjs",
+    "verify:accessible-request-state-browser": "node scripts/accessible-request-state-browser-journeys-check.mjs",
     "verify:performance:playback-scale-unit": "node scripts/perf/playback-scale-budget-check.mjs",
     "verify:performance:playback-scale": "node scripts/perf/run-playback-scale-gate.mjs",
     "verify:media-playback-result": "node scripts/media-playback-result-check.cjs",
