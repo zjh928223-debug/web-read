@@ -141,6 +141,22 @@ export function createApplicationPersistence(options = {}) {
       return row
     },
 
+    async getMany(typeName, ids) {
+      typeFor(typeName)
+      if (!Array.isArray(ids) || ids.length === 0) {
+        throw persistenceError('INVALID_KEY_LIST', `get_many:${typeName}`)
+      }
+      const uniqueIds = [...new Set(ids)]
+      for (const id of uniqueIds) validateId(typeName, id)
+      const rows = await runTransaction('readonly', `get_many:${typeName}`, (store) => (
+        Promise.all(uniqueIds.map((id) => requestPromise(store.get(id), `get_many:${typeName}`)))
+      ))
+      for (const row of rows) {
+        if (row !== undefined) validateRow(typeName, row)
+      }
+      return rows
+    },
+
     async put(typeName, row) {
       validateRow(typeName, row)
       await runTransaction('readwrite', `put:${typeName}`, (store) => (

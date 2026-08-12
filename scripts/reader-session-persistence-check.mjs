@@ -14,6 +14,7 @@ const persistence = createReaderSessionPersistence({ indexedDBApi: fake.indexedD
 const oldSession = fixture('old-content', 'revision-old')
 await persistence.commit(oldSession)
 assertConsistent(fake.rows, oldSession)
+assert.deepEqual(await persistence.loadCommitted(), { status: 'committed', session: oldSession })
 
 fake.manualCompletion = true
 const nextSession = fixture('next-content', 'revision-next')
@@ -27,6 +28,17 @@ fake.completeNext()
 await pendingCommit
 assert.equal(settled, true)
 assertConsistent(fake.rows, nextSession)
+
+const mismatched = structuredClone(fake.rows.get('chunkData'))
+mismatched.revision = 'foreign-revision'
+fake.rows.set('chunkData', mismatched)
+const inconsistent = await persistence.loadCommitted()
+assert.equal(inconsistent.status, 'inconsistent')
+assert.equal(inconsistent.error.code, 'READER_SESSION_INCONSISTENT')
+fake.rows.set('chunkData', {
+  ...mismatched,
+  revision: nextSession.revision,
+})
 
 fake.manualCompletion = false
 fake.failNextAtPut = 3
@@ -99,6 +111,14 @@ function createAtomicIndexedDb() {
         objectStore() {
           return {
             keyPath: 'id',
+            get(id) {
+              const request = { result: undefined, error: null, onsuccess: null, onerror: null }
+              queueMicrotask(() => {
+                request.result = staged.has(id) ? structuredClone(staged.get(id)) : undefined
+                request.onsuccess?.()
+              })
+              return request
+            },
             put(value) {
               puts += 1
               const putIndex = puts
@@ -126,24 +146,24 @@ function createAtomicIndexedDb() {
           queueMicrotask(() => this.onabort?.())
         },
       }
-      if (mode === 'readwrite') {
-        queueMicrotask(() => queueMicrotask(() => {
+      queueMicrotask(() => queueMicrotask(() => {
           if (transaction.aborted || transaction.error) return
-          if (control.abortNext) {
+          if (mode === 'readwrite' && control.abortNext) {
             control.abortNext = false
             transaction.abort()
             return
           }
           const complete = () => {
             if (transaction.aborted || transaction.error) return
-            rows.clear()
-            for (const [key, value] of staged) rows.set(key, value)
+            if (mode === 'readwrite') {
+              rows.clear()
+              for (const [key, value] of staged) rows.set(key, value)
+            }
             transaction.oncomplete?.()
           }
-          if (control.manualCompletion) pending.push(complete)
+          if (mode === 'readwrite' && control.manualCompletion) pending.push(complete)
           else complete()
         }))
-      }
       return transaction
     },
   }

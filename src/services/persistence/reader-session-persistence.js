@@ -2,6 +2,14 @@ import { createApplicationPersistence } from './application-persistence.js'
 
 const SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'readerSession'])
 
+function isReadableSessionRow(row) {
+  return !!(
+    row
+    && SESSION_ROW_IDS.has(row.id)
+    && Object.prototype.hasOwnProperty.call(row, 'content')
+  )
+}
+
 function isSessionRow(row) {
   return !!(
     row
@@ -30,6 +38,10 @@ export function createReaderSessionPersistence(options = {}) {
       readerSessionRow: {
         keyPrefix: '',
         validate: isSessionRow,
+      },
+      readableSessionRow: {
+        keyPrefix: '',
+        validate: isReadableSessionRow,
       },
     },
   })
@@ -61,5 +73,38 @@ export function createReaderSessionPersistence(options = {}) {
     return rows[3].content
   }
 
-  return Object.freeze({ commit })
+  async function loadCommitted() {
+    const ids = ['audioMeta', 'transcript', 'chunkData', 'readerSession']
+    const rows = await persistence.getMany('readableSessionRow', ids)
+    const byId = new Map(rows.filter(Boolean).map((row) => [row.id, row]))
+    const manifestRow = byId.get('readerSession')
+    if (!manifestRow) return { status: 'legacy', session: null }
+    const manifest = manifestRow.content
+    const contentId = String(manifestRow.contentId || manifest?.contentId || '')
+    const revision = String(manifestRow.revision || manifest?.revision || '')
+    const complete = ids.every((id) => byId.has(id))
+    const consistent = complete && contentId && revision && ids.every((id) => {
+      const row = byId.get(id)
+      return row.contentId === contentId && row.revision === revision
+    })
+    if (!consistent || manifest?.schemaVersion !== 1) {
+      return {
+        status: 'inconsistent',
+        session: null,
+        error: { code: 'READER_SESSION_INCONSISTENT', message: 'Stored reader session is incomplete' },
+      }
+    }
+    return {
+      status: 'committed',
+      session: {
+        contentId,
+        revision,
+        audioMeta: byId.get('audioMeta').content,
+        transcript: byId.get('transcript').content,
+        chunkData: byId.get('chunkData').content,
+      },
+    }
+  }
+
+  return Object.freeze({ commit, loadCommitted })
 }
