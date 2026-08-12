@@ -57,10 +57,10 @@
 
 ## 7. Material Workflow 可靠性
 
-- [ ] 7.1 新增 batch job snapshot 或 async event channel，替换每秒 per-job N+1 轮询
-- [ ] 7.2 前端 polling 实现 single-flight、visibility backoff、jitter、AbortController 和 revision guard
+- [x] 7.1 新增 batch job snapshot 或 async event channel，替换每秒 per-job N+1 轮询
+- [x] 7.2 前端 polling 实现 single-flight、visibility backoff、jitter、AbortController 和 revision guard
 - [ ] 7.3 将 job snapshot、active state 与 event log 分离，event 改有界 ring buffer
-- [ ] 7.4 将每行日志全量保存改为阶段 checkpoint 与 100–250ms coalesced persistence
+- [x] 7.4 将每行日志全量保存改为阶段 checkpoint 与 100–250ms coalesced persistence
 - [ ] 7.5 实现 crash recovery 状态机，损坏 jobs/history 必须 quarantine/backup recovery 而非清空覆盖
 - [ ] 7.6 建立 `ProcessSupervisor`，使用 lock、try/finally、进程树 terminate/kill timeout 和真实终态确认
 - [ ] 7.7 将 AI/backfill 改为 202 background job，增加 deadline、cancel、retry+jitter 和分资源限流

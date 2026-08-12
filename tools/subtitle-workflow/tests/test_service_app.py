@@ -13,7 +13,7 @@ from threading import Event
 from fastapi.testclient import TestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
-from youtube_workflow.service import JobManager, NativePicker, NativePickerError, create_app
+from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app
 
 
 class WaitingRunner:
@@ -153,6 +153,50 @@ class MemoryCredentialStore:
 
 
 class ServiceAppTests(unittest.TestCase):
+    def test_job_record_keeps_bounded_events_and_public_last_twenty(self):
+        record = JobRecord(
+            "bounded-events",
+            WorkflowRequest(url="https://example.com/bounded", gemini_mode="mock"),
+            event_limit=32,
+        )
+
+        for index in range(50):
+            record.add_event({"status": "downloading", "stage": "downloading", "message": f"line-{index}"})
+
+        self.assertEqual(len(record.events), 32)
+        self.assertEqual(record.events[0]["message"], "line-18")
+        self.assertEqual(record.public_snapshot()["logSummary"], [f"line-{index}" for index in range(30, 50)])
+
+    def test_job_manager_coalesces_log_persistence_but_flushes_stage_and_terminal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                persistence_delay_seconds=5,
+            )
+            saves = []
+            manager.store.save_jobs = lambda snapshots: saves.append(snapshots)
+            record = JobRecord("coalesced", WorkflowRequest(url="https://example.com/coalesced", gemini_mode="mock"))
+            record.on_change = manager._record_changed
+            manager.jobs[record.job_id] = record
+
+            record.add_event({"status": "downloading", "stage": "downloading", "message": "stage"})
+            self.assertEqual(len(saves), 1)
+            for index in range(10):
+                record.add_event({"status": "downloading", "stage": "downloading", "message": f"stdout-{index}"})
+            self.assertEqual(len(saves), 1)
+
+            manager.flush_persistence()
+            self.assertEqual(len(saves), 2)
+            self.assertEqual(saves[-1][0]["logSummary"][-1], "stdout-9")
+
+            record.add_event({"status": "failed", "stage": "failed", "message": "terminal"})
+            self.assertEqual(len(saves), 3)
+            self.assertEqual(saves[-1][0]["status"], "failed")
+            manager.close()
+            self.assertEqual(len(saves), 3)
+
     def test_health_diagnostics_job_session_file_and_recent_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
@@ -1651,6 +1695,32 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 404)
             self.assertNotIn("must-not-be-served", response.text)
             self.assertNotIn(str(secret), response.text)
+
+    def test_jobs_snapshot_preserves_order_deduplicates_and_reports_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+            first = client.post("/api/jobs", json={"url": "https://example.com/first", "geminiMode": "mock"}).json()
+            second = client.post("/api/jobs", json={"url": "https://example.com/second", "geminiMode": "mock"}).json()
+
+            response = client.post("/api/jobs/snapshot", json={
+                "jobIds": [second["jobId"], first["jobId"], second["jobId"], "", "missing-job"],
+            })
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["schemaVersion"], 1)
+            self.assertTrue(payload["snapshotAt"])
+            self.assertEqual(
+                [item["jobId"] for item in payload["jobs"]],
+                [second["jobId"], first["jobId"]],
+            )
+            self.assertEqual(payload["missingJobIds"], ["missing-job"])
+
+            too_many = client.post("/api/jobs/snapshot", json={
+                "jobIds": [f"job-{index}" for index in range(101)],
+            })
+            self.assertEqual(too_many.status_code, 400)
 
     def test_import_jobs_enqueue_legacy_items_without_prioritizing_current_queue(self):
         with tempfile.TemporaryDirectory() as tmp:

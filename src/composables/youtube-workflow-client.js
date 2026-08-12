@@ -83,6 +83,17 @@ export function createYoutubeWorkflowClient(options = {}) {
     async getJob(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`)))
     },
+    async getJobsSnapshot(jobIds, options = {}) {
+      const uniqueIds = [...new Set((Array.isArray(jobIds) ? jobIds : [])
+        .map((jobId) => String(jobId || '').trim())
+        .filter(Boolean))]
+      return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/snapshot'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jobIds: uniqueIds }),
+        ...(options.signal ? { signal: options.signal } : {}),
+      }))
+    },
     async cancelJob(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
         method: 'POST'

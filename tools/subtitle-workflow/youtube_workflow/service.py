@@ -49,6 +49,7 @@ DEFAULT_EDGE_TTS_VOICE = "en-US-AriaNeural"
 MERRIAM_GENERAL_MEANING_SOURCE = "merriam-webster-collegiate+gemini:v2"
 TERMINAL_STATUSES = {"ready", "failed", "canceled"}
 ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "validating", "ready", "failed", "canceled"}
+DEFAULT_JOB_EVENT_LIMIT = 500
 AUDIO_EXTENSIONS = {
     ".aac",
     ".flac",
@@ -588,7 +589,7 @@ def open_system_video_picker(initial_dir: str = "") -> str:
 
 
 class JobRecord:
-    def __init__(self, job_id: str, request: WorkflowRequest):
+    def __init__(self, job_id: str, request: WorkflowRequest, event_limit: int = DEFAULT_JOB_EVENT_LIMIT):
         self.job_id = job_id
         self.request = request
         self.status = "queued"
@@ -597,11 +598,12 @@ class JobRecord:
         self.updated_at = self.created_at
         self.manifest: dict | None = None
         self.events: list[dict] = []
+        self.event_limit = max(20, int(event_limit))
         self.error: dict | None = None
         self.cancel_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.runner = None
-        self.on_change: Callable[["JobRecord"], None] | None = None
+        self.on_change: Callable[..., None] | None = None
         self.retry_of: str = ""
         self.retry_stage: str = ""
         self.retry_source_manifest: dict | None = None
@@ -645,6 +647,8 @@ class JobRecord:
 
     def add_event(self, event: dict) -> None:
         with self.lock:
+            previous_status = self.status
+            previous_stage = self.stage
             raw_stage = str(event.get("stage", self.stage))
             raw_status = str(event.get("status", raw_stage))
             safe_stage = raw_stage if raw_stage in ALLOWED_STATUSES else self.stage
@@ -656,7 +660,7 @@ class JobRecord:
                 "message": redact_text(str(event.get("message", "")), [self.request.api_key]),
                 "timestamp": utc_now_iso(),
             }
-            self.events.append(safe_event)
+            self._append_event_locked(safe_event)
             self.stage = safe_event["stage"]
             if safe_event["status"] == "ready" and self.manifest is None:
                 self.status = "validating"
@@ -666,13 +670,23 @@ class JobRecord:
             elif self.status == "queued":
                 self.status = "queued"
             self.updated_at = safe_event["timestamp"]
+            immediate_persistence = (
+                self.status != previous_status
+                or self.stage != previous_stage
+                or self.status in TERMINAL_STATUSES
+            )
         if self.on_change:
-            self.on_change(self)
+            self.on_change(self, immediate=immediate_persistence)
+
+    def _append_event_locked(self, event: dict) -> None:
+        self.events.append(event)
+        if len(self.events) > self.event_limit:
+            del self.events[: len(self.events) - self.event_limit]
 
     @classmethod
-    def from_snapshot(cls, snapshot: dict) -> "JobRecord":
+    def from_snapshot(cls, snapshot: dict, event_limit: int = DEFAULT_JOB_EVENT_LIMIT) -> "JobRecord":
         request = WorkflowRequest.from_payload((snapshot or {}).get("request") or {})
-        record = cls(str(snapshot.get("jobId") or uuid.uuid4().hex[:12]), request)
+        record = cls(str(snapshot.get("jobId") or uuid.uuid4().hex[:12]), request, event_limit=event_limit)
         with record.lock:
             record.status = str(snapshot.get("status") or "failed")
             record.stage = str(snapshot.get("stage") or record.status)
@@ -685,7 +699,7 @@ class JobRecord:
             record.import_plan = snapshot.get("importPlan") if isinstance(snapshot.get("importPlan"), dict) else None
             logs = snapshot.get("logSummary") if isinstance(snapshot.get("logSummary"), list) else []
             for line in logs[-20:]:
-                record.events.append({
+                record._append_event_locked({
                     "jobId": record.job_id,
                     "status": record.status,
                     "stage": record.stage,
@@ -707,6 +721,8 @@ class JobManager:
         folder_picker: Callable[[str], str] | None = None,
         video_picker: Callable[[str], str] | None = None,
         annotation_backfill_requester: Callable[..., str] | None = None,
+        persistence_delay_seconds: float = 0.2,
+        event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
     ):
         self.config = config or WorkflowConfig()
         self.runner_factory = runner_factory or (lambda: LocalWorkflowRunner(self.config))
@@ -739,6 +755,11 @@ class JobManager:
         self.video_picker = video_picker or open_system_video_picker
         self.annotation_backfill_requester = annotation_backfill_requester or default_annotation_backfill_requester
         self.jobs: dict[str, JobRecord] = {}
+        self.event_limit = max(20, int(event_limit))
+        self.persistence_delay_seconds = max(0.01, float(persistence_delay_seconds))
+        self._persistence_timer: threading.Timer | None = None
+        self._persistence_dirty = False
+        self._persistence_closed = False
         self.pending: list[JobRecord] = []
         self.worker_thread: threading.Thread | None = None
         self.current_job_id: str | None = None
@@ -775,7 +796,7 @@ class JobManager:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         job_id = uuid.uuid4().hex[:12]
-        record = JobRecord(job_id, request)
+        record = JobRecord(job_id, request, event_limit=self.event_limit)
         record.on_change = self._record_changed
         with self.lock:
             self.jobs[job_id] = record
@@ -954,7 +975,7 @@ class JobManager:
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc))
             job_id = uuid.uuid4().hex[:12]
-            record = JobRecord(job_id, request)
+            record = JobRecord(job_id, request, event_limit=self.event_limit)
             record.on_change = self._record_changed
             record.import_plan = import_plan
             record.add_event({
@@ -1233,7 +1254,7 @@ class JobManager:
         snapshots = self.store.load_jobs()
         for snapshot in snapshots:
             try:
-                record = JobRecord.from_snapshot(snapshot)
+                record = JobRecord.from_snapshot(snapshot, event_limit=self.event_limit)
             except Exception:
                 continue
             record.on_change = self._record_changed
@@ -1249,7 +1270,7 @@ class JobManager:
             record.stage = "failed"
             record.updated_at = utc_now_iso()
             record.error = {"category": "recovery", "message": message}
-            record.events.append({
+            record._append_event_locked({
                 "jobId": record.job_id,
                 "status": "failed",
                 "stage": "failed",
@@ -1269,9 +1290,40 @@ class JobManager:
             )
         self._remember_recent(record.manifest)
 
-    def _record_changed(self, _record: JobRecord) -> None:
+    def _record_changed(self, _record: JobRecord, *, immediate: bool = True) -> None:
         with self.lock:
-            self._persist_jobs_locked()
+            self._persistence_dirty = True
+            if immediate or _record.status in TERMINAL_STATUSES:
+                self._flush_persistence_locked()
+            else:
+                self._schedule_persistence_locked()
+
+    def _schedule_persistence_locked(self) -> None:
+        if self._persistence_closed or self._persistence_timer is not None:
+            return
+        timer = threading.Timer(self.persistence_delay_seconds, self.flush_persistence)
+        timer.daemon = True
+        self._persistence_timer = timer
+        timer.start()
+
+    def _flush_persistence_locked(self) -> None:
+        timer = self._persistence_timer
+        self._persistence_timer = None
+        if timer is not None:
+            timer.cancel()
+        if not self._persistence_dirty:
+            return
+        self._persist_jobs_locked()
+        self._persistence_dirty = False
+
+    def flush_persistence(self) -> None:
+        with self.lock:
+            self._flush_persistence_locked()
+
+    def close(self) -> None:
+        with self.lock:
+            self._persistence_closed = True
+            self._flush_persistence_locked()
 
     def _persist_jobs_locked(self) -> None:
         self.store.save_jobs([record.persisted_snapshot() for record in self.jobs.values()])
@@ -1305,6 +1357,31 @@ class JobManager:
             raise HTTPException(status_code=404, detail="job not found")
         return record
 
+    def jobs_snapshot(self, payload: dict | None = None) -> dict:
+        raw_ids = (payload or {}).get("jobIds")
+        if not isinstance(raw_ids, list):
+            raise HTTPException(status_code=400, detail="jobIds must be a list")
+        job_ids = []
+        for raw_id in raw_ids:
+            job_id = str(raw_id or "").strip()
+            if not job_id or job_id in job_ids:
+                continue
+            if len(job_id) > 128:
+                raise HTTPException(status_code=400, detail="jobId is too long")
+            job_ids.append(job_id)
+        if len(job_ids) > 100:
+            raise HTTPException(status_code=400, detail="at most 100 jobIds are allowed")
+        with self.lock:
+            records = {job_id: self.jobs.get(job_id) for job_id in job_ids}
+        jobs = [records[job_id].public_snapshot() for job_id in job_ids if records[job_id] is not None]
+        missing_ids = [job_id for job_id in job_ids if records[job_id] is None]
+        return {
+            "schemaVersion": 1,
+            "snapshotAt": utc_now_iso(),
+            "jobs": jobs,
+            "missingJobIds": missing_ids,
+        }
+
     def cancel_job(self, job_id: str) -> dict:
         record = self.get_job(job_id)
         record.cancel_event.set()
@@ -1316,18 +1393,6 @@ class JobManager:
         runner = getattr(record, "runner", None)
         if runner is not None and hasattr(runner, "cancel"):
             runner.cancel()
-        with record.lock:
-            if record.status not in TERMINAL_STATUSES:
-                record.status = "canceled"
-                record.stage = "canceled"
-                record.updated_at = utc_now_iso()
-                record.events.append({
-                    "jobId": job_id,
-                    "status": "canceled",
-                    "stage": "canceled",
-                    "message": "任务已取消。",
-                    "timestamp": record.updated_at,
-                })
         return record.public_snapshot()
 
     def prioritize_job(self, job_id: str) -> dict:
@@ -1357,7 +1422,8 @@ class JobManager:
         if request.gemini_mode == "real" and not request.api_key:
             raise HTTPException(status_code=409, detail="apiKey is no longer available for this failed job")
         new_id = uuid.uuid4().hex[:12]
-        record = JobRecord(new_id, request)
+        record = JobRecord(new_id, request, event_limit=self.event_limit)
+        record.on_change = self._record_changed
         record.add_event({"jobId": new_id, "status": "queued", "stage": "queued", "message": "已设为下一项处理。"})
         with self.lock:
             self.jobs[new_id] = record
@@ -1390,7 +1456,7 @@ class JobManager:
         if request.gemini_mode == "real" and not request.api_key:
             raise HTTPException(status_code=409, detail="apiKey is required to retry a real Gemini job after it is no longer in memory")
         new_id = uuid.uuid4().hex[:12]
-        record = JobRecord(new_id, request)
+        record = JobRecord(new_id, request, event_limit=self.event_limit)
         record.on_change = self._record_changed
         record.retry_of = job_id
         record.retry_stage = retry_stage
@@ -1410,7 +1476,7 @@ class JobManager:
             record.status = "canceled"
             record.stage = "canceled"
             record.updated_at = utc_now_iso()
-            record.events.append({
+            record._append_event_locked({
                 "jobId": record.job_id,
                 "status": "canceled",
                 "stage": "canceled",
@@ -2417,7 +2483,7 @@ class JobManager:
                 record.status = status
                 record.stage = status
                 record.updated_at = utc_now_iso()
-                record.events.append({
+                record._append_event_locked({
                     "jobId": record.job_id,
                     "status": status,
                     "stage": status,
@@ -2595,6 +2661,10 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
     @app.post("/api/reader/activity")
     def reader_activity(payload: dict | None = None):
         return manager.record_reader_activity(payload)
+
+    @app.post("/api/jobs/snapshot")
+    def jobs_snapshot(payload: dict | None = None):
+        return manager.jobs_snapshot(payload)
 
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str):

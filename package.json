@@ -148,6 +148,8 @@
     "verify:media-resource-owner": "node scripts/media-resource-owner-check.mjs",
     "verify:lifecycle-scope": "node scripts/lifecycle-scope-check.mjs",
     "verify:request-supervisor": "node scripts/request-supervisor-check.mjs",
+    "verify:job-polling-scheduler": "node scripts/job-polling-scheduler-check.mjs",
+    "verify:youtube-workflow-batch-jobs": "node scripts/youtube-workflow-batch-jobs-contract-check.mjs",
     "verify:youtube-workflow-panel": "node scripts/youtube-workflow-panel-check.cjs",
     "verify:youtube-workflow-panel-behavior": "node scripts/youtube-workflow-panel-behavior-check.cjs",
     "verify:video-player": "node scripts/video-player-module-check.cjs",

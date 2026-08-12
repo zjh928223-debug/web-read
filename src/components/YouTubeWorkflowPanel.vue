@@ -540,6 +540,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
+import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
@@ -599,7 +600,7 @@ const capsuleDragging = ref(false)
 const capsuleHovering = ref(false)
 const playback = new Map()
 const loadedReadyJobs = new Set()
-let pollTimer = 0
+let jobPollingScheduler = null
 let panelDrag = null
 let capsuleDrag = null
 let capsuleMoved = false
@@ -782,6 +783,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopPolling()
+  jobPollingScheduler?.dispose()
+  jobPollingScheduler = null
   syncReaderMarks()
   syncReaderActivity('close')
   window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -1069,8 +1072,16 @@ function handleBackdropPointerDown() {
 
 async function refreshQueue() {
   await checkHealth()
-  await Promise.all(queueJobs.value.map((job) => refreshJob(job.jobId)))
+  await refreshJobsSnapshot(queueJobs.value.map((job) => job.jobId))
   await refreshRecent()
+}
+
+async function refreshJobsSnapshot(jobIds, signal) {
+  if (!jobIds.length) return []
+  const payload = await youtubeWorkflowClient.getJobsSnapshot(jobIds, { signal })
+  const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : []
+  jobs.forEach(updateJob)
+  return jobs
 }
 
 async function refreshRecent() {
@@ -1232,20 +1243,27 @@ function updateJob(fresh) {
 }
 
 function startPolling() {
-  if (pollTimer) return
-  pollTimer = window.setInterval(async () => {
-    const active = queueJobs.value.filter((job) => !terminalStatuses.has(job.status))
-    if (!active.length) {
-      stopPolling()
-      return
-    }
-    await Promise.all(active.map((job) => refreshJob(job.jobId)))
-  }, 1000)
+  if (!jobPollingScheduler) {
+    jobPollingScheduler = createJobPollingScheduler({
+      fetchJobs: (jobIds, signal) => refreshJobsSnapshot(jobIds, signal),
+      onJobs: () => {},
+      onError: (error) => {
+        readerActivityNotice.value = error && error.message ? error.message : String(error)
+      },
+      isHidden: () => document.hidden,
+      intervalMs: 1000,
+      hiddenIntervalMs: 5000,
+    })
+  }
+  const activeIds = queueJobs.value
+    .filter((job) => !terminalStatuses.has(job.status))
+    .map((job) => job.jobId)
+  if (activeIds.length) jobPollingScheduler.start(activeIds)
+  else jobPollingScheduler.stop()
 }
 
 function stopPolling() {
-  if (pollTimer) window.clearInterval(pollTimer)
-  pollTimer = 0
+  jobPollingScheduler?.stop()
 }
 
 async function maybeAutoOpen(job) {
