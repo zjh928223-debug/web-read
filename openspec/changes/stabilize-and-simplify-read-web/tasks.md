@@ -4,7 +4,7 @@
 - [x] 1.2 固定 Node LTS、npm、Python 与 Python dependencies，补齐 yt-dlp、WhisperX、ffmpeg 和 `google.genai` 的安装/探测清单
 - [x] 1.3 将 launcher、Python 和 Vite 中的端口、路径、代理、模型与工具解析收口到版本化 RuntimeConfig
 - [x] 1.4 建立 `verify:fast`、`verify:full`、`verify:release` 入口并明确每层覆盖范围
-- [ ] 1.5 建立 clean-room `npm ci`、隔离 Python environment、frontend build 和 backend test 验证
+- [x] 1.5 建立 clean-room `npm ci`、隔离 Python environment、frontend build 和 backend test 验证
 - [x] 1.6 建立 baseline Release Manifest 草案并为每个产物记录 SHA/checksum
 
 ## 2. 性能与错误可观测性
@@ -103,7 +103,7 @@
 ## 11. 仓库、供应链与文档清理
 
 - [x] 11.1 添加 `engines`、`packageManager`、`.node-version`、Python lock 和版本诊断
-- [ ] 11.2 将 setup 改为 `npm ci` 与锁定 Python 安装，验证全新目录可重复构建
+- [x] 11.2 将 setup 改为 `npm ci` 与锁定 Python 安装，验证全新目录可重复构建
 - [x] 11.3 分类 package 外孤儿 scripts 为 release gate、dev tool 或 archive/delete，并移除旧 read26/start 脚本
 - [x] 11.4 untrack 生成 dist 与个人 local settings，完善 `.gitignore`、`.env.example`、`.editorconfig` 和 `.gitattributes`
 - [x] 11.5 添加 LICENSE、THIRD_PARTY_NOTICES、外部资源/数据来源矩阵、secret scan 和 SBOM/license gate
