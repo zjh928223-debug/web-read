@@ -8,6 +8,7 @@ async function main() {
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const sessionInitSource = [
   'session-runtime-assembly.js',
@@ -34,12 +35,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should delegate render/playback setup through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-    'reader-feature-runtime should import reader interaction runtime'
+    featureAdaptersSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js'"),
+    'reader feature adapters should import reader interaction runtime'
   );
   assert.ok(
-    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
-    'reader-feature-runtime should call the interaction runtime module'
+    featureAdaptersSource.includes('return initReaderInteractionRuntime({'),
+    'reader feature adapters should call the interaction runtime module'
   );
   assert.equal(
     runtimeSource.includes("import { configureRenderRuntime"),
@@ -53,8 +54,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   );
   assert.equal(runtimeSource.includes('configureRenderRuntime({'), false);
   assert.equal(runtimeSource.includes('var playbackRuntime = initReaderPlaybackRuntime({'), false);
-  assert.ok(featureSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'));
-  assert.ok(featureSource.includes('forceUpdateUI = interactionRuntime.forceUpdateUI;'));
+  assert.ok(featureSource.includes('playbackRuntimeHelpersApi: interactionRuntime.playbackRuntimeHelpersApi'));
+  assert.ok(featureSource.includes('forceUpdateUI = interactionRuntime.forceUpdateUI'));
 
   [
     "import { configureRenderRuntime } from './render-runtime.js';",
@@ -100,7 +101,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   const deps = {
     bridgeToPinia: () => 'bridge',
-    tryRestoreChunkNoteDraft: () => 'draft',
     runtimeState: { runtime: true },
     transcriptState: { segments: [] },
     chunkState: { chunkItems: [] },
@@ -123,7 +123,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const result = initReaderInteractionRuntime(deps);
 
   assert.equal(globalThis.__renderRuntimeDeps.bridgeToPinia, deps.bridgeToPinia);
-  assert.equal(globalThis.__renderRuntimeDeps.tryRestoreChunkNoteDraft, deps.tryRestoreChunkNoteDraft);
   assert.equal(globalThis.__playbackRuntimeDeps.runtimeState, deps.runtimeState);
   assert.equal(globalThis.__playbackRuntimeDeps.transcriptState, deps.transcriptState);
   assert.equal(globalThis.__playbackRuntimeDeps.chunkState, deps.chunkState);

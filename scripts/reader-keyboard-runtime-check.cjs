@@ -8,6 +8,7 @@ async function main() {
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
   const sessionInitSource = [
   'session-runtime-assembly.js',
@@ -34,12 +35,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should delegate keyboard setup through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes("import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';"),
-    'reader-feature-runtime should import the reader keyboard runtime module'
+    featureAdaptersSource.includes("import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js'"),
+    'reader feature adapters should import the reader keyboard runtime module'
   );
   assert.ok(
-    featureSource.includes('initReaderKeyboardRuntime({'),
-    'reader-feature-runtime should initialize keyboard wiring through reader keyboard runtime'
+    featureAdaptersSource.includes('return initReaderKeyboardRuntime({'),
+    'reader feature adapters should initialize keyboard wiring through reader keyboard runtime'
   );
   [
     'window.__keyboardModule.init({',

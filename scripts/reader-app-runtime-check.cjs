@@ -8,6 +8,7 @@ async function main() {
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
   const sessionInitSource = [
   'session-runtime-assembly.js',
@@ -34,12 +35,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should delegate app/runtime setup through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js';"),
-    'reader-feature-runtime should import the reader app runtime module'
+    featureAdaptersSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js'"),
+    'reader feature adapters should import the reader app runtime module'
   );
   assert.ok(
-    featureSource.includes('var appRuntime = initReaderAppRuntime({'),
-    'reader-feature-runtime should initialize app/runtime wiring through reader app runtime'
+    featureAdaptersSource.includes('return initReaderAppRuntime({'),
+    'reader feature adapters should initialize app/runtime wiring through reader app runtime'
   );
 
   [

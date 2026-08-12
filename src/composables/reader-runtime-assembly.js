@@ -2,7 +2,7 @@ import { runtimeState } from './runtime-state-facade.js';
 import { renderTranscript, renderChunkMode } from './render-runtime.js';
 import { initReaderRuntimeContext } from './reader-runtime-context.js';
 import { initReaderFeatureRuntime } from './reader-feature-runtime.js';
-import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';
+import { createReaderFeatureAdapters } from './reader-feature-runtime-deps.js';
 import { showToast, showError } from './ui-facades.js';
 import { syncAnnotationGenerationEntryStatus } from './session-facades.js';
 import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';
@@ -31,7 +31,7 @@ export function initReaderRuntimeAssembly(deps = {}) {
   own(runtimeContext);
   var bootstrapRuntime = runtimeContext.bootstrapRuntime;
   var featureRuntime = initReaderFeatureRuntime({
-    ...createReaderFeatureRuntimeDeps({
+    adapters: createReaderFeatureAdapters({
       globalObject: globalObject,
       runtimeState: runtimeState,
       runtimeContext: runtimeContext,

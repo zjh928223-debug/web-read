@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
 const playbackModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'playback-module.js'), 'utf8');
 const componentSource = fs.readFileSync(path.join(repoRoot, 'src', 'components', 'ChunkModeView.vue'), 'utf8');
@@ -21,9 +22,10 @@ assert.ok(
   'reader-runtime-assembly should delegate chunk interactions through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-feature-runtime should configure chunk interactions through reader interaction runtime'
+  featureSource.includes('adapters.startInteraction({'),
+  'reader-feature-runtime should configure chunk interactions through its interaction adapter'
 );
+assert.ok(featureAdaptersSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js'"));
 assert.equal(appSource.includes('configureChunkInteractions({'), false);
 assert.ok(playbackRuntimeSource.includes("import { configureChunkInteractions } from './chunk-interactions.js'"));
 assert.ok(playbackRuntimeSource.includes('configureChunkInteractions({'));

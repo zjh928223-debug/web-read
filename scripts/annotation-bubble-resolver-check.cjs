@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
 const resolverSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble-resolver.js'), 'utf8');
 
@@ -64,9 +65,10 @@ assert.ok(
   'reader-runtime-assembly should initialize annotation bubble resolver through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-feature-runtime should initialize annotation bubble resolver through reader interaction runtime'
+  featureSource.includes('adapters.startInteraction({'),
+  'reader-feature-runtime should initialize annotation bubble resolver through its interaction adapter'
 );
+assert.ok(featureAdaptersSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js'"));
 assert.equal(appSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';"), false);
 assert.ok(
   playbackRuntimeSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js'"),

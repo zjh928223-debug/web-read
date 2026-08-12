@@ -37,7 +37,7 @@ async function main() {
     "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
     "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
     "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
-    "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';",
+    "import { createReaderFeatureAdapters } from './reader-feature-runtime-deps.js';",
     'var runtimeContext = initReaderRuntimeContext({',
     'var bootstrapRuntime = runtimeContext.bootstrapRuntime;',
     'var featureRuntime = initReaderFeatureRuntime({',
@@ -77,8 +77,8 @@ async function main() {
       'function initReaderFeatureRuntime(deps) { const feature = { feature: true, deps, dispose() { globalThis.__assemblyCalls.push(["dispose-feature", feature]); } }; globalThis.__assemblyCalls.push(["feature", deps]); return feature; }\n'
     )
     .replace(
-      "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';\n",
-      'function createReaderFeatureRuntimeDeps(deps) { globalThis.__assemblyCalls.push(["feature-deps", deps]); return { featureDeps: true, input: deps }; }\n'
+      "import { createReaderFeatureAdapters } from './reader-feature-runtime-deps.js';\n",
+      'function createReaderFeatureAdapters(deps) { globalThis.__assemblyCalls.push(["feature-adapters", deps]); return { featureAdapters: true, input: deps }; }\n'
     )
     .replace(
       "import { showToast, showError } from './ui-facades.js';\n",
@@ -107,7 +107,7 @@ async function main() {
 
   assert.deepEqual(globalThis.__assemblyCalls.map((entry) => entry[0]), [
     'context',
-    'feature-deps',
+    'feature-adapters',
     'feature'
   ]);
   assert.equal(globalThis.__assemblyCalls[0][1].getWindow(), fakeWindow);
@@ -120,7 +120,7 @@ async function main() {
     false,
     'reader-runtime-assembly should not pass retired annotation API settings facade'
   );
-  assert.equal(globalThis.__assemblyCalls[2][1].featureDeps, true);
+  assert.equal(globalThis.__assemblyCalls[2][1].adapters.featureAdapters, true);
   assert.equal(api.runtimeContext, globalThis.__runtimeContext);
   assert.equal(api.bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);
   assert.equal(api.featureRuntime.feature, true);

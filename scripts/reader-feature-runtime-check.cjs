@@ -1,213 +1,47 @@
-﻿const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
 
 async function main() {
-  const repoRoot = path.resolve(__dirname, '..');
-  const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
-  const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
-const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
-  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
-  const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
-  const sessionInitSource = [
-  'session-runtime-assembly.js',
-  'session-restore-runtime.js',
-  'session-startup-runtime.js',
-  'session-startup-cleanup.js',
-  'session-ui-settings-restore.js',
-  'session-annotation-context.js',
-  'session-annotation-generated-index.js',
-  'session-annotation-marks.js',
-  'session-annotation-lightweight-io.js',
-  'session-annotation-export-payload.js',
-  'session-annotation-import-normalization.js',
-  'session-annotation-bundle-merge.js',
-  'session-annotation-text.js'
-].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'composables', 'reader-feature-runtime.js'), 'utf8')
+  const executable = source
+    .replace(/^import .*\r?\n/gm, '')
+    .replace('export function initReaderFeatureRuntime', 'function initReaderFeatureRuntime')
+    .concat('\nexport { initReaderFeatureRuntime };')
+  globalThis.__featureBindings = { createLifecycleScope }
+  const declarations = 'const createLifecycleScope = globalThis.__featureBindings.createLifecycleScope;\n'
+  const { initReaderFeatureRuntime } = await import(`data:text/javascript;base64,${Buffer.from(declarations + executable).toString('base64')}#${Date.now()}`)
 
-  assert.ok(
-    runtimeSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"),
-    'reader-runtime should import reader runtime assembly'
-  );
-  assert.ok(
-    assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"),
-    'reader-runtime-assembly should import reader feature runtime'
-  );
-  assert.ok(
-    assemblySource.includes("import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';"),
-    'reader-runtime-assembly should import reader feature runtime dependency assembly'
-  );
-  assert.ok(
-    assemblySource.includes('initReaderFeatureRuntime({'),
-    'reader-runtime-assembly should delegate feature runtime setup'
-  );
-  assert.ok(
-    assemblySource.includes('...createReaderFeatureRuntimeDeps({'),
-    'reader-runtime-assembly should assemble feature deps through the focused deps module'
-  );
-  [
-    'validateMarksArray: validateMarksArray',
-    'findChunkIndexByTimeHelper: findChunkIndexByTimeHelper',
-    'getSegmentCheckpointsHelper: getSegmentCheckpointsHelper',
-    'cleanTextHelper: cleanTextHelper',
-    'tokenizeTextHelper: tokenizeTextHelper',
-    'findExactMatchRangeHelper: findExactMatchRangeHelper',
-    'buildVocabMatchMap: buildVocabMatchMapHelper'
-  ].forEach((pattern) => {
-    assert.equal(shellSource.includes(pattern), false, `reader-runtime-assembly should not own feature helper mapping: ${pattern}`);
-  });
-  [
-    'export function createReaderFeatureRuntimeDeps',
-    'validateMarksArray: runtimeDeps.validateMarksArray',
-    'findChunkIndexByTimeHelper: runtimeDeps.findChunkIndexByTimeHelper',
-    'getSegmentCheckpointsHelper: runtimeDeps.getSegmentCheckpointsHelper',
-    'cleanTextHelper: runtimeDeps.cleanTextHelper',
-    'tokenizeTextHelper: runtimeDeps.tokenizeTextHelper',
-    'findExactMatchRangeHelper: runtimeDeps.findExactMatchRangeHelper',
-    'buildVocabMatchMap: runtimeDeps.buildVocabMatchMapHelper'
-  ].forEach((pattern) => {
-    assert.ok(featureDepsSource.includes(pattern), `reader-feature-runtime-deps should pass required feature helper: ${pattern}`);
-  });
-  assert.equal(featureDepsSource.includes('window.'), false, 'reader-feature-runtime-deps should not read or write window globals');
-  assert.equal(featureDepsSource.includes('document.'), false, 'reader-feature-runtime-deps should not read document globals');
-  [
-    "import { initReaderImportRuntime } from './reader-import-runtime.js';",
-    "import { initReaderControlsRuntime } from './reader-controls-runtime.js';",
-    "import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';",
-    "import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';",
-    "import { initReaderAppRuntime } from './reader-app-runtime.js';",
-    'var chunkControlsApi = null;',
-    'var importRuntime = initReaderImportRuntime({',
-    'var controlsRuntime = initReaderControlsRuntime({',
-    'var interactionRuntime = initReaderInteractionRuntime({',
-    'initReaderKeyboardRuntime({',
-    'var appRuntime = initReaderAppRuntime({',
-    'var forceUpdateUI'
-  ].forEach((pattern) => {
-    assert.equal(runtimeSource.includes(pattern), false, `reader-runtime should not own feature setup: ${pattern}`);
-  });
-  [
-    "import { initReaderImportRuntime } from './reader-import-runtime.js';",
-    "import { initReaderControlsRuntime } from './reader-controls-runtime.js';",
-    "import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';",
-    "import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';",
-    "import { initReaderAppRuntime } from './reader-app-runtime.js';",
-    'export function initReaderFeatureRuntime',
-    'var chunkControlsApi = null;',
-    'var forceUpdateUI;',
-    'var importRuntime = initReaderImportRuntime({',
-    'getChunkControlsApi: function () { return chunkControlsApi; }',
-    'var controlsRuntime = initReaderControlsRuntime({',
-    'getForceUpdateUI: function () { return forceUpdateUI; }',
-    'chunkControlsApi = controlsRuntime.chunkControlsApi;',
-    'var interactionRuntime = initReaderInteractionRuntime({',
-    'forceUpdateUI = interactionRuntime.forceUpdateUI;',
-    'initReaderKeyboardRuntime({',
-    'var appRuntime = initReaderAppRuntime({'
-  ].forEach((pattern) => {
-    assert.ok(featureSource.includes(pattern), `reader-feature-runtime should own ${pattern}`);
-  });
-  assert.equal(featureSource.includes('window.'), false, 'reader-feature-runtime should receive window through globalObject');
-  assert.equal(featureSource.includes('document.'), false, 'reader-feature-runtime should not read document globals');
-
-  [
-    'applyCurrentAudioMeta(audioMeta);',
-    'deps.processTranscript(transcriptData);',
-    'deps.processChunkData(chunkData);',
-    'windowObject.toggleChunkMode(true);',
-    'deps.bridgeToPinia();'
-  ].forEach((pattern) => {
-    assert.ok(sessionInitSource.includes(pattern), `session-init contract should remain intact: ${pattern}`);
-  });
-
-  const testableSource = featureSource
-    .replace(
-      "import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';\n",
-      'function initReaderInteractionRuntime(deps) { globalThis.__featureCalls.push(["interaction", deps]); return { playbackRuntimeHelpersApi: { helper: true }, forceUpdateUI() { return "updated"; }, toggleAnnotationBubble() { return "bubble"; }, handleBackwardClick() { return "back"; }, handleForwardClick() { return "forward"; } }; }\n'
-    )
-    .replace(
-      "import { initReaderControlsRuntime } from './reader-controls-runtime.js';\n",
-      'function initReaderControlsRuntime(deps) { globalThis.__featureCalls.push(["controls", deps]); return { chunkControlsApi: { chunk: true } }; }\n'
-    )
-    .replace(
-      "import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js';\n",
-      'function initReaderKeyboardRuntime(deps) { globalThis.__featureCalls.push(["keyboard", deps]); return { keyboard: true }; }\n'
-    )
-    .replace(
-      "import { initReaderAppRuntime } from './reader-app-runtime.js';\n",
-      'function initReaderAppRuntime(deps) { globalThis.__featureCalls.push(["app", deps]); return { dispose() { globalThis.__featureCalls.push(["dispose-app"]); } }; }\n'
-    )
-    .replace(
-      "import { initReaderImportRuntime } from './reader-import-runtime.js';\n",
-      'function initReaderImportRuntime(deps) { globalThis.__featureCalls.push(["import", deps]); return { visualVocabApi: { vocabMatchMap: new Map([[1, "vocab"]]) } }; }\n'
-    )
-    .replace(
-      "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';\n",
-      'function createLifecycleScope() { const disposers = []; let disposed = false; return { add(disposer) { disposers.push(disposer); }, dispose() { if (disposed) return; disposed = true; for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index](); } }; }\n'
-    );
-
-  globalThis.__featureCalls = [];
-  const globalObject = {
-    __importModule: { id: 'import-module' },
-    __styleEditor: { id: 'style-editor' },
-    __themeStore: { id: 'theme-store' },
-    __lockChunkNoteDimensionsForTheme: () => 'lock',
-    __playbackModule: { id: 'playback-module' },
-    __keyboardModule: { id: 'keyboard-module' },
-    __marksStore: { id: 'marks-store' },
-    __annotationLightweightModule: { id: 'annotation-lightweight' },
-    __appHandlers: { id: 'app-handlers' },
-    __controlsModule: { id: 'controls-module' },
-    getSelection: () => ({ text: 'selection' })
-  };
-
-  const encodedSource = Buffer.from(testableSource, 'utf8').toString('base64');
-  const { initReaderFeatureRuntime } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
-  const api = initReaderFeatureRuntime({
-    globalObject,
-    runtimeState: {},
-    transcriptState: {},
-    chunkState: {},
-    clozeState: {},
-    playbackState: {},
-    audioIdentityApi: {},
-    hotkeyStateApi: {},
-    marksStateApi: { markedMap: new Map([[1, true]]) }
-  });
-
-  assert.deepEqual(globalThis.__featureCalls.map((entry) => entry[0]), [
-    'import',
-    'controls',
-    'interaction',
-    'keyboard',
-    'app'
-  ]);
-  const importDeps = globalThis.__featureCalls[0][1];
-  const controlsDeps = globalThis.__featureCalls[1][1];
-  const interactionDeps = globalThis.__featureCalls[2][1];
-  const keyboardDeps = globalThis.__featureCalls[3][1];
-  const appDeps = globalThis.__featureCalls[4][1];
-
-  assert.equal(importDeps.importModule, globalObject.__importModule);
-  assert.equal(importDeps.forceUpdateUI, undefined, 'import runtime should preserve the previous early undefined forceUpdateUI value');
-  assert.deepEqual(importDeps.getChunkControlsApi(), { chunk: true });
-  assert.equal(controlsDeps.styleEditor, globalObject.__styleEditor);
-  assert.equal(controlsDeps.themeStore, globalObject.__themeStore);
-  assert.equal(controlsDeps.getForceUpdateUI(), api.forceUpdateUI);
-  assert.equal(interactionDeps.vocabMatchMap.get(1), 'vocab');
-  assert.deepEqual(keyboardDeps.chunkControlsApi, { chunk: true });
-  assert.equal(appDeps.playbackRuntimeHelpersApi.helper, true);
-  assert.equal(appDeps.forceUpdateUI, api.forceUpdateUI);
-  assert.equal(api.chunkControlsApi.chunk, true);
-  assert.equal(typeof api.appRuntime.dispose, 'function');
-  api.dispose();
-  api.dispose();
-  assert.equal(globalThis.__featureCalls.filter((entry) => entry[0] === 'dispose-app').length, 1);
-
-  console.log('reader feature runtime check passed');
+  const calls = []
+  const disposed = []
+  const runtime = (name, product = {}) => ({ ...product, dispose: () => disposed.push(name) })
+  const adapters = {
+    startImport(input) { calls.push(['import', input]); return runtime('import', { visualVocabApi: { id: 'visual' } }) },
+    startControls(input) { calls.push(['controls', input]); return runtime('controls', { chunkControlsApi: { id: 'chunk' } }) },
+    startInteraction(input) { calls.push(['interaction', input]); return runtime('interaction', { forceUpdateUI() {}, playbackRuntimeHelpersApi: { id: 'playback' } }) },
+    startKeyboard(input) { calls.push(['keyboard', input]); return runtime('keyboard') },
+    startApp(input) { calls.push(['app', input]); return runtime('app') },
+  }
+  const api = initReaderFeatureRuntime({ adapters })
+  assert.deepEqual(calls.map(([name]) => name), ['import', 'controls', 'interaction', 'keyboard', 'app'])
+  assert.deepEqual(calls[0][1].getChunkControlsApi(), { id: 'chunk' })
+  assert.equal(calls[1][1].getForceUpdateUI(), api.forceUpdateUI)
+  assert.deepEqual(calls[2][1].visualVocabApi, { id: 'visual' })
+  assert.deepEqual(calls[3][1].chunkControlsApi, { id: 'chunk' })
+  assert.equal(calls[3][1].interactionRuntime, api.interactionRuntime)
+  assert.deepEqual(calls[4][1].chunkControlsApi, { id: 'chunk' })
+  assert.equal(calls[4][1].interactionRuntime, api.interactionRuntime)
+  api.dispose()
+  api.dispose()
+  assert.deepEqual(disposed, ['app', 'keyboard', 'interaction', 'controls', 'import'])
+  assert.throws(() => initReaderFeatureRuntime({}), /adapters are required/)
+  console.log('reader feature runtime check passed')
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+function createLifecycleScope() {
+  const disposers = []
+  let disposed = false
+  return { add(fn) { disposers.push(fn) }, dispose() { if (disposed) return; disposed = true; for (let i = disposers.length - 1; i >= 0; i -= 1) disposers[i]() } }
+}
+
+main().catch((error) => { console.error(error); process.exitCode = 1 })

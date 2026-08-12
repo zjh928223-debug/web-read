@@ -20,7 +20,7 @@ async function verifyReaderAssemblyLifecycle(source) {
     renderChunkMode() {},
     initReaderRuntimeContext: () => ({ bootstrapRuntime: {} }),
     initReaderFeatureRuntime: () => ({ dispose: () => disposals.push('feature') }),
-    createReaderFeatureRuntimeDeps: (value) => value,
+    createReaderFeatureAdapters: (value) => value,
     showToast() {},
     showError() {},
     syncAnnotationGenerationEntryStatus() {},

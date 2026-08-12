@@ -6,8 +6,9 @@ async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
-const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
+  const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const interactionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
   const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
   const sessionInitSource = [
@@ -35,8 +36,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should initialize reader playback runtime through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
-    'reader-feature-runtime should initialize playback/interactions through reader interaction runtime'
+    featureSource.includes('adapters.startInteraction({'),
+    'reader-feature-runtime should initialize playback/interactions through the interaction adapter'
+  );
+  assert.ok(
+    featureAdaptersSource.includes('return initReaderInteractionRuntime({'),
+    'reader interaction adapter should own the detailed playback/interactions dependency mapping'
   );
   assert.equal(
     runtimeSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),

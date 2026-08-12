@@ -15,6 +15,7 @@ async function main() {
   const shellSource = fs.readFileSync(shellPath, 'utf8');
   const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
   const featureSource = fs.readFileSync(featurePath, 'utf8');
+  const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = [
     'session-runtime-assembly.js',
@@ -41,12 +42,12 @@ async function main() {
     'reader-runtime-assembly should delegate controls setup through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
-    'reader-feature-runtime should import the reader controls runtime module'
+    featureAdaptersSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js'"),
+    'reader feature adapters should import the reader controls runtime module'
   );
   assert.ok(
-    featureSource.includes('var controlsRuntime = initReaderControlsRuntime({'),
-    'reader-feature-runtime should initialize controls through reader controls runtime'
+    featureAdaptersSource.includes('return initReaderControlsRuntime({'),
+    'reader feature adapters should initialize controls through reader controls runtime'
   );
 
   [

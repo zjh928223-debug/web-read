@@ -21,8 +21,8 @@ assert.ok(
   'reader-runtime-assembly should delegate transcript interactions through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-feature-runtime should configure transcript interactions through reader interaction runtime'
+  featureSource.includes('adapters.startInteraction({'),
+  'reader-feature-runtime should configure transcript interactions through its interaction adapter'
 );
 assert.equal(
   appSource.includes("transcriptContainer.addEventListener('click'"),
@@ -30,7 +30,8 @@ assert.equal(
   'app.js should not own normal transcript click listeners'
 );
 assert.equal(appSource.includes('configureTranscriptInteractions({'), false);
-assert.ok(featureDepsSource.includes('transcriptContainer: domRefs.transcriptContainer'));
+assert.ok(featureDepsSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js'"));
+assert.ok(featureDepsSource.includes('transcriptContainer: dom.transcriptContainer'));
 assert.ok(playbackRuntimeSource.includes("import { configureTranscriptInteractions } from './transcript-interactions.js'"));
 assert.ok(playbackRuntimeSource.includes('configureTranscriptInteractions({'));
 assert.ok(playbackRuntimeSource.includes('legacyTranscriptContainer: deps.transcriptContainer'));

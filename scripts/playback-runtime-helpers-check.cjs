@@ -22,7 +22,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should initialize playback helpers through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes('var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;'),
+    featureSource.includes('playbackRuntimeHelpersApi: interactionRuntime.playbackRuntimeHelpersApi'),
     'reader-feature-runtime should receive playback runtime helpers through the interaction module'
   );
   [
