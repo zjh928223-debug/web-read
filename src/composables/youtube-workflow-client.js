@@ -203,6 +203,31 @@ export function createYoutubeWorkflowClient(options = {}) {
     mediaUrl(jobId, kind) {
       return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/media/${encodeURIComponent(kind)}`)
     },
+    async probeMediaRange(jobId, kind, options = {}) {
+      const response = await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/media/${encodeURIComponent(kind)}`), {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
+      if (response.status === 404 || response.status === 410) {
+        const error = new Error('Reader media is no longer available')
+        error.code = 'MEDIA_RANGE_UNAVAILABLE'
+        throw error
+      }
+      const contentRange = response.headers.get('content-range') || ''
+      const acceptRanges = response.headers.get('accept-ranges') || ''
+      if (response.status !== 206 || !/^bytes 0-0\/\d+$/i.test(contentRange) || !/\bbytes\b/i.test(acceptRanges)) {
+        const error = new Error('Reader media does not support HTTP Range')
+        error.code = 'MEDIA_RANGE_UNSUPPORTED'
+        throw error
+      }
+      return {
+        status: response.status,
+        contentRange,
+        acceptRanges,
+        etag: response.headers.get('etag') || '',
+      }
+    },
     async bindVideoSource(jobId, payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/video-source`), {
         method: 'POST',

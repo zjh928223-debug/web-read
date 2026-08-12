@@ -172,6 +172,16 @@ assert.equal(fake.schema.store, 'files')
 assert.equal(fake.schema.keyPath, 'id')
 assert.equal('clear' in persistence, false)
 
+const abortable = createAtomicIndexedDb()
+abortable.manualCompletion = true
+const abortablePersistence = createReaderSessionPersistence({ indexedDBApi: abortable.indexedDBApi })
+const abortController = new AbortController()
+const abortCommit = abortablePersistence.commit(fixture('aborted-session', 'abort:1'), { signal: abortController.signal })
+await tick()
+abortController.abort('superseded reader session generation')
+await assert.rejects(abortCommit, { code: 'TRANSACTION_ABORTED' })
+assert.equal(abortable.rows.size, 0, 'aborted generation must not commit staged reader rows')
+
 console.log('reader session persistence check passed')
 
 function fixture(contentId, revision) {

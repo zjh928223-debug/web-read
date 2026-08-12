@@ -131,7 +131,7 @@ export function createReaderSessionPersistence(options = {}) {
     return { id, reason, detectedAt, fingerprint }
   }
 
-  async function commit(session) {
+  async function commit(session, options = {}) {
     validateSession(session)
     const timestamp = Date.now()
     const checksum = await sessionChecksum(session)
@@ -157,7 +157,7 @@ export function createReaderSessionPersistence(options = {}) {
         ...common,
       },
     ]
-    await persistence.putMany('readerSessionRow', rows)
+    await persistence.putMany('readerSessionRow', rows, options)
     return rows[3].content
   }
 

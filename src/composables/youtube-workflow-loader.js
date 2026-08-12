@@ -173,10 +173,12 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       const manifest = await client.getSession(jobId, requestOptions)
       if (!isCurrentLoad(load)) return supersededResult(load)
       if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
+      if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
       const audioUrl = client.mediaUrl(jobId, 'audio')
       const [transcriptBlob, chunkBlob] = await Promise.all([
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
+        client.probeMediaRange(jobId, 'audio', requestOptions),
       ])
       if (!isCurrentLoad(load)) return supersededResult(load)
       const [transcriptRaw, chunkRaw] = await Promise.all([
@@ -216,7 +218,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         audioMeta,
         transcript: validated.transcript,
         chunkData: validated.chunkData,
-      })
+      }, requestOptions)
       if (!isCurrentLoad(load)) return supersededResult(load)
 
       applyCurrentAudioMeta(audioMeta)

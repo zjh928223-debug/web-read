@@ -41,6 +41,10 @@ const client = {
     return Promise.resolve(new Blob([JSON.stringify(payload)], { type: 'application/json' }))
   },
   mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}` },
+  probeMediaRange(_jobId, _kind, options = {}) {
+    assert.ok(options.signal, 'Range probe must share the generation AbortSignal')
+    return Promise.resolve({ status: 206, contentRange: 'bytes 0-0/16', acceptRanges: 'bytes' })
+  },
 }
 
 const loader = createYoutubeWorkflowLoader({

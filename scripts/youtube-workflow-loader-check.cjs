@@ -68,6 +68,9 @@ async function main() {
       calls.push(['mediaUrl', jobId, kind]);
       return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`;
     },
+    async probeMediaRange() {
+      return { status: 206, contentRange: 'bytes 0-0/16', acceptRanges: 'bytes' };
+    },
   };
   const loader = api.createYoutubeWorkflowLoader({
     client,
@@ -132,6 +135,7 @@ async function main() {
         return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 99, en: 'bad', zh: '坏' }] }] })], { type: 'application/json' });
       },
       mediaUrl(jobId, kind) { return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`; },
+      async probeMediaRange() { return { status: 206, contentRange: 'bytes 0-0/16', acceptRanges: 'bytes' }; },
     },
     hasCurrentContent: () => false,
     readerSessionPersistence: { commit: (session) => failedWrites.push(session) },
