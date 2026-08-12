@@ -13,7 +13,13 @@ from threading import Event
 from fastapi.testclient import TestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
-from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app
+from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app as create_service_app
+
+
+def create_app(manager):
+    app = create_service_app(manager)
+    app.state.test_job_manager = manager
+    return app
 
 
 class WaitingRunner:
@@ -2068,6 +2074,12 @@ class ServiceAppTests(unittest.TestCase):
         while time.time() < deadline:
             last = client.get(f"/api/jobs/{job_id}").json()
             if last.get("status") == status:
+                if status in {"ready", "failed", "canceled"}:
+                    manager = client.app.state.test_job_manager
+                    worker = manager.worker_thread
+                    if worker is not None and worker is not threading.current_thread():
+                        worker.join()
+                    manager.flush_persistence()
                 return last
             time.sleep(0.02)
         self.fail(f"job {job_id} did not reach {status}: {last}")

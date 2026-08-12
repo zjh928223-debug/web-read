@@ -11,6 +11,8 @@ from pathlib import Path
 from threading import Event
 from typing import Callable, Iterable
 
+from .durable_json import DurableJsonRepository
+
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATA_ROOT = Path(os.getenv("READ_WEB_SUBTITLE_DATA_ROOT", "E:\\ReadWebData\\SubtitleWorkflow"))
@@ -217,7 +219,7 @@ def utc_now_iso() -> str:
 
 
 def _write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    DurableJsonRepository().write(path, data)
 
 
 def safe_title_from_url(url: str) -> str:

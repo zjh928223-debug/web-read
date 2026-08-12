@@ -1,26 +1,21 @@
-import json
 import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .core import build_history_item
+from .durable_json import DurableJsonRepository
+
+
+_JSON_REPOSITORY = DurableJsonRepository()
 
 
 def _read_json(path: Path, fallback):
-    if not path.exists():
-        return fallback
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return fallback
+    return _JSON_REPOSITORY.read(path, fallback).value
 
 
 def _write_json_atomic(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp_path.replace(path)
+    _JSON_REPOSITORY.write(path, data)
 
 
 def _safe_float(value, fallback: float = 0.0) -> float:
@@ -84,7 +79,7 @@ def _reverse_time_key(value: str) -> float:
 
 
 class WorkflowHistoryStore:
-    def __init__(self, state_dir: Path, output_dir: Path):
+    def __init__(self, state_dir: Path, output_dir: Path, json_repository: DurableJsonRepository | None = None):
         self.state_dir = Path(state_dir)
         self.output_dir = Path(output_dir)
         self.jobs_path = self.state_dir / "jobs.json"
@@ -94,20 +89,26 @@ class WorkflowHistoryStore:
         self.logs_dir = self.state_dir / "logs"
         self.service_log_path = self.logs_dir / "service.log"
         self.lock = threading.RLock()
+        self.json_repository = json_repository or DurableJsonRepository()
+        self.last_read_outcomes = {}
 
     def load_jobs(self) -> list[dict]:
         with self.lock:
-            data = _read_json(self.jobs_path, {"jobs": []})
+            outcome = self.json_repository.read(self.jobs_path, {"jobs": []})
+            self.last_read_outcomes["jobs"] = outcome
+            data = outcome.value
             jobs = data.get("jobs") if isinstance(data, dict) else []
             return list(jobs) if isinstance(jobs, list) else []
 
     def save_jobs(self, jobs: list[dict]) -> None:
         with self.lock:
-            _write_json_atomic(self.jobs_path, {"jobs": list(jobs)}, )
+            self.json_repository.write(self.jobs_path, {"jobs": list(jobs)})
 
     def load_history(self) -> list[dict]:
         with self.lock:
-            data = _read_json(self.history_path, {"items": []})
+            outcome = self.json_repository.read(self.history_path, {"items": []})
+            self.last_read_outcomes["history"] = outcome
+            data = outcome.value
             items = data.get("items") if isinstance(data, dict) else []
             return list(items) if isinstance(items, list) else []
 
@@ -117,7 +118,7 @@ class WorkflowHistoryStore:
         with self.lock:
             items = [entry for entry in self.load_history() if entry.get("jobId") != job_id]
             items.insert(0, item)
-            _write_json_atomic(self.history_path, {"items": items})
+            self.json_repository.write(self.history_path, {"items": items})
         return item
 
     def search_history(self, query: str = "", status: str = "", limit: int = 50) -> list[dict]:
@@ -152,7 +153,7 @@ class WorkflowHistoryStore:
                     removed = item
                 else:
                     items.append(item)
-            _write_json_atomic(self.history_path, {"items": items})
+            self.json_repository.write(self.history_path, {"items": items})
             self._remove_reader_index_item_locked(job_id)
         deleted_files = False
         if delete_files and removed and removed.get("outputDir"):
