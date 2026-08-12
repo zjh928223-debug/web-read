@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Benchmark isolated Read-Web workflow HTTP GET endpoints.
+"""Benchmark isolated Read-Web workflow HTTP endpoints.
 
 The default mode owns a temporary workflow service on 127.0.0.1:8766. It never
 connects to, starts, or stops the daily service on port 8765.
@@ -8,6 +8,7 @@ connects to, starts, or stops the daily service on port 8765.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -26,16 +27,33 @@ from typing import Any
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_ROOT = REPOSITORY_ROOT / "tools" / "subtitle-workflow"
 DEFAULT_OUTPUT_ROOT = REPOSITORY_ROOT / "output" / "performance"
+FIXTURE_JOB_ID = "benchmark-ready-job"
+FIXTURE_TTS_TEXT = "benchmark cache hit"
+FIXTURE_TTS_VOICE = "en-US-AriaNeural"
 ENDPOINTS = (
-    ("health", "/api/health"),
-    ("history", "/api/history?limit=50"),
-    ("recent", "/api/recent?limit=10"),
+    {"name": "health", "method": "GET", "route": "/api/health"},
+    {"name": "jobs_snapshot", "method": "POST", "route": "/api/jobs/snapshot", "payload": {"jobIds": [FIXTURE_JOB_ID, "missing-benchmark-job"]}},
+    {"name": "history", "method": "GET", "route": "/api/history?limit=50"},
+    {"name": "reader_activity", "method": "POST", "route": "/api/reader/activity", "payload": {
+        "jobId": FIXTURE_JOB_ID,
+        "event": "progress",
+        "sessionId": "benchmark-session",
+        "durationSeconds": 120,
+        "positionSeconds": 30,
+        "intervals": [[0, 30]],
+        "markCount": 1,
+    }},
+    {"name": "reader_marks_write", "method": "POST", "route": f"/api/jobs/{FIXTURE_JOB_ID}/reader-marks", "payload": {
+        "marks": [{"globalIndex": 1, "word": "benchmark", "start": 0.25, "sourceType": "benchmark"}],
+    }},
+    {"name": "reader_marks_read", "method": "GET", "route": f"/api/jobs/{FIXTURE_JOB_ID}/reader-marks"},
+    {"name": "tts_cache_hit", "method": "POST", "route": "/api/tts/edge", "payload": {"text": FIXTURE_TTS_TEXT}},
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Start an isolated workflow service and benchmark read-only HTTP endpoints."
+        description="Start an isolated workflow service and benchmark deterministic local HTTP endpoints."
     )
     parser.add_argument("--port", type=int, default=8766, help="isolated service port (default: 8766)")
     parser.add_argument("--warmup", type=int, default=5, help="warmup requests per endpoint")
@@ -82,10 +100,20 @@ def git_sha() -> str | None:
         return None
 
 
-def request_json(url: str, timeout: float) -> tuple[float, int | None, Any | None, str | None]:
+def request_json(
+    url: str,
+    timeout: float,
+    *,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+) -> tuple[float, int | None, Any | None, str | None]:
     started = time.perf_counter()
     try:
-        request = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(url, data=body, headers=headers, method=method)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
             status = int(response.status)
@@ -125,7 +153,95 @@ def validate_payload(endpoint: str, payload: Any) -> str | None:
         return None
     if not isinstance(payload, (dict, list)):
         return "invalid-json-shape"
+    if endpoint == "jobs_snapshot" and (
+        payload.get("schemaVersion") != 1
+        or [job.get("jobId") for job in payload.get("jobs", [])] != [FIXTURE_JOB_ID]
+        or payload.get("missingJobIds") != ["missing-benchmark-job"]
+    ):
+        return "invalid-jobs-snapshot"
+    if endpoint == "history" and not any(
+        item.get("jobId") == FIXTURE_JOB_ID for item in payload if isinstance(item, dict)
+    ):
+        return "fixture-history-missing"
+    if endpoint == "reader_activity" and payload.get("jobId") != FIXTURE_JOB_ID:
+        return "invalid-reader-activity"
+    if endpoint.startswith("reader_marks") and (
+        payload.get("jobId") != FIXTURE_JOB_ID or payload.get("markCount") != 1
+    ):
+        return "invalid-reader-marks"
+    if endpoint == "tts_cache_hit" and (
+        payload.get("source") != "edge-tts" or not payload.get("audioUrl")
+    ):
+        return "invalid-tts-cache-hit"
     return None
+
+
+def seed_isolated_fixture(data_root: Path) -> dict[str, str]:
+    """Create one terminal job and one TTS cache entry without external work."""
+    output_root = data_root / "output"
+    job_output = output_root / FIXTURE_JOB_ID
+    state_root = data_root / ".workflow_state"
+    job_output.mkdir(parents=True, exist_ok=True)
+    state_root.mkdir(parents=True, exist_ok=True)
+    now = "2026-08-12T00:00:00+00:00"
+    manifest = {
+        "schemaVersion": 1,
+        "jobId": FIXTURE_JOB_ID,
+        "title": "Backend benchmark fixture",
+        "url": "https://example.invalid/backend-benchmark",
+        "status": "ready",
+        "stage": "ready",
+        "createdAt": now,
+        "updatedAt": now,
+        "finishedAt": now,
+        "outputDir": str(job_output),
+        "request": {"url": "https://example.invalid/backend-benchmark", "geminiMode": "mock"},
+        "files": {},
+        "logSummary": [],
+        "error": None,
+    }
+    job_snapshot = {
+        "jobId": FIXTURE_JOB_ID,
+        "status": "ready",
+        "stage": "ready",
+        "createdAt": now,
+        "updatedAt": now,
+        "request": manifest["request"],
+        "manifest": manifest,
+        "terminalSummary": ["isolated benchmark fixture"],
+    }
+    history_item = {
+        key: manifest.get(key)
+        for key in (
+            "jobId", "title", "url", "status", "stage", "createdAt", "updatedAt",
+            "finishedAt", "outputDir", "request", "files", "error",
+        )
+    }
+    history_item.update({
+        "fileSizes": {},
+        "durationSeconds": None,
+        "checkpoint": None,
+        "sourceType": "benchmark-fixture",
+        "sourceMap": {},
+        "importAction": "",
+        "manifestPath": str(job_output / "manifest.json"),
+    })
+    (job_output / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (state_root / "jobs.json").write_text(
+        json.dumps({"jobs": [job_snapshot]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    (state_root / "history.json").write_text(
+        json.dumps({"items": [history_item]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    cache_id = hashlib.sha256(
+        f"{FIXTURE_TTS_VOICE}\0{FIXTURE_TTS_TEXT}".encode("utf-8")
+    ).hexdigest()
+    tts_cache = state_root / "edge-tts-cache" / f"{cache_id}.mp3"
+    tts_cache.parent.mkdir(parents=True, exist_ok=True)
+    tts_cache.write_bytes(b"read-web-isolated-benchmark-cache")
+    return {"jobId": FIXTURE_JOB_ID, "ttsCacheId": cache_id}
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
@@ -218,6 +334,7 @@ def main() -> int:
     process: subprocess.Popen[bytes] | None = None
 
     with tempfile.TemporaryDirectory(prefix="read-web-backend-benchmark-") as temporary_data_root:
+        fixture = seed_isolated_fixture(Path(temporary_data_root))
         environment = os.environ.copy()
         environment["READ_WEB_SUBTITLE_DATA_ROOT"] = temporary_data_root
         command = [
@@ -250,16 +367,25 @@ def main() -> int:
                 raise RuntimeError(f"isolated workflow service exited with code {process.returncode}")
 
             for _ in range(args.warmup):
-                for _, route in ENDPOINTS:
-                    request_json(f"{base_url}{route}", args.timeout)
+                for endpoint in ENDPOINTS:
+                    request_json(
+                        f"{base_url}{endpoint['route']}",
+                        args.timeout,
+                        method=endpoint["method"],
+                        payload=endpoint.get("payload"),
+                    )
 
             endpoint_samples: dict[str, list[dict[str, Any]]] = {
-                name: [] for name, _ in ENDPOINTS
+                endpoint["name"]: [] for endpoint in ENDPOINTS
             }
             for _ in range(args.rounds):
-                for name, route in ENDPOINTS:
+                for endpoint in ENDPOINTS:
+                    name = endpoint["name"]
                     duration_ms, status, payload, error = request_json(
-                        f"{base_url}{route}", args.timeout
+                        f"{base_url}{endpoint['route']}",
+                        args.timeout,
+                        method=endpoint["method"],
+                        payload=endpoint.get("payload"),
                     )
                     if error is None:
                         error = validate_payload(name, payload)
@@ -275,7 +401,7 @@ def main() -> int:
                 sample for samples in endpoint_samples.values() for sample in samples
             ]
             result = {
-                "schemaVersion": 1,
+                "schemaVersion": 2,
                 "capturedAt": captured_at.isoformat(),
                 "gitSha": git_sha(),
                 "isolation": {
@@ -283,8 +409,11 @@ def main() -> int:
                     "port": args.port,
                     "dailyPort8765Accessed": False,
                     "temporaryDataRoot": True,
+                    "fixtureGeneratedLocally": True,
+                    "externalNetworkRequested": False,
                     "servicePid": process.pid,
                 },
+                "fixture": fixture,
                 "service": {
                     "name": health_payload.get("service"),
                     "version": health_payload.get("serviceVersion"),
@@ -294,7 +423,10 @@ def main() -> int:
                     "warmupPerEndpoint": args.warmup,
                     "roundsPerEndpoint": args.rounds,
                     "timeoutSeconds": args.timeout,
-                    "routes": [route for _, route in ENDPOINTS],
+                    "operations": [
+                        {"name": endpoint["name"], "method": endpoint["method"], "route": endpoint["route"]}
+                        for endpoint in ENDPOINTS
+                    ],
                 },
                 "summary": {
                     "overall": summarize(all_samples),

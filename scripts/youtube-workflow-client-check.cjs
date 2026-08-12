@@ -54,8 +54,9 @@ async function main() {
   await client.redoJob('job-3');
   await client.retryJob('job-4', { stage: 'translating' });
   await client.clearCanceledJobs();
-  await client.pickImportFolder({ initialDir: 'D:/legacy-materials' });
-  await client.pickVideoFile({ initialDir: 'D:/legacy-materials' });
+  const pickerSignal = new AbortController().signal;
+  await client.pickImportFolder({ initialDir: 'D:/legacy-materials' }, { signal: pickerSignal });
+  await client.pickVideoFile({ initialDir: 'D:/legacy-materials' }, { signal: pickerSignal });
   await client.scanImportRoot({ rootPath: 'D:/legacy-materials' });
   await client.createImportJobs({ items: [{ audioPath: 'D:/legacy-materials/a.mp3', selected: true }], geminiMode: 'mock' });
   await client.getSession('job-1');
@@ -128,6 +129,8 @@ async function main() {
   assert.equal(calls[16].options.method, 'POST');
   assert.equal(calls[17].options.method, 'POST');
   assert.equal(calls[18].options.method, 'POST');
+  assert.equal(calls[17].options.signal, pickerSignal);
+  assert.equal(calls[18].options.signal, pickerSignal);
   assert.equal(calls[19].options.method, 'POST');
   assert.equal(calls[20].options.method, 'POST');
   assert.equal(JSON.parse(calls[20].options.body).geminiMode, 'mock');
@@ -145,6 +148,23 @@ async function main() {
   assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video?access_token=test-client-token');
   assert.equal(client.mediaUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/media/video?access_token=test-client-token');
   assert.equal(client.eventsUrl('job-1'), 'http://127.0.0.1:8765/api/jobs/job-1/events?access_token=test-client-token');
+
+  const failingClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 504,
+      async json() {
+        return { detail: { code: 'native-picker-timeout', message: 'Native picker timed out' } };
+      },
+    }),
+  });
+  await assert.rejects(failingClient.pickVideoFile(), (error) => {
+    assert.equal(error.code, 'native-picker-timeout');
+    assert.equal(error.status, 504);
+    assert.equal(error.message, 'Native picker timed out');
+    return true;
+  });
 
   console.log('youtube workflow client check passed');
 }

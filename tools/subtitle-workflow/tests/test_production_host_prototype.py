@@ -1,12 +1,15 @@
 import tempfile
 import time
 import unittest
+import threading
 from pathlib import Path
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import uvicorn
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
-from youtube_workflow.production_host_prototype import create_production_host
+from youtube_workflow.production_host_prototype import create_local_app_host
 from youtube_workflow.service import JobManager, create_app as create_service_app
 
 
@@ -22,7 +25,7 @@ class ProductionHostPrototypeTests(unittest.TestCase):
             workflow = create_service_app(manager, access_token="prototype-test-token")
 
             with TestClient(
-                create_production_host(dist_dir=dist, workflow_app=workflow),
+                create_local_app_host(dist_dir=dist, workflow_app=workflow),
                 base_url="http://127.0.0.1",
                 headers={"X-Read-Web-Token": "prototype-test-token"},
             ) as client:
@@ -53,6 +56,86 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 self.assertEqual(len(ranged.content), 4)
                 self.assertTrue(ranged.headers["content-range"].startswith("bytes 2-5/"))
                 self.assertEqual(client.head(f"/api/jobs/{job_id}/media/audio").status_code, 200)
+
+    def test_capability_routes_are_owned_separately_from_workflow_and_static(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dist = Path(tmp)
+            (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+            workflow = FastAPI()
+            capability = FastAPI()
+
+            @workflow.get("/api/health")
+            def workflow_health():
+                return {"owner": "workflow"}
+
+            @capability.get("/api/vocabulary/local-sentences")
+            def dictionary():
+                return {"owner": "capability", "items": [{"sentence": "real route"}]}
+
+            @capability.post("/api/tts/edge")
+            def tts():
+                return {"owner": "capability", "audioUrl": "/api/tts/edge/audio/demo.mp3"}
+
+            @capability.post("/api/vocabulary/sentence-translations")
+            def translation():
+                return {"owner": "capability", "items": [{"translationZh": "真实路由"}]}
+
+            with TestClient(create_local_app_host(
+                dist_dir=dist,
+                workflow_app=workflow,
+                capability_app=capability,
+            )) as client:
+                self.assertEqual(client.get("/api/health").json()["owner"], "workflow")
+                self.assertEqual(client.get("/api/vocabulary/local-sentences").json()["owner"], "capability")
+                self.assertEqual(client.post("/api/tts/edge", json={"text": "hello"}).json()["owner"], "capability")
+                translated = client.post("/api/vocabulary/sentence-translations", json={"items": []}).json()
+                self.assertEqual(translated["items"][0]["translationZh"], "真实路由")
+
+    def test_capability_proxy_crosses_real_http_boundary_for_dictionary_tts_and_translation(self):
+        capability = FastAPI()
+
+        @capability.get("/api/vocabulary/local-sentences")
+        def dictionary(word: str = ""):
+            return {"available": True, "items": [{"word": word}]}
+
+        @capability.post("/api/tts/edge")
+        def tts(payload: dict):
+            return {"voice": "en-US-AriaNeural", "text": payload["text"]}
+
+        @capability.post("/api/vocabulary/sentence-translations")
+        def translation(payload: dict):
+            return {"available": True, "items": payload["items"]}
+
+        server = uvicorn.Server(uvicorn.Config(capability, host="127.0.0.1", port=0, log_level="error"))
+        listener = server.config.bind_socket()
+        port = listener.getsockname()[1]
+        thread = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
+        thread.start()
+        deadline = time.time() + 3
+        while not server.started and time.time() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(server.started)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                dist = Path(tmp)
+                (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+                workflow = FastAPI()
+                with TestClient(create_local_app_host(
+                    dist_dir=dist,
+                    workflow_app=workflow,
+                    capability_base_url=f"http://127.0.0.1:{port}",
+                )) as client:
+                    dictionary_response = client.get("/api/vocabulary/local-sentences?word=flow")
+                    self.assertEqual(dictionary_response.status_code, 200, dictionary_response.text)
+                    self.assertEqual(dictionary_response.json()["items"][0]["word"], "flow")
+                    self.assertEqual(client.post("/api/tts/edge", json={"text": "hello"}).json()["text"], "hello")
+                    translated = client.post(
+                        "/api/vocabulary/sentence-translations", json={"items": [{"text": "hello"}]}
+                    ).json()
+                    self.assertEqual(translated["items"], [{"text": "hello"}])
+        finally:
+            server.should_exit = True
+            thread.join(3)
 
 
 if __name__ == "__main__":

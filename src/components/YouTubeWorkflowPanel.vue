@@ -19,11 +19,11 @@
 
   <div class="youtube-workflow">
     <div v-if="panelOpen" class="youtube-workflow-backdrop" @pointerdown.self="handleBackdropPointerDown">
-      <section class="youtube-workflow-panel" :style="panelStyle" role="dialog" aria-label="素材处理" @pointerdown.stop>
+      <section ref="panelDialogRoot" class="youtube-workflow-panel" :style="panelStyle" role="dialog" aria-modal="true" aria-label="素材处理" :aria-busy="panelPending ? 'true' : 'false'" @pointerdown.stop>
         <header class="youtube-workflow-header" @pointerdown="startPanelDrag">
           <div>
             <h2>素材处理</h2>
-            <p :class="['youtube-workflow-health', serviceOnline ? 'online' : 'offline']">
+            <p :class="['youtube-workflow-health', serviceOnline ? 'online' : 'offline']" role="status" aria-live="polite" aria-atomic="true">
               {{ serviceOnline ? '后台服务已连接' : '后台服务未启动' }}
             </p>
           </div>
@@ -95,6 +95,7 @@
                     <span>{{ primaryActionText }}</span>
                   </button>
                   <button type="button" class="small-btn" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
+                  <button v-if="nativePickerRetryable" type="button" class="small-btn" :disabled="legacyImportBusy" @click="retryNativePicker">重试选择</button>
                   <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
                 </div>
 
@@ -455,17 +456,17 @@
         </div>
 
         <div v-if="cancelRecordsOpen" class="youtube-subwindow">
-          <div class="youtube-subwindow-card">
+          <section ref="cancelRecordsDialogRoot" class="youtube-subwindow-card" role="dialog" aria-modal="true" aria-labelledby="youtube-cancel-records-title" :aria-busy="cancelRecordsPending ? 'true' : 'false'">
             <header>
-              <strong>取消记录</strong>
-              <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭取消记录" title="关闭" @click="cancelRecordsOpen = false">x</button>
+              <strong id="youtube-cancel-records-title">取消记录</strong>
+              <button ref="cancelRecordsInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭取消记录" title="关闭" :disabled="cancelRecordsPending" @click="closeCancelRecords">x</button>
             </header>
-            <p v-if="!canceledJobs.length">没有取消记录。</p>
+            <p v-if="!canceledJobs.length" ref="cancelRecordsDialogStatus" role="status" aria-live="polite" aria-atomic="true">没有取消记录。</p>
             <ul v-else>
               <li v-for="job in canceledJobs" :key="job.jobId">{{ shortUrl(job.request && job.request.url) || job.jobId }}</li>
             </ul>
-            <button type="button" class="small-btn" :disabled="!canceledJobs.length" @click="confirmClearCanceled">清空取消记录</button>
-          </div>
+            <button type="button" class="small-btn" :disabled="!canceledJobs.length || cancelRecordsPending" @click="confirmClearCanceled">清空取消记录</button>
+          </section>
         </div>
       </section>
     </div>
@@ -488,49 +489,49 @@
       </button>
     </Teleport>
 
-    <div v-if="switchModal" class="youtube-switch-modal-backdrop" role="dialog" aria-modal="true">
-      <section class="youtube-switch-modal">
-        <h3>{{ switchModal.title }}</h3>
+    <div v-if="switchModal" class="youtube-switch-modal-backdrop">
+      <section ref="switchDialogRoot" class="youtube-switch-modal" role="dialog" aria-modal="true" aria-labelledby="youtube-switch-dialog-title" :aria-busy="switchPending ? 'true' : 'false'">
+        <h3 id="youtube-switch-dialog-title">{{ switchModal.title }}</h3>
         <p v-if="switchModal.target">目标：{{ jobDisplayTitle(switchModal.target) }}</p>
         <p v-if="switchModal.queueText">队列：{{ switchModal.queueText }}</p>
         <p v-if="switchModal.currentText">当前文章：{{ switchModal.currentText }}</p>
-        <p>{{ switchModal.message }}</p>
+        <p ref="switchDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ switchModal.message }}</p>
         <div class="youtube-workflow-actions">
-          <button type="button" @click="confirmSwitch">{{ switchModal.confirmText }}</button>
-          <button type="button" class="small-btn" @click="cancelSwitch">取消</button>
+          <button ref="switchDialogInitialFocus" type="button" :disabled="switchPending" @click="confirmSwitch">{{ switchModal.confirmText }}</button>
+          <button type="button" class="small-btn" :disabled="switchPending" @click="cancelSwitch">取消</button>
         </div>
       </section>
     </div>
 
-    <div v-if="incompletePrompt" class="youtube-switch-modal-backdrop" role="dialog" aria-modal="true">
-      <section class="youtube-switch-modal">
-        <h3>当前阅读内容不完整</h3>
-        <p>{{ incompletePrompt.message }}</p>
+    <div v-if="incompletePrompt" class="youtube-switch-modal-backdrop">
+      <section ref="incompleteDialogRoot" class="youtube-switch-modal" role="dialog" aria-modal="true" aria-labelledby="youtube-incomplete-dialog-title" :aria-busy="incompletePending ? 'true' : 'false'">
+        <h3 id="youtube-incomplete-dialog-title">当前阅读内容不完整</h3>
+        <p ref="incompleteDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ incompletePrompt.message }}</p>
         <p>本地补处理放在 02；当前可以把阅读器视为空并打开队列文章。</p>
         <div class="youtube-workflow-actions">
-          <button type="button" @click="openIncompleteTarget">打开队列文章</button>
-          <button type="button" class="small-btn" @click="incompletePrompt = null">取消</button>
+          <button ref="incompleteDialogInitialFocus" type="button" :disabled="incompletePending" @click="openIncompleteTarget">打开队列文章</button>
+          <button type="button" class="small-btn" :disabled="incompletePending" @click="closeIncompletePrompt">取消</button>
         </div>
       </section>
     </div>
 
     <div v-if="qualityModal" class="youtube-subwindow">
-      <section class="youtube-subwindow-card youtube-quality-card">
+      <section ref="qualityDialogRoot" class="youtube-subwindow-card youtube-quality-card" role="dialog" aria-modal="true" aria-labelledby="youtube-quality-dialog-title" :aria-busy="qualityPending ? 'true' : 'false'">
         <header>
-          <strong>质量报告</strong>
-          <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" @click="qualityModal = null">x</button>
+          <strong id="youtube-quality-dialog-title">质量报告</strong>
+          <button ref="qualityDialogInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" :disabled="qualityPending" @click="closeQualityModal">x</button>
         </header>
         <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
-        <p>{{ qualityIssueSummary(qualityModal.report) }}</p>
+        <p ref="qualityDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ qualityIssueSummary(qualityModal.report) }}</p>
         <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
           <li v-for="issue in qualityModal.report.issues.slice(0, 8)" :key="issue.code + issue.message">
             {{ issue.code }}：{{ issue.message }}
           </li>
         </ul>
         <div class="youtube-workflow-actions">
-          <button type="button" @click="retryJob(qualityModal.job, 'segmenting')">重新AI切分</button>
-          <button type="button" class="small-btn" @click="retryJob(qualityModal.job, 'translating')">重新翻译</button>
-          <button type="button" class="small-btn" @click="qualityModal = null">关闭</button>
+          <button type="button" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</button>
+          <button type="button" class="small-btn" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</button>
+          <button type="button" class="small-btn" :disabled="qualityPending" @click="closeQualityModal">关闭</button>
         </div>
       </section>
     </div>
@@ -546,7 +547,9 @@ import { createReaderSessionPersistence } from '../services/persistence/reader-s
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 import { createErrorPresenter } from '../services/runtime/error-presenter.js'
+import { createDialogController, createPendingActionGuard } from '../services/runtime/dialog-controller.js'
 import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js'
+import { createNativePickerController } from '../services/workflow/native-picker-controller.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
@@ -567,6 +570,18 @@ const legacyImportPath = ref(loadTextSetting('youtubeWorkflow.legacyImportPath',
 const legacyImportPreview = ref(null)
 const legacyImportNotice = ref('')
 const legacyImportBusy = ref(false)
+const nativePickerRetryable = ref(false)
+const nativePicker = createNativePickerController({
+  client: youtubeWorkflowClient,
+  refocus: (target) => {
+    if (target && typeof target.focus === 'function' && target.isConnected) target.focus()
+    else window.focus()
+  },
+  onState(state) {
+    legacyImportBusy.value = state.status === 'busy'
+    nativePickerRetryable.value = state.retryable === true
+  }
+})
 const rememberApiKey = ref(loadBoolSetting('youtubeWorkflow.rememberApiKey', false))
 const apiKey = ref('')
 const credentialStatus = ref({ stored: false, provider: '' })
@@ -601,6 +616,23 @@ const cancelRecordsOpen = ref(false)
 const cancelRecordsNotice = ref('')
 const switchModal = ref(null)
 const incompletePrompt = ref(null)
+const switchPending = ref(false)
+const incompletePending = ref(false)
+const qualityPending = ref(false)
+const cancelRecordsPending = ref(false)
+const panelDialogRoot = ref(null)
+const switchDialogRoot = ref(null)
+const switchDialogStatus = ref(null)
+const switchDialogInitialFocus = ref(null)
+const incompleteDialogRoot = ref(null)
+const incompleteDialogStatus = ref(null)
+const incompleteDialogInitialFocus = ref(null)
+const qualityDialogRoot = ref(null)
+const qualityDialogStatus = ref(null)
+const qualityDialogInitialFocus = ref(null)
+const cancelRecordsDialogRoot = ref(null)
+const cancelRecordsDialogStatus = ref(null)
+const cancelRecordsInitialFocus = ref(null)
 const qualityModal = ref(null)
 const currentJobId = ref('')
 const panelPosition = ref(getDefaultPanelPosition())
@@ -623,6 +655,16 @@ let readerSessionLoader = null
 let readerUnloadFlushed = false
 const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
+const panelDialogController = createDialogController()
+const switchDialogController = createDialogController()
+const incompleteDialogController = createDialogController()
+const qualityDialogController = createDialogController()
+const cancelRecordsDialogController = createDialogController()
+const switchActionGuard = createPendingActionGuard({ onChange: (pending) => { switchPending.value = pending } })
+const incompleteActionGuard = createPendingActionGuard({ onChange: (pending) => { incompletePending.value = pending } })
+const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
+const cancelRecordsActionGuard = createPendingActionGuard({ onChange: (pending) => { cancelRecordsPending.value = pending } })
+const panelPending = computed(() => starting.value || legacyImportBusy.value)
 const readerMarksLedgers = new Map()
 const readerActivityLedgers = new Map()
 
@@ -854,6 +896,16 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelRecordsActionGuard.dispose()
+  qualityActionGuard.dispose()
+  incompleteActionGuard.dispose()
+  switchActionGuard.dispose()
+  cancelRecordsDialogController.dispose()
+  qualityDialogController.dispose()
+  incompleteDialogController.dispose()
+  switchDialogController.dispose()
+  panelDialogController.dispose()
+  nativePicker.cancel()
   stopPolling()
   jobPollingScheduler?.dispose()
   jobPollingScheduler = null
@@ -870,6 +922,90 @@ onBeforeUnmount(() => {
   readerActivityLedgers.clear()
   diagnosticsDownloader.dispose()
 })
+
+watch(panelOpen, async (open) => {
+  if (!open) {
+    panelDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!panelDialogRoot.value) return
+  panelDialogController.open(panelDialogRoot.value, {
+    initialFocus: panelDialogRoot.value.querySelector('button:not([disabled]), input:not([disabled]), textarea:not([disabled])'),
+    isPending: () => panelPending.value,
+    onRequestClose: closePanel,
+  })
+})
+
+watch(panelPending, (pending) => panelDialogController.setBusy(pending))
+
+watch(switchModal, async (modal) => {
+  if (!modal) {
+    switchDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!switchDialogRoot.value) return
+  switchDialogController.open(switchDialogRoot.value, {
+    initialFocus: switchDialogInitialFocus.value,
+    statusElement: switchDialogStatus.value,
+    isPending: () => switchPending.value,
+    onRequestClose: cancelSwitch,
+  })
+})
+
+watch(switchPending, (pending) => switchDialogController.setBusy(pending))
+
+watch(incompletePrompt, async (prompt) => {
+  if (!prompt) {
+    incompleteDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!incompleteDialogRoot.value) return
+  incompleteDialogController.open(incompleteDialogRoot.value, {
+    initialFocus: incompleteDialogInitialFocus.value,
+    statusElement: incompleteDialogStatus.value,
+    isPending: () => incompletePending.value,
+    onRequestClose: closeIncompletePrompt,
+  })
+})
+
+watch(incompletePending, (pending) => incompleteDialogController.setBusy(pending))
+
+watch(qualityModal, async (modal) => {
+  if (!modal) {
+    qualityDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!qualityDialogRoot.value) return
+  qualityDialogController.open(qualityDialogRoot.value, {
+    initialFocus: qualityDialogInitialFocus.value,
+    statusElement: qualityDialogStatus.value,
+    isPending: () => qualityPending.value,
+    onRequestClose: closeQualityModal,
+  })
+})
+
+watch(qualityPending, (pending) => qualityDialogController.setBusy(pending))
+
+watch(cancelRecordsOpen, async (open) => {
+  if (!open) {
+    cancelRecordsDialogController.close()
+    return
+  }
+  await nextTick()
+  if (!cancelRecordsDialogRoot.value) return
+  cancelRecordsDialogController.open(cancelRecordsDialogRoot.value, {
+    initialFocus: cancelRecordsInitialFocus.value,
+    statusElement: cancelRecordsDialogStatus.value,
+    isPending: () => cancelRecordsPending.value,
+    onRequestClose: closeCancelRecords,
+  })
+})
+
+watch(cancelRecordsPending, (pending) => cancelRecordsDialogController.setBusy(pending))
 
 function makeLoader() {
   return readerSessionLoader ||= createYoutubeWorkflowLoader({
@@ -1033,21 +1169,36 @@ async function enqueueUrls() {
 }
 
 async function chooseLegacyImportFolder() {
-  legacyImportBusy.value = true
   legacyImportNotice.value = '正在打开系统文件夹选择框；如果没有看到，请检查任务栏或用 Alt+Tab 切换。'
   try {
-    const result = await youtubeWorkflowClient.pickImportFolder({ initialDir: legacyImportPath.value })
+    const result = await nativePicker.pick('folder', { initialDir: legacyImportPath.value })
     if (!result || !result.selected || !result.path) {
       legacyImportNotice.value = '已取消选择目录'
       return
     }
     legacyImportPath.value = result.path
     legacyImportPreview.value = null
-    await scanLegacyImport(result.path, { keepBusy: true })
+    await scanLegacyImport(result.path)
   } catch (err) {
-    legacyImportNotice.value = err && err.message ? err.message : String(err)
-  } finally {
-    legacyImportBusy.value = false
+    const presented = errorPresenter.present(err)
+    legacyImportNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
+  }
+}
+
+async function retryNativePicker() {
+  legacyImportNotice.value = '正在重新打开系统文件夹选择框…'
+  try {
+    const result = await nativePicker.retry()
+    if (!result || !result.selected || !result.path) {
+      legacyImportNotice.value = '已取消选择目录'
+      return
+    }
+    legacyImportPath.value = result.path
+    legacyImportPreview.value = null
+    await scanLegacyImport(result.path)
+  } catch (err) {
+    const presented = errorPresenter.present(err)
+    legacyImportNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
   }
 }
 
@@ -1392,10 +1543,18 @@ function openJob(job) {
   }
 }
 
-function openIncompleteTarget() {
+async function openIncompleteTarget() {
   const job = incompletePrompt.value && incompletePrompt.value.job
+  if (!job) return
+  await incompleteActionGuard.run(async () => {
+    await loadJob(job)
+    incompletePrompt.value = null
+  })
+}
+
+function closeIncompletePrompt() {
+  if (incompletePending.value) return
   incompletePrompt.value = null
-  if (job) loadJob(job)
 }
 
 function requestSwitch(job, title) {
@@ -1439,19 +1598,23 @@ function goQueue(offset) {
 
 async function confirmSwitch() {
   const modal = switchModal.value
-  switchModal.value = null
   if (!modal) return
-  if (modal.type === 'import-folder') {
-    openPanel()
-    setWorkflowView('add')
-    await nextTick()
-    await chooseLegacyImportFolder()
-    return
-  }
-  if (modal.target) await loadJob(modal.target)
+  await switchActionGuard.run(async () => {
+    if (modal.type === 'import-folder') {
+      switchModal.value = null
+      openPanel()
+      setWorkflowView('add')
+      await nextTick()
+      await chooseLegacyImportFolder()
+      return
+    }
+    if (modal.target) await loadJob(modal.target)
+    switchModal.value = null
+  })
 }
 
 function cancelSwitch() {
+  if (switchPending.value) return
   const modal = switchModal.value
   switchModal.value = null
   if (modal && modal.wasPlaying) {
@@ -1738,10 +1901,26 @@ async function retryJob(job, stage = 'translating') {
   startPolling()
 }
 
+async function retryQualityJob(job, stage) {
+  await qualityActionGuard.run(() => retryJob(job, stage))
+}
+
+function closeQualityModal() {
+  if (qualityPending.value) return
+  qualityModal.value = null
+}
+
 async function confirmClearCanceled() {
   if (!window.confirm('只清空取消记录，成功和失败任务会保留。继续吗？')) return
-  await youtubeWorkflowClient.clearCanceledJobs()
-  queueJobs.value = queueJobs.value.filter((job) => job.status !== 'canceled')
+  await cancelRecordsActionGuard.run(async () => {
+    await youtubeWorkflowClient.clearCanceledJobs()
+    queueJobs.value = queueJobs.value.filter((job) => job.status !== 'canceled')
+    cancelRecordsOpen.value = false
+  })
+}
+
+function closeCancelRecords() {
+  if (cancelRecordsPending.value) return
   cancelRecordsOpen.value = false
 }
 

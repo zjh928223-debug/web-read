@@ -11,9 +11,15 @@ function trimTrailingSlash(value) {
 async function readJsonResponse(response) {
   if (!response.ok) {
     let detail = ''
+    let code = ''
     try {
       const body = await response.json()
-      detail = body && body.detail ? String(body.detail) : ''
+      if (body?.detail && typeof body.detail === 'object') {
+        detail = String(body.detail.message || '')
+        code = String(body.detail.code || '')
+      } else {
+        detail = body?.detail ? String(body.detail) : ''
+      }
     } catch (error) {
       recordBestEffortFailure(error, {
         operationId: 'workflow-error-body-parse',
@@ -21,7 +27,10 @@ async function readJsonResponse(response) {
         details: { status: response.status },
       })
     }
-    throw new Error(detail || `YouTube workflow service returned ${response.status}`)
+    const error = new Error(detail || `YouTube workflow service returned ${response.status}`)
+    if (code) error.code = code
+    error.status = response.status
+    throw error
   }
   return response.json()
 }
@@ -144,18 +153,20 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'POST'
       }))
     },
-    async pickImportFolder(payload = {}) {
+    async pickImportFolder(payload = {}, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/import/pick-folder'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
+        body: JSON.stringify(payload || {}),
+        signal: options.signal
       }))
     },
-    async pickVideoFile(payload = {}) {
+    async pickVideoFile(payload = {}, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/media/pick-video'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
+        body: JSON.stringify(payload || {}),
+        signal: options.signal
       }))
     },
     async scanImportRoot(payload = {}) {

@@ -83,7 +83,9 @@ async function main() {
   assert.ok(panelSource.includes('历史库'), 'history library entry should be visible in the workflow panel');
   assert.ok(panelSource.includes('导入旧素材目录'), 'panel should expose explicit legacy material import');
   assert.ok(panelSource.includes('legacyImportPath') && panelSource.includes('scanLegacyImport'), 'legacy import should scan a selected directory path');
-  assert.ok(panelSource.includes('chooseLegacyImportFolder') && panelSource.includes('pickImportFolder'), 'legacy import should use the local service to open a system folder picker');
+  assert.ok(panelSource.includes('chooseLegacyImportFolder') && panelSource.includes("nativePicker.pick('folder'"), 'legacy import should use the unified native picker controller');
+  assert.ok(panelSource.includes('nativePicker.retry()') && panelSource.includes('nativePickerRetryable'), 'native picker failures and cancellation should expose a retry action');
+  assert.ok(panelSource.includes('nativePicker.cancel()'), 'workflow unmount should abort an outstanding native picker request');
   assert.ok(panelSource.includes('readonly'), 'legacy import path should be displayed as read-only instead of requiring manual typing');
   assert.ok(panelSource.includes('选择并扫描目录'), 'legacy import should combine system folder selection with scanning');
   assert.ok(panelSource.includes('enqueueLegacyImport') && panelSource.includes('createImportJobs'), 'legacy import preview should enqueue selected items through the service');

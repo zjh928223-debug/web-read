@@ -1,16 +1,22 @@
 # Backend HTTP Benchmark
 
-`scripts/perf/backend-http-benchmark.py` 为 Material Workflow 的轻量只读 HTTP routes 建立可重复基线。默认行为是自行启动 `127.0.0.1:8766`，并将 `READ_WEB_SUBTITLE_DATA_ROOT` 指向一次性临时目录；benchmark 结束、失败或被中断时，仅关闭自己持有的 `Popen` process，随后由 `TemporaryDirectory` 删除隔离数据。
+`scripts/perf/backend-http-benchmark.py` 为 Material Workflow 的本地 HTTP 关键路径建立可重复基线。默认行为是自行启动 `127.0.0.1:8766`，并将 `READ_WEB_SUBTITLE_DATA_ROOT` 指向一次性临时目录；benchmark 结束、失败或被中断时，仅关闭自己持有的 `Popen` process，随后由 `TemporaryDirectory` 删除隔离数据。
 
 脚本明确拒绝 port 8765，也不会探测、复用或终止该日用服务。若 8766 已有 listener，脚本会直接失败，不会接管现有实例。
 
-## 覆盖 routes
+脚本会在临时目录中预置一个 `ready` 终态任务和一个 Edge TTS 缓存文件。它不会创建真实工作流任务，不会执行 yt-dlp、WhisperX、ffmpeg、Gemini 或 Edge TTS 网络请求。
+
+## 覆盖 operations
 
 - `GET /api/health`
+- `POST /api/jobs/snapshot`（存在任务和缺失任务的批量快照）
 - `GET /api/history?limit=50`
-- `GET /api/recent?limit=10`
+- `POST /api/reader/activity`（临时任务进度写入）
+- `POST /api/jobs/{jobId}/reader-marks`（marks 原子写入）
+- `GET /api/jobs/{jobId}/reader-marks`（marks 读取）
+- `POST /api/tts/edge`（预置文件的确定性缓存命中，不访问上游）
 
-这些请求只读取临时 service state。默认先对每个 route warmup 5 次，再对每个 route 测量 30 次。
+所有读写都限定在临时 service state。默认先对每个 operation warmup 5 次，再对每个 operation 测量 30 次。
 
 ## 运行
 
@@ -37,7 +43,7 @@ python E:\read-web-next\scripts\perf\backend-http-benchmark.py --port 18766 --ou
 JSON 包含：
 
 - git SHA、采集时间、Python service PID、service version 和 startup duration。
-- warmup、measured rounds、timeout 与精确 routes。
+- warmup、measured rounds、timeout 与精确 method/routes。
 - 每个 endpoint 和 overall 的 request/success/error 数、error rate、HTTP status counts。
 - 成功请求的 p50、p95 和 max duration。
 - 每轮原始 duration、status code 和脱敏后的 error category，供后续 baseline diff 使用。
