@@ -11,6 +11,13 @@ function persistenceError(code, operation, cause) {
   return error
 }
 
+function revisionConflict(operation, expectedRevision, actualRevision) {
+  const error = persistenceError('REVISION_CONFLICT', operation)
+  error.expectedRevision = expectedRevision
+  error.actualRevision = actualRevision
+  return error
+}
+
 function requestPromise(request, operation) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result)
@@ -181,6 +188,28 @@ export function createApplicationPersistence(options = {}) {
       await runTransaction('readwrite', `put_many:${typeName}`, (store) => (
         Promise.all(rows.map((row) => requestPromise(store.put(row), `put_many:${typeName}`)))
       ), options)
+      return rows
+    },
+
+    async compareAndSwapMany(typeName, rows, options = {}) {
+      typeFor(typeName)
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw persistenceError('INVALID_VALUE_LIST', `compare_and_swap_many:${typeName}`)
+      }
+      for (const row of rows) validateRow(typeName, row)
+      validateId(typeName, options.guardId)
+      if (!Object.prototype.hasOwnProperty.call(options, 'expectedRevision')) {
+        throw persistenceError('EXPECTED_REVISION_REQUIRED', `compare_and_swap_many:${typeName}`)
+      }
+      const operation = `compare_and_swap_many:${typeName}`
+      await runTransaction('readwrite', operation, async (store) => {
+        const current = await requestPromise(store.get(options.guardId), operation)
+        const actualRevision = current?.revision ?? null
+        if (actualRevision !== options.expectedRevision) {
+          throw revisionConflict(operation, options.expectedRevision, actualRevision)
+        }
+        await Promise.all(rows.map((row) => requestPromise(store.put(row), operation)))
+      }, options)
       return rows
     },
 

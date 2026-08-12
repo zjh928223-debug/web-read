@@ -171,6 +171,33 @@ class MemoryCredentialStore:
 
 
 class ServiceAppTests(unittest.TestCase):
+    def test_session_api_enriches_legacy_manifest_identity_without_rewriting_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+            try:
+                created = client.post("/api/jobs", json={"url": "https://example.com/legacy-session", "geminiMode": "mock"}).json()
+                ready = self._wait_ready(client, created["jobId"])
+                output_dir = Path(ready["outputDir"])
+                manifest_path = output_dir / "manifest.json"
+                legacy = json.loads(manifest_path.read_text(encoding="utf-8"))
+                legacy.pop("contentId", None)
+                legacy.pop("revision", None)
+                legacy.pop("integrity", None)
+                manifest_path.write_text(json.dumps(legacy), encoding="utf-8")
+                manager.jobs.pop(created["jobId"], None)
+
+                session = client.get(f"/api/jobs/{created['jobId']}/session")
+
+                self.assertEqual(session.status_code, 200)
+                self.assertEqual(session.json()["contentId"], f"youtube-workflow:{created['jobId']}")
+                self.assertRegex(session.json()["revision"], r"^sha256:[0-9a-f]{64}$")
+                self.assertNotIn("contentId", json.loads(manifest_path.read_text(encoding="utf-8")))
+            finally:
+                client.close()
+                manager.close()
+
     def test_annotation_backfill_returns_202_and_exposes_background_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
             provider_started = Event()
@@ -1601,10 +1628,20 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(saved.status_code, 200)
             self.assertEqual(saved.json()["markCount"], 2)
             self.assertEqual(saved.json()["marks"][1]["globalIndex"], 3)
+            self.assertEqual(saved.json()["integrity"]["algorithm"], "sha256")
+            self.assertEqual(saved.json()["integrity"]["representation"], "marks-fields.v1")
 
             loaded = client.get(f"/api/jobs/{ready['jobId']}/reader-marks")
             self.assertEqual(loaded.status_code, 200)
             self.assertEqual(loaded.json()["marks"], saved.json()["marks"])
+            self.assertEqual(loaded.json()["integrity"], saved.json()["integrity"])
+
+            session = client.get(f"/api/jobs/{ready['jobId']}/session").json()
+            self.assertEqual(session["contentId"], f"youtube-workflow:{ready['jobId']}")
+            self.assertEqual(
+                session["integrity"]["marks"],
+                {key: value for key, value in saved.json()["integrity"].items() if key != "algorithm"},
+            )
 
             output_dir = Path(client.get(f"/api/jobs/{ready['jobId']}/session").json()["outputDir"])
             marks_path = output_dir / "_workflow" / "reader-marks.json"

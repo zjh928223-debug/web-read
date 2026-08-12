@@ -11,6 +11,7 @@ from youtube_workflow.core import (
     assert_manifest_has_no_secret,
     classify_error,
     validate_session_files,
+    marks_integrity,
 )
 
 
@@ -82,6 +83,24 @@ class VideoImportCommandRunner:
 
 
 class WorkflowCoreTests(unittest.TestCase):
+    def test_marks_integrity_uses_cross_language_stable_business_field_projection(self):
+        first = marks_integrity([{
+            "globalIndex": 2,
+            "word": "stable",
+            "start": 1.0,
+            "sourceType": "manual-mark",
+            "browserOnlyExtension": {"ignored": True},
+        }])
+        second = marks_integrity([{
+            "sourceType": "manual-mark",
+            "start": 1,
+            "word": "stable",
+            "globalIndex": 2,
+        }])
+
+        self.assertEqual(first, second)
+        self.assertEqual(first["representation"], "marks-fields.v1")
+
     def test_fake_runner_generates_manifest_and_reader_files_without_api_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             events = []
@@ -111,6 +130,15 @@ class WorkflowCoreTests(unittest.TestCase):
             self.assertTrue(Path(manifest["files"]["transcript"]).exists())
             self.assertTrue(Path(manifest["files"]["chunkData"]).exists())
             self.assertTrue(Path(manifest["files"]["chunkData"]).name.endswith(".ai-chunks.json"))
+            self.assertEqual(manifest["contentId"], "youtube-workflow:job-test")
+            self.assertRegex(manifest["revision"], r"^sha256:[0-9a-f]{64}$")
+            self.assertEqual(manifest["integrity"]["algorithm"], "sha256")
+            self.assertEqual(manifest["integrity"]["transcript"]["representation"], "file-bytes")
+            self.assertEqual(manifest["integrity"]["chunkData"]["representation"], "file-bytes")
+            self.assertIsNone(manifest["integrity"]["marks"])
+            revision = manifest["revision"]
+            validate_session_files(manifest)
+            self.assertEqual(manifest["revision"], revision)
             self.assertFalse((Path(manifest["outputDir"]) / "output.json").exists())
             self.assertIn("ready", [event["stage"] for event in events])
             allowed_states = {
@@ -147,6 +175,33 @@ class WorkflowCoreTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "transcript.*segments"):
                 validate_session_files(manifest)
+
+    def test_validate_session_files_rejects_resource_changed_after_identity_was_declared(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            audio = root / "audio.wav"
+            transcript = root / "transcript.json"
+            chunk_data = root / "output.json"
+            audio.write_bytes(b"RIFFfake")
+            transcript.write_text(json.dumps({"segments": [{"words": [{"word": "stable"}]}]}), encoding="utf-8")
+            chunk_data.write_text(json.dumps({"s": [{"id": 0, "chunks": [{"en": "stable"}]}]}), encoding="utf-8")
+            manifest = {
+                "jobId": "integrity-fixture",
+                "outputDir": str(root),
+                "files": {
+                    "audio": str(audio),
+                    "transcript": str(transcript),
+                    "chunkData": str(chunk_data),
+                },
+            }
+
+            validate_session_files(manifest)
+            declared_revision = manifest["revision"]
+            transcript.write_text(json.dumps({"segments": [{"words": [{"word": "changed"}]}]}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "resource integrity mismatch"):
+                validate_session_files(manifest)
+            self.assertEqual(manifest["revision"], declared_revision)
 
     def test_classify_error_groups_user_visible_failure_categories(self):
         self.assertEqual(classify_error(RuntimeError("cookies are expired")), "youtube")

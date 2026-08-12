@@ -47,6 +47,25 @@ await persistence.deleteMany('session', [row.id, 'reader.session:missing'])
 assert.equal(fake.completedTransactions, deletesCompletedBeforeResolve + 1)
 assert.equal(await persistence.get('session', row.id), undefined)
 
+const revisionOne = { ...row, revision: 'revision-1' }
+await persistence.compareAndSwapMany('session', [revisionOne], {
+  guardId: row.id,
+  expectedRevision: null,
+})
+assert.deepEqual(await persistence.get('session', row.id), revisionOne)
+await assert.rejects(
+  persistence.compareAndSwapMany('session', [{ ...row, revision: 'revision-stale' }], {
+    guardId: row.id,
+    expectedRevision: null,
+  }),
+  (error) => error.name === 'ApplicationPersistenceError'
+    && error.code === 'REVISION_CONFLICT'
+    && error.expectedRevision === null
+    && error.actualRevision === 'revision-1',
+  'a stale writer must not overwrite a committed revision',
+)
+assert.deepEqual(await persistence.get('session', row.id), revisionOne)
+
 const delayed = createFakeIndexedDb({ manualCompletion: true })
 const delayedPersistence = createApplicationPersistence({
   indexedDBApi: delayed.indexedDBApi,

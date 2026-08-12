@@ -42,6 +42,7 @@ from .core import (
     coerce_bool,
     load_json_file,
     make_manifest,
+    marks_integrity,
     utc_now_iso,
     validate_session_files,
 )
@@ -1803,12 +1804,31 @@ class JobManager:
     def _manifest_for_job(self, job_id: str) -> dict:
         record = self.jobs.get(job_id)
         if record and record.manifest:
-            return self._normalize_legacy_video_priority_media(record.manifest)
+            manifest = self._normalize_legacy_video_priority_media(record.manifest)
+            return self._enrich_session_identity(manifest)
         item = self.store.get_history_item(job_id)
         manifest_path = Path(str(item.get("manifestPath", ""))) if item else None
         if manifest_path and manifest_path.exists():
-            return self._normalize_legacy_video_priority_media(load_json_file(manifest_path))
+            manifest = self._normalize_legacy_video_priority_media(load_json_file(manifest_path))
+            return self._enrich_session_identity(manifest)
         raise HTTPException(status_code=404, detail="job manifest not found")
+
+    @staticmethod
+    def _enrich_session_identity(manifest: dict) -> dict:
+        if manifest.get("status") != "ready":
+            return manifest
+        if all(key in manifest for key in ("contentId", "revision", "integrity")):
+            try:
+                validate_session_files(manifest)
+            except Exception as exc:
+                raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}")
+            return manifest
+        enriched = dict(manifest)
+        try:
+            validate_session_files(enriched)
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}")
+        return enriched
 
     def registered_media_path(self, job_id: str, media_kind: str) -> Path:
         if media_kind not in {"audio", "video"}:
@@ -2263,6 +2283,7 @@ class JobManager:
                 "jobId": job_id,
                 "marks": [],
                 "markCount": 0,
+                "integrity": None,
                 "path": str(path),
             }
         try:
@@ -2276,11 +2297,13 @@ class JobManager:
             "updatedAt": payload.get("updatedAt") if isinstance(payload, dict) else "",
             "marks": marks,
             "markCount": len(marks),
+            "integrity": marks_integrity(marks),
             "path": str(path),
         }
 
     def save_reader_marks(self, job_id: str, payload: dict | None = None) -> dict:
         marks = normalize_reader_marks((payload or {}).get("marks"))
+        manifest = self._manifest_for_job(job_id)
         path = self._reader_marks_path(job_id)
         document = {
             "schemaVersion": 1,
@@ -2289,10 +2312,20 @@ class JobManager:
             "marks": marks,
         }
         write_json_file(path, document)
+        validate_session_files(manifest, refresh_identity=True)
+        output_dir = Path(str(manifest.get("outputDir") or ""))
+        if output_dir:
+            write_json_file(output_dir / "manifest.json", manifest)
+        record = self.jobs.get(job_id)
+        if record is not None:
+            record.manifest = manifest
+        if self._should_store_history(manifest):
+            self.store.upsert_history(manifest)
         self.append_service_log(f"reader marks saved {job_id} count={len(marks)}")
         return {
             **document,
             "markCount": len(marks),
+            "integrity": marks_integrity(marks),
             "path": str(path),
         }
 

@@ -161,7 +161,14 @@ export function createReaderSessionPersistence(options = {}) {
         ...common,
       },
     ]
-    await persistence.putMany('readerSessionRow', rows, options)
+    if (Object.prototype.hasOwnProperty.call(options, 'expectedRevision')) {
+      await persistence.compareAndSwapMany('readerSessionRow', rows, {
+        ...options,
+        guardId: 'readerSession',
+      })
+    } else {
+      await persistence.putMany('readerSessionRow', rows, options)
+    }
     return rows[4].content
   }
 

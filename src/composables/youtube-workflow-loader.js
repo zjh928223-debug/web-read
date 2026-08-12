@@ -62,6 +62,46 @@ function validateGeneratedSession({ audioUrl, transcript, chunkData, validateTra
   return { transcript: normalizedTranscript, chunkData: normalizedChunkData }
 }
 
+function normalizePreparedMarks(marks, transcript) {
+  const words = (transcript?.segments || []).flatMap((segment) => Array.isArray(segment?.words) ? segment.words : [])
+  return marks.map((mark) => {
+    const globalIndex = Number(mark?.globalIndex)
+    if (!Number.isInteger(globalIndex) || globalIndex < 0 || globalIndex >= words.length) {
+      throw new Error('reader mark globalIndex is outside the prepared transcript')
+    }
+    const word = words[globalIndex] || {}
+    return {
+      ...mark,
+      globalIndex,
+      word: String(mark.word || word.word || word.text || ''),
+      ...(Number.isFinite(Number(mark.start ?? word.start)) ? { start: Number(mark.start ?? word.start) } : {}),
+      sourceType: String(mark.sourceType || mark.source || 'manual-mark'),
+    }
+  })
+}
+
+function resolveReaderSessionIdentity(manifest, requestedJobId) {
+  if (!manifest || typeof manifest !== 'object') throw new Error('reader session manifest is required')
+  if (typeof manifest.jobId === 'string' && manifest.jobId && manifest.jobId !== requestedJobId) {
+    throw new Error('reader session manifest jobId does not match the requested job')
+  }
+  const fallbackContentId = `youtube-workflow:${requestedJobId}`
+  const contentId = typeof manifest.contentId === 'string' ? manifest.contentId : ''
+  const revision = typeof manifest.revision === 'string' ? manifest.revision : ''
+  if (!contentId || !revision || !manifest.integrity) {
+    return {
+      contentId: fallbackContentId,
+      revision: `${fallbackContentId}:1`,
+      status: {
+        status: 'degraded',
+        code: 'READER_SESSION_IDENTITY_LEGACY',
+        reason: 'manifest-identity-missing',
+      },
+    }
+  }
+  return { contentId, revision, status: { status: 'verified' } }
+}
+
 function defaultHasCurrentContent() {
   const state = typeof window !== 'undefined' ? window.__state : null
   if (state && Array.isArray(state.segments) && state.segments.length) return true
@@ -127,6 +167,30 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     return payload.marks
   }
 
+  async function prepareExpectedRevision() {
+    if (typeof readerSessionPersistence.loadCommitted !== 'function') return null
+    const current = await readerSessionPersistence.loadCommitted()
+    return current?.status === 'committed' && typeof current.session?.revision === 'string'
+      ? current.session.revision
+      : null
+  }
+
+  async function commitLatestSession(load, session, requestOptions, expectedRevision) {
+    let revision = expectedRevision
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await readerSessionPersistence.commit(session, { ...requestOptions, expectedRevision: revision })
+      } catch (error) {
+        if (error?.code !== 'REVISION_CONFLICT' || !isCurrentLoad(load) || attempt === 2) throw error
+        revision = Object.prototype.hasOwnProperty.call(error, 'actualRevision')
+          ? error.actualRevision
+          : await prepareExpectedRevision()
+        if (!isCurrentLoad(load)) return null
+      }
+    }
+    return null
+  }
+
   async function restoreAnnotationBackfillResult(jobId) {
     if (!client || typeof client.getAnnotationBackfillResult !== 'function') return { status: 'skipped', reason: 'missing-client-method' }
     if (!annotationLightweightModule || typeof annotationLightweightModule.importManualLightweightAnnotations !== 'function') {
@@ -172,12 +236,13 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
       if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
       const audioUrl = client.mediaUrl(jobId, 'audio')
-      const [manifest, transcriptBlob, chunkBlob, marks] = await Promise.all([
+      const [manifest, transcriptBlob, chunkBlob, marks, , expectedRevision] = await Promise.all([
         client.getSession(jobId, requestOptions),
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
         prepareReaderMarks(jobId, requestOptions),
         client.probeMediaRange(jobId, 'audio', requestOptions),
+        prepareExpectedRevision(),
       ])
       if (!isCurrentLoad(load)) return supersededResult(load)
       const [transcriptRaw, chunkRaw] = await Promise.all([
@@ -192,9 +257,11 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         validateTranscriptData: deps.validateTranscriptData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateTranscriptData : null),
         validateChunkData: deps.validateChunkData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateChunkData : null)
       })
+      const normalizedMarks = normalizePreparedMarks(marks, validated.transcript)
       if (!isCurrentLoad(load)) return supersededResult(load)
 
       const title = manifest.title || `youtube-${jobId}`
+      const identity = resolveReaderSessionIdentity(manifest, jobId)
       const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
       const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
       const hasVideo = !!manifestFiles.video
@@ -207,18 +274,18 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         source: 'youtube-workflow',
         jobId,
         streamUrl: audioUrl,
+        readerSessionIdentity: identity.status,
       }
 
-      const contentId = `youtube-workflow:${jobId}`
-      const revision = `${contentId}:1`
-      await readerSessionPersistence.commit({
+      const { contentId, revision } = identity
+      await commitLatestSession(load, {
         contentId,
         revision,
         audioMeta,
         transcript: validated.transcript,
         chunkData: validated.chunkData,
-        marks,
-      }, requestOptions)
+        marks: normalizedMarks,
+      }, requestOptions, expectedRevision)
       if (!isCurrentLoad(load)) return supersededResult(load)
 
       applyCurrentAudioMeta(audioMeta)
@@ -240,7 +307,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       processChunkData(validated.chunkData)
       if (!isCurrentLoad(load)) return supersededResult(load)
       if (typeof deps.applyReaderMarks === 'function') {
-        await deps.applyReaderMarks(marks, { persist: false, contentId, revision })
+        await deps.applyReaderMarks(normalizedMarks, { persist: false, contentId, revision })
       }
       if (!isCurrentLoad(load)) return supersededResult(load)
       await restoreAnnotationBackfillResult(jobId)
@@ -248,7 +315,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       resetChunkDisplay()
       if (typeof deps.showToast === 'function') deps.showToast('YouTube result loaded', 'success')
       loadState = { status: 'loaded', generation: load.generation, jobId, error: null }
-      return { status: 'loaded', jobId, manifest, generation: load.generation }
+      return { status: 'loaded', jobId, manifest, generation: load.generation, identity: identity.status }
     } catch (error) {
       if (!isCurrentLoad(load)) return supersededResult(load)
       loadState = {

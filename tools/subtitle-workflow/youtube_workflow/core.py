@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import re
@@ -6,6 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
@@ -299,6 +301,102 @@ def load_json_file(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _sha256_integrity(payload: bytes, representation: str) -> dict:
+    return {
+        "bytes": len(payload),
+        "representation": representation,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _file_integrity(path: Path) -> dict:
+    return _sha256_integrity(path.read_bytes(), "file-bytes")
+
+
+def _canonical_decimal(value) -> str | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not number.is_finite():
+        return None
+    if number == 0:
+        return "0"
+    text = format(number.normalize(), "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def canonical_marks_bytes(marks: list) -> bytes:
+    projected = []
+    for mark in marks:
+        projected.append({
+            "globalIndex": int(mark["globalIndex"]),
+            "word": str(mark.get("word") or ""),
+            "start": _canonical_decimal(mark.get("start")),
+            "sourceType": str(mark.get("sourceType") or "manual-mark"),
+        })
+    return json.dumps(
+        projected,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _marks_integrity(marks: list | None) -> dict | None:
+    if marks is None:
+        return None
+    return _sha256_integrity(canonical_marks_bytes(marks), "marks-fields.v1")
+
+
+def marks_integrity(marks: list) -> dict:
+    return {"algorithm": "sha256", **_marks_integrity(marks)}
+
+
+def _session_revision(content_id: str, integrity: dict) -> str:
+    descriptor = {"contentId": content_id, "integrity": integrity}
+    canonical = json.dumps(
+        descriptor,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(canonical).hexdigest()}"
+
+
+def attach_session_identity(
+    manifest: dict,
+    paths: dict,
+    *,
+    marks: list | None = None,
+    verify_existing: bool = True,
+) -> dict:
+    job_id = str(manifest.get("jobId") or "").strip()
+    if not job_id:
+        raise ValueError("manifest.jobId is required for session identity")
+    content_id = f"youtube-workflow:{job_id}"
+    integrity = {
+        "algorithm": "sha256",
+        "transcript": _file_integrity(paths["transcript"]),
+        "chunkData": _file_integrity(paths["chunkData"]),
+        "marks": _marks_integrity(marks),
+    }
+    revision = _session_revision(content_id, integrity)
+    existing_complete = all(key in manifest for key in ("contentId", "revision", "integrity"))
+    if verify_existing and existing_complete:
+        if manifest["contentId"] != content_id:
+            raise ValueError("session contentId does not match manifest jobId")
+        if manifest["integrity"] != integrity or manifest["revision"] != revision:
+            raise ValueError("session resource integrity mismatch")
+        return manifest
+    manifest["contentId"] = content_id
+    manifest["revision"] = revision
+    manifest["integrity"] = integrity
+    return manifest
+
+
 def _chunk_count(chunk_data: dict) -> int:
     if isinstance(chunk_data, dict) and isinstance(chunk_data.get("s"), list):
         total = 0
@@ -312,7 +410,7 @@ def _chunk_count(chunk_data: dict) -> int:
     return 0
 
 
-def validate_session_files(manifest: dict) -> dict:
+def validate_session_files(manifest: dict, *, refresh_identity: bool = False) -> dict:
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if not isinstance(files, dict):
         raise ValueError("manifest.files is required")
@@ -335,6 +433,15 @@ def validate_session_files(manifest: dict) -> dict:
     result = {"audio": audio_path, "transcript": transcript_path, "chunkData": chunk_path}
     if video_path:
         result["video"] = video_path
+    marks = None
+    output_dir = Path(str(manifest.get("outputDir") or ""))
+    marks_path = output_dir / "_workflow" / "reader-marks.json" if output_dir else None
+    if marks_path and marks_path.exists():
+        marks_document = load_json_file(marks_path)
+        marks = marks_document.get("marks") if isinstance(marks_document, dict) else None
+        if not isinstance(marks, list):
+            raise ValueError("reader marks JSON must contain a marks array")
+    attach_session_identity(manifest, result, marks=marks, verify_existing=not refresh_identity)
     return result
 
 

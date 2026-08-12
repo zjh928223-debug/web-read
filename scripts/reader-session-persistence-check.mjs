@@ -183,6 +183,21 @@ abortController.abort('superseded reader session generation')
 await assert.rejects(abortCommit, { code: 'TRANSACTION_ABORTED' })
 assert.equal(abortable.rows.size, 0, 'aborted generation must not commit staged reader rows')
 
+const casFake = createAtomicIndexedDb()
+const firstTab = createReaderSessionPersistence({ indexedDBApi: casFake.indexedDBApi })
+const secondTab = createReaderSessionPersistence({ indexedDBApi: casFake.indexedDBApi })
+const baseSession = fixture('shared-content', 'shared:1')
+await firstTab.commit(baseSession, { expectedRevision: null })
+const winner = fixture('shared-content', 'shared:2')
+const stale = fixture('shared-content', 'shared:stale')
+await firstTab.commit(winner, { expectedRevision: 'shared:1' })
+await assert.rejects(
+  secondTab.commit(stale, { expectedRevision: 'shared:1' }),
+  { code: 'REVISION_CONFLICT' },
+  'a stale tab must not overwrite a newer committed reader session',
+)
+assertConsistent(casFake.rows, winner)
+
 console.log('reader session persistence check passed')
 
 function fixture(contentId, revision) {
@@ -284,7 +299,7 @@ function createAtomicIndexedDb() {
           queueMicrotask(() => this.onabort?.())
         },
       }
-      queueMicrotask(() => queueMicrotask(() => {
+      setTimeout(() => {
           if (transaction.aborted || transaction.error) return
           if (mode === 'readwrite' && control.abortNext) {
             control.abortNext = false
@@ -301,7 +316,7 @@ function createAtomicIndexedDb() {
           }
           if (mode === 'readwrite' && control.manualCompletion) pending.push(complete)
           else complete()
-        }))
+        }, 0)
       return transaction
     },
   }
