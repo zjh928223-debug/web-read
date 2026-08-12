@@ -36,6 +36,13 @@
       return time < st.chunkItems[0].start ? 0 : st.chunkItems.length - 1;
     }
 
+    function getWordElement(wordIndex) {
+      var rootId = state.isChunkMode ? 'chunk-vue-container' : 'transcript-vue-container';
+      var root = document.getElementById(rootId);
+      if (root) return root.querySelector('[data-word-index="' + wordIndex + '"]');
+      return document.getElementById('word-' + wordIndex);
+    }
+
     function mainUpdateHighlight(wordIndex, currentTime) {
       var st = state;
       if (currentTime === undefined) currentTime = audioPlayer.currentTime;
@@ -50,7 +57,7 @@
 
         var chunkIdx = findChunkIndexByTime(currentTime);
         var nextWordEl = (st.highlightMode === 1 && wordIndex !== -1)
-          ? document.getElementById('word-' + wordIndex)
+          ? getWordElement(wordIndex)
           : null;
         st.activeWordHighlightEl = swapActiveClass(nextWordEl, st.activeWordHighlightEl, 'word-highlight');
         st.activeSentenceEl = swapActiveClass(null, st.activeSentenceEl, 'sentence-active');
@@ -98,7 +105,7 @@
       st.activeSentenceEl = swapActiveClass(null, st.activeSentenceEl, 'sentence-active');
 
       if (st.highlightMode === 1 && wordIndex !== -1) {
-        var span = document.getElementById('word-' + wordIndex);
+        var span = getWordElement(wordIndex);
         st.activeWordHighlightEl = swapActiveClass(span, st.activeWordHighlightEl, 'word-highlight');
         followPlaybackTarget(span);
         syncPlaybackStores(wordIndex, -1, -1);

@@ -44,7 +44,7 @@
 - [x] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算
 - [x] 5.6 建立 `MediaResourceOwner`，在 replace/dispose 时可靠释放 Object URL、media src 和相关资源
 - [x] 5.7 修复 export/download Object URL 的 finally/延迟 revoke 并加入连续打开材料的 heap 稳定性测试
-- [ ] 5.8 为中断、快速切换 A/B/A、无 Range、文件失效和恢复旧 session 建立 browser journeys
+- [x] 5.8 为中断、快速切换 A/B/A、无 Range、文件失效和恢复旧 session 建立 browser journeys
 
 ## 6. Playback 与学习交互热路径
 
@@ -53,7 +53,7 @@
 - [x] 6.3 将 active word/chunk 更新限制在必要 DOM 或虚拟窗口，避免整个 transcript 重渲染
 - [x] 6.4 将播放器 rejection 映射为 playing/blocked/no-source/error 并提供可见恢复动作
 - [x] 6.5 优化 glass effects，移除 whole-body 永久 observer 或限定根节点和批处理范围
-- [ ] 6.6 验证 1k/10k transcript、连续 100 次 word/chunk/seek 的 p95、Long Task 与 listener 数预算
+- [x] 6.6 验证 1k/10k transcript、连续 100 次 word/chunk/seek 的 p95、Long Task 与 listener 数预算
 
 ## 7. Material Workflow 可靠性
 
@@ -66,7 +66,7 @@
 - [x] 7.7 将 AI/backfill 改为 202 background job，增加 deadline、cancel、retry+jitter 和分资源限流
 - [x] 7.8 修复 rate limiter 锁内 sleep 与缓存原子性，隔离空/截断 cache 文件
 - [x] 7.9 建立统一 `NativePicker` 的稳定 owner、cancel/error/timeout/kill 与前端 Abort/retry
-- [ ] 7.10 为 1/10/50 active jobs、上游 timeout/503、取消、重启和 picker 焦点变化建立压力测试
+- [x] 7.10 为 1/10/50 active jobs、上游 timeout/503、取消、重启和 picker 焦点变化建立压力测试
 
 ## 8. Marks、Activity、Vocabulary、Preview 与 Annotation 数据
 
@@ -108,7 +108,7 @@
 - [x] 11.4 untrack 生成 dist 与个人 local settings，完善 `.gitignore`、`.env.example`、`.editorconfig` 和 `.gitattributes`
 - [x] 11.5 添加 LICENSE、THIRD_PARTY_NOTICES、外部资源/数据来源矩阵、secret scan 和 SBOM/license gate
 - [x] 11.6 将 README/PROJECT_MAP/CURRENT/operations 收敛为当前事实，给历史文档增加 archived banner
-- [ ] 11.7 建立 Windows CI，运行固定工具链、frontend/backend tests、关键 journeys、security/license 和 build
+- [x] 11.7 建立 Windows CI，运行固定工具链、frontend/backend tests、关键 journeys、security/license 和 build
 - [ ] 11.8 在每个阶段形成小提交并维护可审计 changelog；准备推送前单独确认远端 branch/upstream
 
 ## 12. 备份、迁移与发布验收

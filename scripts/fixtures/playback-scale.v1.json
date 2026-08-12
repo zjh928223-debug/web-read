@@ -1,0 +1,10 @@
+{
+  "schema": "read-web.playback-scale-fixture",
+  "version": 1,
+  "offline": true,
+  "wordCounts": [1000, 10000],
+  "wordsPerSegment": 10,
+  "wordDurationSeconds": 0.01,
+  "interactionsPerOperation": 100,
+  "operations": ["word", "chunk", "seek", "mark", "mode"]
+}

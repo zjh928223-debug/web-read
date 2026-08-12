@@ -32,22 +32,32 @@ export function initChunkControls(deps = {}) {
     var newState = forceState !== null ? forceState : !state.isChunkMode;
     if (newState === state.isChunkMode) return;
 
+    var runtimeWordCount = window.__state && Array.isArray(window.__state.words) ? window.__state.words.length : 0;
+    var preserveScrollAnchor = runtimeWordCount <= 2000;
     var anchorRatio = 0;
     var container = document.getElementById('main-app-area');
     var anchorEl = null;
-    if (state.isChunkMode) {
-      anchorEl = document.querySelector('.chunk-active') || document.querySelector('.chunk-block');
-    } else {
-      anchorEl = document.querySelector('.sentence-active') || document.querySelector('.transcript-line');
+    if (preserveScrollAnchor) {
+      if (state.isChunkMode) {
+        anchorEl = document.querySelector('.chunk-active') || document.querySelector('.chunk-block');
+      } else {
+        anchorEl = document.querySelector('.sentence-active') || document.querySelector('.transcript-line');
+      }
     }
 
-    if (anchorEl && container) {
+    if (preserveScrollAnchor && anchorEl && container) {
       var rect = anchorEl.getBoundingClientRect();
       var containerRect = container.getBoundingClientRect();
       anchorRatio = rect.top - containerRect.top;
     }
 
     state.isChunkMode = newState;
+    var transcriptView = document.getElementById('transcript-vue-container');
+    var chunkView = document.getElementById('chunk-vue-container');
+    if (transcriptView && chunkView) {
+      transcriptView.classList.toggle('reader-view-hidden', newState);
+      chunkView.classList.toggle('reader-view-hidden', !newState);
+    }
     if (!state.isChunkMode) {
       state.lastAiPrevTapChunkIndex = -1;
       state.lastAiPrevTapAt = 0;
@@ -56,16 +66,22 @@ export function initChunkControls(deps = {}) {
     if (toggleChunkBtn) toggleChunkBtn.classList.toggle('active', state.isChunkMode);
     if (typeof deps.updateHighlightModeUI === 'function') deps.updateHighlightModeUI();
 
-    if (state.isChunkMode) {
-      renderChunkMode();
-    } else {
-      renderTranscript();
-      document.querySelectorAll('.chunk-note-tag').forEach(function (el) { el.remove(); });
+    if (preserveScrollAnchor) {
+      if (state.isChunkMode) renderChunkMode();
+      else renderTranscript();
+      updateChunkFocusModeUI();
     }
-    updateChunkFocusModeUI();
+
+    if (!preserveScrollAnchor) {
+      requestAnimationFrame(function () {
+        var forceUpdateUI = getForceUpdateUI();
+        if (typeof forceUpdateUI === 'function' && audioPlayer) forceUpdateUI(audioPlayer.currentTime);
+      });
+      return;
+    }
 
     requestAnimationFrame(function () {
-      updateChunkFocusModeUI();
+      if (preserveScrollAnchor) updateChunkFocusModeUI();
       var forceUpdateUI = getForceUpdateUI();
       if (typeof forceUpdateUI === 'function' && audioPlayer) {
         forceUpdateUI(audioPlayer.currentTime);
@@ -78,7 +94,7 @@ export function initChunkControls(deps = {}) {
         newAnchor = document.querySelector('.sentence-active');
       }
 
-      if (newAnchor && container) {
+      if (preserveScrollAnchor && newAnchor && container) {
         var nextRect = newAnchor.getBoundingClientRect();
         var currentTop = nextRect.top - container.getBoundingClientRect().top;
         container.scrollTop += currentTop - anchorRatio;

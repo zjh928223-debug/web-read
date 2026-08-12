@@ -1,10 +1,10 @@
 <template>
   <div
-    v-if="ts.useVueRendering && chunkState.isChunkMode"
+    v-if="ts.useVueRendering"
     ref="rootElement"
     id="chunk-vue-container"
     class="reading-area chunk-mode"
-    :class="{ 'cn-mode-focus': chunkState.chunkFocusMode }"
+    :class="{ 'cn-mode-focus': chunkState.chunkFocusMode, 'reader-view-hidden': !chunkState.isChunkMode }"
   >
     <div
       v-for="(chunk, idx) in chunkState.chunkItems"
@@ -24,7 +24,7 @@
             :key="word.globalIndex != null ? word.globalIndex : widx"
           >
             <span
-              :id="'word-' + (word.globalIndex != null ? word.globalIndex : widx)"
+              :id="'chunk-word-' + (word.globalIndex != null ? word.globalIndex : widx)"
               :data-word-index="word.globalIndex != null ? word.globalIndex : widx"
               :data-word-start="word.start"
               :data-word-end="word.end"

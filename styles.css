@@ -2095,6 +2095,18 @@ body {
       min-width: 0;
     }
 
+    .reader-view-hidden {
+      position: absolute !important;
+      left: -100000px !important;
+      top: 0 !important;
+      width: 1px !important;
+      height: 1px !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      contain: strict;
+    }
+
     #transcript-container,
     .reading-area {
       border: none;
@@ -2137,6 +2149,8 @@ body {
       font-family: 'Segoe UI', sans-serif;
       font-size: 20px; 
       line-height: 1.6;
+      content-visibility: auto;
+      contain-intrinsic-block-size: 56px;
     }
     .sentence-active {
       background-color: var(--sentence-highlight-bg);
@@ -2257,6 +2271,8 @@ body {
         z-index: 1;
         user-select: text;
         -webkit-user-select: text;
+        content-visibility: auto;
+        contain-intrinsic-block-size: 58px;
     }
 
     .chunk-block.chunk-active {

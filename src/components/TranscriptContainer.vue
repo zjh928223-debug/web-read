@@ -1,5 +1,11 @@
 <template>
-  <div v-if="ts.useVueRendering && !chunkModeActive" ref="rootElement" id="transcript-vue-container" class="reading-area">
+  <div
+    v-if="ts.useVueRendering"
+    ref="rootElement"
+    id="transcript-vue-container"
+    class="reading-area"
+    :class="{ 'reader-view-hidden': chunkModeActive }"
+  >
     <div
       v-for="(seg, idx) in ts.segments"
       :key="idx"

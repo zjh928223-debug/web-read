@@ -1,0 +1,38 @@
+{
+  "schema": "read-web.playback-scale-budgets",
+  "version": 1,
+  "status": "active",
+  "scope": "Isolated offline 1k/10k transcript hot-path regression gate; independent from production release baseline budgets",
+  "fixture": {
+    "schema": "read-web.playback-scale-fixture",
+    "version": 1,
+    "wordCounts": [1000, 10000],
+    "interactionsPerOperation": 100,
+    "offline": true
+  },
+  "baseline": {
+    "capturedAt": "2026-08-12",
+    "platform": "win32",
+    "method": "One isolated Chromium run per fixed transcript size after cached reader-view optimization; thresholds round the observed maximum upward with local variance allowance.",
+    "limitations": "Initial same-machine regression budget, not a cross-machine SLA. Mode switching remains above the 100ms product target and is tracked separately."
+  },
+  "budgets": {
+    "importMaxMs": {
+      "1000": 250,
+      "10000": 1800
+    },
+    "interactionP95Ms": {
+      "word": 30,
+      "chunk": 30,
+      "seek": 30,
+      "mark": 30,
+      "mode": 300
+    },
+    "longTaskMaxMs": 300,
+    "listenerActiveMax": {
+      "1000": 50,
+      "10000": 50
+    },
+    "listenerGrowthMax": 0
+  }
+}
