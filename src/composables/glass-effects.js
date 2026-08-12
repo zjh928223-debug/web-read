@@ -1,4 +1,7 @@
+    var activeDispose = null;
+
     function init(lockChunkDimensionsFn) {
+      if (typeof activeDispose === 'function') activeDispose();
       var panelSelector = [
         '.controls','.extra-controls','.transcript-header','#helper-panel',
       '#style-editor-modal','#chunk-style-modal',
@@ -8,6 +11,11 @@
     var buttonSelector = [
       'button','.file-btn','.mini-toggle','.style-btn-toggle'
     ].join(', ');
+    var root = document.getElementById('main-app-area') || document.body;
+    var bindings = [];
+    var pendingNodes = [];
+    var decorateRafId = 0;
+    var disposed = false;
 
     function setGlassPointerVars(el, clientX, clientY) {
       var rect = el.getBoundingClientRect();
@@ -44,6 +52,13 @@
       el.addEventListener('pointermove', onMove, { passive: true });
       el.addEventListener('pointerenter', onEnter, { passive: true });
       el.addEventListener('pointerleave', onLeave, { passive: true });
+      bindings.push(function () {
+        if (rafId) cancelAnimationFrame(rafId);
+        el.removeEventListener('pointermove', onMove);
+        el.removeEventListener('pointerenter', onEnter);
+        el.removeEventListener('pointerleave', onLeave);
+        delete el.dataset.glassBound;
+      });
     }
 
     function decorateExisting() {
@@ -58,12 +73,12 @@
 
     decorateExisting();
 
-    var observer = new MutationObserver(function (mutations) {
-      for (var i = 0; i < mutations.length; i++) {
-        var mutation = mutations[i];
-        if (!mutation.addedNodes || mutation.addedNodes.length === 0) continue;
-        for (var j = 0; j < mutation.addedNodes.length; j++) {
-          var node = mutation.addedNodes[j];
+    function decoratePendingNodes() {
+      decorateRafId = 0;
+      var nodes = pendingNodes;
+      pendingNodes = [];
+      for (var i = 0; i < nodes.length; i++) {
+          var node = nodes[i];
           if (!(node instanceof Element)) continue;
           if (node.matches && node.matches(panelSelector)) {
             node.classList.add('glass-panel');
@@ -81,15 +96,38 @@
               el.classList.add('glass-button');
             });
           }
-        }
+      }
+    }
+
+    var observer = new MutationObserver(function (mutations) {
+      if (disposed) return;
+      for (var i = 0; i < mutations.length; i++) {
+        var addedNodes = mutations[i].addedNodes;
+        if (!addedNodes) continue;
+        for (var j = 0; j < addedNodes.length; j++) pendingNodes.push(addedNodes[j]);
+      }
+      if (pendingNodes.length && !decorateRafId) {
+        decorateRafId = requestAnimationFrame(decoratePendingNodes);
       }
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(root, { childList: true, subtree: true });
 
     if (typeof lockChunkDimensionsFn === 'function') {
       window.__lockChunkNoteDimensionsForTheme = lockChunkDimensionsFn;
     }
+    activeDispose = function () {
+      if (disposed) return;
+      disposed = true;
+      observer.disconnect();
+      if (decorateRafId) cancelAnimationFrame(decorateRafId);
+      pendingNodes = [];
+      for (var i = bindings.length - 1; i >= 0; i--) bindings[i]();
+      bindings = [];
+      if (activeDispose === dispose) activeDispose = null;
+    };
+    var dispose = activeDispose;
+    return dispose;
   }
 
   export function initGlassEffects(deps) {
@@ -110,7 +148,7 @@
       });
     }
 
-    init(lockChunkNoteDimensions);
+    return init(lockChunkNoteDimensions);
   }
 
   window.__glassEffects = { init: init };

@@ -1,5 +1,5 @@
 <template>
-  <div v-if="ts.useVueRendering && !chunkModeActive" id="transcript-vue-container" class="reading-area">
+  <div v-if="ts.useVueRendering && !chunkModeActive" ref="rootElement" id="transcript-vue-container" class="reading-area">
     <div
       v-for="(seg, idx) in ts.segments"
       :key="idx"
@@ -29,7 +29,7 @@
 </template>
 
 <script>
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { handleTranscriptWordClick, handleTranscriptWordContextMenu } from '../composables/transcript-interactions.js'
@@ -39,6 +39,33 @@ export default {
   setup() {
     const ts = useTranscriptStore()
     const chunk = useChunkStore()
+    const rootElement = ref(null)
+    let activeWordElement = null
+
+    function syncActiveWordClass() {
+      const index = Number(ts.activeWordIdx)
+      const nextElement = Number.isInteger(index) && index >= 0 && rootElement.value
+        ? rootElement.value.querySelector('#word-' + index)
+        : null
+      if (activeWordElement && activeWordElement !== nextElement) {
+        activeWordElement.classList.remove('word-highlight')
+      }
+      if (nextElement && nextElement !== activeWordElement) {
+        nextElement.classList.add('word-highlight')
+      }
+      activeWordElement = nextElement
+    }
+
+    watch(
+      () => ts.activeWordIdx,
+      () => nextTick(syncActiveWordClass)
+    )
+    onMounted(syncActiveWordClass)
+    onUpdated(syncActiveWordClass)
+    onBeforeUnmount(() => {
+      if (activeWordElement) activeWordElement.classList.remove('word-highlight')
+      activeWordElement = null
+    })
 
     function isMarkedWord(idx) {
       if (idx == null || typeof window === 'undefined') return false
@@ -54,9 +81,6 @@ export default {
     function wordClasses(word) {
       var idx = word.globalIndex
       var classes = {}
-      if (idx != null && ts.highlightMode === 1 && idx === ts.activeWordIdx) {
-        classes['word-highlight'] = true
-      }
       if (isMarkedWord(idx)) {
         classes.marked = true
       }
@@ -100,7 +124,7 @@ export default {
       return chunk.isChunkMode || false
     })
 
-    return { ts, chunkModeActive, lineClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
+    return { ts, rootElement, chunkModeActive, lineClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
   }
 }
 </script>

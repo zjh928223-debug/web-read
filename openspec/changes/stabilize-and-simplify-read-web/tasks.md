@@ -49,10 +49,10 @@
 ## 6. Playback 与学习交互热路径
 
 - [ ] 6.1 建立 playback 单一 store/controller，禁止 legacy DOM 与 Pinia 对等双写
-- [ ] 6.2 用事件驱动播放更新替代永久无条件 rAF，暂停和不可见时停止调度
-- [ ] 6.3 将 active word/chunk 更新限制在必要 DOM 或虚拟窗口，避免整个 transcript 重渲染
+- [x] 6.2 用事件驱动播放更新替代永久无条件 rAF，暂停和不可见时停止调度
+- [x] 6.3 将 active word/chunk 更新限制在必要 DOM 或虚拟窗口，避免整个 transcript 重渲染
 - [ ] 6.4 将播放器 rejection 映射为 playing/blocked/no-source/error 并提供可见恢复动作
-- [ ] 6.5 优化 glass effects，移除 whole-body 永久 observer 或限定根节点和批处理范围
+- [x] 6.5 优化 glass effects，移除 whole-body 永久 observer 或限定根节点和批处理范围
 - [ ] 6.6 验证 1k/10k transcript、连续 100 次 word/chunk/seek 的 p95、Long Task 与 listener 数预算
 
 ## 7. Material Workflow 可靠性

@@ -22,6 +22,7 @@
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "python scripts/perf/backend-http-benchmark.py",
     "verify:performance:browser": "node scripts/perf/browser-journeys.mjs",
+    "verify:performance:playback-active-word": "node scripts/playback-active-word-performance-check.mjs",
     "verify:playback": "node scripts/read-web-playback-check.cjs",
     "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",

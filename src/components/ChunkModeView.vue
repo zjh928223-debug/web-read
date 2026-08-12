@@ -1,6 +1,7 @@
 <template>
   <div
     v-if="ts.useVueRendering && chunkState.isChunkMode"
+    ref="rootElement"
     id="chunk-vue-container"
     class="reading-area chunk-mode"
     :class="{ 'cn-mode-focus': chunkState.chunkFocusMode }"
@@ -9,7 +10,7 @@
       v-for="(chunk, idx) in chunkState.chunkItems"
       :key="idx"
       :id="'chunk-' + idx"
-      :class="chunkClasses(idx)"
+      class="chunk-block"
       :data-chunk-idx="idx"
       :data-chunk-ref="chunkRef(chunk, idx)"
       :data-legacy-chunk-ref="chunk.segId"
@@ -40,6 +41,7 @@
 </template>
 
 <script>
+import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import {
@@ -54,6 +56,33 @@ export default {
   setup() {
     const ts = useTranscriptStore()
     const chunkState = useChunkStore()
+    const rootElement = ref(null)
+    let activeChunkElement = null
+
+    function syncActiveChunkClass() {
+      const index = Number(chunkState.activeChunkIdx)
+      const nextElement = Number.isInteger(index) && index >= 0 && rootElement.value
+        ? rootElement.value.querySelector('#chunk-' + index)
+        : null
+      if (activeChunkElement && activeChunkElement !== nextElement) {
+        activeChunkElement.classList.remove('chunk-active')
+      }
+      if (nextElement && nextElement !== activeChunkElement) {
+        nextElement.classList.add('chunk-active')
+      }
+      activeChunkElement = nextElement
+    }
+
+    watch(
+      () => chunkState.activeChunkIdx,
+      () => nextTick(syncActiveChunkClass)
+    )
+    onMounted(syncActiveChunkClass)
+    onUpdated(syncActiveChunkClass)
+    onBeforeUnmount(() => {
+      if (activeChunkElement) activeChunkElement.classList.remove('chunk-active')
+      activeChunkElement = null
+    })
 
     function isMarkedWord(idx) {
       if (idx == null || typeof window === 'undefined') return false
@@ -69,9 +98,6 @@ export default {
     function wordClasses(word) {
       var idx = word.globalIndex
       var classes = {}
-      if (idx != null && ts.highlightMode === 1 && idx === ts.activeWordIdx) {
-        classes['word-highlight'] = true
-      }
       if (isMarkedWord(idx)) {
         classes.marked = true
       }
@@ -79,13 +105,6 @@ export default {
         classes['preview-vocabulary-word'] = true
       }
       return classes
-    }
-
-    function chunkClasses(index) {
-      return {
-        'chunk-block': true,
-        'chunk-active': index === chunkState.activeChunkIdx
-      }
     }
 
     function chunkRef(chunk, index) {
@@ -137,7 +156,7 @@ export default {
       handleChunkClick({ chunk: chunk, index: idx, event: event, chunkStore: chunkState })
     }
 
-    return { ts, chunkState, chunkRef, chunkClasses, cnClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu, onChunkContextMenu, onChunkClick }
+    return { ts, chunkState, rootElement, chunkRef, cnClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu, onChunkContextMenu, onChunkClick }
   }
 }
 </script>
