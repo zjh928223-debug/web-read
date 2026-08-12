@@ -1,6 +1,7 @@
 export const REQUIRED_ARIA_SYSTEM_VOICE = 'Microsoft Aria Online (Natural) - English (United States)'
 export const REQUIRED_ARIA_EDGE_VOICE = 'en-US-AriaNeural'
-const DEFAULT_LOCAL_TTS_BASE_URL = 'http://127.0.0.1:8765'
+const DEFAULT_LOCAL_TTS_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
+  || 'http://127.0.0.1:8765'
 const PREFETCH_CONCURRENCY = 4
 const AUDIO_READY_TIMEOUT_MS = 8000
 

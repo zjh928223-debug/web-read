@@ -35,7 +35,7 @@
 
         <div v-if="!serviceOnline" class="youtube-workflow-alert">
           <strong>后台服务未启动</strong>
-          <span>启动命令：python -m uvicorn youtube_workflow.service:app --host 127.0.0.1 --port 8765</span>
+          <span>当前后端地址：{{ youtubeWorkflowClient.baseUrl }}</span>
         </div>
 
         <div class="youtube-workflow-layout">

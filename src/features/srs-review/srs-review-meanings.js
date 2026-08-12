@@ -1,4 +1,5 @@
-const DEFAULT_DICTIONARY_BASE_URL = 'http://127.0.0.1:8765'
+const DEFAULT_DICTIONARY_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
+  || 'http://127.0.0.1:8765'
 const MAX_BATCH_SIZE = 50
 const GENERAL_MEANING_SOURCE = 'merriam-webster-collegiate+gemini:v2'
 const MERRIAM_GEMINI_SOURCE_PREFIX = 'merriam-webster-collegiate+gemini'

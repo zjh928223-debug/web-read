@@ -1,6 +1,7 @@
 const pronunciationCache = new Map()
 const pronunciationSequenceCache = new Map()
-const DEFAULT_MERRIAM_BASE_URL = 'http://127.0.0.1:8765'
+const DEFAULT_MERRIAM_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
+  || 'http://127.0.0.1:8765'
 const REQUIRED_PHRASE_EDGE_VOICE = 'en-US-AriaNeural'
 
 export async function resolveAmericanPronunciation(word, options = {}) {

@@ -17,7 +17,7 @@ export function createSentenceTranslationVitePlugin(options = {}) {
             apiKey,
             models: options.models ?? options.model,
             proxyUrl: options.proxyUrl,
-            cachePath: options.cachePath || resolve(process.cwd(), 'data/dictionaries/local-sentence-translations.sqlite'),
+            cachePath: options.cachePath || process.env.SENTENCE_TRANSLATION_CACHE_PATH || resolve(process.cwd(), 'data/dictionaries/local-sentence-translations.sqlite'),
           })
           return service
         },

@@ -2,8 +2,8 @@ param(
   [switch]$ServiceOnly,
   [switch]$FrontendOnly,
   [switch]$NoOpen,
-  [string]$ReaderRoot = "E:\read-web",
-  [string]$WorkflowRoot = "E:\read-web-worktrees\next-feature-20260629\tools\subtitle-workflow",
+  [string]$ReaderRoot = "",
+  [string]$WorkflowRoot = "",
   [string]$WorkflowDataRoot = "E:\ReadWebData\SubtitleWorkflow",
   [string]$ServiceHealthUrl = "http://127.0.0.1:8765/api/health",
   [string]$ReaderUrl = "http://127.0.0.1:5173",
@@ -13,6 +13,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$defaultReaderRoot = Split-Path -Parent $PSScriptRoot
+if (-not $ReaderRoot) {
+  $ReaderRoot = $defaultReaderRoot
+}
+if (-not $WorkflowRoot) {
+  $WorkflowRoot = Join-Path $ReaderRoot 'tools\subtitle-workflow'
+}
 
 function Test-HttpOk {
   param([string]$Url)
@@ -127,6 +135,7 @@ $serviceUri = [Uri]$ServiceHealthUrl
 $servicePort = $serviceUri.Port
 $readerUri = [Uri]$ReaderUrl
 $readerPort = $readerUri.Port
+$env:VITE_LOCAL_SERVICE_BASE_URL = $serviceUri.GetLeftPart([System.UriPartial]::Authority)
 if ($readerPort -le 0) {
   throw "Reader URL must include a port: $ReaderUrl"
 }

@@ -16,6 +16,7 @@ node_modules/
 .playwright-cli/
 .playwright-deps/
 .codex/startup-logs/
+.codex/config.toml
 .codex-vite-*.log
 output/*.log
 output/playwright/*.png
@@ -25,3 +26,4 @@ vite-*.txt
 .vite-dev.*.log
 src/features/srs-review/srs-review.sample.local.json
 /data/dictionaries/
+/tmp/
