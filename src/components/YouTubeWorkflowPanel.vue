@@ -544,6 +544,7 @@ import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loa
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
+import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
@@ -618,6 +619,7 @@ let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
 let readerUnloadFlushed = false
 const readerSessionPersistence = createReaderSessionPersistence()
+const diagnosticsDownloader = createObjectUrlDownloader()
 const readerMarksLedgers = new Map()
 const readerActivityLedgers = new Map()
 
@@ -858,6 +860,7 @@ onBeforeUnmount(() => {
   readerMarksLedgers.clear()
   readerActivityLedgers.forEach((ledger) => ledger.dispose())
   readerActivityLedgers.clear()
+  diagnosticsDownloader.dispose()
 })
 
 function makeLoader() {
@@ -1273,14 +1276,7 @@ async function confirmCleanup() {
 async function downloadDiagnosticsPackage() {
   try {
     const blob = await youtubeWorkflowClient.diagnosticsPackage()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `subtitle-workflow-diagnostics-${Date.now()}.zip`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    diagnosticsDownloader.download(blob, `subtitle-workflow-diagnostics-${Date.now()}.zip`)
     backendConfigNotice.value = '诊断包已导出'
   } catch (err) {
     backendConfigNotice.value = err && err.message ? err.message : String(err)

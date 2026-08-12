@@ -101,6 +101,7 @@ export function createSessionAnnotationRuntime(deps = {}) {
         syncAnnotationGenerationEntryStatus,
         showToast: globals.showToast
     });
+    const disposeAnnotationLightweightIo = annotationLightweightIoRuntime.dispose;
     annotationLightweightIoRuntime.installAnnotationContextExport();
     if (globals.annotationLightweightModule && typeof globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime === 'function') {
         globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({
@@ -117,6 +118,9 @@ export function createSessionAnnotationRuntime(deps = {}) {
         syncAnnotationGenerationEntryStatus,
         normalizeAnnotationMark,
         emitAnnotationDiagnostics,
-        getAnnotationGeneratedResultStore
+        getAnnotationGeneratedResultStore,
+        dispose() {
+            if (typeof disposeAnnotationLightweightIo === 'function') disposeAnnotationLightweightIo();
+        }
     };
 }

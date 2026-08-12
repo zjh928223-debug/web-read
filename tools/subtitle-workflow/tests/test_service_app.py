@@ -249,6 +249,53 @@ class ServiceAppTests(unittest.TestCase):
         self.assertEqual(record.events[0]["message"], "line-18")
         self.assertEqual(record.public_snapshot()["logSummary"], [f"line-{index}" for index in range(30, 50)])
 
+    def test_persisted_job_state_separates_terminal_summary_from_event_ring(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config), event_limit=64)
+            record = JobRecord(
+                "terminal-summary",
+                WorkflowRequest(url="https://example.com/summary", gemini_mode="mock"),
+                event_limit=64,
+            )
+            record.on_change = manager._record_changed
+            manager.jobs[record.job_id] = record
+            for index in range(40):
+                record.add_event({"status": "downloading", "stage": "downloading", "message": f"line-{index}"})
+            with record.lock:
+                record.status = "failed"
+                record.stage = "failed"
+                record.error = {"category": "test", "message": "terminal"}
+                record.manifest = make_manifest(
+                    job_id=record.job_id,
+                    request=record.request,
+                    status="failed",
+                    stage="failed",
+                    output_dir=Path(tmp),
+                    error=record.error,
+                    log_summary=[f"line-{index}" for index in range(40)],
+                )
+            manager._record_changed(record)
+            manager.close()
+
+            persisted = json.loads((config.state_dir / "jobs.json").read_text(encoding="utf-8"))["jobs"][0]
+            self.assertNotIn("events", persisted)
+            self.assertNotIn("logSummary", persisted)
+            self.assertNotIn("logSummary", persisted["manifest"])
+            self.assertEqual(persisted["terminalSummary"], [f"line-{index}" for index in range(35, 40)])
+
+            restarted = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config), event_limit=64)
+            try:
+                restored = restarted.get_job("terminal-summary")
+                self.assertEqual(restored.events, [])
+                self.assertEqual(
+                    restored.public_snapshot()["logSummary"],
+                    [f"line-{index}" for index in range(35, 40)],
+                )
+                self.assertEqual(restored.status, "failed")
+            finally:
+                restarted.close()
+
     def test_job_manager_coalesces_log_persistence_but_flushes_stage_and_terminal(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
@@ -268,18 +315,17 @@ class ServiceAppTests(unittest.TestCase):
             for index in range(10):
                 record.add_event({"status": "downloading", "stage": "downloading", "message": f"stdout-{index}"})
             self.assertEqual(len(saves), 1)
-
-            manager.flush_persistence()
-            self.assertEqual(len(saves), 2)
-            self.assertEqual(saves[-1][0]["logSummary"][-1], "stdout-9")
+            self.assertFalse(manager._persistence_dirty)
+            self.assertIsNone(manager._persistence_timer)
 
             record.add_event({"status": "failed", "stage": "failed", "message": "terminal"})
-            self.assertEqual(len(saves), 3)
+            self.assertEqual(len(saves), 2)
             self.assertEqual(saves[-1][0]["status"], "failed")
+            self.assertEqual(saves[-1][0]["terminalSummary"][-1], "terminal")
             manager.close()
-            self.assertEqual(len(saves), 3)
+            self.assertEqual(len(saves), 2)
 
-    def test_job_manager_close_flushes_and_joins_pending_persistence_timer(self):
+    def test_job_manager_close_flushes_and_joins_pending_state_timer(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
             manager = JobManager(
@@ -294,7 +340,9 @@ class ServiceAppTests(unittest.TestCase):
             manager.jobs[record.job_id] = record
 
             record.add_event({"status": "downloading", "stage": "downloading", "message": "stage"})
-            record.add_event({"status": "downloading", "stage": "downloading", "message": "pending stdout"})
+            with manager.lock:
+                manager._persistence_dirty = True
+                manager._schedule_persistence_locked()
             pending_timer = manager._persistence_timer
             self.assertIsNotNone(pending_timer)
             self.assertTrue(pending_timer.is_alive())
@@ -304,7 +352,8 @@ class ServiceAppTests(unittest.TestCase):
             self.assertTrue(manager._persistence_closed)
             self.assertIsNone(manager._persistence_timer)
             self.assertFalse(pending_timer.is_alive())
-            self.assertEqual(saves[-1][0]["logSummary"][-1], "pending stdout")
+            self.assertEqual(saves[-1][0]["stage"], "downloading")
+            self.assertNotIn("logSummary", saves[-1][0])
 
     def test_health_diagnostics_job_session_file_and_recent_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:

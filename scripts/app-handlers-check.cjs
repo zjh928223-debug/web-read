@@ -65,7 +65,6 @@ const context = {
   window: {},
   console,
   Blob: function Blob() {},
-  URL: { createObjectURL: () => 'blob:mock' },
   document: {
     body: {
       appendChild() {},
@@ -80,6 +79,27 @@ vm.createContext(context);
 vm.runInContext(appHandlersSource, context, { filename: 'app-handlers.js' });
 
 assert.equal(typeof context.window.__appHandlers.initMarksImport, 'function');
+
+const exportListeners = {};
+const exported = [];
+const exportJsonBtn = {
+  addEventListener(type, handler) { exportListeners[`json:${type}`] = handler; }
+};
+const exportMdAllBtn = {
+  addEventListener(type, handler) { exportListeners[`text:${type}`] = handler; }
+};
+context.window.__appHandlers.initExports({
+  exportJsonBtn,
+  exportMdAllBtn,
+  markedMap: new Map([[0, { globalIndex: 0, word: 'Hello' }]]),
+  getSegments: () => [{ words: [{ globalIndex: 0, word: 'Hello' }, { globalIndex: 1, word: 'world' }] }],
+  downloadBlob(blob, filename) { exported.push({ blob, filename }); },
+  showError(code, message) { throw new Error(`${code}: ${message}`); },
+  showToast() {}
+});
+exportListeners['json:click']();
+exportListeners['text:click']();
+assert.deepEqual(exported.map((item) => item.filename), ['marks.json', 'transcript_full.txt']);
 
 const listeners = {};
 let inputClicked = false;

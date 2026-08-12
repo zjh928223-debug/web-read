@@ -30,6 +30,7 @@ assert.ok(
   'createSessionAnnotationLightweightIoRuntime({',
   'globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({',
   'installAnnotationContextExport();',
+  'disposeAnnotationLightweightIo',
   'emitAnnotationDiagnostics,',
   'getAnnotationGeneratedResultStore'
 ].forEach((pattern) => {

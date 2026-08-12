@@ -34,6 +34,7 @@ async function main() {
     "from './session-annotation-export-payload.js';",
     "from './session-annotation-import-normalization.js';",
     "from './session-annotation-bundle-merge.js';",
+    "from '../services/runtime/download-object-url.js';",
     'export function createSessionAnnotationLightweightIoRuntime',
     'replaceExisting: options.replaceExisting !== false'
   ].forEach((pattern) => {
@@ -43,6 +44,7 @@ async function main() {
     moduleSource.includes('function excludePreviewGeneratedItems(items)'),
     'lightweight import should define the preview-item boundary'
   );
+  assert.equal(moduleSource.includes('setTimeout(() => urlApi.revokeObjectURL'), false);
   assert.ok(
     moduleSource.includes("'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems("),
     'lightweight import should not rebuild reader marks from preview-scan items'

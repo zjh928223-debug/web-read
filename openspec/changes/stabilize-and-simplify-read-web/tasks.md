@@ -43,7 +43,7 @@
 - [x] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
 - [ ] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算
 - [x] 5.6 建立 `MediaResourceOwner`，在 replace/dispose 时可靠释放 Object URL、media src 和相关资源
-- [ ] 5.7 修复 export/download Object URL 的 finally/延迟 revoke 并加入连续打开材料的 heap 稳定性测试
+- [x] 5.7 修复 export/download Object URL 的 finally/延迟 revoke 并加入连续打开材料的 heap 稳定性测试
 - [ ] 5.8 为中断、快速切换 A/B/A、无 Range、文件失效和恢复旧 session 建立 browser journeys
 
 ## 6. Playback 与学习交互热路径
@@ -59,7 +59,7 @@
 
 - [x] 7.1 新增 batch job snapshot 或 async event channel，替换每秒 per-job N+1 轮询
 - [x] 7.2 前端 polling 实现 single-flight、visibility backoff、jitter、AbortController 和 revision guard
-- [ ] 7.3 将 job snapshot、active state 与 event log 分离，event 改有界 ring buffer
+- [x] 7.3 将 job snapshot、active state 与 event log 分离，event 改有界 ring buffer
 - [x] 7.4 将每行日志全量保存改为阶段 checkpoint 与 100–250ms coalesced persistence
 - [ ] 7.5 实现 crash recovery 状态机，损坏 jobs/history 必须 quarantine/backup recovery 而非清空覆盖
 - [ ] 7.6 建立 `ProcessSupervisor`，使用 lock、try/finally、进程树 terminate/kill timeout 和真实终态确认
@@ -84,7 +84,7 @@
 - [x] 9.1 建立 `LifecycleScope`，统一注册 listener、timer、rAF、observer、Object URL 和 disposer
 - [x] 9.2 让 reader/session/runtime init 返回 disposer，并加入 init-twice/unmount/reinit 不增长测试
 - [x] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
-- [ ] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics
+- [x] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics
 - [ ] 9.5 扫描并移除关键路径空 `catch`/floating promise，只保留有记录的明确 best-effort 策略
 - [ ] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
 - [x] 9.7 修复 Passage Preview translation controller 代际捕获，并为快速替换/abort 补回归
@@ -105,7 +105,7 @@
 - [ ] 11.1 添加 `engines`、`packageManager`、`.node-version`、Python lock 和版本诊断
 - [ ] 11.2 将 setup 改为 `npm ci` 与锁定 Python 安装，验证全新目录可重复构建
 - [ ] 11.3 分类 package 外孤儿 scripts 为 release gate、dev tool 或 archive/delete，并移除旧 read26/start 脚本
-- [ ] 11.4 untrack 生成 dist 与个人 local settings，完善 `.gitignore`、`.env.example`、`.editorconfig` 和 `.gitattributes`
+- [x] 11.4 untrack 生成 dist 与个人 local settings，完善 `.gitignore`、`.env.example`、`.editorconfig` 和 `.gitattributes`
 - [ ] 11.5 添加 LICENSE、THIRD_PARTY_NOTICES、外部资源/数据来源矩阵、secret scan 和 SBOM/license gate
 - [ ] 11.6 将 README/PROJECT_MAP/CURRENT/operations 收敛为当前事实，给历史文档增加 archived banner
 - [ ] 11.7 建立 Windows CI，运行固定工具链、frontend/backend tests、关键 journeys、security/license 和 build

@@ -99,6 +99,10 @@ async function main() {
   assert.ok(panelSource.includes("apiKey.value = ''"), 'closing the panel should clear typed API key material');
   assert.ok(panelSource.includes('downloadDiagnosticsPackage'), 'advanced maintenance should allow exporting a sanitized diagnostics package');
   assert.ok(panelSource.includes('diagnosticsPackage'), 'panel should call the diagnostics package client endpoint');
+  assert.ok(panelSource.includes('createObjectUrlDownloader'), 'diagnostics export should use the shared Object URL owner');
+  assert.ok(panelSource.includes('diagnosticsDownloader.download(blob'), 'diagnostics export should delegate download lifecycle');
+  assert.ok(panelSource.includes('diagnosticsDownloader.dispose()'), 'workflow unmount should release pending diagnostics URLs');
+  assert.equal(panelSource.includes('URL.revokeObjectURL(url)'), false, 'diagnostics export must not revoke in the click task');
   assert.ok(panelSource.includes('高级设置'), 'Base URL should be hidden in advanced settings');
   assert.ok(panelSource.includes('loadTextSetting') && panelSource.includes('saveTextSetting'), 'model and Base URL should persist outside IndexedDB');
   assert.ok(panelSource.includes('上一篇') && panelSource.includes('下一篇'), 'reader controls should include previous/next queue navigation');

@@ -8,6 +8,7 @@ import {
 import {
   buildManualLightweightImportedBundle
 } from './session-annotation-bundle-merge.js';
+import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js';
 
 function requireLightweightIoFunction(deps, name) {
   if (deps && typeof deps[name] === 'function') return deps[name];
@@ -28,6 +29,10 @@ function excludePreviewGeneratedItems(items) {
 }
 
 export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
+  const downloader = createObjectUrlDownloader({
+    documentObject: deps.documentObject,
+    urlApi: deps.urlApi
+  });
   function getManualLightweightAnnotationImportNormalizationDeps() {
     return {
       normalizeAnnotationTextValue: requireLightweightIoFunction(deps, 'normalizeAnnotationTextValue'),
@@ -61,17 +66,9 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
   }
 
   function downloadJsonFile(payload, filename) {
-    const documentObject = deps.documentObject;
-    const urlApi = deps.urlApi;
     const BlobCtor = deps.BlobCtor;
     const blob = new BlobCtor([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const a = documentObject.createElement('a');
-    a.href = urlApi.createObjectURL(blob);
-    a.download = filename;
-    documentObject.body.appendChild(a);
-    a.click();
-    documentObject.body.removeChild(a);
-    setTimeout(() => urlApi.revokeObjectURL(a.href), 0);
+    downloader.download(blob, filename);
   }
 
   function installAnnotationContextExport() {
@@ -139,6 +136,7 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     installAnnotationContextExport,
     getManualLightweightAnnotationImportNormalizationDeps,
     getManualLightweightAnnotationBundleMergeDeps,
-    getManualLightweightAnnotationExportPayloadDeps
+    getManualLightweightAnnotationExportPayloadDeps,
+    dispose: downloader.dispose
   };
 }

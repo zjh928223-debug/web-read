@@ -139,6 +139,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     .replace(
       "import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'\n",
       "const createLifecycleScope = globalThis.__readerAppRuntimeTest.createLifecycleScope;\n"
+    )
+    .replace(
+      "import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'\n",
+      "const createObjectUrlDownloader = globalThis.__readerAppRuntimeTest.createObjectUrlDownloader;\n"
     );
 
   const calls = {
@@ -164,6 +168,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
           disposed = true;
           for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]();
         }
+      };
+    },
+    createObjectUrlDownloader() {
+      return {
+        download(blob, filename) { calls.exports.push({ blob, filename, viaDownloader: true }); },
+        dispose() { calls.disposed.push('downloader'); }
       };
     },
     createOptionalLocalDictionaryClient() {
@@ -287,7 +297,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(Object.prototype.hasOwnProperty.call(calls.publicFacades[0], 'openChunkNoteContextFromEvent'), false);
   api.dispose();
   api.dispose();
-  assert.deepEqual(calls.disposed, ['glass', 'controls']);
+  assert.deepEqual(calls.disposed, ['glass', 'controls', 'downloader']);
 
   delete globalThis.__readerAppRuntimeTest;
 

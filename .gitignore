@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 .env
 .env.*
+!.env.example
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -17,6 +18,7 @@ node_modules/
 .playwright-deps/
 .codex/startup-logs/
 .codex/config.toml
+.claude/settings.local.json
 .codex-vite-*.log
 output/*.log
 output/playwright/*.png
@@ -25,8 +27,13 @@ output/baselines/
 output/release/
 output/performance/
 dist/
+cankao/dist/
 vite-*.txt
 .vite-dev.*.log
 src/features/srs-review/srs-review.sample.local.json
 /data/dictionaries/
 /tmp/
+*.sqlite.previous
+*.sqlite.build-*
+*.sqlite.build-*-wal
+*.sqlite.build-*-shm

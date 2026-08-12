@@ -6,6 +6,7 @@ import { configureReaderPublicFacades } from './reader-public-facades.js'
 import { createOptionalLocalDictionaryClient } from '../dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import { createDictionaryEnrichmentAdapter } from '../dictionary/ecdict/application/dictionary-enrichment-adapter.mjs'
 import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js'
+import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 
 function createOptionalDictionaryEnrichmentAdapter() {
   const client = createOptionalLocalDictionaryClient()
@@ -17,6 +18,8 @@ function createOptionalDictionaryEnrichmentAdapter() {
 
 export function initReaderAppRuntime(deps = {}) {
   const lifecycle = createLifecycleScope()
+  const downloader = createObjectUrlDownloader()
+  lifecycle.add(function () { downloader.dispose() })
   var audioPlayer = (typeof globalThis !== 'undefined' && globalThis.__mediaSource && typeof globalThis.__mediaSource.createActiveMediaProxy === 'function')
     ? globalThis.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
     : deps.audioPlayer
@@ -68,6 +71,7 @@ export function initReaderAppRuntime(deps = {}) {
     exportMdAllBtn: deps.exportMdAllBtn,
     markedMap: deps.marksStateApi.markedMap,
     getSegments: function () { return deps.transcriptState.segments },
+    downloadBlob: downloader.download,
     showError: deps.showError,
     showToast: deps.showToast
   })

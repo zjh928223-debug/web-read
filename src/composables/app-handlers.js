@@ -8,6 +8,11 @@
       : function () { return config.segments || []; };
     var showError = config.showError;
     var showToast = config.showToast;
+    var downloadBlob = config.downloadBlob;
+
+    if (typeof downloadBlob !== 'function') {
+      throw new TypeError('app-handlers exports require downloadBlob');
+    }
 
     if (exportJsonBtn) {
       exportJsonBtn.addEventListener('click', function () {
@@ -15,9 +20,7 @@
         var arr = [];
         markedMap.forEach(function (v) { arr.push(v); });
         var blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'marks.json';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        downloadBlob(blob, 'marks.json');
       });
     }
 
@@ -34,9 +37,7 @@
           }).join(' ');
         }).join('\n\n');
         var blob = new Blob([lines], { type: 'text/plain' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'transcript_full.txt';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        downloadBlob(blob, 'transcript_full.txt');
       });
     }
   }

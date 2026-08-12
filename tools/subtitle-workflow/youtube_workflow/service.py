@@ -55,6 +55,7 @@ MERRIAM_GENERAL_MEANING_SOURCE = "merriam-webster-collegiate+gemini:v2"
 TERMINAL_STATUSES = {"ready", "failed", "canceled"}
 ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "validating", "ready", "failed", "canceled"}
 DEFAULT_JOB_EVENT_LIMIT = 500
+DEFAULT_TERMINAL_SUMMARY_LIMIT = 5
 DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
 AUDIO_EXTENSIONS = {
     ".aac",
@@ -480,6 +481,14 @@ def redact_payload(value, secrets: list[str]):
     return text
 
 
+def _without_event_logs(manifest: dict | None) -> dict | None:
+    if not isinstance(manifest, dict):
+        return None
+    snapshot = dict(manifest)
+    snapshot.pop("logSummary", None)
+    return snapshot
+
+
 @dataclass(frozen=True)
 class NativePickerResult:
     status: str
@@ -604,6 +613,7 @@ class JobRecord:
         self.updated_at = self.created_at
         self.manifest: dict | None = None
         self.events: list[dict] = []
+        self.terminal_summary: list[str] = []
         self.event_limit = max(20, int(event_limit))
         self.error: dict | None = None
         self.cancel_event = threading.Event()
@@ -618,6 +628,11 @@ class JobRecord:
 
     def public_snapshot(self) -> dict:
         with self.lock:
+            event_summary = [
+                redact_text(event.get("message", ""), [self.request.api_key])
+                for event in self.events
+                if event.get("message")
+            ][-20:]
             snapshot = {
                 "jobId": self.job_id,
                 "status": self.status,
@@ -626,11 +641,7 @@ class JobRecord:
                 "updatedAt": self.updated_at,
                 "request": self.request.safe_manifest_request(),
                 "error": self.error,
-                "logSummary": [
-                    redact_text(event.get("message", ""), [self.request.api_key])
-                    for event in self.events
-                    if event.get("message")
-                ][-20:],
+                "logSummary": event_summary or list(self.terminal_summary),
             }
             if self.manifest:
                 snapshot["title"] = self.manifest.get("title", "")
@@ -645,8 +656,26 @@ class JobRecord:
 
     def persisted_snapshot(self) -> dict:
         with self.lock:
-            snapshot = self.public_snapshot()
-            snapshot["manifest"] = self.manifest
+            snapshot = {
+                "jobId": self.job_id,
+                "status": self.status,
+                "stage": self.stage,
+                "createdAt": self.created_at,
+                "updatedAt": self.updated_at,
+                "request": self.request.safe_manifest_request(),
+                "error": self.error,
+                "manifest": _without_event_logs(self.manifest),
+            }
+            if self.status in TERMINAL_STATUSES:
+                summary = [
+                    redact_text(event.get("message", ""), [self.request.api_key])
+                    for event in self.events
+                    if event.get("message")
+                ][-DEFAULT_TERMINAL_SUMMARY_LIMIT:]
+                snapshot["terminalSummary"] = summary or list(self.terminal_summary)
+            if self.retry_of:
+                snapshot["retryOf"] = self.retry_of
+                snapshot["retryStage"] = self.retry_stage
             if self.import_plan:
                 snapshot["importPlan"] = self.import_plan
             return snapshot
@@ -681,7 +710,7 @@ class JobRecord:
                 or self.stage != previous_stage
                 or self.status in TERMINAL_STATUSES
             )
-        if self.on_change:
+        if self.on_change and immediate_persistence:
             self.on_change(self, immediate=immediate_persistence)
 
     def _append_event_locked(self, event: dict) -> None:
@@ -703,15 +732,10 @@ class JobRecord:
             record.retry_of = str(snapshot.get("retryOf") or "")
             record.retry_stage = str(snapshot.get("retryStage") or "")
             record.import_plan = snapshot.get("importPlan") if isinstance(snapshot.get("importPlan"), dict) else None
-            logs = snapshot.get("logSummary") if isinstance(snapshot.get("logSummary"), list) else []
-            for line in logs[-20:]:
-                record._append_event_locked({
-                    "jobId": record.job_id,
-                    "status": record.status,
-                    "stage": record.stage,
-                    "message": str(line),
-                    "timestamp": record.updated_at,
-                })
+            summary = snapshot.get("terminalSummary")
+            if not isinstance(summary, list):
+                summary = snapshot.get("logSummary") if isinstance(snapshot.get("logSummary"), list) else []
+            record.terminal_summary = [str(line) for line in summary[-DEFAULT_TERMINAL_SUMMARY_LIMIT:]]
         return record
 
 

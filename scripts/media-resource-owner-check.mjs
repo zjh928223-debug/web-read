@@ -87,6 +87,25 @@ assert.deepEqual(failedBindEvents, ['set:blob:unbound'])
 
 assert.throws(() => owner.replace(''), TypeError)
 
+const heapUrls = new Set()
+let peakHeapUrls = 0
+let heapSequence = 0
+const heapMediaElement = createMediaElement([])
+const heapOwner = createMediaResourceOwner({
+  mediaElement: heapMediaElement,
+  revokeObjectURL(url) { heapUrls.delete(url) },
+})
+for (let index = 0; index < 500; index += 1) {
+  const url = `blob:material-${++heapSequence}`
+  heapUrls.add(url)
+  peakHeapUrls = Math.max(peakHeapUrls, heapUrls.size)
+  heapOwner.replace(url)
+}
+assert.equal(heapUrls.size, 1, 'only the active material URL may remain live')
+heapOwner.dispose()
+assert.equal(heapUrls.size, 0, 'disposing after repeated material opens must release the final URL')
+assert.equal(peakHeapUrls, 2, 'replace must keep consecutive material Object URLs bounded')
+
 console.log('MediaResourceOwner checks passed.')
 
 function createMediaElement(events, failures = {}) {
