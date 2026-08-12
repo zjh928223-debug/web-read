@@ -31,6 +31,20 @@ function validateSession(session) {
   }
 }
 
+function hasValidCommittedPayload(byId) {
+  const audioMeta = byId.get('audioMeta')?.content
+  const transcript = byId.get('transcript')?.content
+  const chunkData = byId.get('chunkData')?.content
+  const validAudioMeta = !!audioMeta && typeof audioMeta === 'object' && !Array.isArray(audioMeta)
+  const validTranscript = !!transcript
+    && typeof transcript === 'object'
+    && Array.isArray(transcript.segments)
+  const validChunkData = Array.isArray(chunkData)
+    || !!(chunkData && typeof chunkData === 'object'
+      && (Array.isArray(chunkData.s) || Array.isArray(chunkData.items)))
+  return validAudioMeta && validTranscript && validChunkData
+}
+
 export function createReaderSessionPersistence(options = {}) {
   const persistence = createApplicationPersistence({
     indexedDBApi: options.indexedDBApi,
@@ -83,7 +97,15 @@ export function createReaderSessionPersistence(options = {}) {
     const contentId = String(manifestRow.contentId || manifest?.contentId || '')
     const revision = String(manifestRow.revision || manifest?.revision || '')
     const complete = ids.every((id) => byId.has(id))
-    const consistent = complete && contentId && revision && ids.every((id) => {
+    const manifestMatchesRow = manifest
+      && manifest.contentId === contentId
+      && manifest.revision === revision
+    const consistent = complete
+      && contentId
+      && revision
+      && manifestMatchesRow
+      && hasValidCommittedPayload(byId)
+      && ids.every((id) => {
       const row = byId.get(id)
       return row.contentId === contentId && row.revision === revision
     })
@@ -91,7 +113,7 @@ export function createReaderSessionPersistence(options = {}) {
       return {
         status: 'inconsistent',
         session: null,
-        error: { code: 'READER_SESSION_INCONSISTENT', message: 'Stored reader session is incomplete' },
+        error: { code: 'READER_SESSION_INCONSISTENT', message: 'Stored reader session is incomplete or inconsistent' },
       }
     }
     return {

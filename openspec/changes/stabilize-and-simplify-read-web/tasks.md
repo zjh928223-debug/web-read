@@ -33,7 +33,7 @@
 - [ ] 4.4 定义 versioned envelope、revision/contentId/checksum、unknown schema rejection 和 corrupt quarantine
 - [ ] 4.5 迁移当前假 await/request-success writers，并为 Quota、abort、关闭页面和多标签并发补测试
 - [x] 4.6 建立 `DurableJsonRepository` 的 temp+fsync+replace+backup+recovery 契约
-- [ ] 4.7 将 SQLite builder 改为 temp build、integrity check、atomic swap 和 previous backup
+- [x] 4.7 将 SQLite builder 改为 temp build、integrity check、atomic swap 和 previous backup
 
 ## 5. Reader Session 与大媒体流式化
 
@@ -83,7 +83,7 @@
 
 - [x] 9.1 建立 `LifecycleScope`，统一注册 listener、timer、rAF、observer、Object URL 和 disposer
 - [x] 9.2 让 reader/session/runtime init 返回 disposer，并加入 init-twice/unmount/reinit 不增长测试
-- [ ] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
+- [x] 9.3 建立 `RequestSupervisor` 的 timeout、abort、single-flight、generation/revision 和 correlationId
 - [ ] 9.4 建立 typed error taxonomy 与 `ErrorPresenter`，统一 notice/status/retry 与脱敏 diagnostics
 - [ ] 9.5 扫描并移除关键路径空 `catch`/floating promise，只保留有记录的明确 best-effort 策略
 - [ ] 9.6 统一 dialog 的 aria-modal、focus trap、initial/restore focus、ESC、aria-live/aria-busy 和 pending guard
@@ -92,7 +92,7 @@
 
 ## 10. Legacy Runtime 收敛
 
-- [ ] 10.1 生成 `window.*`、`window.__state`、bridge、inline DOM handler 和 root script 的静态/运行时 consumer map
+- [x] 10.1 生成 `window.*`、`window.__state`、bridge、inline DOM handler 和 root script 的静态/运行时 consumer map
 - [x] 10.2 删除 retired notes no-op runtime/deps/session/facades，并将 `applyCurrentAudioMeta` 迁入真实 owner
 - [ ] 10.3 按 import/controls/interaction/keyboard/app 行为域拆解超宽 reader feature 参数袋
 - [ ] 10.4 将 session DOM/global 依赖收集器折叠或拆成小而有行为的 adapters

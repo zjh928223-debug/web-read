@@ -19,7 +19,7 @@ function errorDetails(code, error, fallbackMessage) {
 }
 
 function failure(record, status, code, error, message) {
-  return {
+  const result = {
     ok: false,
     status,
     operation: record.operation,
@@ -27,10 +27,13 @@ function failure(record, status, code, error, message) {
     correlationId: record.correlationId,
     error: errorDetails(code, error, message),
   }
+  if (record.hasRevision) result.revision = record.revision
+  if (status === 'stale-revision') result.currentRevision = record.currentRevision
+  return result
 }
 
 function success(record, value) {
-  return {
+  const result = {
     ok: true,
     status: 'success',
     operation: record.operation,
@@ -38,11 +41,16 @@ function success(record, value) {
     correlationId: record.correlationId,
     value,
   }
+  if (record.hasRevision) result.revision = record.revision
+  return result
 }
 
 /**
  * Supervises independent request lanes keyed by operation name.
  * Each lane is single-flight: starting a new generation supersedes the old one.
+ * Revision-aware runs must provide both `revision` and `getCurrentRevision`.
+ * Their task receives `commit(effect)`, the only supervised state-commit seam;
+ * it executes the effect only while both generation and revision are current.
  */
 export function createRequestSupervisor(options = {}) {
   const active = new Map()
@@ -69,6 +77,10 @@ export function createRequestSupervisor(options = {}) {
     const key = String(operation || '').trim()
     if (!key) throw new TypeError('request operation is required')
     if (typeof task !== 'function') throw new TypeError('request task must be a function')
+    const hasRevision = Object.prototype.hasOwnProperty.call(runOptions, 'revision')
+    if (hasRevision && typeof runOptions.getCurrentRevision !== 'function') {
+      throw new TypeError('getCurrentRevision is required when revision is provided')
+    }
 
     const previous = active.get(key)
     interrupt(previous, 'superseded', 'REQUEST_SUPERSEDED', `Request "${key}" was superseded by a newer generation`)
@@ -83,12 +95,41 @@ export function createRequestSupervisor(options = {}) {
       operation: key,
       generation,
       correlationId,
+      hasRevision,
+      revision: runOptions.revision,
+      getCurrentRevision: runOptions.getCurrentRevision,
+      currentRevision: runOptions.revision,
+      revisionRejected: false,
+      commitAccepted: false,
       controller,
       resolveInterruption,
       settled: false,
       timer: null,
     }
     active.set(key, record)
+
+    function hasCurrentGeneration() {
+      return !record.settled && active.get(key) === record && generations.get(key) === generation
+    }
+
+    function hasCurrentRevision() {
+      if (!record.hasRevision) return true
+      record.currentRevision = record.getCurrentRevision()
+      return Object.is(record.currentRevision, record.revision)
+    }
+
+    function commit(effect) {
+      if (typeof effect !== 'function') throw new TypeError('request commit must be a function')
+      if (!hasCurrentGeneration() || !hasCurrentRevision()) {
+        if (record.hasRevision && !Object.is(record.currentRevision, record.revision)) {
+          record.revisionRejected = true
+        }
+        return false
+      }
+      effect()
+      record.commitAccepted = true
+      return true
+    }
 
     const configuredTimeout = runOptions.timeoutMs === undefined ? defaultTimeoutMs : Number(runOptions.timeoutMs)
     if (Number.isFinite(configuredTimeout) && configuredTimeout >= 0) {
@@ -98,9 +139,20 @@ export function createRequestSupervisor(options = {}) {
     }
 
     const taskResult = Promise.resolve()
-      .then(() => task({ signal: controller.signal, operation: key, generation, correlationId }))
+      .then(() => task({ signal: controller.signal, operation: key, generation, revision: record.revision, correlationId, commit }))
       .then(
-        (value) => success(record, value),
+        (value) => {
+          if (record.hasRevision && !record.commitAccepted && (record.revisionRejected || !hasCurrentRevision())) {
+            return failure(
+              record,
+              'stale-revision',
+              'REQUEST_REVISION_STALE',
+              null,
+              `Request "${key}" revision is stale`,
+            )
+          }
+          return success(record, value)
+        },
         (error) => {
           if (controller.signal.aborted) {
             return failure(record, 'aborted', 'REQUEST_ABORTED', error, `Request "${key}" was aborted`)

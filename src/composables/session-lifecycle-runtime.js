@@ -12,6 +12,7 @@ import {
     startSessionRuntime
 } from './session-startup-runtime.js';
 import { createLifecycleScope } from '../services/runtime/lifecycle-scope.js';
+import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js';
 
 export function startSessionLifecycleRuntime(deps = {}) {
     const lifecycle = createLifecycleScope();
@@ -29,6 +30,9 @@ export function startSessionLifecycleRuntime(deps = {}) {
     const domRefs = deps.domRefs;
     const globals = deps.globals;
     const annotationRuntime = deps.annotationRuntime;
+    const readerSessionPersistence = deps.readerSessionPersistence || createReaderSessionPersistence({
+        indexedDBApi: windowObject.indexedDB
+    });
 
     const startupCleanupRuntime = createSessionStartupCleanupRuntime({
         state,
@@ -49,6 +53,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
         lblAudio: domRefs.lblAudio,
         lblTranscript: domRefs.lblTranscript,
         lblVisual: domRefs.lblVisual,
+        readerSessionPersistence,
         loadFromDB: globals.loadFromDB,
         markFileLoaded: globals.markFileLoaded,
         applyCurrentAudioMeta: globals.applyCurrentAudioMeta,

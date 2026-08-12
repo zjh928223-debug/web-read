@@ -11,6 +11,11 @@ const { createReaderSessionPersistence } = await import(
 
 const fake = createAtomicIndexedDb()
 const persistence = createReaderSessionPersistence({ indexedDBApi: fake.indexedDBApi })
+assert.deepEqual(
+  await persistence.loadCommitted(),
+  { status: 'legacy', session: null },
+  'missing manifest is the only explicit legacy fallback signal',
+)
 const oldSession = fixture('old-content', 'revision-old')
 await persistence.commit(oldSession)
 assertConsistent(fake.rows, oldSession)
@@ -38,6 +43,31 @@ assert.equal(inconsistent.error.code, 'READER_SESSION_INCONSISTENT')
 fake.rows.set('chunkData', {
   ...mismatched,
   revision: nextSession.revision,
+})
+
+const mismatchedManifest = structuredClone(fake.rows.get('readerSession'))
+mismatchedManifest.content.revision = 'foreign-manifest-revision'
+fake.rows.set('readerSession', mismatchedManifest)
+const invalidManifest = await persistence.loadCommitted()
+assert.equal(invalidManifest.status, 'inconsistent')
+assert.equal(invalidManifest.error.code, 'READER_SESSION_INCONSISTENT')
+fake.rows.set('readerSession', {
+  ...mismatchedManifest,
+  content: {
+    ...mismatchedManifest.content,
+    revision: nextSession.revision,
+  },
+})
+
+const corruptTranscript = structuredClone(fake.rows.get('transcript'))
+corruptTranscript.content = { segments: 'not-an-array' }
+fake.rows.set('transcript', corruptTranscript)
+const invalidPayload = await persistence.loadCommitted()
+assert.equal(invalidPayload.status, 'inconsistent')
+assert.equal(invalidPayload.error.code, 'READER_SESSION_INCONSISTENT')
+fake.rows.set('transcript', {
+  ...corruptTranscript,
+  content: nextSession.transcript,
 })
 
 fake.manualCompletion = false

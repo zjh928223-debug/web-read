@@ -101,6 +101,7 @@
     "verify:reader-feature-runtime": "node scripts/reader-feature-runtime-check.cjs",
     "verify:reader-runtime-deps": "node scripts/reader-runtime-deps-check.cjs",
     "verify:notes-wrapper-drain": "node scripts/retired-notes-drain-check.mjs",
+    "verify:compatibility-consumer-map": "node scripts/compatibility-consumer-map.mjs --output docs/architecture/compatibility-consumer-map.json",
     "verify:state-facades": "node scripts/state-facade-owner-check.cjs",
     "verify:bridge-startup": "node scripts/bridge-startup-check.cjs",
     "verify:reader-runtime-shell": "node scripts/reader-runtime-shell-check.cjs",

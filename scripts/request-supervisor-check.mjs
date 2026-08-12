@@ -45,6 +45,88 @@ assert.deepEqual(
 oldWork.resolve('late-old-value')
 await Promise.resolve()
 
+// Generation and resource revision are separate commit guards. A task that
+// ignores abort and finishes late must not commit after a newer generation.
+const generationCommits = []
+const ignoredAbortWork = deferred()
+const ignoredAbortRequest = supervisor.run('guarded-generation', async ({ commit }) => {
+  const value = await ignoredAbortWork.promise
+  commit(() => generationCommits.push(value))
+  return value
+}, { correlationId: 'guarded-old' })
+await Promise.resolve()
+const currentGenerationResult = await supervisor.run('guarded-generation', async ({ commit }) => {
+  commit(() => generationCommits.push('current-generation'))
+  return 'current-generation'
+}, { correlationId: 'guarded-current' })
+ignoredAbortWork.resolve('late-generation')
+const ignoredAbortResult = await ignoredAbortRequest
+await Promise.resolve()
+assert.equal(currentGenerationResult.status, 'success')
+assert.equal(ignoredAbortResult.status, 'superseded')
+assert.deepEqual(generationCommits, ['current-generation'])
+
+// A resource can advance without starting a new request generation. Revision
+// therefore needs an explicit guard rather than being inferred from generation.
+let currentRevision = 'revision-1'
+const revisionWork = deferred()
+const revisionCommits = []
+const staleRevisionRequest = supervisor.run('load-revisioned-resource', async ({ revision, commit }) => {
+  assert.equal(revision, 'revision-1')
+  const value = await revisionWork.promise
+  const committed = commit(() => revisionCommits.push(value))
+  assert.equal(committed, false)
+  return value
+}, {
+  revision: 'revision-1',
+  getCurrentRevision: () => currentRevision,
+  correlationId: 'revision-old',
+})
+await Promise.resolve()
+currentRevision = 'revision-2'
+revisionWork.resolve('late-revision-1')
+const staleRevisionResult = await staleRevisionRequest
+assert.deepEqual(
+  {
+    ok: staleRevisionResult.ok,
+    status: staleRevisionResult.status,
+    generation: staleRevisionResult.generation,
+    revision: staleRevisionResult.revision,
+    currentRevision: staleRevisionResult.currentRevision,
+    correlationId: staleRevisionResult.correlationId,
+    code: staleRevisionResult.error.code,
+  },
+  {
+    ok: false,
+    status: 'stale-revision',
+    generation: 1,
+    revision: 'revision-1',
+    currentRevision: 'revision-2',
+    correlationId: 'revision-old',
+    code: 'REQUEST_REVISION_STALE',
+  },
+)
+assert.deepEqual(revisionCommits, [])
+
+const currentRevisionResult = await supervisor.run('load-revisioned-resource', async ({ commit }) => {
+  assert.equal(commit(() => revisionCommits.push('revision-2')), true)
+  return 'revision-2-value'
+}, {
+  revision: 'revision-2',
+  getCurrentRevision: () => currentRevision,
+  correlationId: 'revision-current',
+})
+assert.deepEqual(
+  { ok: currentRevisionResult.ok, status: currentRevisionResult.status, revision: currentRevisionResult.revision, value: currentRevisionResult.value },
+  { ok: true, status: 'success', revision: 'revision-2', value: 'revision-2-value' },
+)
+assert.deepEqual(revisionCommits, ['revision-2'])
+
+await assert.rejects(
+  supervisor.run('invalid-revision-guard', async () => 'unreachable', { revision: 1 }),
+  /getCurrentRevision is required/,
+)
+
 // Operations have independent single-flight lanes.
 const independent = await Promise.all([
   supervisor.run('load-audio', async () => 'audio'),

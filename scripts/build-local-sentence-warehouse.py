@@ -12,9 +12,12 @@ import argparse
 import hashlib
 import html
 import json
+import os
 import re
+import shutil
 import sqlite3
 import sys
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -24,6 +27,119 @@ DEFAULT_OUTPUT = DATA / "local-sentences.sqlite"
 MDICT_VENDOR = DATA / "tools" / "mdict-python"
 WORD_RE = re.compile(r"^[a-z]+(?:[-'][a-z]+)*$")
 TAG_RE = re.compile(r"<[^>]+>")
+REQUIRED_TABLES = {"build_metadata", "sentences", "primary_senses"}
+REQUIRED_METADATA = {
+    "schema_version",
+    "builder_version",
+    "sentence_count",
+    "source_counts",
+    "primary_sense_count",
+}
+SCHEMA_VERSION = "1"
+BUILDER_VERSION = "local-sentence-warehouse.v1"
+
+
+class WarehouseValidationError(RuntimeError):
+    pass
+
+
+def previous_database_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".previous")
+
+
+def validate_warehouse(path: Path) -> dict:
+    try:
+        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        raise WarehouseValidationError("candidate database cannot be opened") from exc
+    try:
+        integrity = connection.execute("PRAGMA integrity_check").fetchone()
+        if not integrity or integrity[0] != "ok":
+            raise WarehouseValidationError("candidate integrity_check failed")
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        missing_tables = REQUIRED_TABLES - tables
+        if missing_tables:
+            raise WarehouseValidationError(f"candidate missing required tables: {sorted(missing_tables)}")
+        metadata = dict(connection.execute("SELECT key, value FROM build_metadata"))
+        missing_metadata = REQUIRED_METADATA - metadata.keys()
+        if missing_metadata:
+            raise WarehouseValidationError(f"candidate missing required metadata: {sorted(missing_metadata)}")
+        sentence_count = connection.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
+        primary_sense_count = connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]
+        try:
+            expected_sentences = int(metadata["sentence_count"])
+            expected_primary_senses = int(metadata["primary_sense_count"])
+            source_counts = json.loads(metadata["source_counts"])
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise WarehouseValidationError("candidate metadata is invalid") from exc
+        if sentence_count != expected_sentences:
+            raise WarehouseValidationError("candidate sentence_count does not match rows")
+        if primary_sense_count != expected_primary_senses:
+            raise WarehouseValidationError("candidate primary_sense_count does not match rows")
+        if not isinstance(source_counts, dict):
+            raise WarehouseValidationError("candidate source_counts must be an object")
+        if metadata["schema_version"] != SCHEMA_VERSION:
+            raise WarehouseValidationError("candidate schema_version is unsupported")
+        if metadata["builder_version"] != BUILDER_VERSION:
+            raise WarehouseValidationError("candidate builder_version is unsupported")
+        if any(
+            not isinstance(source, str)
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            for source, count in source_counts.items()
+        ):
+            raise WarehouseValidationError("candidate source_counts entries are invalid")
+        return {
+            "sentence_count": sentence_count,
+            "primary_sense_count": primary_sense_count,
+            "schema_version": metadata["schema_version"],
+            "builder_version": metadata["builder_version"],
+        }
+    except sqlite3.Error as exc:
+        raise WarehouseValidationError("candidate database is invalid") from exc
+    finally:
+        connection.close()
+
+
+def _copy_durable(source: Path, destination: Path) -> None:
+    temporary = destination.with_name(f"{destination.name}.tmp-{uuid.uuid4().hex}")
+    try:
+        with source.open("rb") as source_handle, temporary.open("wb") as destination_handle:
+            shutil.copyfileobj(source_handle, destination_handle)
+            destination_handle.flush()
+            os.fsync(destination_handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("r+b") as handle:
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def build_sqlite_atomically(output: Path, build_candidate, *, before_replace=None) -> dict:
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f"{output.name}.build-{uuid.uuid4().hex}")
+    try:
+        build_candidate(temporary)
+        outcome = validate_warehouse(temporary)
+        _fsync_file(temporary)
+        if before_replace is not None:
+            before_replace(temporary, output)
+        if output.exists():
+            _copy_durable(output, previous_database_path(output))
+        os.replace(temporary, output)
+        return outcome
+    finally:
+        for candidate in (temporary, Path(str(temporary) + "-wal"), Path(str(temporary) + "-shm")):
+            candidate.unlink(missing_ok=True)
 
 
 def normalize_text(value: str) -> str:
@@ -409,41 +525,61 @@ def main() -> int:
     if args.primary_senses_only:
         if not args.output.exists():
             raise SystemExit(f"Sentence warehouse does not exist: {args.output}")
-        connection = sqlite3.connect(args.output)
-        count = import_new_oxford_primary_senses(connection, args.bilingual_mdx)
-        connection.execute(
-            "INSERT INTO build_metadata(key, value) VALUES ('primary_sense_count', ?) "
-            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            (str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),),
-        )
-        connection.commit()
-        connection.execute("PRAGMA optimize")
-        connection.close()
+        count = 0
+
+        def build_primary_senses_candidate(temporary: Path) -> None:
+            nonlocal count
+            shutil.copy2(args.output, temporary)
+            connection = sqlite3.connect(temporary)
+            try:
+                count = import_new_oxford_primary_senses(connection, args.bilingual_mdx)
+                connection.execute(
+                    "INSERT INTO build_metadata(key, value) VALUES ('primary_sense_count', ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),),
+                )
+                connection.execute("PRAGMA optimize")
+                connection.commit()
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                connection.close()
+
+        build_sqlite_atomically(args.output, build_primary_senses_candidate)
         digest = hashlib.sha256(args.output.read_bytes()).hexdigest()
         print(json.dumps({"output": str(args.output), "primary_senses_imported": count,
                           "sha256": digest}, indent=2))
         return 0
 
-    connection = create_database(args.output)
-    counts = {
-        "ldoce5": import_ldoce(connection, args.ldoce_mdx),
-        "vocabulary_com": import_vocabulary_com(connection, args.vocabulary_mdx),
-        "open_english_wordnet": import_wordnet(connection, args.wordnet),
-        "kaikki": import_kaikki(connection, args.kaikki),
-        "new_oxford_primary_senses": import_new_oxford_primary_senses(connection, args.bilingual_mdx),
-    }
-    total = connection.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
-    metadata = {
-        "schema_version": "1",
-        "builder_version": "local-sentence-warehouse.v1",
-        "sentence_count": str(total),
-        "source_counts": json.dumps(counts, sort_keys=True),
-        "primary_sense_count": str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),
-    }
-    connection.executemany("INSERT INTO build_metadata(key, value) VALUES (?, ?)", metadata.items())
-    connection.commit()
-    connection.execute("PRAGMA optimize")
-    connection.close()
+    counts = {}
+    total = 0
+
+    def build_full_candidate(temporary: Path) -> None:
+        nonlocal counts, total
+        connection = create_database(temporary)
+        try:
+            counts = {
+                "ldoce5": import_ldoce(connection, args.ldoce_mdx),
+                "vocabulary_com": import_vocabulary_com(connection, args.vocabulary_mdx),
+                "open_english_wordnet": import_wordnet(connection, args.wordnet),
+                "kaikki": import_kaikki(connection, args.kaikki),
+                "new_oxford_primary_senses": import_new_oxford_primary_senses(connection, args.bilingual_mdx),
+            }
+            total = connection.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
+            metadata = {
+                "schema_version": SCHEMA_VERSION,
+                "builder_version": BUILDER_VERSION,
+                "sentence_count": str(total),
+                "source_counts": json.dumps(counts, sort_keys=True),
+                "primary_sense_count": str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),
+            }
+            connection.executemany("INSERT INTO build_metadata(key, value) VALUES (?, ?)", metadata.items())
+            connection.execute("PRAGMA optimize")
+            connection.commit()
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            connection.close()
+
+    build_sqlite_atomically(args.output, build_full_candidate)
     digest = hashlib.sha256(args.output.read_bytes()).hexdigest()
     print(json.dumps({"output": str(args.output), "sentences": total, "sources": counts, "sha256": digest}, indent=2))
     return 0

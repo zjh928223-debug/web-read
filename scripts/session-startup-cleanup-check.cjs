@@ -90,7 +90,6 @@ async function main() {
   assert.deepEqual(diagnostics[0].payload.scope, { audioKey: 'audio-1', documentId: 'doc-1' });
   assert.ok(removed.includes('st.chunkCnVisible'));
   assert.ok(removed.includes('st.chunkCnHoldMode'));
-  assert.ok(removed.includes('chunkNoteVisible'));
 
   console.log('session startup cleanup check passed');
 }

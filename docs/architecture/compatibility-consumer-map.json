@@ -1,0 +1,2084 @@
+{
+  "schemaVersion": 1,
+  "capture": {
+    "mode": "isolated-vite-runtime",
+    "port": 4195,
+    "sourceRoot": "src + index.html",
+    "consoleErrors": [],
+    "pageErrors": []
+  },
+  "summary": {
+    "compatibilitySurfaces": 76,
+    "staticReaders": 32,
+    "staticWriters": 67,
+    "runtimeDefined": 69,
+    "runtimeCalled": 3,
+    "inlineHandlers": 0,
+    "loadedScripts": 21
+  },
+  "surfaces": [
+    {
+      "name": "__annotationLightweightModule",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 877
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 82
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/annotation-lightweight-module.js",
+          "line": 102
+        }
+      ],
+      "runtime": {
+        "name": "__annotationLightweightModule",
+        "defined": true,
+        "type": "object",
+        "reads": 2,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__annotationStore",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/annotation.js",
+          "line": 2
+        }
+      ],
+      "runtime": {
+        "name": "__annotationStore",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__appHandlers",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/app-handlers.js",
+          "line": 96
+        }
+      ],
+      "runtime": {
+        "name": "__appHandlers",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__audioStore",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 78
+        },
+        {
+          "file": "src/main.js",
+          "line": 79
+        },
+        {
+          "file": "src/stores/audio.js",
+          "line": 95
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 85
+        }
+      ],
+      "runtime": {
+        "name": "__audioStore",
+        "defined": true,
+        "type": "object",
+        "reads": 9,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__chunkNoteLayout",
+      "reads": [
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 111
+        },
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 111
+        },
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 112
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "__chunkNoteLayout",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "__chunkState",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 107
+        },
+        {
+          "file": "src/main.js",
+          "line": 107
+        },
+        {
+          "file": "src/main.js",
+          "line": 108
+        },
+        {
+          "file": "src/stores/chunk.js",
+          "line": 3
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/chunk-state.js",
+          "line": 160
+        }
+      ],
+      "runtime": {
+        "name": "__chunkState",
+        "defined": true,
+        "type": "object",
+        "reads": 4,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__chunkStore",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/chunk.js",
+          "line": 1
+        }
+      ],
+      "runtime": {
+        "name": "__chunkStore",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__clozeState",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 110
+        },
+        {
+          "file": "src/main.js",
+          "line": 110
+        },
+        {
+          "file": "src/main.js",
+          "line": 111
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/cloze-state.js",
+          "line": 108
+        }
+      ],
+      "runtime": {
+        "name": "__clozeState",
+        "defined": true,
+        "type": "object",
+        "reads": 4,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__controlsModule",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 165
+        }
+      ],
+      "runtime": {
+        "name": "__controlsModule",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__glassEffects",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/glass-effects.js",
+          "line": 134
+        }
+      ],
+      "runtime": {
+        "name": "__glassEffects",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__importModule",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/import-module.js",
+          "line": 395
+        }
+      ],
+      "runtime": {
+        "name": "__importModule",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__keyboardModule",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/keyboard-module.js",
+          "line": 298
+        }
+      ],
+      "runtime": {
+        "name": "__keyboardModule",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__legacyControlBindings",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/legacy-control-bindings.js",
+          "line": 59
+        }
+      ],
+      "runtime": {
+        "name": "__legacyControlBindings",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__marksStore",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2073
+        },
+        {
+          "file": "src/main.js",
+          "line": 89
+        },
+        {
+          "file": "src/main.js",
+          "line": 90
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/stores/marks.js",
+          "line": 39
+        }
+      ],
+      "runtime": {
+        "name": "__marksStore",
+        "defined": true,
+        "type": "object",
+        "reads": 3,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__mediaSource",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 128
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 800
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1848
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1848
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1849
+        },
+        {
+          "file": "src/composables/app-handlers.js",
+          "line": 60
+        },
+        {
+          "file": "src/composables/app-handlers.js",
+          "line": 60
+        },
+        {
+          "file": "src/composables/app-handlers.js",
+          "line": 61
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 6
+        },
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 6
+        },
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 129
+        },
+        {
+          "file": "src/composables/highlight-controls-module.js",
+          "line": 6
+        },
+        {
+          "file": "src/composables/highlight-controls-module.js",
+          "line": 6
+        },
+        {
+          "file": "src/composables/highlight-controls-module.js",
+          "line": 7
+        },
+        {
+          "file": "src/composables/keyboard-module.js",
+          "line": 10
+        },
+        {
+          "file": "src/composables/keyboard-module.js",
+          "line": 10
+        },
+        {
+          "file": "src/composables/keyboard-module.js",
+          "line": 11
+        },
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 2
+        },
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 2
+        },
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 3
+        },
+        {
+          "file": "src/composables/playback-runtime-helpers.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/playback-runtime-helpers.js",
+          "line": 5
+        },
+        {
+          "file": "src/composables/playback-runtime-helpers.js",
+          "line": 6
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 84
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/media-source-module.js",
+          "line": 343
+        }
+      ],
+      "runtime": {
+        "name": "__mediaSource",
+        "defined": true,
+        "type": "object",
+        "reads": 37,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__piniaStores",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2154
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2154
+        },
+        {
+          "file": "src/composables/chunk-state.js",
+          "line": 63
+        },
+        {
+          "file": "src/composables/chunk-state.js",
+          "line": 63
+        },
+        {
+          "file": "src/composables/chunk-state.js",
+          "line": 64
+        },
+        {
+          "file": "src/composables/cloze-state.js",
+          "line": 27
+        },
+        {
+          "file": "src/composables/cloze-state.js",
+          "line": 27
+        },
+        {
+          "file": "src/composables/cloze-state.js",
+          "line": 28
+        },
+        {
+          "file": "src/composables/pinia-bridge-module.js",
+          "line": 7
+        },
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 17
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 30
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 30
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 31
+        },
+        {
+          "file": "src/composables/ui-facades.js",
+          "line": 2
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/main.js",
+          "line": 97
+        }
+      ],
+      "runtime": {
+        "name": "__piniaStores",
+        "defined": true,
+        "type": "object",
+        "reads": 6,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__playbackModule",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 259
+        }
+      ],
+      "runtime": {
+        "name": "__playbackModule",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__playbackState",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-state.js",
+          "line": 84
+        }
+      ],
+      "runtime": {
+        "name": "__playbackState",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__sessionStateProvider",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-state-provider.js",
+          "line": 14
+        }
+      ],
+      "runtime": {
+        "name": "__sessionStateProvider",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__state",
+      "reads": [
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 89
+        },
+        {
+          "file": "src/components/TranscriptContainer.vue",
+          "line": 72
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 869
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 869
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1352
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1924
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1924
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2045
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2065
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2084
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2148
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 66
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 78
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 78
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/runtime-state-facade.js",
+          "line": 7
+        }
+      ],
+      "runtime": {
+        "name": "__state",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__styleEditor",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/style-editor.js",
+          "line": 201
+        }
+      ],
+      "runtime": {
+        "name": "__styleEditor",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__themeStore",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 55
+        },
+        {
+          "file": "src/main.js",
+          "line": 56
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/stores/theme.js",
+          "line": 284
+        }
+      ],
+      "runtime": {
+        "name": "__themeStore",
+        "defined": true,
+        "type": "object",
+        "reads": 4,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__transcriptState",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 104
+        },
+        {
+          "file": "src/main.js",
+          "line": 104
+        },
+        {
+          "file": "src/main.js",
+          "line": 105
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 111
+        }
+      ],
+      "runtime": {
+        "name": "__transcriptState",
+        "defined": true,
+        "type": "object",
+        "reads": 4,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__transcriptStore",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/transcript.js",
+          "line": 2
+        }
+      ],
+      "runtime": {
+        "name": "__transcriptStore",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__uiStore",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 68
+        },
+        {
+          "file": "src/main.js",
+          "line": 69
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/stores/ui.js",
+          "line": 14
+        }
+      ],
+      "runtime": {
+        "name": "__uiStore",
+        "defined": true,
+        "type": "object",
+        "reads": 2,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__USE_VUE_RENDERING",
+      "reads": [
+        {
+          "file": "src/App.vue",
+          "line": 141
+        },
+        {
+          "file": "src/composables/render-mode.js",
+          "line": 2
+        },
+        {
+          "file": "src/composables/render-mode.js",
+          "line": 5
+        },
+        {
+          "file": "src/main.js",
+          "line": 116
+        },
+        {
+          "file": "src/main.js",
+          "line": 118
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/render-mode.js",
+          "line": 3
+        },
+        {
+          "file": "src/main.js",
+          "line": 120
+        }
+      ],
+      "runtime": {
+        "name": "__USE_VUE_RENDERING",
+        "defined": true,
+        "type": "boolean",
+        "reads": 4,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "__xxxStore",
+      "reads": [
+        {
+          "file": "src/main.js",
+          "line": 41
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "__xxxStore",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "AnnotationBubble",
+      "reads": [
+        {
+          "file": "src/composables/annotation-bubble.js",
+          "line": 402
+        },
+        {
+          "file": "src/composables/annotation-bubble.js",
+          "line": 405
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "AnnotationBubble",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationClickResolver",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/services/annotation/click-resolver.js",
+          "line": 222
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationClickResolver",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationGeneratedResultStore",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/services/annotation/result-store.js",
+          "line": 221
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationGeneratedResultStore",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationGenerationDiagnostics",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/services/annotation/diagnostics.js",
+          "line": 165
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationGenerationDiagnostics",
+        "defined": true,
+        "type": "object",
+        "reads": 3,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationGenerationStorage",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/services/annotation/storage.js",
+          "line": 261
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationGenerationStorage",
+        "defined": true,
+        "type": "object",
+        "reads": 3,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationTargetSource",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/services/annotation/target-source.js",
+          "line": 403
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationTargetSource",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "applyCurrentAudioMeta",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 868
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 868
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/reader-public-facades.js",
+          "line": 26
+        }
+      ],
+      "runtime": {
+        "name": "applyCurrentAudioMeta",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "aspectRatio",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 138
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 152
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "aspectRatio",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "bridgeToPinia",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2092
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2092
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/pinia-bridge-module.js",
+          "line": 34
+        }
+      ],
+      "runtime": {
+        "name": "bridgeToPinia",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "buildCurrentSentenceDocId",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/reader-public-facades.js",
+          "line": 25
+        }
+      ],
+      "runtime": {
+        "name": "buildCurrentSentenceDocId",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "changeSpeed",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 23
+        }
+      ],
+      "runtime": {
+        "name": "changeSpeed",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "ChunkMatchingHelpers",
+      "reads": [
+        {
+          "file": "src/composables/import-module.js",
+          "line": 14
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/utils/chunk-matching.js",
+          "line": 130
+        }
+      ],
+      "runtime": {
+        "name": "ChunkMatchingHelpers",
+        "defined": true,
+        "type": "object",
+        "reads": 2,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "clearDBStore",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 104
+        }
+      ],
+      "runtime": {
+        "name": "clearDBStore",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "closeChunkStyleModal",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/style-editor.js",
+          "line": 177
+        }
+      ],
+      "runtime": {
+        "name": "closeChunkStyleModal",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "cycleHighlightMode",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/highlight-controls-module.js",
+          "line": 38
+        }
+      ],
+      "runtime": {
+        "name": "cycleHighlightMode",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "DataUtils",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 874
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 874
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 875
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 875
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 191
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 191
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 192
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 192
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/utils/data-utils.js",
+          "line": 174
+        }
+      ],
+      "runtime": {
+        "name": "DataUtils",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "deleteFromDB",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 103
+        }
+      ],
+      "runtime": {
+        "name": "deleteFromDB",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "forceUpdateUI",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 252
+        }
+      ],
+      "runtime": {
+        "name": "forceUpdateUI",
+        "defined": true,
+        "type": "function",
+        "reads": 2,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "handleBackwardClick",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 250
+        }
+      ],
+      "runtime": {
+        "name": "handleBackwardClick",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "handleBackwardClickNormalMode",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 255
+        }
+      ],
+      "runtime": {
+        "name": "handleBackwardClickNormalMode",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "handleForwardClick",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 251
+        }
+      ],
+      "runtime": {
+        "name": "handleForwardClick",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "handleForwardClickNormalMode",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 256
+        }
+      ],
+      "runtime": {
+        "name": "handleForwardClickNormalMode",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "IdentityStorageKeys",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/utils/identity-storage-keys.js",
+          "line": 61
+        }
+      ],
+      "runtime": {
+        "name": "IdentityStorageKeys",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "ImportExportSharedHelpers",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/utils/import-export-helpers.js",
+          "line": 35
+        }
+      ],
+      "runtime": {
+        "name": "ImportExportSharedHelpers",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "initDB",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 100
+        }
+      ],
+      "runtime": {
+        "name": "initDB",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 1,
+        "assigned": true
+      }
+    },
+    {
+      "name": "isInputLikeTarget",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/keyboard-module.js",
+          "line": 302
+        }
+      ],
+      "runtime": {
+        "name": "isInputLikeTarget",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "loadFromDB",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 102
+        }
+      ],
+      "runtime": {
+        "name": "loadFromDB",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 6,
+        "assigned": true
+      }
+    },
+    {
+      "name": "mainUpdateHighlight",
+      "reads": [
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 61
+        },
+        {
+          "file": "src/composables/controls-module.js",
+          "line": 62
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 253
+        }
+      ],
+      "runtime": {
+        "name": "mainUpdateHighlight",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "minimized",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 6
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 17
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 18
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 25
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 32
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 139
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 173
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 218
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "minimized",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "notifyAnnotationBubbleWordClick",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/annotation-bubble-resolver.js",
+          "line": 153
+        }
+      ],
+      "runtime": {
+        "name": "notifyAnnotationBubbleWordClick",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "openChunkStyleModal",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/style-editor.js",
+          "line": 176
+        }
+      ],
+      "runtime": {
+        "name": "openChunkStyleModal",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "PlaybackIndexHelpers",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/utils/playback-index.js",
+          "line": 72
+        }
+      ],
+      "runtime": {
+        "name": "PlaybackIndexHelpers",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "processChunkData",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 872
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 81
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/import-module.js",
+          "line": 275
+        }
+      ],
+      "runtime": {
+        "name": "processChunkData",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "processTranscript",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 871
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 80
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/import-module.js",
+          "line": 388
+        }
+      ],
+      "runtime": {
+        "name": "processTranscript",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "processVisual",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/visual-vocab-module.js",
+          "line": 95
+        }
+      ],
+      "runtime": {
+        "name": "processVisual",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "saveToDB",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2090
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2090
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/stores/audio.js",
+          "line": 101
+        }
+      ],
+      "runtime": {
+        "name": "saveToDB",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "showError",
+      "reads": [
+        {
+          "file": "src/stores/ui.js",
+          "line": 9
+        },
+        {
+          "file": "src/stores/ui.js",
+          "line": 10
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/components/ToastMessage.vue",
+          "line": 20
+        },
+        {
+          "file": "src/composables/ui-facades.js",
+          "line": 23
+        },
+        {
+          "file": "src/main.js",
+          "line": 74
+        }
+      ],
+      "runtime": {
+        "name": "showError",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "showToast",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 879
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1464
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1465
+        },
+        {
+          "file": "src/composables/media-source-module.js",
+          "line": 139
+        },
+        {
+          "file": "src/composables/media-source-module.js",
+          "line": 139
+        },
+        {
+          "file": "src/main.js",
+          "line": 67
+        },
+        {
+          "file": "src/main.js",
+          "line": 72
+        },
+        {
+          "file": "src/stores/ui.js",
+          "line": 3
+        },
+        {
+          "file": "src/stores/ui.js",
+          "line": 4
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/components/ToastMessage.vue",
+          "line": 17
+        },
+        {
+          "file": "src/composables/ui-facades.js",
+          "line": 22
+        },
+        {
+          "file": "src/main.js",
+          "line": 73
+        }
+      ],
+      "runtime": {
+        "name": "showToast",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "syncAnnotationGenerationEntryStatus",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2091
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2091
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "syncAnnotationGenerationEntryStatus",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "toggleAnnotationBubble",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/playback-module.js",
+          "line": 254
+        }
+      ],
+      "runtime": {
+        "name": "toggleAnnotationBubble",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "toggleChunkFocusMode",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 214
+        }
+      ],
+      "runtime": {
+        "name": "toggleChunkFocusMode",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "toggleChunkMode",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 213
+        }
+      ],
+      "runtime": {
+        "name": "toggleChunkMode",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "toggleChunkShadowManual",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 215
+        }
+      ],
+      "runtime": {
+        "name": "toggleChunkShadowManual",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "updateChunkCnHoldBtn",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2164
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2164
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 216
+        }
+      ],
+      "runtime": {
+        "name": "updateChunkCnHoldBtn",
+        "defined": true,
+        "type": "function",
+        "reads": 1,
+        "calls": 1,
+        "assigned": true
+      }
+    },
+    {
+      "name": "updateChunkStyle",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/style-editor.js",
+          "line": 178
+        }
+      ],
+      "runtime": {
+        "name": "updateChunkStyle",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "VocabMatchingHelpers",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/utils/vocab-matching.js",
+          "line": 66
+        }
+      ],
+      "runtime": {
+        "name": "VocabMatchingHelpers",
+        "defined": true,
+        "type": "object",
+        "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "width",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 137
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 151
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 255
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "width",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "x",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 159
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 228
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "x",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "y",
+      "reads": [
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 142
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 160
+        },
+        {
+          "file": "src/components/VideoPlayerFloat.vue",
+          "line": 229
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "y",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    }
+  ],
+  "runtimeProbes": {
+    "state": {
+      "__state": 0
+    },
+    "bridge": {
+      "bridgeToPinia": 1
+    }
+  },
+  "scripts": [
+    {
+      "src": "/@vite/client",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/cse.js",
+      "type": "classic",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/theme.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/ui.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/audio.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/marks.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/transcript.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/chunk.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/stores/annotation.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/glass-effects.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/app-handlers.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/style-editor.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/import-module.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/keyboard-module.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/media-source-module.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/playback-module.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/controls-module.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/legacy-control-bindings.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/reader-runtime.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/composables/session-init.js",
+      "type": "module",
+      "inline": false
+    },
+    {
+      "src": "/src/main.js",
+      "type": "module",
+      "inline": false
+    }
+  ],
+  "inlineHandlers": []
+}
