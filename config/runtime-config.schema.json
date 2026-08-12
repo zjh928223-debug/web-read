@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://read-web.local/schemas/runtime-config-v1.json",
+  "title": "Read-Web RuntimeConfig v1",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "frontend": { "$ref": "#/$defs/endpoint" },
+    "backend": { "$ref": "#/$defs/endpoint" },
+    "dataRoot": { "type": "string", "minLength": 1 },
+    "python": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "executable": { "type": "string", "minLength": 1 } }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ytDlp": { "type": "string", "minLength": 1 },
+        "whisperx": { "type": "string", "minLength": 1 },
+        "ffmpeg": { "type": "string", "minLength": 1 },
+        "cookies": { "type": "string", "minLength": 1 }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "proxyUrl": { "type": "string" } }
+    },
+    "ai": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "minLength": 1 },
+        "baseUrl": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    }
+  }
+}

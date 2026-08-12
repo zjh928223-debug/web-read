@@ -12,18 +12,20 @@ from threading import Event
 from typing import Callable, Iterable
 
 from .durable_json import DurableJsonRepository
+from .runtime_config import load_runtime_config
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATA_ROOT = Path(os.getenv("READ_WEB_SUBTITLE_DATA_ROOT", "E:\\ReadWebData\\SubtitleWorkflow"))
+_BOOTSTRAP_RUNTIME = load_runtime_config()
+DEFAULT_DATA_ROOT = _BOOTSTRAP_RUNTIME.data_root
 DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "output"
-DEFAULT_WHISPERX_PATH = Path(r"D:\whisper_env\Scripts\whisperx.exe")
-DEFAULT_YT_DLP_PATH = Path(r"D:\whisper_env\Scripts\yt-dlp.exe")
-DEFAULT_FFMPEG_PATH = Path(os.getenv("FFMPEG_PATH", "ffmpeg"))
-DEFAULT_COOKIES_PATH = Path(r"C:\Users\0\Desktop\www.youtube.com_cookies.txt")
-DEFAULT_PROXY_URL = "http://127.0.0.1:7897"
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-DEFAULT_GEMINI_BASE_URL = os.getenv("GEMINI_BASE_URL", "")
+DEFAULT_WHISPERX_PATH = _BOOTSTRAP_RUNTIME.whisperx_path
+DEFAULT_YT_DLP_PATH = _BOOTSTRAP_RUNTIME.yt_dlp_path
+DEFAULT_FFMPEG_PATH = _BOOTSTRAP_RUNTIME.ffmpeg_path
+DEFAULT_COOKIES_PATH = _BOOTSTRAP_RUNTIME.cookies_path
+DEFAULT_PROXY_URL = _BOOTSTRAP_RUNTIME.proxy_url
+DEFAULT_GEMINI_MODEL = _BOOTSTRAP_RUNTIME.model
+DEFAULT_GEMINI_BASE_URL = _BOOTSTRAP_RUNTIME.gemini_base_url
 GEMINI_CACHE_DIR = DEFAULT_DATA_ROOT / ".gemini_cache"
 DEFAULT_STATE_DIR = DEFAULT_DATA_ROOT / ".workflow_state"
 
@@ -131,23 +133,29 @@ def choose_downloaded_media(files: Iterable[Path], video_priority: bool) -> Path
 
 @dataclass
 class WorkflowConfig:
-    output_dir: Path = DEFAULT_OUTPUT_DIR
-    yt_dlp_path: Path = DEFAULT_YT_DLP_PATH
-    whisperx_path: Path = DEFAULT_WHISPERX_PATH
-    ffmpeg_path: Path = DEFAULT_FFMPEG_PATH
-    cookies_path: Path = DEFAULT_COOKIES_PATH
-    proxy_url: str = DEFAULT_PROXY_URL
-    state_dir: Path = DEFAULT_STATE_DIR
+    output_dir: Path | None = None
+    yt_dlp_path: Path | None = None
+    whisperx_path: Path | None = None
+    ffmpeg_path: Path | None = None
+    cookies_path: Path | None = None
+    proxy_url: str | None = None
+    state_dir: Path | None = None
 
     def __post_init__(self) -> None:
-        self.output_dir = Path(self.output_dir)
-        self.yt_dlp_path = Path(self.yt_dlp_path)
-        self.whisperx_path = Path(self.whisperx_path)
-        self.ffmpeg_path = Path(self.ffmpeg_path)
-        self.cookies_path = Path(self.cookies_path)
-        self.state_dir = Path(self.state_dir)
-        if self.state_dir == DEFAULT_STATE_DIR and self.output_dir != DEFAULT_OUTPUT_DIR:
+        runtime = load_runtime_config()
+        output_was_explicit = self.output_dir is not None
+        self.output_dir = Path(self.output_dir) if output_was_explicit else runtime.output_dir
+        self.yt_dlp_path = Path(self.yt_dlp_path) if self.yt_dlp_path is not None else runtime.yt_dlp_path
+        self.whisperx_path = Path(self.whisperx_path) if self.whisperx_path is not None else runtime.whisperx_path
+        self.ffmpeg_path = Path(self.ffmpeg_path) if self.ffmpeg_path is not None else runtime.ffmpeg_path
+        self.cookies_path = Path(self.cookies_path) if self.cookies_path is not None else runtime.cookies_path
+        self.proxy_url = str(self.proxy_url) if self.proxy_url is not None else runtime.proxy_url
+        if self.state_dir is not None:
+            self.state_dir = Path(self.state_dir)
+        elif output_was_explicit:
             self.state_dir = self.output_dir / ".workflow_state"
+        else:
+            self.state_dir = runtime.state_dir
 
 
 def coerce_bool(value, default: bool = False) -> bool:
