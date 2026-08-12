@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,14 +19,27 @@ class JsonReadOutcome:
 
 
 class DurableJsonRepository:
+    _path_locks: dict[str, threading.RLock] = {}
+    _path_locks_guard = threading.Lock()
+
     def __init__(self, before_replace: Callable[[Path, Path], None] | None = None):
         self.before_replace = before_replace
+
+    @classmethod
+    def _path_lock(cls, path: Path) -> threading.RLock:
+        key = str(Path(path).resolve()).lower()
+        with cls._path_locks_guard:
+            return cls._path_locks.setdefault(key, threading.RLock())
 
     @staticmethod
     def backup_path(path: Path) -> Path:
         return path.with_suffix(path.suffix + ".bak")
 
     def read(self, path: Path, fallback: Any = None) -> JsonReadOutcome:
+        with self._path_lock(path):
+            return self._read_unlocked(path, fallback)
+
+    def _read_unlocked(self, path: Path, fallback: Any = None) -> JsonReadOutcome:
         path = Path(path)
         interrupted_paths = self._quarantine_temps(path)
         if not path.exists():
@@ -54,6 +68,10 @@ class DurableJsonRepository:
             )
 
     def write(self, path: Path, value: Any, *, preserve_backup: bool = True) -> None:
+        with self._path_lock(path):
+            self._write_unlocked(path, value, preserve_backup=preserve_backup)
+
+    def _write_unlocked(self, path: Path, value: Any, *, preserve_backup: bool = True) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_name(f"{path.name}.tmp-{uuid.uuid4().hex}")
