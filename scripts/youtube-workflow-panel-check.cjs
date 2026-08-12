@@ -76,7 +76,7 @@ async function main() {
   assert.ok(panelSource.includes('bindPlaybackTrackingTo(getReaderMedia())'), 'reader activity tracking should rebind when the active media element changes');
   assert.ok(panelSource.includes('refreshCurrentJobMediaForVideoPriority'), 'enabling video priority should refresh media metadata for the current job');
   assert.ok(panelSource.includes('youtubeWorkflowClient.getSession(currentJobId.value)'), 'video priority refresh should re-read the current job session');
-  assert.ok(panelSource.includes("youtubeWorkflowClient.fileUrl(currentJobId.value, 'video')"), 'video priority refresh should use the service video endpoint');
+  assert.ok(panelSource.includes("youtubeWorkflowClient.mediaUrl(currentJobId.value, 'video')"), 'video priority refresh should use the authorized Range service endpoint');
   assert.ok(indexSource.includes('deprecated-file-entry') && indexSource.includes('过时入口'), 'manual audio/subtitle file inputs should be folded into the deprecated entry');
   assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');

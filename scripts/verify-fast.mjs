@@ -9,6 +9,7 @@ const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'pyth
 
 const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
+  command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('playback helper behavior', process.execPath, ['scripts/playback-runtime-helpers-check.cjs']),
   command('annotation resolver behavior', process.execPath, ['scripts/annotation-bubble-resolver-check.cjs']),
   command('annotation bundle merge behavior', process.execPath, ['scripts/session-annotation-bundle-merge-check.cjs']),

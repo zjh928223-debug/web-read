@@ -1,5 +1,7 @@
 # Read-Web Refactoring Program README
 
+> **历史规划 / Archived:** 本文保留用于追溯早期重构判断。当前实施以 `openspec/changes/stabilize-and-simplify-read-web/`、`CURRENT_PROJECT_STATUS.md` 和 `docs/OPERATIONS.md` 为准。
+
 > **For agentic workers:** This document is the governing program plan for the Read-Web refactor. Do not interpret it as permission to rewrite the whole application in one change. Complete the phases in order, satisfy every exit gate, and create a focused OpenSpec change plus a task-level implementation plan before modifying a new architectural boundary.
 
 **Document date:** 2026-07-11 (Asia/Shanghai)

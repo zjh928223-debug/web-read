@@ -181,6 +181,9 @@ export function createYoutubeWorkflowClient(options = {}) {
     fileUrl(jobId, kind) {
       return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/file/${encodeURIComponent(kind)}`)
     },
+    mediaUrl(jobId, kind) {
+      return capabilityUrl(`/api/jobs/${encodeURIComponent(jobId)}/media/${encodeURIComponent(kind)}`)
+    },
     async bindVideoSource(jobId, payload = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/video-source`), {
         method: 'POST',

@@ -45,7 +45,7 @@ function killProcessTree(child) {
 
 function runLoadCheck() {
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [path.join('scripts', 'read26-load-check.cjs')], {
+    const child = spawn(process.execPath, [path.join('scripts', 'read-web-load-check.cjs')], {
       cwd: process.cwd(),
       stdio: 'inherit',
       env: {

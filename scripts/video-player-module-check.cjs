@@ -47,7 +47,7 @@ assert.ok(videoFloatSource.includes('startVideoResize'), 'video window should re
 assert.ok(videoFloatSource.includes('minimizeVideo'), 'video window should support minimize without switching sources');
 assert.ok(videoFloatSource.includes('closeVideo'), 'video window close should switch back to audio');
 
-assert.ok(loaderSource.includes("client.fileUrl(jobId, 'video')"), 'workflow loader should use a service video URL instead of a blob');
+assert.ok(loaderSource.includes("client.mediaUrl(jobId, 'video')"), 'workflow loader should use an authorized Range service URL instead of a blob');
 assert.ok(loaderSource.includes('mediaSource.loadJobMedia'), 'workflow loader should register video availability at load time');
 assert.ok(panelSource.includes('setVideoPreferred'), 'workflow panel should keep the shared video preference in sync');
 assert.ok(panelSource.includes('window.__mediaSource'), 'workflow panel should use the shared media source module');

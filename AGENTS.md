@@ -24,8 +24,8 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 9 src/stores/*.js module compatibility stores
-├── 10 src/composables/*.js module compatibility/runtime modules
+├── 7 src/stores/*.js module compatibility stores
+├── 9 src/composables/*.js module compatibility/runtime modules
 ├── src/composables/reader-runtime.js as type="module"
 ├── src/composables/session-init.js as type="module"
 └── /src/main.js as type="module" for Vue + Pinia
@@ -263,7 +263,7 @@ npm run verify:production-preview  # Production preview load check against dist
 npm test             # Same as verify:vite
 ```
 
-`verify:read26` is now only a legacy alias to the current Vite verification.
+Use `verify:vite` for the current Vite load and interaction verification.
 
 ## Documentation Status
 

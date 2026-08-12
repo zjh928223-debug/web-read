@@ -1,484 +1,78 @@
 # Read-Web
 
-Vite + Vue 3 + Pinia migration of a legacy browser-based language reading tool.
+Read-Web 是一个本地运行的英语学习阅读器，使用 Vite、Vue 3、Pinia 和 FastAPI。它支持音视频材料、同步字幕、AI 语块、标记、轻量标注、词汇预习、SRS 复习和本地词典。
 
-The app provides audio playback, synchronized transcript reading, AI chunk mode, marks, lightweight annotation workflows, and annotation API settings.
+项目目前仍是混合架构：Vue/Pinia 已承担主要界面和状态，但启动链仍保留一组 `window.*` 与 DOM 兼容边界。不要把它当成已经完成的纯 Vue 重写。
 
-For the detailed current architecture and migration status, see `CURRENT_PROJECT_STATUS.md`.
+## 当前工作区
 
-## Current Status
+本目录 `E:\read-web-next` 是下一版的隔离开发工作区，分支为 `codex/read-web-next`。
 
-This is a working hybrid app, not a clean Vue-only rewrite.
+- 日常使用版仍位于 `E:\read-web`，使用 `5173/8765`。
+- Next 开发预览使用 `5174/8766`。
+- 桌面快捷方式在所有发布门禁通过并获得用户确认前不得切换。
+- 学习数据、媒体、凭据和大型词典不进入 Git。
 
-```text
-legacy DOM shell + module-bound controls
-        ->
-src/composables/reader-runtime.js thin runtime entry
-        ->
-src/composables/reader-runtime-assembly.js remaining runtime assembly
-        ->
-src/composables/session-init.js thin session entry
-        ->
-src/composables/session-runtime-assembly.js thin session runtime assembly
-        ->
-window.__state / state adapters / Pinia bridge module compatibility
-        ->
-Pinia stores in src/pinia-stores
-        ->
-Vue components
-```
+当前架构事实见 [CURRENT_PROJECT_STATUS.md](CURRENT_PROJECT_STATUS.md)，文件所有权见 [PROJECT_MAP.md](PROJECT_MAP.md)，启动、验证和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
-Vue rendering is currently enabled by default through `window.__USE_VUE_RENDERING = true`, but many actions still go through legacy `window.xxx` functions and module-bound DOM event wiring.
-
-## Active Conversation Handoff (2026-08-06)
-
-This section is the compact handoff for the personalized vocabulary-learning work completed across the current long-running conversation. A new session should read this section first, then use the linked OpenSpec artifacts instead of reconstructing decisions from chat history.
-
-### User learning intent
-
-- First contact is exposure, not memorization. The learner only needs to understand what the word means in the current short sentence; there is no requirement to recall it or see it several times on the same day.
-- First contact teaches one primary sense only. Secondary or extended senses and difficult IELTS/Cambridge source passages belong to later review after the primary sense is familiar.
-- Repetition timing must adapt to observed forgetting and feedback instead of applying a rigid “every word repeats tomorrow” rule.
-- Learner preference controls presentation form, not curriculum coverage. The system may choose a preferred sentence/audio/prompt style, but it must still cover weak parts of speech, morphology, senses, collocations, and transfer skills.
-- The agreed model is layered: FSRS handles per-learning-unit memory timing; a skill estimator identifies weaknesses; a constrained curriculum planner guarantees necessary coverage; a contextual-bandit preference model chooses presentation form. Shadow mode observes first and must not alter formal scheduling until explicitly promoted.
-
-The normative design, rollout gates, and unfinished work are in [`openspec/changes/separate-vocabulary-acquisition-and-review/`](openspec/changes/separate-vocabulary-acquisition-and-review/). Its task list currently records 134 completed and 17 pending tasks; do not duplicate or silently replace those pending tasks here.
-
-### Implemented product state
-
-- The read-only **模型观察** page and opt-in Shadow reporting path exist. Shadow output is derived from immutable learning data and cannot change ratings, due dates, the review ledger, or FSRS state. See [`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md) and the active OpenSpec design.
-- First contact now shows one word, one compact primary Chinese sense, pronunciation, and at most one short real or AI-assisted English sentence. It no longer automatically presents the difficult IELTS/Cambridge paragraph.
-- English sentence lookup is local-first, then Merriam-Webster Learner's/Collegiate, Tatoeba, and Wordnik. Only when those sources and the imported context cannot provide a usable sentence does the same-origin AI adapter generate a short learning aid. Every result and previously saved sentence must pass the same fail-closed target-lemma, inflection, and POS validation before display, so a related dictionary entry cannot be underlined as the requested word. AI examples are session-only, explicitly labeled, and never usable for review graduation. Merriam-Webster keys stay in Windows Credential Manager or server-only environment variables; Wordnik remains optional and safely reports unavailable until `WORDNIK_API_KEY` is configured.
-- The ignored local SQLite warehouse combines LDOCE5, Vocabulary.com, Open English WordNet, Kaikki, and a New Oxford bilingual primary-sense index. Supplemental bilingual, phrase, collocation, frequency, and pronunciation resources remain under the Git-ignored `data/dictionaries/` tree.
-- Whole-sentence Chinese translation is AI-assisted through the same-origin service, processed sequentially in batches of at most 25 and cached locally. Failure never blocks the English sentence. AI example fallback defaults to `gemma-4-31b-it`, then `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`; each provider attempt has a 15-second timeout.
-- The first-contact shortcut dialog supports reveal, word audio, sentence audio, Chinese translation visibility, previous item, and next item. Chinese translation can use either hold-to-show or persistent press-to-toggle behavior, with the selected mode restored locally. No shortcut labels appear on the learning card. Its weak `快捷键` trigger sits after the preview count and is explicitly centered inside its compact click area.
-
-### Primary-sense and sentence-matching rule
-
-The latest defect was `automatic` being imported as “自动手枪” while its displayed sentence used the adjective. This is fixed as a general pipeline rule:
-
-1. Determine the bilingual learner-dictionary primary sense and part of speech first.
-2. Reject sentence candidates from another part of speech.
-3. Rank remaining candidates by overlap between the primary English definition and the candidate sense gloss, followed by learner-dictionary sense order and the existing short-sentence constraints.
-4. Persist the repaired primary meaning, POS, sense key, and selected local sentence back into the current preview batch.
-5. If no sentence matches the primary POS/sense, return unavailable and continue to the next registered real-sentence provider; do not substitute a misleading local sentence.
-
-The local warehouse currently contains 68,013 bilingual primary-sense rows. The verified `automatic` result is “自动的” with `My camera is fully automatic`, rather than the noun meaning or the previous breathing-technique sentence. Refresh only this index with:
+## 快速验证
 
 ```powershell
-python scripts/build-local-sentence-warehouse.py --primary-senses-only
-```
-
-Implementation boundaries are documented in [`src/dictionary/local-sentences/README.md`](src/dictionary/local-sentences/README.md). Key runtime files are `local-sentence-service.mjs`, `local-warehouse-preview-sentence.js`, `passage-preview-import.js`, `PassagePreviewPage.vue`, and `App.vue`.
-
-### Verification and workspace state
-
-The latest implementation passed:
-
-```text
-npm run verify:passage-preview
-npm run verify:local-sentences
+npm ci
+npm run verify:toolchain
+npm run verify:fast
 npm run build
-npm run verify:vite
-openspec validate separate-vocabulary-acquisition-and-review --strict
-git diff --check
+node scripts/verify-full.mjs
 ```
 
-An isolated browser check confirmed the live local endpoint returns “自动的” and the primary-sense-matched camera sentence. The IndexedDB schema remains `SeekPlayerDB` version 1 with only the `files` object store.
+`verify:full` 只使用隔离端口 `4193/4194`，包含 fast gate、生产构建、3 条浏览器旅程、production preview 和后端测试。它不会启动、停止或复用日常版 `5173/8765`。
 
-The worktree is intentionally dirty and contains the complete uncommitted work from several approved preview, translation, shortcut, local-dictionary, and Shadow iterations. Preserve all existing changes and untracked files; do not reset, discard, or rebuild the feature from scratch. The generated dictionary databases and downloaded resources are intentionally ignored and must not be committed or redistributed.
+启动 Next 预览：
 
-### Recommended continuation
-
-- Continue from the pending checklist in [`tasks.md`](openspec/changes/separate-vocabulary-acquisition-and-review/tasks.md), especially observational statistics and later read-only training-data work, only when that is the user's next priority.
-- For immediate product work, collect actual learning feedback from preview/review and fix concrete mismatches without introducing a rigid interval-rule engine.
-- Communicate autonomously: the user prefers implementation without step-by-step reporting and only wants decisions escalated when intent is genuinely ambiguous.
-
-### Suggested skills
-
-- `openspec-apply-change` for continuing implementation under the active change.
-- `build-web-apps:frontend-testing-debugging` for rendered preview/review behavior and Playwright regressions.
-- `diagnose` for hard data-selection, caching, persistence, or scheduling defects.
-- `qa` when the next session is driven by screenshots and iterative user-reported UI issues.
-
-## Cleanup Mode
-
-The root `app.js` file has been removed as part of `complete-appjs-decomposition`. `src/composables/reader-runtime-shell.js` has been retired, and `src/composables/session-init.js` is now a thin entry that delegates to focused session runtime modules through `src/composables/session-runtime-assembly.js`.
-
-- Do not add feature logic to `src/composables/reader-runtime.js`.
-- Do not reintroduce `src/composables/reader-runtime-shell.js`.
-- Do not change the IndexedDB schema without a separate migration.
-- Do not reorder `index.html` scripts unless that change is isolated and fully verified.
-- Treat `window.__state`, runtime `bridgeToPinia`, former `window.__bridge` expectations, and `window.*` exports as temporary compatibility surfaces.
-
-## Quick Start
-
-```bash
-npm install
-npm run dev
-npm test
-npm run build
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-next-preview.ps1
 ```
 
-Useful URLs:
-
-- Dev server: `http://127.0.0.1:5173/`
-- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short sentence. Automatic lookup is local-first: the ignored read-only SQLite sentence warehouse is queried before Merriam-Webster Learner's/Collegiate, Tatoeba, and Wordnik. The warehouse supports inflected forms such as `sanctuaries → sanctuary`, `propping → prop`, and `gauges → gauge`, and retains provenance internally. When no usable real/context sentence survives, the AI adapter uses the Gemma/Gemini fallback chain above and validates the generated learning aid before display. The learning surface shows the compact English sentence, an underlined target word, pronunciation, and an available whole-sentence Chinese translation; no long IELTS paragraph is substituted.
-- Windows desktop launch: `scripts/launch-learning-page.ps1` reuses or starts the local Vite service and opens the normal reader page. Short-sentence preparation starts only after clicking `待预习`; when no batch has been imported, that entry remains available for a normal `待预习` import.
-
-Build the local warehouse with `npm run sentences:build`. The default build reads the local Vocabulary.com MDX, LDOCE5 MDX, New Oxford bilingual MDX primary senses, Open English WordNet archive, and an optional full Kaikki JSONL file from `data/dictionaries/`. Source files, extracted sentences, MDD audio, and the generated `local-sentences.sqlite` stay in that Git-ignored directory and are never bundled. Refresh only the bilingual primary-sense index with `python scripts/build-local-sentence-warehouse.py --primary-senses-only`. See `src/dictionary/local-sentences/README.md` for paths and source roles.
-
-Download the supplemental bilingual, sentence, phrase, collocation, frequency, and pronunciation resources with `powershell -File scripts/download-mdict-supplements.ps1`. Downloads are resumable and run in hidden background processes by default; use `-Foreground` to wait for them. The large ODE3 and Merriam-Webster audio files therefore do not block normal development.
-
-Whole-sentence Chinese translation uses the same-origin Vite proxy and a separate Git-ignored SQLite cache. It first uses `VOCABULARY_TRANSLATION_API_KEY` (or `GEMINI_API_KEY`) from `.env.local`, then reuses the Gemini key already saved by the local subtitle workflow in Windows Credential Manager. The default model chain is `gemma-4-31b-it`, `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`; override the first model with `VOCABULARY_TRANSLATION_MODEL` and add comma-separated fallbacks with `VOCABULARY_TRANSLATION_FALLBACK_MODELS`. `VOCABULARY_TRANSLATION_PROXY_URL` defaults to the existing local proxy at `http://127.0.0.1:7897`. A 50-sentence preview is translated as two sequential batches of 25, cached sentences are not sent again, and each provider attempt has a 15-second timeout. Missing configuration or provider failure leaves the English sentence usable without showing an error inside the learning card.
-
-AI-assisted preview sentences use the same-origin Vite proxy and the server-only `VOCABULARY_AI_PREVIEW_API_KEY` (falling back to `VOCABULARY_TRANSLATION_API_KEY`, `GEMINI_API_KEY`, or `SubtitleWorkflow/GeminiApiKey` in Windows Credential Manager). The default model chain is `gemma-4-31b-it`, `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`. Override the first model with `VOCABULARY_AI_PREVIEW_MODEL`, add comma-separated fallbacks with `VOCABULARY_AI_PREVIEW_FALLBACK_MODELS`, and use `VOCABULARY_AI_PREVIEW_PROXY_URL` for the local proxy. Generated sentences are not persisted as authentic evidence or review cards.
-
-The first-contact header includes a compact `快捷键` settings dialog. Revealing “看看这个词怎么用”, word pronunciation, sentence pronunciation, Chinese sentence visibility, previous item, and next item default to `Space`, `R`, `S`, `C`, `ArrowLeft`, and `ArrowRight`; every mapping can be changed and is restored from local storage after refresh. The low-contrast settings entry sits immediately after the right-aligned preview count, while shortcut labels remain visible only inside the dialog rather than on the study card or footer controls.
-
-To enable Wordnik locally, create the ignored file `.env.local` with `WORDNIK_API_KEY=your_key`, then restart `npm run dev`. The key is read only by the Vite/Node proxy and is never exposed to browser code. Without the key, Wordnik safely reports unavailable and the rest of the preview continues normally.
-
-Merriam-Webster uses two separate reference keys. The preferred server-only environment names are `MERRIAM_WEBSTER_LEARNERS_API_KEY` and `MERRIAM_WEBSTER_DICTIONARY_API_KEY`; on Windows the Vite proxy also reads `SubtitleWorkflow/MerriamWebsterLearnersDictionaryApiKey` and `SubtitleWorkflow/MerriamWebsterDictionaryApiKey` from Credential Manager. Learner's is queried first for sense-level examples and Collegiate is used only as a fallback. Each reference has a 900-query/day local safety budget below the official free limit, formatted results remain in page memory only, and displayed Merriam-Webster content includes the required official 50px logo.
-- Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
-- Verification server: `http://127.0.0.1:4173/`
-
-## Optional Local Dictionary
-
-ECDICT is an optional, read-only local dictionary. The Node SQLite service remains isolated from
-reader and SRS business modules; browser code uses only the HTTP client, enrichment adapter, and
-formatter. It enriches article-preview candidates in memory and can show transient assistance after
-an SRS answer is revealed. It does not overwrite or persist Vocabulary Entry meanings or review
-records; disabled or unavailable dictionary access remains fail-open.
-
-`ECDICT_ENABLED` defaults to `false`. The Vite plugin module may load statically, but it registers no
-endpoint while disabled; when enabled, the SQLite service is loaded lazily on the first lookup. See
-`src/dictionary/ecdict/README.md` for setup and verification commands.
-
-## Scripts
-
-```bash
-npm run dev          # Vite dev server
-npm run build        # Vite production build
-npm run verify:vite  # Playwright load check against the current root entry
-npm run verify:vocab-matching # Focused vocab matching helper check
-npm run verify:srs-review # Standalone/live SRS review queue, rating, retry, and fallback check
-npm run verify:srs-review-ui-v2 # Acquisition-aware review policy and UI check
-npm run verify:passage-preview # Passage Preview unit, live Aria, and browser checks
-npm run verify:vocabulary-acquisition-service # Acquisition lifecycle service check
-npm run verify:annotation-lightweight-module # Focused annotation lightweight glue check
-npm run verify:keyboard-boundary # Focused keyboard boundary helper check
-npm run verify:transcript-state # Focused transcript state adapter check
-npm run verify:chunk-state # Focused chunk state adapter check
-npm run verify:cloze-state # Focused cloze state adapter check
-npm run verify:playback-state # Focused playback state adapter check
-npm run verify:playback-runtime-helpers # Focused playback runtime helper check
-npm run verify:state-facades # Focused window.__state owner facade check
-npm run verify:bridge-startup # Focused adapter-to-Pinia startup check
-npm run verify:file-input-bindings # Focused file picker DOM binding check
-npm run verify:inline-handler-bindings # Focused remaining inline handler migration check
-npm run verify:control-playback-state-deps # Focused controls/playback state dependency check
-npm run verify:session-state-provider # Focused session-init state provider check
-npm run verify:session-runtime-assembly # Focused thin session entry and session assembly guard
-npm run verify:session-runtime-deps # Focused session runtime dependency collection check
-npm run verify:session-lifecycle-runtime # Focused session lifecycle runtime assembly check
-npm run verify:session-annotation-services # Focused session annotation service helper check
-npm run verify:session-annotation-text # Focused session annotation text/context helper check
-npm run verify:session-annotation-export-payload # Focused annotation lightweight export payload check
-npm run verify:session-annotation-import-normalization # Focused annotation lightweight import normalization check
-npm run verify:session-annotation-bundle-merge # Focused annotation lightweight bundle merge check
-npm run verify:session-annotation-runtime # Focused session annotation runtime assembly check
-npm run verify:session-annotation-generated-index # Focused generated annotation index runtime check
-npm run verify:session-annotation-marks # Focused annotation marks rebuild/runtime check
-npm run verify:session-annotation-context # Focused annotation document context check
-npm run verify:session-annotation-lightweight-io # Focused annotation lightweight IO runtime check
-npm run verify:session-annotation-api-settings-runtime # Focused annotation API settings runtime check
-npm run verify:session-startup-cleanup # Focused session startup cleanup check
-npm run verify:session-restore-runtime # Focused session restore runtime check
-npm run verify:session-startup-runtime # Focused session startup orchestration check
-npm run verify:session-ui-settings-restore # Focused session UI settings restore check
-npm run verify:runtime-state-source # Focused runtime state source guard
-npm run verify:reader-runtime-shell # Focused retired reader runtime assembly guard
-npm run verify:reader-runtime-assembly # Focused reader runtime assembly sequence check
-npm run verify:reader-runtime-context # Focused reader startup context composition check
-npm run verify:reader-feature-runtime # Focused reader feature runtime composition check
-npm run verify:reader-feature-runtime-deps # Focused reader feature runtime dependency assembly check
-npm run verify:reader-bootstrap-runtime # Focused reader bootstrap runtime setup check
-npm run verify:reader-runtime-deps # Focused reader runtime dependency collection check
-npm run verify:reader-interaction-runtime # Focused reader interaction runtime setup check
-npm run verify:reader-playback-runtime # Focused reader playback runtime setup check
-npm run verify:reader-controls-runtime # Focused reader controls runtime setup check
-npm run verify:reader-keyboard-runtime # Focused reader keyboard runtime setup check
-npm run verify:reader-app-runtime # Focused reader app runtime setup check
-npm run verify:reader-import-runtime # Focused reader import runtime setup check
-npm run verify:reader-runtime-helpers # Focused reader runtime helper extraction check
-npm run verify:reader-dom-refs # Focused reader runtime DOM ref collection check
-npm run verify:app-window-facades # Focused app.js duplicate window facade guard
-npm run verify:pinia-bridge-module # Focused Pinia bridge module check
-npm run verify:audio-store-facades # Focused DB compatibility facade check
-npm run verify:keyboard-facades # Focused keyboard helper facade check
-npm run verify:import-facades # Focused transcript/chunk import facade check
-npm run verify:chunk-controls-module # Focused AI chunk controls module check
-npm run verify:highlight-controls-module # Focused highlight controls module check
-npm run verify:theme-controls-module # Focused theme controls module check
-npm run verify:glass-effects # Focused glass effects module check
-npm run verify:style-editor-module # Focused style editor module check
-npm run verify:app-handlers # Focused app handlers module check
-npm run verify:marks-store # Focused marks store ownership check
-npm run verify:marks-state-module # Focused marks runtime state module check
-npm run verify:visual-vocab-module # Focused visual vocab state module check
-npm run verify:legacy-dom-drain # Focused removed legacy DOM lookup check
-npm run verify:audio-identity-module # Focused audio identity state module check
-npm run verify:hotkey-state-module # Focused hotkey runtime state module check
-npm run verify:transcript-interactions # Focused normal transcript interaction check
-npm run verify:chunk-interactions # Focused AI chunk interaction check
-npm run verify:render-facades # Focused legacy render facade removal check
-npm run verify:script-order # Focused index.html script order guard
-npm run verify:annotation-bubble # Focused annotation bubble module check
-npm run verify:annotation-api-settings-ui # Focused annotation API settings UI module check
-npm run verify:legacy-root-copy # Focused legacy root copy removal check
-npm run verify:production-preview # Production preview load check against dist
-npm test             # Same as verify:vite
-```
-
-`read-26.html` no longer exists in the project root. Old `read26` script names are compatibility aliases only.
-
-## Runtime Load Order
-
-`index.html` currently loads:
+## 当前入口
 
 ```text
-9 src/stores/*.js module compatibility stores
-10 src/composables/*.js module compatibility/runtime modules
-src/composables/reader-runtime.js module
-src/composables/session-init.js module
-/src/main.js Vue + Pinia module
+index.html
+├── 7 个 src/stores/*.js 兼容 store
+├── 9 个 src/composables/*.js 兼容/运行模块
+├── src/composables/reader-runtime.js
+├── src/composables/session-init.js
+└── src/main.js（Vue + Pinia）
 ```
 
-The former root regular scripts now load through Vite module replacements and are no longer referenced by `index.html`:
+主要代码边界：
+
+- `src/components/`：Vue 用户界面。
+- `src/pinia-stores/`：真实 Pinia store。
+- `src/stores/`：启动期 `window.*` 兼容 store，不是 Pinia。
+- `src/composables/`：Reader/Session 运行时组装与旧 DOM 行为迁移层。
+- `src/services/persistence/`：IndexedDB、Reader Session 和 latest-wins 持久化边界。
+- `src/services/runtime/`：生命周期、请求监管、错误呈现和 Object URL 资源所有权。
+- `tools/subtitle-workflow/`：本地 FastAPI 材料处理服务。
+
+## 数据约束
+
+IndexedDB schema 在当前稳定化工作中保持不变：
 
 ```text
-annotation-bubble.js
-annotation-api-settings-ui.js
-```
-
-## Source Map
-
-```text
-src/
-|-- main.js                    # Vue mount + Pinia adapter binding
-|-- App.vue                    # Root component
-|-- srs-review-main.js         # Standalone in-memory SRS review entry
-|-- features/passage-preview/  # Isolated five-word local preview overlay
-|-- features/srs-review/       # Shared review page, queue, context/audio, and CSS
-|-- components/                # 5 Vue components
-|-- pinia-stores/              # 9 real Pinia stores
-|-- stores/                    # 9 legacy window compatibility stores
-|-- composables/               # 78 moduleized legacy behavior chunks
-|-- services/pronunciation/    # Strict Aria pronunciation client + Vite endpoint
-|-- services/vocabulary/       # Vocabulary, acquisition, events, review policy, and UoW
-|-- utils/                     # 11 utility ES modules
-`-- services/annotation/       # 14 annotation pipeline ES modules
-```
-
-## Data Storage
-
-IndexedDB schema is fixed:
-
-```text
-DB name: SeekPlayerDB
+Database: SeekPlayerDB
 Version: 1
-Store: files
+Object store: files
 Key path: id
 ```
 
-The vocabulary SRS snapshot remains in that existing store under
-`vocabulary.srs.store.v1`. The reader's `今日复习` overlay uses the normal
-IndexedDB-backed vocabulary service. The standalone `/srs-review.html` entry
-instead loads `src/features/srs-review/srs-review.sample.local.json` through an
-in-memory repository; that personal snapshot is gitignored and standalone
-ratings are discarded on reload.
+改变数据库版本、object store 或 key path 必须有单独的数据迁移、备份和回滚方案。
 
-The live review page builds a stable local-day queue and combines remaining
-items with that day's existing `reviewLogs`, so reopening the page does not
-shrink the displayed daily total. Its `复习记录` popover groups the existing
-logs by local date and counts unique words; no additional store or DB migration
-is used.
+## 已退役能力
 
-Review ratings use the four native FSRS levels with keyboard shortcuts `1-4`:
-`忘记`, `困难`, `一般`, and `容易`. Recall mode exposes only `忘记` until the
-answer is revealed; the other ratings become available after reveal.
+`read-26.html`、根 `app.js`、`reader-runtime-shell.js`、手工 chunk 导入、cloze UI、sentence/chunk notes UI 与对应 notes runtime 已退役。不要恢复它们，也不要把旧规划文档当作当前入口说明。
 
-The word panel prefers the concise context `simple_meaning` and omits the old
-hint row. Previous/next controls (also arrow keys) provide read-only review of
-completed Vocabulary Entries without creating duplicate ratings. `R 重读单词和原句` starts
-the word/source sequence from the beginning by button or globally captured `R`.
-Space globally and silently pauses or resumes active review audio without
-adding pause UI. Every English word in the left context is clickable: timed
-transcripts seek the original audio to that word, while text-only contexts use
-an American system voice for the remaining sentence.
+## 稳定化计划
 
-Context words keep a plain-text appearance and only scale slightly on hover.
-The replay keycap can capture and persist a replacement single-character
-shortcut; letter matching is case-insensitive, while Space and `1-4` remain
-reserved. The low-emphasis reread control sits at the lower-right edge of the
-word panel instead of mixing with the word and meanings. Stored SRS meanings
-are labeled as contextual.
+当前实施计划在 [openspec/changes/stabilize-and-simplify-read-web/](openspec/changes/stabilize-and-simplify-read-web/)；它覆盖性能测量、单一生产宿主、原子持久化、大媒体流式播放、后台可靠性、生命周期、兼容层收敛、仓库治理和最终迁移回滚。
 
-When review opens, `srs-review-meanings.js` sends only words missing a
-`general_meaning` to the local workflow service in batches of at most 50. The
-service reads Merriam-Webster Collegiate `shortdef` values, translates the
-batch into concise Chinese with the saved Gemini credential, and returns both
-the English definition and Chinese general meaning. The vocabulary service
-writes these fields back into the existing `vocabulary.srs.store.v1` snapshot,
-so future review sessions reuse them without another dictionary request. This
-adds fields inside the existing row content and does not change IndexedDB
-version or object stores.
-
-Vocabulary acquisition and SRS review are now separate lifecycles. New candidates
-enter versioned acquisition rows first; only an explicit, transaction-backed
-graduation creates a review state. Learning attempts, review attempts, command
-receipts, and the session ledger are stored as named or sharded rows inside the
-existing `files` object store. Legacy implicit card creation remains behind a
-flag-off compatibility adapter while callers migrate.
-
-Passage Preview is an isolated local five-word vertical slice. It imports a
-user-selected result package, keeps copyrighted source text in browser-local
-storage, never creates a review state, and uses strict Microsoft Aria playback.
-The Vite endpoint generates `en-US-AriaNeural` audio on demand; it does not read
-preview data or change IndexedDB.
-
-Dictionary parsing follows spelling cross-references such as `centre -> center`
-and rejects geographical or biographical name entries. Versioned
-`dictionary_source` values invalidate only older Merriam/Gemini results.
-General meanings use primary black text; contextual meanings use muted gray
-text.
-
-## Personalized Vocabulary Learning Direction
-
-The next vocabulary layer treats the learner as a model that is updated from
-observed learning behavior, but it deliberately separates memory, knowledge
-needs, and presentation preference:
-
-- Preview is a single low-pressure exposure. It presents the word form, one
-  primary sense, and one understandable validated sentence. It does not try to
-  create same-day repetition or require immediate recall.
-- FSRS remains the per-`LearningUnit` memory scheduler after graduation. A
-  `LearningUnit` is a word plus one target sense, not an undifferentiated list
-  of every dictionary meaning.
-- A skill estimator derives weak areas such as part of speech, inflection,
-  derivation, irregular forms, primary/secondary senses, collocation, and
-  context transfer from append-only events.
-- A constrained curriculum planner decides what must be learned. Weak,
-  important skills receive coverage even when the learner dislikes them or
-  often skips them.
-- A preference model ranks only the presentation form, such as a minimal
-  sentence, audio-first prompt, cloze, or later original context. It may make a
-  required item easier to approach, but it may not remove required content.
-
-Primary-sense selection is evidence based and deterministic. It combines a
-learner-dictionary ordering, WordNet most-frequent-sense evidence, and
-general/exam-corpus evidence, records disagreement, and leaves uncertain cases
-unresolved. Whole-word frequency from ECDICT is useful metadata but cannot by
-itself select a sense. Sentence candidates are provenance-first: user-owned
-articles and subtitles plus redistributable open corpora are preferred. AI may
-retrieve, rank, simplify a display gloss, or explain an example, but generated
-text is not labeled as an authentic source sentence and the original evidence
-is immutable.
-
-Raw `LearningEvent` records remain the source of truth. Skill estimates,
-preference estimates, reports, and plans are disposable derived state that can
-be rebuilt when an algorithm changes. Every decision carries algorithm and
-content versions; replacements first run in historical replay and shadow mode,
-then behind a feature flag with a deterministic fallback. A new model must not
-silently rewrite FSRS ratings, history, or all existing due dates.
-
-The rollout is intentionally progressive: deterministic contracts and
-baselines first, diagnostic and preference models in shadow mode second, and
-bounded adaptive control only after enough cross-day evidence exists. The
-detailed ownership, interfaces, rollout gates, and parallel task prompts are in
-[`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md).
-
-Wave B shadow integration defaults to off. The **模型观察** page now owns a
-versioned local **开始模型观察** switch; the review service reads that setting
-dynamically whenever it creates a new V2 session. When enabled,
-it reads immutable `LearningEvent` and acquisition snapshots only after the
-formal review ledger has been persisted, builds a comparison report in the
-background, and stores the rebuildable report in the existing `files` object
-store row `vocabulary.personalization.shadow-reports.v1`. Shadow output and
-failures never change the returned ledger, FSRS due dates, ratings, or review
-state.
-
-The read-only diagnostics page is available at
-`/personalization-shadow.html` and from the review header's **模型观察** link.
-It reads the latest reports from the same derived-cache row and explains queue
-movement, weak-skill evidence, presentation preference, and insufficient-data
-states. It intentionally exposes no publish, reorder, rating, or due-date write
-action. If today's V2 ledger already exists, **补建今天报告** reconstructs only
-the derived Shadow report from that frozen ledger and append-only events. It
-does not write the ledger, ReviewState, due dates, ratings, or database schema.
-If today's review uses only the legacy data source, the page reports that no V2
-session is available instead of fabricating a report from legacy logs. Add
-`?demo=1` for the deterministic visual/QA fixture; normal use reads local
-IndexedDB reports and the local Shadow setting.
-
-Do not change this schema without an explicit migration plan.
-
-## Current High-Risk Areas
-
-- `src/composables/reader-runtime.js` is now a thin runtime entry that directly initializes `src/composables/reader-runtime-assembly.js`; `src/composables/reader-runtime-assembly.js` owns the remaining runtime assembly and delegates direct `window.*` facade ownership, transcript, chunk, cloze, playback transient, reader startup context, reader feature runtime composition, reader feature runtime dependency assembly, reader bootstrap runtime, reader runtime dependency collection, reader notes/session runtime dependency assembly, reader notes/session runtime, reader notes runtime, reader session runtime, reader interaction runtime, reader playback runtime, reader controls runtime, reader keyboard runtime, reader app runtime, reader import runtime, reader runtime helpers, note state, visual/vocab matching state, audio identity state, hotkey runtime state, marks runtime state, and render compatibility behavior through focused adapters/modules.
-- Transcript state now goes through `src/composables/transcript-state.js`, which binds directly to the real Pinia transcript store after Pinia creation.
-- Chunk mode state now goes through `src/composables/chunk-state.js`, which binds directly to the real Pinia chunk store after Pinia creation.
-- Cloze quiz state now goes through `src/composables/cloze-state.js`, which binds directly to the real Pinia cloze store after Pinia creation.
-- `window.renderTranscript` and `window.renderChunkMode` have been removed; `session-init.js` uses `src/composables/render-runtime.js`, which owns the current Vue bridge render calls.
-- Remaining legacy control inline handlers have been removed from `index.html`; `src/composables/legacy-control-bindings.js` now binds those DOM controls to existing compatibility functions.
-- Playback transient state now goes through `src/composables/playback-state.js`; playback and controls modules receive their temporary state view through explicit init deps instead of reading `window.__state` directly.
-- Playback helper behavior now goes through `src/composables/playback-runtime-helpers.js`; focused reader runtime modules inject its API into playback and controls modules, including sentence-mode previous/next jumps.
-- `src/composables/session-init.js` is now a thin session entry that initializes `src/composables/session-runtime-assembly.js`.
-- `src/composables/session-runtime-assembly.js` sequences session runtime deps, annotation runtime setup, lifecycle startup/restore/UI setup, public session facade handler wiring, and API settings initialization.
-- `src/composables/session-runtime-deps.js` owns session runtime `window`/DOM/global dependency collection; it no longer installs temporary `window.__session_*` bridge facades.
-- `src/composables/session-annotation-runtime.js` composes generated index refresh, annotation context, marks rebuild, lightweight annotation import/export, API settings, and annotation facade support for session startup.
-- `src/composables/session-lifecycle-runtime.js` composes startup cleanup, persisted session restore, DB-ready startup orchestration, and UI settings restore for session startup.
-- `src/composables/session-annotation-services.js` owns annotation service/global lookup helpers and diagnostics emit for session startup and annotation import/export code.
-- `src/composables/runtime-state-facade.js` now owns the `runtimeState` object and exposes it as `window.__state` only as a temporary compatibility facade.
-- `src/composables/runtime-state-bindings.js` now owns the `runtimeState` getter/setter bindings that preserve current `st.*` compatibility for startup/session code.
-- `src/composables/reader-runtime-assembly.js` owns the runtime initialization sequence for context and feature runtime setup.
-- `src/composables/reader-runtime-context.js` owns startup context composition for bootstrap state, DOM refs, focus/current-note helpers, and chunk note transfer dialog access.
-- `src/composables/reader-feature-runtime.js` owns feature runtime composition for import, controls, interactions, keyboard, app handlers, and chunk note transfer handoff.
-- `src/composables/reader-feature-runtime-deps.js` owns the large feature runtime dependency mapping from runtime context, bootstrap state, and DOM refs.
-- `src/composables/reader-dom-refs.js` now owns static reader runtime DOM ref collection; session annotation settings DOM setup is wired through `src/composables/session-annotation-runtime.js` and `src/composables/session-annotation-api-settings-runtime.js`.
-- `src/composables/reader-bootstrap-runtime.js` owns initial state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization for the runtime assembly.
-- `src/composables/reader-runtime-deps.js` owns runtime utility/global helper dependency collection for validation, import helpers, identity keys, playback indexes, chunk matching, and vocab matching.
-- Notes UI/runtime and its no-op compatibility chain are retired; `applyCurrentAudioMeta(...)` is owned directly by `src/composables/audio-identity-module.js`.
-- `src/composables/reader-interaction-runtime.js` owns render runtime configuration and reader playback runtime initialization for the runtime assembly.
-- `src/composables/reader-playback-runtime.js` owns annotation bubble resolver setup, playback helper setup, playback module initialization, and transcript/chunk interaction configuration.
-- `src/composables/reader-controls-runtime.js` owns highlight/chunk/theme control initialization and style editor initialization for the runtime assembly.
-- `src/composables/reader-keyboard-runtime.js` owns keyboard module initialization and injects hotkey, mark, chunk-note, and panel-close dependencies.
-- `src/composables/reader-app-runtime.js` owns annotation lightweight controls, app handlers, controls loop, glass effects, and reader public facade initialization for the runtime assembly.
-- `src/composables/reader-import-runtime.js` owns session facade/provider setup, visual vocab setup, runtime state bindings, chunk pipeline, and import handler initialization for the runtime assembly.
-- `src/composables/reader-runtime-helpers.js` owns reader focus restore, current-note toggling, and chunk-note export dialog access helpers used by import/keyboard callers.
-- Local audio identity and chunk note layout API aliases have been removed from `reader-runtime.js`; runtime assembly now injects those module APIs directly.
-- `src/composables/session-facades.js`, `annotation-bubble-resolver.js`, `reader-public-facades.js`, `ui-facades.js`, and `render-mode.js` own the remaining public compatibility facade assignments previously made directly by root `app.js`; session runtime now injects session facade handlers directly instead of using `window.__session_*` bridge facades.
-- `window.bridgeToPinia` now lives in `src/composables/pinia-bridge-module.js`.
-- Duplicate app-level window facades for playback controls, speed, and chunk style controls have moved to their module owners.
-- DB compatibility window facades now live in `src/stores/audio.js`, delegating through the current `window.__audioStore` implementation.
-- Chunk note style compatibility facades have been removed with the chunk note UI.
-- `window.isInputLikeTarget` now lives in `src/composables/keyboard-module.js`.
-- `window.processTranscript` and `window.processChunkData` now live in `src/composables/import-module.js`.
-- Highlight mode controls and the temporary `window.cycleHighlightMode` facade now live in `src/composables/highlight-controls-module.js`.
-- AI chunk mode controls and their temporary window facades now live in `src/composables/chunk-controls-module.js`; focused reader runtime modules initialize the module and pass its API to keyboard/import callers.
-- Theme control DOM bindings now live in `src/composables/theme-controls-module.js`; glass sizing setup and style editor parsing helpers are owned by `src/composables/glass-effects.js` and `src/composables/style-editor.js`.
-- Marks import button binding now lives in `src/composables/app-handlers.js`; marks toggle behavior remains owned by `src/stores/marks.js`.
-- Marks runtime state now lives in `src/composables/marks-state-module.js`; `session-init.js` still restores and rebuilds marks through the unchanged `st.markedMap` state field.
-- Chunk note import/export, cloze import/rendering, and the old notes/definition hotkey have been removed from the active runtime.
-- Chunk note runtime wrappers and thin keyboard/modal/layout/visual/save/snapshot/context-menu wrappers have been removed from the active runtime.
-- Visual/vocab matching state and the temporary `window.processVisual` restore contract now live in `src/composables/visual-vocab-module.js`; `session-init.js` still calls `processVisual(visualData)`.
-- Audio identity state, derived doc-id helpers, and `applyCurrentAudioMeta(...)` live in `src/composables/audio-identity-module.js`; `session-init.js` still calls the public contract unchanged.
-- Hotkey runtime state now lives in `src/composables/hotkey-state-module.js`; `session-init.js` still restores persisted hotkeys through the unchanged `st.*Key` state fields.
-- No-consumer `chunkNoteModalEl` and `chunkPointerDown` runtime state facades have been removed and are guarded by `verify:state-facades`.
-- Absent legacy sidebar/notes DOM lookups and the dead `toggleSidebar()` path have been removed from `reader-runtime.js`.
-- Sentence note runtime wrappers and thin sentence interaction wrappers have been removed from the active runtime. Notes facades now resolve to no-op compatibility APIs while callers are drained.
-- Annotation lightweight import/export button glue lives in `src/composables/annotation-lightweight-module.js`; session-side payload/export/import/merge behavior now lives in `src/composables/session-annotation-*.js` and `src/composables/session-annotation-lightweight-io.js`, and its export/import handlers are injected explicitly.
-- Annotation bubble DOM API now lives in `src/composables/annotation-bubble.js`; generated/vocab bubble hit resolution now lives in `src/composables/annotation-bubble-resolver.js`.
-- Annotation API settings UI now lives in `src/composables/annotation-api-settings-ui.js`; session initialization reaches it directly through `src/composables/session-annotation-api-settings-runtime.js`.
-- `src/stores/` and `src/pinia-stores/` both exist. The former is compatibility; the latter is real Pinia.
-- Former root regular scripts are no longer loaded by `index.html` and are no longer copied by Vite.
+历史设计和已完成迁移保留用于追溯，但若与当前代码冲突，以 `CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md`、`docs/OPERATIONS.md` 和实际测试为准。

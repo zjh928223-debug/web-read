@@ -86,7 +86,7 @@ async function main() {
       }
     }
 
-    const loadExitCode = await runNodeCheck('read26-load-check.cjs');
+    const loadExitCode = await runNodeCheck('read-web-load-check.cjs');
     if (loadExitCode !== 0) {
       process.exitCode = loadExitCode;
       return;

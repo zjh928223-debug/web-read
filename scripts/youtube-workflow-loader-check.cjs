@@ -64,9 +64,9 @@ async function main() {
         },
       };
     },
-    fileUrl(jobId, kind) {
-      calls.push(['fileUrl', jobId, kind]);
-      return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`;
+    mediaUrl(jobId, kind) {
+      calls.push(['mediaUrl', jobId, kind]);
+      return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`;
     },
   };
   const loader = api.createYoutubeWorkflowLoader({
@@ -114,12 +114,12 @@ async function main() {
   assert.ok(calls.some((call) => call[0] === 'annotationBackfillResult' && call[1] === 'job-1'));
   assert.ok(calls.some((call) => call[0] === 'importAnnotationBackfillResult' && call[1] === 1 && call[3] === false), 'loader should import saved annotation backfill result without replacing existing reader marks or calling Gemini again');
   assert.ok(calls.some((call) => call[0] === 'resetChunkDisplay'), 'loader should reset AI chunk Chinese visibility after loading generated chunk data');
-  assert.ok(calls.some((call) => call[0] === 'fileUrl' && call[1] === 'job-1' && call[2] === 'video'), 'loader should request the service video URL when manifest has a video file');
+  assert.ok(calls.some((call) => call[0] === 'mediaUrl' && call[1] === 'job-1' && call[2] === 'video'), 'loader should request the authorized Range video URL when manifest has a video file');
   assert.ok(mediaCalls.some((call) => call[0] === 'setAudioElement' && call[1] === true), 'loader should register the audio element with the shared media source');
   assert.ok(mediaCalls.some((call) => {
     return call[0] === 'loadJobMedia'
       && call[1].hasVideo === true
-      && call[1].videoUrl.endsWith('/api/jobs/job-1/file/video')
+      && call[1].videoUrl.endsWith('/api/jobs/job-1/media/video')
       && call[1].videoSource === 'auto-single';
   }), 'loader should register video availability with the shared media source');
 
@@ -131,7 +131,7 @@ async function main() {
         if (kind === 'transcript') return new Blob([JSON.stringify(makeTranscript())], { type: 'application/json' });
         return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 99, en: 'bad', zh: '坏' }] }] })], { type: 'application/json' });
       },
-      fileUrl(jobId, kind) { return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`; },
+      mediaUrl(jobId, kind) { return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`; },
     },
     hasCurrentContent: () => false,
     readerSessionPersistence: { commit: (session) => failedWrites.push(session) },

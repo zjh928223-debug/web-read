@@ -172,8 +172,8 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       const requestOptions = { signal: load.controller.signal }
       const manifest = await client.getSession(jobId, requestOptions)
       if (!isCurrentLoad(load)) return supersededResult(load)
-      if (typeof client.fileUrl !== 'function') throw new Error('workflow media URL is not available')
-      const audioUrl = client.fileUrl(jobId, 'audio')
+      if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
+      const audioUrl = client.mediaUrl(jobId, 'audio')
       const [transcriptBlob, chunkBlob] = await Promise.all([
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
@@ -197,7 +197,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
       const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
       const hasVideo = !!manifestFiles.video
-      const videoUrl = hasVideo && typeof client.fileUrl === 'function' ? client.fileUrl(jobId, 'video') : ''
+      const videoUrl = hasVideo ? client.mediaUrl(jobId, 'video') : ''
       const audioMeta = {
         name: `${title}.audio`,
         size: 0,

@@ -13,6 +13,7 @@ from threading import Event
 from fastapi.testclient import TestClient as FastApiTestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
+from youtube_workflow.process_supervisor import ProcessSupervisor
 from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app as create_service_app
 
 
@@ -1575,6 +1576,9 @@ class ServiceAppTests(unittest.TestCase):
         class FakeProcess:
             returncode = 0
 
+            def poll(self):
+                return self.returncode
+
             def communicate(self, timeout=None):
                 calls.append(("communicate", timeout))
                 return ('{"status":"canceled","path":""}\n', "")
@@ -1610,16 +1614,44 @@ class ServiceAppTests(unittest.TestCase):
                 self.returncode = -9
                 return ("", "")
 
+            def poll(self):
+                return self.returncode
+
+            def wait(self, timeout=None):
+                events.append(("wait", timeout))
+                if self.returncode is None and timeout is not None:
+                    raise subprocess.TimeoutExpired("powershell", timeout)
+                return self.returncode
+
+            def terminate(self):
+                events.append(("terminate", None))
+
             def kill(self):
                 events.append(("kill", None))
+                self.returncode = -9
 
-        picker = NativePicker(process_factory=lambda *_args, **_kwargs: TimedOutProcess(), timeout_seconds=0.01)
+        process = TimedOutProcess()
+        picker = NativePicker(
+            timeout_seconds=0.01,
+            supervisor=ProcessSupervisor(
+                process_factory=lambda *_args, **_kwargs: process,
+                platform_name="posix",
+                terminate_timeout=0.01,
+                kill_timeout=0.01,
+            ),
+        )
 
         with self.assertRaises(NativePickerError) as raised:
             picker.pick("video", "")
 
         self.assertEqual(raised.exception.code, "native-picker-timeout")
-        self.assertEqual(events, [("communicate", 0.01), ("kill", None), ("communicate", None)])
+        self.assertEqual(events, [
+            ("communicate", 0.01),
+            ("terminate", None),
+            ("wait", 0.01),
+            ("kill", None),
+            ("wait", 0.01),
+        ])
 
     def test_native_picker_serializes_folder_and_video_operations(self):
         started = threading.Event()
@@ -1627,6 +1659,9 @@ class ServiceAppTests(unittest.TestCase):
 
         class WaitingProcess:
             returncode = 0
+
+            def poll(self):
+                return self.returncode
 
             def communicate(self, timeout=None):
                 started.set()

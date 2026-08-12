@@ -1,5 +1,7 @@
 # SRS 单词复习简化版实施说明
 
+> **历史实施说明 / Archived:** 这是 SRS MVP 阶段记录，不是当前全项目架构或发布操作文档。当前事实见 `CURRENT_PROJECT_STATUS.md` 与 `docs/OPERATIONS.md`。
+
 > 适用范围：个人使用工具
 > 实施原则：优先缩短复习时间，不重构无关代码，不建设复杂数据系统。
 

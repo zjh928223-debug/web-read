@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "description": "Isolated sparse-file contract for workflow Range playback; no real user media is read.",
+  "sizesMiB": [300, 540],
+  "rangeRequestBytes": 65536,
+  "maxFirstPlayableMs": 1000,
+  "maxIdbPayloadBytes": 1048576,
+  "maxNetworkRequestsPerFixture": 1
+}

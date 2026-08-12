@@ -140,6 +140,7 @@ async function main() {
   assert.equal(JSON.parse(calls[32].options.body).model, 'gemini-test');
   assert.ok(calls.every((call) => call.options.headers['X-Read-Web-Token'] === 'test-client-token'));
   assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video?access_token=test-client-token');
+  assert.equal(client.mediaUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/media/video?access_token=test-client-token');
   assert.equal(client.eventsUrl('job-1'), 'http://127.0.0.1:8765/api/jobs/job-1/events?access_token=test-client-token');
 
   console.log('youtube workflow client check passed');

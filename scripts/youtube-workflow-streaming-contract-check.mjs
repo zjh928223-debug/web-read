@@ -25,11 +25,14 @@ const client = {
   },
   async getFile(_jobId, kind) {
     fileCalls.push(kind)
-    assert.ok(kind === 'transcript' || kind === 'chunkData', `large media must use fileUrl(), not getFile(..., ${kind})`)
+    assert.ok(kind === 'transcript' || kind === 'chunkData', `large media must use mediaUrl(), not getFile(..., ${kind})`)
     return new Blob([JSON.stringify(kind === 'transcript' ? transcript : chunkData)], { type: 'application/json' })
   },
-  fileUrl(jobId, kind) {
-    return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`
+  mediaUrl(jobId, kind) {
+    return `http://127.0.0.1:8765/api/jobs/${jobId}/media/${kind}`
+  },
+  fileUrl(_jobId, kind) {
+    assert.fail(`large ${kind} media must not use the generic file endpoint`)
   },
 }
 
@@ -44,6 +47,7 @@ const loader = loaderModule.createYoutubeWorkflowLoader({
     async commit(session) {
       writes.push(session)
       assert.equal('audio' in session, false, 'streamed workflow media must not be copied into IndexedDB')
+      assert.equal('video' in session, false, 'streamed workflow video must not be copied into IndexedDB')
     },
   },
   applyCurrentAudioMeta() {},

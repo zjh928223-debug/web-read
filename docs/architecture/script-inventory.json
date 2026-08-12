@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "scope": "Executable files under scripts/ that are not referenced directly by package.json scripts",
+  "releaseGate": [
+    "scripts/aria-edge-tts-live-check.cjs",
+    "scripts/passage-preview-browser-check.cjs",
+    "scripts/read-web-load-check.cjs",
+    "scripts/srs-review-service-v2-check.cjs",
+    "scripts/vocabulary-learning-events-check.cjs"
+  ],
+  "devTool": [
+    "scripts/capture-next-baseline.ps1",
+    "scripts/complete-local-dictionary-downloads.ps1",
+    "scripts/download-mdict-supplements.ps1",
+    "scripts/launch-learning-page.ps1",
+    "scripts/launch-next-preview.ps1",
+    "scripts/start-latest-reader.ps1"
+  ],
+  "archiveDelete": [
+    ".codex/actions/check-read26-load.sh",
+    "scripts/open-read-web.ps1",
+    "scripts/read26-load-check.cjs",
+    "scripts/read26-load-check.js",
+    "scripts/read26-verify.cjs",
+    "scripts/read26-verify.js",
+    "scripts/start-final-reader.ps1",
+    "scripts/start-youtube-reader.ps1",
+    "scripts/stop-youtube-reader.ps1",
+    "scripts/vite-verify.cjs",
+    "scripts/youtube-workflow-startup-check.cjs"
+  ]
+}

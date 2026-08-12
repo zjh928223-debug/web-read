@@ -26,7 +26,7 @@
 另逐项执行 package 中全部 98 个 `verify:*` 脚本：
 
 - 83 项通过（含需要临时 5173 服务的 4 项浏览器行为验证、production preview、
-  `verify:read26` 和 `verify:vite`）；
+  `verify:vite`）；
 - 15 项失败。
 
 15 项失败均为 ECDICT 范围外的现有兼容守卫不一致，断言指向 notes、session

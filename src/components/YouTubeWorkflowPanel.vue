@@ -829,7 +829,7 @@ async function refreshCurrentJobMediaForVideoPriority() {
       jobId: currentJobId.value,
       title: manifest.title || '',
       hasVideo: true,
-      videoUrl: youtubeWorkflowClient.fileUrl(currentJobId.value, 'video'),
+      videoUrl: youtubeWorkflowClient.mediaUrl(currentJobId.value, 'video'),
       videoSource: media.videoSource || 'session-refresh'
     })
     if (typeof mediaSource.setVideoPreferred === 'function') mediaSource.setVideoPreferred(true)

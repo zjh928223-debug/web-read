@@ -46,6 +46,7 @@ from .core import (
 )
 from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore
+from .process_supervisor import ProcessSupervisor
 
 
 SERVICE_VERSION = "0.2.3"
@@ -502,8 +503,8 @@ class NativePickerError(RuntimeError):
 
 
 class NativePicker:
-    def __init__(self, process_factory=None, timeout_seconds: float = 120):
-        self.process_factory = process_factory or subprocess.Popen
+    def __init__(self, process_factory=None, timeout_seconds: float = 120, supervisor: ProcessSupervisor | None = None):
+        self.supervisor = supervisor or ProcessSupervisor(process_factory=process_factory)
         self.timeout_seconds = timeout_seconds
         self._operation_lock = threading.Lock()
 
@@ -562,8 +563,11 @@ try {{
   $owner.Dispose()
 }}
 """
-        process = self.process_factory(
+        handle = self.supervisor.start(
             ["powershell", "-NoProfile", "-STA", "-Command", script],
+            job_id="native-picker",
+            stage=picker_kind,
+            timeout_seconds=self.timeout_seconds,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -571,12 +575,15 @@ try {{
             encoding="utf-8",
             errors="replace",
         )
+        process = handle.process
         try:
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired:
-            process.kill()
-            process.communicate()
+            self.supervisor.cancel(handle)
             raise NativePickerError("native-picker-timeout", "native picker timed out")
+        finally:
+            if process.poll() is not None:
+                self.supervisor.release(handle)
         if process.returncode != 0:
             detail = (stderr or stdout or "native picker failed").strip()
             raise NativePickerError("native-picker-error", detail)

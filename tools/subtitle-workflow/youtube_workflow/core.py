@@ -12,6 +12,7 @@ from threading import Event
 from typing import Callable, Iterable
 
 from .durable_json import DurableJsonRepository
+from .process_supervisor import ProcessSupervisor
 from .runtime_config import load_runtime_config
 
 
@@ -509,30 +510,29 @@ class FakeWorkflowRunner:
 
 
 class SubprocessCommandRunner:
-    def __init__(self):
-        self.current_process: subprocess.Popen | None = None
-        self.current_process_name = ""
+    def __init__(self, supervisor: ProcessSupervisor | None = None):
+        self.supervisor = supervisor or ProcessSupervisor()
+
+    @property
+    def current_process(self):
+        return self.supervisor.current_process
+
+    @property
+    def current_process_name(self) -> str:
+        snapshot = self.supervisor.snapshot()
+        return "" if snapshot is None else str(snapshot["stage"])
 
     def cancel(self) -> None:
-        process = self.current_process
-        if process is None:
-            return
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        self.current_process = None
-        self.current_process_name = ""
+        self.supervisor.cancel()
 
     def run(self, cmd: list[str], source: str, emit_line: Callable[[str], None], cancel_event: Event | None = None) -> None:
         cancel_event = cancel_event or Event()
         if cancel_event.is_set():
             raise RuntimeError("任务已取消，未启动新的外部命令。")
-        process = subprocess.Popen(
+        handle = self.supervisor.start(
             cmd,
+            job_id=source,
+            stage=source,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -540,21 +540,23 @@ class SubprocessCommandRunner:
             errors="replace",
             bufsize=1,
         )
-        self.current_process = process
-        self.current_process_name = source
-        assert process.stdout is not None
-        for raw_line in process.stdout:
-            if cancel_event.is_set():
-                self.cancel()
-                raise RuntimeError(f"任务已取消，{source} 已停止。")
-            line = raw_line.strip()
-            if line:
-                emit_line(line)
-        process.wait()
-        self.current_process = None
-        self.current_process_name = ""
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, cmd)
+        process = handle.process
+        try:
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                if cancel_event.is_set():
+                    self.supervisor.cancel(handle)
+                    raise RuntimeError(f"任务已取消，{source} 已停止。")
+                line = raw_line.strip()
+                if line:
+                    emit_line(line)
+            process.wait()
+            if process.returncode != 0:
+                raise subprocess.CalledProcessError(process.returncode, cmd)
+        finally:
+            if process.poll() is None:
+                self.supervisor.cancel(handle)
+            self.supervisor.release(handle)
 
 
 class LocalWorkflowRunner:

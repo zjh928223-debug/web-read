@@ -11,5 +11,10 @@ This directory contains the local FastAPI material-processing service used by Re
 Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch; install Python dependencies manually when needed:
 
 ```powershell
-python -m pip install -r E:\read-web\tools\subtitle-workflow\requirements-service.txt
+python -m pip install -r .\tools\subtitle-workflow\requirements-service.txt
 ```
+
+在 Next 隔离工作区中，端口、data root 和工具路径由根目录的
+`config/runtime.next.json` 与 `RuntimeConfig` 解析。默认 `8765` 仅描述未提供
+RuntimeConfig 时的兼容行为；Next launcher 使用 `8766`。完整操作说明见
+`docs/OPERATIONS.md`。

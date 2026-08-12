@@ -40,7 +40,7 @@ const client = {
     const payload = kind === 'transcript' ? transcript(jobId) : chunks(jobId)
     return Promise.resolve(new Blob([JSON.stringify(payload)], { type: 'application/json' }))
   },
-  fileUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}` },
+  mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}` },
 }
 
 const loader = createYoutubeWorkflowLoader({
