@@ -197,6 +197,33 @@ class ServiceAppTests(unittest.TestCase):
             manager.close()
             self.assertEqual(len(saves), 3)
 
+    def test_job_manager_close_flushes_and_joins_pending_persistence_timer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                persistence_delay_seconds=30,
+            )
+            saves = []
+            manager.store.save_jobs = lambda snapshots: saves.append(snapshots)
+            record = JobRecord("shutdown-flush", WorkflowRequest(url="https://example.com/shutdown", gemini_mode="mock"))
+            record.on_change = manager._record_changed
+            manager.jobs[record.job_id] = record
+
+            record.add_event({"status": "downloading", "stage": "downloading", "message": "stage"})
+            record.add_event({"status": "downloading", "stage": "downloading", "message": "pending stdout"})
+            pending_timer = manager._persistence_timer
+            self.assertIsNotNone(pending_timer)
+            self.assertTrue(pending_timer.is_alive())
+
+            manager.close()
+
+            self.assertTrue(manager._persistence_closed)
+            self.assertIsNone(manager._persistence_timer)
+            self.assertFalse(pending_timer.is_alive())
+            self.assertEqual(saves[-1][0]["logSummary"][-1], "pending stdout")
+
     def test_health_diagnostics_job_session_file_and_recent_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
@@ -1700,27 +1727,30 @@ class ServiceAppTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
             manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
-            client = TestClient(create_app(manager))
-            first = client.post("/api/jobs", json={"url": "https://example.com/first", "geminiMode": "mock"}).json()
-            second = client.post("/api/jobs", json={"url": "https://example.com/second", "geminiMode": "mock"}).json()
+            with TestClient(create_app(manager)) as client:
+                first = client.post("/api/jobs", json={"url": "https://example.com/first", "geminiMode": "mock"}).json()
+                second = client.post("/api/jobs", json={"url": "https://example.com/second", "geminiMode": "mock"}).json()
 
-            response = client.post("/api/jobs/snapshot", json={
-                "jobIds": [second["jobId"], first["jobId"], second["jobId"], "", "missing-job"],
-            })
-            self.assertEqual(response.status_code, 200)
-            payload = response.json()
-            self.assertEqual(payload["schemaVersion"], 1)
-            self.assertTrue(payload["snapshotAt"])
-            self.assertEqual(
-                [item["jobId"] for item in payload["jobs"]],
-                [second["jobId"], first["jobId"]],
-            )
-            self.assertEqual(payload["missingJobIds"], ["missing-job"])
+                response = client.post("/api/jobs/snapshot", json={
+                    "jobIds": [second["jobId"], first["jobId"], second["jobId"], "", "missing-job"],
+                })
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["schemaVersion"], 1)
+                self.assertTrue(payload["snapshotAt"])
+                self.assertEqual(
+                    [item["jobId"] for item in payload["jobs"]],
+                    [second["jobId"], first["jobId"]],
+                )
+                self.assertEqual(payload["missingJobIds"], ["missing-job"])
 
-            too_many = client.post("/api/jobs/snapshot", json={
-                "jobIds": [f"job-{index}" for index in range(101)],
-            })
-            self.assertEqual(too_many.status_code, 400)
+                too_many = client.post("/api/jobs/snapshot", json={
+                    "jobIds": [f"job-{index}" for index in range(101)],
+                })
+                self.assertEqual(too_many.status_code, 400)
+
+            self.assertTrue(manager._persistence_closed)
+            self.assertIsNone(manager.worker_thread)
 
     def test_import_jobs_enqueue_legacy_items_without_prioritizing_current_queue(self):
         with tempfile.TemporaryDirectory() as tmp:

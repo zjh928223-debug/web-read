@@ -10,6 +10,7 @@ import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -1321,8 +1322,26 @@ class JobManager:
             self._flush_persistence_locked()
 
     def close(self) -> None:
+        persistence_timer = None
+        worker_thread = None
         with self.lock:
             self._persistence_closed = True
+            persistence_timer = self._persistence_timer
+            self._persistence_timer = None
+            if persistence_timer is not None:
+                persistence_timer.cancel()
+            for record in self.jobs.values():
+                if record.status not in TERMINAL_STATUSES:
+                    record.cancel_event.set()
+            worker_thread = self.worker_thread
+
+        current_thread = threading.current_thread()
+        if persistence_timer is not None and persistence_timer is not current_thread:
+            persistence_timer.join()
+        if worker_thread is not None and worker_thread is not current_thread:
+            worker_thread.join()
+
+        with self.lock:
             self._flush_persistence_locked()
 
     def _persist_jobs_locked(self) -> None:
@@ -2495,7 +2514,15 @@ class JobManager:
 
 def create_app(manager: JobManager | None = None) -> FastAPI:
     manager = manager or JobManager()
-    app = FastAPI(title="SubtitleWorkflow Local Service")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            manager.close()
+
+    app = FastAPI(title="SubtitleWorkflow Local Service", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
