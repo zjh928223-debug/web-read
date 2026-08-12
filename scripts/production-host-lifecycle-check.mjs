@@ -251,8 +251,8 @@ try {
       })
       const browserArtifact = JSON.parse(await readFile(path.join(outputRoot, 'browser-journeys', 'browser-journeys.json'), 'utf8'))
       assert.equal(browserArtifact.isolation.mode, 'browser-route-fixtures-with-real-host-api')
-      assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/health'))
       assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/vocabulary/local-sentences'))
+      assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/tts/edge'))
       assert.equal(browserArtifact.errors.length, 0)
     }
 

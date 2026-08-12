@@ -22,8 +22,8 @@
 - [x] 3.2 实现 Local App Host 托管 `dist`、SPA fallback、健康/版本端点和现有字典/TTS/翻译能力
 - [x] 3.3 实现 Host/Origin/短期 token 校验并强制拒绝非 loopback bind
 - [x] 3.4 实现 launcher 的端口占用检查、PID ownership、ready timeout、重复实例检测和失败清理
-- [ ] 3.5 验证独立 production host 不依赖 Vite dev/preview，所有关键 endpoints 和 browser journeys 通过
-- [ ] 3.6 保留 5174/8766 dev fallback 并完成 host 启停/崩溃/重启压力测试
+- [x] 3.5 验证独立 production host 不依赖 Vite dev/preview，所有关键 endpoints 和 browser journeys 通过
+- [x] 3.6 保留 5174/8766 dev fallback 并完成 host 启停/崩溃/重启压力测试
 
 ## 4. 统一应用持久化基础
 
