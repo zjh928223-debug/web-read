@@ -1,11 +1,12 @@
 param(
   [switch]$NoOpen,
   [string]$WorkflowRoot = '',
-  [string]$WorkflowDataRoot = 'E:\ReadWebData\SubtitleWorkflow',
-  [string]$DictionaryDataRoot = 'E:\read-web\data\dictionaries',
-  [string]$ServiceHealthUrl = 'http://127.0.0.1:8765/api/health',
-  [string]$ReaderUrl = 'http://127.0.0.1:5173/',
-  [string]$PythonPath = 'C:\Users\0\AppData\Local\Programs\Python\Python310\python.exe',
+  [string]$RuntimeConfigPath = '',
+  [string]$WorkflowDataRoot = '',
+  [string]$DictionaryDataRoot = '',
+  [string]$ServiceHealthUrl = '',
+  [string]$ReaderUrl = '',
+  [string]$PythonPath = '',
   [int]$StartupTimeoutSeconds = 45
 )
 
@@ -13,6 +14,17 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $WorkflowRoot = if ($WorkflowRoot) { $WorkflowRoot } else { Join-Path $projectRoot 'tools\subtitle-workflow' }
+$RuntimeConfigPath = if ($RuntimeConfigPath) { $RuntimeConfigPath } elseif ($env:READ_WEB_RUNTIME_CONFIG) { $env:READ_WEB_RUNTIME_CONFIG } else { Join-Path $projectRoot 'config\runtime.legacy.json' }
+$DictionaryDataRoot = if ($DictionaryDataRoot) { $DictionaryDataRoot } else { Join-Path $projectRoot 'data\dictionaries' }
+$bootstrapPython = if ($PythonPath) { $PythonPath } else { (Get-Command python -ErrorAction Stop).Source }
+$runtimeArguments = @('-m', 'youtube_workflow.runtime_config')
+$runtimeArguments += @('--config', $RuntimeConfigPath)
+Push-Location $WorkflowRoot
+try { $runtime = (& $bootstrapPython @runtimeArguments | ConvertFrom-Json) } finally { Pop-Location }
+if (-not $WorkflowDataRoot) { $WorkflowDataRoot = $runtime.dataRoot }
+if (-not $ServiceHealthUrl) { $ServiceHealthUrl = $runtime.backend.healthUrl }
+if (-not $ReaderUrl) { $ReaderUrl = $runtime.frontend.url }
+if (-not $PythonPath) { $PythonPath = $runtime.python.executable }
 $workflowLauncher = Join-Path $PSScriptRoot 'start-latest-reader.ps1'
 $baseUrl = $ReaderUrl.TrimEnd('/')
 $learningUrl = "$baseUrl/"
@@ -37,6 +49,7 @@ try {
     -NoOpen `
     -ReaderRoot $projectRoot `
     -WorkflowRoot $WorkflowRoot `
+    -RuntimeConfigPath $RuntimeConfigPath `
     -WorkflowDataRoot $WorkflowDataRoot `
     -ServiceHealthUrl $ServiceHealthUrl `
     -ReaderUrl $baseUrl `
@@ -66,7 +79,7 @@ try {
     $stderrLog = Join-Path $env:TEMP "read-web-learning-vite-$readerPort.err.log"
     $serverProcess = Start-Process `
       -FilePath $npmCommand `
-      -ArgumentList @('run', 'dev', '--', '--host', '127.0.0.1', '--port', "$readerPort", '--strictPort') `
+      -ArgumentList @('run', 'dev') `
       -WorkingDirectory $projectRoot `
       -WindowStyle Hidden `
       -RedirectStandardOutput $stdoutLog `

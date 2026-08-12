@@ -34,6 +34,7 @@ try {
   $runtime = $resolvedJson | ConvertFrom-Json
   $launchParams = @{
     WorkflowRoot = $workflowRoot
+    RuntimeConfigPath = $RuntimeConfigPath
     WorkflowDataRoot = $runtime.dataRoot
     ServiceHealthUrl = $runtime.backend.healthUrl
     ReaderUrl = $runtime.frontend.url

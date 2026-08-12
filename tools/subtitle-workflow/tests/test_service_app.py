@@ -201,6 +201,11 @@ class ServiceAppTests(unittest.TestCase):
                     headers={"X-Read-Web-Token": TEST_ACCESS_TOKEN, "Origin": "https://attacker.example"},
                 )
                 self.assertEqual(hostile_origin.status_code, 403)
+                hostile_loopback_origin = client.get(
+                    "/api/config",
+                    headers={"X-Read-Web-Token": TEST_ACCESS_TOKEN, "Origin": "http://127.0.0.1:9999"},
+                )
+                self.assertEqual(hostile_loopback_origin.status_code, 403)
 
             with FastApiTestClient(app, base_url="http://attacker.example") as hostile_host:
                 rejected = hostile_host.get("/api/health")
@@ -366,6 +371,9 @@ class ServiceAppTests(unittest.TestCase):
             health = client.get("/api/health").json()
             self.assertEqual(health["status"], "ok")
             self.assertEqual(health["service"], "subtitle-workflow")
+            self.assertIn("releaseId", health)
+            self.assertIn("profileId", health)
+            self.assertIn("instanceId", health)
             self.assertTrue(health["features"]["videoPlayback"])
             self.assertTrue(str(health["workflowRoot"]).endswith("subtitle-workflow"))
             diagnostics = client.get("/api/diagnostics").json()

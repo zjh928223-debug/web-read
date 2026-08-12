@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { EventEmitter } from 'node:events'
+import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -31,6 +32,7 @@ export function loadCapabilityRuntimeConfig(env = process.env, cwd = process.cwd
   return {
     host: env.READ_WEB_CAPABILITY_HOST || '127.0.0.1',
     port: Number.parseInt(env.READ_WEB_CAPABILITY_PORT || '8770', 10),
+    accessToken: String(env.READ_WEB_SERVICE_TOKEN || '').trim(),
     localSentenceDatabasePath: env.LOCAL_SENTENCE_DATABASE_PATH,
     translationApiKey: env.VOCABULARY_TRANSLATION_API_KEY || env.GEMINI_API_KEY,
     translationModels: compactModels(env.VOCABULARY_TRANSLATION_MODEL, env.VOCABULARY_TRANSLATION_FALLBACK_MODELS),
@@ -50,6 +52,8 @@ export function loadCapabilityRuntimeConfig(env = process.env, cwd = process.cwd
 
 export function createLocalCapabilityServer(options = {}) {
   const config = { ...loadCapabilityRuntimeConfig(options.env, options.cwd), ...options }
+  if (!isLoopbackHost(config.host)) throw new Error('Local capability host requires a loopback bind host')
+  if (!config.accessToken) throw new Error('Local capability host requires an instance token')
   const lifecycle = new EventEmitter()
   const middleware = []
   const adapter = {
@@ -86,8 +90,25 @@ export function createLocalCapabilityServer(options = {}) {
   for (const plugin of plugins) plugin.configureServer?.(adapter)
 
   const server = createServer((request, response) => {
-    if (request.method === 'GET' && new URL(request.url || '/', 'http://127.0.0.1').pathname === '/api/app/capabilities') {
+    const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+    if (!isLoopbackHost(request.headers.host || '')) {
+      sendJson(response, 400, { detail: 'invalid host' })
+      return
+    }
+    if (!isAllowedLoopbackOrigin(request.headers.origin || '', request.headers.host || '')) {
+      sendJson(response, 403, { detail: 'origin not allowed' })
+      return
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/app/capabilities') {
       sendJson(response, 200, { status: 'ok', service: 'read-web-local-capabilities', endpoints: CAPABILITY_ENDPOINTS })
+      return
+    }
+    let suppliedToken = String(request.headers['x-read-web-token'] || '')
+    if (!suppliedToken && allowsQueryToken(request.method, requestUrl.pathname)) {
+      suppliedToken = requestUrl.searchParams.get('access_token') || ''
+    }
+    if (!tokensEqual(suppliedToken, config.accessToken)) {
+      sendJson(response, 401, { detail: 'access token required' })
       return
     }
     dispatch(middleware, request, response, () => sendJson(response, 404, { detail: 'capability route not found' }))
@@ -117,6 +138,38 @@ function dispatch(middleware, request, response, onMissing) {
 
 function compactModels(primary, fallbacks = '') {
   return [primary, ...String(fallbacks || '').split(',')].map((value) => String(value || '').trim()).filter(Boolean)
+}
+
+function isLoopbackHost(value) {
+  try {
+    const hostname = new URL(`http://${String(value || '').trim()}`).hostname.replace(/^\[|\]$/g, '').toLowerCase()
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
+
+function isAllowedLoopbackOrigin(value, requestHost) {
+  if (!value) return true
+  try {
+    const origin = new URL(String(value))
+    return ['http:', 'https:'].includes(origin.protocol)
+      && isLoopbackHost(origin.host)
+      && origin.host.toLowerCase() === String(requestHost || '').toLowerCase()
+  } catch {
+    return false
+  }
+}
+
+function allowsQueryToken(method, pathname) {
+  if (!['GET', 'HEAD'].includes(String(method || '').toUpperCase())) return false
+  return pathname.startsWith('/api/tts/edge/audio/')
+}
+
+function tokensEqual(supplied, expected) {
+  const left = Buffer.from(String(supplied || ''))
+  const right = Buffer.from(String(expected || ''))
+  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right)
 }
 
 function sendJson(response, status, value) {

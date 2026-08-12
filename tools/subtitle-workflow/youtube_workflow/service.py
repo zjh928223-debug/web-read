@@ -2688,10 +2688,26 @@ def _is_allowed_loopback_origin(value: str) -> bool:
     if not value:
         return True
     parsed = urlsplit(value)
-    return parsed.scheme in {"http", "https"} and _is_loopback_host(parsed.netloc)
+    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() in {
+        "localhost:5173",
+        "127.0.0.1:5173",
+        "localhost:5174",
+        "127.0.0.1:5174",
+        "localhost:4173",
+        "127.0.0.1:4173",
+    }
 
 
-def create_app(manager: JobManager | None = None, access_token: str | None = None) -> FastAPI:
+def create_app(
+    manager: JobManager | None = None,
+    access_token: str | None = None,
+    bind_host: str | None = None,
+) -> FastAPI:
+    configured_bind_host = str(bind_host or os.getenv("READ_WEB_BACKEND_HOST") or "127.0.0.1").strip()
+    if not _is_loopback_host(configured_bind_host):
+        if manager is not None:
+            manager.close()
+        raise ValueError("Workflow service requires a loopback bind host")
     manager = manager or JobManager()
     access_token = str(access_token or os.getenv("READ_WEB_SERVICE_TOKEN") or "").strip()
 
@@ -2764,6 +2780,9 @@ def create_app(manager: JobManager | None = None, access_token: str | None = Non
             "status": "degraded" if recovery_blocked else "ok",
             "service": "subtitle-workflow",
             "serviceVersion": SERVICE_VERSION,
+            "releaseId": os.environ.get("READ_WEB_RELEASE_ID", ""),
+            "profileId": os.environ.get("READ_WEB_PROFILE_ID", ""),
+            "instanceId": os.environ.get("READ_WEB_INSTANCE_ID", ""),
             "workflowRoot": str(SCRIPT_DIR),
             "dataRoot": str(DEFAULT_DATA_ROOT),
             "features": {

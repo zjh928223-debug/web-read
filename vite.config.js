@@ -11,9 +11,11 @@ import { createLocalSentenceVitePlugin } from './src/dictionary/local-sentences/
 import { createSentenceTranslationVitePlugin } from './src/services/vocabulary/sentence-translation-vite-plugin.mjs'
 import { createAiPreviewSentenceVitePlugin } from './src/services/vocabulary/ai-preview-sentence-vite-plugin.mjs'
 import { createIeltsLearningPoolVitePlugin } from './src/services/vocabulary/ielts-learning-pool-vite-plugin.mjs'
+import { loadRuntimeConfig } from './src/services/runtime/runtime-config-node.mjs'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
+  const runtime = loadRuntimeConfig({ env: { ...env, ...process.env }, cwd: process.cwd() })
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
   const ecdictServiceUrl = pathToFileURL(resolve(
     __dirname,
@@ -29,12 +31,12 @@ export default defineConfig(({ mode }) => {
     createSentenceTranslationVitePlugin({
       apiKey: process.env.VOCABULARY_TRANSLATION_API_KEY || env.VOCABULARY_TRANSLATION_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY,
       models: [
-        process.env.VOCABULARY_TRANSLATION_MODEL || env.VOCABULARY_TRANSLATION_MODEL,
+        process.env.VOCABULARY_TRANSLATION_MODEL || env.VOCABULARY_TRANSLATION_MODEL || runtime.ai.model,
         ...(process.env.VOCABULARY_TRANSLATION_FALLBACK_MODELS
           || env.VOCABULARY_TRANSLATION_FALLBACK_MODELS
           || '').split(','),
       ],
-      proxyUrl: process.env.VOCABULARY_TRANSLATION_PROXY_URL || env.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
+      proxyUrl: process.env.VOCABULARY_TRANSLATION_PROXY_URL || env.VOCABULARY_TRANSLATION_PROXY_URL || runtime.network.proxyUrl,
     }),
     createAiPreviewSentenceVitePlugin({
       apiKey: process.env.VOCABULARY_AI_PREVIEW_API_KEY
@@ -44,7 +46,7 @@ export default defineConfig(({ mode }) => {
         || process.env.GEMINI_API_KEY
         || env.GEMINI_API_KEY,
       models: [
-        process.env.VOCABULARY_AI_PREVIEW_MODEL || env.VOCABULARY_AI_PREVIEW_MODEL,
+        process.env.VOCABULARY_AI_PREVIEW_MODEL || env.VOCABULARY_AI_PREVIEW_MODEL || runtime.ai.model,
         ...(process.env.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS
           || env.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS
           || '').split(','),
@@ -53,7 +55,7 @@ export default defineConfig(({ mode }) => {
         || env.VOCABULARY_AI_PREVIEW_PROXY_URL
         || process.env.VOCABULARY_TRANSLATION_PROXY_URL
         || env.VOCABULARY_TRANSLATION_PROXY_URL
-        || 'http://127.0.0.1:7897',
+        || runtime.network.proxyUrl,
     }),
     createMerriamWebsterSentenceVitePlugin({
       dictionaryApiKey: process.env.MERRIAM_WEBSTER_DICTIONARY_API_KEY || env.MERRIAM_WEBSTER_DICTIONARY_API_KEY,
@@ -86,9 +88,10 @@ export default defineConfig(({ mode }) => {
     }
   },
   server: {
-    host: '127.0.0.1',
+    host: runtime.frontend.host,
     open: false,
-    port: 5173
+    port: runtime.frontend.port,
+    strictPort: true
   }
   }
 })

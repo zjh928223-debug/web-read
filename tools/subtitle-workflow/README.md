@@ -11,7 +11,7 @@ This directory contains the local FastAPI material-processing service used by Re
 Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch; install Python dependencies manually when needed:
 
 ```powershell
-python -m pip install -r .\tools\subtitle-workflow\requirements-service.txt
+python -m pip install --require-hashes -r .\tools\subtitle-workflow\requirements-service.lock
 ```
 
 在 Next 隔离工作区中，端口、data root 和工具路径由根目录的

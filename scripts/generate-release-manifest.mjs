@@ -15,6 +15,7 @@ const trackedArtifacts = [
   'vite.config.js',
   'scripts/launch-next-preview.ps1',
   'tools/subtitle-workflow/requirements-service.txt',
+  'tools/subtitle-workflow/requirements-service.lock',
   'tools/subtitle-workflow/youtube_workflow/service.py',
 ]
 

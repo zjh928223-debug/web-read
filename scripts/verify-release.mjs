@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import process from 'node:process'
 
 const stages = [
+  ['clean-room install and build', process.execPath, ['scripts/verify-clean-room.mjs']],
   ['full behavior gate', process.execPath, ['scripts/verify-full.mjs']],
   ['performance budget contract', process.execPath, ['scripts/perf/validate-performance-budgets.mjs']],
   ['isolated backend HTTP benchmark', 'python', ['scripts/perf/backend-http-benchmark.py']],
@@ -9,9 +10,7 @@ const stages = [
 ]
 
 const pending = [
-  'clean-room npm/Python install',
-  'browser performance budgets with fixed learning fixtures',
-  'secret/license/SBOM scan',
+  'enforced browser performance budgets after sufficient baseline samples',
   'backup/restore and shortcut rollback rehearsal',
 ]
 

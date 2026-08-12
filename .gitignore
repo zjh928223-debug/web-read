@@ -26,6 +26,7 @@ output/playwright/*.json
 output/baselines/
 output/release/
 output/performance/
+output/test-data-*/
 dist/
 cankao/dist/
 vite-*.txt
