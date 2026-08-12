@@ -60,13 +60,25 @@ export const useAudioStore = defineStore('audio', () => {
   }
 
   function deleteFromDB(id) {
-    return new Promise(function (resolve) {
-      if (!_db) { resolve(); return }
+    if (!_db) return initDB().then(function () { return deleteFromDB(id) })
+    return new Promise(function (resolve, reject) {
       var tx = _db.transaction([STORE_NAME], 'readwrite')
       var store = tx.objectStore(STORE_NAME)
       var req = store.delete(id)
-      req.onsuccess = function () { resolve() }
-      req.onerror = function () { resolve() }
+      var settled = false
+      var fail = function (error) {
+        if (settled) return
+        settled = true
+        reject(error || tx.error || req.error || new Error('Audio database delete failed'))
+      }
+      req.onerror = function () { fail(req.error) }
+      tx.onerror = function () { fail(tx.error) }
+      tx.onabort = function () { fail(tx.error || new Error('Audio database delete aborted')) }
+      tx.oncomplete = function () {
+        if (settled) return
+        settled = true
+        resolve()
+      }
     })
   }
 

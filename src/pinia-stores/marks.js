@@ -9,10 +9,10 @@ export const useMarksStore = defineStore('marks', () => {
     })
   }
 
-  function toggle(markedMap, currentWordIndex, words, saveToDB, syncAnnotationFn) {
-    if (currentWordIndex === -1) return
+  async function toggle(markedMap, currentWordIndex, words, saveToDB, syncAnnotationFn) {
+    if (currentWordIndex === -1) return false
     var w = words[currentWordIndex]
-    if (!w) return
+    if (!w) return false
     var isMarked = false
     if (markedMap.has(currentWordIndex)) {
       markedMap.delete(currentWordIndex)
@@ -25,8 +25,9 @@ export const useMarksStore = defineStore('marks', () => {
     syncVisual(currentWordIndex, isMarked)
     var arr = []
     markedMap.forEach(function (v) { arr.push(v) })
-    saveToDB('marks', arr)
-    if (typeof syncAnnotationFn === 'function') syncAnnotationFn()
+    await saveToDB('marks', arr)
+    if (typeof syncAnnotationFn === 'function') await syncAnnotationFn()
+    return true
   }
 
   function exportToArray(markedMap) {

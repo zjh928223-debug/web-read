@@ -122,6 +122,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     chunkControlsApi: chunkControlsApi,
     saveToDB: deps.saveToDB,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
+    showError: deps.showError,
     toggleAnnotationBubble: toggleAnnotationBubble,
     handleBackwardClick: handleBackwardClick,
     handleForwardClick: handleForwardClick,

@@ -38,7 +38,7 @@
 ## 5. Reader Session 与大媒体流式化
 
 - [x] 5.1 建立 `ReaderSessionLoad` generation token、AbortController、single-flight 和 typed load state
-- [x] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
+- [ ] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
 - [x] 5.3 确保导入失败保留旧 session，且 UI load error 不得回写为 workflow job failed
 - [x] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
 - [x] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算

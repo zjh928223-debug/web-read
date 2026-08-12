@@ -3,13 +3,18 @@ export function getFirstFileFromEvent(event) {
 }
 
 export function readFileAsText(file, onText) {
-  if (!file || typeof onText !== 'function') return;
-  const reader = new FileReader();
-  reader.onload = (evt) => {
-    const text = evt && evt.target ? evt.target.result : '';
-    onText(text);
-  };
-  reader.readAsText(file);
+  if (!file) return Promise.reject(new TypeError('file is required'));
+  const promise = new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => resolve(evt && evt.target ? evt.target.result : '');
+    reader.onerror = () => reject(reader.error || new Error('File read failed'));
+    reader.onabort = () => reject(reader.error || new Error('File read aborted'));
+    reader.readAsText(file);
+  });
+  return promise.then((text) => {
+    if (typeof onText === 'function') return onText(text);
+    return text;
+  });
 }
 
 export function getCurrentAudioFilenameBase(currentAudioMeta, fallback = 'audio') {

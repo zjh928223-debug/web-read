@@ -70,7 +70,7 @@
       importMarksInput.addEventListener('change', function (e) {
         var f = getFirstFileFromEvent(e);
         if (!f) return;
-        readFileAsText(f, function (rawText) {
+        return Promise.resolve(readFileAsText(f, async function (rawText) {
           try {
             var words = getWords();
             var arr = validateMarksArray(JSON.parse(rawText), words.length);
@@ -83,12 +83,14 @@
                 });
               }
             });
-            saveToDB('marks', (function () { var out = []; markedMap.forEach(function (v) { out.push(v); }); return out; })());
+            await saveToDB('marks', (function () { var out = []; markedMap.forEach(function (v) { out.push(v); }); return out; })());
             if (isChunkModeFn()) renderChunkMode(); else renderTranscript();
             forceUpdateUI(audioPlayer.currentTime);
-            syncAnnotationGenerationEntryStatus();
+            await syncAnnotationGenerationEntryStatus();
             showToast('Marks imported', 'success');
           } catch (x) { showError('MARKS_IMPORT', x && x.message ? x.message : 'Invalid marks file'); }
+        })).catch(function (error) {
+          showError('MARKS_IMPORT', error && error.message ? error.message : 'Marks file could not be read');
         });
       });
     }

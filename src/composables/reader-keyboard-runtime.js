@@ -16,13 +16,16 @@ export function initReaderKeyboardRuntime(deps = {}) {
     getBackwardKey: function () { return deps.hotkeyStateApi.backwardKey },
     getForwardKey: function () { return deps.hotkeyStateApi.forwardKey },
     toggleMarkCurrent: function () {
-      deps.marksStore.toggleMark(
+      return deps.marksStore.toggleMark(
         deps.marksStateApi.markedMap,
         deps.transcriptState.currentWordIndex,
         deps.transcriptState.words,
         deps.saveToDB,
         deps.syncAnnotationGenerationEntryStatus
       )
+    },
+    onMarkError: function (error) {
+      deps.showError('MARKS_SAVE', error && error.message ? error.message : 'Mark could not be saved')
     },
     toggleAnnotationBubble: deps.toggleAnnotationBubble,
     beginHoldChunkCn: deps.chunkControlsApi.beginHoldChunkCn,

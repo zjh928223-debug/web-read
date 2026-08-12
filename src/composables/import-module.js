@@ -312,29 +312,35 @@
     var markedMap = deps.markedMap;
 
     // Audio
-    audioFileInput.addEventListener('change', function (e) {
+    audioFileInput.addEventListener('change', async function (e) {
         var file = getFirstFileFromEvent(e);
         if (!file) return;
-        saveToDB('audio', file);
-        applyCurrentAudioMeta({ name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' });
-        clearGeneratedAnnotationIndex();
-        saveToDB('audioMeta', state.currentAudioMeta);
-        audioPlayer.src = URL.createObjectURL(file);
-        markFileLoaded(lblAudio);
-        e.target.value = '';
-        restoreReaderFocus();
+        try {
+          var audioMeta = { name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' };
+          await saveToDB('audio', file);
+          await saveToDB('audioMeta', audioMeta);
+          applyCurrentAudioMeta(audioMeta);
+          clearGeneratedAnnotationIndex();
+          audioPlayer.src = URL.createObjectURL(file);
+          markFileLoaded(lblAudio);
+        } catch (error) {
+          showError('AUDIO_SAVE', error && error.message ? error.message : 'Audio could not be saved');
+        } finally {
+          e.target.value = '';
+          restoreReaderFocus();
+        }
     });
 
     // Transcript
     transcriptFileInput.addEventListener('change', function (event) {
       var file = getFirstFileFromEvent(event);
       if (!file) return;
-      readFileAsText(file, function (rawText) {
+      return Promise.resolve(readFileAsText(file, async function (rawText) {
         var json, promiseChain;
         try {
             json = validateTranscriptData(JSON.parse(rawText));
-            promiseChain = clearPersistedChunkSession().then(function () {
-              saveToDB('transcript', json);
+            promiseChain = clearPersistedChunkSession().then(async function () {
+              await saveToDB('transcript', json);
               processTranscript(json);
             }).then(function () {
                 emitAnnotationDiagnostics('app.import_scope_updated', {
@@ -349,6 +355,8 @@
             }).catch(function (err) { showError('TRANSCRIPT_PARSE', err && err.message ? err.message : 'Invalid transcript JSON'); })
             .then(function () { event.target.value = ''; restoreReaderFocus(); });
         } catch(err) { showError('TRANSCRIPT_PARSE', err && err.message ? err.message : 'Invalid transcript JSON'); event.target.value = ''; restoreReaderFocus(); }
+      })).catch(function (error) {
+        showError('TRANSCRIPT_READ', error && error.message ? error.message : 'Transcript file could not be read');
       });
     });
 

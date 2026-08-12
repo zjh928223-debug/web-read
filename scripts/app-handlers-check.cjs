@@ -150,7 +150,8 @@ assert.equal(typeof listeners['input:change'], 'function');
 listeners['btn:click']();
 assert.equal(inputClicked, true, 'marks import button should trigger the file input');
 
-listeners['input:change']({});
+async function verifyMarksImport() {
+await listeners['input:change']({});
 
 assert.equal(markedMap.size, 1);
 assert.deepEqual(JSON.parse(JSON.stringify(markedMap.get(0))), {
@@ -182,3 +183,9 @@ assert.equal(toast, 'Marks imported');
 });
 
 console.log('app handlers check passed');
+}
+
+verifyMarksImport().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

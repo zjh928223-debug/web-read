@@ -131,7 +131,7 @@ async function main() {
     ['target-a', { occurrenceGlobalStart: 1, occurrenceGlobalEnd: 2 }]
   ])), { start: 1, end: 2 });
 
-  const rebuilt = runtime.rebuildMarksFromAnnotationItems([
+  const rebuilt = await runtime.rebuildMarksFromAnnotationItems([
     { targetId: 'target-a', occurrenceKey: 'occ-a' }
   ], { sourceType: 'annotation-lightweight-import', replaceExisting: true });
   assert.deepEqual(rebuilt, { addedCount: 2, totalCount: 2 });
@@ -144,7 +144,7 @@ async function main() {
   assert.equal(updatedAt, 12.5);
   assert.equal(synced, 1);
 
-  const cleared = runtime.rebuildMarksFromAnnotationItems([], { replaceExisting: true });
+  const cleared = await runtime.rebuildMarksFromAnnotationItems([], { replaceExisting: true });
   assert.deepEqual(cleared, { addedCount: 0, totalCount: 0 });
   assert.equal(state.markedMap.size, 0);
   assert.deepEqual(saves.at(-1), { key: 'marks', value: [] });

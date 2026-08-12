@@ -109,7 +109,7 @@ export function createSessionAnnotationMarksRuntime(deps = {}) {
     return { start, end };
   }
 
-  function rebuildMarksFromAnnotationItems(items, options = {}) {
+  async function rebuildMarksFromAnnotationItems(items, options = {}) {
     const annotationItems = Array.isArray(items) ? items : [];
     const sourceType = String(options.sourceType || 'annotation-import');
     const replaceExisting = options.replaceExisting !== false;
@@ -141,7 +141,7 @@ export function createSessionAnnotationMarksRuntime(deps = {}) {
 
     if (!addedCount && replaceExisting) {
       state.markedMap.clear();
-      deps.saveToDB('marks', []);
+      await deps.saveToDB('marks', []);
       return { addedCount: 0, totalCount: 0 };
     }
 
@@ -151,14 +151,14 @@ export function createSessionAnnotationMarksRuntime(deps = {}) {
 
     state.markedMap.clear();
     nextMap.forEach((value, key) => state.markedMap.set(key, value));
-    deps.saveToDB('marks', Array.from(state.markedMap.values()));
+    await deps.saveToDB('marks', Array.from(state.markedMap.values()));
     if (state.isChunkMode) {
       deps.renderChunkMode();
     } else {
       deps.renderTranscript();
     }
     deps.forceUpdateUI(deps.getAudioCurrentTime());
-    deps.syncAnnotationGenerationEntryStatus();
+    await deps.syncAnnotationGenerationEntryStatus();
     return { addedCount, totalCount: state.markedMap.size };
   }
 

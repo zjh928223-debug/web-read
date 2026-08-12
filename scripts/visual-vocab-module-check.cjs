@@ -165,7 +165,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     assert.deepEqual(api.vocabMatchMap.get(2), { word: 'Manual' });
 
     const changeEvent = { target: { value: 'visual.json' } };
-    visualFileInput.listeners.change(changeEvent);
+    await visualFileInput.listeners.change(changeEvent);
     assert.deepEqual(savedRecord, { id: 'visual', data: { vocab_list: [{ word: 'Loaded', match_context: 'Loaded word' }] } });
     assert.equal(api.globalVocab[0].word, 'Loaded');
     assert.deepEqual(api.vocabMatchMap.get(1), { word: 'Loaded', match_context: 'Loaded word' });

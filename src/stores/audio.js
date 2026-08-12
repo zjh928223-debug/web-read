@@ -59,13 +59,25 @@
   }
 
   function deleteFromDB(id) {
-    return new Promise(function (resolve) {
-      if (!_db) { resolve(); return; }
+    if (!_db) return initDB().then(function () { return deleteFromDB(id); });
+    return new Promise(function (resolve, reject) {
       var transaction = _db.transaction([STORE_NAME], 'readwrite');
       var store = transaction.objectStore(STORE_NAME);
       var request = store.delete(id);
-      request.onsuccess = function () { resolve(); };
-      request.onerror = function () { resolve(); };
+      var settled = false;
+      var fail = function (error) {
+        if (settled) return;
+        settled = true;
+        reject(error || transaction.error || request.error || new Error('Audio database delete failed'));
+      };
+      request.onerror = function () { fail(request.error); };
+      transaction.onerror = function () { fail(transaction.error); };
+      transaction.onabort = function () { fail(transaction.error || new Error('Audio database delete aborted')); };
+      transaction.oncomplete = function () {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
     });
   }
 

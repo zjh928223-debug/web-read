@@ -6,10 +6,10 @@
     });
   }
 
-  function toggleMark(markedMap, currentWordIndex, words, saveToDB, syncAnnotationGenerationEntryStatus) {
-    if (currentWordIndex === -1) return;
+  async function toggleMark(markedMap, currentWordIndex, words, saveToDB, syncAnnotationGenerationEntryStatus) {
+    if (currentWordIndex === -1) return false;
     var w = words[currentWordIndex];
-    if (!w) return;
+    if (!w) return false;
     var isMarked = false;
 
     if (markedMap.has(currentWordIndex)) {
@@ -26,8 +26,9 @@
     syncMarkedWordVisual(currentWordIndex, isMarked);
     var arr = [];
     markedMap.forEach(function (v) { arr.push(v); });
-    saveToDB('marks', arr);
-    syncAnnotationGenerationEntryStatus();
+    await saveToDB('marks', arr);
+    await syncAnnotationGenerationEntryStatus();
+    return true;
   }
 
   function exportMarksToArray(markedMap) {

@@ -70,12 +70,12 @@ export function initVisualVocab(deps = {}) {
             if (typeof getFirstFileFromEvent !== 'function' || typeof readFileAsText !== 'function') return;
             var file = getFirstFileFromEvent(event);
             if (!file) return;
-            readFileAsText(file, function (rawText) {
+            return Promise.resolve(readFileAsText(file, async function (rawText) {
                 try {
                     var data = typeof validateVisualData === 'function'
                         ? validateVisualData(JSON.parse(rawText))
                         : JSON.parse(rawText);
-                    if (typeof saveToDB === 'function') saveToDB('visual', data);
+                    if (typeof saveToDB === 'function') await saveToDB('visual', data);
                     applyVisualData(data);
                     if (typeof markFileLoaded === 'function') markFileLoaded(lblVisual);
                     if (typeof showToast === 'function') showToast('Visual data loaded', 'success');
@@ -86,6 +86,10 @@ export function initVisualVocab(deps = {}) {
                 } finally {
                     if (event && event.target) event.target.value = '';
                     if (typeof restoreReaderFocus === 'function') restoreReaderFocus();
+                }
+            })).catch(function (error) {
+                if (typeof showError === 'function') {
+                    showError('VISUAL_READ', error && error.message ? error.message : 'Visual file could not be read');
                 }
             });
         });

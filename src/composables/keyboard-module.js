@@ -58,7 +58,9 @@
       }
       else if (lowerKey === getMarkKey()) {
         e.preventDefault();
-        toggleMarkCurrent();
+        Promise.resolve(toggleMarkCurrent()).catch(function (error) {
+          if (typeof deps.onMarkError === 'function') deps.onMarkError(error);
+        });
       }
       else if (lowerKey === getAnnotationBubbleKey()) {
         e.preventDefault();
