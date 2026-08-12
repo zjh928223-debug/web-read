@@ -54,6 +54,22 @@ for (const key of ["kind", "capturedAt", "source", "method"]) {
     fail(`baseline.${key}`, "must be a non-empty string");
   }
 }
+if (config.status === "active") {
+  if (!isNonEmptyString(config.baseline?.id)) fail("baseline.id", "is required for an active baseline");
+  if (!Number.isInteger(config.baseline?.sampleRuns) || config.baseline.sampleRuns < 3) fail("baseline.sampleRuns", "must be at least 3 for an active baseline");
+  const gates = config.releaseGate?.browser;
+  const candidate = config.releaseGate?.candidate;
+  if (!isNonEmptyString(candidate?.fixture?.schema) || !Number.isInteger(candidate?.fixture?.version)) fail("releaseGate.candidate.fixture", "must identify fixture schema and version");
+  if (!Number.isInteger(candidate?.runCount) || candidate.runCount < 3) fail("releaseGate.candidate.runCount", "must be at least 3");
+  if (!Array.isArray(candidate?.journeys) || candidate.journeys.length !== 7 || new Set(candidate.journeys).size !== candidate.journeys.length) fail("releaseGate.candidate.journeys", "must contain seven unique fixed journeys");
+  if (!Array.isArray(gates) || gates.length === 0) fail("releaseGate.browser", "must define at least one enforced browser metric");
+  for (const [index, gate] of (gates || []).entries()) {
+    const gatePath = `releaseGate.browser[${index}]`;
+    for (const key of ["id", "source", "statistic", "unit"]) if (!isNonEmptyString(gate[key])) fail(`${gatePath}.${key}`, "must be a non-empty string");
+    if (!Number.isInteger(gate.minimumSamples) || gate.minimumSamples < 1) fail(`${gatePath}.minimumSamples`, "must be a positive integer");
+    if (!isFiniteNonNegative(gate.limit)) fail(`${gatePath}.limit`, "must be a finite non-negative number");
+  }
+}
 for (const key of ["limitations", "activationRequirements"]) {
   const values = config.baseline?.[key];
   if (!Array.isArray(values) || values.length === 0 || values.some((value) => !isNonEmptyString(value))) {
@@ -126,6 +142,4 @@ const metricCount = requiredCategories.reduce(
   (total, category) => total + config.budgets[category].length,
   0,
 );
-console.log(
-  `Performance budgets valid: schema v${config.version}, ${config.status}, ${metricCount} report-only metrics across ${requiredCategories.length} categories`,
-);
+console.log(`Performance budgets valid: schema v${config.version}, ${config.status}, ${metricCount} diagnostic metrics and ${config.releaseGate?.browser?.length || 0} browser release gates`);

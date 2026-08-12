@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
@@ -15,7 +15,8 @@ const python = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
 const token = 'isolated-production-host-test-token'
 const releaseId = 'isolated-production-host-test'
 const profileId = 'isolated-random-port'
-const outputRoot = path.join(repoRoot, 'output', 'production-host')
+const executionId = randomUUID()
+const outputRoot = path.resolve(process.env.READ_WEB_PRODUCTION_HOST_OUTPUT || path.join(repoRoot, 'output', 'production-host'))
 
 const runtimeConfig = JSON.parse(await readFile(path.join(repoRoot, 'config', 'runtime.next.json'), 'utf8'))
 assert.equal(runtimeConfig.frontend.port, 5174, 'next dev fallback must remain on 5174')
@@ -188,7 +189,7 @@ try {
   assert.equal(capabilityHealth.status, 'ok')
   assert.equal(capabilityHealth.endpoints.length, 9)
   for (let cycle = 1; cycle <= 3; cycle += 1) {
-    const instanceId = `production-cycle-${cycle}`
+    const instanceId = `${executionId}:production-cycle-${cycle}`
     host = startHost({ port, instanceId, dataRoot: path.join(tempRoot, `data-${cycle}`) })
     const health = await waitForHealth(baseUrl, instanceId)
     assert.deepEqual(
@@ -254,6 +255,22 @@ try {
       assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/vocabulary/local-sentences'))
       assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/tts/edge'))
       assert.equal(browserArtifact.errors.length, 0)
+      browserArtifact.provenance = {
+        hostKind: 'local-app-host',
+        distMode: 'built-dist',
+        baseUrl,
+        releaseId: health.releaseId,
+        profileId: health.profileId,
+        instanceId: health.instanceId,
+        manifestSha256: health.manifest.sha256,
+        manifestGitSha: health.manifest.gitSha,
+        configSchemaVersion: health.configCompatibility.schemaVersion,
+      }
+      await writeFile(
+        path.join(outputRoot, 'browser-journeys', 'browser-journeys.json'),
+        `${JSON.stringify(browserArtifact, null, 2)}\n`,
+        'utf8',
+      )
     }
 
     const pid = host.child.pid

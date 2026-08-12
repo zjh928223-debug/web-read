@@ -1,39 +1,60 @@
 {
   "schema": "read-web.performance-budgets",
   "version": 1,
-  "status": "provisional",
+  "status": "active",
   "environment": {
     "profileId": "windows-local-isolated-2026-08-12",
     "workspaceKind": "isolated-next-copy",
     "platform": "win32",
     "frontend": {
       "developmentUrl": "http://127.0.0.1:5174",
-      "measuredProductionUrl": "http://127.0.0.1:5175",
-      "buildMode": "vite-production-build"
+      "measuredProductionUrl": "random loopback port owned by Local App Host",
+      "buildMode": "built dist served by Local App Host"
     },
     "backend": {
-      "url": "http://127.0.0.1:8766",
+      "url": "workflow ASGI mounted inside the measured Local App Host",
       "dataKind": "isolated-test-data"
     },
-    "fixture": "empty-reader-shell-and-synthetic-4000-word-transcript"
+    "fixture": "performance-browser-journeys.v1: 12 segments × 8 words = 96-word transcript"
   },
   "baseline": {
-    "kind": "provisional-diagnostic-sample",
+    "id": "windows-local-app-host-fixed-fixture-2026-08-12-r1",
+    "kind": "automated-fixed-fixture-sample",
+    "sampleRuns": 3,
     "capturedAt": "2026-08-12",
     "source": "Read-Web isolated architecture and performance audit",
-    "method": "Browser navigation sampling, synthetic 4000-word transcript interaction sampling, and empty local API requests against the isolated copy",
+    "method": "Three isolated Chromium runs of all seven fixed browser journeys through a freshly started Local App Host and real capability sidecar on random loopback ports; every raw JSON and trace is retained per run",
     "limitations": [
-      "The diagnostic run did not record enough repeated samples to claim statistically valid p95 values.",
-      "Long Task entries were not captured as a machine-readable series.",
-      "The production sample used a temporary Vite production preview and is not the future Local App Host.",
-      "These observations establish instrumentation inputs only; they are not release thresholds."
+      "Three runs establish an initial local regression gate, not a cross-machine product SLA.",
+      "Each named measure currently has three samples; limits use the observed maximum plus an explicit 25% local variance allowance rounded up.",
+      "Vite dev cold-start remains diagnostic only; release enforcement measures the independent Local App Host over built dist assets.",
+      "Backend HTTP budgets remain independently enforced by the backend benchmark; this baseline gates browser journeys only."
     ],
     "activationRequirements": [
-      "Run an automated fixed-fixture harness and retain every raw sample.",
+      "Retain every automated fixed-fixture raw sample and trace.",
       "Fingerprint the machine, build, git SHA, fixture, frontend host, backend host, and runtime configuration.",
       "Separate cold-start and warm-start distributions and calculate p50, p95, and max from repeated runs.",
       "Capture Long Task, console, page, request, HTTP, and unhandled-rejection evidence in the same run.",
-      "Review the generated limits before changing status to active or enabling release enforcement."
+      "Re-baseline only through an explicit reviewed config change that preserves previous artifacts."
+    ]
+  },
+  "releaseGate": {
+    "candidate": {
+      "fixture": { "schema": "read-web.performance-browser-fixture", "version": 1 },
+      "runCount": 3,
+      "journeys": ["cold-start", "material-open", "play-pause-seek", "continuous-word-chunk", "material-workflow", "passage-preview", "srs-review"]
+    },
+    "browser": [
+      { "id": "browser.cold-start", "source": "measures", "name": "cold-start.navigate-to-reader-ready", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 370 },
+      { "id": "browser.material-open", "source": "measures", "name": "material.open-fixed-reader-fixture", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 95 },
+      { "id": "browser.playback-play", "source": "measures", "name": "playback.play", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 40 },
+      { "id": "browser.playback-pause", "source": "measures", "name": "playback.pause", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 25 },
+      { "id": "browser.playback-seek", "source": "measures", "name": "playback.seek", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 25 },
+      { "id": "browser.active-word-chunk", "source": "samples", "statistic": "p95", "unit": "ms", "minimumSamples": 192, "limit": 25 },
+      { "id": "browser.material-workflow-open", "source": "measures", "name": "material-workflow.open", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 160 },
+      { "id": "browser.passage-preview-open", "source": "measures", "name": "passage-preview.import-and-open", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 85 },
+      { "id": "browser.srs-open", "source": "measures", "name": "srs-review.open-fixed-sample", "statistic": "p95", "unit": "ms", "minimumSamples": 3, "limit": 225 },
+      { "id": "browser.long-task-max", "source": "longTasks", "statistic": "max", "unit": "ms", "minimumSamples": 1, "limit": 135 }
     ]
   },
   "budgets": {
@@ -69,14 +90,14 @@
     ],
     "interaction": [
       {
-        "id": "interaction.transcript.initial-render-4000-words",
+        "id": "interaction.transcript.initial-render-96-words",
         "metric": "initialTranscriptRender",
         "unit": "ms",
         "statistic": "single-diagnostic-sample",
         "observed": {
           "value": 108.2
         },
-        "context": "Synthetic 4000-word transcript with approximately 4353 DOM nodes",
+        "context": "Fixed v1 browser fixture with 12 segments × 8 words = 96 transcript words",
         "gate": {
           "mode": "report-only",
           "limit": null
@@ -91,7 +112,7 @@
           "min": 29,
           "max": 57
         },
-        "context": "Synthetic 4000-word transcript; not a repeated-run p95 distribution",
+        "context": "Legacy diagnostic observation; active release gate uses the fixed 96-word v1 browser fixture",
         "gate": {
           "mode": "report-only",
           "limit": null

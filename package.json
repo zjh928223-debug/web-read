@@ -25,7 +25,7 @@
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "python scripts/perf/backend-http-benchmark.py",
     "verify:performance:browser": "node scripts/perf/run-browser-journeys.mjs",
-    "verify:performance:browser-candidate": "node scripts/perf/run-browser-budget-candidate.mjs",
+    "verify:performance:browser-candidate": "npm run build && node scripts/perf/run-browser-budget-candidate.mjs",
     "verify:performance:budget-gate": "node scripts/perf/performance-budget-gate.mjs",
     "verify:performance:budget-gate-unit": "node scripts/perf/performance-budget-gate-check.mjs",
     "verify:performance:playback-active-word": "node scripts/playback-active-word-performance-check.mjs",

@@ -441,6 +441,7 @@ try {
     longTaskMaxMs: Math.max(0, ...artifact.longTasks.map((item) => item.duration)),
     errorCount: artifact.errors.length,
   }
+  await page.screenshot({ path: path.join(outputDirectory, 'browser-journeys-final.png'), fullPage: true })
   await context.tracing.stop({ path: path.join(outputDirectory, 'browser-journeys-trace.zip') })
   await browser.close()
   const outputPath = path.join(outputDirectory, 'browser-journeys.json')

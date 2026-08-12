@@ -26,6 +26,8 @@ output/playwright/*.json
 output/baselines/
 output/release/
 output/performance/
+output/production-host/
+output/*.patch
 output/test-data-*/
 dist/
 cankao/dist/
