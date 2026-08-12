@@ -4,15 +4,16 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+const adapterSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js'), 'utf8');
 
 assert.ok(
-  assemblySource.includes("from './session-lifecycle-runtime.js';"),
-  'session-runtime-assembly should delegate lifecycle setup through session-lifecycle-runtime'
+  adapterSource.includes("from './session-lifecycle-runtime.js';"),
+  'session adapter should own lifecycle runtime setup'
 );
 assert.ok(
-  assemblySource.includes('const lifecycleRuntime = startSessionLifecycleRuntime({'),
-  'session-runtime-assembly should initialize lifecycle runtime through the focused module'
+  adapterSource.includes('return startSessionLifecycleRuntime({'),
+  'session adapter should initialize the focused lifecycle runtime'
 );
 
 [

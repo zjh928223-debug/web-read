@@ -1,4 +1,7 @@
-export function createSessionRuntimeDeps(env = {}) {
+import { createSessionAnnotationRuntime } from './session-annotation-runtime.js';
+import { startSessionLifecycleRuntime } from './session-lifecycle-runtime.js';
+
+export function createSessionRuntimeAdapters(env = {}) {
   const windowObject = typeof env.getWindow === 'function' ? env.getWindow() : globalThis;
   const documentObject = typeof env.getDocument === 'function' ? env.getDocument() : windowObject.document;
 
@@ -8,7 +11,7 @@ export function createSessionRuntimeDeps(env = {}) {
       : null;
   }
 
-  return {
+  const runtimeDeps = {
     windowObject,
     documentObject,
     namespace: windowObject._ns || {},
@@ -47,6 +50,37 @@ export function createSessionRuntimeDeps(env = {}) {
       showToast: windowObject.showToast,
       updateChunkCnHoldBtn: windowObject.updateChunkCnHoldBtn,
       annotationLightweightModule: windowObject.__annotationLightweightModule
+    }
+  };
+
+  return {
+    getWindow: function () { return windowObject; },
+    annotation: {
+      start: function (state) {
+        return createSessionAnnotationRuntime({
+          state,
+          namespace: runtimeDeps.namespace,
+          windowObject,
+          documentObject,
+          runtimeDeps,
+          domRefs: runtimeDeps.domRefs,
+          globals: runtimeDeps.globals
+        });
+      }
+    },
+    lifecycle: {
+      start: function (state, annotationRuntime) {
+        return startSessionLifecycleRuntime({
+          state,
+          namespace: runtimeDeps.namespace,
+          runtimeDeps,
+          documentObject,
+          windowObject,
+          domRefs: runtimeDeps.domRefs,
+          globals: runtimeDeps.globals,
+          annotationRuntime
+        });
+      }
     }
   };
 }

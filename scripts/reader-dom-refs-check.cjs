@@ -10,7 +10,7 @@ const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-dom-refs.js'), 'utf8');
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
-const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
+const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js'), 'utf8');
 const sessionAnnotationRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
@@ -23,7 +23,7 @@ assert.ok(
   'reader-runtime-context should collect DOM refs through reader-dom-refs'
 );
 assert.ok(
-  featureDepsSource.includes('var domRefs = runtimeContext.domRefs;'),
+  featureDepsSource.includes('const dom = runtimeContext.domRefs'),
   'feature dependency module should receive DOM refs from reader-runtime-context'
 );
 assert.equal(
@@ -102,7 +102,7 @@ assert.equal(
 });
 
 assert.ok(
-  sessionAssemblySource.includes("from './session-annotation-runtime.js';") &&
+  sessionRuntimeDepsSource.includes("from './session-annotation-runtime.js';") &&
     sessionRuntimeDepsSource.includes("annotationMarkCountEl: getElement('annotation-mark-count')") &&
     sessionAnnotationRuntimeSource.includes('markCountEl: domRefs.annotationMarkCountEl') &&
     sessionAssemblySource.includes('initAnnotationApiSettingsUi();') === false,

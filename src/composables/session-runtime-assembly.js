@@ -1,13 +1,7 @@
 import { getSessionState } from './session-state-provider.js';
 import {
-    createSessionAnnotationRuntime
-} from './session-annotation-runtime.js';
-import {
-    startSessionLifecycleRuntime
-} from './session-lifecycle-runtime.js';
-import {
-    createSessionRuntimeDeps
-} from './session-runtime-deps.js';
+    createSessionRuntimeAdapters
+} from './session-runtime-adapters.js';
 import {
     configureSessionFacades
 } from './session-facades.js';
@@ -24,38 +18,17 @@ export function initSessionRuntimeAssembly(env = {}) {
       }
       return runtime;
     }
-    const runtimeDeps = createSessionRuntimeDeps(env);
-    const documentObject = runtimeDeps.documentObject;
-    const windowObject = runtimeDeps.windowObject;
-    const domRefs = runtimeDeps.domRefs;
-    const globals = runtimeDeps.globals;
+    const adapters = createSessionRuntimeAdapters(env);
+    const windowObject = adapters.getWindow();
     var st = getSessionState();
-    var _ns = runtimeDeps.namespace;
-    const annotationRuntime = createSessionAnnotationRuntime({
-        state: st,
-        namespace: _ns,
-        windowObject,
-        documentObject,
-        runtimeDeps,
-        domRefs,
-        globals
-    });
+    const annotationRuntime = adapters.annotation.start(st);
     own(annotationRuntime);
     const clearGeneratedAnnotationIndex = annotationRuntime.clearGeneratedAnnotationIndex;
     const getAnnotationGenerationScope = annotationRuntime.getAnnotationGenerationScope;
     const scheduleGeneratedAnnotationIndexRefresh = annotationRuntime.scheduleGeneratedAnnotationIndexRefresh;
     const syncAnnotationGenerationEntryStatus = annotationRuntime.syncAnnotationGenerationEntryStatus;
     const emitAnnotationDiagnostics = annotationRuntime.emitAnnotationDiagnostics;
-    const lifecycleRuntime = startSessionLifecycleRuntime({
-        state: st,
-        namespace: _ns,
-        runtimeDeps,
-        documentObject,
-        windowObject,
-        domRefs,
-        globals,
-        annotationRuntime
-      });
+    const lifecycleRuntime = adapters.lifecycle.start(st, annotationRuntime);
       own(lifecycleRuntime);
 
 
@@ -71,7 +44,7 @@ export function initSessionRuntimeAssembly(env = {}) {
       });
 
       const assembly = {
-        runtimeDeps,
+        adapters,
         annotationRuntime,
         lifecycleRuntime,
         ready: lifecycleRuntime && lifecycleRuntime.ready,

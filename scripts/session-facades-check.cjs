@@ -8,7 +8,7 @@ async function main() {
   const readerAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
   const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-facades.js'), 'utf8');
-  const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
+  const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js'), 'utf8');
 
 [
   'clearGeneratedAnnotationIndex',

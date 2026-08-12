@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureAdaptersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
 const sessionInitSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
@@ -40,8 +41,8 @@ assert.ok(
   'reader-runtime-assembly should delegate reader import runtime through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
-  'reader-feature-runtime should import reader import runtime'
+  featureAdaptersSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js'"),
+  'reader feature adapters should own reader import runtime creation'
 );
 
 assert.equal(

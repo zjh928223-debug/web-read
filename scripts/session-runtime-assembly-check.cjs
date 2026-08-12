@@ -8,108 +8,104 @@ function countNonBlankLines(source) {
 
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
-  const entryPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
-  const assemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
-  const depsPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js');
-  const annotationRuntimePath = path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js');
-  const lifecycleRuntimePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
-  const entrySource = fs.readFileSync(entryPath, 'utf8');
-  const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
-  const depsSource = fs.readFileSync(depsPath, 'utf8');
-  const annotationRuntimeSource = fs.readFileSync(annotationRuntimePath, 'utf8');
-  const lifecycleRuntimeSource = fs.readFileSync(lifecycleRuntimePath, 'utf8');
+  const entrySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-init.js'), 'utf8');
+  const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+  const adapterSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js'), 'utf8');
 
-  assert.ok(
-    entrySource.includes("import { initSessionRuntimeAssembly } from './session-runtime-assembly.js';"),
-    'session-init should import the session runtime assembly'
-  );
-  assert.ok(
-    entrySource.includes('initSessionRuntimeAssembly({'),
-    'session-init should call the session runtime assembly'
-  );
+  assert.ok(entrySource.includes("import { initSessionRuntimeAssembly } from './session-runtime-assembly.js';"));
+  assert.ok(entrySource.includes('initSessionRuntimeAssembly({'));
   assert.ok(countNonBlankLines(entrySource) <= 6, 'session-init should remain a thin entry');
-  [
-    'restoreSession',
-    'createSessionAnnotationLightweightIoRuntime',
-    'initDB().then'
-  ].forEach((pattern) => {
-    assert.equal(entrySource.includes(pattern), false, `session-init should not keep runtime assembly logic: ${pattern}`);
-  });
+  assert.ok(assemblySource.includes('export function initSessionRuntimeAssembly'));
+  assert.ok(assemblySource.includes('const adapters = createSessionRuntimeAdapters(env);'));
+  assert.ok(assemblySource.includes('const annotationRuntime = adapters.annotation.start(st);'));
+  assert.ok(assemblySource.includes('const lifecycleRuntime = adapters.lifecycle.start(st, annotationRuntime);'));
+  assert.equal(assemblySource.includes('runtimeDeps'), false);
+  assert.equal(assemblySource.includes('domRefs'), false);
+  assert.equal(assemblySource.includes('globals'), false);
+  assert.equal(assemblySource.includes('document.getElementById'), false);
+  assert.ok(adapterSource.includes("from './session-annotation-runtime.js';"));
+  assert.ok(adapterSource.includes("from './session-lifecycle-runtime.js';"));
 
-  assert.ok(
-    assemblySource.includes('export function initSessionRuntimeAssembly'),
-    'session-runtime-assembly should export initSessionRuntimeAssembly'
-  );
-  [
-    "from './session-runtime-deps.js';",
-    "from './session-facades.js';",
-    "from './session-annotation-runtime.js';",
-    "from './session-lifecycle-runtime.js';",
-    'const runtimeDeps = createSessionRuntimeDeps(env);',
-    'const annotationRuntime = createSessionAnnotationRuntime({',
-    'const lifecycleRuntime = startSessionLifecycleRuntime({',
-    'configureSessionFacades({',
-    'getWindow: function () { return windowObject; }'
-  ].forEach((pattern) => {
-    assert.ok(assemblySource.includes(pattern), `session-runtime-assembly should contain ${pattern}`);
-  });
-  assert.equal(assemblySource.includes('window.'), false, 'session-runtime-assembly should receive window through session-runtime-deps');
-  assert.equal(
-    assemblySource.includes('document.getElementById'),
-    false,
-    'session-runtime-assembly should receive DOM refs through session-runtime-deps'
-  );
-  [
-    'export function createSessionRuntimeDeps',
-    'windowObject.saveToDB'
-  ].forEach((pattern) => {
-    assert.ok(depsSource.includes(pattern), `session-runtime-deps should contain ${pattern}`);
-  });
-  [
-    'export function createSessionAnnotationRuntime',
-    'globals.annotationLightweightModule.configureManualLightweightAnnotationRuntime({',
-    'createSessionAnnotationGeneratedIndexRuntime({',
-    'createSessionAnnotationLightweightIoRuntime({',
-    'markCountEl: domRefs.annotationMarkCountEl'
-  ].forEach((pattern) => {
-    assert.ok(annotationRuntimeSource.includes(pattern), `session-annotation-runtime should contain ${pattern}`);
-  });
-  [
-    'export function startSessionLifecycleRuntime',
-    'createSessionStartupCleanupRuntime({',
-    'createSessionRestoreRuntime({',
-    'startSessionRuntime({',
-    'restoreSessionUiSettings({'
-  ].forEach((pattern) => {
-    assert.ok(lifecycleRuntimeSource.includes(pattern), `session-lifecycle-runtime should contain ${pattern}`);
-  });
-  [
-    "from './session-restore-runtime.js';",
-    "from './session-startup-runtime.js';",
-    "from './session-ui-settings-restore.js';",
-    'createSessionStartupCleanupRuntime({',
-    'createSessionRestoreRuntime({',
-    'startSessionRuntime({',
-    'restoreSessionUiSettings({'
-  ].forEach((pattern) => {
-    assert.equal(assemblySource.includes(pattern), false, `session-runtime-assembly should not keep lifecycle setup: ${pattern}`);
-  });
-  [
-    'installSessionRuntimeFacades',
-    'windowObject.__session_clearGeneratedAnnotationIndex',
-    'windowObject.__session_clearPersistedChunkSession',
-    'windowObject.__session_getAnnotationGenerationScope',
-    'windowObject.__session_emitAnnotationDiagnostics',
-    'windowObject.__session_scheduleGeneratedAnnotationIndexRefresh',
-    'windowObject.__session_syncAnnotationGenerationEntryStatus',
-    'windowObject.__session_exportManualLightweightAnnotations',
-    'windowObject.__session_importManualLightweightAnnotations',
-    'windowObject.__session_initAnnotationApiSettingsUi'
-  ].forEach((pattern) => {
-    assert.equal(depsSource.includes(pattern), false, `session-runtime-deps should not keep retired facade: ${pattern}`);
-  });
+  const calls = [];
+  const state = { id: 'state' };
+  const windowObject = { id: 'window' };
+  const annotationRuntime = {
+    clearGeneratedAnnotationIndex() {},
+    getAnnotationGenerationScope() {},
+    scheduleGeneratedAnnotationIndexRefresh() {},
+    syncAnnotationGenerationEntryStatus() {},
+    emitAnnotationDiagnostics() {},
+    dispose() { calls.push('dispose-annotation'); }
+  };
+  const lifecycleRuntime = {
+    clearPersistedChunkSession() {},
+    ready: Promise.resolve('ready'),
+    dispose() { calls.push('dispose-lifecycle'); }
+  };
+  const adapters = {
+    getWindow() { calls.push('get-window'); return windowObject; },
+    annotation: {
+      start(receivedState) {
+        calls.push(['start-annotation', receivedState]);
+        return annotationRuntime;
+      }
+    },
+    lifecycle: {
+      start(receivedState, receivedAnnotation) {
+        calls.push(['start-lifecycle', receivedState, receivedAnnotation]);
+        return lifecycleRuntime;
+      }
+    }
+  };
+  let facadeDeps;
+  const executable = assemblySource
+    .replace(/^import[\s\S]*?from '[^']+';\r?\n/gm, '')
+    .replace('export function initSessionRuntimeAssembly', 'function initSessionRuntimeAssembly')
+    .concat('\nexport { initSessionRuntimeAssembly };');
+  const bindings = {
+    getSessionState: () => state,
+    createSessionRuntimeAdapters: () => adapters,
+    configureSessionFacades: (deps) => { facadeDeps = deps; },
+    createLifecycleScope
+  };
+  const declarations = Object.keys(bindings)
+    .map((name) => `const ${name} = globalThis.__sessionAssemblyBindings.${name};`)
+    .join('\n');
+  globalThis.__sessionAssemblyBindings = bindings;
+  const encoded = Buffer.from(`${declarations}\n${executable}`).toString('base64');
+  const module = await import(`data:text/javascript;base64,${encoded}#${Date.now()}`);
+  const assembly = module.initSessionRuntimeAssembly();
+
+  assert.deepEqual(calls.slice(0, 3), [
+    'get-window',
+    ['start-annotation', state],
+    ['start-lifecycle', state, annotationRuntime]
+  ]);
+  assert.equal(assembly.adapters, adapters);
+  assert.equal(assembly.annotationRuntime, annotationRuntime);
+  assert.equal(assembly.lifecycleRuntime, lifecycleRuntime);
+  assert.equal(assembly.ready, lifecycleRuntime.ready);
+  assert.equal(facadeDeps.getWindow(), windowObject);
+  assert.equal(facadeDeps.getRuntimeState(), state);
+  assert.equal(facadeDeps.clearPersistedChunkSession, lifecycleRuntime.clearPersistedChunkSession);
+  assembly.dispose();
+  assembly.dispose();
+  assert.deepEqual(calls.slice(-2), ['dispose-lifecycle', 'dispose-annotation']);
 
   console.log('session runtime assembly check passed');
+}
+
+function createLifecycleScope() {
+  const disposers = [];
+  let disposed = false;
+  return {
+    add(disposer) { disposers.push(disposer); },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]();
+    }
+  };
 }
 
 main().catch((error) => {

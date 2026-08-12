@@ -59,14 +59,10 @@ async function verifySessionAssemblyLifecycle(source) {
   }
   const names = {
     getSessionState: () => ({}),
-    createSessionAnnotationRuntime: () => annotationRuntime,
-    startSessionLifecycleRuntime: () => lifecycleRuntime,
-    createSessionRuntimeDeps: () => ({
-      documentObject: {},
-      windowObject: {},
-      domRefs: {},
-      globals: {},
-      namespace: {},
+    createSessionRuntimeAdapters: () => ({
+      getWindow: () => ({}),
+      annotation: { start: () => annotationRuntime },
+      lifecycle: { start: () => lifecycleRuntime },
     }),
     configureSessionFacades() {},
     createLifecycleScope,

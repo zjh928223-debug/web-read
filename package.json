@@ -107,7 +107,7 @@
     "verify:control-playback-state-deps": "node scripts/control-playback-state-deps-check.cjs",
     "verify:session-state-provider": "node scripts/session-state-provider-check.cjs",
     "verify:session-runtime-assembly": "node scripts/session-runtime-assembly-check.cjs",
-    "verify:session-runtime-deps": "node scripts/session-runtime-deps-check.cjs",
+    "verify:session-runtime-adapters": "node scripts/session-runtime-adapters-check.cjs",
     "verify:session-lifecycle-runtime": "node scripts/session-lifecycle-runtime-check.cjs",
     "verify:session-annotation-services": "node scripts/session-annotation-services-check.cjs",
     "verify:session-annotation-text": "node scripts/session-annotation-text-check.cjs",

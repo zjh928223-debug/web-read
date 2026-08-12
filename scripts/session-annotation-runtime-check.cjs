@@ -4,15 +4,16 @@ const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
+const adapterSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
 
 assert.ok(
-  assemblySource.includes("from './session-annotation-runtime.js';"),
-  'session-runtime-assembly should delegate annotation runtime setup through session-annotation-runtime'
+  adapterSource.includes("from './session-annotation-runtime.js';"),
+  'session adapter should own annotation runtime setup'
 );
 assert.ok(
-  assemblySource.includes('const annotationRuntime = createSessionAnnotationRuntime({'),
-  'session-runtime-assembly should initialize annotation runtime through the focused module'
+  adapterSource.includes('return createSessionAnnotationRuntime({'),
+  'session adapter should initialize the focused annotation runtime'
 );
 
 [

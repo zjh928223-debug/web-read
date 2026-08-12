@@ -95,7 +95,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/session-annotation-services.js` - annotation service/global lookup helpers and diagnostics emit used by session runtime modules.
 - `src/composables/session-init.js` - about 7 lines. Thin session entry only.
 - `src/composables/session-runtime-assembly.js` - about 61 lines. Session assembly over focused modules.
-- `src/composables/session-runtime-deps.js` - about 62 lines. Session runtime window/DOM/global dependency collection.
+- `src/composables/session-runtime-adapters.js` - behavior-bearing annotation/lifecycle adapters that privately resolve session DOM/global dependencies.
 - `src/composables/session-annotation-runtime.js` - about 134 lines. Annotation runtime assembly over generated index, context, marks, lightweight IO, and API settings modules.
 - `src/composables/session-lifecycle-runtime.js` - about 102 lines. Startup cleanup, persisted restore, DB-ready startup, and UI settings restore assembly.
 - `src/composables/session-annotation-text.js` - annotation text normalization, sentence splitting, and context sentence resolution.
@@ -201,7 +201,7 @@ npm run verify:inline-handler-bindings  # Focused remaining inline handler migra
 npm run verify:control-playback-state-deps  # Focused controls/playback state dependency check
 npm run verify:session-state-provider  # Focused session-init state provider check
 npm run verify:session-runtime-assembly  # Focused thin session entry and session assembly guard
-npm run verify:session-runtime-deps  # Focused session runtime dependency collection check
+npm run verify:session-runtime-adapters  # Focused session runtime adapter behavior check
 npm run verify:session-lifecycle-runtime  # Focused session lifecycle runtime assembly check
 npm run verify:session-annotation-services  # Focused session annotation service helper check
 npm run verify:session-annotation-text  # Focused session annotation text/context helper check
