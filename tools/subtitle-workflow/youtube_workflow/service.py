@@ -1555,6 +1555,19 @@ class JobManager:
             return self._normalize_legacy_video_priority_media(load_json_file(manifest_path))
         raise HTTPException(status_code=404, detail="job manifest not found")
 
+    def registered_media_path(self, job_id: str, media_kind: str) -> Path:
+        if media_kind not in {"audio", "video"}:
+            raise HTTPException(status_code=404, detail="media kind not found")
+        manifest = self._manifest_for_job(job_id)
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+        registered_path = str(files.get(media_kind) or "").strip()
+        if not registered_path:
+            raise HTTPException(status_code=404, detail="registered media not found")
+        path = Path(registered_path)
+        if not path.exists() or not path.is_file():
+            raise HTTPException(status_code=404, detail="registered media not found")
+        return path
+
     def _normalize_legacy_video_priority_media(self, manifest: dict) -> dict:
         files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
         request = manifest.get("request") if isinstance(manifest.get("request"), dict) else {}
@@ -2675,6 +2688,11 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="file not found")
         media_type = "application/json" if file_kind in {"transcript", "chunkData"} else "application/octet-stream"
         return FileResponse(path, media_type=media_type, filename=path.name)
+
+    @app.api_route("/api/jobs/{job_id}/media/{media_kind}", methods=["GET", "HEAD"])
+    def job_media(job_id: str, media_kind: str):
+        path = manager.registered_media_path(job_id, media_kind)
+        return FileResponse(path, filename=path.name, content_disposition_type="inline")
 
     @app.get("/api/recent")
     def recent(limit: int = 10):

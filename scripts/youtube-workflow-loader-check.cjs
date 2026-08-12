@@ -41,7 +41,6 @@ async function main() {
     },
     async getFile(jobId, kind) {
       calls.push(['file', kind]);
-      if (kind === 'audio') return new Blob(['audio'], { type: 'audio/wav' });
       if (kind === 'transcript') return new Blob([JSON.stringify(makeTranscript())], { type: 'application/json' });
       return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 2, en: 'Hello world', zh: '你好' }] }] })], { type: 'application/json' });
     },
@@ -72,7 +71,6 @@ async function main() {
   const loader = api.createYoutubeWorkflowLoader({
     client,
     hasCurrentContent: () => false,
-    createObjectURL: () => 'blob:audio',
     audioPlayer: {},
     saveToDB: (key, value) => writes.push([key, value]),
     applyCurrentAudioMeta: (meta) => calls.push(['audioMeta', meta.name]),
@@ -102,7 +100,7 @@ async function main() {
 
   const result = await loader.loadJobIntoReader('job-1', { replacePolicy: 'ask' });
   assert.equal(result.status, 'loaded');
-  assert.deepEqual(writes.map(([key]) => key), ['audio', 'audioMeta', 'transcript', 'chunkData']);
+  assert.deepEqual(writes.map(([key]) => key), ['audioMeta', 'transcript', 'chunkData']);
   assert.ok(calls.some((call) => call[0] === 'transcript'));
   assert.ok(calls.some((call) => call[0] === 'chunkData'));
   assert.ok(calls.some((call) => call[0] === 'readerMarks' && call[1] === 'job-1'));
@@ -124,10 +122,10 @@ async function main() {
     client: {
       async getSession() { return { jobId: 'bad', files: {} }; },
       async getFile(_jobId, kind) {
-        if (kind === 'audio') return new Blob(['audio'], { type: 'audio/wav' });
         if (kind === 'transcript') return new Blob([JSON.stringify(makeTranscript())], { type: 'application/json' });
         return new Blob([JSON.stringify({ s: [{ id: 0, chunks: [{ a: 1, b: 99, en: 'bad', zh: '坏' }] }] })], { type: 'application/json' });
       },
+      fileUrl(jobId, kind) { return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`; },
     },
     hasCurrentContent: () => false,
     saveToDB: (key, value) => failedWrites.push([key, value]),

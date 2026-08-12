@@ -1489,6 +1489,70 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(ranged.headers["accept-ranges"], "bytes")
             self.assertEqual(ranged.headers["content-range"], "bytes 2-5/10")
 
+    def test_registered_media_endpoint_supports_head_range_etag_and_rejects_non_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+
+            created = client.post("/api/jobs", json={"url": "https://example.com/media-range", "geminiMode": "mock"}).json()
+            ready = self._wait_ready(client, created["jobId"])
+            video = Path(tmp) / "registered.mp4"
+            video.write_bytes(b"0123456789")
+            client.post(f"/api/jobs/{ready['jobId']}/video-source", json={"videoPath": str(video), "source": "manual"})
+
+            full = client.get(f"/api/jobs/{ready['jobId']}/media/video")
+            self.assertEqual(full.status_code, 200)
+            self.assertEqual(full.content, b"0123456789")
+            self.assertEqual(full.headers["accept-ranges"], "bytes")
+            self.assertTrue(full.headers["etag"])
+
+            head = client.head(f"/api/jobs/{ready['jobId']}/media/video")
+            self.assertEqual(head.status_code, 200)
+            self.assertEqual(head.content, b"")
+            self.assertEqual(head.headers["content-length"], "10")
+            self.assertEqual(head.headers["accept-ranges"], "bytes")
+            self.assertEqual(head.headers["etag"], full.headers["etag"])
+
+            ranged = client.get(
+                f"/api/jobs/{ready['jobId']}/media/video",
+                headers={"Range": "bytes=2-5"},
+            )
+            self.assertEqual(ranged.status_code, 206)
+            self.assertEqual(ranged.content, b"2345")
+            self.assertEqual(ranged.headers["content-range"], "bytes 2-5/10")
+            self.assertEqual(ranged.headers["content-length"], "4")
+            self.assertEqual(ranged.headers["etag"], full.headers["etag"])
+
+            unsatisfied = client.get(
+                f"/api/jobs/{ready['jobId']}/media/video",
+                headers={"Range": "bytes=20-30"},
+            )
+            self.assertEqual(unsatisfied.status_code, 416)
+            self.assertEqual(unsatisfied.headers["content-range"], "bytes */10")
+
+            self.assertEqual(client.get(f"/api/jobs/{ready['jobId']}/media/transcript").status_code, 404)
+            self.assertEqual(client.get(f"/api/jobs/{ready['jobId']}/media/not-registered").status_code, 404)
+
+    def test_registered_media_endpoint_never_accepts_a_caller_supplied_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+
+            created = client.post("/api/jobs", json={"url": "https://example.com/media-boundary", "geminiMode": "mock"}).json()
+            ready = self._wait_ready(client, created["jobId"])
+            secret = Path(tmp) / "not-in-manifest.mp4"
+            secret.write_bytes(b"must-not-be-served")
+
+            response = client.get(
+                f"/api/jobs/{ready['jobId']}/media/video",
+                params={"path": str(secret)},
+            )
+            self.assertEqual(response.status_code, 404)
+            self.assertNotIn("must-not-be-served", response.text)
+            self.assertNotIn(str(secret), response.text)
+
     def test_import_jobs_enqueue_legacy_items_without_prioritizing_current_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "legacy"

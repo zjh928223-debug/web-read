@@ -40,9 +40,9 @@
 - [ ] 5.1 建立 `ReaderSessionLoad` generation token、AbortController、single-flight 和 typed load state
 - [ ] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
 - [ ] 5.3 确保导入失败保留旧 session，且 UI load error 不得回写为 workflow job failed
-- [ ] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
+- [x] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
 - [ ] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算
-- [ ] 5.6 建立 `MediaResourceOwner`，在 replace/dispose 时可靠释放 Object URL、media src 和相关资源
+- [x] 5.6 建立 `MediaResourceOwner`，在 replace/dispose 时可靠释放 Object URL、media src 和相关资源
 - [ ] 5.7 修复 export/download Object URL 的 finally/延迟 revoke 并加入连续打开材料的 heap 稳定性测试
 - [ ] 5.8 为中断、快速切换 A/B/A、无 Range、文件失效和恢复旧 session 建立 browser journeys
 

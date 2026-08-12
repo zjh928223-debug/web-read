@@ -144,6 +144,8 @@
     "verify:legacy-root-copy": "node scripts/legacy-root-copy-check.cjs",
     "verify:youtube-workflow-client": "node scripts/youtube-workflow-client-check.cjs",
     "verify:youtube-workflow-loader": "node scripts/youtube-workflow-loader-check.cjs",
+    "verify:youtube-workflow-streaming": "node scripts/youtube-workflow-streaming-contract-check.mjs",
+    "verify:media-resource-owner": "node scripts/media-resource-owner-check.mjs",
     "verify:youtube-workflow-panel": "node scripts/youtube-workflow-panel-check.cjs",
     "verify:youtube-workflow-panel-behavior": "node scripts/youtube-workflow-panel-behavior-check.cjs",
     "verify:video-player": "node scripts/video-player-module-check.cjs",

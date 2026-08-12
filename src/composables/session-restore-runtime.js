@@ -8,12 +8,18 @@ export function createSessionRestoreRuntime(deps = {}) {
       currentAudioKey: state.currentAudioKey,
       currentDocId: namespace.currentDocId
     });
-    const audioBlob = await deps.loadFromDB('audio');
-    if (audioBlob) {
+    const audioMeta = await deps.loadFromDB('audioMeta');
+    const streamUrl = audioMeta && typeof audioMeta === 'object' && typeof audioMeta.streamUrl === 'string'
+      ? audioMeta.streamUrl
+      : '';
+    const audioBlob = streamUrl ? null : await deps.loadFromDB('audio');
+    if (streamUrl) {
+      deps.audioPlayer.src = streamUrl;
+      deps.markFileLoaded(deps.lblAudio, 'Audio stream restored');
+    } else if (audioBlob) {
       deps.audioPlayer.src = deps.urlApi.createObjectURL(audioBlob);
       deps.markFileLoaded(deps.lblAudio, 'Audio restored');
     }
-    const audioMeta = await deps.loadFromDB('audioMeta');
     if (audioMeta && typeof audioMeta === 'object') {
       deps.applyCurrentAudioMeta(audioMeta);
     } else if (audioBlob) {

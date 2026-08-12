@@ -46,10 +46,8 @@ function createJsonFileLike(payload, filename) {
   }
 }
 
-function validateGeneratedSession({ audioBlob, transcript, chunkData, validateTranscriptData, validateChunkData }) {
-  if (!audioBlob || !Number.isFinite(Number(audioBlob.size)) || Number(audioBlob.size) <= 0) {
-    throw new Error('audio file is missing or empty')
-  }
+function validateGeneratedSession({ audioUrl, transcript, chunkData, validateTranscriptData, validateChunkData }) {
+  if (typeof audioUrl !== 'string' || !audioUrl) throw new Error('audio stream is missing')
   const normalizedTranscript = validateTranscriptData ? validateTranscriptData(transcript) : transcript
   if (!normalizedTranscript || !Array.isArray(normalizedTranscript.segments) || !normalizedTranscript.segments.length) {
     throw new Error('transcript JSON must contain segments')
@@ -83,7 +81,6 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   const processChunkData = deps.processChunkData || (typeof window !== 'undefined' ? window.processChunkData : null)
   const annotationLightweightModule = deps.annotationLightweightModule || (typeof window !== 'undefined' ? window.__annotationLightweightModule : null)
   const resetChunkDisplay = typeof deps.resetChunkDisplay === 'function' ? deps.resetChunkDisplay : function () {}
-  const createObjectURL = deps.createObjectURL || (typeof URL !== 'undefined' ? URL.createObjectURL.bind(URL) : null)
   const mediaSource = deps.mediaSource || (typeof window !== 'undefined' ? window.__mediaSource : null)
 
   async function restoreReaderMarks(jobId) {
@@ -124,13 +121,18 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     if (typeof processChunkData !== 'function') throw new Error('processChunkData is not available')
 
     const manifest = await client.getSession(jobId)
-    const audioBlob = await client.getFile(jobId, 'audio')
-    const transcriptBlob = await client.getFile(jobId, 'transcript')
-    const chunkBlob = await client.getFile(jobId, 'chunkData')
-    const transcriptRaw = await blobToJson(transcriptBlob, 'transcript')
-    const chunkRaw = await blobToJson(chunkBlob, 'chunkData')
+    if (typeof client.fileUrl !== 'function') throw new Error('workflow media URL is not available')
+    const audioUrl = client.fileUrl(jobId, 'audio')
+    const [transcriptBlob, chunkBlob] = await Promise.all([
+      client.getFile(jobId, 'transcript'),
+      client.getFile(jobId, 'chunkData'),
+    ])
+    const [transcriptRaw, chunkRaw] = await Promise.all([
+      blobToJson(transcriptBlob, 'transcript'),
+      blobToJson(chunkBlob, 'chunkData'),
+    ])
     const validated = validateGeneratedSession({
-      audioBlob,
+      audioUrl,
       transcript: transcriptRaw,
       chunkData: chunkRaw,
       validateTranscriptData: deps.validateTranscriptData || (typeof window !== 'undefined' && window.DataUtils ? window.DataUtils.validateTranscriptData : null),
@@ -144,21 +146,21 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     const videoUrl = hasVideo && typeof client.fileUrl === 'function' ? client.fileUrl(jobId, 'video') : ''
     const audioMeta = {
       name: `${title}.audio`,
-      size: audioBlob.size || 0,
+      size: 0,
       lastModified: Date.now(),
-      type: audioBlob.type || 'application/octet-stream',
+      type: 'application/octet-stream',
       source: 'youtube-workflow',
-      jobId
+      jobId,
+      streamUrl: audioUrl,
     }
 
-    await Promise.resolve(saveToDB('audio', audioBlob))
     applyCurrentAudioMeta(audioMeta)
     await Promise.resolve(saveToDB('audioMeta', audioMeta))
     await Promise.resolve(saveToDB('transcript', validated.transcript))
     await Promise.resolve(saveToDB('chunkData', validated.chunkData))
 
     const audioPlayer = deps.audioPlayer || (typeof document !== 'undefined' ? document.getElementById('audio-player') : null)
-    if (audioPlayer && createObjectURL) audioPlayer.src = createObjectURL(audioBlob)
+    if (audioPlayer) audioPlayer.src = audioUrl
     if (mediaSource && typeof mediaSource.setAudioElement === 'function') {
       mediaSource.setAudioElement(audioPlayer)
     }
