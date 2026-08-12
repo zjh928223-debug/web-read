@@ -273,6 +273,7 @@
                 <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
               </div>
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
+              <p class="youtube-workflow-hint" :data-tone="readerSaveStateTone" data-reader-save-state>{{ readerSaveStateText }}</p>
 
               <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
               <article
@@ -541,6 +542,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
+import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
+import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
@@ -581,6 +584,8 @@ const recentQuery = ref('')
 const recentFilter = ref('all')
 const workflowView = ref('recent')
 const readerActivityNotice = ref('')
+const readerMarksSaveState = ref('saved')
+const readerActivitySaveState = ref('saved')
 const historyJobs = ref([])
 const historyOpen = ref(true)
 const historyQuery = ref('')
@@ -608,11 +613,68 @@ let linkSequence = 0
 let readerSessionId = ''
 let readerSessionStartedAt = ''
 let readerLastSyncAt = 0
-let markCountObserver = null
-let readerMarksSyncTimer = 0
 let playbackTrackedMedia = null
 let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
+let readerUnloadFlushed = false
+const readerSessionPersistence = createReaderSessionPersistence()
+const readerMarksLedgers = new Map()
+const readerActivityLedgers = new Map()
+
+const readerSaveStateText = computed(() => {
+  const states = [readerMarksSaveState.value, readerActivitySaveState.value]
+  if (states.includes('error')) return '学习记录保存失败，保留待重试'
+  if (states.includes('saving')) return '学习记录保存中'
+  if (states.includes('dirty')) return '学习记录有待保存更新'
+  return '学习记录已保存'
+})
+const readerSaveStateTone = computed(() => readerSaveStateText.value.includes('失败') ? 'warning' : 'muted')
+
+function getReaderMarksLedger(jobId) {
+  if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
+  const ledger = createLatestWinsLedger({
+    write(entry) {
+      return youtubeWorkflowClient.saveReaderMarks(entry.jobId, { marks: entry.marks })
+    },
+    createOperationId(sequence) {
+      return `reader-marks-${jobId}-${Date.now()}-${sequence}`
+    },
+    onStateChange(state) {
+      if (currentJobId.value !== jobId) return
+      readerMarksSaveState.value = state.status
+      if (state.status === 'error') readerActivityNotice.value = '标记保存失败，将在下次修改时重试'
+      else if (state.status === 'saved' && readerActivityNotice.value.startsWith('标记保存失败')) readerActivityNotice.value = ''
+    }
+  })
+  readerMarksLedgers.set(jobId, ledger)
+  return ledger
+}
+
+function getReaderActivityLedger(jobId) {
+  if (readerActivityLedgers.has(jobId)) return readerActivityLedgers.get(jobId)
+  const ledger = createLatestWinsLedger({
+    async write(entry, context) {
+      const updated = await youtubeWorkflowClient.recordReaderActivity({
+        ...entry.payload,
+        activityOperationId: context.operationId,
+        activitySequence: context.sequence
+      })
+      mergeRecentReaderItem(updated)
+      return updated
+    },
+    createOperationId(sequence) {
+      return `reader-activity-${jobId}-${readerSessionId || 'session'}-${sequence}`
+    },
+    onStateChange(state) {
+      if (currentJobId.value !== jobId) return
+      readerActivitySaveState.value = state.status
+      if (state.status === 'error') readerActivityNotice.value = '进度保存失败，将保留最新进度重试'
+      else if (state.status === 'saved' && readerActivityNotice.value.startsWith('进度保存失败')) readerActivityNotice.value = ''
+    }
+  })
+  readerActivityLedgers.set(jobId, ledger)
+  return ledger
+}
 
 const geminiMode = computed(() => {
   const params = new URLSearchParams(window.location.search)
@@ -776,7 +838,6 @@ onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
   syncVideoPreferred(videoPriority.value)
   bindPlaybackTracking()
-  bindMarkCountTracking()
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('pagehide', handleBeforeUnload)
@@ -788,19 +849,21 @@ onBeforeUnmount(() => {
   jobPollingScheduler = null
   readerSessionLoader?.cancelLoad()
   readerSessionLoader = null
-  syncReaderMarks()
-  syncReaderActivity('close')
+  handleBeforeUnload()
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('pagehide', handleBeforeUnload)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
   unbindPlaybackTracking()
-  unbindMarkCountTracking()
+  readerMarksLedgers.forEach((ledger) => ledger.dispose())
+  readerMarksLedgers.clear()
+  readerActivityLedgers.forEach((ledger) => ledger.dispose())
+  readerActivityLedgers.clear()
 })
 
 function makeLoader() {
   return readerSessionLoader ||= createYoutubeWorkflowLoader({
     client: youtubeWorkflowClient,
-    saveToDB: window.saveToDB,
+    readerSessionPersistence: readerSessionPersistence,
     applyCurrentAudioMeta(meta) {
       if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
       else if (window.__state) window.__state.currentAudioMeta = meta
@@ -1943,15 +2006,10 @@ async function syncReaderActivity(event = 'progress') {
   if (!currentJobId.value) return null
   const payload = buildReaderActivityPayload(event)
   if (!payload) return null
-  try {
-    const updated = await youtubeWorkflowClient.recordReaderActivity(payload)
-    mergeRecentReaderItem(updated)
-    readerActivityNotice.value = ''
-    return updated
-  } catch (err) {
-    readerActivityNotice.value = '进度保存失败'
-    return null
-  }
+  const ledger = getReaderActivityLedger(payload.jobId)
+  ledger.submit({ jobId: payload.jobId, payload })
+  await ledger.waitForIdle()
+  return ledger.getState().status === 'saved' ? ledger.getState() : null
 }
 
 function buildReaderActivityPayload(event) {
@@ -2035,49 +2093,21 @@ async function applyReaderMarks(marks) {
   if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
 }
 
-function scheduleReaderMarksSync() {
+function submitCurrentReaderMarks() {
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
-  if (readerMarksSyncTimer) window.clearTimeout(readerMarksSyncTimer)
-  readerMarksSyncTimer = window.setTimeout(() => {
-    readerMarksSyncTimer = 0
-    syncReaderMarks()
-  }, 250)
-}
-
-async function syncReaderMarks() {
-  ensureCurrentJobFromAudioMeta()
-  if (!currentJobId.value) return null
-  try {
-    return await youtubeWorkflowClient.saveReaderMarks(currentJobId.value, { marks: getCurrentReaderMarks() })
-  } catch (_err) {
-    return null
-  }
+  const jobId = currentJobId.value
+  return getReaderMarksLedger(jobId).submit({
+    jobId,
+    marks: getCurrentReaderMarks()
+  })
 }
 
 function handleReaderMarksChanged() {
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
-  scheduleReaderMarksSync()
+  submitCurrentReaderMarks()
   syncReaderActivity('annotation')
-}
-
-function bindMarkCountTracking() {
-  const el = document.getElementById('annotation-mark-count')
-  if (!el || typeof MutationObserver === 'undefined') return
-  markCountObserver = new MutationObserver(() => {
-    if (!currentJobId.value) return
-    scheduleReaderMarksSync()
-    syncReaderActivity('annotation')
-  })
-  markCountObserver.observe(el, { attributes: true, attributeFilter: ['data-count'] })
-}
-
-function unbindMarkCountTracking() {
-  if (markCountObserver) markCountObserver.disconnect()
-  markCountObserver = null
-  if (readerMarksSyncTimer) window.clearTimeout(readerMarksSyncTimer)
-  readerMarksSyncTimer = 0
 }
 
 function sendJsonOnUnload(url, payload) {
@@ -2098,9 +2128,12 @@ function sendJsonOnUnload(url, payload) {
 }
 
 function handleBeforeUnload() {
+  if (readerUnloadFlushed) return
   ensureCurrentJobFromAudioMeta()
   const payload = buildReaderActivityPayload('close')
   if (!payload) return
+  readerUnloadFlushed = true
+  payload.activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
   try {
     sendJsonOnUnload(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, payload)
   } catch (_err) {}

@@ -73,7 +73,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   const client = deps.client
   if (!client) throw new Error('youtube workflow loader requires a client')
   const hasCurrentContent = deps.hasCurrentContent || defaultHasCurrentContent
-  const saveToDB = deps.saveToDB || (typeof window !== 'undefined' ? window.saveToDB : null)
+  const readerSessionPersistence = deps.readerSessionPersistence
   const applyCurrentAudioMeta = deps.applyCurrentAudioMeta || function (meta) {
     if (typeof window !== 'undefined' && window.__state) window.__state.currentAudioMeta = meta
   }
@@ -153,7 +153,9 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     if (replacePolicy !== 'replace-current' && hasCurrentContent()) {
       return { status: 'conflict', jobId }
     }
-    if (typeof saveToDB !== 'function') throw new Error('saveToDB is not available')
+    if (!readerSessionPersistence || typeof readerSessionPersistence.commit !== 'function') {
+      throw new Error('readerSessionPersistence is not available')
+    }
     if (typeof processTranscript !== 'function') throw new Error('processTranscript is not available')
     if (typeof processChunkData !== 'function') throw new Error('processChunkData is not available')
 
@@ -206,11 +208,15 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         streamUrl: audioUrl,
       }
 
-      await Promise.all([
-        Promise.resolve(saveToDB('audioMeta', audioMeta)),
-        Promise.resolve(saveToDB('transcript', validated.transcript)),
-        Promise.resolve(saveToDB('chunkData', validated.chunkData)),
-      ])
+      const contentId = `youtube-workflow:${jobId}`
+      const revision = `${contentId}:1`
+      await readerSessionPersistence.commit({
+        contentId,
+        revision,
+        audioMeta,
+        transcript: validated.transcript,
+        chunkData: validated.chunkData,
+      })
       if (!isCurrentLoad(load)) return supersededResult(load)
 
       applyCurrentAudioMeta(audioMeta)

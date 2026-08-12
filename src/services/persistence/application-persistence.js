@@ -115,15 +115,17 @@ export function createApplicationPersistence(options = {}) {
   async function runTransaction(mode, operation, execute) {
     const database = await openDatabase()
     let transaction
+    let completion
     try {
       transaction = database.transaction([STORE_NAME], mode)
       const store = transaction.objectStore(STORE_NAME)
-      const completion = transactionPromise(transaction, operation)
+      completion = transactionPromise(transaction, operation)
       const result = await execute(store)
       await completion
       return result
     } catch (error) {
       try { transaction?.abort() } catch { /* Preserve the original failure. */ }
+      if (completion) await completion.catch(() => {})
       if (error?.name === 'ApplicationPersistenceError') throw error
       throw persistenceError('TRANSACTION_FAILED', operation, error)
     }
@@ -145,6 +147,18 @@ export function createApplicationPersistence(options = {}) {
         requestPromise(store.put(row), `put:${typeName}`)
       ))
       return row
+    },
+
+    async putMany(typeName, rows) {
+      typeFor(typeName)
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw persistenceError('INVALID_VALUE_LIST', `put_many:${typeName}`)
+      }
+      for (const row of rows) validateRow(typeName, row)
+      await runTransaction('readwrite', `put_many:${typeName}`, (store) => (
+        Promise.all(rows.map((row) => requestPromise(store.put(row), `put_many:${typeName}`)))
+      ))
+      return rows
     },
 
     async deleteMany(typeName, ids) {

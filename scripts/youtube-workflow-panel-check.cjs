@@ -113,6 +113,8 @@ async function main() {
   assert.ok(panelSource.includes("replacePolicy: 'ask'"), 'queue submission should not silently replace current content');
   assert.ok(panelSource.includes("window.applyCurrentAudioMeta(meta)"), 'workflow loader should apply audio meta through the reader facade so audioKey stays in sync');
   assert.ok(panelSource.includes("annotationLightweightModule: window.__annotationLightweightModule"), 'workflow loader should receive the lightweight annotation importer for saved AI backfill results');
+  assert.ok(panelSource.includes('createReaderSessionPersistence'), 'workflow panel should create the atomic reader session persistence adapter');
+  assert.ok(panelSource.includes('readerSessionPersistence:'), 'workflow loader should receive the atomic reader session persistence adapter');
   assert.ok(panelSource.includes('readerSessionLoader ||= createYoutubeWorkflowLoader'), 'workflow panel should reuse one loader so A/B loads share the latest-wins generation');
   assert.ok(panelSource.includes("if (!result || result.status !== 'loaded') return"), 'superseded reader loads must not update the current job or session');
   assert.ok(panelSource.includes('readerSessionLoader?.cancelLoad()'), 'workflow panel should abort an active reader load on unmount');

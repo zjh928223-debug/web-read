@@ -32,7 +32,7 @@
 - [x] 4.3 删除/封闭公开 `clearDBStore()`，改为领域 allowlist keys 删除并验证不会清除其他数据
 - [ ] 4.4 定义 versioned envelope、revision/contentId/checksum、unknown schema rejection 和 corrupt quarantine
 - [ ] 4.5 迁移当前假 await/request-success writers，并为 Quota、abort、关闭页面和多标签并发补测试
-- [ ] 4.6 建立 `DurableJsonRepository` 的 temp+fsync+replace+backup+recovery 契约
+- [x] 4.6 建立 `DurableJsonRepository` 的 temp+fsync+replace+backup+recovery 契约
 - [ ] 4.7 将 SQLite builder 改为 temp build、integrity check、atomic swap 和 previous backup
 
 ## 5. Reader Session 与大媒体流式化
@@ -70,8 +70,8 @@
 
 ## 8. Marks、Activity、Vocabulary、Preview 与 Annotation 数据
 
-- [ ] 8.1 建立 marks/activity ledger，采用 coalesce、monotonic sequence、one-in-flight latest-wins 和 dirty/saved/error
-- [ ] 8.2 移除 window event 与 MutationObserver 对同一 marks 改动的重复写通道
+- [x] 8.1 建立 marks/activity ledger，采用 coalesce、monotonic sequence、one-in-flight latest-wins 和 dirty/saved/error
+- [x] 8.2 移除 window event 与 MutationObserver 对同一 marks 改动的重复写通道
 - [ ] 8.3 将 legacy Vocabulary Snapshot writers 迁到统一 Unit of Work 或 revision/CAS，阻止 lost update
 - [ ] 8.4 对 Vocabulary unknown schema 实施显式拒绝、migration registry 和迁移前 row backup
 - [ ] 8.5 将 Passage Preview 多 localStorage key 合并为 batchId/revision envelope 或可恢复 transition

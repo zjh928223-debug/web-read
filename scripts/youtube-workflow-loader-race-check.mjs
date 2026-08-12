@@ -28,7 +28,7 @@ function chunks(label) {
 const aManifest = deferred()
 const sessionSignals = new Map()
 const visible = { transcript: 'old-session', chunk: 'old-session', audio: 'old-session' }
-const writes = []
+const commits = []
 const client = {
   getSession(jobId, options = {}) {
     sessionSignals.set(jobId, options.signal)
@@ -46,7 +46,9 @@ const client = {
 const loader = createYoutubeWorkflowLoader({
   client,
   hasCurrentContent: () => false,
-  saveToDB(key, value) { writes.push([key, value]) },
+  readerSessionPersistence: {
+    async commit(session) { commits.push(session) },
+  },
   applyCurrentAudioMeta(meta) { visible.audio = meta.jobId },
   processTranscript(value) { visible.transcript = value.segments[0].words[0].word },
   processChunkData(value) { visible.chunk = value.s[0].chunks[0].en },
@@ -74,7 +76,9 @@ const resultA = await loadA
 assert.equal(resultA.status, 'superseded')
 assert.equal(resultA.generation, 1)
 assert.deepEqual(visible, { transcript: 'job-b', chunk: 'job-b', audio: 'job-b' }, 'late A must not overwrite B')
-assert.ok(writes.every(([, value]) => !JSON.stringify(value).includes('job-a')), 'superseded A must not persist')
+assert.ok(commits.every((value) => !JSON.stringify(value).includes('job-a')), 'superseded A must not persist')
+assert.equal(commits.length, 1)
+assert.equal(commits[0].contentId, 'youtube-workflow:job-b')
 assert.deepEqual(loader.getLoadState(), {
   status: 'loaded', generation: 2, jobId: 'job-b', error: null,
 })

@@ -27,6 +27,7 @@ async function main() {
   const api = await importModule(modulePath);
 
   const writes = [];
+  const sessionCommits = [];
   const calls = [];
   const mediaCalls = [];
   const client = {
@@ -72,7 +73,9 @@ async function main() {
     client,
     hasCurrentContent: () => false,
     audioPlayer: {},
-    saveToDB: (key, value) => writes.push([key, value]),
+    readerSessionPersistence: {
+      async commit(session) { sessionCommits.push(session); },
+    },
     applyCurrentAudioMeta: (meta) => calls.push(['audioMeta', meta.name]),
     processTranscript: (data) => calls.push(['transcript', data.segments.length]),
     processChunkData: (data) => calls.push(['chunkData', data.s.length]),
@@ -100,7 +103,10 @@ async function main() {
 
   const result = await loader.loadJobIntoReader('job-1', { replacePolicy: 'ask' });
   assert.equal(result.status, 'loaded');
-  assert.deepEqual(writes.map(([key]) => key), ['audioMeta', 'transcript', 'chunkData']);
+  assert.equal(sessionCommits.length, 1, 'workflow reader state must use one atomic session commit');
+  assert.equal(sessionCommits[0].contentId, 'youtube-workflow:job-1');
+  assert.equal(sessionCommits[0].revision, 'youtube-workflow:job-1:1');
+  assert.equal(sessionCommits[0].audioMeta.jobId, 'job-1');
   assert.ok(calls.some((call) => call[0] === 'transcript'));
   assert.ok(calls.some((call) => call[0] === 'chunkData'));
   assert.ok(calls.some((call) => call[0] === 'readerMarks' && call[1] === 'job-1'));
@@ -128,7 +134,7 @@ async function main() {
       fileUrl(jobId, kind) { return `http://127.0.0.1:8765/api/jobs/${jobId}/file/${kind}`; },
     },
     hasCurrentContent: () => false,
-    saveToDB: (key, value) => failedWrites.push([key, value]),
+    readerSessionPersistence: { commit: (session) => failedWrites.push(session) },
     applyCurrentAudioMeta: () => {},
     processTranscript: () => {},
     processChunkData: () => {},
@@ -145,7 +151,7 @@ async function main() {
   const conflictLoader = api.createYoutubeWorkflowLoader({
     client,
     hasCurrentContent: () => true,
-    saveToDB: (key, value) => failedWrites.push([key, value]),
+    readerSessionPersistence: { commit: (session) => failedWrites.push(session) },
   });
   const conflict = await conflictLoader.loadJobIntoReader('job-1', { replacePolicy: 'ask' });
   assert.equal(conflict.status, 'conflict');

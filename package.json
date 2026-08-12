@@ -26,6 +26,8 @@
     "verify:media-playback-result": "node scripts/media-playback-result-check.cjs",
     "verify:youtube-workflow-loader-race": "node scripts/youtube-workflow-loader-race-check.mjs",
     "verify:runtime-assembly-lifecycle": "node scripts/runtime-assembly-lifecycle-check.mjs",
+    "verify:reader-session-persistence": "node scripts/reader-session-persistence-check.mjs",
+    "verify:latest-wins-ledger": "node scripts/latest-wins-ledger-check.mjs",
     "verify:playback": "node scripts/read-web-playback-check.cjs",
     "verify:interactions": "node scripts/read-web-interactions-check.cjs",
     "verify:vocab-matching": "node scripts/vocab-matching-helper-check.cjs",

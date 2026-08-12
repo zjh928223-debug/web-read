@@ -40,9 +40,11 @@ const loader = loaderModule.createYoutubeWorkflowLoader({
   createObjectURL() {
     assert.fail('streamed workflow media must not allocate an object URL')
   },
-  saveToDB(key, value) {
-    writes.push([key, value])
-    assert.notEqual(key, 'audio', 'streamed workflow media must not be copied into IndexedDB')
+  readerSessionPersistence: {
+    async commit(session) {
+      writes.push(session)
+      assert.equal('audio' in session, false, 'streamed workflow media must not be copied into IndexedDB')
+    },
   },
   applyCurrentAudioMeta() {},
   processTranscript() {},
@@ -55,5 +57,5 @@ const loader = loaderModule.createYoutubeWorkflowLoader({
 await loader.loadJobIntoReader('stream-contract', { replacePolicy: 'replace-current' })
 
 assert.deepEqual(fileCalls.slice().sort(), ['chunkData', 'transcript'], 'only small JSON artifacts may be materialized')
-assert.ok(!writes.some(([key]) => key === 'audio'), 'large workflow media must not be persisted as a Blob')
+assert.ok(writes.every((session) => !('audio' in session)), 'large workflow media must not be persisted as a Blob')
 console.log('youtube workflow streaming contract check passed')
