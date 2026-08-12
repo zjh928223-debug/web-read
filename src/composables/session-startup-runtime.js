@@ -1,3 +1,5 @@
+import { recordBestEffortFailure } from '../services/runtime/best-effort.js';
+
 export function startSessionRuntime(deps = {}) {
   const state = deps.state || {};
   const namespace = deps.namespace || {};
@@ -14,7 +16,15 @@ export function startSessionRuntime(deps = {}) {
 
     const savedManualStates = localStorageApi.getItem('st.manualChunkStates');
     if (savedManualStates) {
-      try { state.manualChunkStates = JSON.parse(savedManualStates); } catch (e) {}
+      try {
+        state.manualChunkStates = JSON.parse(savedManualStates);
+      } catch (error) {
+        recordBestEffortFailure(error, {
+          operationId: 'session-manual-chunk-state-restore',
+          reason: 'invalid optional manual chunk preferences fall back to a fresh in-memory map'
+        });
+        state.manualChunkStates = {};
+      }
     }
 
     const savedCnMode = localStorageApi.getItem('st.chunkCnMode');

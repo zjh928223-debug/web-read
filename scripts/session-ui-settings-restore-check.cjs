@@ -8,7 +8,10 @@ async function main() {
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const assemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
   const lifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
-  const moduleSource = fs.readFileSync(modulePath, 'utf8');
+  const moduleSource = fs.readFileSync(modulePath, 'utf8').replace(
+    /^import \{ recordBestEffortFailure \} from '\.\.\/services\/runtime\/best-effort\.js';?$/m,
+    'const recordBestEffortFailure = () => null;',
+  );
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
   const lifecycleSource = fs.readFileSync(lifecyclePath, 'utf8');
@@ -26,34 +29,22 @@ async function main() {
   const api = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
   const storage = new Map([
     ['markKey', 'M'],
-    ['st.notesKey', 'N'],
     ['st.annotationBubbleKey', 'A'],
     ['st.chunkCnKey', 'C'],
     ['st.chunkShadowKey', 'S'],
-    ['st.chunkNoteKey', 'K'],
     ['st.backwardKey', 'ArrowLeft'],
     ['st.forwardKey', 'ArrowRight'],
     ['highlightColor', '#ff0'],
     ['sentenceColor', '#0ff'],
-    ['chunkNoteSize', '18px'],
-    ['chunkNoteColor', '#333'],
-    ['chunkNoteWidth', '620'],
-    ['chunkNoteMinHeight', '56'],
-    ['chunkNoteArrowSize', '9px'],
-    ['st.notePreviewVisible', 'true'],
-    ['st.notePreviewWidth', '480'],
-    ['st.notePreviewHeight', '1000']
   ]);
   const written = [];
   const styles = [];
   const input = () => ({ value: '' });
   const inputs = {
     hotkeyInput: input(),
-    hotkeyNotesInput: input(),
     hotkeyAnnotationBubbleInput: input(),
     hotkeyChunkCnInput: input(),
     hotkeyChunkShadowInput: input(),
-    hotkeyChunkNoteInput: input(),
     hotkeyBackwardInput: input(),
     hotkeyForwardInput: input(),
     highlightColorInput: input(),
@@ -84,23 +75,15 @@ async function main() {
   });
 
   assert.equal(state.markKey, 'm');
-  assert.equal(state.notesKey, 'n');
   assert.equal(state.annotationBubbleKey, 'a');
   assert.equal(state.chunkCnKey, 'c');
   assert.equal(state.chunkShadowKey, 's');
-  assert.equal(state.chunkNoteKey, 'k');
   assert.equal(state.backwardKey, 'ArrowLeft');
   assert.equal(state.forwardKey, 'ArrowRight');
   assert.equal(inputs.hotkeyInput.value, 'm');
   assert.equal(inputs.highlightColorInput.value, '#ff0');
   assert.ok(styles.some((entry) => entry.name === '--word-highlight-bg' && entry.value === '#ff0'));
-  assert.ok(styles.some((entry) => entry.name === '--chunk-note-width' && entry.value === '260px'));
-  assert.ok(styles.some((entry) => entry.name === '--chunk-note-min-height' && entry.value === '18px'));
-  assert.ok(written.some((entry) => entry.key === 'chunkNoteWidth' && entry.value === '260px'));
-  assert.ok(written.some((entry) => entry.key === 'chunkNoteMinHeight' && entry.value === '18px'));
-  assert.equal(state.notePreviewVisible, true);
-  assert.equal(state.notePreviewWidth, 480);
-  assert.equal(state.notePreviewHeight, 672);
+  assert.deepEqual(written, []);
 
   console.log('session UI settings restore check passed');
 }

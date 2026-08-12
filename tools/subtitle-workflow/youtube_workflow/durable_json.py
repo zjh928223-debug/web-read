@@ -14,6 +14,7 @@ class JsonReadOutcome:
     source: str
     error_code: str | None = None
     quarantine_path: Path | None = None
+    recovery_paths: tuple[Path, ...] = ()
 
 
 class DurableJsonRepository:
@@ -26,19 +27,31 @@ class DurableJsonRepository:
 
     def read(self, path: Path, fallback: Any = None) -> JsonReadOutcome:
         path = Path(path)
+        interrupted_paths = self._quarantine_temps(path)
         if not path.exists():
+            if interrupted_paths:
+                return JsonReadOutcome(
+                    fallback, "interrupted", "fallback", "JSON_WRITE_INTERRUPTED",
+                    recovery_paths=interrupted_paths,
+                )
             return JsonReadOutcome(fallback, "missing", "fallback")
         try:
-            return JsonReadOutcome(self._decode(path), "ok", "primary")
+            return JsonReadOutcome(self._decode(path), "ok", "primary", recovery_paths=interrupted_paths)
         except (OSError, UnicodeError, json.JSONDecodeError):
             quarantine_path = self._quarantine(path)
             backup_path = self.backup_path(path)
             try:
                 recovered = self._decode(backup_path)
             except (OSError, UnicodeError, json.JSONDecodeError):
-                return JsonReadOutcome(fallback, "corrupt", "fallback", "JSON_CORRUPT", quarantine_path)
+                return JsonReadOutcome(
+                    fallback, "corrupt", "fallback", "JSON_CORRUPT", quarantine_path,
+                    interrupted_paths,
+                )
             self.write(path, recovered, preserve_backup=False)
-            return JsonReadOutcome(recovered, "recovered", "backup", "JSON_PRIMARY_CORRUPT", quarantine_path)
+            return JsonReadOutcome(
+                recovered, "recovered", "backup", "JSON_PRIMARY_CORRUPT", quarantine_path,
+                interrupted_paths,
+            )
 
     def write(self, path: Path, value: Any, *, preserve_backup: bool = True) -> None:
         path = Path(path)
@@ -84,6 +97,15 @@ class DurableJsonRepository:
         quarantine_path = path.with_name(f"{path.name}.corrupt-{uuid.uuid4().hex}")
         os.replace(path, quarantine_path)
         return quarantine_path
+
+    @staticmethod
+    def _quarantine_temps(path: Path) -> tuple[Path, ...]:
+        quarantined = []
+        for temporary in path.parent.glob(f"{path.name}.tmp-*"):
+            quarantine_path = temporary.with_name(f"{temporary.name}.interrupted-{uuid.uuid4().hex}")
+            os.replace(temporary, quarantine_path)
+            quarantined.append(quarantine_path)
+        return tuple(quarantined)
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:

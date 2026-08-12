@@ -1,3 +1,5 @@
+import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js';
+
 function normalizeAnnotationScopeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -54,7 +56,13 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     if (!isAnnotationDebugEnabled()) return;
     try {
       consoleApi.debug(`[annotation-debug] ${step}`, payload || {});
-    } catch (error) {}
+    } catch (error) {
+      recordBestEffortFailure(error, {
+        operationId: 'annotation-debug-log',
+        reason: 'debug logging must never change annotation behavior',
+        logger: consoleApi
+      });
+    }
   }
 
   function emitDiagnostics(event, payload) {
@@ -77,7 +85,13 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
           scope: getAnnotationGenerationScope()
         }
       }));
-    } catch (_error) {}
+    } catch (error) {
+      recordBestEffortFailure(error, {
+        operationId: 'annotation-debug-log',
+        reason: 'compatibility event delivery must not interrupt mark state updates',
+        logger: consoleApi
+      });
+    }
   }
 
   function nextGeneratedIndexRefreshSeq() {
@@ -181,7 +195,13 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
   function scheduleGeneratedAnnotationIndexRefresh() {
     const scheduledScopeKey = getAnnotationGenerationScopeKey();
-    refreshGeneratedAnnotationIndexForCurrentDocument().catch(() => {
+    observeBestEffort(refreshGeneratedAnnotationIndexForCurrentDocument(), {
+      operationId: 'annotation-generated-index-refresh',
+      reason: 'failed background refresh clears only the matching transient index and remains retryable',
+      logger: consoleApi,
+      fallback: null,
+    }).then((result) => {
+      if (result !== null) return;
       if (getAnnotationGenerationScopeKey() === scheduledScopeKey) clearGeneratedAnnotationIndex();
     });
   }

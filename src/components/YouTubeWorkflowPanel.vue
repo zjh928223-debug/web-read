@@ -545,6 +545,8 @@ import { createJobPollingScheduler } from '../services/workflow/job-polling-sche
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
+import { createErrorPresenter } from '../services/runtime/error-presenter.js'
+import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const FLOAT_SNAP_THRESHOLD = 96
@@ -559,6 +561,7 @@ const panelShrunk = ref(false)
 const serviceOnline = ref(false)
 const linkInput = ref('')
 const linkCards = ref([])
+const errorPresenter = createErrorPresenter()
 const linkNotice = ref('')
 const legacyImportPath = ref(loadTextSetting('youtubeWorkflow.legacyImportPath', ''))
 const legacyImportPreview = ref(null)
@@ -833,7 +836,12 @@ async function refreshCurrentJobMediaForVideoPriority() {
       videoSource: media.videoSource || 'session-refresh'
     })
     if (typeof mediaSource.setVideoPreferred === 'function') mediaSource.setVideoPreferred(true)
-  } catch (_err) {}
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'panel-current-video-refresh',
+      reason: 'optional video metadata refresh must not interrupt reader playback',
+    })
+  }
 }
 
 onMounted(() => {
@@ -979,7 +987,13 @@ function removeLinkCard(id) {
 async function copyLink(url) {
   try {
     await navigator.clipboard.writeText(url)
-  } catch (_err) {}
+  } catch (error) {
+    const presented = recordBestEffortFailure(error, {
+      operationId: 'panel-clipboard-copy',
+      reason: 'clipboard permission failure leaves the source link visible for manual copy',
+    })
+    linkNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
+  }
 }
 
 async function enqueueUrls() {
@@ -1190,7 +1204,13 @@ async function loadBackendConfig() {
     outputDir.value = config.outputDir || ''
     ytDlpPath.value = config.ytDlpPath || ''
     whisperxPath.value = config.whisperxPath || ''
-  } catch (_err) {}
+  } catch (error) {
+    const presented = recordBestEffortFailure(error, {
+      operationId: 'panel-backend-config-load',
+      reason: 'settings view keeps its current defaults when optional backend config is unavailable',
+    })
+    backendConfigNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
+  }
 }
 
 async function loadCredentialStatus() {
@@ -1287,7 +1307,13 @@ async function refreshJob(jobId) {
   try {
     const fresh = await youtubeWorkflowClient.getJob(jobId)
     updateJob(fresh)
-  } catch (_err) {}
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'panel-job-refresh',
+      reason: 'polling retains the previous immutable job snapshot until the next scheduled refresh',
+      details: { jobId },
+    })
+  }
 }
 
 function updateJob(fresh) {
@@ -1430,7 +1456,12 @@ function cancelSwitch() {
   switchModal.value = null
   if (modal && modal.wasPlaying) {
     const audio = getAudio()
-    if (audio) audio.play().catch(() => {})
+    if (audio) {
+      observeBestEffort(audio.play(), {
+        operationId: 'panel-audio-resume',
+        reason: 'browser autoplay rejection keeps playback paused and available for explicit user retry',
+      })
+    }
   }
 }
 
@@ -1457,9 +1488,11 @@ async function loadJob(job) {
     if (audio) audio.pause()
     hidePanelAfterLoad()
   } catch (err) {
-    if (typeof window.showToast === 'function') {
-      window.showToast('材料加载失败，请检查本地服务后重试。', 'error')
-    }
+    const presented = errorPresenter.present(err, {
+      operationId: `panel-material-load-${job.jobId}`,
+      details: { jobId: job.jobId },
+    })
+    if (typeof window.showToast === 'function') window.showToast(`${presented.notice.message} (${presented.notice.operationId})`, 'error')
   }
 }
 
@@ -2111,12 +2144,15 @@ function sendJsonOnUnload(url, payload) {
   const blob = new Blob([text], { type: 'application/json' })
   if (navigator.sendBeacon && navigator.sendBeacon(url, blob)) return true
   if (typeof fetch === 'function') {
-    fetch(url, {
+    observeBestEffort(fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: text,
       keepalive: true
-    }).catch(() => {})
+    }), {
+      operationId: 'panel-unload-fetch',
+      reason: 'page unload cannot await fallback delivery; the next session will retry dirty ledger state',
+    })
     return true
   }
   return false
@@ -2131,13 +2167,23 @@ function handleBeforeUnload() {
   payload.activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
   try {
     sendJsonOnUnload(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, payload)
-  } catch (_err) {}
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'panel-unload-fetch',
+      reason: 'page unload cannot await activity delivery; the next session restores persisted activity',
+    })
+  }
   try {
     sendJsonOnUnload(
       `${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`,
       { marks: getCurrentReaderMarks() }
     )
-  } catch (_err) {}
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'panel-unload-fetch',
+      reason: 'page unload cannot await marks delivery; dirty marks remain eligible for the next ledger retry',
+    })
+  }
 }
 
 function resetChunkChineseDisplay() {
@@ -2156,14 +2202,17 @@ function resetChunkChineseDisplay() {
   document.querySelectorAll('.chunk-cn').forEach((el) => el.classList.add('hidden-cn'))
   try {
     window.localStorage.setItem('st.chunkCnVisible', 'false')
-  } catch (_err) {}
+  } catch (error) {
+    recordPanelSettingFailure(error, 'write', 'st.chunkCnVisible')
+  }
   if (typeof window.updateChunkCnHoldBtn === 'function') window.updateChunkCnHoldBtn()
 }
 
 function loadTextSetting(key, fallback) {
   try {
     return window.localStorage.getItem(key) || fallback
-  } catch (_err) {
+  } catch (error) {
+    recordPanelSettingFailure(error, 'read', key)
     return fallback
   }
 }
@@ -2171,14 +2220,17 @@ function loadTextSetting(key, fallback) {
 function saveTextSetting(key, value) {
   try {
     window.localStorage.setItem(key, String(value || ''))
-  } catch (_err) {}
+  } catch (error) {
+    recordPanelSettingFailure(error, 'write', key)
+  }
 }
 
 function loadBoolSetting(key, fallback) {
   try {
     const value = window.localStorage.getItem(key)
     return value == null ? fallback : value === 'true'
-  } catch (_err) {
+  } catch (error) {
+    recordPanelSettingFailure(error, 'read', key)
     return fallback
   }
 }
@@ -2186,21 +2238,43 @@ function loadBoolSetting(key, fallback) {
 function saveBoolSetting(key, value) {
   try {
     window.localStorage.setItem(key, value ? 'true' : 'false')
-  } catch (_err) {}
+  } catch (error) {
+    recordPanelSettingFailure(error, 'write', key)
+  }
 }
 
 function loadPosition(key, fallback) {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(key) || '')
     if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) return parsed
-  } catch (_err) {}
+  } catch (error) {
+    recordPanelSettingFailure(error, 'read', key)
+  }
   return fallback
 }
 
 function savePosition(key, value) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value))
-  } catch (_err) {}
+  } catch (error) {
+    recordPanelSettingFailure(error, 'write', key)
+  }
+}
+
+function recordPanelSettingFailure(error, action, key) {
+  if (action === 'read') {
+    recordBestEffortFailure(error, {
+      operationId: 'panel-setting-read',
+      reason: 'optional panel preference falls back to its current default',
+      details: { key },
+    })
+    return
+  }
+  recordBestEffortFailure(error, {
+    operationId: 'panel-setting-write',
+    reason: 'optional panel preference remains in memory for the current session',
+    details: { key },
+  })
 }
 
 function getViewportSize() {

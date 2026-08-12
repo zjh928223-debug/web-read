@@ -1,6 +1,7 @@
 'use strict';
 
 import * as DIAGNOSTICS from './diagnostics.js';
+import { recordBestEffortFailure } from '../runtime/best-effort.js';
 
 const GENERATED_FILE = 'annotation.generated.json';
 const STATUS_FILE = 'annotation.status.json';
@@ -27,7 +28,12 @@ function emitAnnotationDebug(step, payload) {
     if (!isAnnotationDebugEnabled()) return;
     try {
         console.debug(`[annotation-debug] ${step}`, payload || {});
-    } catch (error) {}
+    } catch (error) {
+        recordBestEffortFailure(error, {
+            operationId: 'annotation-debug-log',
+            reason: 'debug logging must never change annotation persistence behavior'
+        });
+    }
 }
 
 export function setDirectoryHandle(handle) {
@@ -202,6 +208,11 @@ async function loadJson(scope, filename) {
             const file = await fileHandle.getFile();
             return JSON.parse(await file.text());
         } catch (error) {
+            recordBestEffortFailure(error, {
+                operationId: 'annotation-storage-read',
+                reason: 'missing or unreadable optional annotation artifacts are represented as not loaded',
+                details: { filename, storageMode: getStorageMode() }
+            });
             return null;
         }
     }
@@ -210,6 +221,11 @@ async function loadJson(scope, filename) {
         const raw = global.localStorage && global.localStorage.getItem(getLocalStorageKey(scope, filename));
         return raw ? JSON.parse(raw) : null;
     } catch (error) {
+        recordBestEffortFailure(error, {
+            operationId: 'annotation-storage-read',
+            reason: 'unavailable fallback annotation storage returns no optional bundle instead of blocking reader startup',
+            details: { filename, storageMode: getStorageMode() }
+        });
         return null;
     }
 }
@@ -238,6 +254,11 @@ async function fileExists(filename) {
         await directoryHandle.getFileHandle(filename);
         return true;
     } catch (error) {
+        recordBestEffortFailure(error, {
+            operationId: 'annotation-storage-read',
+            reason: 'optional artifact existence probes report false when the directory is unavailable',
+            details: { filename, storageMode: getStorageMode() }
+        });
         return false;
     }
 }

@@ -45,7 +45,7 @@ from .core import (
     validate_session_files,
 )
 from .credentials import CredentialStoreError, default_credential_store
-from .history import WorkflowHistoryStore
+from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
 from .process_supervisor import ProcessSupervisor
 
 
@@ -862,6 +862,10 @@ class JobManager:
         self.current_job_id: str | None = None
         self.recent: list[dict] = []
         self.store = WorkflowHistoryStore(self.config.state_dir, self.config.output_dir)
+        self.recovery_status = {
+            "jobs": {"status": "ok", "writable": True},
+            "history": {"status": "ok", "writable": True},
+        }
         self.lock = threading.RLock()
         self.request_metrics = RequestMetrics()
         self._apply_saved_config()
@@ -888,6 +892,8 @@ class JobManager:
             self.config.whisperx_path = Path(str(payload.get("whisperxPath")))
 
     def create_job(self, payload: dict) -> dict:
+        self._require_domain_writable("jobs")
+        self._require_domain_writable("history")
         try:
             request = WorkflowRequest.from_payload(payload)
             request = self._with_saved_credential(request)
@@ -1349,7 +1355,13 @@ class JobManager:
         )
 
     def _load_persisted_jobs(self) -> None:
-        snapshots = self.store.load_jobs()
+        try:
+            snapshots = self.store.load_jobs()
+            self._record_recovery_outcome("jobs")
+        except WorkflowStateRecoveryError as exc:
+            self._block_recovery_domain("jobs", exc)
+            snapshots = []
+        recovered_non_terminal = False
         for snapshot in snapshots:
             try:
                 record = JobRecord.from_snapshot(snapshot, event_limit=self.event_limit)
@@ -1358,16 +1370,60 @@ class JobManager:
             record.on_change = self._record_changed
             if record.status not in TERMINAL_STATUSES:
                 self._mark_recovered_failed(record)
+                recovered_non_terminal = True
             self.jobs[record.job_id] = record
-        self.recent = self.store.search_history(limit=10)
+        if recovered_non_terminal and self.recovery_status["jobs"]["writable"]:
+            self._persist_jobs_locked()
+        try:
+            self.recent = self.store.search_history(limit=10)
+            self._record_recovery_outcome("history")
+        except WorkflowStateRecoveryError as exc:
+            self._block_recovery_domain("history", exc)
+            self.recent = []
+
+    def _record_recovery_outcome(self, domain: str) -> None:
+        outcome = self.store.last_read_outcomes.get(domain)
+        if outcome is None:
+            return
+        self.recovery_status[domain] = {
+            "status": outcome.status,
+            "source": outcome.source,
+            "errorCode": outcome.error_code,
+            "quarantinePath": str(outcome.quarantine_path) if outcome.quarantine_path else "",
+            "recoveryPaths": [str(path) for path in outcome.recovery_paths],
+            "writable": True,
+        }
+
+    def _block_recovery_domain(self, domain: str, exc: WorkflowStateRecoveryError) -> None:
+        outcome = exc.outcome
+        self.recovery_status[domain] = {
+            "status": "blocked",
+            "source": outcome.source,
+            "errorCode": outcome.error_code or "JSON_RECOVERY_REQUIRED",
+            "quarantinePath": str(outcome.quarantine_path) if outcome.quarantine_path else "",
+            "recoveryPaths": [str(path) for path in outcome.recovery_paths],
+            "writable": False,
+        }
+
+    def _require_domain_writable(self, domain: str) -> None:
+        recovery = self.recovery_status.get(domain) or {}
+        if not recovery.get("writable", True):
+            raise HTTPException(
+                status_code=503,
+                detail={"code": "WORKFLOW_STATE_RECOVERY_REQUIRED", "domain": domain},
+            )
 
     def _mark_recovered_failed(self, record: JobRecord) -> None:
         message = "服务重启后恢复到可重试状态；未保存 API key，需重新发起阶段重试。"
         with record.lock:
+            recovered_status = record.status
             record.status = "failed"
             record.stage = "failed"
             record.updated_at = utc_now_iso()
             record.error = {"category": "recovery", "message": message}
+            record.error["recoveryCode"] = (
+                "RECOVERED_QUEUED" if recovered_status == "queued" else "RECOVERED_INTERRUPTED"
+            )
             record._append_event_locked({
                 "jobId": record.job_id,
                 "status": "failed",
@@ -1386,7 +1442,6 @@ class JobManager:
                 started_at=record.created_at,
                 finished_at=record.updated_at,
             )
-        self._remember_recent(record.manifest)
 
     def _record_changed(self, _record: JobRecord, *, immediate: bool = True) -> None:
         with self.lock:
@@ -1442,6 +1497,7 @@ class JobManager:
             self._flush_persistence_locked()
 
     def _persist_jobs_locked(self) -> None:
+        self._require_domain_writable("jobs")
         self.store.save_jobs([record.persisted_snapshot() for record in self.jobs.values()])
 
     def _ensure_worker_locked(self) -> None:
@@ -1660,6 +1716,7 @@ class JobManager:
         return {"deleted": True, "jobId": job_id, "status": status}
 
     def list_history(self, query: str = "", status: str = "", limit: int = 50) -> list[dict]:
+        self._require_domain_writable("history")
         return self.store.search_history(query=query, status=status, limit=limit)
 
     def list_reader_recent(self, query: str = "", limit: int = 50) -> list[dict]:
@@ -2494,6 +2551,7 @@ class JobManager:
     def diagnostics_status(self) -> dict:
         diagnostics = redact_payload(build_diagnostics(self.config), self._known_secrets())
         diagnostics["requestMetrics"] = self.request_metrics.snapshot()
+        diagnostics["workflowRecovery"] = self.recovery_status
         return diagnostics
 
     def diagnostics_package(self) -> bytes:
@@ -2518,6 +2576,7 @@ class JobManager:
         return buffer.getvalue()
 
     def _remember_recent(self, manifest: dict) -> None:
+        self._require_domain_writable("history")
         history_item = None
         if self._should_store_history(manifest):
             history_item = self.store.upsert_history(manifest)
@@ -2698,8 +2757,11 @@ def create_app(manager: JobManager | None = None, access_token: str | None = Non
 
     @app.get("/api/health")
     def health():
+        recovery_blocked = any(
+            not item.get("writable", True) for item in manager.recovery_status.values()
+        )
         return {
-            "status": "ok",
+            "status": "degraded" if recovery_blocked else "ok",
             "service": "subtitle-workflow",
             "serviceVersion": SERVICE_VERSION,
             "workflowRoot": str(SCRIPT_DIR),
@@ -2712,6 +2774,7 @@ def create_app(manager: JobManager | None = None, access_token: str | None = Non
                 "merriamWebsterGeneralMeanings": True,
                 "edgeTtsPronunciation": True,
             },
+            "recoveryRequired": recovery_blocked,
             "time": utc_now_iso(),
         }
 

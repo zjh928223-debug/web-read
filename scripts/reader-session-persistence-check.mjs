@@ -11,15 +11,95 @@ const { createReaderSessionPersistence } = await import(
 
 const fake = createAtomicIndexedDb()
 const persistence = createReaderSessionPersistence({ indexedDBApi: fake.indexedDBApi })
+fake.rows.set('audioMeta', { id: 'audioMeta', content: { name: 'legacy-audio' } })
+fake.rows.set('transcript', { id: 'transcript', content: { segments: [] } })
+fake.rows.set('chunkData', { id: 'chunkData', content: { s: [] } })
+const plainLegacyRows = cloneRows(fake.rows)
 assert.deepEqual(
   await persistence.loadCommitted(),
   { status: 'legacy', session: null },
   'missing manifest is the only explicit legacy fallback signal',
 )
+assert.deepEqual(fake.rows, plainLegacyRows, 'plain legacy rows must remain untouched for the legacy restore path')
+fake.rows.clear()
 const oldSession = fixture('old-content', 'revision-old')
 await persistence.commit(oldSession)
 assertConsistent(fake.rows, oldSession)
 assert.deepEqual(await persistence.loadCommitted(), { status: 'committed', session: oldSession })
+assert.equal(fake.rows.get('readerSession').content.schemaVersion, 2, 'new commits must use the versioned reader-session envelope')
+assert.match(fake.rows.get('readerSession').content.checksum, /^sha256:[a-f0-9]{64}$/)
+assert.equal(fake.rows.get('readerSession').checksum, fake.rows.get('readerSession').content.checksum)
+
+const currentV2Rows = cloneRows(fake.rows)
+for (const id of ['audioMeta', 'transcript', 'chunkData', 'readerSession']) {
+  const legacyRow = structuredClone(fake.rows.get(id))
+  delete legacyRow.checksum
+  if (id === 'readerSession') {
+    legacyRow.content.schemaVersion = 1
+    delete legacyRow.content.checksum
+  }
+  fake.rows.set(id, legacyRow)
+}
+assert.deepEqual(
+  await persistence.loadCommitted(),
+  { status: 'committed', session: oldSession },
+  'known v1 envelopes must remain readable without rewriting the source rows',
+)
+replaceRows(fake.rows, currentV2Rows)
+
+fake.rows.get('readerSession').content.schemaVersion = 99
+const unknownSourceRows = [...fake.rows].map(([, row]) => structuredClone(row))
+const unknownRows = cloneRows(fake.rows)
+const unknownSchema = await persistence.loadCommitted()
+assert.equal(unknownSchema.status, 'unknown-schema')
+assert.equal(unknownSchema.error.code, 'READER_SESSION_SCHEMA_UNSUPPORTED')
+assert.equal(unknownSchema.error.schemaVersion, 99)
+assert.match(unknownSchema.quarantine.id, /^readerSessionQuarantine:/)
+assert.deepEqual(
+  fake.rows.get(unknownSchema.quarantine.id).content.rows,
+  unknownSourceRows,
+  'unknown envelopes must be quarantined with their original values',
+)
+for (const [id, row] of unknownRows) {
+  assert.deepEqual(fake.rows.get(id), row, `${id} source row must not be overwritten during quarantine`)
+}
+replaceRows(fake.rows, currentV2Rows)
+
+const brokenManifest = structuredClone(fake.rows.get('readerSession'))
+delete brokenManifest.content
+fake.rows.set('readerSession', brokenManifest)
+const unreadableManifest = await persistence.loadCommitted()
+assert.equal(unreadableManifest.status, 'corrupt')
+assert.equal(unreadableManifest.error.code, 'READER_SESSION_CORRUPT')
+replaceRows(fake.rows, currentV2Rows)
+
+const missingContent = structuredClone(fake.rows.get('chunkData'))
+delete missingContent.content
+fake.rows.set('chunkData', missingContent)
+const malformedRow = await persistence.loadCommitted()
+assert.equal(malformedRow.status, 'corrupt')
+assert.equal(malformedRow.error.code, 'READER_SESSION_CORRUPT')
+assert.match(malformedRow.quarantine.id, /^readerSessionQuarantine:/)
+assert.equal(Object.prototype.hasOwnProperty.call(fake.rows.get('chunkData'), 'content'), false)
+replaceRows(fake.rows, currentV2Rows)
+
+fake.rows.set('unrelated-domain-row', { id: 'unrelated-domain-row', content: { keep: true } })
+const tamperedTranscript = structuredClone(fake.rows.get('transcript'))
+tamperedTranscript.content.segments[0].words[0].word = 'tampered-but-valid-shape'
+fake.rows.set('transcript', tamperedTranscript)
+const checksumMismatch = await persistence.loadCommitted()
+assert.equal(checksumMismatch.status, 'corrupt')
+assert.equal(checksumMismatch.error.code, 'READER_SESSION_CHECKSUM_MISMATCH')
+assert.equal(checksumMismatch.error.expectedChecksum, currentV2Rows.get('readerSession').checksum)
+assert.match(checksumMismatch.error.actualChecksum, /^sha256:[a-f0-9]{64}$/)
+assert.match(checksumMismatch.quarantine.id, /^readerSessionQuarantine:/)
+assert.equal(fake.rows.get('transcript').content.segments[0].words[0].word, 'tampered-but-valid-shape')
+assert.deepEqual(fake.rows.get('unrelated-domain-row'), { id: 'unrelated-domain-row', content: { keep: true } })
+const quarantineId = checksumMismatch.quarantine.id
+const repeatedMismatch = await persistence.loadCommitted()
+assert.equal(repeatedMismatch.quarantine.id, quarantineId, 're-reading the same corruption must reuse its quarantine record')
+assert.equal([...fake.rows.keys()].filter((id) => id.startsWith('readerSessionQuarantine:')).length, 1)
+replaceRows(fake.rows, currentV2Rows)
 
 fake.manualCompletion = true
 const nextSession = fixture('next-content', 'revision-next')
@@ -33,13 +113,15 @@ fake.completeNext()
 await pendingCommit
 assert.equal(settled, true)
 assertConsistent(fake.rows, nextSession)
+fake.manualCompletion = false
 
 const mismatched = structuredClone(fake.rows.get('chunkData'))
 mismatched.revision = 'foreign-revision'
 fake.rows.set('chunkData', mismatched)
 const inconsistent = await persistence.loadCommitted()
-assert.equal(inconsistent.status, 'inconsistent')
-assert.equal(inconsistent.error.code, 'READER_SESSION_INCONSISTENT')
+assert.equal(inconsistent.status, 'corrupt')
+assert.equal(inconsistent.error.code, 'READER_SESSION_CORRUPT')
+assert.match(inconsistent.quarantine.id, /^readerSessionQuarantine:/)
 fake.rows.set('chunkData', {
   ...mismatched,
   revision: nextSession.revision,
@@ -49,8 +131,8 @@ const mismatchedManifest = structuredClone(fake.rows.get('readerSession'))
 mismatchedManifest.content.revision = 'foreign-manifest-revision'
 fake.rows.set('readerSession', mismatchedManifest)
 const invalidManifest = await persistence.loadCommitted()
-assert.equal(invalidManifest.status, 'inconsistent')
-assert.equal(invalidManifest.error.code, 'READER_SESSION_INCONSISTENT')
+assert.equal(invalidManifest.status, 'corrupt')
+assert.equal(invalidManifest.error.code, 'READER_SESSION_CORRUPT')
 fake.rows.set('readerSession', {
   ...mismatchedManifest,
   content: {
@@ -63,14 +145,13 @@ const corruptTranscript = structuredClone(fake.rows.get('transcript'))
 corruptTranscript.content = { segments: 'not-an-array' }
 fake.rows.set('transcript', corruptTranscript)
 const invalidPayload = await persistence.loadCommitted()
-assert.equal(invalidPayload.status, 'inconsistent')
-assert.equal(invalidPayload.error.code, 'READER_SESSION_INCONSISTENT')
+assert.equal(invalidPayload.status, 'corrupt')
+assert.equal(invalidPayload.error.code, 'READER_SESSION_CORRUPT')
 fake.rows.set('transcript', {
   ...corruptTranscript,
   content: nextSession.transcript,
 })
 
-fake.manualCompletion = false
 fake.failNextAtPut = 3
 const quotaSession = fixture('quota-content', 'revision-quota')
 await assert.rejects(
@@ -104,18 +185,32 @@ function fixture(contentId, revision) {
 }
 
 function assertConsistent(rows, expected) {
+  const checksums = new Set()
   for (const id of ['audioMeta', 'transcript', 'chunkData', 'readerSession']) {
     const row = rows.get(id)
     assert.equal(row.revision, expected.revision, `${id} revision must match the committed session`)
     assert.equal(row.contentId, expected.contentId, `${id} contentId must match the committed session`)
+    assert.match(row.checksum, /^sha256:[a-f0-9]{64}$/)
+    checksums.add(row.checksum)
   }
   assert.deepEqual(rows.get('audioMeta').content, expected.audioMeta)
   assert.deepEqual(rows.get('transcript').content, expected.transcript)
   assert.deepEqual(rows.get('chunkData').content, expected.chunkData)
-  assert.equal(rows.get('readerSession').content.schemaVersion, 1)
+  assert.equal(rows.get('readerSession').content.schemaVersion, 2)
+  assert.equal(rows.get('readerSession').content.checksum, rows.get('readerSession').checksum)
+  assert.equal(checksums.size, 1, 'all committed rows must bind to the same session checksum')
 }
 
 function tick() { return new Promise((resolve) => setTimeout(resolve, 0)) }
+
+function cloneRows(rows) {
+  return new Map([...rows].map(([key, value]) => [key, structuredClone(value)]))
+}
+
+function replaceRows(target, source) {
+  target.clear()
+  for (const [key, value] of source) target.set(key, structuredClone(value))
+}
 
 function createAtomicIndexedDb() {
   const rows = new Map()

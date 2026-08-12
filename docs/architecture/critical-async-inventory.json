@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "criticalPaths": [
+    "src/components/YouTubeWorkflowPanel.vue",
+    "src/composables/session-annotation-generated-index.js",
+    "src/composables/session-startup-cleanup.js",
+    "src/composables/session-startup-runtime.js",
+    "src/composables/session-ui-settings-restore.js",
+    "src/composables/youtube-workflow-client.js",
+    "src/composables/youtube-workflow-loader.js",
+    "src/services/annotation/storage.js",
+    "src/services/media/media-resource-owner.js",
+    "src/services/runtime/download-object-url.js"
+  ],
+  "requiredBestEffortOperations": [
+    "annotation-debug-log",
+    "annotation-generated-index-refresh",
+    "annotation-storage-read",
+    "panel-audio-resume",
+    "panel-backend-config-load",
+    "panel-clipboard-copy",
+    "panel-current-video-refresh",
+    "panel-job-refresh",
+    "panel-setting-read",
+    "panel-setting-write",
+    "panel-unload-fetch",
+    "session-manual-chunk-state-restore",
+    "session-startup-setting-cleanup",
+    "session-ui-settings-restore",
+    "workflow-error-body-parse"
+  ]
+}

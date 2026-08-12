@@ -1,3 +1,5 @@
+import { recordBestEffortFailure } from '../services/runtime/best-effort.js';
+
 export function restoreSessionUiSettings(deps = {}) {
   const state = deps.state || {};
   const localStorageApi = deps.localStorageApi;
@@ -24,5 +26,10 @@ export function restoreSessionUiSettings(deps = {}) {
       documentObject.documentElement.style.setProperty('--sentence-highlight-bg', localStorageApi.getItem('sentenceColor'));
       deps.sentenceColorInput.value = localStorageApi.getItem('sentenceColor');
     }
-  } catch (e) {}
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'session-ui-settings-restore',
+      reason: 'session starts with declared UI defaults when optional preferences are unavailable'
+    });
+  }
 }

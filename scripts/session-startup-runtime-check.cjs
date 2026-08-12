@@ -8,7 +8,10 @@ async function main() {
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const assemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
   const lifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
-  const moduleSource = fs.readFileSync(modulePath, 'utf8');
+  const moduleSource = fs.readFileSync(modulePath, 'utf8').replace(
+    /^import \{ recordBestEffortFailure \} from '\.\.\/services\/runtime\/best-effort\.js';?$/m,
+    'const recordBestEffortFailure = () => null;',
+  );
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
   const lifecycleSource = fs.readFileSync(lifecyclePath, 'utf8');

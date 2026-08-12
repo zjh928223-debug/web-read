@@ -13,6 +13,7 @@ from threading import Event
 from fastapi.testclient import TestClient as FastApiTestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, WorkflowRequest, make_manifest
+from youtube_workflow.history import WorkflowHistoryStore
 from youtube_workflow.process_supervisor import ProcessSupervisor
 from youtube_workflow.service import JobManager, JobRecord, NativePicker, NativePickerError, create_app as create_service_app
 
@@ -530,6 +531,82 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(recovered["status"], "failed")
             self.assertEqual(recovered["error"]["category"], "recovery")
             self.assertNotIn("recover-1", client.get("/api/history?status=failed").text)
+
+    def test_startup_recovery_distinguishes_queued_running_and_terminal_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            config.state_dir.mkdir(parents=True, exist_ok=True)
+            jobs = []
+            for job_id, status in (("queued-job", "queued"), ("running-job", "transcribing"), ("terminal-job", "failed")):
+                jobs.append({
+                    "jobId": job_id,
+                    "status": status,
+                    "stage": status,
+                    "request": {"url": f"https://example.com/{job_id}", "geminiMode": "mock"},
+                    "error": {"category": "original", "message": "kept"} if status == "failed" else None,
+                })
+            (config.state_dir / "jobs.json").write_text(json.dumps({"jobs": jobs}), encoding="utf-8")
+
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            try:
+                self.assertEqual(manager.get_job("queued-job").error["recoveryCode"], "RECOVERED_QUEUED")
+                self.assertEqual(manager.get_job("running-job").error["recoveryCode"], "RECOVERED_INTERRUPTED")
+                terminal = manager.get_job("terminal-job")
+                self.assertEqual(terminal.status, "failed")
+                self.assertEqual(terminal.error, {"category": "original", "message": "kept"})
+                persisted = json.loads((config.state_dir / "jobs.json").read_text(encoding="utf-8"))["jobs"]
+                self.assertTrue(all(item["status"] == "failed" for item in persisted))
+            finally:
+                manager.close()
+
+    def test_unrecoverable_jobs_start_diagnostics_but_block_state_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            config.state_dir.mkdir(parents=True, exist_ok=True)
+            (config.state_dir / "jobs.json").write_text("broken", encoding="utf-8")
+
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+            try:
+                diagnostics = client.get("/api/diagnostics").json()["workflowRecovery"]["jobs"]
+                self.assertEqual(diagnostics["status"], "blocked")
+                self.assertFalse(diagnostics["writable"])
+                self.assertEqual(client.get("/api/health").json()["status"], "degraded")
+                response = client.post("/api/jobs", json={"url": "https://example.com/new", "geminiMode": "mock"})
+                self.assertEqual(response.status_code, 503)
+                self.assertFalse((config.state_dir / "jobs.json").exists())
+                self.assertTrue(list(config.state_dir.glob("jobs.json.corrupt-*")))
+            finally:
+                manager.close()
+
+    def test_jobs_and_history_recover_from_backups_before_manager_accepts_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            store = WorkflowHistoryStore(config.state_dir, config.output_dir)
+            stable_job = {
+                "jobId": "stable-job",
+                "status": "failed",
+                "stage": "failed",
+                "request": {"url": "https://example.com/stable", "geminiMode": "mock"},
+            }
+            store.save_jobs([stable_job])
+            store.save_jobs([{**stable_job, "jobId": "newer-job"}])
+            store.json_repository.write(store.history_path, {"items": [{"jobId": "stable-history"}]})
+            store.json_repository.write(store.history_path, {"items": [{"jobId": "newer-history"}]})
+            store.jobs_path.write_text("broken", encoding="utf-8")
+            store.history_path.write_text("broken", encoding="utf-8")
+
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            try:
+                self.assertEqual(manager.get_job("stable-job").status, "failed")
+                self.assertEqual(manager.recent[0]["jobId"], "stable-history")
+                diagnostics = manager.diagnostics_status()["workflowRecovery"]
+                self.assertEqual(diagnostics["jobs"]["status"], "recovered")
+                self.assertEqual(diagnostics["history"]["status"], "recovered")
+                self.assertTrue(diagnostics["jobs"]["writable"])
+                self.assertTrue(diagnostics["history"]["writable"])
+            finally:
+                manager.close()
 
     def test_config_and_maintenance_endpoints_do_not_store_api_key(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 from youtube_workflow.durable_json import DurableJsonRepository
-from youtube_workflow.history import WorkflowHistoryStore
+from youtube_workflow.history import WorkflowHistoryStore, WorkflowStateRecoveryError
 
 
 class DurableJsonRepositoryTests(unittest.TestCase):
@@ -67,6 +67,39 @@ class DurableJsonRepositoryTests(unittest.TestCase):
             self.assertEqual(jobs, [{"jobId": "stable"}])
             self.assertEqual(store.last_read_outcomes["jobs"].status, "recovered")
             self.assertEqual(store.last_read_outcomes["jobs"].error_code, "JSON_PRIMARY_CORRUPT")
+
+    def test_unrecoverable_jobs_remain_blocked_after_quarantine_instead_of_becoming_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = WorkflowHistoryStore(root / "state", root / "output")
+            store.state_dir.mkdir(parents=True)
+            store.jobs_path.write_text("broken", encoding="utf-8")
+
+            with self.assertRaises(WorkflowStateRecoveryError):
+                store.load_jobs()
+            self.assertFalse(store.jobs_path.exists())
+
+            restarted_store = WorkflowHistoryStore(root / "state", root / "output")
+            with self.assertRaises(WorkflowStateRecoveryError):
+                restarted_store.load_jobs()
+
+            self.assertFalse(restarted_store.jobs_path.exists())
+            self.assertTrue(list(restarted_store.state_dir.glob("jobs.json.corrupt-*")))
+
+    def test_interrupted_temp_is_quarantined_and_cannot_become_empty_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = WorkflowHistoryStore(root / "state", root / "output")
+            store.state_dir.mkdir(parents=True)
+            temporary = store.state_dir / "jobs.json.tmp-interrupted"
+            temporary.write_text('{"jobs":[', encoding="utf-8")
+
+            with self.assertRaises(WorkflowStateRecoveryError) as raised:
+                store.load_jobs()
+
+            self.assertEqual(raised.exception.outcome.error_code, "JSON_WRITE_INTERRUPTED")
+            self.assertFalse(temporary.exists())
+            self.assertTrue(list(store.state_dir.glob("jobs.json.tmp-interrupted.interrupted-*")))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+import { recordBestEffortFailure } from '../services/runtime/best-effort.js'
+
 const DEFAULT_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
   || 'http://127.0.0.1:8765'
 const DEFAULT_ACCESS_TOKEN = import.meta.env?.VITE_READ_WEB_SERVICE_TOKEN || ''
@@ -12,7 +14,13 @@ async function readJsonResponse(response) {
     try {
       const body = await response.json()
       detail = body && body.detail ? String(body.detail) : ''
-    } catch (_err) {}
+    } catch (error) {
+      recordBestEffortFailure(error, {
+        operationId: 'workflow-error-body-parse',
+        reason: 'HTTP status fallback remains actionable when an optional JSON error body is malformed',
+        details: { status: response.status },
+      })
+    }
     throw new Error(detail || `YouTube workflow service returned ${response.status}`)
   }
   return response.json()

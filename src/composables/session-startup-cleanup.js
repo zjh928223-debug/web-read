@@ -1,3 +1,5 @@
+import { recordBestEffortFailure } from '../services/runtime/best-effort.js';
+
 export function createSessionStartupCleanupRuntime(deps = {}) {
   const state = deps.state || {};
   const namespace = deps.namespace || {};
@@ -15,7 +17,12 @@ export function createSessionStartupCleanupRuntime(deps = {}) {
     try {
       localStorageApi.removeItem('st.manualChunkStates');
       localStorageApi.removeItem('st.isChunkMode');
-    } catch (e) {}
+    } catch (error) {
+      recordBestEffortFailure(error, {
+        operationId: 'session-startup-setting-cleanup',
+        reason: 'domain database cleanup remains authoritative when legacy local preferences are unavailable'
+      });
+    }
     await deps.deleteFromDB('chunkData');
     await deps.deleteFromDB('marks');
     const toggleChunkBtn = documentObject.getElementById('toggle-chunk-btn');
@@ -37,7 +44,12 @@ export function createSessionStartupCleanupRuntime(deps = {}) {
       localStorageApi.removeItem('st.isChunkMode');
       localStorageApi.removeItem('st.chunkCnVisible');
       localStorageApi.removeItem('st.chunkCnHoldMode');
-    } catch (e) {}
+    } catch (error) {
+      recordBestEffortFailure(error, {
+        operationId: 'session-startup-setting-cleanup',
+        reason: 'startup continues with in-memory defaults when legacy local preferences cannot be removed'
+      });
+    }
   }
 
   return {

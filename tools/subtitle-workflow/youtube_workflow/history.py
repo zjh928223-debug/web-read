@@ -10,6 +10,13 @@ from .durable_json import DurableJsonRepository
 _JSON_REPOSITORY = DurableJsonRepository()
 
 
+class WorkflowStateRecoveryError(RuntimeError):
+    def __init__(self, domain: str, outcome):
+        super().__init__(f"{domain} state is corrupt and has no valid backup")
+        self.domain = domain
+        self.outcome = outcome
+
+
 def _read_json(path: Path, fallback):
     return _JSON_REPOSITORY.read(path, fallback).value
 
@@ -96,6 +103,7 @@ class WorkflowHistoryStore:
         with self.lock:
             outcome = self.json_repository.read(self.jobs_path, {"jobs": []})
             self.last_read_outcomes["jobs"] = outcome
+            self._require_recoverable("jobs", self.jobs_path, outcome)
             data = outcome.value
             jobs = data.get("jobs") if isinstance(data, dict) else []
             return list(jobs) if isinstance(jobs, list) else []
@@ -108,9 +116,17 @@ class WorkflowHistoryStore:
         with self.lock:
             outcome = self.json_repository.read(self.history_path, {"items": []})
             self.last_read_outcomes["history"] = outcome
+            self._require_recoverable("history", self.history_path, outcome)
             data = outcome.value
             items = data.get("items") if isinstance(data, dict) else []
             return list(items) if isinstance(items, list) else []
+
+    @staticmethod
+    def _require_recoverable(domain: str, path: Path, outcome) -> None:
+        if outcome.status in {"corrupt", "interrupted"}:
+            raise WorkflowStateRecoveryError(domain, outcome)
+        if outcome.status == "missing" and any(path.parent.glob(f"{path.name}.corrupt-*")):
+            raise WorkflowStateRecoveryError(domain, outcome)
 
     def upsert_history(self, manifest: dict) -> dict:
         item = build_history_item(manifest)
