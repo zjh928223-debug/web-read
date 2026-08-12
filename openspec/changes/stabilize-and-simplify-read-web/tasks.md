@@ -13,7 +13,7 @@
 - [x] 2.2 建立统一 Playwright fixture，采集 navigation、action latency、Long Task、console/page/unhandled/request/HTTP errors
 - [ ] 2.3 为冷启动、材料打开、play/pause/seek、连续 word/chunk、Material、Preview 和 SRS 建立固定 journeys
 - [ ] 2.4 新增 backend HTTP benchmark，覆盖 health、jobs snapshot、history、activity/marks 和缓存命中路由
-- [ ] 2.5 为 FastAPI 增加 requestId、route/status/duration/bytes 与 Server-Timing 聚合诊断
+- [x] 2.5 为 FastAPI 增加 requestId、route/status/duration/bytes 与 Server-Timing 聚合诊断
 - [ ] 2.6 为失败 journey 保存 trace、截图、JSON，并实现 baseline diff 和 release budget gate
 
 ## 3. 正式本地 Production Host

@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 import zipfile
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -54,6 +55,7 @@ MERRIAM_GENERAL_MEANING_SOURCE = "merriam-webster-collegiate+gemini:v2"
 TERMINAL_STATUSES = {"ready", "failed", "canceled"}
 ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "translating", "validating", "ready", "failed", "canceled"}
 DEFAULT_JOB_EVENT_LIMIT = 500
+DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
 AUDIO_EXTENSIONS = {
     ".aac",
     ".flac",
@@ -713,6 +715,66 @@ class JobRecord:
         return record
 
 
+class RequestMetrics:
+    def __init__(self, sample_limit: int = DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT, route_limit: int = 128):
+        self.sample_limit = max(32, int(sample_limit))
+        self.route_limit = max(16, int(route_limit))
+        self.samples = deque(maxlen=self.sample_limit)
+        self.routes: dict[str, dict[str, int | float]] = {}
+        self.count = 0
+        self.errors = 0
+        self.response_bytes = 0
+        self.lock = threading.RLock()
+
+    def observe(self, method: str, route_template: str, status: int, duration_ms: float, response_bytes: int) -> None:
+        route_key = f"{str(method or 'UNKNOWN').upper()} {route_template or '<unmatched>'}"
+        with self.lock:
+            if route_key not in self.routes and len(self.routes) >= self.route_limit:
+                route_key = "OTHER <overflow>"
+            route = self.routes.setdefault(route_key, {"count": 0, "errors": 0, "durationMs": 0.0, "responseBytes": 0})
+            is_error = int(status) >= 400
+            duration = max(0.0, float(duration_ms))
+            byte_count = max(0, int(response_bytes or 0))
+            self.count += 1
+            self.errors += int(is_error)
+            self.response_bytes += byte_count
+            self.samples.append(duration)
+            route["count"] += 1
+            route["errors"] += int(is_error)
+            route["durationMs"] += duration
+            route["responseBytes"] += byte_count
+
+    @staticmethod
+    def _percentile(values: list[float], percentile: float) -> float:
+        if not values:
+            return 0.0
+        index = min(len(values) - 1, max(0, int((len(values) - 1) * percentile)))
+        return round(values[index], 3)
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            samples = sorted(self.samples)
+            routes = {
+                key: {
+                    "count": int(value["count"]),
+                    "errors": int(value["errors"]),
+                    "averageMs": round(float(value["durationMs"]) / max(1, int(value["count"])), 3),
+                    "responseBytes": int(value["responseBytes"]),
+                }
+                for key, value in sorted(self.routes.items())
+            }
+            return {
+                "count": self.count,
+                "errors": self.errors,
+                "responseBytes": self.response_bytes,
+                "p50Ms": self._percentile(samples, 0.50),
+                "p95Ms": self._percentile(samples, 0.95),
+                "sampleCount": len(samples),
+                "sampleLimit": self.sample_limit,
+                "routes": routes,
+            }
+
+
 class JobManager:
     def __init__(
         self,
@@ -770,6 +832,7 @@ class JobManager:
         self.recent: list[dict] = []
         self.store = WorkflowHistoryStore(self.config.state_dir, self.config.output_dir)
         self.lock = threading.RLock()
+        self.request_metrics = RequestMetrics()
         self._apply_saved_config()
         self._load_persisted_jobs()
         self.append_service_log("service initialized")
@@ -2398,7 +2461,9 @@ class JobManager:
         return [secret for secret in secrets if secret]
 
     def diagnostics_status(self) -> dict:
-        return redact_payload(build_diagnostics(self.config), self._known_secrets())
+        diagnostics = redact_payload(build_diagnostics(self.config), self._known_secrets())
+        diagnostics["requestMetrics"] = self.request_metrics.snapshot()
+        return diagnostics
 
     def diagnostics_package(self) -> bytes:
         secrets = self._known_secrets()
@@ -2548,6 +2613,29 @@ def create_app(manager: JobManager | None = None, access_token: str | None = Non
             manager.close()
 
     app = FastAPI(title="SubtitleWorkflow Local Service", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def observe_request_metrics(request, call_next):
+        request_id = uuid.uuid4().hex
+        started_at = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        route = request.scope.get("route")
+        route_template = getattr(route, "path", None) or "<unmatched>"
+        response_bytes = 0
+        content_length = response.headers.get("content-length")
+        if content_length and str(content_length).isdigit():
+            response_bytes = int(content_length)
+        manager.request_metrics.observe(
+            request.method,
+            route_template,
+            response.status_code,
+            duration_ms,
+            response_bytes,
+        )
+        response.headers["X-Request-Id"] = request_id
+        response.headers["Server-Timing"] = f"app;dur={duration_ms:.3f}"
+        return response
 
     @app.middleware("http")
     async def enforce_loopback_security(request, call_next):

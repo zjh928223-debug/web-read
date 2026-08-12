@@ -204,6 +204,37 @@ class ServiceAppTests(unittest.TestCase):
                 rejected = hostile_host.get("/api/health")
                 self.assertEqual(rejected.status_code, 400)
 
+    def test_request_metrics_are_bounded_route_templated_and_do_not_leak_inputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            secret_job_id = "secret-job-identifier"
+            client = TestClient(create_app(manager))
+
+            response = client.get(f"/api/jobs/{secret_job_id}?access_token=query-secret")
+            self.assertEqual(response.status_code, 404)
+            self.assertTrue(response.headers["x-request-id"])
+            self.assertRegex(response.headers["server-timing"], r"^app;dur=\d+(?:\.\d+)?$")
+
+            diagnostics = client.get("/api/diagnostics").json()
+            metrics = diagnostics["requestMetrics"]
+            self.assertGreaterEqual(metrics["count"], 1)
+            self.assertGreaterEqual(metrics["errors"], 1)
+            self.assertGreaterEqual(metrics["p95Ms"], metrics["p50Ms"])
+            routes = metrics["routes"]
+            self.assertIn("GET /api/jobs/{job_id}", routes)
+            serialized = json.dumps(metrics)
+            self.assertNotIn(secret_job_id, serialized)
+            self.assertNotIn("query-secret", serialized)
+            self.assertLessEqual(metrics["sampleCount"], metrics["sampleLimit"])
+
+            for index in range(metrics["sampleLimit"] + 50):
+                manager.request_metrics.observe("GET", f"/dynamic/{index}", 200, index / 10, index)
+            bounded = manager.request_metrics.snapshot()
+            self.assertEqual(bounded["sampleCount"], bounded["sampleLimit"])
+            self.assertLessEqual(len(bounded["routes"]), manager.request_metrics.route_limit + 1)
+            self.assertIn("OTHER <overflow>", bounded["routes"])
+
     def test_job_record_keeps_bounded_events_and_public_last_twenty(self):
         record = JobRecord(
             "bounded-events",
