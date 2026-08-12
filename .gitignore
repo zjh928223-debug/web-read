@@ -23,6 +23,7 @@ output/playwright/*.png
 output/playwright/*.json
 output/baselines/
 output/release/
+output/performance/
 dist/
 vite-*.txt
 .vite-dev.*.log

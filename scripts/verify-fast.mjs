@@ -1,0 +1,86 @@
+import { spawn } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const scriptDirectory = dirname(fileURLToPath(import.meta.url))
+const projectRoot = resolve(scriptDirectory, '..')
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+
+const included = [
+  command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
+  command('playback helper behavior', process.execPath, ['scripts/playback-runtime-helpers-check.cjs']),
+  command('annotation resolver behavior', process.execPath, ['scripts/annotation-bubble-resolver-check.cjs']),
+  command('annotation bundle merge behavior', process.execPath, ['scripts/session-annotation-bundle-merge-check.cjs']),
+  command('vocabulary acquisition behavior', process.execPath, ['scripts/vocabulary-acquisition-service-check.cjs']),
+  command('vocabulary learning events behavior', process.execPath, ['scripts/vocabulary-learning-events-check.cjs']),
+  command('SRS v2 behavior', process.execPath, ['scripts/srs-review-service-v2-check.cjs']),
+  command('workflow client contract', process.execPath, ['scripts/youtube-workflow-client-check.cjs']),
+  command('workflow loader contract', process.execPath, ['scripts/youtube-workflow-loader-check.cjs']),
+  command('workflow secret boundary', process.execPath, ['scripts/youtube-workflow-secret-check.cjs']),
+  command(
+    'Python service dependency inventory',
+    pythonCommand,
+    ['tools/subtitle-workflow/scripts/verify_runtime_dependencies.py', '--profile', 'service'],
+  ),
+]
+
+const excluded = [
+  ['browser journeys', 'require an isolated Vite process and belong to verify-full'],
+  ['production build/preview', 'slower artifact checks belong to verify-full'],
+  ['Python backend suite', 'contains threaded integration tests and belongs to verify-full'],
+  ['live TTS, dictionary, AI, and YouTube checks', 'may use network, credentials, paid APIs, or external media'],
+  ['performance, clean-room, secret/license/SBOM, restore, and rollback gates', 'planned for verify-release'],
+  ['source-shape compatibility checks', 'retained as focused checks but not used as the primary fast behavior gate'],
+]
+
+function command(label, executable, args, options = {}) {
+  return { label, executable, args, cwd: options.cwd || projectRoot, env: options.env || {} }
+}
+
+function printable(item) {
+  return [item.executable, ...item.args].map((part) => JSON.stringify(part)).join(' ')
+}
+
+function printPlan() {
+  console.log('verify-fast included:')
+  included.forEach((item, index) => console.log(`  ${index + 1}. ${item.label}: ${printable(item)}`))
+  console.log('verify-fast excluded:')
+  excluded.forEach(([area, reason]) => console.log(`  - ${area}: ${reason}`))
+}
+
+function run(item) {
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(item.executable, item.args, {
+      cwd: item.cwd,
+      env: { ...process.env, ...item.env },
+      stdio: 'inherit',
+      windowsHide: true,
+      shell: process.platform === 'win32' && item.executable.endsWith('.cmd'),
+    })
+    child.on('error', reject)
+    child.on('exit', (code, signal) => resolvePromise({ code: code ?? 1, signal }))
+  })
+}
+
+async function main() {
+  printPlan()
+  if (process.argv.includes('--list')) return
+
+  const startedAt = Date.now()
+  for (const [index, item] of included.entries()) {
+    console.log(`\n[verify-fast ${index + 1}/${included.length}] ${item.label}`)
+    const result = await run(item)
+    if (result.code !== 0) {
+      console.error(`verify-fast failed: ${item.label} exited ${result.code}${result.signal ? ` (${result.signal})` : ''}`)
+      process.exitCode = result.code
+      return
+    }
+  }
+  console.log(`\nverify-fast passed (${included.length} checks, ${((Date.now() - startedAt) / 1000).toFixed(1)}s)`)
+}
+
+main().catch((error) => {
+  console.error(`verify-fast failed to run: ${error?.message || error}`)
+  process.exitCode = 1
+})

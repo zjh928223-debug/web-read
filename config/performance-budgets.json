@@ -1,0 +1,136 @@
+{
+  "schema": "read-web.performance-budgets",
+  "version": 1,
+  "status": "provisional",
+  "environment": {
+    "profileId": "windows-local-isolated-2026-08-12",
+    "workspaceKind": "isolated-next-copy",
+    "platform": "win32",
+    "frontend": {
+      "developmentUrl": "http://127.0.0.1:5174",
+      "measuredProductionUrl": "http://127.0.0.1:5175",
+      "buildMode": "vite-production-build"
+    },
+    "backend": {
+      "url": "http://127.0.0.1:8766",
+      "dataKind": "isolated-test-data"
+    },
+    "fixture": "empty-reader-shell-and-synthetic-4000-word-transcript"
+  },
+  "baseline": {
+    "kind": "provisional-diagnostic-sample",
+    "capturedAt": "2026-08-12",
+    "source": "Read-Web isolated architecture and performance audit",
+    "method": "Browser navigation sampling, synthetic 4000-word transcript interaction sampling, and empty local API requests against the isolated copy",
+    "limitations": [
+      "The diagnostic run did not record enough repeated samples to claim statistically valid p95 values.",
+      "Long Task entries were not captured as a machine-readable series.",
+      "The production sample used a temporary Vite production preview and is not the future Local App Host.",
+      "These observations establish instrumentation inputs only; they are not release thresholds."
+    ],
+    "activationRequirements": [
+      "Run an automated fixed-fixture harness and retain every raw sample.",
+      "Fingerprint the machine, build, git SHA, fixture, frontend host, backend host, and runtime configuration.",
+      "Separate cold-start and warm-start distributions and calculate p50, p95, and max from repeated runs.",
+      "Capture Long Task, console, page, request, HTTP, and unhandled-rejection evidence in the same run.",
+      "Review the generated limits before changing status to active or enabling release enforcement."
+    ]
+  },
+  "budgets": {
+    "startup": [
+      {
+        "id": "startup.production.dom-content-loaded",
+        "metric": "domContentLoaded",
+        "unit": "ms",
+        "statistic": "single-diagnostic-sample",
+        "observed": {
+          "value": 199
+        },
+        "context": "Temporary Vite production preview; 12 resources, 3 scripts, approximately 6.9 MB JS heap",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      },
+      {
+        "id": "startup.development.dom-content-loaded",
+        "metric": "domContentLoaded",
+        "unit": "ms",
+        "statistic": "single-diagnostic-sample",
+        "observed": {
+          "value": 1731
+        },
+        "context": "Vite development mode; 213 resources, 207 scripts, approximately 16.5 MB JS heap",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      }
+    ],
+    "interaction": [
+      {
+        "id": "interaction.transcript.initial-render-4000-words",
+        "metric": "initialTranscriptRender",
+        "unit": "ms",
+        "statistic": "single-diagnostic-sample",
+        "observed": {
+          "value": 108.2
+        },
+        "context": "Synthetic 4000-word transcript with approximately 4353 DOM nodes",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      },
+      {
+        "id": "interaction.transcript.active-word-update",
+        "metric": "activeWordUpdate",
+        "unit": "ms",
+        "statistic": "diagnostic-observed-range",
+        "observed": {
+          "min": 29,
+          "max": 57
+        },
+        "context": "Synthetic 4000-word transcript; not a repeated-run p95 distribution",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      }
+    ],
+    "localApi": [
+      {
+        "id": "local-api.empty-route-latency",
+        "metric": "requestLatency",
+        "unit": "ms",
+        "statistic": "diagnostic-observed-range",
+        "observed": {
+          "min": 18,
+          "max": 25
+        },
+        "context": "Empty local backend routes on 127.0.0.1; route mix and sample count were not retained",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      }
+    ],
+    "longTask": [
+      {
+        "id": "long-task.browser-main-thread",
+        "metric": "longTaskDuration",
+        "unit": "ms",
+        "statistic": "not-yet-collected",
+        "observed": {
+          "value": null,
+          "reason": "The diagnostic audit did not retain a machine-readable Long Task series."
+        },
+        "context": "Instrumentation is required before a defensible threshold can be activated",
+        "gate": {
+          "mode": "report-only",
+          "limit": null
+        }
+      }
+    ]
+  }
+}
