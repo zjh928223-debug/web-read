@@ -27,9 +27,9 @@
 
 ## 4. 统一应用持久化基础
 
-- [ ] 4.1 建立 `ApplicationPersistence`，统一打开 `SeekPlayerDB` v1/files、blocked/versionchange/retry 与 typed key registry
-- [ ] 4.2 实现以 `tx.oncomplete` 为成功条件的 transaction runner 和故障注入测试
-- [ ] 4.3 删除/封闭公开 `clearDBStore()`，改为领域 allowlist keys 删除并验证不会清除其他数据
+- [x] 4.1 建立 `ApplicationPersistence`，统一打开 `SeekPlayerDB` v1/files、blocked/versionchange/retry 与 typed key registry
+- [x] 4.2 实现以 `tx.oncomplete` 为成功条件的 transaction runner 和故障注入测试
+- [x] 4.3 删除/封闭公开 `clearDBStore()`，改为领域 allowlist keys 删除并验证不会清除其他数据
 - [ ] 4.4 定义 versioned envelope、revision/contentId/checksum、unknown schema rejection 和 corrupt quarantine
 - [ ] 4.5 迁移当前假 await/request-success writers，并为 Quota、abort、关闭页面和多标签并发补测试
 - [ ] 4.6 建立 `DurableJsonRepository` 的 temp+fsync+replace+backup+recovery 契约

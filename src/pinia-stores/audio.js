@@ -26,10 +26,26 @@ export const useAudioStore = defineStore('audio', () => {
   }
 
   function saveToDB(id, data) {
-    if (!_db) return
-    var tx = _db.transaction([STORE_NAME], 'readwrite')
-    var store = tx.objectStore(STORE_NAME)
-    store.put({ id: id, content: data, timestamp: new Date().getTime() })
+    return new Promise(function (resolve, reject) {
+      if (!_db) { reject(new Error('Audio database is not initialized')); return }
+      var tx = _db.transaction([STORE_NAME], 'readwrite')
+      var store = tx.objectStore(STORE_NAME)
+      var request = store.put({ id: id, content: data, timestamp: new Date().getTime() })
+      var settled = false
+      var fail = function (error) {
+        if (settled) return
+        settled = true
+        reject(error || tx.error || request.error || new Error('Audio database write failed'))
+      }
+      request.onerror = function () { fail(request.error) }
+      tx.onerror = function () { fail(tx.error) }
+      tx.onabort = function () { fail(tx.error || new Error('Audio database write aborted')) }
+      tx.oncomplete = function () {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+    })
   }
 
   function loadFromDB(id) {
@@ -55,13 +71,15 @@ export const useAudioStore = defineStore('audio', () => {
   }
 
   function clearDBStore() {
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
       if (!_db) { resolve(); return }
       var tx = _db.transaction([STORE_NAME], 'readwrite')
       var store = tx.objectStore(STORE_NAME)
-      var req = store.clear()
-      req.onsuccess = function () { resolve() }
-      req.onerror = function () { resolve() }
+      store.delete('audio')
+      store.delete('audioMeta')
+      tx.oncomplete = function () { resolve() }
+      tx.onerror = function () { reject(tx.error || new Error('Audio records clear failed')) }
+      tx.onabort = function () { reject(tx.error || new Error('Audio records clear aborted')) }
     })
   }
 

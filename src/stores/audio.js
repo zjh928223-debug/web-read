@@ -23,10 +23,26 @@
   }
 
   function saveToDB(id, data) {
-    if (!_db) return;
-    var transaction = _db.transaction([STORE_NAME], 'readwrite');
-    var store = transaction.objectStore(STORE_NAME);
-    store.put({ id: id, content: data, timestamp: new Date().getTime() });
+    return new Promise(function (resolve, reject) {
+      if (!_db) { reject(new Error('Audio database is not initialized')); return; }
+      var transaction = _db.transaction([STORE_NAME], 'readwrite');
+      var store = transaction.objectStore(STORE_NAME);
+      var request = store.put({ id: id, content: data, timestamp: new Date().getTime() });
+      var settled = false;
+      var fail = function (error) {
+        if (settled) return;
+        settled = true;
+        reject(error || transaction.error || request.error || new Error('Audio database write failed'));
+      };
+      request.onerror = function () { fail(request.error); };
+      transaction.onerror = function () { fail(transaction.error); };
+      transaction.onabort = function () { fail(transaction.error || new Error('Audio database write aborted')); };
+      transaction.oncomplete = function () {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+    });
   }
 
   function loadFromDB(id) {
@@ -54,13 +70,15 @@
   }
 
   function clearDBStore() {
-    return new Promise(function (resolve) {
+    return new Promise(function (resolve, reject) {
       if (!_db) { resolve(); return; }
       var transaction = _db.transaction([STORE_NAME], 'readwrite');
       var store = transaction.objectStore(STORE_NAME);
-      var request = store.clear();
-      request.onsuccess = function () { resolve(); };
-      request.onerror = function () { resolve(); };
+      store.delete('audio');
+      store.delete('audioMeta');
+      transaction.oncomplete = function () { resolve(); };
+      transaction.onerror = function () { reject(transaction.error || new Error('Audio records clear failed')); };
+      transaction.onabort = function () { reject(transaction.error || new Error('Audio records clear aborted')); };
     });
   }
 

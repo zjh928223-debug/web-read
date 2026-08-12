@@ -128,6 +128,8 @@
     "verify:identity-storage-keys": "node scripts/identity-storage-keys-check.cjs",
     "verify:hotkey-state-module": "node scripts/hotkey-state-module-check.cjs",
     "verify:audio-store-facades": "node scripts/audio-store-facades-check.cjs",
+    "verify:application-persistence": "node scripts/application-persistence-check.mjs",
+    "verify:audio-store-transaction": "node scripts/audio-store-transaction-check.mjs",
     "verify:keyboard-facades": "node scripts/keyboard-facades-check.cjs",
     "verify:import-facades": "node scripts/import-facades-check.cjs",
     "verify:chunk-controls-module": "node scripts/chunk-controls-module-check.cjs",
