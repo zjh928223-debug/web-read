@@ -28,7 +28,7 @@ export async function findRealPreviewSentence(item, options = {}) {
       use_case: SENTENCE_RANKING_USE_CASES.FIRST_PREVIEW,
       candidates,
     }, {
-      limits: { max_word_count: 16, max_clause_depth: 1, max_structure_difficulty: 2 },
+      limits: { max_word_count: 14, max_clause_depth: 1, max_structure_difficulty: 2 },
       require_independent_comprehensibility: true,
       reject_unknown_comprehensibility: true,
     })

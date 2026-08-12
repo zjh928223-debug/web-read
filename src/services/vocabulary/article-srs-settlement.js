@@ -110,6 +110,23 @@ async function getExistingWordInfo(vocabularyService, lemma, language) {
   return { word, contexts };
 }
 
+async function getExistingWordsAndContexts(vocabularyService, lemmas, language) {
+  const lookupKeys = Array.from(new Set((Array.isArray(lemmas) ? lemmas : [])
+    .map((lemma) => normalizeLookupKey(lemma))
+    .filter(Boolean)));
+  if (!lookupKeys.length || !vocabularyService) return new Map();
+  if (typeof vocabularyService.getWordsAndContextsByLemmas === 'function') {
+    const result = await vocabularyService.getWordsAndContextsByLemmas(lookupKeys, { language });
+    if (result instanceof Map) return result;
+    if (result && typeof result === 'object') return new Map(Object.entries(result));
+  }
+  const entries = await Promise.all(lookupKeys.map(async (lookupKey) => [
+    lookupKey,
+    await getExistingWordInfo(vocabularyService, lookupKey, language),
+  ]));
+  return new Map(entries);
+}
+
 function determineCandidateDisposition({ item, existingWord, contexts, sourceId }) {
   const manual = !isPreviewGeneratedItem(item);
   const status = existingWord && existingWord.status;
@@ -174,6 +191,11 @@ export async function buildArticleSrsSettlement(options = {}) {
   const sourceUrl = normalizeNullableText(options.sourceUrl || options.source_url);
   const candidates = [];
   const excluded = [];
+  const existingInfoByLemma = await getExistingWordsAndContexts(
+    vocabularyService,
+    items.map((item) => normalizeSrsCandidateText(getItemText(item))),
+    language,
+  );
 
   for (const item of items) {
     const targetId = getItemTargetId(item);
@@ -200,7 +222,7 @@ export async function buildArticleSrsSettlement(options = {}) {
     const lemma = normalizeSrsCandidateText(rawText);
     const displayText = classification.normalized || lemma;
     const simpleMeaning = getItemSimpleMeaning(item);
-    const existingInfo = await getExistingWordInfo(vocabularyService, lemma, language);
+    const existingInfo = existingInfoByLemma.get(normalizeLookupKey(lemma)) || { word: null, contexts: [] };
     const existingSourceContext = findContextFromCurrentSource(existingInfo.contexts, sourceId, sentence || rawText);
     if (existingSourceContext) {
       excluded.push({

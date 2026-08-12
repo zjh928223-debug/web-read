@@ -1,5 +1,9 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
+import {
+  deriveEnglishLemmaCandidates,
+  isEnglishInflectionOf,
+} from '../../services/vocabulary/english-inflection-match.mjs'
 
 export const LOCAL_SENTENCE_SCHEMA_VERSION = '1'
 
@@ -30,26 +34,59 @@ export function createLocalSentenceService({ databasePath } = {}) {
        id ASC
      LIMIT ?
   `)
+  const hasPrimarySenses = Boolean(database.prepare(
+    "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'primary_senses'",
+  ).get()?.present)
+  const primarySenseStatement = hasPrimarySenses ? database.prepare(`
+    SELECT lemma, part_of_speech, definition_en, meaning_zh, source_name,
+           source_record_id, source_priority, entry_order, sense_order
+      FROM primary_senses
+     WHERE lemma IN (?, ?, ?, ?, ?, ?, ?, ?)
+     ORDER BY source_priority ASC, entry_order ASC, sense_order ASC
+  `) : null
 
   return Object.freeze({
     available: true,
     query(word, { lemma = '', limit = 24, maxWordCount = 20 } = {}) {
       const normalizedWord = normalizeWord(word)
       const normalizedLemma = normalizeWord(lemma)
-      const lemmas = unique([normalizedLemma, normalizedWord, ...deriveLemmaCandidates(normalizedWord)]).slice(0, 8)
+      const suppliedLemma = normalizedLemma
+        && (!normalizedWord || isEnglishInflectionOf(normalizedWord, normalizedLemma))
+        ? normalizedLemma
+        : ''
+      const lemmas = unique([suppliedLemma, normalizedWord, ...deriveLemmaCandidates(normalizedWord)]).slice(0, 8)
       while (lemmas.length < 8) lemmas.push('')
       if (!normalizedWord && !normalizedLemma) return { available: true, items: [], lemmas: [] }
       const surfacePattern = `*${normalizedWord}*`
       const rows = statement.all(...lemmas, normalizeMaxWords(maxWordCount), surfacePattern, normalizeLimit(limit))
+      const primarySenses = primarySenseStatement?.all(...lemmas) || []
+      const primarySense = lemmas
+        .filter(Boolean)
+        .map((candidate) => primarySenses.find((sense) => normalizeWord(sense.lemma) === candidate))
+        .find(Boolean) || null
       return {
         available: true,
-        schemaVersion: 'local-sentence-results.v1',
+        schemaVersion: 'local-sentence-results.v2',
         lemmas: lemmas.filter(Boolean),
+        primarySense: primarySense ? {
+          lemma: primarySense.lemma,
+          partOfSpeech: primarySense.part_of_speech,
+          definitionEn: primarySense.definition_en,
+          meaningZh: primarySense.meaning_zh,
+          entryOrder: primarySense.entry_order,
+          senseOrder: primarySense.sense_order,
+          source: {
+            name: primarySense.source_name,
+            recordId: primarySense.source_record_id,
+          },
+        } : null,
         items: rows.map((row) => ({
           lemma: row.lemma,
           sentence: row.sentence,
           senseGloss: row.sense_gloss,
           partOfSpeech: row.part_of_speech,
+          senseOrder: row.sense_order,
+          sourcePriority: row.source_priority,
           wordCount: row.word_count,
           source: {
             name: row.source_name,
@@ -69,23 +106,7 @@ export function createLocalSentenceService({ databasePath } = {}) {
 }
 
 export function deriveLemmaCandidates(value) {
-  const word = normalizeWord(value)
-  if (!word) return []
-  const candidates = []
-  if (word.endsWith('ies') && word.length > 4) candidates.push(`${word.slice(0, -3)}y`)
-  if (word.endsWith('ves') && word.length > 4) candidates.push(`${word.slice(0, -3)}f`, `${word.slice(0, -3)}fe`)
-  if (word.endsWith('ing') && word.length > 5) {
-    const stem = word.slice(0, -3)
-    candidates.push(stem, `${stem}e`, removeDoubledFinal(stem))
-  }
-  if (word.endsWith('ied') && word.length > 4) candidates.push(`${word.slice(0, -3)}y`)
-  if (word.endsWith('ed') && word.length > 4) {
-    const stem = word.slice(0, -2)
-    candidates.push(stem, `${stem}e`, removeDoubledFinal(stem))
-  }
-  if (word.endsWith('es') && word.length > 4) candidates.push(word.slice(0, -2), word.slice(0, -1))
-  if (word.endsWith('s') && word.length > 3 && !word.endsWith('ss')) candidates.push(word.slice(0, -1))
-  return unique(candidates.filter((candidate) => candidate.length >= 2 && candidate !== word))
+  return deriveEnglishLemmaCandidates(value)
 }
 
 function unavailableService(errorCode) {
@@ -97,10 +118,6 @@ function unavailableService(errorCode) {
     },
     close() {},
   })
-}
-
-function removeDoubledFinal(value) {
-  return /([b-df-hj-np-tv-z])\1$/u.test(value) ? value.slice(0, -1) : value
 }
 
 function normalizeWord(value) {

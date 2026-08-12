@@ -5,9 +5,10 @@
 
   function defaultVideoWindow() {
     var viewportWidth = typeof window !== 'undefined' ? window.innerWidth || 1280 : 1280
+    var viewportHeight = typeof window !== 'undefined' ? window.innerHeight || 720 : 720
     return {
       x: Math.max(24, viewportWidth - DEFAULT_WINDOW_WIDTH - 24),
-      y: 24,
+      y: Math.max(180, Math.min(320, viewportHeight - 270)),
       width: DEFAULT_WINDOW_WIDTH,
       aspectRatio: 16 / 9,
       minimized: false
@@ -32,7 +33,11 @@
       var raw = window.localStorage.getItem(WINDOW_KEY)
       if (raw) {
         var parsed = JSON.parse(raw)
-        return Object.assign({}, defaultVideoWindow(), parsed || {})
+        var next = Object.assign({}, defaultVideoWindow(), parsed || {})
+        // The previous default was top-right (y=24), which covered the reader toolbar.
+        // Migrate that untouched position once while preserving deliberately moved windows.
+        if (parsed && Number(parsed.y) <= 24) next.y = defaultVideoWindow().y
+        return next
       }
     } catch (_err) {}
     return Object.assign({}, defaultVideoWindow())

@@ -5,8 +5,12 @@ import { pathToFileURL } from 'node:url'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
+import { createMerriamWebsterSentenceVitePlugin } from './src/services/vocabulary/merriam-webster-sentence-vite-plugin.mjs'
 import { createWordnikSentenceVitePlugin } from './src/services/vocabulary/wordnik-sentence-vite-plugin.mjs'
 import { createLocalSentenceVitePlugin } from './src/dictionary/local-sentences/local-sentence-vite-plugin.mjs'
+import { createSentenceTranslationVitePlugin } from './src/services/vocabulary/sentence-translation-vite-plugin.mjs'
+import { createAiPreviewSentenceVitePlugin } from './src/services/vocabulary/ai-preview-sentence-vite-plugin.mjs'
+import { createIeltsLearningPoolVitePlugin } from './src/services/vocabulary/ielts-learning-pool-vite-plugin.mjs'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -22,9 +26,46 @@ export default defineConfig(({ mode }) => {
     createLocalSentenceVitePlugin({
       databasePath: process.env.LOCAL_SENTENCE_DATABASE_PATH,
     }),
+    createSentenceTranslationVitePlugin({
+      apiKey: process.env.VOCABULARY_TRANSLATION_API_KEY || env.VOCABULARY_TRANSLATION_API_KEY || process.env.GEMINI_API_KEY || env.GEMINI_API_KEY,
+      models: [
+        process.env.VOCABULARY_TRANSLATION_MODEL || env.VOCABULARY_TRANSLATION_MODEL,
+        ...(process.env.VOCABULARY_TRANSLATION_FALLBACK_MODELS
+          || env.VOCABULARY_TRANSLATION_FALLBACK_MODELS
+          || '').split(','),
+      ],
+      proxyUrl: process.env.VOCABULARY_TRANSLATION_PROXY_URL || env.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
+    }),
+    createAiPreviewSentenceVitePlugin({
+      apiKey: process.env.VOCABULARY_AI_PREVIEW_API_KEY
+        || env.VOCABULARY_AI_PREVIEW_API_KEY
+        || process.env.VOCABULARY_TRANSLATION_API_KEY
+        || env.VOCABULARY_TRANSLATION_API_KEY
+        || process.env.GEMINI_API_KEY
+        || env.GEMINI_API_KEY,
+      models: [
+        process.env.VOCABULARY_AI_PREVIEW_MODEL || env.VOCABULARY_AI_PREVIEW_MODEL,
+        ...(process.env.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS
+          || env.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS
+          || '').split(','),
+      ],
+      proxyUrl: process.env.VOCABULARY_AI_PREVIEW_PROXY_URL
+        || env.VOCABULARY_AI_PREVIEW_PROXY_URL
+        || process.env.VOCABULARY_TRANSLATION_PROXY_URL
+        || env.VOCABULARY_TRANSLATION_PROXY_URL
+        || 'http://127.0.0.1:7897',
+    }),
+    createMerriamWebsterSentenceVitePlugin({
+      dictionaryApiKey: process.env.MERRIAM_WEBSTER_DICTIONARY_API_KEY || env.MERRIAM_WEBSTER_DICTIONARY_API_KEY,
+      learnersApiKey: process.env.MERRIAM_WEBSTER_LEARNERS_API_KEY || env.MERRIAM_WEBSTER_LEARNERS_API_KEY,
+    }),
     createTatoebaSentenceVitePlugin(),
     createWordnikSentenceVitePlugin({
       apiKey: process.env.WORDNIK_API_KEY || env.WORDNIK_API_KEY,
+    }),
+    createIeltsLearningPoolVitePlugin({
+      candidatesPath: process.env.IELTS_READING_VOCABULARY_CANDIDATES_PATH
+        || env.IELTS_READING_VOCABULARY_CANDIDATES_PATH,
     }),
     createEcdictVitePlugin({
       enabled: ecdictEnabled,

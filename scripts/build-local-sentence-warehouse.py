@@ -96,9 +96,106 @@ def create_database(path: Path) -> sqlite3.Connection:
         );
         CREATE INDEX sentences_lemma_priority_idx
           ON sentences(lemma, source_priority, sense_order, word_count);
+        CREATE TABLE primary_senses (
+          lemma TEXT NOT NULL,
+          part_of_speech TEXT NOT NULL DEFAULT '',
+          definition_en TEXT NOT NULL,
+          meaning_zh TEXT NOT NULL,
+          source_name TEXT NOT NULL,
+          source_record_id TEXT NOT NULL,
+          source_priority INTEGER NOT NULL,
+          entry_order INTEGER NOT NULL DEFAULT 999,
+          sense_order INTEGER NOT NULL DEFAULT 999,
+          PRIMARY KEY (lemma, part_of_speech, source_name)
+        );
+        CREATE INDEX primary_senses_lemma_priority_idx
+          ON primary_senses(lemma, source_priority, entry_order, sense_order);
         """
     )
     return connection
+
+
+def ensure_primary_sense_table(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS primary_senses (
+          lemma TEXT NOT NULL,
+          part_of_speech TEXT NOT NULL DEFAULT '',
+          definition_en TEXT NOT NULL,
+          meaning_zh TEXT NOT NULL,
+          source_name TEXT NOT NULL,
+          source_record_id TEXT NOT NULL,
+          source_priority INTEGER NOT NULL,
+          entry_order INTEGER NOT NULL DEFAULT 999,
+          sense_order INTEGER NOT NULL DEFAULT 999,
+          PRIMARY KEY (lemma, part_of_speech, source_name)
+        );
+        CREATE INDEX IF NOT EXISTS primary_senses_lemma_priority_idx
+          ON primary_senses(lemma, source_priority, entry_order, sense_order);
+        """
+    )
+
+
+def normalize_part_of_speech(value: str) -> str:
+    value = normalize_text(value).lower().rstrip(".")
+    aliases = {
+        "a": "adjective", "adj": "adjective", "s": "adjective",
+        "n": "noun", "v": "verb", "adv": "adverb", "r": "adverb",
+    }
+    return aliases.get(value, value)
+
+
+def clean_primary_sense_text(value: str) -> str:
+    return re.sub(r"^\s*\d+\.\s*[■•]?\s*", "", normalize_text(value)).strip(" ;；,，。")
+
+
+def import_new_oxford_primary_senses(connection, path: Path) -> int:
+    """Import the first bilingual learner-dictionary sense for each headword POS."""
+    if not path.exists():
+        return 0
+    source_name = "New Oxford English-Chinese Dictionary (2nd ed.)"
+    ensure_primary_sense_table(connection)
+    connection.execute("DELETE FROM primary_senses WHERE source_name = ?", (source_name,))
+    inserted = 0
+    pos_pattern = re.compile(r'<span\s+class=["\']DX["\'][^>]*>(.*?)</span>', re.I | re.S)
+    sense_pattern = re.compile(
+        r'<span\s+class=["\']JX["\'][^>]*>(.*?)'
+        r'<span\s+class=["\']GZ["\'][^>]*>(.*?)</span>',
+        re.I | re.S,
+    )
+    mdx = open_mdx(path)
+    for raw_key, raw_record in mdx.items():
+        lemma = normalize_headword(decode(raw_key))
+        if not lemma:
+            continue
+        record = decode(raw_record).split('<span class="PS">', 1)[0].split('<span class="YY">', 1)[0]
+        positions = list(pos_pattern.finditer(record))
+        for entry_order, match in enumerate(positions, 1):
+            part_of_speech = normalize_part_of_speech(match.group(1))
+            if not part_of_speech:
+                continue
+            section_end = positions[entry_order].start() if entry_order < len(positions) else len(record)
+            sense_match = sense_pattern.search(record, match.end(), section_end)
+            if not sense_match:
+                continue
+            definition_en = clean_primary_sense_text(sense_match.group(1))
+            meaning_zh = clean_primary_sense_text(sense_match.group(2))
+            if not definition_en or not meaning_zh:
+                continue
+            before = connection.total_changes
+            connection.execute(
+                """INSERT OR IGNORE INTO primary_senses
+                (lemma, part_of_speech, definition_en, meaning_zh, source_name,
+                 source_record_id, source_priority, entry_order, sense_order)
+                VALUES (?, ?, ?, ?, ?, ?, 5, ?, 1)""",
+                (lemma, part_of_speech, definition_en, meaning_zh, source_name,
+                 f"{lemma}:{part_of_speech}:1", entry_order),
+            )
+            inserted += connection.total_changes - before
+        if inserted and inserted % 5000 == 0:
+            connection.commit()
+    connection.commit()
+    return inserted
 
 
 def add_sentence(connection, *, lemma, sentence, source_name, source_type,
@@ -304,7 +401,28 @@ def main() -> int:
     parser.add_argument("--ldoce-mdx", type=Path, default=DATA / "sources" / "mdx" / "ldoce5.mdx")
     parser.add_argument("--wordnet", type=Path, default=DATA / "sources" / "english-wordnet-2025-json.zip")
     parser.add_argument("--kaikki", type=Path, default=DATA / "sources" / "kaikki.org-dictionary-English.jsonl")
+    parser.add_argument("--bilingual-mdx", type=Path, default=DATA / "sources" / "mdx" / "supplements" / "new-oxford2-bilingual.mdx")
+    parser.add_argument("--primary-senses-only", action="store_true",
+                        help="Add or refresh bilingual primary senses without rebuilding sentence rows")
     args = parser.parse_args()
+
+    if args.primary_senses_only:
+        if not args.output.exists():
+            raise SystemExit(f"Sentence warehouse does not exist: {args.output}")
+        connection = sqlite3.connect(args.output)
+        count = import_new_oxford_primary_senses(connection, args.bilingual_mdx)
+        connection.execute(
+            "INSERT INTO build_metadata(key, value) VALUES ('primary_sense_count', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),),
+        )
+        connection.commit()
+        connection.execute("PRAGMA optimize")
+        connection.close()
+        digest = hashlib.sha256(args.output.read_bytes()).hexdigest()
+        print(json.dumps({"output": str(args.output), "primary_senses_imported": count,
+                          "sha256": digest}, indent=2))
+        return 0
 
     connection = create_database(args.output)
     counts = {
@@ -312,6 +430,7 @@ def main() -> int:
         "vocabulary_com": import_vocabulary_com(connection, args.vocabulary_mdx),
         "open_english_wordnet": import_wordnet(connection, args.wordnet),
         "kaikki": import_kaikki(connection, args.kaikki),
+        "new_oxford_primary_senses": import_new_oxford_primary_senses(connection, args.bilingual_mdx),
     }
     total = connection.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
     metadata = {
@@ -319,6 +438,7 @@ def main() -> int:
         "builder_version": "local-sentence-warehouse.v1",
         "sentence_count": str(total),
         "source_counts": json.dumps(counts, sort_keys=True),
+        "primary_sense_count": str(connection.execute("SELECT COUNT(*) FROM primary_senses").fetchone()[0]),
     }
     connection.executemany("INSERT INTO build_metadata(key, value) VALUES (?, ?)", metadata.items())
     connection.commit()

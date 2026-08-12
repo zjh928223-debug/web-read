@@ -111,7 +111,12 @@ export async function resolveReviewSource(context, options = {}) {
     })
     const contextWindow = buildTranscriptContextWindow(transcript, sentence)
     const target = contextWindow.find((item) => item.target)
-    if (!target) return null
+    if (!target) {
+      const error = new Error('Review transcript does not contain the target sentence')
+      error.code = 'TARGET_SENTENCE_NOT_FOUND'
+      notifyReviewSourceError(options, error)
+      return null
+    }
     const wordRange = findTranscriptWordRange(target.segment, options.word)
     const result = {
       paragraphs: contextWindow.map((item) => {
@@ -147,9 +152,35 @@ export async function resolveReviewSource(context, options = {}) {
       }
     } catch (_error) {}
     return result
-  } catch (_error) {
+  } catch (error) {
+    notifyReviewSourceError(options, error)
     return null
   }
+}
+
+export function describeReviewSourceError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || error || '')
+  if (code === 'TARGET_SENTENCE_NOT_FOUND') {
+    return '原字幕中没有找到这条目标句，暂时无法定位原文音频。'
+  }
+  if (/timed out|abort/iu.test(message)) {
+    return '原文音频服务响应超时，请稍后重试。'
+  }
+  if (/failed to fetch|fetch failed|networkerror|err_connection_refused/iu.test(message)) {
+    return '原文音频服务未连接。请重新打开桌面的“英语学习”快捷方式，或点击重试。'
+  }
+  if (/\b404\b/u.test(message)) {
+    return '没有找到这条原文对应的字幕或音频文件。'
+  }
+  return '原文音频暂时不可用，请重试。'
+}
+
+function notifyReviewSourceError(options, error) {
+  if (typeof options.onError !== 'function') return
+  try {
+    options.onError(error)
+  } catch (_error) {}
 }
 
 async function loadReviewTranscript(client, sourceId, options) {

@@ -41,6 +41,7 @@ export function importVocabularyPreview(payload = {}) {
       primarySenseReason: primary.reason,
       targetSenseKey: primary.targetSenseKey,
       realSentence: normalizeRealSentence(input?.realSentence, lemma),
+      previewContext: normalizePreviewContext(input?.previewContext, lemma),
     })
   })
   if (!items.length) throw new Error('预习文件缺少可用的单一中文主要义。')
@@ -93,6 +94,7 @@ function resolveImportedPrimarySense(input, lemma) {
         .find((candidate) => normalizeText(candidate?.sense_key || candidate?.id) === result.primary_sense_key)
       const meaningZh = selectOneMeaning(
         selected?.meaningZh || selected?.meaning_zh || selected?.meaning || selected?.gloss,
+        selected?.pos || selected?.partOfSpeech || input?.pos || input?.partOfSpeech,
       )
       if (meaningZh) {
         return {
@@ -112,7 +114,7 @@ function resolveImportedPrimarySense(input, lemma) {
     || input?.zh
     || input?.translation
     || input?.meaning
-  const meaningZh = selectOneMeaning(explicit)
+  const meaningZh = selectOneMeaning(explicit, input?.pos || input?.partOfSpeech)
   return {
     meaningZh,
     status: input?.primarySenseStatus === 'resolved' ? 'resolved' : 'suggested',
@@ -123,13 +125,33 @@ function resolveImportedPrimarySense(input, lemma) {
   }
 }
 
-function selectOneMeaning(value) {
-  const normalized = normalizeText(value)
+function selectOneMeaning(value, partOfSpeech = '') {
+  const normalized = normalizeText(selectPartOfSpeechSection(value, partOfSpeech) || value)
     .replace(/^\[[^\]]+\]\s*/u, '')
-    .replace(/^(?:n|v|adj|adv|noun|verb|adjective|adverb)\.?\s*/iu, '')
+    .replace(/^(?:n|v|a|adj|adv|noun|verb|adjective|adverb)\.?\s*/iu, '')
   if (!normalized) return ''
   return normalizeText(normalized.split(/[;；\n]|[,，](?=\s*[^（(]{1,12}(?:[,，;；]|$))/u)[0])
     .replace(/[；;，,。]+$/u, '')
+}
+
+function selectPartOfSpeechSection(value, partOfSpeech) {
+  const target = normalizePartOfSpeech(partOfSpeech)
+  if (!target) return ''
+  const text = String(value ?? '').normalize('NFKC').replace(/\r?\n/gu, ' ')
+  const pattern = /(?:^|\s)(n|noun|v|verb|a|adj|adjective|adv|adverb)\.?\s+([\s\S]*?)(?=\s+(?:n|noun|v|verb|a|adj|adjective|adv|adverb)\.?\s+|$)/giu
+  for (const match of text.matchAll(pattern)) {
+    if (normalizePartOfSpeech(match[1]) === target) return match[2]
+  }
+  return ''
+}
+
+function normalizePartOfSpeech(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/\.$/u, '')
+  if (['a', 'adj', 'adjective', 's'].includes(normalized)) return 'adjective'
+  if (['n', 'noun'].includes(normalized)) return 'noun'
+  if (['v', 'verb'].includes(normalized)) return 'verb'
+  if (['adv', 'adverb', 'r'].includes(normalized)) return 'adverb'
+  return normalized
 }
 
 function normalizeRealSentence(value, lemma) {
@@ -144,6 +166,31 @@ function normalizeRealSentence(value, lemma) {
   const escaped = String(lemma || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
   if (!escaped || !new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence)) return null
   return { sentence, translationZh, source: { ...source } }
+}
+
+function normalizePreviewContext(value, lemma) {
+  if (!value || typeof value !== 'object') return null
+  const sentence = normalizeText(value.sentence)
+  if (!sentence || !containsTargetForm(sentence, lemma)) return null
+  return {
+    sentence,
+    surrounding_text: normalizeText(value.surrounding_text || value.surroundingText) || null,
+    source_kind: normalizeText(value.source_kind || value.sourceKind) || 'user_local_exam_material',
+    source_id: normalizeText(value.source_id || value.sourceId),
+    source_title: normalizeText(value.source_title || value.sourceTitle),
+    source_locator: value.source_locator || value.sourceLocator || null,
+    license_kind: normalizeText(value.license_kind || value.licenseKind) || 'user_owned',
+    ownership: normalizeText(value.ownership) || 'private',
+    quality_status: normalizeText(value.quality_status || value.qualityStatus) || 'validated',
+    quality_reason: normalizeText(value.quality_reason || value.qualityReason),
+    validated_at: normalizeText(value.validated_at || value.validatedAt),
+    extensions: value.extensions && typeof value.extensions === 'object' ? value.extensions : {},
+  }
+}
+
+function containsTargetForm(sentence, lemma) {
+  const escaped = String(lemma || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+  return Boolean(escaped && new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence))
 }
 
 export function extractPreviewPhrase({ sentence, word, form } = {}) {

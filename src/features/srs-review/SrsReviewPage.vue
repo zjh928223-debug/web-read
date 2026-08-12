@@ -5,7 +5,18 @@
         <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
         返回
       </button>
-      <div class="srs-review-heading" aria-hidden="true"></div>
+      <div class="srs-review-heading">
+        <span
+          class="srs-review-source-label"
+          :class="{
+            'is-v2': review.reviewSource.value === 'v2',
+            'is-legacy': review.reviewSource.value === 'legacy',
+            'is-loading': !review.reviewSource.value,
+          }"
+          role="status"
+        >{{ reviewSourceLabel }}</span>
+        <p class="srs-review-source-caption">{{ reviewSourceCaption }}</p>
+      </div>
       <div ref="historyContainer" class="srs-review-summary">
         <p class="srs-review-progress" aria-live="polite">{{ review.progress.value }}</p>
         <a
@@ -69,6 +80,35 @@
         </section>
       </div>
     </header>
+
+    <section
+      v-if="props.legacyMigration && migrationStatus && migrationStatus.eligible"
+      class="srs-review-migration-banner"
+      aria-label="历史词接入 V2"
+    >
+      <div class="srs-review-migration-copy">
+        <strong>历史词接入 V2</strong>
+        <p>
+          已接入 {{ migrationStatus.migrated }} / {{ migrationStatus.eligible }} 个旧词；
+          <span v-if="migrationStatus.remaining">还有 {{ migrationStatus.remaining }} 个可以接入。</span>
+          <span v-else>可迁移的旧词已经处理完毕。</span>
+          <span v-if="migrationStatus.pending_confirmation">另有 {{ migrationStatus.pending_confirmation }} 个需要补充含义。</span>
+        </p>
+      </div>
+      <button
+        v-if="migrationStatus.remaining"
+        type="button"
+        class="srs-review-migration-button"
+        :disabled="migrationBusy"
+        @click="startLegacyMigration"
+      >
+        {{ migrationBusy ? '正在接入…' : '接入 V2' }}
+      </button>
+      <span v-else class="srs-review-migration-complete">已完成</span>
+      <p v-if="migrationMessage" class="srs-review-migration-message" role="status">
+        {{ migrationMessage }}
+      </p>
+    </section>
 
     <section
       v-if="review.sessionLedger.value && !review.loading.value && review.current.value"
@@ -176,13 +216,17 @@
           </div>
 
           <div
-            v-if="review.contextCueLevel.value !== 'none' && (sourceLoading || audioState?.url)"
+            v-if="review.contextCueLevel.value !== 'none' && (sourceLoading || audioState?.url || sourceAudioNotice)"
             class="srs-review-audio"
           >
             <label :for="audioId">原文音频</label>
             <div v-if="sourceLoading" class="srs-review-audio-loading" role="status">
               <span class="srs-review-spinner" aria-hidden="true"></span>
               <span>正在加载原文音频…</span>
+            </div>
+            <div v-else-if="sourceAudioNotice" class="srs-review-audio-notice" role="alert">
+              <p>{{ sourceAudioNotice }}</p>
+              <button type="button" @click="retrySourceAudio">重试</button>
             </div>
             <audio
               v-else
@@ -353,6 +397,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   buildReviewContext,
+  describeReviewSourceError,
   releaseReviewAudio,
   resolveReviewGeneralMeaning,
   resolveReviewMeaning,
@@ -385,6 +430,7 @@ import { getReviewActionForShortcut, useSrsReview } from './useSrsReview.js'
 
 const props = defineProps({
   service: { type: Object, required: true },
+  legacyMigration: { type: Object, default: null },
   standalone: { type: Boolean, default: false },
   dictionaryClient: { type: Object, default: null },
 })
@@ -399,9 +445,27 @@ const pronunciationUrl = ref('')
 const pronunciationUrls = ref([])
 const pronunciationLoading = ref(false)
 const sourceLoading = ref(false)
+const sourceAudioNotice = ref('')
 const historyOpen = ref(false)
 const historyContainer = ref(null)
 const flowNotice = ref('')
+const migrationStatus = ref(null)
+const migrationBusy = ref(false)
+const migrationMessage = ref('')
+const reviewSourceLabel = computed(() => {
+  if (review.reviewSource.value === 'v2') return '当前：V2 复习'
+  if (review.reviewSource.value === 'legacy') return '当前：旧版复习'
+  return '正在判断复习来源…'
+})
+const reviewSourceCaption = computed(() => {
+  if (review.reviewSource.value === 'v2') {
+    return 'V2 会话已建立；开启模型观察后，不需要复习完全部卡片才会生成报告。'
+  }
+  if (review.reviewSource.value === 'legacy') {
+    return '当前词条仍来自旧版复习队列；复习旧版队列不会自动创建 V2。要接入 V2，需要单独执行历史词迁移或重新确认。'
+  }
+  return '系统正在检查是否存在到期的 V2 复习卡。'
+})
 const wordShortcut = ref('r')
 const sentenceShortcut = ref('s')
 const shortcutEditingTarget = ref('')
@@ -515,6 +579,7 @@ onMounted(async () => {
   sentenceShortcut.value = loadShortcut(sentenceShortcutStorageKey, 's', wordShortcut.value)
   window.addEventListener('keydown', handleReviewShortcut, true)
   document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
+  await loadLegacyMigrationStatus()
   await review.load()
   meaningAbortController = new AbortController()
   void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
@@ -543,6 +608,46 @@ function handleHistoryOutsidePointer(event) {
   shortcutEditingTarget.value = ''
 }
 
+async function loadLegacyMigrationStatus() {
+  if (!props.legacyMigration || typeof props.legacyMigration.getStatus !== 'function') return
+  try {
+    migrationStatus.value = await props.legacyMigration.getStatus()
+  } catch (error) {
+    migrationMessage.value = error?.message || '无法读取历史词迁移状态'
+  }
+}
+
+async function startLegacyMigration() {
+  if (
+    migrationBusy.value
+    || !props.legacyMigration
+    || typeof props.legacyMigration.migrateAll !== 'function'
+  ) return
+  migrationBusy.value = true
+  migrationMessage.value = '正在保留旧记录并创建 V2 学习单元…'
+  try {
+    const result = await props.legacyMigration.migrateAll({
+      batchSize: 25,
+      onProgress(status) {
+        migrationStatus.value = status
+        migrationMessage.value = `正在接入历史词：已处理 ${status.migrated} / ${status.eligible}`
+      },
+    })
+    migrationStatus.value = result
+    migrationMessage.value = result.pending_confirmation
+      ? `已完成可自动接入的词；还有 ${result.pending_confirmation} 个词需要补充含义。`
+      : '历史词已接入 V2；原版记录仍保留。'
+    await review.load()
+    void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
+      signal: meaningAbortController?.signal,
+    })
+  } catch (error) {
+    migrationMessage.value = error?.message || '历史词接入失败，可稍后重试'
+  } finally {
+    migrationBusy.value = false
+  }
+}
+
 watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   const request = ++audioRequest
   sequencePlaybackRequest = -1
@@ -554,23 +659,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   void dictionaryAssistance.setCard(nextId ? word.value.word : '')
   if (!nextId) return
   void prefetchUpcomingPronunciations()
-  const context = viewContext.value?.raw
-  sourceLoading.value = Boolean(context?.source_id || context?.sourceId)
-  const sourcePromise = Promise.resolve(
-    context ? resolveReviewSource(context, { word: word.value.word }) : null,
-  ).then((resolved) => {
-    if (request !== audioRequest) {
-      releaseReviewAudio(resolved)
-      return null
-    }
-    audioState.value = resolved
-    audioPlaybackRange.value = resolved
-      ? { start: resolved.start, end: resolved.end }
-      : null
-    sourceLoading.value = false
-    return resolved
-  })
-  sourceReadyPromise = sourcePromise
+  const sourcePromise = loadReviewSourceForCurrentCard(request)
   pronunciationLoading.value = true
   const readyPromise = resolveAmericanPronunciationSequence(word.value.word)
   pronunciationReadyPromise = readyPromise
@@ -751,6 +840,54 @@ function saveShortcut(storageKey, shortcut) {
   } catch (_error) {}
 }
 
+function loadReviewSourceForCurrentCard(request = audioRequest) {
+  const context = viewContext.value?.raw
+  const hasSource = Boolean(context?.source_id || context?.sourceId)
+  sourceAudioNotice.value = ''
+  sourceLoading.value = hasSource
+  if (!context || !hasSource) {
+    sourceReadyPromise = Promise.resolve(null)
+    return sourceReadyPromise
+  }
+  const sourcePromise = Promise.resolve(resolveReviewSource(context, {
+    word: word.value.word,
+    onError(error) {
+      handleReviewSourceError(error, request)
+    },
+  })).then((resolved) => {
+    if (request !== audioRequest) {
+      releaseReviewAudio(resolved)
+      return null
+    }
+    audioState.value = resolved
+    audioPlaybackRange.value = resolved
+      ? { start: resolved.start, end: resolved.end }
+      : null
+    sourceLoading.value = false
+    return resolved
+  })
+  sourceReadyPromise = sourcePromise
+  return sourcePromise
+}
+
+function handleReviewSourceError(error, request = audioRequest) {
+  if (request !== audioRequest) return
+  sourceAudioNotice.value = describeReviewSourceError(error)
+}
+
+async function retrySourceAudio() {
+  if (sourceLoading.value) return
+  if (audioElement.value) {
+    audioElement.value.pause()
+    audioElement.value.removeAttribute('src')
+    audioElement.value.load()
+  }
+  releaseReviewAudio(audioState.value)
+  audioState.value = null
+  audioPlaybackRange.value = null
+  await loadReviewSourceForCurrentCard(audioRequest)
+}
+
 function stopAndReleaseAudio() {
   sourceReadyPromise = Promise.resolve(null)
   if (cancelSentenceReady) cancelSentenceReady()
@@ -764,6 +901,7 @@ function stopAndReleaseAudio() {
   audioState.value = null
   audioPlaybackRange.value = null
   sourceLoading.value = false
+  sourceAudioNotice.value = ''
   stopPronunciation()
   pronunciationLoading.value = false
   pronunciationUrl.value = ''
@@ -1090,5 +1228,6 @@ function handlePronunciationError() {
 function handleSourceAudioError() {
   if (!audioState.value) return
   audioState.value = { ...audioState.value, url: '' }
+  sourceAudioNotice.value = '原文音频文件加载失败，请重试。'
 }
 </script>

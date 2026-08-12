@@ -91,6 +91,7 @@ async function main() {
 
   await verifyReadOnlySourceProbe({ sourceSelector, uiServiceModule })
   await verifySourceSelection({ useSrsReview, sourceSelector })
+  verifySourceIndicator()
   await verifyPromptRendering(prompt)
 
   const now = '2026-07-29T01:00:00.000Z'
@@ -285,12 +286,17 @@ async function main() {
   assert.match(pageSource, /显示目标句/)
   assert.match(pageSource, /显示周边语境/)
   assert.match(pageSource, /removeUnavailableReason/)
+  assert.match(pageSource, /sourceAudioNotice/)
+  assert.match(pageSource, /retrySourceAudio/)
+  assert.match(pageSource, /handleReviewSourceError\(error, request\)/)
   assert.doesNotMatch(pageSource, />\s*掌握\s*</, 'the page must not expose a fifth rating')
 
   const appSource = fs.readFileSync(path.join(repoRoot, 'src/App.vue'), 'utf8')
   assert.match(appSource, /createSrsReviewSourceSelector/)
   assert.match(appSource, /VITE_SRS_REVIEW_V2_ENABLED/)
-  assert.match(appSource, /legacyService:\s*vocabularyService/)
+  assert.match(appSource, /createLegacyVocabularyMigration/)
+  assert.match(appSource, /createLegacyReviewServiceAdapter/)
+  assert.match(appSource, /legacyService:\s*legacyReviewService/)
 
   console.log('SRS review UI V2 focused verification passed.')
 }
@@ -478,6 +484,22 @@ async function verifySourceSelection({ useSrsReview, sourceSelector }) {
     v2Enabled: 'off',
   })
   assert.equal((await flagOffSelector.resolveReviewSource({})).source, 'legacy')
+}
+
+function verifySourceIndicator() {
+  const pageSource = fs.readFileSync(
+    path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),
+    'utf8',
+  )
+  assert.match(pageSource, /srs-review-source-label/)
+  assert.match(pageSource, /reviewSourceLabel/)
+  assert.match(pageSource, /reviewSourceCaption/)
+  assert.match(pageSource, /复习旧版队列不会自动创建 V2/)
+  assert.match(pageSource, /历史词迁移或重新确认/)
+  assert.match(pageSource, /不需要复习完全部卡片/)
+  assert.match(pageSource, /legacyMigration/)
+  assert.match(pageSource, /startLegacyMigration/)
+  assert.match(pageSource, /接入 V2/)
 }
 
 async function verifyPromptRendering(prompt) {

@@ -27,18 +27,27 @@ async function importVocabularyApi(repoRoot) {
     'exam-vocabulary-importer.js',
     'exam-vocabulary-context-matcher.js',
     'legacy-vocabulary-reassessment.js',
+    'legacy-vocabulary-migration.js',
+    'ielts-learning-pools.js',
     'vocabulary-service.js',
     'index.js',
   ];
 
   const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-vocabulary-preview-${process.pid}-`));
   try {
+    const poolConfig = JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, 'config', 'ielts-learning-pools.json'), 'utf8')));
     files.forEach((file) => {
-      const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
+      let source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
         .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
         .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
         .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-review-policy\.js'/g, "from './srs-review-policy.mjs'")
         .replace(/from '\.\.\/\.\.\/features\/srs-review\/srs-session-planner\.js'/g, "from './srs-session-planner.mjs'");
+      if (file === 'ielts-learning-pools.js') {
+        source = source.replace(/import poolConfig from '\.\.\/\.\.\/\.\.\/config\/ielts-learning-pools\.json'/, `const poolConfig = ${poolConfig}`);
+      }
+      if (file === 'index.js') {
+        source = source.replace(/export \* from '\.\/personalization\/index\.(?:js|mjs)';/, '');
+      }
       fs.writeFileSync(path.join(tempDir, file.replace(/\.js$/, '.mjs')), source);
     });
     fs.writeFileSync(

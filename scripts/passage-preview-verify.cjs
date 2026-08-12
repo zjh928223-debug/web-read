@@ -8,8 +8,10 @@ const port = Number(process.env.PASSAGE_PREVIEW_VERIFY_PORT || 4197)
 const targetUrl = `http://${host}:${port}/`
 
 async function run() {
-  const unitCode = await runCheck('passage-preview-check.cjs', {})
-  if (unitCode !== 0) process.exit(unitCode)
+  for (const script of ['passage-preview-check.cjs', 'passage-preview-shortcuts-check.mjs']) {
+    const unitCode = await runCheck(script, {})
+    if (unitCode !== 0) process.exit(unitCode)
+  }
 
   const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js')
   const server = spawn(process.execPath, [

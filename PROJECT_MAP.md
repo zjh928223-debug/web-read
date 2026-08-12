@@ -271,20 +271,40 @@ meanings as primary black text and contextual meanings as secondary gray text.
 `App.vue` also opens `features/passage-preview/PassagePreviewPage.vue` from the
 `待预习` entry. The overlay accepts general local word batches, reduces each item
 to one primary-meaning suggestion, and requests at most one sense-matched short
-authentic sentence through `preview-sentence-source.js` and the versioned
-sentence-source registry. The only currently connected automatic online
-providers are the read-only local SQLite sentence warehouse, Tatoeba, and Wordnik in that order; an exhausted lookup retains every
-provider attempt so the UI does not hide an earlier local/Tatoeba miss behind the
-last Wordnik status. Imported preview rows may already contain a traceable
+sentence through `preview-sentence-source.js` and the versioned sentence-source
+registry. The currently connected automatic providers are the read-only local
+SQLite sentence warehouse, Merriam-Webster Learner's/Collegiate, Tatoeba, and
+Wordnik in that order; an exhausted lookup retains every provider attempt so the
+UI does not hide an earlier miss behind the last Wordnik status. If no real or
+imported-context sentence survives, `passage-preview-ai-sentence.js` requests a
+session-only AI learning aid through the same-origin proxy, trying Gemma 4 31B
+then Gemini 3.5/3.1 Flash-Lite with per-model timeouts.
+`preview-sentence-target-validation.mjs` is the shared fail-closed boundary for
+all ready results and previously persisted sentences. It accepts only a sentence
+containing an inverse-validated inflection of the requested lemma, rejects explicit
+POS conflicts, records the exact matched form used by the underline, and lets the
+registry continue to the next provider when a candidate fails validation.
+The left learning column uses bounded long-word typography and in-column Chinese
+wrapping. Its shortcut dialog persists a separate translation display preference:
+`hold` reveals only until keyup/blur/navigation, while `persistent` keeps the
+existing press-to-toggle behavior.
+Imported preview rows may already contain a traceable
 `realSentence` from an article, subtitle, open corpus, or dictionary-example
 workflow, but those source classes do not yet have automatic local-search
 adapters. The local adapter derives lemma candidates for inflected forms and never writes the warehouse or `SeekPlayerDB`. The same-origin Vite adapter preserves Tatoeba
-sentence IDs, author links, and license attribution. A server-side Wordnik
-provider is the second source: it reads `WORDNIK_API_KEY` outside the browser,
+sentence IDs, author links, and license attribution. The server-side
+Merriam-Webster provider reads separate Learner's and Collegiate keys from
+Windows Credential Manager or server-only environment variables, extracts
+sense-level `vis` examples, uses a 900-query/day safety budget per reference,
+and keeps formatted results only in page memory. Learner's is tried first;
+Collegiate is queried only when no learner example survives POS/sense filtering.
+Displayed results include the required unmodified 50px official logo. A
+server-side Wordnik provider reads `WORDNIK_API_KEY` outside the browser,
 uses an 80-call/hour local safety budget, retains only formatted session-memory
-results, and renders Wordnik's required exact-word attribution. Failed source or sense checks resolve to a no-sentence state and never to an AI
-sentence or long IELTS fallback. Preview state remains separate from reader
-chunk state and never writes a `ReviewState`. `services/pronunciation/` prefers
+results. Failed source or sense checks resolve to a no-sentence state or to the
+explicitly labeled AI learning-aid fallback; generated output remains outside
+`ReviewState` and cannot graduate a word. Preview state remains separate from
+reader chunk state and never writes a `ReviewState`. `services/pronunciation/` prefers
 the exact Microsoft Aria system voice and falls back to the same-origin
 `en-US-AriaNeural` Vite endpoint.
 

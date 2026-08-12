@@ -191,7 +191,7 @@
 - [x] 21.1 新增 Wordnik Vite/Node 同源代理，从 `WORDNIK_API_KEY` 服务端环境读取密钥，请求官方 `/examples`，规范化例句与来源定位，并保证响应和日志不泄露密钥。
 - [x] 21.2 增加每小时 80 次本地安全预算、官方 rate-limit header 读取、无密钥/限额/上游失败安全回退与 no-store 响应；不得自动重试或绕过限制。
 - [x] 21.3 实现 Wordnik 预习 adapter，将其作为 Tatoeba 之后的补充来源，执行首次接触短句排序并仅使用会话内格式化缓存，不写 localStorage、IndexedDB 或语料仓库。
-- [x] 21.4 在 Wordnik 结果中显示无中文整句翻译提示、具体 word 链接和官方原尺寸 `Powered by Wordnik` badge，满足 attribution 要求。
+- [x] 21.4 保留 Wordnik 的具体 word 链接、provider 与 attribution 元数据；Wave C6 按后续产品决定从学习面板移除缺译提示、来源长文案和 badge。
 - [x] 21.5 增加 focused verification 与浏览器回归，覆盖密钥缺失零上游调用、密钥只走 header、配额保护、会话复用、来源回退、无持久化、生产构建和 Vite 加载。
 
 ## 22. Wave C4：真实句来源状态透明度
@@ -207,3 +207,66 @@
 - [x] 23.3 调整首次接触来源与缺翻译文案，区分词典例句、真实出版摘句和在线语料，不把所有无翻译句误称为 Wordnik。
 - [x] 23.4 下载并记录首批文本词典；为大体积 MDD 音频保留可续传下载与后续索引入口，音频下载不阻塞文字链路。
 - [x] 23.5 增加合成 fixture 与真实本地冒烟检查，覆盖 `sanctuaries`、`propping`、`gauges`、本地优先、在线回退、无 IndexedDB schema 变化和无受限内容进入 Git/构建产物。
+## 24. Wave C6：紧凑首次接触语境与批量整句翻译
+
+- [x] 24.1 扩充本地个人词典资源清单，下载双语学习词典、整句/短语、搭配、词频分级和发音补充资源；大体积音频允许后台续传，全部资源保持在 Git 忽略目录。
+- [x] 24.2 收紧首次接触语境版式：英文例句通常一行、最多自然换成两行；目标词只使用下划线，不显示底色或阴影；页面不展示缺译提示或来源归属长文案。
+- [x] 24.3 增加可复用的整句中文翻译批处理边界，每次最多 25 句、单并发、结构化返回；优先复用本地缓存，未配置 AI 时不得阻塞英文例句。
+- [x] 24.4 增加 focused verification、构建和浏览器视觉验收，覆盖中文翻译、无提示文案、下划线目标词和桌面端一至两行布局。
+
+## 25. Wave C7：首次接触自定义快捷键
+
+- [x] 25.1 扩展版本化快捷键模块，定义五个动作、默认值、唯一性校验、键盘事件规范化和 `localStorage` 恢复/迁移。
+- [x] 25.2 在首次接触页增加快捷键设置弹层与全局动作处理；主学习界面不显示按键提示，输入和捕获状态不误触，导航不跳过未揭示步骤。
+- [x] 25.3 增加 focused verification、浏览器交互验收、构建和 OpenSpec strict 校验，覆盖改键、刷新持久化、双发音、中文显隐、上一个和下一词。
+- [x] 25.4 将“看看这个词怎么用”加入快捷键映射，并把弱化后的设置入口移到右侧预习数量之后；补充持久化、揭示动作和位置/视觉回归。
+
+## 26. Wave C8：主要义项优先的真实句匹配
+
+- [x] 26.1 为本地双语学习词典增加精简主要义项索引，保留 lemma、词性、英文释义、中文释义、义项顺序和来源。
+- [x] 26.2 先按主要词性筛句，再按英文释义重合、学习词典义项顺序与原有难度约束排序；无匹配时不得用其他词性的短句。
+- [x] 26.3 让首次接触页用仓库主要义项修正旧批次的错误建议，并持久化义项与真实句的一致结果。
+- [x] 26.4 将右上角“快捷键”文字缩小并在点击区内水平、垂直居中，保持弱化且位于预习数量之后。
+- [x] 26.5 增加 `automatic` 回归、本地仓库合约、浏览器交互/视觉验收，并运行 build、Vite 与 OpenSpec strict 校验。
+
+## 27. Wave C9：Merriam-Webster 学习词典例句兜底
+
+- [x] 27.1 将 Dictionary 与 Learner's 两个 key 分别保存到 Windows Credential Manager，并用对应 reference 各完成一次不泄密的实时验证。
+- [x] 27.2 新增 Merriam-Webster 同源服务端点，Learner's 优先、Collegiate 兜底，解析义项级 `vis`、词性、释义与 attribution，并设置每 reference 每日安全预算。
+- [x] 27.3 新增首次接触 provider 与会话内缓存；按目标词性/义项筛选，禁止把响应写入 localStorage、IndexedDB 或本地 SQLite。
+- [x] 27.4 在展示 Merriam-Webster 内容时按官方要求显示未修改的 50px 标识，不恢复其他来源长文案或通用 badge。
+- [x] 27.5 增加 focused verification、浏览器回归、build、Vite 与 OpenSpec strict 验证，覆盖双 key、来源顺序、额度、无泄密和安全回退。
+
+## 28. Wave C10：桌面学习页面入口
+
+- [x] 28.1 增加 `/?learning=preview` 直达规则，只自动打开已保存的有效首次接触批次，无批次时不自动触发文件选择器。
+- [x] 28.2 增加 Windows 启动脚本，验证并复用现有 Read-Web 服务，必要时以固定严格端口静默启动 Vite，再打开学习网址。
+- [x] 28.3 在当前用户桌面生成“英语学习”快捷方式，目标为仓库内启动脚本且不包含任何 API key。
+- [x] 28.4 增加 focused verification，并运行预习回归、构建、Vite 与 OpenSpec strict 校验。
+
+## 29. Wave C11：目标词、lemma、义项与句中词形统一验收
+
+- [x] 29.1 增加共享英语屈折验证与最终验收模块，覆盖 `slates/slate`、`rates/rate`、`notes/note`、`sanctuaries/sanctuary`、`propping/prop` 和 `gauges/gauge`，明确拒绝 `slat`、`rat`、`not`。
+- [x] 29.2 修复本地 SQLite 查询：按经逆向验证的 lemma 顺序选择主要义，并只从锁定 lemma 中选句，禁止 `slates` 串到 `slat/slats`。
+- [x] 29.3 修复 Merriam-Webster 解析：相关响应词条不得成为目标词，`rescue` 查询必须拒绝只含 `mission` 的例句，同时保留 `rescue/rescued` 合法形式。
+- [x] 29.4 将统一验收接到所有 provider ready 结果与页面下划线；读取旧持久化句时重新验证，失败则重新走来源链并允许主要义修正。
+- [x] 29.5 增加 focused、真实本地库、真实 API 与浏览器回归，并运行 build、Vite、OpenSpec strict、密钥与 IndexedDB schema guard。
+
+## 30. Wave C12：长内容自适应与中文快捷键展示模式
+
+- [x] 30.1 补充 proposal/design/spec，明确长单词缩放、长中文栏内换行，以及“按住展示 / 持续展示”的持久设置和按住复位边界。
+- [x] 30.2 修复首次接触左栏尺寸约束，为长英文目标词增加确定性字号等级，并保证中文主要义不越过中线或产生水平滚动。
+- [x] 30.3 在快捷键设置加入中文展示模式切换；实现 persistent 按下切换与 hold 按下显示、keyup/切词/关闭/blur/hidden 复位。
+- [x] 30.4 增加 focused 与浏览器布局/交互回归，并运行 passage preview、build、Vite、OpenSpec strict 和架构守卫。
+
+## 31. Wave C13：剑雅候选池与预习 acquisition 闭环
+
+- [x] 31.1 将自动预习候选源从旧版 SRS row 切换到本地剑雅阅读 priority pool，同源 endpoint 只返回最小候选与按批次请求的本地定位详情；候选池不可用时 fail closed。
+- [x] 31.2 保持每日 50 词分配、lemma 去重、已分配日期续接，并让批次缓存保留可恢复的候选详情，不把版权原句打包进构建产物。
+- [x] 31.3 在 vocabulary service 增加显式 `queuePreviewVocabularyAcquisition()`，复用既有 acquisition 状态机与 UoW；稳定 preview identity，首次接触只写 acquisition/context，不写旧版 ReviewState。
+- [x] 31.4 将首次接触揭示与句子 enrichment 接入 preview acquisition 投影，保存 item、learning unit、anchor、introduced_at 和 acquisition status，支持刷新后恢复。
+- [x] 31.5 增加 24 小时 delayed-check coordinator 与 UI：候选词先显示原始语境，答案揭示标记为不可毕业，评分单独记录 `again/hard/good/easy`。
+- [x] 31.6 将通过的 delayed check 接入既有 `graduateLearningUnit()`，原子创建唯一 V2 ReviewState、graduation event 和 receipt，并保持旧版 SRS row 不新增卡片。
+- [x] 31.7 修改预习入口优先处理到期考察；没有待考察词时才继续下一个剑雅批次，并更新完成态文案说明后续生命周期。
+- [x] 31.8 增加 preview acquisition graduation focused verification，覆盖无旧 ReviewState、validated anchor、24 小时跨 episode、毕业建卡和旧版 fixture 兼容。
+- [x] 31.9 运行候选池 endpoint、预习续接、acquisition、preview、build、Vite 与 OpenSpec strict 验证，并记录本轮实现边界。

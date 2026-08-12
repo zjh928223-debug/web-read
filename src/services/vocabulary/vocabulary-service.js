@@ -24,6 +24,9 @@ import {
   createIndexedDbAcquisitionRepository,
 } from './vocabulary-acquisition-repository.js';
 import {
+  normalizeContextEvidence,
+} from './vocabulary-context-evidence.js';
+import {
   createVocabularyAcquisitionService,
 } from './vocabulary-acquisition-service.js';
 import {
@@ -116,6 +119,20 @@ export function createVocabularyService(options = {}) {
   }
 
   async function queueVocabularyAcquisition(input = {}) {
+    return queueAcquisitionInternal(input, {
+      source: 'article-settlement',
+      createContextEvidence: createArticleContextEvidence,
+    });
+  }
+
+  async function queuePreviewVocabularyAcquisition(input = {}) {
+    return queueAcquisitionInternal(input, {
+      source: 'ielts-preview',
+      createContextEvidence: createPreviewContextEvidence,
+    });
+  }
+
+  async function queueAcquisitionInternal(input = {}, options = {}) {
     if (!acquisitionEnabled) {
       throw new Error('Vocabulary acquisition writes are disabled');
     }
@@ -133,6 +150,7 @@ export function createVocabularyService(options = {}) {
     let state = unit
       ? await acquisitionRepository.getState(unit.learning_unit_id)
       : null;
+    let attachedContextEvidence = null;
 
     if (!unit) {
       await acquisitionService.queueCandidate(createAcquisitionCommand(
@@ -154,7 +172,7 @@ export function createVocabularyService(options = {}) {
             archived_at: null,
             revision: 0,
             extensions: {
-              source: 'article-settlement',
+              source: options.source || 'article-settlement',
             },
           },
           event_id: identity.queueEventId,
@@ -197,7 +215,8 @@ export function createVocabularyService(options = {}) {
 
     if ((state?.status === 'introduced' || state?.status === 'acquiring')
       && !state.context_evidence_ids.includes(identity.evidenceId)) {
-      const evidence = createArticleContextEvidence(input, unit, identity, unit.created_at);
+      const evidence = options.createContextEvidence?.(input, unit, identity, unit.created_at) || null;
+      attachedContextEvidence = evidence;
       if (evidence) {
         await acquisitionService.attachContextEvidence(createAcquisitionCommand(
           identity,
@@ -218,6 +237,7 @@ export function createVocabularyService(options = {}) {
       word: storedWord,
       learningUnit: unit,
       acquisitionState: state,
+      contextEvidence: attachedContextEvidence,
       alreadyGraduated: state?.status === 'graduated',
       created: !existingBySense,
     };
@@ -225,6 +245,37 @@ export function createVocabularyService(options = {}) {
 
   async function getWordByLemma(lemma, options = {}) {
     return repository.findWordByLemma(lemma, { language: normalizeLanguage(options.language) });
+  }
+
+  async function getWordsAndContextsByLemmas(lemmas, options = {}) {
+    const language = normalizeLanguage(options.language);
+    const lookupKeys = Array.from(new Set((Array.isArray(lemmas) ? lemmas : [lemmas])
+      .map((lemma) => normalizeLookupKey(lemma))
+      .filter(Boolean)));
+    if (!lookupKeys.length) return new Map();
+    if (typeof repository.loadSnapshot !== 'function') return null;
+    const lookupKeySet = new Set(lookupKeys);
+    const snapshot = await repository.loadSnapshot();
+    const wordsByKey = new Map((Array.isArray(snapshot && snapshot.words) ? snapshot.words : [])
+      .filter((word) => word && word.language === language && lookupKeySet.has(word.lookup_key))
+      .map((word) => [word.lookup_key, word]));
+    const contextsByWordId = new Map();
+    (Array.isArray(snapshot && snapshot.contexts) ? snapshot.contexts : []).forEach((context) => {
+      const wordId = context && context.word_id;
+      if (!wordId) return;
+      const contexts = contextsByWordId.get(wordId) || [];
+      contexts.push(context);
+      contextsByWordId.set(wordId, contexts);
+    });
+    return new Map(lookupKeys.map((lookupKey) => {
+      const word = wordsByKey.get(lookupKey) || null;
+      return [lookupKey, {
+        word: cloneVocabularyValue(word),
+        contexts: word
+          ? (contextsByWordId.get(word.id) || []).map(cloneVocabularyValue)
+          : [],
+      }];
+    }));
   }
 
   async function getContextsForWord(wordId) {
@@ -396,9 +447,13 @@ export function createVocabularyService(options = {}) {
     addWordLegacy,
     upsertVocabularyEntry,
     queueVocabularyAcquisition,
+    queuePreviewVocabularyAcquisition,
+    getAcquisitionRepository: () => acquisitionRepository,
+    getAcquisitionService: () => acquisitionService,
     isAcquisitionEnabled: () => acquisitionEnabled,
     getLegacyCompatibilityCalls: () => legacyCompatibilityCalls.map((item) => ({ ...item })),
     getWordByLemma,
+    getWordsAndContextsByLemmas,
     getContextsForWord,
     getReviewLogs,
     getDueWords,
@@ -471,11 +526,22 @@ function createStableIntegrationId(prefix, value) {
 
 function createAcquisitionIdentity(word, input, targetSenseKey) {
   const context = input.context || {};
+  const acquisitionIdentity = input.acquisition_identity || input.acquisitionIdentity || {};
   const seed = {
     word_id: word.id,
     target_sense_key: targetSenseKey,
-    source_id: normalizeNullableText(context.source_id || context.sourceId),
-    target_id: normalizeNullableText(input.target_id || input.targetId),
+    source_id: normalizeNullableText(
+      acquisitionIdentity.source_id
+        || acquisitionIdentity.sourceId
+        || context.source_id
+        || context.sourceId,
+    ),
+    target_id: normalizeNullableText(
+      acquisitionIdentity.target_id
+        || acquisitionIdentity.targetId
+        || input.target_id
+        || input.targetId,
+    ),
   };
   const root = createStableIntegrationId('article-acquisition', seed);
   return {
@@ -536,6 +602,52 @@ function createArticleContextEvidence(input, unit, identity, createdAt) {
       source_url: normalizeNullableText(context.source_url || context.sourceUrl),
     },
   };
+}
+
+function createPreviewContextEvidence(input, unit, identity, createdAt) {
+  const context = input.context;
+  const sentence = normalizeText(context && context.sentence);
+  if (!sentence) return null;
+
+  const sourceKind = normalizeNullableText(context.source_kind || context.sourceKind)
+    || 'user_local_exam_material';
+  const sourceId = normalizeNullableText(context.source_id || context.sourceId)
+    || `ielts-preview:${unit.normalized_form}`;
+  const sourceTitle = normalizeNullableText(context.source_title || context.sourceTitle)
+    || '剑桥雅思阅读本地语料';
+  const qualityStatus = normalizeNullableText(context.quality_status || context.qualityStatus)
+    || 'validated';
+  const sourceLocator = context.source_locator || context.sourceLocator || {
+    locator_version: 'source-locator.v1',
+    local_locator: normalizeNullableText(context.local_locator || context.localLocator)
+      || identity.evidenceId,
+  };
+
+  return normalizeContextEvidence({
+    schema_version: 'context-evidence.v1',
+    context_evidence_id: identity.evidenceId,
+    learning_unit_id: unit.learning_unit_id,
+    sentence,
+    surrounding_text: normalizeNullableText(context.surrounding_text || context.surroundingText),
+    source_kind: sourceKind,
+    source_id: sourceId,
+    source_title: sourceTitle,
+    source_locator: sourceLocator,
+    license_kind: normalizeNullableText(context.license_kind || context.licenseKind)
+      || 'user_owned',
+    ownership: normalizeNullableText(context.ownership) || 'private',
+    quality_status: qualityStatus,
+    quality_reason: normalizeNullableText(context.quality_reason || context.qualityReason)
+      || '本地用户持有的剑桥雅思语料已通过来源校验',
+    created_at: createdAt,
+    validated_at: qualityStatus === 'validated'
+      ? normalizeNullableText(context.validated_at || context.validatedAt) || createdAt
+      : null,
+    revision: 0,
+    extensions: context.extensions && typeof context.extensions === 'object'
+      ? context.extensions
+      : {},
+  });
 }
 
 function mergeWordTags(word, tags) {

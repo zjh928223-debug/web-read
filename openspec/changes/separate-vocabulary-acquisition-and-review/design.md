@@ -308,8 +308,8 @@ P6 同时实现 review repository，必须等待 P6 的共享 repository/UoW 合
 - 入口位于“今日复习”附近，以覆盖层打开，并复用复习页的两栏卡片、页头与底部操作区视觉语言；不得修改“今日复习”的队列、评分、自动播放或历史行为。
 - 真实句候选优先来自用户文章/字幕和许可开放语料；当前开放适配器通过同源 Vite endpoint 查询 Tatoeba，只接收已批准、带简体中文翻译和 `CC BY 2.0 FR` 的记录，并保存句子 ID、作者及链接。候选必须通过 `sentence-candidate-ranking.v1` 的 `first_preview` 义项、来源和难度硬约束。
 - 预习 UI 只依赖 `sentence-source-registry.v1`，不直接绑定具体语料服务。Tatoeba 保持第一来源；Wordnik 是第二来源，只在前者未返回合格句时调用。Wordnik API key 仅由 Vite/Node 同源代理从 `WORDNIK_API_KEY` 读取，客户端 bundle、URL 与响应均不得包含密钥；代理采用每小时 80 次本地安全预算并读取官方 rate-limit header。Wordnik 格式化结果可在当前页面会话内暂存以避免往返导航重复调用，但不得写入 localStorage、IndexedDB 或独立语料仓库。
-- Wordnik `/examples` 不提供中文整句翻译，也不把例句绑定到可验证的词典 sense id。因此适配器只把官方针对该词返回的真实例句作为“主要义的 provider-ranked 候选”，继续执行短句、结构、来源和词形筛选；页面明确显示整句中文暂缺，不伪造翻译。Wordnik 数据旁必须链接到具体 word 页面并显示未缩放的官方 `Powered by Wordnik` badge。
-- 用户本地考试原句不得用于 `first_preview`；其定位只保留给 `late_context_transfer`。没有合格候选时显示无句状态，AI 不得现编默认替代句。
+- Wordnik `/examples` 不提供中文整句翻译，也不把例句绑定到可验证的词典 sense id。因此适配器只把官方针对该词返回的真实例句作为“主要义的 provider-ranked 候选”，继续执行短句、结构、来源和词形筛选。来源 URL、provider 和 attribution 元数据保留在内部结果中；学习面板不显示缺译说明、来源长文案或 badge，整句中文由独立翻译层按需补充。
+- 未经候选池登记的用户本地考试原句不得用于 `first_preview`；其定位只保留给 `late_context_transfer`。本变更的剑桥阅读 priority 候选池是明确登记的本地例外，按 C13 的来源、定位和许可约束使用；没有合格候选时显示无句状态，AI 不得现编默认替代句。
 - 状态仅为 `not_started`、`in_progress`、`completed`，保存动态批次当前位置与每词学习内容揭示状态。它不复用或写入 SRS repository，不创建 `ReviewState`。
 - 卡片首态只显示单词；学习内容揭示后显示可用音标、一个中文主要义和至多一条带中文翻译与 attribution 的短真实句。同日不追加第二或第三条重复语境。
 - 发音服务优先严格匹配系统语音 `Microsoft Aria Online (Natural) - English (United States)`；不可用时只请求 Vite dev/preview 提供的同源 `/api/tts/edge`，该端点用 `node-edge-tts` 合成并声明 `en-US-AriaNeural`。客户端不得接受其他英语语音；两者都不可用时显示“Aria美式发音暂不可用”。
@@ -354,3 +354,73 @@ P6 同时实现 review repository，必须等待 P6 的共享 repository/UoW 合
 - `balanced` 的默认 revisit 延迟采用固定 15 分钟，还是直接采用 scheduler 的第一个 short step 并限制最多一次。
 - 用户本地考试材料的保存粒度是完整句子、短摘录还是只保存定位符；需结合实际导入格式确认。
 - 个性化参数发布是否每月人工确认，还是达到显著改善后自动创建待确认候选；建议首期只生成报告。
+
+## Wave C13: 剑雅候选池驱动的预习 acquisition 闭环
+
+### Candidate source and daily continuation
+
+- 首次接触每日分配的唯一自动来源是本地 Vite 同源 `/api/vocabulary/ielts-learning-pool`。服务端读取用户本机 `reading-vocabulary-candidates.json`，只返回 `readingVocabulary` pool 的 priority candidate lemma；候选池不可用时返回明确 unavailable，浏览器不得读取或推导 `vocabulary.srs.store.v1` 作为新批次来源。
+- 候选详情按当前批次 lemma 请求，保留本地剑桥书号、Test、Passage、source id 和 `local_locator`。候选例句不写入应用发布包；只在用户本机已有语料时通过开发/预览服务提供。
+- 分配仍以 lemma 去重、日期和 50 词批次为边界。批次记录可缓存最小候选详情，但正式 acquisition/review 状态只保存在现有 `files` store 的命名 row 中。
+
+### First contact registration
+
+- 首次接触词第一次揭示学习内容时调用显式 `queuePreviewVocabularyAcquisition()`。该入口创建/复用 `LearningUnit`、选择一个目标义项、写入 `introduced`，并在有合格本地候选语境时附加 `validated` `ContextEvidence`；它不得创建旧版 vocabulary `ReviewState`。
+- 每个剑雅 lemma 使用稳定的 acquisition identity，后续页面刷新、例句 enrichment 或重新打开批次必须复用同一 `(word_id, target_sense_key)`，不得因为显示层 target key 格式变化重复创建 active learning unit。
+- 没有合格语境时词可以停留在 `introduced`，但不得进入待考察或 review；来源、许可或 locator 不完整时保持 pending/缺句状态。
+
+### Delayed check and graduation
+
+- `getDueChecks()` 从 acquisition snapshot 和本地预习投影共同确定待考察词：状态为 `acquiring`/`ready_for_check`、存在 validated anchor，且 `introduced_at` 至少过去 `86,400,000ms`。待考察页先显示原始英文语境，不默认显示中文答案。
+- 用户可以在评分前主动揭示答案，但该 attempt 的 `answer_revealed_before_rating` 必须为 true，不能毕业；`again` 也不能毕业。`hard/good/easy` 且答案未揭示、跨 episode 且已满 24 小时的 attempt 通过既有 `graduateLearningUnit()` 原子事务。
+- graduation 在同一 IndexedDB transaction 中写 acquisition graduated、initial V2 `ReviewState`、graduation event 和 command receipt；旧版 `vocabulary.srs.store.v1` 不接收该词的新卡。由于初始 due_at 等于毕业时间，毕业后的词会被 V2 review source 识别为今日复习。
+- 打开“待预习”入口时优先处理到期 delayed checks；没有待考察词时才生成/打开下一个剑雅批次。预习完成页明确告知“首次接触已记录 → 24 小时后考察 → 通过后进入复习”，不再声称由模型自行决定是否再次出现。
+## Wave C6: compact preview context and sentence translation
+
+- The preview keeps provenance in the sentence record but does not render the verbose provenance or missing-translation notices in the learning surface. The surface contains only the short English sentence, its pronunciation control, and the Chinese sentence translation when available.
+- Target highlighting is typographic only: an underline with no background, shadow, badge, or color block. Desktop sentence typography is sized for a normal one-line sentence and a long eligible sentence to wrap naturally to a second line.
+- AI translation is a bounded enrichment operation, never a sentence-generation source. Requests contain at most 25 stable sentence IDs and English sentences, run with concurrency one, require a structured ID-to-Chinese response, and reuse a local cache. A 50-word preview therefore becomes two translation requests instead of one large fragile request.
+- Translation failure or missing configuration leaves the authentic English sentence usable and silent; it does not display a technical setup or missing-translation message inside the study card.
+- Additional MDX/MDD assets remain local-only and ignored by Git. Text, phrase, collocation, frequency, bilingual, and pronunciation sources may be downloaded, while duplicate layout variants are not required.
+
+## Wave C7: first-contact shortcut settings
+
+- The first-contact surface owns a versioned `localStorage` shortcut map for six actions: reveal “看看这个词怎么用”, word pronunciation, sentence pronunciation, Chinese sentence visibility, previous item, and next item. Defaults are `Space`, `R`, `S`, `C`, `ArrowLeft`, and `ArrowRight`.
+- Shortcut values must be unique, must not require modifier keys, and must not run while focus is inside an input, textarea, select, contenteditable element, or the shortcut-capture flow.
+- A compact settings dialog is opened by a low-contrast text action immediately after the right-aligned preview count. It must not occupy the centered title area or compete visually with the study content. The study surface does not render key labels, badges, or shortcut hints after the dialog closes.
+- Navigation shortcuts mirror the visible footer semantics: they do not skip an unrevealed card, previous is bounded at the first item, and next completes the batch only from the final revealed item.
+- Chinese sentence visibility is transient presentation state. The shortcut configuration persists, but whether the translation is currently hidden does not persist across page sessions.
+
+## Wave C8: primary-sense-first sentence matching
+
+- The local warehouse may index a compact primary sense from a local bilingual learner dictionary. Primary sense selection is POS-aware and keeps the English definition beside the Chinese gloss so sentence candidates can be compared without translating or generating English content at runtime.
+- Sentence selection first restricts candidates to the primary part of speech, then prefers semantic overlap between the primary English definition and candidate `senseGloss`, followed by learner-dictionary sense order and the existing source/length constraints. A sentence from another POS or unrelated sense cannot win merely because it is shorter.
+- When the warehouse has stronger primary-sense evidence, the first-contact item is enriched with the corrected Chinese gloss, POS, target-sense key and matched sentence. Existing imported batches can therefore be repaired without re-importing, while missing warehouse data safely retains the imported suggestion.
+- The shortcut settings trigger remains after the preview count, but its click box uses explicit inline flex centering and compact line height so the small label cannot float outside its visual bounds.
+
+## Wave C9: Merriam-Webster learner-example fallback
+
+- The two Merriam-Webster API products remain separate: Learner's Dictionary is queried first for pedagogical examples, while Collegiate Dictionary is a fallback when the learner reference has no eligible same-POS/sense example.
+- Both keys are server-only credentials. The browser calls one same-origin endpoint and never receives a key, upstream URL, or raw dictionary payload. Formatted results are cached only in page memory and are not written to localStorage, IndexedDB, or the local SQLite warehouse.
+- The adapter reads examples from sense-level `vis` fields, preserves the containing definition and part of speech, rejects mismatched POS/sense or sentences outside the first-contact length boundary, and keeps the existing no-AI/no-exam-paragraph fallback.
+- Each reference has an in-memory local safety budget below the official 1,000-query daily free limit. Missing credentials, exhausted budgets, upstream errors, and spelling suggestions fail open to the next registered source.
+- When Merriam-Webster content is displayed, the learning surface renders the unmodified official logo at an approved 50px size and links to the reference product. This required compact branding is not a general return of verbose source prose or badges.
+
+## Wave C10: desktop learning-page launch
+
+- A Windows launcher owns local process startup outside the learning model. It reuses a verified Read-Web server on `127.0.0.1:5173`, otherwise starts Vite with a strict port, waits for the application marker, and opens `/?learning=preview` in the default browser.
+- The learning query opens only an already-valid saved first-contact batch. If no batch is available, startup remains on the reader instead of attempting a browser-blocked file-picker click without a user gesture.
+- The launcher contains no API credentials and stores only Vite stdout/stderr logs in the operating-system temporary directory. It does not change IndexedDB, acquisition, review, sentence-provider, or credential behavior.
+
+## Wave C11: fail-closed target-word validation
+
+- Every ready provider result passes one browser-side final acceptance gate before the registry may stop fallback. The gate locks the displayed target surface to one candidate lemma, verifies that the target surface is a generated inflection of that lemma, finds the exact accepted surface in the sentence, and rejects explicit part-of-speech conflicts.
+- English inflection handling is shared by the local SQLite service, Merriam-Webster parser, final gate, and highlighter. Candidate generation is inverse-checked by regenerating inflections, so `slates` can resolve to `slate` but not `slat`; `rates` cannot resolve to `rat`, and `notes` cannot resolve to `not`.
+- The local service chooses a primary sense in ordered, morphology-validated candidate order and restricts sentence selection to that locked lemma. Merriam-Webster accepts only entries whose headword belongs to the query's validated lemma candidates, then finds examples using target-lemma inflections rather than arbitrary stems from related response entries.
+- Highlighting uses the exact accepted sentence form, never a provider-controlled related headword plus a permissive suffix regex. Previously persisted results are revalidated on read; invalid results are ignored and replaced through the normal source chain, allowing a corrected local primary meaning to overwrite stale enrichment.
+
+## Wave C12: unclipped first-contact content and translation display modes
+
+- The left preview column is a hard layout boundary. Its inner grid items use border-box sizing and `min-width: 0`; Chinese primary meanings wrap inside the column, while long English targets use deterministic length classes to reduce type size before the inherited no-wrap heading can clip.
+- Translation shortcut behavior is an explicit local preference independent of the shortcut key map. `persistent` preserves the existing press-to-toggle behavior; `hold` reveals only while the configured key is down and hides on keyup.
+- Hold state is presentation-only and never persists. Switching items, closing the overlay, window blur, document hidden, or component unmount clears it. The selected display mode persists locally and restores after refresh without modifying preview progress, vocabulary, review, or IndexedDB data.

@@ -30,6 +30,77 @@ Vue components
 
 Vue rendering is currently enabled by default through `window.__USE_VUE_RENDERING = true`, but many actions still go through legacy `window.xxx` functions and module-bound DOM event wiring.
 
+## Active Conversation Handoff (2026-08-06)
+
+This section is the compact handoff for the personalized vocabulary-learning work completed across the current long-running conversation. A new session should read this section first, then use the linked OpenSpec artifacts instead of reconstructing decisions from chat history.
+
+### User learning intent
+
+- First contact is exposure, not memorization. The learner only needs to understand what the word means in the current short sentence; there is no requirement to recall it or see it several times on the same day.
+- First contact teaches one primary sense only. Secondary or extended senses and difficult IELTS/Cambridge source passages belong to later review after the primary sense is familiar.
+- Repetition timing must adapt to observed forgetting and feedback instead of applying a rigid “every word repeats tomorrow” rule.
+- Learner preference controls presentation form, not curriculum coverage. The system may choose a preferred sentence/audio/prompt style, but it must still cover weak parts of speech, morphology, senses, collocations, and transfer skills.
+- The agreed model is layered: FSRS handles per-learning-unit memory timing; a skill estimator identifies weaknesses; a constrained curriculum planner guarantees necessary coverage; a contextual-bandit preference model chooses presentation form. Shadow mode observes first and must not alter formal scheduling until explicitly promoted.
+
+The normative design, rollout gates, and unfinished work are in [`openspec/changes/separate-vocabulary-acquisition-and-review/`](openspec/changes/separate-vocabulary-acquisition-and-review/). Its task list currently records 134 completed and 17 pending tasks; do not duplicate or silently replace those pending tasks here.
+
+### Implemented product state
+
+- The read-only **模型观察** page and opt-in Shadow reporting path exist. Shadow output is derived from immutable learning data and cannot change ratings, due dates, the review ledger, or FSRS state. See [`personalized-learning-parallel-plan.md`](openspec/changes/separate-vocabulary-acquisition-and-review/personalized-learning-parallel-plan.md) and the active OpenSpec design.
+- First contact now shows one word, one compact primary Chinese sense, pronunciation, and at most one short real or AI-assisted English sentence. It no longer automatically presents the difficult IELTS/Cambridge paragraph.
+- English sentence lookup is local-first, then Merriam-Webster Learner's/Collegiate, Tatoeba, and Wordnik. Only when those sources and the imported context cannot provide a usable sentence does the same-origin AI adapter generate a short learning aid. Every result and previously saved sentence must pass the same fail-closed target-lemma, inflection, and POS validation before display, so a related dictionary entry cannot be underlined as the requested word. AI examples are session-only, explicitly labeled, and never usable for review graduation. Merriam-Webster keys stay in Windows Credential Manager or server-only environment variables; Wordnik remains optional and safely reports unavailable until `WORDNIK_API_KEY` is configured.
+- The ignored local SQLite warehouse combines LDOCE5, Vocabulary.com, Open English WordNet, Kaikki, and a New Oxford bilingual primary-sense index. Supplemental bilingual, phrase, collocation, frequency, and pronunciation resources remain under the Git-ignored `data/dictionaries/` tree.
+- Whole-sentence Chinese translation is AI-assisted through the same-origin service, processed sequentially in batches of at most 25 and cached locally. Failure never blocks the English sentence. AI example fallback defaults to `gemma-4-31b-it`, then `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`; each provider attempt has a 15-second timeout.
+- The first-contact shortcut dialog supports reveal, word audio, sentence audio, Chinese translation visibility, previous item, and next item. Chinese translation can use either hold-to-show or persistent press-to-toggle behavior, with the selected mode restored locally. No shortcut labels appear on the learning card. Its weak `快捷键` trigger sits after the preview count and is explicitly centered inside its compact click area.
+
+### Primary-sense and sentence-matching rule
+
+The latest defect was `automatic` being imported as “自动手枪” while its displayed sentence used the adjective. This is fixed as a general pipeline rule:
+
+1. Determine the bilingual learner-dictionary primary sense and part of speech first.
+2. Reject sentence candidates from another part of speech.
+3. Rank remaining candidates by overlap between the primary English definition and the candidate sense gloss, followed by learner-dictionary sense order and the existing short-sentence constraints.
+4. Persist the repaired primary meaning, POS, sense key, and selected local sentence back into the current preview batch.
+5. If no sentence matches the primary POS/sense, return unavailable and continue to the next registered real-sentence provider; do not substitute a misleading local sentence.
+
+The local warehouse currently contains 68,013 bilingual primary-sense rows. The verified `automatic` result is “自动的” with `My camera is fully automatic`, rather than the noun meaning or the previous breathing-technique sentence. Refresh only this index with:
+
+```powershell
+python scripts/build-local-sentence-warehouse.py --primary-senses-only
+```
+
+Implementation boundaries are documented in [`src/dictionary/local-sentences/README.md`](src/dictionary/local-sentences/README.md). Key runtime files are `local-sentence-service.mjs`, `local-warehouse-preview-sentence.js`, `passage-preview-import.js`, `PassagePreviewPage.vue`, and `App.vue`.
+
+### Verification and workspace state
+
+The latest implementation passed:
+
+```text
+npm run verify:passage-preview
+npm run verify:local-sentences
+npm run build
+npm run verify:vite
+openspec validate separate-vocabulary-acquisition-and-review --strict
+git diff --check
+```
+
+An isolated browser check confirmed the live local endpoint returns “自动的” and the primary-sense-matched camera sentence. The IndexedDB schema remains `SeekPlayerDB` version 1 with only the `files` object store.
+
+The worktree is intentionally dirty and contains the complete uncommitted work from several approved preview, translation, shortcut, local-dictionary, and Shadow iterations. Preserve all existing changes and untracked files; do not reset, discard, or rebuild the feature from scratch. The generated dictionary databases and downloaded resources are intentionally ignored and must not be committed or redistributed.
+
+### Recommended continuation
+
+- Continue from the pending checklist in [`tasks.md`](openspec/changes/separate-vocabulary-acquisition-and-review/tasks.md), especially observational statistics and later read-only training-data work, only when that is the user's next priority.
+- For immediate product work, collect actual learning feedback from preview/review and fix concrete mismatches without introducing a rigid interval-rule engine.
+- Communicate autonomously: the user prefers implementation without step-by-step reporting and only wants decisions escalated when intent is genuinely ambiguous.
+
+### Suggested skills
+
+- `openspec-apply-change` for continuing implementation under the active change.
+- `build-web-apps:frontend-testing-debugging` for rendered preview/review behavior and Playwright regressions.
+- `diagnose` for hard data-selection, caching, persistence, or scheduling defects.
+- `qa` when the next session is driven by screenshots and iterative user-reported UI issues.
+
 ## Cleanup Mode
 
 The root `app.js` file has been removed as part of `complete-appjs-decomposition`. `src/composables/reader-runtime-shell.js` has been retired, and `src/composables/session-init.js` is now a thin entry that delegates to focused session runtime modules through `src/composables/session-runtime-assembly.js`.
@@ -52,11 +123,22 @@ npm run build
 Useful URLs:
 
 - Dev server: `http://127.0.0.1:5173/`
-- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short sentence. Automatic lookup is local-first: the ignored read-only SQLite sentence warehouse is queried before Tatoeba and Wordnik. The warehouse supports inflected forms such as `sanctuaries → sanctuary`, `propping → prop`, and `gauges → gauge`, and retains dictionary/publication provenance. If no local candidate qualifies, Tatoeba and then Wordnik are attempted and the page reports every source status. No source path generates an AI sentence or substitutes a long IELTS paragraph.
+- First-contact vocabulary preview: open `待预习` from the main reader. It shows one compact primary-meaning suggestion and at most one short sentence. Automatic lookup is local-first: the ignored read-only SQLite sentence warehouse is queried before Merriam-Webster Learner's/Collegiate, Tatoeba, and Wordnik. The warehouse supports inflected forms such as `sanctuaries → sanctuary`, `propping → prop`, and `gauges → gauge`, and retains provenance internally. When no usable real/context sentence survives, the AI adapter uses the Gemma/Gemini fallback chain above and validates the generated learning aid before display. The learning surface shows the compact English sentence, an underlined target word, pronunciation, and an available whole-sentence Chinese translation; no long IELTS paragraph is substituted.
+- Windows desktop launch: `scripts/launch-learning-page.ps1` reuses or starts the local Vite service and opens the normal reader page. Short-sentence preparation starts only after clicking `待预习`; when no batch has been imported, that entry remains available for a normal `待预习` import.
 
-Build the local warehouse with `npm run sentences:build`. The default build reads the local Vocabulary.com MDX, LDOCE5 MDX, Open English WordNet archive, and an optional full Kaikki JSONL file from `data/dictionaries/`. Source files, extracted sentences, MDD audio, and the generated `local-sentences.sqlite` stay in that Git-ignored directory and are never bundled. See `src/dictionary/local-sentences/README.md` for paths and source roles.
+Build the local warehouse with `npm run sentences:build`. The default build reads the local Vocabulary.com MDX, LDOCE5 MDX, New Oxford bilingual MDX primary senses, Open English WordNet archive, and an optional full Kaikki JSONL file from `data/dictionaries/`. Source files, extracted sentences, MDD audio, and the generated `local-sentences.sqlite` stay in that Git-ignored directory and are never bundled. Refresh only the bilingual primary-sense index with `python scripts/build-local-sentence-warehouse.py --primary-senses-only`. See `src/dictionary/local-sentences/README.md` for paths and source roles.
+
+Download the supplemental bilingual, sentence, phrase, collocation, frequency, and pronunciation resources with `powershell -File scripts/download-mdict-supplements.ps1`. Downloads are resumable and run in hidden background processes by default; use `-Foreground` to wait for them. The large ODE3 and Merriam-Webster audio files therefore do not block normal development.
+
+Whole-sentence Chinese translation uses the same-origin Vite proxy and a separate Git-ignored SQLite cache. It first uses `VOCABULARY_TRANSLATION_API_KEY` (or `GEMINI_API_KEY`) from `.env.local`, then reuses the Gemini key already saved by the local subtitle workflow in Windows Credential Manager. The default model chain is `gemma-4-31b-it`, `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`; override the first model with `VOCABULARY_TRANSLATION_MODEL` and add comma-separated fallbacks with `VOCABULARY_TRANSLATION_FALLBACK_MODELS`. `VOCABULARY_TRANSLATION_PROXY_URL` defaults to the existing local proxy at `http://127.0.0.1:7897`. A 50-sentence preview is translated as two sequential batches of 25, cached sentences are not sent again, and each provider attempt has a 15-second timeout. Missing configuration or provider failure leaves the English sentence usable without showing an error inside the learning card.
+
+AI-assisted preview sentences use the same-origin Vite proxy and the server-only `VOCABULARY_AI_PREVIEW_API_KEY` (falling back to `VOCABULARY_TRANSLATION_API_KEY`, `GEMINI_API_KEY`, or `SubtitleWorkflow/GeminiApiKey` in Windows Credential Manager). The default model chain is `gemma-4-31b-it`, `gemini-3.5-flash-lite`, then `gemini-3.1-flash-lite`. Override the first model with `VOCABULARY_AI_PREVIEW_MODEL`, add comma-separated fallbacks with `VOCABULARY_AI_PREVIEW_FALLBACK_MODELS`, and use `VOCABULARY_AI_PREVIEW_PROXY_URL` for the local proxy. Generated sentences are not persisted as authentic evidence or review cards.
+
+The first-contact header includes a compact `快捷键` settings dialog. Revealing “看看这个词怎么用”, word pronunciation, sentence pronunciation, Chinese sentence visibility, previous item, and next item default to `Space`, `R`, `S`, `C`, `ArrowLeft`, and `ArrowRight`; every mapping can be changed and is restored from local storage after refresh. The low-contrast settings entry sits immediately after the right-aligned preview count, while shortcut labels remain visible only inside the dialog rather than on the study card or footer controls.
 
 To enable Wordnik locally, create the ignored file `.env.local` with `WORDNIK_API_KEY=your_key`, then restart `npm run dev`. The key is read only by the Vite/Node proxy and is never exposed to browser code. Without the key, Wordnik safely reports unavailable and the rest of the preview continues normally.
+
+Merriam-Webster uses two separate reference keys. The preferred server-only environment names are `MERRIAM_WEBSTER_LEARNERS_API_KEY` and `MERRIAM_WEBSTER_DICTIONARY_API_KEY`; on Windows the Vite proxy also reads `SubtitleWorkflow/MerriamWebsterLearnersDictionaryApiKey` and `SubtitleWorkflow/MerriamWebsterDictionaryApiKey` from Credential Manager. Learner's is queried first for sense-level examples and Collegiate is used only as a fallback. Each reference has a 900-query/day local safety budget below the official free limit, formatted results remain in page memory only, and displayed Merriam-Webster content includes the required official 50px logo.
 - Standalone SRS review: `http://127.0.0.1:5173/srs-review.html` (uses the gitignored local snapshot)
 - Verification server: `http://127.0.0.1:4173/`
 

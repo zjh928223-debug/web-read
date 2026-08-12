@@ -48,12 +48,13 @@ const DEFAULT_STATE = {
   videoUrl: '',
   videoTitle: '',
   activeKind: 'audio',
-  window: { x: Math.max(24, (typeof window !== 'undefined' ? window.innerWidth || 1280 : 1280) - 384), y: 24, width: 360, aspectRatio: 16 / 9, minimized: false }
+  window: { x: Math.max(24, (typeof window !== 'undefined' ? window.innerWidth || 1280 : 1280) - 384), y: 320, width: 360, aspectRatio: 16 / 9, minimized: false }
 }
 const TITLEBAR_HEIGHT = 30
 const MINIMIZED_HEIGHT = 32
 const DRAG_THRESHOLD = 6
 const CONTROL_REVEAL_MS = 2200
+const READER_CONTROLS_GAP = 12
 
 const videoRef = ref(null)
 const mediaState = ref({ ...DEFAULT_STATE, window: { ...DEFAULT_STATE.window } })
@@ -73,15 +74,51 @@ const mediaTitle = computed(() => {
   return mediaState.value.videoTitle || '本地视频'
 })
 
+function getReaderControlsRect() {
+  if (typeof document === 'undefined') return null
+  const element = document.querySelector('.transcript-header')
+  if (!element || typeof element.getBoundingClientRect !== 'function') return null
+  const rect = element.getBoundingClientRect()
+  if (!rect || !rect.width || !rect.height) return null
+  return rect
+}
+
+function avoidReaderControls(windowState, width, height) {
+  const next = { ...windowState }
+  const rect = getReaderControlsRect()
+  if (!rect || typeof window === 'undefined') return next
+  const viewportWidth = window.innerWidth || 1280
+  const viewportHeight = window.innerHeight || 720
+  const left = Math.max(0, Math.min(viewportWidth - width, Number(next.x) || 0))
+  const top = Math.max(0, Number(next.y) || 0)
+  const overlaps = left < rect.right
+    && left + width > rect.left
+    && top < rect.bottom
+    && top + height > rect.top
+  if (!overlaps) return next
+
+  const below = rect.bottom + READER_CONTROLS_GAP
+  const above = rect.top - height - READER_CONTROLS_GAP
+  if (below + height <= viewportHeight - READER_CONTROLS_GAP) {
+    next.y = below
+  } else if (above >= READER_CONTROLS_GAP) {
+    next.y = above
+  } else {
+    next.y = Math.max(READER_CONTROLS_GAP, Math.min(viewportHeight - height - READER_CONTROLS_GAP, top))
+  }
+  return next
+}
+
 const playerStyle = computed(() => {
   const win = mediaState.value.window || DEFAULT_STATE.window
   const width = Math.max(260, Number(win.width) || 360)
   const aspectRatio = Math.max(1, Number(win.aspectRatio) || 16 / 9)
   const videoHeight = Math.round(width / aspectRatio)
   const height = win.minimized ? MINIMIZED_HEIGHT : videoHeight + TITLEBAR_HEIGHT
+  const safeWindow = avoidReaderControls(win, width, height)
   return {
-    left: `${Math.max(0, Number(win.x) || 0)}px`,
-    top: `${Math.max(0, Number(win.y) || 0)}px`,
+    left: `${Math.max(0, Number(safeWindow.x) || 0)}px`,
+    top: `${Math.max(0, Number(safeWindow.y) || 0)}px`,
     width: `${width}px`,
     height: `${height}px`
   }
@@ -92,10 +129,21 @@ function getMediaSource() {
 }
 
 function syncMediaState(next) {
-  mediaState.value = {
+  const merged = {
     ...DEFAULT_STATE,
     ...(next || {}),
     window: { ...DEFAULT_STATE.window, ...((next && next.window) || {}) }
+  }
+  const width = Math.max(260, Number(merged.window.width) || 360)
+  const aspectRatio = Math.max(1, Number(merged.window.aspectRatio) || 16 / 9)
+  const height = merged.window.minimized ? MINIMIZED_HEIGHT : Math.round(width / aspectRatio) + TITLEBAR_HEIGHT
+  const safeWindow = avoidReaderControls(merged.window, width, height)
+  mediaState.value = { ...merged, window: safeWindow }
+  if (safeWindow.y !== merged.window.y) {
+    const mediaSource = getMediaSource()
+    if (mediaSource && typeof mediaSource.setVideoWindow === 'function') {
+      mediaSource.setVideoWindow({ y: safeWindow.y })
+    }
   }
 }
 

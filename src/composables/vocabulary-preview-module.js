@@ -23,6 +23,7 @@ import {
 } from './session-facades.js';
 import { getAnnotationGenerationStorage } from './session-annotation-services.js';
 import { formatDictionarySuggestion } from '../dictionary/ecdict/browser/dictionary-suggestion-view.mjs';
+import { createAriaAmericanPronunciationService } from '../services/pronunciation/aria-american-pronunciation.js';
 
 const MODEL_STORAGE_KEY = 'annotationBackfillAi.model';
 const SESSION_API_KEY = '__annotationBackfillAiSessionApiKey';
@@ -69,6 +70,19 @@ function getSourceInfo(state = {}, scope = {}) {
   };
 }
 
+function getSettlementCacheKey(sourceInfo = {}, items = []) {
+  try {
+    return [
+      normalizeText(sourceInfo.sourceId),
+      normalizeText(sourceInfo.sourceTitle),
+      normalizeText(sourceInfo.sourceUrl),
+      JSON.stringify(Array.isArray(items) ? items : []),
+    ].join('::');
+  } catch (_error) {
+    return '';
+  }
+}
+
 function getStoredModel(windowObject) {
   try {
     return normalizeText(windowObject && windowObject.localStorage && windowObject.localStorage.getItem(MODEL_STORAGE_KEY));
@@ -99,6 +113,19 @@ function createElement(documentObject, tagName, className, textContent) {
   if (className) element.className = className;
   if (textContent != null) element.textContent = textContent;
   return element;
+}
+
+function createSpeakerIcon(documentObject) {
+  const namespace = 'http://www.w3.org/2000/svg';
+  const svg = documentObject.createElementNS(namespace, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const speaker = documentObject.createElementNS(namespace, 'path');
+  speaker.setAttribute('d', 'M11 5 6 9H3v6h3l5 4V5Z');
+  const sound = documentObject.createElementNS(namespace, 'path');
+  sound.setAttribute('d', 'M15 9.5a4 4 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10');
+  svg.append(speaker, sound);
+  return svg;
 }
 
 function getStorage(windowObject) {
@@ -246,6 +273,12 @@ function createPreviewDialog(options = {}) {
     keyLabel.append(createElement(documentObject, 'span', 'vocabulary-preview-dialog__label', 'Gemini API key'), apiKeyInput);
 
     statusEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__status');
+    const dictionaryHint = createElement(
+      documentObject,
+      'p',
+      'vocabulary-preview-dialog__hint',
+      '候选卡上的 ECDICT 释义来自本地词典，仅用于筛选参考；点击“生成 AI 解释”后才会调用 Gemini 并写回当前文章。'
+    );
     listEl = createElement(documentObject, 'div', 'vocabulary-preview-dialog__list');
     const footer = createElement(documentObject, 'div', 'vocabulary-preview-dialog__footer');
     const cancelButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--secondary', '取消');
@@ -253,7 +286,7 @@ function createPreviewDialog(options = {}) {
     runButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__button vocabulary-preview-dialog__button--primary', '生成 AI 解释');
     runButton.type = 'submit';
     footer.append(cancelButton, runButton);
-    form.append(modelLabel, keyLabel, statusEl, listEl, footer);
+    form.append(modelLabel, keyLabel, statusEl, dictionaryHint, listEl, footer);
     root.append(header, form);
     documentObject.body.append(backdrop, root);
 
@@ -297,7 +330,7 @@ function createPreviewDialog(options = {}) {
     const sharedApiKey = normalizeText(getSharedApiKey());
     if (sharedApiKey && apiKeyInput) apiKeyInput.value = sharedApiKey;
     const summary = scan && scan.summary ? scan.summary : {};
-    setStatus(`重点预习 ${summary.priorityCount || 0} 个，可能是专有名词 ${summary.properNounCount || 0} 个，已解释 ${summary.alreadyExplainedCount || 0} 个。`);
+    setStatus(`重点预习 ${summary.priorityCount || 0} 个，可能是专有名词 ${summary.properNounCount || 0} 个，已生成 AI 解释 ${summary.alreadyExplainedCount || 0} 个。`);
     renderCandidateList(documentObject, listEl, Array.isArray(scan && scan.candidates) ? scan.candidates : []);
     setBusy(false);
     root.hidden = false;
@@ -363,7 +396,7 @@ function getSettlementCandidateGroups(candidates = []) {
   }].filter((group) => group.candidates.length);
 }
 
-function renderSettlementList(documentObject, container, candidates, removedIds, onRemove, onRelearn) {
+function renderSettlementList(documentObject, container, candidates, removedIds, onRemove, onRelearn, onSpeak, speakingTargetId, expandedMeaningIds) {
   container.textContent = '';
   if (!candidates.length) {
     container.appendChild(createElement(documentObject, 'div', 'vocabulary-preview-dialog__empty', '当前文章没有可整理入 SRS 的候选。'));
@@ -385,6 +418,15 @@ function renderSettlementList(documentObject, container, candidates, removedIds,
       row.dataset.removed = removedIds.has(targetId) ? 'true' : 'false';
       const main = createElement(documentObject, 'div', 'vocabulary-preview-dialog__item-main');
       const line = createElement(documentObject, 'span', 'vocabulary-preview-dialog__item-line');
+      const spokenText = normalizeText(candidate.markedText || candidate.lemma);
+      const speakerButton = createElement(documentObject, 'button', 'vocabulary-preview-dialog__speaker');
+      speakerButton.type = 'button';
+      speakerButton.title = `使用 Microsoft Aria Natural 发音朗读 ${spokenText}`;
+      speakerButton.setAttribute('aria-label', speakerButton.title);
+      speakerButton.setAttribute('aria-pressed', speakingTargetId === targetId ? 'true' : 'false');
+      speakerButton.dataset.playing = speakingTargetId === targetId ? 'true' : 'false';
+      speakerButton.appendChild(createSpeakerIcon(documentObject));
+      speakerButton.addEventListener('click', () => onSpeak(candidate));
       line.append(
         createElement(documentObject, 'strong', '', candidate.markedText || candidate.lemma),
         createElement(documentObject, 'span', 'vocabulary-preview-dialog__item-meta', getSettlementEntryKindLabel(candidate))
@@ -392,9 +434,13 @@ function renderSettlementList(documentObject, container, candidates, removedIds,
       const compactMeaning = getSettlementCompactMeaning(candidate);
       row.dataset.hasMeaning = compactMeaning ? 'true' : 'false';
       const meaning = createElement(documentObject, 'span', 'vocabulary-preview-dialog__item-meaning', compactMeaning);
-      meaning.hidden = true;
+      const isMeaningExpanded = !!compactMeaning && expandedMeaningIds.has(targetId);
+      row.dataset.expanded = isMeaningExpanded ? 'true' : 'false';
+      meaning.hidden = !isMeaningExpanded;
       function toggleMeaning() {
         if (!compactMeaning) return;
+        if (meaning.hidden) expandedMeaningIds.add(targetId);
+        else expandedMeaningIds.delete(targetId);
         meaning.hidden = !meaning.hidden;
         row.dataset.expanded = meaning.hidden ? 'false' : 'true';
         main.setAttribute('aria-expanded', meaning.hidden ? 'false' : 'true');
@@ -402,7 +448,7 @@ function renderSettlementList(documentObject, container, candidates, removedIds,
       if (compactMeaning) {
         main.tabIndex = 0;
         main.setAttribute('role', 'button');
-        main.setAttribute('aria-expanded', 'false');
+        main.setAttribute('aria-expanded', isMeaningExpanded ? 'true' : 'false');
         row.addEventListener('click', (event) => {
           if (event.target && typeof event.target.closest === 'function' && event.target.closest('button')) return;
           toggleMeaning();
@@ -416,6 +462,7 @@ function renderSettlementList(documentObject, container, candidates, removedIds,
       main.append(line, meaning);
       const actions = createElement(documentObject, 'div', 'vocabulary-preview-dialog__item-actions');
       actions.addEventListener('click', (event) => event.stopPropagation());
+      actions.appendChild(speakerButton);
       if (candidate.group === ARTICLE_SRS_SETTLEMENT_GROUPS.NEEDS_EXPLICIT_RELEARN && candidate.eligible === false) {
         const relearnBtn = createElement(documentObject, 'button', 'vocabulary-preview-dialog__mini-button', '重新学习');
         relearnBtn.type = 'button';
@@ -444,6 +491,10 @@ function createSettlementDialog(options = {}) {
   const onSkip = options.onSkip;
   const onToggleRemove = options.onToggleRemove;
   const onRefineMeanings = options.onRefineMeanings;
+  const pronunciation = options.pronunciationService || createAriaAmericanPronunciationService({
+    windowObject,
+    voiceWaitMs: 0,
+  });
   let root = null;
   let backdrop = null;
   let statusEl = null;
@@ -460,6 +511,9 @@ function createSettlementDialog(options = {}) {
   let dragState = null;
   let resizeState = null;
   let refinementInFlight = false;
+  let speakingTargetId = '';
+  let pronunciationRequestId = 0;
+  let expandedMeaningIds = new Set();
 
   function getViewportSize() {
     const docEl = documentObject.documentElement || {};
@@ -623,13 +677,34 @@ function createSettlementDialog(options = {}) {
         statusEl.dataset.state = '';
       }
     }
-    renderSettlementList(documentObject, listEl, settlement.candidates || [], removedIds, toggleRemove, markRelearn);
+    renderSettlementList(
+      documentObject,
+      listEl,
+      settlement.candidates || [],
+      removedIds,
+      toggleRemove,
+      markRelearn,
+      speakCandidate,
+      speakingTargetId,
+      expandedMeaningIds
+    );
     const activeCount = (settlement.candidates || []).filter((candidate) => candidate.eligible !== false && !removedIds.has(normalizeText(candidate.targetId))).length;
     const refinableCount = getSettlementMeaningRefinementCandidates((settlement.candidates || [])
       .filter((candidate) => !removedIds.has(normalizeText(candidate && candidate.targetId)))).length;
     if (addAllButton) addAllButton.disabled = busy || activeCount <= 0;
     if (addWordsButton) addWordsButton.disabled = busy || !(settlement.candidates || []).some((candidate) => candidate.entry_type === VOCABULARY_ENTRY_TYPES.WORD && candidate.eligible !== false && !removedIds.has(normalizeText(candidate.targetId)));
     if (refineButton) refineButton.disabled = busy || refinementInFlight || typeof onRefineMeanings !== 'function' || refinableCount <= 0;
+  }
+
+  function updateSpeakingState(targetId) {
+    if (!listEl || typeof listEl.querySelectorAll !== 'function') return;
+    listEl.querySelectorAll('.vocabulary-preview-dialog__item').forEach((row) => {
+      const active = String(row.dataset.targetId || '') === String(targetId || '');
+      const button = row.querySelector('.vocabulary-preview-dialog__speaker');
+      if (!button) return;
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      button.dataset.playing = active ? 'true' : 'false';
+    });
   }
 
   async function toggleRemove(candidate) {
@@ -668,9 +743,64 @@ function createSettlementDialog(options = {}) {
     render();
   }
 
+  async function speakCandidate(candidate) {
+    const targetId = normalizeText(candidate && candidate.targetId);
+    const spokenText = normalizeText(candidate && (candidate.markedText || candidate.lemma));
+    if (!targetId || !spokenText) return;
+    if (speakingTargetId === targetId) {
+      pronunciationRequestId += 1;
+      pronunciation.stop();
+      speakingTargetId = '';
+      updateSpeakingState('');
+      return;
+    }
+    const requestId = ++pronunciationRequestId;
+    pronunciation.stop();
+    speakingTargetId = targetId;
+    updateSpeakingState(targetId);
+    try {
+      await pronunciation.speak(spokenText);
+    } catch (error) {
+      if (error && error.name !== 'AbortError' && requestId === pronunciationRequestId) {
+        statusOverride = { text: 'Microsoft Aria Natural 发音暂不可用。', state: 'error' };
+        if (statusEl) {
+          statusEl.textContent = statusOverride.text;
+          statusEl.dataset.state = statusOverride.state;
+        }
+      }
+    } finally {
+      if (requestId === pronunciationRequestId) {
+        speakingTargetId = '';
+        updateSpeakingState('');
+      }
+    }
+  }
+
+  function openLoading(message = '正在整理本篇生词…') {
+    ensureMounted();
+    pronunciationRequestId += 1;
+    pronunciation.stop();
+    speakingTargetId = '';
+    expandedMeaningIds = new Set();
+    settlement = { candidates: [], summary: {}, loading: true };
+    removedIds = new Set();
+    statusOverride = { text: message, state: 'working' };
+    render();
+    if (listEl) {
+      listEl.textContent = '';
+      listEl.appendChild(createElement(documentObject, 'div', 'vocabulary-preview-dialog__empty', message));
+    }
+    root.hidden = false;
+    backdrop.hidden = false;
+  }
+
   function open(nextSettlement) {
     ensureMounted();
-    settlement = nextSettlement || { candidates: [], summary: {} };
+    pronunciationRequestId += 1;
+    pronunciation.stop();
+    speakingTargetId = '';
+    expandedMeaningIds = new Set();
+    settlement = { ...(nextSettlement || { candidates: [], summary: {} }), loading: false };
     removedIds = new Set((Array.isArray(settlement.removedTargetIds) ? settlement.removedTargetIds : [])
       .map(normalizeText)
       .filter(Boolean));
@@ -678,9 +808,19 @@ function createSettlementDialog(options = {}) {
     render();
     root.hidden = false;
     backdrop.hidden = false;
+    const prefetchTexts = (settlement.candidates || [])
+      .map((candidate) => normalizeText(candidate && (candidate.markedText || candidate.lemma)))
+      .filter(Boolean);
+    if (typeof pronunciation.prefetch === 'function' && prefetchTexts.length) {
+      void pronunciation.prefetch(prefetchTexts).catch(() => {});
+    }
   }
 
   function close() {
+    pronunciationRequestId += 1;
+    pronunciation.stop();
+    speakingTargetId = '';
+    expandedMeaningIds = new Set();
     if (root) root.hidden = true;
     if (backdrop) backdrop.hidden = true;
   }
@@ -689,6 +829,14 @@ function createSettlementDialog(options = {}) {
     busy = !!nextBusy;
     if (refineButton) refineButton.textContent = busy ? '精简中...' : 'AI 精简释义';
     render();
+  }
+
+  function setStatus(message, state = 'idle') {
+    statusOverride = { text: message || '', state };
+    if (statusEl) {
+      statusEl.textContent = statusOverride.text;
+      statusEl.dataset.state = state;
+    }
   }
 
   async function refineMeanings() {
@@ -721,6 +869,12 @@ function createSettlementDialog(options = {}) {
     if (typeof onApply !== 'function') return;
     if (busy) return;
     busy = true;
+    setStatus(
+      mode === 'all' ? '正在加入单词和短语，请稍候…' : '正在加入单词，请稍候…',
+      'working',
+    );
+    if (addAllButton) addAllButton.textContent = mode === 'all' ? '加入中…' : '加入单词和短语';
+    if (addWordsButton) addWordsButton.textContent = mode === 'words' ? '加入中…' : '只加入单词';
     addAllButton.disabled = true;
     addWordsButton.disabled = true;
     if (refineButton) refineButton.disabled = true;
@@ -732,8 +886,13 @@ function createSettlementDialog(options = {}) {
         removedTargetIds: Array.from(removedIds),
       });
       if (result) close();
+      else setStatus('本次没有完成加入，请稍后重试。', 'error');
+    } catch (error) {
+      setStatus(error && error.message ? error.message : '加入失败，请稍后重试。', 'error');
     } finally {
       busy = false;
+      if (addAllButton) addAllButton.textContent = '加入单词和短语';
+      if (addWordsButton) addWordsButton.textContent = '只加入单词';
       render();
     }
   }
@@ -758,7 +917,7 @@ function createSettlementDialog(options = {}) {
     }
   }
 
-  return { open, close };
+  return { open, openLoading, close, setStatus, setSpeakingState: updateSpeakingState };
 }
 
 export function createVocabularyPreviewController(deps = {}) {
@@ -798,10 +957,18 @@ export function createVocabularyPreviewController(deps = {}) {
   });
   let activeIdentityKey = '';
   let settlementProgressBadgeRequestId = 0;
+  let settlementOpening = false;
+  let settlementCache = null;
 
   function updateSettlementProgressBadge(status) {
     if (!settleButton) return;
     settleButton.dataset.settlementProgress = status;
+    if (settlementOpening) {
+      settleButton.disabled = true;
+      settleButton.textContent = '正在整理本篇…';
+      settleButton.title = '正在整理本篇生词，请稍候';
+      return;
+    }
     if (status === 'processed') {
       settleButton.textContent = '本篇已有整理记录';
       settleButton.title = '本文已有加入或跳过记录；打开可查看尚未处理的候选';
@@ -858,6 +1025,7 @@ export function createVocabularyPreviewController(deps = {}) {
     if (activeIdentityKey && identityKey !== activeIdentityKey) {
       previewVisible = false;
       latestPreviewScan = null;
+      settlementCache = null;
       setPreviewWordIndexes(windowObject, []);
     }
     activeIdentityKey = identityKey;
@@ -869,8 +1037,11 @@ export function createVocabularyPreviewController(deps = {}) {
       previewButton.title = available ? '扫描当前文章的预习生词' : '请先打开标准素材库里的文章';
     }
     if (settleButton) {
-      settleButton.disabled = !available;
-      settleButton.title = available ? '确认本文已学完后，整理本篇已解释生词到 SRS' : '请先打开标准素材库里的文章';
+      settleButton.disabled = !available || settlementOpening;
+      settleButton.title = settlementOpening
+        ? '正在整理本篇生词，请稍候'
+        : available ? '确认本文已学完后，整理本篇已解释生词到 SRS' : '请先打开标准素材库里的文章';
+      if (settlementOpening) settleButton.textContent = '正在整理本篇…';
     }
     if (togglePreviewButton) {
       togglePreviewButton.disabled = !available;
@@ -980,22 +1151,41 @@ export function createVocabularyPreviewController(deps = {}) {
   }
 
   async function openSettlement() {
+    if (settlementOpening) return null;
+    settlementOpening = true;
     try {
       const identity = getCurrentIdentity(state);
       if (!identity.jobId) {
         showError('VOCABULARY_SETTLEMENT', '请先打开标准素材库里的文章');
         return null;
       }
+      if (settleButton) {
+        settleButton.disabled = true;
+        settleButton.textContent = '正在整理本篇…';
+        settleButton.title = '正在整理本篇生词，请稍候';
+      }
+      settlementDialog.openLoading('正在整理本篇生词…');
       const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
       const sourceInfo = getSourceInfo(state, scope);
-      const builtSettlement = await buildArticleSrsSettlement({
-        items: getGeneratedItemsFromBundle(bundle),
-        vocabularyService,
-        sourceId: sourceInfo.sourceId,
-        sourceTitle: sourceInfo.sourceTitle,
-        sourceUrl: sourceInfo.sourceUrl,
-      });
+      const generatedItems = getGeneratedItemsFromBundle(bundle);
+      const cacheKey = getSettlementCacheKey(sourceInfo, generatedItems);
+      let builtSettlement = settlementCache && settlementCache.key === cacheKey
+        ? settlementCache.value
+        : null;
+      if (!builtSettlement) {
+        builtSettlement = await buildArticleSrsSettlement({
+          items: generatedItems,
+          vocabularyService,
+          sourceId: sourceInfo.sourceId,
+          sourceTitle: sourceInfo.sourceTitle,
+          sourceUrl: sourceInfo.sourceUrl,
+        });
+        settlementCache = { key: cacheKey, value: builtSettlement };
+      }
       const progress = await settlementProgressRepository.getProgress(sourceInfo.sourceId);
+      if (getCurrentIdentity(state).jobId !== identity.jobId) {
+        throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
+      }
       const settlement = applyArticleSrsSettlementProgress(builtSettlement, progress);
       settlement.articleId = sourceInfo.sourceId;
       if (settlement.summary && settlement.summary.processed > 0) {
@@ -1006,6 +1196,9 @@ export function createVocabularyPreviewController(deps = {}) {
     } catch (error) {
       showError('VOCABULARY_SETTLEMENT', error && error.message ? error.message : '整理本篇生词失败');
       return null;
+    } finally {
+      settlementOpening = false;
+      refreshAvailability();
     }
   }
 
@@ -1141,6 +1334,7 @@ export function createVocabularyPreviewController(deps = {}) {
       } catch (progressError) {
         showError('VOCABULARY_SETTLEMENT_PROGRESS', `SRS 已写入，但整理印记保存失败：${progressError && progressError.message ? progressError.message : '未知错误'}`);
       }
+      settlementCache = null;
       await refreshSettlementProgressBadge(actionIdentity.currentIdentity);
       showToast(`已整理入 SRS：新增 ${result.added} 个，追加语境 ${result.existingContextAdded + result.knownContextAdded} 个，重新学习 ${result.relearned || 0} 个。`, 'success');
       return result;
@@ -1162,6 +1356,7 @@ export function createVocabularyPreviewController(deps = {}) {
         .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
         .filter(Boolean);
       await settlementProgressRepository.recordSkip(articleId, { skippedTargetIds });
+      settlementCache = null;
       await refreshSettlementProgressBadge(currentIdentity);
       showToast('本篇候选已标记为不加入 SRS。', 'info');
       return true;

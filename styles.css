@@ -3818,6 +3818,7 @@ body {
       left: 50%;
       top: 50%;
       width: min(520px, calc(100vw - 32px));
+      height: min(720px, calc(100vh - 40px));
       max-height: min(720px, calc(100vh - 40px));
       transform: translate(-50%, -50%);
       border: 1px solid rgba(203,213,225,0.72);
@@ -3829,6 +3830,8 @@ body {
       -webkit-backdrop-filter: blur(22px) saturate(1.25);
       overflow: hidden;
       display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
     }
 
     .vocabulary-preview-dialog__header {
@@ -3877,6 +3880,9 @@ body {
 
     .vocabulary-preview-dialog__form {
       display: grid;
+      grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+      min-height: 0;
+      overflow: hidden;
       padding: 16px 20px 18px;
     }
 
@@ -3937,6 +3943,14 @@ body {
       margin: 0;
     }
 
+    .vocabulary-preview-dialog__hint {
+      margin: 0;
+      color: rgba(71,85,105,0.70);
+      font-size: 12px;
+      line-height: 1.5;
+      font-weight: 600;
+    }
+
     .vocabulary-preview-dialog__status[data-state="working"] {
       color: #0369a1;
       background: rgba(224,242,254,0.70);
@@ -3955,7 +3969,8 @@ body {
     .vocabulary-preview-dialog__list {
       display: grid;
       gap: 8px;
-      max-height: 320px;
+      max-height: none;
+      min-height: 0;
       overflow: auto;
       padding-right: 2px;
     }
@@ -4093,6 +4108,52 @@ body {
 
     .vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-line strong {
       line-height: 28px;
+    }
+
+    .vocabulary-preview-dialog__speaker {
+      width: 28px;
+      height: 28px;
+      min-width: 28px;
+      min-height: 28px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(71,85,105,0.72);
+      background: transparent;
+      box-shadow: none;
+      cursor: pointer;
+      transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+    }
+
+    .vocabulary-preview-dialog__speaker:hover,
+    .vocabulary-preview-dialog__speaker:focus-visible {
+      color: rgba(15,23,42,0.94);
+      background: rgba(148,163,184,0.16);
+      transform: none;
+      outline: none;
+    }
+
+    .vocabulary-preview-dialog__speaker:focus-visible {
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.18);
+    }
+
+    .vocabulary-preview-dialog__speaker[data-playing="true"] {
+      color: rgb(37,99,235);
+      background: rgba(37,99,235,0.12);
+    }
+
+    .vocabulary-preview-dialog__speaker svg {
+      width: 17px;
+      height: 17px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
     }
 
     .vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__item-meta {

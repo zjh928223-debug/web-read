@@ -44,8 +44,16 @@ async function main() {
     const box = await player.boundingBox();
     assert.ok(box, 'video player should render with a box');
     assert.ok(Math.abs((box.x + box.width) - (VIEWPORT.width - 24)) <= 16, `video player should default to top right, got right=${box.x + box.width}`);
-    assert.ok(Math.abs(box.y - 24) <= 12, `video player should default near top margin, got y=${box.y}`);
     assert.ok(box.width >= 340 && box.width <= 380, `video player should default around 360px wide, got width=${box.width}`);
+    const readerControlsBox = await page.locator('.transcript-header').boundingBox();
+    assert.ok(readerControlsBox, 'reader controls should render for overlap regression coverage');
+    assert.ok(
+      box.x + box.width <= readerControlsBox.x
+        || readerControlsBox.x + readerControlsBox.width <= box.x
+        || box.y + box.height <= readerControlsBox.y
+        || readerControlsBox.y + readerControlsBox.height <= box.y,
+      `video player should not cover reader controls, player=${JSON.stringify(box)}, controls=${JSON.stringify(readerControlsBox)}`
+    );
 
     const video = page.locator('.youtube-video-player video');
     assert.equal(await video.getAttribute('preload'), 'metadata');
