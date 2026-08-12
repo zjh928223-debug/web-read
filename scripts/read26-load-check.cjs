@@ -9,8 +9,7 @@ const reportPath = path.join(artifactsDir, 'read-web-load-report.json');
 
 const expectedGlobals = [
   'ImportExportSharedHelpers',
-  'IdentityStorageKeys',
-  'SentenceNotesPersistenceUtils'
+  'IdentityStorageKeys'
 ];
 
 async function ensureArtifactsDir() {

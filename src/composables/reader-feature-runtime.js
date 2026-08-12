@@ -43,16 +43,12 @@ export function initReaderFeatureRuntime(deps = {}) {
     lblVisual: deps.lblVisual,
     validateVisualData: deps.validateVisualData,
     validateTranscriptData: deps.validateTranscriptData,
-    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,
     forceUpdateUI: forceUpdateUI,
     bridgeToPinia: deps.bridgeToPinia,
-    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
-    chunkNotesApi: deps.chunkNotesApi,
     audioPlayer: deps.audioPlayer,
     transcriptContainer: deps.transcriptContainer,
-    notesState: deps.notesState,
     getChunkControlsApi: function () { return chunkControlsApi; },
     toggleChunkBtn: deps.toggleChunkBtn,
     cleanTextHelper: deps.cleanTextHelper,
@@ -63,8 +59,6 @@ export function initReaderFeatureRuntime(deps = {}) {
   own(importRuntime);
   var visualVocabApi = importRuntime.visualVocabApi;
 
-  deps.chunkNotesApi.ensureChunkNoteOverlayLayers();
-
   var controlsRuntime = initReaderControlsRuntime({
     transcriptState: deps.transcriptState,
     chunkState: deps.chunkState,
@@ -73,17 +67,11 @@ export function initReaderFeatureRuntime(deps = {}) {
     toggleChunkBtn: deps.toggleChunkBtn,
     chunkCnHoldBtn: deps.chunkCnHoldBtn,
     audioPlayer: deps.audioPlayer,
-    closeChunkNoteContextMenu: deps.chunkNotesApi.closeChunkNoteContextMenu,
-    closeChunkNotePopover: deps.chunkNotesApi.closeChunkNotePopover,
     renderChunkMode: deps.renderChunkMode,
     renderTranscript: deps.renderTranscript,
-    clearChunkNoteConnectors: deps.chunkNotesApi.clearChunkNoteConnectors,
     getForceUpdateUI: function () { return forceUpdateUI; },
     bridgeToPinia: deps.bridgeToPinia,
     styleEditor: globalObject.__styleEditor,
-    adjustChunkNoteArrowSizeByGap: deps.chunkNotesApi.adjustChunkNoteArrowSizeByGap,
-    renderAllChunkNoteTags: deps.chunkNotesApi.renderAllChunkNoteTags,
-    scheduleChunkNoteConnectorRedraw: deps.chunkNotesApi.scheduleChunkNoteConnectorRedraw,
     themeStore: globalObject.__themeStore,
     themeToggleBtn: deps.themeToggleBtn,
     themeCustomBgInput: deps.themeCustomBgInput,
@@ -91,9 +79,7 @@ export function initReaderFeatureRuntime(deps = {}) {
     themeCustomSubInput: deps.themeCustomSubInput,
     themeCustomBorderInput: deps.themeCustomBorderInput,
     themeCustomButtonInput: deps.themeCustomButtonInput,
-    themeCustomResetBtn: deps.themeCustomResetBtn,
-    refreshAllChunkNoteVisuals: deps.chunkNotesApi.refreshAllChunkNoteVisuals,
-    getLockChunkNoteDimensionsForTheme: function () { return globalObject.__lockChunkNoteDimensionsForTheme; }
+    themeCustomResetBtn: deps.themeCustomResetBtn
   });
   own(controlsRuntime);
   chunkControlsApi = controlsRuntime.chunkControlsApi;
@@ -112,12 +98,10 @@ export function initReaderFeatureRuntime(deps = {}) {
     bsFindActiveHelper: deps.bsFindActiveHelper,
     markedMap: deps.marksStateApi.markedMap,
     vocabMatchMap: visualVocabApi.vocabMatchMap,
-    hasActiveTextSelectionWithinChunk: deps.sentenceNotesApi.hasActiveTextSelectionWithinChunk,
     getSelection: function () { return globalObject.getSelection && globalObject.getSelection(); },
     playbackModule: globalObject.__playbackModule,
     getWindow: function () { return globalObject; },
     bridgeToPinia: deps.bridgeToPinia,
-    tryRestoreChunkNoteDraft: deps.chunkNotesApi.tryRestoreChunkNoteDraft
   });
   own(interactionRuntime);
   var playbackRuntimeHelpersApi = interactionRuntime.playbackRuntimeHelpersApi;
@@ -133,11 +117,9 @@ export function initReaderFeatureRuntime(deps = {}) {
     audioPlayer: deps.audioPlayer,
     transcriptState: deps.transcriptState,
     chunkState: deps.chunkState,
-    notesState: deps.notesState,
     hotkeyStateApi: deps.hotkeyStateApi,
     marksStateApi: deps.marksStateApi,
     chunkControlsApi: chunkControlsApi,
-    chunkNotesApi: deps.chunkNotesApi,
     saveToDB: deps.saveToDB,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
     toggleAnnotationBubble: toggleAnnotationBubble,
@@ -165,8 +147,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     chunkState: deps.chunkState,
     marksStateApi: deps.marksStateApi,
     chunkControlsApi: chunkControlsApi,
-    chunkNotesApi: deps.chunkNotesApi,
-    sentenceNotesApi: deps.sentenceNotesApi,
     audioIdentityApi: deps.audioIdentityApi,
     playbackRuntimeHelpersApi: playbackRuntimeHelpersApi,
     audioPlayer: deps.audioPlayer,
@@ -174,10 +154,6 @@ export function initReaderFeatureRuntime(deps = {}) {
     readFileAsText: deps.readFileAsText,
     validateMarksArray: deps.validateMarksArray,
     saveToDB: deps.saveToDB,
-    setChunkNoteVisible: deps.setChunkNoteVisible,
-    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
-    loadSentenceNotesForCurrentAudio: deps.loadSentenceNotesForCurrentAudio,
-    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
     applyCurrentAudioMeta: deps.applyCurrentAudioMeta,
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,

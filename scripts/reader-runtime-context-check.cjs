@@ -90,9 +90,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);',
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',

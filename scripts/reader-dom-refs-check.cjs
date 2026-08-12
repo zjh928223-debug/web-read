@@ -8,7 +8,6 @@ const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'r
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
-const notesSessionDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
 const domRefsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-dom-refs.js'), 'utf8');
 const sessionAssemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const sessionRuntimeDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-deps.js'), 'utf8');
@@ -24,9 +23,8 @@ assert.ok(
   'reader-runtime-context should collect DOM refs through reader-dom-refs'
 );
 assert.ok(
-  featureDepsSource.includes('var domRefs = runtimeContext.domRefs;') &&
-    notesSessionDepsSource.includes('var domRefs = runtimeContext.domRefs;'),
-  'focused dependency modules should receive DOM refs from reader-runtime-context'
+  featureDepsSource.includes('var domRefs = runtimeContext.domRefs;'),
+  'feature dependency module should receive DOM refs from reader-runtime-context'
 );
 assert.equal(
   runtimeSource.includes("import { collectReaderDomRefs } from './reader-dom-refs.js';"),

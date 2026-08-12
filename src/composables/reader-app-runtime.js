@@ -104,19 +104,11 @@ export function initReaderAppRuntime(deps = {}) {
     lifecycle.add(function () { controlsController.dispose() })
   }
 
-  const disposeGlassEffects = initGlassEffects({
-    listChunkNotes: function () { return deps.chunkNotesApi.listChunkNotes() },
-    getChunkNoteTagById: deps.chunkNotesApi.getChunkNoteTagById,
-    getChunkNoteContentBoxSize: deps.chunkNotesApi.getChunkNoteContentBoxSize
-  })
+  const disposeGlassEffects = initGlassEffects()
   if (typeof disposeGlassEffects === 'function') lifecycle.add(disposeGlassEffects)
 
   configureReaderPublicFacades({
     buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId,
-    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
-    setChunkNoteVisible: deps.setChunkNoteVisible,
-    loadSentenceNotesForCurrentAudio: deps.loadSentenceNotesForCurrentAudio,
-    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
     applyCurrentAudioMeta: deps.applyCurrentAudioMeta
   })
 

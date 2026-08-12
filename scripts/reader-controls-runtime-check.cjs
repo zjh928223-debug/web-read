@@ -192,12 +192,12 @@ async function main() {
   assert.equal(calls.highlight[0].playbackState, deps.playbackState);
   assert.equal(calls.highlight[0].getForceUpdateUI, deps.getForceUpdateUI);
   assert.equal(calls.chunk[0].state, deps.chunkState);
-  assert.equal(calls.chunk[0].closeChunkNotePopover, deps.closeChunkNotePopover);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls.chunk[0], 'closeChunkNotePopover'), false);
   assert.equal(typeof calls.chunk[0].updateHighlightModeUI, 'function');
   assert.equal(calls.style[0].updateShadowBtnText, api.chunkControlsApi.updateShadowBtnText);
   assert.equal(calls.style[0].getIsChunkMode(), true);
   assert.equal(calls.theme[0].themeStore, deps.themeStore);
-  assert.equal(calls.theme[0].getLockChunkNoteDimensionsForTheme, deps.getLockChunkNoteDimensionsForTheme);
+  assert.equal(Object.prototype.hasOwnProperty.call(calls.theme[0], 'getLockChunkNoteDimensionsForTheme'), false);
   assert.equal(typeof api.highlightControlsApi.updateHighlightModeUI, 'function');
   assert.equal(typeof api.chunkControlsApi.beginHoldChunkCn, 'function');
 

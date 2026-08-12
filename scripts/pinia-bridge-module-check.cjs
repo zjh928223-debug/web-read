@@ -7,8 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
-const notesSessionRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime.js'), 'utf8');
-const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const interactionSource = fs.readFileSync(path.join(repoRoot, 'scripts', 'read-web-interactions-check.cjs'), 'utf8');
 
@@ -17,35 +16,36 @@ assert.ok(
   'reader-runtime should delegate Pinia bridge assembly through reader-runtime-assembly'
 );
 assert.ok(
-  assemblySource.includes("import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';"),
-  'reader-runtime-assembly should initialize the Pinia bridge through reader notes/session runtime'
+  bootstrapSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js';"),
+  'bootstrap runtime should import the Pinia bridge'
+);
+assert.equal(
+  assemblySource.includes('notesSessionRuntime'),
+  false,
+  'retired notes/session runtime should stay absent'
 );
 assert.ok(
-  assemblySource.includes('notesSessionRuntime: notesSessionRuntime'),
-  'reader-runtime-assembly should pass notes/session runtime to focused feature deps'
+  featureDepsSource.includes('bridgeToPinia: bootstrapRuntime.bridgeToPinia'),
+  'feature deps should receive the Pinia bridge from bootstrap runtime'
 );
 assert.ok(
-  featureDepsSource.includes('bridgeToPinia: notesSessionRuntime.bridgeToPinia'),
-  'reader-feature-runtime-deps should receive the Pinia bridge from notes/session runtime'
+  bootstrapSource.includes('var bridgeToPinia = initPiniaBridge({'),
+  'bootstrap runtime should initialize the bridge once'
 );
 assert.ok(
-  notesSessionRuntimeSource.includes("import { initReaderNotesRuntime } from './reader-notes-runtime.js';"),
-  'reader-notes-session-runtime should import the notes runtime module that initializes the Pinia bridge'
-);
-assert.ok(
-  notesSessionRuntimeSource.includes('bridgeToPinia: notesRuntime.bridgeToPinia'),
-  'reader-notes-session-runtime should forward the Pinia bridge from notes runtime'
+  bootstrapSource.includes('bridgeToPinia: bridgeToPinia'),
+  'bootstrap runtime should expose the bridge'
 );
 assert.equal(appSource.includes('initPiniaBridge({'), false, 'reader-runtime should not initialize Pinia bridge directly');
 assert.equal(appSource.includes('function bridgeToPinia()'), false, 'reader-runtime should not own bridgeToPinia implementation');
 assert.equal(appSource.includes('window.bridgeToPinia ='), false, 'reader-runtime should not own window.bridgeToPinia');
 assert.ok(
-  notesRuntimeSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"),
-  'reader-notes-runtime should import the Pinia bridge module'
+  bootstrapSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"),
+  'bootstrap runtime should import the bridge module'
 );
 assert.ok(
-  notesRuntimeSource.includes('var bridgeToPinia = initPiniaBridge({'),
-  'reader-notes-runtime should initialize Pinia bridge once'
+  bootstrapSource.includes('var bridgeToPinia = initPiniaBridge({'),
+  'bootstrap runtime should initialize Pinia bridge once'
 );
 assert.ok(bridgeSource.includes('export function initPiniaBridge'), 'bridge module should expose an init API');
 assert.ok(bridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'), 'bridge module should own window.bridgeToPinia');

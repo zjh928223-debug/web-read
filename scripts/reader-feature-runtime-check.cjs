@@ -97,7 +97,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'var forceUpdateUI;',
     'var importRuntime = initReaderImportRuntime({',
     'getChunkControlsApi: function () { return chunkControlsApi; }',
-    'deps.chunkNotesApi.ensureChunkNoteOverlayLayers();',
     'var controlsRuntime = initReaderControlsRuntime({',
     'getForceUpdateUI: function () { return forceUpdateUI; }',
     'chunkControlsApi = controlsRuntime.chunkControlsApi;',
@@ -113,9 +112,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);',
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',
@@ -151,17 +147,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     );
 
   globalThis.__featureCalls = [];
-  const chunkNotesApi = {
-    ensureChunkNoteOverlayLayers() { globalThis.__featureCalls.push(['ensure-overlays']); },
-    closeChunkNoteContextMenu() {},
-    closeChunkNotePopover() {},
-    clearChunkNoteConnectors() {},
-    adjustChunkNoteArrowSizeByGap() {},
-    renderAllChunkNoteTags() {},
-    scheduleChunkNoteConnectorRedraw() {},
-    refreshAllChunkNoteVisuals() {},
-    tryRestoreChunkNoteDraft() {}
-  };
   const globalObject = {
     __importModule: { id: 'import-module' },
     __styleEditor: { id: 'style-editor' },
@@ -187,27 +172,21 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     playbackState: {},
     audioIdentityApi: {},
     hotkeyStateApi: {},
-    marksStateApi: { markedMap: new Map([[1, true]]) },
-    chunkNotesApi,
-    sentenceNotesApi: {
-      hasActiveTextSelectionWithinChunk() {}
-    },
-    notesState: {}
+    marksStateApi: { markedMap: new Map([[1, true]]) }
   });
 
   assert.deepEqual(globalThis.__featureCalls.map((entry) => entry[0]), [
     'import',
-    'ensure-overlays',
     'controls',
     'interaction',
     'keyboard',
     'app'
   ]);
   const importDeps = globalThis.__featureCalls[0][1];
-  const controlsDeps = globalThis.__featureCalls[2][1];
-  const interactionDeps = globalThis.__featureCalls[3][1];
-  const keyboardDeps = globalThis.__featureCalls[4][1];
-  const appDeps = globalThis.__featureCalls[5][1];
+  const controlsDeps = globalThis.__featureCalls[1][1];
+  const interactionDeps = globalThis.__featureCalls[2][1];
+  const keyboardDeps = globalThis.__featureCalls[3][1];
+  const appDeps = globalThis.__featureCalls[4][1];
 
   assert.equal(importDeps.importModule, globalObject.__importModule);
   assert.equal(importDeps.forceUpdateUI, undefined, 'import runtime should preserve the previous early undefined forceUpdateUI value');

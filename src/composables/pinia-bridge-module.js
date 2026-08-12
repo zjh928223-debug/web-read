@@ -2,15 +2,11 @@ export function initPiniaBridge(deps = {}) {
   var transcriptState = deps.transcriptState;
   var chunkState = deps.chunkState;
   var clozeState = deps.clozeState;
-  var getNotesState = typeof deps.getNotesState === 'function'
-    ? deps.getNotesState
-    : function () { return null; };
 
   function bridgeToPinia() {
     var ps = window.__piniaStores;
     var chunkSnapshot = chunkState.getSnapshot();
     var clozeSnapshot = clozeState.getSnapshot();
-    var notesState = getNotesState();
     if (ps) {
       if (ps.transcript) {
         ps.transcript.segments = transcriptState.segments;
@@ -26,7 +22,6 @@ export function initPiniaBridge(deps = {}) {
         ps.chunk.chunkCNHoldMode = chunkSnapshot.chunkCnHoldMode;
         ps.chunk.chunkFocusMode = chunkSnapshot.chunkCnMode === 'focus';
         ps.chunk.chunkShadowVisible = chunkSnapshot.isChunkShadowOn;
-        ps.chunk.chunkNoteVisible = !!(notesState && notesState.chunkNoteVisible);
       }
       if (ps.cloze) {
         ps.cloze.items = clozeSnapshot.clozeItems;

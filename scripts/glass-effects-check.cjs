@@ -51,23 +51,12 @@ assert.ok(
 );
 
 assert.ok(
-  appRuntimeSource.includes('initGlassEffects({'),
+  appRuntimeSource.includes('initGlassEffects()'),
   'reader-app-runtime should initialize glass effects through the module'
 );
 
-[
-  'function lockChunkNoteDimensions()',
-].forEach((pattern) => {
-  assert.equal(
-    runtimeSource.includes(pattern),
-    false,
-    `reader-runtime should not own glass effect sizing logic: ${pattern}`
-  );
-  assert.ok(
-    glassEffectsSource.includes(pattern),
-    `glass-effects module should own glass effect sizing logic: ${pattern}`
-  );
-});
+assert.equal(glassEffectsSource.includes('lockChunkNoteDimensions'), false, 'retired notes sizing hook should stay removed');
+assert.equal(glassEffectsSource.includes('__lockChunkNoteDimensionsForTheme'), false, 'retired notes global should stay removed');
 
 assert.equal(
   runtimeSource.includes('window.__glassEffects.init('),
@@ -76,8 +65,8 @@ assert.equal(
 );
 
 assert.ok(
-  glassEffectsSource.includes('init(lockChunkNoteDimensions);'),
-  'glass-effects module should initialize the existing glass runtime with the sizing callback'
+  glassEffectsSource.includes('return init();'),
+  'glass-effects module should initialize the glass runtime directly'
 );
 
 assert.ok(

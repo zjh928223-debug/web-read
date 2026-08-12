@@ -2,7 +2,6 @@
 import '../utils/data-utils.js';
 import '../utils/identity-storage-keys.js';
 import '../utils/import-export-helpers.js';
-import '../utils/sentence-notes-persistence.js';
 import '../utils/playback-index.js';
 import '../utils/chunk-matching.js';
 import '../utils/vocab-matching.js';

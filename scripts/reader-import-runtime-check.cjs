@@ -222,16 +222,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     lblAudio: { id: 'lbl-audio' },
     lblTranscript: { id: 'lbl-transcript' },
     validateTranscriptData(data) { return data; },
-    switchSentenceNotesDoc() {},
     renderTranscript() {},
     forceUpdateUI: undefined,
-    loadChunkNotesForCurrentAudio() {},
-    chunkNotesApi: {
-      clearChunkNotesFileState() { return 'cleared'; }
-    },
     audioPlayer: { id: 'audio' },
     transcriptContainer: { id: 'transcript' },
-    notesState: { currentDocId: 'doc' }
   };
 
   const api = initReaderImportRuntime(deps);
@@ -261,7 +255,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.importHandlers[0].clearGeneratedAnnotationIndex, sessionFns.clearGeneratedAnnotationIndex);
   assert.equal(calls.importHandlers[0].syncAnnotationGenerationEntryStatus, sessionFns.syncAnnotationGenerationEntryStatus);
   assert.equal(calls.importHandlers[0].buildCurrentSentenceDocId(), 'doc-id');
-  assert.equal(calls.importHandlers[0].clearChunkNotesFileState(), 'cleared');
   assert.equal(calls.importHandlers[0].markedMap, markedMap);
   assert.equal(calls.importHandlers[0].forceUpdateUI, undefined);
 

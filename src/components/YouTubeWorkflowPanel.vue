@@ -870,7 +870,6 @@ function makeLoader() {
     },
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,
-    switchSentenceNotesDoc: window.switchSentenceNotesDoc,
     audioPlayer: document.getElementById('audio-player'),
     validateTranscriptData: window.DataUtils && window.DataUtils.validateTranscriptData,
     validateChunkData: window.DataUtils && window.DataUtils.validateChunkData,

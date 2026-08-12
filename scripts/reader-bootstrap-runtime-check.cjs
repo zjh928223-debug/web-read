@@ -8,7 +8,6 @@ async function main() {
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const contextSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-context.js'), 'utf8');
-  const notesDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-session-runtime-deps.js'), 'utf8');
   const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
   const sessionInitSource = [
@@ -88,14 +87,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'transcriptState: bootstrapRuntime.transcriptState',
     'chunkState: bootstrapRuntime.chunkState',
     'clozeState: bootstrapRuntime.clozeState',
-    'audioIdentityApi: bootstrapRuntime.audioIdentityApi'
-  ].forEach((pattern) => {
-    assert.ok(notesDepsSource.includes(pattern), `reader-notes-session-runtime-deps should consume bootstrap result: ${pattern}`);
-  });
-  [
-    'transcriptState: bootstrapRuntime.transcriptState',
-    'chunkState: bootstrapRuntime.chunkState',
-    'clozeState: bootstrapRuntime.clozeState',
     'playbackState: bootstrapRuntime.playbackState',
     'hotkeyStateApi: bootstrapRuntime.hotkeyStateApi',
     'marksStateApi: bootstrapRuntime.marksStateApi'
@@ -132,9 +123,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);',
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',
@@ -150,7 +138,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     )
     .replace(
       "import { initAudioIdentity } from './audio-identity-module.js';\n",
-      'function initAudioIdentity(deps) { globalThis.__audioIdentityInput = deps; return { currentAudioKey: "audio-key", getChunkNotesStorageKey: deps.getChunkNotesStorageKey } }\n'
+      'function initAudioIdentity(deps) { globalThis.__audioIdentityInput = deps; return { currentAudioKey: "audio-key" } }\n'
     )
     .replace(
       "import { initHotkeyState } from './hotkey-state-module.js';\n",
@@ -159,6 +147,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     .replace(
       "import { initMarksState } from './marks-state-module.js';\n",
       'function initMarksState() { globalThis.__marksInitCount = (globalThis.__marksInitCount || 0) + 1; return { markedMap: new Map([[1, true]]) } }\n'
+    )
+    .replace(
+      "import { initPiniaBridge } from './pinia-bridge-module.js';\n",
+      'function initPiniaBridge(deps) { globalThis.__bridgeInput = deps; return function bridgeToPinia() {} }\n'
     );
 
   globalThis.__runtimeDepsInput = null;
@@ -211,7 +203,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(globalThis.__runtimeDepsInput.getWindow(), fakeWindow);
   assert.equal(api.runtimeDeps, globalThis.__runtimeDepsResult);
   assert.equal(globalThis.__audioIdentityInput.buildAudioKey(), 'build-audio');
-  assert.equal(globalThis.__audioIdentityInput.getChunkNotesStorageKey(), 'chunk-notes-key');
   assert.equal(globalThis.__audioIdentityInput.getSegments(), fakeWindow.__transcriptState.segments);
   assert.equal(api.audioIdentityApi.currentAudioKey, 'audio-key');
   assert.deepEqual(api.hotkeyStateApi, { markKey: 'm' });

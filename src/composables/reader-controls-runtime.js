@@ -18,21 +18,14 @@ export function initReaderControlsRuntime(deps = {}) {
     chunkCnHoldBtn: deps.chunkCnHoldBtn,
     audioPlayer: deps.audioPlayer,
     updateHighlightModeUI: highlightControlsApi.updateHighlightModeUI,
-    closeChunkNoteContextMenu: deps.closeChunkNoteContextMenu,
-    closeChunkNotePopover: deps.closeChunkNotePopover,
     renderChunkMode: deps.renderChunkMode,
     renderTranscript: deps.renderTranscript,
-    clearChunkNoteConnectors: deps.clearChunkNoteConnectors,
     getForceUpdateUI: deps.getForceUpdateUI,
     bridgeToPinia: deps.bridgeToPinia
   })
 
   deps.styleEditor.init({
-    adjustChunkNoteArrowSizeByGap: deps.adjustChunkNoteArrowSizeByGap,
-    renderAllChunkNoteTags: deps.renderAllChunkNoteTags,
-    scheduleChunkNoteConnectorRedraw: deps.scheduleChunkNoteConnectorRedraw,
     getIsChunkMode() { return deps.chunkState.isChunkMode },
-    closeChunkNotePopover: deps.closeChunkNotePopover,
     updateShadowBtnText: chunkControlsApi.updateShadowBtnText
   })
 
@@ -44,9 +37,7 @@ export function initReaderControlsRuntime(deps = {}) {
     themeCustomSubInput: deps.themeCustomSubInput,
     themeCustomBorderInput: deps.themeCustomBorderInput,
     themeCustomButtonInput: deps.themeCustomButtonInput,
-    themeCustomResetBtn: deps.themeCustomResetBtn,
-    refreshAllChunkNoteVisuals: deps.refreshAllChunkNoteVisuals,
-    getLockChunkNoteDimensionsForTheme: deps.getLockChunkNoteDimensionsForTheme
+    themeCustomResetBtn: deps.themeCustomResetBtn
   })
 
   return {

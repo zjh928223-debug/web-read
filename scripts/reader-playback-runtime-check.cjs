@@ -99,9 +99,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);'
   ].forEach((pattern) => {
     assert.ok(sessionInitSource.includes(pattern), `session-init contract should remain intact: ${pattern}`);
   });

@@ -7,18 +7,10 @@ export function initThemeControls(deps) {
     var themeCustomBorderInput = deps.themeCustomBorderInput;
     var themeCustomButtonInput = deps.themeCustomButtonInput;
     var themeCustomResetBtn = deps.themeCustomResetBtn;
-    var refreshAllChunkNoteVisuals = deps.refreshAllChunkNoteVisuals;
-    var getLockChunkNoteDimensionsForTheme = deps.getLockChunkNoteDimensionsForTheme || function () {
-        return window.__lockChunkNoteDimensionsForTheme;
-    };
 
     themeStore.init();
 
     themeToggleBtn.addEventListener('click', function () {
-        var lockChunkNoteDimensionsForTheme = getLockChunkNoteDimensionsForTheme();
-        if (typeof lockChunkNoteDimensionsForTheme === 'function') {
-            lockChunkNoteDimensionsForTheme();
-        }
         var currentTheme = localStorage.getItem('theme') || 'light';
         var nextTheme = currentTheme === 'light' ? 'dark' : (currentTheme === 'dark' ? 'custom' : 'light');
         themeStore.applyThemeMode(nextTheme);
@@ -27,7 +19,6 @@ export function initThemeControls(deps) {
         } else {
             themeStore.closeCustomThemePanel();
         }
-        refreshAllChunkNoteVisuals();
     });
 
     [
@@ -44,7 +35,6 @@ export function initThemeControls(deps) {
             var colors = themeStore.getStoredCustomThemeColors();
             colors[key] = input.value;
             themeStore.applyCustomTheme(colors);
-            refreshAllChunkNoteVisuals();
         });
         input.addEventListener('change', function () {
             themeStore.closeCustomThemePanel();
@@ -55,7 +45,6 @@ export function initThemeControls(deps) {
         themeCustomResetBtn.addEventListener('click', function () {
             themeStore.applyCustomTheme(themeStore.CUSTOM_THEME_DEFAULTS);
             themeStore.closeCustomThemePanel();
-            refreshAllChunkNoteVisuals();
         });
     }
 }

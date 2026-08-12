@@ -56,7 +56,6 @@ export function initReaderPlaybackRuntime(deps = {}) {
     forceUpdateUI,
     notifyAnnotationBubbleWordClick,
     isChunkMode() { return deps.chunkState.isChunkMode },
-    hasActiveTextSelectionWithinChunk: deps.hasActiveTextSelectionWithinChunk,
     legacyTranscriptContainer: deps.transcriptContainer
   })
 

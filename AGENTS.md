@@ -112,15 +112,12 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/session-startup-cleanup.js` - startup/persisted cleanup runtime.
 - `src/composables/session-ui-settings-restore.js` - persisted UI/hotkey settings restore.
 - `src/composables/reader-feature-runtime.js` - feature runtime composition for import, controls, interactions, keyboard, app handlers, and annotation controls.
-- `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context, bootstrap state, and notes/session wrappers.
+- `src/composables/reader-feature-runtime-deps.js` - feature runtime dependency assembly for runtime context and bootstrap state.
 - `src/composables/reader-runtime-context.js` - startup context composition for bootstrap state, DOM refs, focus helpers, and retired transfer dialog compatibility access.
 - `src/composables/reader-dom-refs.js` - static reader runtime DOM ref collection.
 - `src/composables/reader-bootstrap-runtime.js` - state adapter references, DB compatibility wrappers, runtime helper collection, audio identity, hotkey state, and marks state bootstrap.
 - `src/composables/reader-runtime-deps.js` - runtime utility/global helper dependency collection.
-- `src/composables/reader-notes-session-runtime-deps.js` - notes/session runtime dependency assembly for runtime context, bootstrap state, and DOM refs.
-- `src/composables/reader-notes-session-runtime.js` - notes runtime setup plus session-facing note/audio lifecycle wrapper composition.
-- `src/composables/reader-notes-runtime.js` - disabled notes compatibility runtime returning no-op chunk/sentence note APIs for old callers.
-- `src/composables/reader-session-runtime.js` - session-facing disabled note lifecycle wrappers and `applyCurrentAudioMeta(...)` side-effect wrapper.
+- Notes UI/runtime and its no-op compatibility chain are retired. `applyCurrentAudioMeta(...)` is owned by `audio-identity-module.js`.
 - `src/composables/reader-interaction-runtime.js` - render runtime configuration and reader playback runtime initialization.
 - `src/composables/reader-playback-runtime.js` - annotation bubble resolver, playback helper, playback module, and transcript/chunk interaction setup.
 - `src/composables/reader-controls-runtime.js` - highlight/chunk/theme control setup and style editor init.
@@ -229,10 +226,6 @@ npm run verify:reader-feature-runtime  # Focused reader feature runtime composit
 npm run verify:reader-feature-runtime-deps  # Focused reader feature runtime dependency assembly check
 npm run verify:reader-bootstrap-runtime  # Focused reader bootstrap runtime setup check
 npm run verify:reader-runtime-deps  # Focused reader runtime dependency collection check
-npm run verify:reader-notes-session-runtime-deps  # Focused reader notes/session runtime dependency assembly check
-npm run verify:reader-notes-session-runtime  # Focused reader notes/session runtime setup check
-npm run verify:reader-notes-runtime  # Focused reader notes runtime setup check
-npm run verify:reader-session-runtime  # Focused reader session runtime setup check
 npm run verify:reader-interaction-runtime  # Focused reader interaction runtime setup check
 npm run verify:reader-playback-runtime  # Focused reader playback runtime setup check
 npm run verify:reader-controls-runtime  # Focused reader controls runtime setup check

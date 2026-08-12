@@ -93,7 +93,7 @@
 ## 10. Legacy Runtime 收敛
 
 - [ ] 10.1 生成 `window.*`、`window.__state`、bridge、inline DOM handler 和 root script 的静态/运行时 consumer map
-- [ ] 10.2 删除 retired notes no-op runtime/deps/session/facades，并将 `applyCurrentAudioMeta` 迁入真实 owner
+- [x] 10.2 删除 retired notes no-op runtime/deps/session/facades，并将 `applyCurrentAudioMeta` 迁入真实 owner
 - [ ] 10.3 按 import/controls/interaction/keyboard/app 行为域拆解超宽 reader feature 参数袋
 - [ ] 10.4 将 session DOM/global 依赖收集器折叠或拆成小而有行为的 adapters
 - [ ] 10.5 逐状态域移除 compatibility store/bridge/global owner，每次执行行为和 production startup gate

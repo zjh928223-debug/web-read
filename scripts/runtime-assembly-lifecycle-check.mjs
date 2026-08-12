@@ -19,8 +19,6 @@ async function verifyReaderAssemblyLifecycle(source) {
     renderTranscript() {},
     renderChunkMode() {},
     initReaderRuntimeContext: () => ({ bootstrapRuntime: {} }),
-    initReaderNotesSessionRuntime: () => ({ dispose: () => disposals.push('notes') }),
-    createReaderNotesSessionRuntimeDeps: (value) => value,
     initReaderFeatureRuntime: () => ({ dispose: () => disposals.push('feature') }),
     createReaderFeatureRuntimeDeps: (value) => value,
     showToast() {},
@@ -32,12 +30,12 @@ async function verifyReaderAssemblyLifecycle(source) {
   const windowObject = { document: {} }
   const first = module.initReaderRuntimeAssembly({ getWindow: () => windowObject })
   const second = module.initReaderRuntimeAssembly({ getWindow: () => windowObject })
-  assert.deepEqual(disposals, ['feature', 'notes'])
+  assert.deepEqual(disposals, ['feature'])
   first.dispose()
-  assert.deepEqual(disposals, ['feature', 'notes'])
+  assert.deepEqual(disposals, ['feature'])
   second.dispose()
   second.dispose()
-  assert.deepEqual(disposals, ['feature', 'notes', 'feature', 'notes'])
+  assert.deepEqual(disposals, ['feature', 'feature'])
 }
 
 async function verifySessionAssemblyLifecycle(source) {

@@ -61,10 +61,6 @@ appWindowAssignments.forEach((name) => {
   'syncAnnotationGenerationEntryStatus',
   'notifyAnnotationBubbleWordClick',
   'buildCurrentSentenceDocId',
-  'loadChunkNotesForCurrentAudio',
-  'setChunkNoteVisible',
-  'loadSentenceNotesForCurrentAudio',
-  'switchSentenceNotesDoc',
   'applyCurrentAudioMeta',
   'openChunkStyleModal',
   'closeChunkStyleModal',
@@ -112,13 +108,17 @@ assert.ok(
 );
 [
   'buildCurrentSentenceDocId',
-  'loadChunkNotesForCurrentAudio',
-  'setChunkNoteVisible',
-  'loadSentenceNotesForCurrentAudio',
-  'switchSentenceNotesDoc',
   'applyCurrentAudioMeta'
 ].forEach((name) => {
   assert.ok(readerPublicFacadesSource.includes(`window.${name} = ${name};`), `reader-public-facades should own window.${name}`);
+});
+[
+  'loadChunkNotesForCurrentAudio',
+  'setChunkNoteVisible',
+  'loadSentenceNotesForCurrentAudio',
+  'switchSentenceNotesDoc'
+].forEach((name) => {
+  assert.equal(readerPublicFacadesSource.includes(`window.${name} =`), false, `retired notes facade should stay removed: ${name}`);
 });
 [
   'selectSentenceFromChunkTarget',

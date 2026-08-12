@@ -236,9 +236,6 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       }
       processTranscript(validated.transcript)
       processChunkData(validated.chunkData)
-      if (typeof deps.switchSentenceNotesDoc === 'function') {
-        await deps.switchSentenceNotesDoc(validated.transcript)
-      }
       if (!isCurrentLoad(load)) return supersededResult(load)
       await restoreReaderMarks(jobId)
       if (!isCurrentLoad(load)) return supersededResult(load)

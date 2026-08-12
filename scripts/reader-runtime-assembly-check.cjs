@@ -36,27 +36,21 @@ async function main() {
     "import { runtimeState } from './runtime-state-facade.js';",
     "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
     "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
-    "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';",
-    "import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';",
     "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
     "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';",
     'var runtimeContext = initReaderRuntimeContext({',
     'var bootstrapRuntime = runtimeContext.bootstrapRuntime;',
-    'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
     'var featureRuntime = initReaderFeatureRuntime({',
-    'notesSessionRuntime: notesSessionRuntime',
     'var assembly = {'
   ].forEach((pattern) => {
     assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should own ${pattern}`);
   });
+  assert.equal(assemblySource.includes('notesSessionRuntime'), false, 'retired notes/session runtime should stay removed');
   assert.equal(assemblySource.includes('window.'), false, 'reader-runtime-assembly should receive window through explicit deps');
   assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);',
     'deps.processTranscript(transcriptData);',
     'deps.processChunkData(chunkData);',
     'windowObject.toggleChunkMode(true);',
@@ -77,14 +71,6 @@ async function main() {
     .replace(
       "import { initReaderRuntimeContext } from './reader-runtime-context.js';\n",
       'function initReaderRuntimeContext(deps) { globalThis.__assemblyCalls.push(["context", deps]); return globalThis.__runtimeContext; }\n'
-    )
-    .replace(
-      "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';\n",
-      'function initReaderNotesSessionRuntime(deps) { globalThis.__assemblyCalls.push(["notes", deps]); return globalThis.__notesSessionRuntime; }\n'
-    )
-    .replace(
-      "import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';\n",
-      'function createReaderNotesSessionRuntimeDeps(deps) { globalThis.__assemblyCalls.push(["notes-deps", deps]); return { notesDeps: true, input: deps }; }\n'
     )
     .replace(
       "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';\n",
@@ -111,7 +97,6 @@ async function main() {
   globalThis.__runtimeContext = {
     bootstrapRuntime: { id: 'bootstrap' }
   };
-  globalThis.__notesSessionRuntime = { id: 'notes-session' };
 
   const encodedSource = Buffer.from(testableSource, 'utf8').toString('base64');
   const { initReaderRuntimeAssembly } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
@@ -122,30 +107,22 @@ async function main() {
 
   assert.deepEqual(globalThis.__assemblyCalls.map((entry) => entry[0]), [
     'context',
-    'notes-deps',
-    'notes',
     'feature-deps',
     'feature'
   ]);
   assert.equal(globalThis.__assemblyCalls[0][1].getWindow(), fakeWindow);
   assert.equal(globalThis.__assemblyCalls[0][1].getDocument(), fakeWindow.document);
-  assert.equal(globalThis.__assemblyCalls[1][1].globalObject, fakeWindow);
-  assert.equal(globalThis.__assemblyCalls[1][1].runtimeContext, globalThis.__runtimeContext);
-  assert.equal(globalThis.__assemblyCalls[1][1].bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);
-  assert.equal(globalThis.__assemblyCalls[2][1].notesDeps, true);
-  assert.equal(globalThis.__assemblyCalls[3][1].notesSessionRuntime, globalThis.__notesSessionRuntime);
-  assert.equal(globalThis.__assemblyCalls[3][1].runtimeState.id, 'runtime-state');
-  assert.equal(globalThis.__assemblyCalls[3][1].renderTranscript(), 'transcript');
-  assert.equal(globalThis.__assemblyCalls[3][1].renderChunkMode(), 'chunk');
+  assert.equal(globalThis.__assemblyCalls[1][1].runtimeState.id, 'runtime-state');
+  assert.equal(globalThis.__assemblyCalls[1][1].renderTranscript(), 'transcript');
+  assert.equal(globalThis.__assemblyCalls[1][1].renderChunkMode(), 'chunk');
   assert.equal(
-    Object.prototype.hasOwnProperty.call(globalThis.__assemblyCalls[3][1], 'initAnnotationApiSettingsUi'),
+    Object.prototype.hasOwnProperty.call(globalThis.__assemblyCalls[1][1], 'initAnnotationApiSettingsUi'),
     false,
     'reader-runtime-assembly should not pass retired annotation API settings facade'
   );
-  assert.equal(globalThis.__assemblyCalls[4][1].featureDeps, true);
+  assert.equal(globalThis.__assemblyCalls[2][1].featureDeps, true);
   assert.equal(api.runtimeContext, globalThis.__runtimeContext);
   assert.equal(api.bootstrapRuntime, globalThis.__runtimeContext.bootstrapRuntime);
-  assert.equal(api.notesSessionRuntime, globalThis.__notesSessionRuntime);
   assert.equal(api.featureRuntime.feature, true);
   assert.equal(typeof api.dispose, 'function');
   const secondApi = initReaderRuntimeAssembly({ getWindow: () => fakeWindow });

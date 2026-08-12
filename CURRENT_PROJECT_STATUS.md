@@ -159,10 +159,6 @@ runtime-state-bindings.js         about 72 lines
 reader-dom-refs.js                about 64 lines
 reader-bootstrap-runtime.js       about 45 lines
 reader-runtime-deps.js            about 41 lines
-reader-notes-session-runtime-deps.js about 28 lines
-reader-notes-session-runtime.js   about 41 lines
-reader-notes-runtime.js           about 68 lines
-reader-session-runtime.js         about 31 lines
 reader-interaction-runtime.js     about 40 lines
 reader-playback-runtime.js        about 69 lines
 reader-controls-runtime.js        about 57 lines
@@ -262,10 +258,8 @@ window.__USE_VUE_RENDERING = true
 - startup context setup delegated through `src/composables/reader-runtime-context.js`
 - bootstrap state/helper setup delegated through `src/composables/reader-bootstrap-runtime.js`
 - runtime initialization sequence delegated through `src/composables/reader-runtime-assembly.js`
-- notes/session composition delegated through `src/composables/reader-notes-session-runtime.js`
 - feature runtime setup delegated through `src/composables/reader-feature-runtime.js`
 - feature runtime dependency assembly delegated through `src/composables/reader-feature-runtime-deps.js`
-- notes/session runtime dependency assembly delegated through `src/composables/reader-notes-session-runtime-deps.js`
 - render/playback setup delegated through `src/composables/reader-interaction-runtime.js`
 - control setup delegated through `src/composables/reader-controls-runtime.js`
 - annotation runtime setup delegated through `src/composables/session-annotation-runtime.js`
@@ -325,7 +319,7 @@ Transcript, chunk, cloze, and playback transient state have moved behind focused
 - Cloze quiz UI, cloze import, cloze interaction helpers, and cloze Vue components have been removed.
 - Chunk note DOM, chunk note import/export/style UI, chunk note layout helpers, and `notes-module.js` have been removed from the active runtime.
 - Sentence note sidebar behavior has been removed from the active runtime.
-- `src/composables/reader-notes-runtime.js` now returns no-op compatibility APIs so older session/public facade callers do not crash while those compatibility surfaces are drained.
+- Notes UI/runtime and the no-op compatibility chain are retired; `applyCurrentAudioMeta(...)` is owned by `src/composables/audio-identity-module.js`.
 
 ### Annotation Tools
 
@@ -383,10 +377,6 @@ npm run verify:reader-feature-runtime
 npm run verify:reader-feature-runtime-deps
 npm run verify:reader-bootstrap-runtime
 npm run verify:reader-runtime-deps
-npm run verify:reader-notes-session-runtime-deps
-npm run verify:reader-notes-session-runtime
-npm run verify:reader-notes-runtime
-npm run verify:reader-session-runtime
 npm run verify:reader-interaction-runtime
 npm run verify:reader-playback-runtime
 npm run verify:reader-controls-runtime
@@ -479,7 +469,6 @@ scripts/reader-runtime-shell-check.cjs
 scripts/reader-runtime-assembly-check.cjs
 scripts/reader-feature-runtime-check.cjs
 scripts/reader-feature-runtime-deps-check.cjs
-scripts/reader-notes-session-runtime-deps-check.cjs
 scripts/reader-controls-runtime-check.cjs
 scripts/reader-keyboard-runtime-check.cjs
 scripts/reader-app-runtime-check.cjs
@@ -544,14 +533,11 @@ Current checks cover:
 - moved startup context composition for bootstrap state, DOM refs, and focus helpers out of `reader-runtime.js` into `src/composables/reader-runtime-context.js` while keeping `session-init.js` restore/public contracts unchanged through `verify:reader-runtime-context`
 - moved feature runtime composition for import, controls, interactions, keyboard, app handlers, and annotation controls out of `reader-runtime.js` into `src/composables/reader-feature-runtime.js` while keeping `session-init.js` restore/public contracts unchanged through `verify:reader-feature-runtime`
 - moved feature runtime dependency assembly out of `reader-runtime-shell.js` into `src/composables/reader-feature-runtime-deps.js`, leaving the feature dependency mapping outside the thin shell while preserving session restore/public contracts through `verify:reader-feature-runtime-deps`
-- moved notes/session runtime dependency assembly out of `reader-runtime-shell.js` into `src/composables/reader-notes-session-runtime-deps.js`, leaving the notes/session dependency mapping outside the thin shell while preserving notes/session public contracts through `verify:reader-notes-session-runtime-deps`
 - moved the remaining context/notes/feature initialization sequence out of `reader-runtime-shell.js` into `src/composables/reader-runtime-assembly.js`; `reader-runtime-shell.js` was later retired and is guarded from reappearing through `verify:reader-runtime-shell`
 - migrated static DOM ref collection out of `reader-runtime.js` into `src/composables/reader-dom-refs.js` and removed no-consumer runtime DOM lookups while keeping `session-init.js` annotation settings DOM ownership unchanged through `verify:reader-dom-refs`
 - moved bootstrap state adapter references, DB compatibility wrappers, runtime helper collection, audio identity initialization, hotkey state initialization, and marks state initialization out of `reader-runtime.js` into `src/composables/reader-bootstrap-runtime.js` while keeping `session-init.js` state/audio/hotkey/marks contracts unchanged through `verify:reader-bootstrap-runtime`
 - moved reader runtime utility/global helper dependency collection out of `reader-runtime.js` into `src/composables/reader-runtime-deps.js` while keeping import/chunk/playback/session contracts unchanged through `verify:reader-runtime-deps`
-- moved notes runtime and session wrapper composition out of `reader-runtime.js` into `src/composables/reader-notes-session-runtime.js` while keeping notes/session public contracts unchanged through `verify:reader-notes-session-runtime`
-- replaced shared notes runtime with disabled no-op compatibility APIs in `src/composables/reader-notes-runtime.js` while old callers are drained
-- kept session-facing disabled note lifecycle wrappers and the `applyCurrentAudioMeta(...)` side-effect wrapper in `src/composables/reader-session-runtime.js`
+- retired the notes UI/runtime no-op compatibility chain and moved `applyCurrentAudioMeta(...)` ownership to `src/composables/audio-identity-module.js`
 - moved render runtime configuration and reader playback runtime initialization out of `reader-runtime.js` into `src/composables/reader-interaction-runtime.js` while keeping `session-init.js` render/import/restore contracts unchanged through `verify:reader-interaction-runtime`
 - moved annotation bubble resolver setup, playback helper setup, playback module init, and transcript/chunk interaction configuration out of `reader-runtime.js` into `src/composables/reader-playback-runtime.js` while keeping playback/interaction/session contracts unchanged through `verify:reader-playback-runtime`
 - moved highlight/chunk/theme control initialization and style editor initialization out of `reader-runtime.js` into `src/composables/reader-controls-runtime.js` while keeping control contracts unchanged through `verify:reader-controls-runtime`

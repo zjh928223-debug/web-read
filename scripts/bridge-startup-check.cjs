@@ -9,7 +9,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const bridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
 const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
-const notesRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-notes-runtime.js'), 'utf8');
+const bootstrapSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-bootstrap-runtime.js'), 'utf8');
 
 assert.equal(appSource.includes('window.__bridge'), false, 'app.js should not create or write window.__bridge');
 assert.equal(mainSource.includes('window.__bridge'), false, 'src/main.js should not read window.__bridge');
@@ -20,10 +20,10 @@ assert.equal(appSource.includes('window.bridgeToPinia ='), false, 'app.js should
 assert.equal(appSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js';"), false);
 assert.equal(appSource.includes('var bridgeToPinia = initPiniaBridge({'), false, 'reader-runtime should not initialize the bridge module directly');
 assert.ok(appSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"), 'reader-runtime should delegate bridge startup through reader-runtime-assembly');
-assert.ok(assemblySource.includes('notesSessionRuntime: notesSessionRuntime'), 'reader-runtime-assembly should pass notes/session runtime to focused feature deps');
-assert.ok(featureDepsSource.includes('bridgeToPinia: notesSessionRuntime.bridgeToPinia'), 'reader-feature-runtime-deps should receive the bridge for injected callers');
-assert.ok(notesRuntimeSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"));
-assert.ok(notesRuntimeSource.includes('var bridgeToPinia = initPiniaBridge({'), 'reader-notes-runtime should initialize the bridge module');
+assert.equal(assemblySource.includes('notesSessionRuntime'), false, 'retired notes/session runtime should stay absent');
+assert.ok(featureDepsSource.includes('bridgeToPinia: bootstrapRuntime.bridgeToPinia'), 'feature deps should receive bridge from bootstrap runtime');
+assert.ok(bootstrapSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"));
+assert.ok(bootstrapSource.includes('var bridgeToPinia = initPiniaBridge({'), 'bootstrap runtime should initialize the bridge module');
 assert.ok(bridgeSource.includes('function bridgeToPinia()'), 'bridge module should own bridgeToPinia implementation');
 assert.ok(bridgeSource.includes('var ps = window.__piniaStores;'), 'bridgeToPinia should write directly to Pinia stores');
 assert.ok(bridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'), 'bridge module should own window.bridgeToPinia');

@@ -4,10 +4,6 @@ export function initAudioIdentity(deps = {}) {
     var buildAudioKey = deps.buildAudioKey;
     var buildCurrentAudioMetaState = deps.buildCurrentAudioMetaState;
     var getCurrentAudioFilenameBaseHelper = deps.getCurrentAudioFilenameBase;
-    var getChunkNotesStorageKeyHelper = deps.getChunkNotesStorageKey;
-    var getChunkNoteDraftStorageKeyHelper = deps.getChunkNoteDraftStorageKey;
-    var getSentenceNotesStorageKeyHelper = deps.getSentenceNotesStorageKey;
-    var getLegacySentenceNotesStorageKeyHelper = deps.getLegacySentenceNotesStorageKey;
     var buildCurrentSentenceDocIdHelper = deps.buildCurrentSentenceDocId;
     var getSegments = typeof deps.getSegments === 'function' ? deps.getSegments : function () { return []; };
     var onCurrentAudioMetaChange = typeof deps.onCurrentAudioMetaChange === 'function'
@@ -44,30 +40,6 @@ export function initAudioIdentity(deps = {}) {
         return fallback;
     }
 
-    function getChunkNotesStorageKey() {
-        return typeof getChunkNotesStorageKeyHelper === 'function'
-            ? getChunkNotesStorageKeyHelper(currentAudioKey)
-            : 'chunkNotes';
-    }
-
-    function getChunkNoteDraftStorageKey() {
-        return typeof getChunkNoteDraftStorageKeyHelper === 'function'
-            ? getChunkNoteDraftStorageKeyHelper(currentAudioKey)
-            : 'chunkNoteDraft';
-    }
-
-    function getSentenceNotesStorageKey() {
-        return typeof getSentenceNotesStorageKeyHelper === 'function'
-            ? getSentenceNotesStorageKeyHelper()
-            : 'sentenceNotes';
-    }
-
-    function getLegacySentenceNotesStorageKey(audioKey = currentAudioKey) {
-        return typeof getLegacySentenceNotesStorageKeyHelper === 'function'
-            ? getLegacySentenceNotesStorageKeyHelper(audioKey)
-            : 'sentenceNotes';
-    }
-
     function buildCurrentSentenceDocId(transcriptSource = null) {
         return typeof buildCurrentSentenceDocIdHelper === 'function'
             ? buildCurrentSentenceDocIdHelper(transcriptSource, currentAudioKey, getSegments())
@@ -81,10 +53,6 @@ export function initAudioIdentity(deps = {}) {
         setCurrentAudioKey,
         applyCurrentAudioMeta,
         getCurrentAudioFilenameBase,
-        getChunkNotesStorageKey,
-        getChunkNoteDraftStorageKey,
-        getSentenceNotesStorageKey,
-        getLegacySentenceNotesStorageKey,
         buildCurrentSentenceDocId
     };
 }

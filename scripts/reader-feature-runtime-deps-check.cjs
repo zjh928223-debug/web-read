@@ -22,8 +22,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'audioIdentityApi: bootstrapRuntime.audioIdentityApi',
     'validateMarksArray: runtimeDeps.validateMarksArray',
     'buildVocabMatchMap: runtimeDeps.buildVocabMatchMapHelper',
-    'applyCurrentAudioMeta: notesSessionRuntime.applyCurrentAudioMeta',
-    'bridgeToPinia: notesSessionRuntime.bridgeToPinia',
+    'applyCurrentAudioMeta: bootstrapRuntime.audioIdentityApi.applyCurrentAudioMeta',
+    'bridgeToPinia: bootstrapRuntime.bridgeToPinia',
     'restoreReaderFocus: runtimeContext.restoreReaderFocus',
     'audioPlayer: domRefs.audioPlayer'
   ].forEach((pattern) => {
@@ -56,7 +56,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     chunkState: { id: 'chunk' },
     clozeState: { id: 'cloze' },
     playbackState: { id: 'playback' },
-    audioIdentityApi: { id: 'audio' },
+    audioIdentityApi: { id: 'audio', applyCurrentAudioMeta: () => 'audio-meta' },
+    bridgeToPinia: () => 'bridge',
     hotkeyStateApi: { id: 'hotkeys' },
     marksStateApi: { id: 'marks' },
     saveToDB: () => 'saved',
@@ -109,22 +110,11 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     domRefs,
     restoreReaderFocus: () => 'focus'
   };
-  const notesSessionRuntime = {
-    applyCurrentAudioMeta: () => 'audio-meta',
-    switchSentenceNotesDoc: () => 'switch',
-    bridgeToPinia: () => 'bridge',
-    loadChunkNotesForCurrentAudio: () => 'load-chunk',
-    loadSentenceNotesForCurrentAudio: () => 'load-sentence',
-    chunkNotesApi: { id: 'chunk-notes' },
-    sentenceNotesApi: { id: 'sentence-notes' },
-    notesState: { id: 'notes-state' }
-  };
   const api = createReaderFeatureRuntimeDeps({
     globalObject: { id: 'window' },
     runtimeState: { id: 'runtime-state' },
     runtimeContext,
     bootstrapRuntime,
-    notesSessionRuntime,
     showToast: () => 'toast',
     showError: () => 'error',
     renderTranscript: () => 'transcript',
@@ -140,8 +130,9 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(api.settleArticleVocabularyBtn, domRefs.settleArticleVocabularyBtn);
   assert.equal(api.validateMarksArray, runtimeDeps.validateMarksArray);
   assert.equal(api.buildVocabMatchMap, runtimeDeps.buildVocabMatchMapHelper);
-  assert.equal(api.applyCurrentAudioMeta, notesSessionRuntime.applyCurrentAudioMeta);
-  assert.equal(api.bridgeToPinia, notesSessionRuntime.bridgeToPinia);
+  assert.equal(api.applyCurrentAudioMeta, bootstrapRuntime.audioIdentityApi.applyCurrentAudioMeta);
+  assert.equal(api.bridgeToPinia, bootstrapRuntime.bridgeToPinia);
+  assert.equal(moduleSource.includes('notesSessionRuntime'), false, 'retired notes/session runtime should stay absent');
   assert.equal(api.restoreReaderFocus, runtimeContext.restoreReaderFocus);
   assert.equal(api.audioPlayer, domRefs.audioPlayer);
   [

@@ -113,9 +113,6 @@
 
     observer.observe(root, { childList: true, subtree: true });
 
-    if (typeof lockChunkDimensionsFn === 'function') {
-      window.__lockChunkNoteDimensionsForTheme = lockChunkDimensionsFn;
-    }
     activeDispose = function () {
       if (disposed) return;
       disposed = true;
@@ -130,25 +127,8 @@
     return dispose;
   }
 
-  export function initGlassEffects(deps) {
-    function lockChunkNoteDimensions() {
-      deps.listChunkNotes().forEach(function (note) {
-        if (!note || !note.id) return;
-        var tag = deps.getChunkNoteTagById(note.id);
-        if (tag) {
-          var contentBox = deps.getChunkNoteContentBoxSize(tag);
-          var w = Math.max(40, Math.round(contentBox && Number.isFinite(contentBox.width) ? contentBox.width : 0));
-          var h = Math.max(18, Math.round(contentBox && Number.isFinite(contentBox.height) ? contentBox.height : 0));
-          note.w = w;
-          note.h = h;
-        }
-        if (Number.isFinite(Number(note.w)) && Number.isFinite(Number(note.h))) {
-          note.autoSize = false;
-        }
-      });
-    }
-
-    return init(lockChunkNoteDimensions);
+  export function initGlassEffects() {
+    return init();
   }
 
   window.__glassEffects = { init: init };

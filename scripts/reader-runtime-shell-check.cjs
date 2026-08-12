@@ -49,26 +49,19 @@ assert.equal(
   "import { runtimeState } from './runtime-state-facade.js';",
   "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
   "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
-  "import { initReaderNotesSessionRuntime } from './reader-notes-session-runtime.js';",
-  "import { createReaderNotesSessionRuntimeDeps } from './reader-notes-session-runtime-deps.js';",
   "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
   "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';",
   'var runtimeContext = initReaderRuntimeContext({',
-  'var notesSessionRuntime = initReaderNotesSessionRuntime(createReaderNotesSessionRuntimeDeps({',
   'var featureRuntime = initReaderFeatureRuntime({',
-  'notesSessionRuntime: notesSessionRuntime'
 ].forEach((pattern) => {
   assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should own ${pattern}`);
 });
+assert.equal(assemblySource.includes('notesSessionRuntime'), false, 'retired notes/session assembly should stay removed');
 assert.equal(assemblySource.includes('window.'), false, 'reader-runtime-assembly should receive window through explicit deps');
 assert.equal(assemblySource.includes('document.'), false, 'reader-runtime-assembly should receive document through explicit deps');
 
 [
-  'deps.setChunkNoteVisible(namespace.chunkNoteVisible, false);',
   'applyCurrentAudioMeta(audioMeta);',
-  'await deps.loadChunkNotesForCurrentAudio();',
-  'await deps.loadSentenceNotesForCurrentAudio();',
-  'await deps.switchSentenceNotesDoc(transcriptData);',
   'deps.processTranscript(transcriptData);',
   'deps.processChunkData(chunkData);',
   'windowObject.toggleChunkMode(true);',

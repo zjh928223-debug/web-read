@@ -158,7 +158,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
       toggleChunkCn() {},
       toggleChunkShadow() {}
     },
-    chunkNotesApi: {},
     saveToDB() { calls.saveDb += 1; },
     syncAnnotationGenerationEntryStatus() { calls.sync += 1; },
     toggleAnnotationBubble() {},

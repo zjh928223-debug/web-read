@@ -55,15 +55,12 @@ export function initChunkControls(deps = {}) {
     localStorage.setItem('isChunkMode', state.isChunkMode);
     if (toggleChunkBtn) toggleChunkBtn.classList.toggle('active', state.isChunkMode);
     if (typeof deps.updateHighlightModeUI === 'function') deps.updateHighlightModeUI();
-    if (typeof deps.closeChunkNoteContextMenu === 'function') deps.closeChunkNoteContextMenu();
-    if (typeof deps.closeChunkNotePopover === 'function') deps.closeChunkNotePopover();
 
     if (state.isChunkMode) {
       renderChunkMode();
     } else {
       renderTranscript();
       document.querySelectorAll('.chunk-note-tag').forEach(function (el) { el.remove(); });
-      if (typeof deps.clearChunkNoteConnectors === 'function') deps.clearChunkNoteConnectors();
     }
     updateChunkFocusModeUI();
 

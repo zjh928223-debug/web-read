@@ -52,11 +52,8 @@ export function startSessionLifecycleRuntime(deps = {}) {
         loadFromDB: globals.loadFromDB,
         markFileLoaded: globals.markFileLoaded,
         applyCurrentAudioMeta: globals.applyCurrentAudioMeta,
-        loadChunkNotesForCurrentAudio: globals.loadChunkNotesForCurrentAudio,
-        loadSentenceNotesForCurrentAudio: globals.loadSentenceNotesForCurrentAudio,
         processTranscript: globals.processTranscript,
         buildCurrentSentenceDocId: globals.buildCurrentSentenceDocId,
-        switchSentenceNotesDoc: globals.switchSentenceNotesDoc,
         scheduleGeneratedAnnotationIndexRefresh: annotationRuntime.scheduleGeneratedAnnotationIndexRefresh,
         processVisual: globals.processVisual,
         processChunkData: globals.processChunkData,
@@ -79,8 +76,6 @@ export function startSessionLifecycleRuntime(deps = {}) {
         transcriptContainer: domRefs.transcriptContainer,
         initDB: globals.initDB,
         clearPersistedReaderContentOnStartup: startupCleanupRuntime.clearPersistedReaderContentOnStartup,
-        adjustChunkNoteArrowSizeByGap: globals.adjustChunkNoteArrowSizeByGap,
-        setChunkNoteVisible: globals.setChunkNoteVisible,
         updateChunkCnHoldBtn: globals.updateChunkCnHoldBtn,
         restoreSession: sessionRestoreRuntime.restoreSession
     });

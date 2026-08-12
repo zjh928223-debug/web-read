@@ -97,9 +97,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
 
   [
     'applyCurrentAudioMeta(audioMeta);',
-    'await deps.loadChunkNotesForCurrentAudio();',
-    'await deps.loadSentenceNotesForCurrentAudio();',
-    'await deps.switchSentenceNotesDoc(transcriptData);'
   ].forEach((pattern) => {
     assert.ok(sessionInitSource.includes(pattern), `session-init contract should remain intact: ${pattern}`);
   });
@@ -174,10 +171,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.deepEqual(deps.findExactMatchRangeHelper(), [1, 2]);
   assert.deepEqual(Array.from(deps.buildVocabMatchMapHelper()), [[1, 'vocab']]);
   assert.equal(deps.buildAudioKey(), 'audio-key');
-  assert.equal(deps.getChunkNotesStorageKey(), 'chunk-notes-key');
-  assert.equal(deps.getChunkNoteDraftStorageKey(), 'chunk-note-draft-key');
-  assert.equal(deps.getSentenceNotesStorageKey(), 'sentence-notes-key');
-  assert.equal(deps.getLegacySentenceNotesStorageKey(), 'legacy-sentence-notes-key');
   assert.equal(deps.buildCurrentSentenceDocId(), 'sentence-doc-id');
   assert.deepEqual(deps.buildCurrentAudioMetaState(), { name: 'audio' });
   assert.equal(deps.getCurrentAudioFilenameBase(), 'lesson');

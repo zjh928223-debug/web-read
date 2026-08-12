@@ -78,7 +78,6 @@ export function initReaderImportRuntime(deps = {}) {
     lblTranscript: deps.lblTranscript,
     validateTranscriptData: deps.validateTranscriptData,
     clearPersistedChunkSession: clearPersistedChunkSession,
-    switchSentenceNotesDoc: deps.switchSentenceNotesDoc,
     getAnnotationGenerationScope: getAnnotationGenerationScope,
     emitAnnotationDiagnostics: emitAnnotationDiagnostics,
     buildCurrentSentenceDocId: deps.audioIdentityApi.buildCurrentSentenceDocId,
@@ -89,10 +88,7 @@ export function initReaderImportRuntime(deps = {}) {
     syncAnnotationGenerationEntryStatus: syncAnnotationGenerationEntryStatus,
     bridgeToPinia: deps.bridgeToPinia,
     rebuildVocabMatching: visualVocabApi.rebuildVocabMatching,
-    loadChunkNotesForCurrentAudio: deps.loadChunkNotesForCurrentAudio,
-    clearChunkNotesFileState: function () { return deps.chunkNotesApi.clearChunkNotesFileState() },
     audioPlayer: deps.audioPlayer,
-    _ns: deps.notesState,
     markedMap: deps.marksStateApi.markedMap
   })
 

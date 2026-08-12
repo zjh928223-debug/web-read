@@ -11,11 +11,13 @@ const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'compos
 const themeControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'theme-controls-module.js'), 'utf8');
 const sessionInitSource = [
   'session-runtime-assembly.js',
+  'session-lifecycle-runtime.js',
   'session-restore-runtime.js',
   'session-startup-runtime.js',
   'session-startup-cleanup.js',
   'session-ui-settings-restore.js',
   'session-annotation-context.js',
+  'session-annotation-runtime.js',
   'session-annotation-generated-index.js',
   'session-annotation-marks.js',
   'session-annotation-lightweight-io.js',
@@ -68,6 +70,23 @@ assert.ok(
   assert.ok(
     themeControlsSource.includes(pattern),
     `theme-controls-module should own theme control binding logic: ${pattern}`
+  );
+});
+
+[
+  'refreshAllChunkNoteVisuals',
+  'getLockChunkNoteDimensionsForTheme',
+  '__lockChunkNoteDimensionsForTheme'
+].forEach((retiredSurface) => {
+  assert.equal(
+    themeControlsSource.includes(retiredSurface),
+    false,
+    `theme controls must not call retired notes surface: ${retiredSurface}`
+  );
+  assert.equal(
+    controlsRuntimeSource.includes(retiredSurface),
+    false,
+    `reader controls must not inject retired notes surface: ${retiredSurface}`
   );
 });
 

@@ -1,7 +1,6 @@
 export function createReaderFeatureRuntimeDeps(deps) {
   var runtimeContext = deps.runtimeContext;
   var bootstrapRuntime = deps.bootstrapRuntime;
-  var notesSessionRuntime = deps.notesSessionRuntime;
   var runtimeDeps = bootstrapRuntime.runtimeDeps;
   var domRefs = runtimeContext.domRefs;
 
@@ -21,7 +20,7 @@ export function createReaderFeatureRuntimeDeps(deps) {
     getFirstFileFromEvent: runtimeDeps.getFirstFileFromEvent,
     readFileAsText: runtimeDeps.readFileAsText,
     saveToDB: bootstrapRuntime.saveToDB,
-    applyCurrentAudioMeta: notesSessionRuntime.applyCurrentAudioMeta,
+    applyCurrentAudioMeta: bootstrapRuntime.audioIdentityApi.applyCurrentAudioMeta,
     restoreReaderFocus: runtimeContext.restoreReaderFocus,
     showToast: deps.showToast,
     showError: deps.showError,
@@ -32,15 +31,9 @@ export function createReaderFeatureRuntimeDeps(deps) {
     validateVisualData: runtimeDeps.validateVisualData,
     validateTranscriptData: runtimeDeps.validateTranscriptData,
     validateMarksArray: runtimeDeps.validateMarksArray,
-    switchSentenceNotesDoc: notesSessionRuntime.switchSentenceNotesDoc,
     renderTranscript: deps.renderTranscript,
     renderChunkMode: deps.renderChunkMode,
-    bridgeToPinia: notesSessionRuntime.bridgeToPinia,
-    loadChunkNotesForCurrentAudio: notesSessionRuntime.loadChunkNotesForCurrentAudio,
-    loadSentenceNotesForCurrentAudio: notesSessionRuntime.loadSentenceNotesForCurrentAudio,
-    chunkNotesApi: notesSessionRuntime.chunkNotesApi,
-    sentenceNotesApi: notesSessionRuntime.sentenceNotesApi,
-    notesState: notesSessionRuntime.notesState,
+    bridgeToPinia: bootstrapRuntime.bridgeToPinia,
     syncAnnotationGenerationEntryStatus: deps.syncAnnotationGenerationEntryStatus,
     findChunkIndexByTimeHelper: runtimeDeps.findChunkIndexByTimeHelper,
     bsFindActiveHelper: runtimeDeps.bsFindActiveHelper,

@@ -7,7 +7,6 @@ import App from './App.vue'
 import './utils/data-utils.js'
 import './utils/identity-storage-keys.js'
 import './utils/import-export-helpers.js'
-import './utils/sentence-notes-persistence.js'
 import './utils/playback-index.js'
 import './utils/chunk-matching.js'
 import './utils/vocab-matching.js'
@@ -32,7 +31,6 @@ import { useMarksStore } from './pinia-stores/marks.js'
 import { useClozeStore } from './pinia-stores/cloze.js'
 import { useTranscriptStore } from './pinia-stores/transcript.js'
 import { useChunkStore } from './pinia-stores/chunk.js'
-import { useNotesStore } from './pinia-stores/notes.js'
 import { useAnnotationStore } from './pinia-stores/annotation.js'
 
 const app = createApp(App)
@@ -51,7 +49,6 @@ const marksStore = useMarksStore()
 const clozeStore = useClozeStore()
 const transcriptStore = useTranscriptStore()
 const chunkStore = useChunkStore()
-const notesStore = useNotesStore()
 const annotationStore = useAnnotationStore()
 
 // Bridge theme — replace IIFE store methods with Pinia delegation
@@ -100,7 +97,7 @@ if (window.__marksStore) {
 window.__piniaStores = {
   theme: themeStore, ui: uiStore, audio: audioStore, marks: marksStore,
   cloze: clozeStore, transcript: transcriptStore, chunk: chunkStore,
-  notes: notesStore, annotation: annotationStore
+  annotation: annotationStore
 }
 
 // Phase 8: adapters loaded before Pinia keep startup data until stores exist.

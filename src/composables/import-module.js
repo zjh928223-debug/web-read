@@ -298,7 +298,6 @@
     var lblTranscript = deps.lblTranscript;
     var validateTranscriptData = deps.validateTranscriptData;
     var clearPersistedChunkSession = deps.clearPersistedChunkSession;
-    var switchSentenceNotesDoc = deps.switchSentenceNotesDoc;
     var getAnnotationGenerationScope = deps.getAnnotationGenerationScope;
     var emitAnnotationDiagnostics = deps.emitAnnotationDiagnostics;
     var buildCurrentSentenceDocId = deps.buildCurrentSentenceDocId;
@@ -309,16 +308,6 @@
     var syncAnnotationGenerationEntryStatus = deps.syncAnnotationGenerationEntryStatus;
     var bridgeToPinia = deps.bridgeToPinia;
     var rebuildVocabMatching = deps.rebuildVocabMatching;
-    var loadChunkNotesForCurrentAudio = deps.loadChunkNotesForCurrentAudio;
-    var _ns = deps._ns || window.__notesState || null;
-    var clearChunkNotesFileState = typeof deps.clearChunkNotesFileState === 'function'
-        ? deps.clearChunkNotesFileState
-        : function () {
-            if (!_ns || typeof _ns !== 'object') return;
-            _ns.chunkNotesFileHandle = null;
-            _ns.chunkNotesFileHandleAudioKey = '';
-            _ns.chunkNotesFileName = '';
-        };
     var audioPlayer = deps.audioPlayer;
     var markedMap = deps.markedMap;
 
@@ -329,11 +318,7 @@
         saveToDB('audio', file);
         applyCurrentAudioMeta({ name: file.name || 'audio', size: file.size || 0, lastModified: file.lastModified || 0, type: file.type || '' });
         clearGeneratedAnnotationIndex();
-        clearChunkNotesFileState();
         saveToDB('audioMeta', state.currentAudioMeta);
-        loadChunkNotesForCurrentAudio().then(function () {
-            if (state.isChunkMode) renderChunkMode();
-        });
         audioPlayer.src = URL.createObjectURL(file);
         markFileLoaded(lblAudio);
         e.target.value = '';
@@ -351,12 +336,10 @@
             promiseChain = clearPersistedChunkSession().then(function () {
               saveToDB('transcript', json);
               processTranscript(json);
-              return switchSentenceNotesDoc(json);
             }).then(function () {
                 emitAnnotationDiagnostics('app.import_scope_updated', {
                     scope: getAnnotationGenerationScope(),
                     currentAudioKey: state.currentAudioKey,
-                    currentDocId: _ns.currentDocId,
                     derivedDocId: buildCurrentSentenceDocId(json),
                     segmentCount: Array.isArray(json && json.segments) ? json.segments.length : 0
                 });
@@ -391,7 +374,6 @@
           emitAnnotationDiagnostics('app.process_transcript', {
               scope: getAnnotationGenerationScope(),
               currentAudioKey: state.currentAudioKey,
-              currentDocId: _ns.currentDocId,
               derivedDocId: buildCurrentSentenceDocId(json),
               segmentCount: state.segments.length,
               wordCount: state.words.length

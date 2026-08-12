@@ -51,7 +51,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'window.__appHandlers.initExports({',
     'window.__appHandlers.initMarksImport({',
     'window.__controlsModule.init({',
-    'initGlassEffects({',
+    'initGlassEffects()',
     'configureReaderPublicFacades({'
   ].forEach((pattern) => {
     assert.equal(
@@ -74,7 +74,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'deps.appHandlers.initExports({',
     'deps.appHandlers.initMarksImport({',
     'deps.controlsModule.init({',
-    'initGlassEffects({',
+    'initGlassEffects()',
     'configureReaderPublicFacades({',
     'dispose: lifecycle.dispose'
   ].forEach((pattern) => {
@@ -213,11 +213,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     chunkState: { isChunkMode: true, hasAiChunkData: true },
     marksStateApi: { markedMap },
     chunkControlsApi: { toggleChunkMode(value) { return value; } },
-    chunkNotesApi: {
-      listChunkNotes() { return [{ id: 'note-1' }]; },
-      getChunkNoteTagById(id) { return { id }; },
-      getChunkNoteContentBoxSize() { return { width: 1, height: 2 }; }
-    },
     audioIdentityApi: {
       currentAudioKey: 'audio-key',
       getCurrentAudioFilenameBase() { return 'lesson'; },
@@ -231,10 +226,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     readFileAsText() {},
     validateMarksArray(items) { return items; },
     saveToDB() {},
-    setChunkNoteVisible() {},
-    loadChunkNotesForCurrentAudio() {},
-    loadSentenceNotesForCurrentAudio() {},
-    switchSentenceNotesDoc() {},
     applyCurrentAudioMeta() {},
     renderTranscript() { calls.rendered = 'transcript'; },
     renderChunkMode() { calls.rendered = 'chunk'; },
@@ -291,7 +282,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(calls.marksImport[0].isChunkModeFn(), false);
   assert.equal(calls.controls[0].state, deps.runtimeState);
   assert.equal(calls.controls[0].findChunkIndexByTime(3), 3);
-  assert.deepEqual(calls.glass[0].listChunkNotes(), [{ id: 'note-1' }]);
+  assert.equal(calls.glass[0], undefined);
   assert.equal(calls.publicFacades[0].buildCurrentSentenceDocId(), 'doc-id');
   assert.equal(Object.prototype.hasOwnProperty.call(calls.publicFacades[0], 'openChunkNoteContextFromEvent'), false);
   api.dispose();

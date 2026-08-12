@@ -17,32 +17,12 @@ export function buildCurrentSentenceDocId() {
   return callPublicApi('buildCurrentSentenceDocId', arguments);
 }
 
-export function loadChunkNotesForCurrentAudio() {
-  return callPublicApi('loadChunkNotesForCurrentAudio', arguments);
-}
-
-export function setChunkNoteVisible() {
-  return callPublicApi('setChunkNoteVisible', arguments);
-}
-
-export function loadSentenceNotesForCurrentAudio() {
-  return callPublicApi('loadSentenceNotesForCurrentAudio', arguments);
-}
-
-export function switchSentenceNotesDoc() {
-  return callPublicApi('switchSentenceNotesDoc', arguments);
-}
-
 export function applyCurrentAudioMeta() {
   return callPublicApi('applyCurrentAudioMeta', arguments);
 }
 
 function installReaderPublicFacades() {
   window.buildCurrentSentenceDocId = buildCurrentSentenceDocId;
-  window.loadChunkNotesForCurrentAudio = loadChunkNotesForCurrentAudio;
-  window.setChunkNoteVisible = setChunkNoteVisible;
-  window.loadSentenceNotesForCurrentAudio = loadSentenceNotesForCurrentAudio;
-  window.switchSentenceNotesDoc = switchSentenceNotesDoc;
   window.applyCurrentAudioMeta = applyCurrentAudioMeta;
 }
 

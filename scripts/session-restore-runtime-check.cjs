@@ -71,20 +71,11 @@ async function main() {
     applyCurrentAudioMeta(meta) {
       calls.push(['audioMeta', meta.name]);
     },
-    async loadChunkNotesForCurrentAudio() {
-      calls.push(['chunkNotes']);
-    },
-    async loadSentenceNotesForCurrentAudio() {
-      calls.push(['sentenceNotes']);
-    },
     processTranscript(data) {
       calls.push(['transcript', data.segments.length]);
     },
     buildCurrentSentenceDocId() {
       return 'derived-doc';
-    },
-    async switchSentenceNotesDoc(data) {
-      calls.push(['switchSentenceNotesDoc', !!data]);
     },
     scheduleGeneratedAnnotationIndexRefresh() {
       calls.push(['scheduleGeneratedAnnotationIndexRefresh']);

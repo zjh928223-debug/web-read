@@ -15,7 +15,6 @@ const expectedScriptSrcs = [
   'src/stores/marks.js',
   'src/stores/transcript.js',
   'src/stores/chunk.js',
-  'src/stores/notes.js',
   'src/stores/annotation.js',
   'src/composables/glass-effects.js',
   'src/composables/app-handlers.js',

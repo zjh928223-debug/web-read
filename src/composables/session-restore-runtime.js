@@ -30,9 +30,6 @@ export function createSessionRestoreRuntime(deps = {}) {
         type: audioBlob.type || ''
       });
     }
-    await deps.loadChunkNotesForCurrentAudio();
-    await deps.loadSentenceNotesForCurrentAudio();
-
     const transcriptData = await deps.loadFromDB('transcript');
     if (transcriptData) {
       deps.processTranscript(transcriptData);
@@ -43,7 +40,6 @@ export function createSessionRestoreRuntime(deps = {}) {
         derivedDocId: deps.buildCurrentSentenceDocId(transcriptData),
         segmentCount: Array.isArray(transcriptData && transcriptData.segments) ? transcriptData.segments.length : 0
       });
-      await deps.switchSentenceNotesDoc(transcriptData);
       deps.emitAnnotationDiagnostics('app.restore_scope_updated', {
         scope: deps.getAnnotationGenerationScope(),
         currentAudioKey: state.currentAudioKey,
@@ -51,8 +47,6 @@ export function createSessionRestoreRuntime(deps = {}) {
       });
       deps.scheduleGeneratedAnnotationIndexRefresh();
       deps.markFileLoaded(deps.lblTranscript, 'Transcript restored');
-    } else {
-      await deps.switchSentenceNotesDoc();
     }
 
     const visualData = await deps.loadFromDB('visual');

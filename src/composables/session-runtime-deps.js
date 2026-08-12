@@ -38,18 +38,13 @@ export function createSessionRuntimeDeps(env = {}) {
       initDB: windowObject.initDB,
       markFileLoaded: windowObject.markFileLoaded,
       applyCurrentAudioMeta: windowObject.applyCurrentAudioMeta,
-      loadChunkNotesForCurrentAudio: windowObject.loadChunkNotesForCurrentAudio,
-      loadSentenceNotesForCurrentAudio: windowObject.loadSentenceNotesForCurrentAudio,
       buildCurrentSentenceDocId: windowObject.buildCurrentSentenceDocId,
-      switchSentenceNotesDoc: windowObject.switchSentenceNotesDoc,
       processVisual: windowObject.processVisual,
       processChunkData: windowObject.processChunkData,
       processTranscript: windowObject.processTranscript,
       bridgeToPinia: windowObject.bridgeToPinia,
       forceUpdateUI: windowObject.forceUpdateUI,
       showToast: windowObject.showToast,
-      adjustChunkNoteArrowSizeByGap: windowObject.adjustChunkNoteArrowSizeByGap,
-      setChunkNoteVisible: windowObject.setChunkNoteVisible,
       updateChunkCnHoldBtn: windowObject.updateChunkCnHoldBtn,
       annotationLightweightModule: windowObject.__annotationLightweightModule
     }

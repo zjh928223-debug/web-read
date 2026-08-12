@@ -2,6 +2,7 @@ import { collectReaderRuntimeDeps } from './reader-runtime-deps.js';
 import { initAudioIdentity } from './audio-identity-module.js';
 import { initHotkeyState } from './hotkey-state-module.js';
 import { initMarksState } from './marks-state-module.js';
+import { initPiniaBridge } from './pinia-bridge-module.js';
 
 export function initReaderBootstrapRuntime(deps = {}) {
   var getWindow = typeof deps.getWindow === 'function' ? deps.getWindow : function () { return globalThis; };
@@ -28,10 +29,6 @@ export function initReaderBootstrapRuntime(deps = {}) {
     buildAudioKey: runtimeDeps.buildAudioKey,
     buildCurrentAudioMetaState: runtimeDeps.buildCurrentAudioMetaState,
     getCurrentAudioFilenameBase: runtimeDeps.getCurrentAudioFilenameBase,
-    getChunkNotesStorageKey: runtimeDeps.getChunkNotesStorageKey,
-    getChunkNoteDraftStorageKey: runtimeDeps.getChunkNoteDraftStorageKey,
-    getSentenceNotesStorageKey: runtimeDeps.getSentenceNotesStorageKey,
-    getLegacySentenceNotesStorageKey: runtimeDeps.getLegacySentenceNotesStorageKey,
     buildCurrentSentenceDocId: runtimeDeps.buildCurrentSentenceDocId,
     getSegments: function () { return transcriptState.segments; },
     onCurrentAudioMetaChange: function () {
@@ -46,6 +43,12 @@ export function initReaderBootstrapRuntime(deps = {}) {
     }
   });
 
+  var bridgeToPinia = initPiniaBridge({
+    transcriptState: transcriptState,
+    chunkState: chunkState,
+    clozeState: clozeState
+  });
+
   return {
     transcriptState: transcriptState,
     chunkState: chunkState,
@@ -55,6 +58,7 @@ export function initReaderBootstrapRuntime(deps = {}) {
     loadFromDB: loadFromDB,
     runtimeDeps: runtimeDeps,
     audioIdentityApi: audioIdentityApi,
+    bridgeToPinia: bridgeToPinia,
     hotkeyStateApi: initHotkeyState(),
     marksStateApi: initMarksState()
   };

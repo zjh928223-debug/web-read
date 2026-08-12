@@ -3,8 +3,7 @@ import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';
 
 export function initReaderInteractionRuntime(deps = {}) {
   configureRenderRuntime({
-    bridgeToPinia: deps.bridgeToPinia,
-    tryRestoreChunkNoteDraft: deps.tryRestoreChunkNoteDraft
+    bridgeToPinia: deps.bridgeToPinia
   });
 
   var playbackRuntime = initReaderPlaybackRuntime({
@@ -21,7 +20,6 @@ export function initReaderInteractionRuntime(deps = {}) {
     bsFindActiveHelper: deps.bsFindActiveHelper,
     markedMap: deps.markedMap,
     vocabMatchMap: deps.vocabMatchMap,
-    hasActiveTextSelectionWithinChunk: deps.hasActiveTextSelectionWithinChunk,
     getSelection: deps.getSelection,
     playbackModule: deps.playbackModule,
     getWindow: deps.getWindow

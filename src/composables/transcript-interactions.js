@@ -2,8 +2,7 @@ var runtime = {
   getAudioPlayer: null,
   forceUpdateUI: null,
   notifyAnnotationBubbleWordClick: null,
-  isChunkMode: null,
-  hasActiveTextSelectionWithinChunk: null
+  isChunkMode: null
 };
 
 var legacyTranscriptContainer = null;
@@ -79,14 +78,6 @@ function bindLegacyTranscriptContainer(container) {
   container.addEventListener('click', function (event) {
     var span = event.target && event.target.closest ? event.target.closest('span[data-word-start]') : null;
     if (!span || !container.contains(span)) return;
-    if (
-      typeof runtime.isChunkMode === 'function' &&
-      runtime.isChunkMode() &&
-      typeof runtime.hasActiveTextSelectionWithinChunk === 'function' &&
-      runtime.hasActiveTextSelectionWithinChunk()
-    ) {
-      return;
-    }
     handleTranscriptWordClick({ event: event, element: span });
   }, true);
 }
@@ -97,8 +88,7 @@ export function configureTranscriptInteractions(deps) {
     getAudioPlayer: source.getAudioPlayer || runtime.getAudioPlayer,
     forceUpdateUI: source.forceUpdateUI || runtime.forceUpdateUI,
     notifyAnnotationBubbleWordClick: source.notifyAnnotationBubbleWordClick || runtime.notifyAnnotationBubbleWordClick,
-    isChunkMode: source.isChunkMode || runtime.isChunkMode,
-    hasActiveTextSelectionWithinChunk: source.hasActiveTextSelectionWithinChunk || runtime.hasActiveTextSelectionWithinChunk
+    isChunkMode: source.isChunkMode || runtime.isChunkMode
   });
   if (source.legacyTranscriptContainer) {
     bindLegacyTranscriptContainer(source.legacyTranscriptContainer);

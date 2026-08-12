@@ -1,14 +1,10 @@
 var runtime = {
-  bridgeToPinia: null,
-  tryRestoreChunkNoteDraft: null
+  bridgeToPinia: null
 }
 
 export function configureRenderRuntime(deps) {
   var config = deps || {}
   runtime.bridgeToPinia = typeof config.bridgeToPinia === 'function' ? config.bridgeToPinia : null
-  runtime.tryRestoreChunkNoteDraft = typeof config.tryRestoreChunkNoteDraft === 'function'
-    ? config.tryRestoreChunkNoteDraft
-    : null
   return runtime
 }
 
@@ -20,8 +16,5 @@ export function renderTranscript() {
 
 export function renderChunkMode() {
   if (typeof runtime.bridgeToPinia === 'function') runtime.bridgeToPinia()
-  if (typeof runtime.tryRestoreChunkNoteDraft === 'function') {
-    runtime.tryRestoreChunkNoteDraft()
-  }
   return undefined
 }

@@ -11,18 +11,15 @@ const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-public-facades.js'), 'utf8');
 
 [
-  'selectSentenceFromChunkTarget',
-  'openChunkNoteContextFromEvent',
   'buildCurrentSentenceDocId',
-  'loadChunkNotesForCurrentAudio',
-  'setChunkNoteVisible',
-  'loadSentenceNotesForCurrentAudio',
-  'switchSentenceNotesDoc',
   'applyCurrentAudioMeta'
 ].forEach((name) => {
   assert.equal(appSource.includes(`window.${name} =`), false, `app.js should not own window.${name}`);
   assert.ok(facadeSource.includes(`export function ${name}()`), `reader-public-facades should export ${name}`);
   assert.ok(facadeSource.includes(`window.${name} = ${name};`), `reader-public-facades should own window.${name}`);
+});
+['loadChunkNotesForCurrentAudio', 'setChunkNoteVisible', 'loadSentenceNotesForCurrentAudio', 'switchSentenceNotesDoc'].forEach((name) => {
+  assert.equal(facadeSource.includes(name), false, `retired notes facade should stay removed: ${name}`);
 });
 
 assert.ok(

@@ -10,11 +10,7 @@
   }
 
   function init(deps) {
-    var adjustChunkNoteArrowSizeByGap = deps.adjustChunkNoteArrowSizeByGap;
-    var renderAllChunkNoteTags = deps.renderAllChunkNoteTags;
-    var scheduleChunkNoteConnectorRedraw = deps.scheduleChunkNoteConnectorRedraw;
     var getIsChunkMode = deps.getIsChunkMode;
-    var closeChunkNotePopover = deps.closeChunkNotePopover;
     var updateShadowBtnText = deps.updateShadowBtnText;
 
     var styleSettings = {
@@ -174,9 +170,6 @@
       localStorage.setItem('chunkEnSize', en + 'px'); localStorage.setItem('chunkCnSize', cn + 'px');
       localStorage.setItem('chunkGap', gap + 'px'); localStorage.setItem('chunkCnColor', cnColor);
       localStorage.setItem('chunkBgColor', bgColor);
-      if (typeof adjustChunkNoteArrowSizeByGap === 'function') adjustChunkNoteArrowSizeByGap();
-      if (getIsChunkMode && getIsChunkMode() && typeof renderAllChunkNoteTags === 'function') renderAllChunkNoteTags();
-      if (typeof scheduleChunkNoteConnectorRedraw === 'function') scheduleChunkNoteConnectorRedraw();
     }
 
     // Wire global functions for HTML onclick
@@ -189,7 +182,6 @@
     if (backdrop) {
       backdrop.onclick = function () {
         closeChunkStyleModal();
-        if (typeof closeChunkNotePopover === 'function') closeChunkNotePopover();
       };
     }
 

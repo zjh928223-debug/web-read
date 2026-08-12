@@ -106,12 +106,6 @@ async function main() {
       async clearPersistedReaderContentOnStartup() {
         calls.push('clear');
       },
-      adjustChunkNoteArrowSizeByGap() {
-        calls.push('adjust');
-      },
-      setChunkNoteVisible(value, persist) {
-        calls.push(['noteVisible', value, persist]);
-      },
       updateChunkCnHoldBtn() {
         calls.push('hold');
       },
@@ -125,7 +119,7 @@ async function main() {
     global.setTimeout = originalSetTimeout;
   }
 
-  assert.deepEqual(calls.slice(0, 3), ['initDB', 'clear', 'adjust']);
+  assert.deepEqual(calls.slice(0, 3), ['initDB', 'clear', 'hold']);
   assert.deepEqual(state.manualChunkStates, { a: true });
   assert.equal(state.chunkCnMode, 'focus');
   assert.equal(state.isChunkShadowOn, false);
