@@ -8,9 +8,11 @@ from pathlib import Path
 
 from google import genai
 from google.genai import types
+from youtube_workflow.durable_json import DurableJsonRepository
 
 
-_GEMINI_REQUEST_LOCK = threading.Lock()
+_GEMINI_REQUEST_LOCKS = {}
+_GEMINI_REQUEST_LOCKS_LOCK = threading.Lock()
 _GEMINI_RATE_LIMIT_LOCK = threading.Lock()
 
 GEMINI_FREE_TIER_LIMITS = {
@@ -44,29 +46,30 @@ class GeminiFreeTierRateLimiter:
     def __init__(self, now_func=None, sleep_func=None):
         self.now_func = now_func or time.time
         self.sleep_func = sleep_func or time.sleep
+        self.repository = DurableJsonRepository()
 
     def _state_path(self, cache_dir: Path) -> Path:
         return cache_dir / "rate-limit-state.json"
 
     def _load_state(self, cache_dir: Path) -> dict:
         path = self._state_path(cache_dir)
-        if not path.exists():
-            return {}
-        try:
-            state = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
+        outcome = self.repository.read(path, {})
+        if outcome.status in {"corrupt", "interrupted"}:
+            raise RuntimeError(f"Gemini rate state recovery required: {outcome.error_code}")
+        state = outcome.value
         return state if isinstance(state, dict) else {}
 
     def _write_state(self, cache_dir: Path, state: dict) -> None:
         path = self._state_path(cache_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.repository.write(path, state)
 
     def _today(self, now: float) -> str:
         return datetime.fromtimestamp(now, timezone.utc).date().isoformat()
 
-    def reserve(self, cache_dir: Path, model_name, token_estimate=1, log_func=None, log_prefix="Gemini") -> None:
+    def reserve(
+        self, cache_dir: Path, model_name, token_estimate=1, log_func=None,
+        log_prefix="Gemini", deadline: float | None = None,
+    ) -> None:
         limits = get_gemini_free_tier_limits(model_name)
         model_key = normalize_gemini_model_name(model_name)
         rpm = int(limits.get("rpm") or 0)
@@ -74,8 +77,9 @@ class GeminiFreeTierRateLimiter:
         rpd = int(limits.get("rpd") or 0)
         token_estimate = max(1, int(token_estimate or 1))
 
-        with _GEMINI_RATE_LIMIT_LOCK:
-            while True:
+        while True:
+            wait_seconds = 0.0
+            with _GEMINI_RATE_LIMIT_LOCK:
                 now = float(self.now_func())
                 state = self._load_state(cache_dir)
                 model_state = state.setdefault(model_key, {})
@@ -112,39 +116,67 @@ class GeminiFreeTierRateLimiter:
                     waits.append(max(0.0, recent_tokens[0][0] + 60.0 - now))
 
                 wait_seconds = max(waits) if waits else 0.0
-                if wait_seconds > 0.01:
-                    if log_func is not None:
-                        log_func(
-                            f"{log_prefix}: waiting {wait_seconds:.1f}s for Gemini free-tier rate limit "
-                            f"model={model_key} rpm={rpm} tpm={tpm} rpd={rpd}"
-                        )
-                    self.sleep_func(wait_seconds)
-                    continue
-
-                recent.append(now)
-                recent_tokens.append([now, token_estimate])
-                daily["count"] = int(daily.get("count") or 0) + 1
-                model_state["recent"] = recent[-max(1, rpm):] if rpm else recent
-                model_state["recentTokens"] = recent_tokens[-100:]
-                model_state["daily"] = daily
-                model_state["limits"] = limits
-                state[model_key] = model_state
-                self._write_state(cache_dir, state)
-                return
+                if wait_seconds <= 0.01:
+                    recent.append(now)
+                    recent_tokens.append([now, token_estimate])
+                    daily["count"] = int(daily.get("count") or 0) + 1
+                    model_state["recent"] = recent[-max(1, rpm):] if rpm else recent
+                    model_state["recentTokens"] = recent_tokens[-100:]
+                    model_state["daily"] = daily
+                    model_state["limits"] = limits
+                    state[model_key] = model_state
+                    self._write_state(cache_dir, state)
+                    return
+            if log_func is not None:
+                log_func(
+                    f"{log_prefix}: waiting {wait_seconds:.1f}s for Gemini free-tier rate limit "
+                    f"model={model_key} rpm={rpm} tpm={tpm} rpd={rpd}"
+                )
+            if deadline is not None and float(self.now_func()) + wait_seconds > float(deadline):
+                raise TimeoutError(f"{log_prefix} rate-limit reservation exceeds deadline")
+            self.sleep_func(wait_seconds)
 
 
 _GEMINI_RATE_LIMITER = GeminiFreeTierRateLimiter()
 
 
 def build_request_fingerprint(model_name, system_prompt, payload_obj, extra_config=None):
+    cache_config = {
+        key: value
+        for key, value in (extra_config or {}).items()
+        if key not in {"api_key", "deadline"}
+    }
     fingerprint_payload = {
         "model_name": model_name,
         "system_prompt": system_prompt,
         "payload_obj": payload_obj,
-        "extra_config": extra_config or {},
+        "extra_config": cache_config,
     }
     serialized = json.dumps(fingerprint_payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _request_lock(fingerprint: str) -> threading.Lock:
+    with _GEMINI_REQUEST_LOCKS_LOCK:
+        return _GEMINI_REQUEST_LOCKS.setdefault(fingerprint, threading.Lock())
+
+
+def _load_gemini_cache(repository, cache_path: Path, fingerprint: str) -> str | None:
+    outcome = repository.read(cache_path, None)
+    if outcome.status == "missing":
+        return None
+    envelope = outcome.value
+    if (
+        isinstance(envelope, dict)
+        and envelope.get("schemaVersion") == 1
+        and envelope.get("fingerprint") == fingerprint
+        and isinstance(envelope.get("response"), str)
+        and envelope["response"].strip()
+    ):
+        return envelope["response"]
+    if cache_path.exists():
+        repository._quarantine(cache_path)
+    return None
 
 
 def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payload_obj, extra_config=None, log_func=None, log_prefix="Gemini"):
@@ -155,24 +187,30 @@ def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payloa
         payload_obj,
         extra_config=extra_config,
     )
-    cache_path = cache_dir / f"{fingerprint}.txt"
+    cache_path = cache_dir / f"{fingerprint}.json"
+    repository = DurableJsonRepository()
 
-    if cache_path.exists():
+    cached = _load_gemini_cache(repository, cache_path, fingerprint)
+    if cached is not None:
         if log_func is not None:
             log_func(f"{log_prefix}：命中缓存：{cache_path.name}")
-        return cache_path.read_text(encoding="utf-8")
+        return cached
 
     if log_func is not None:
         log_func(f"{log_prefix}：未命中缓存，发起真实请求：{cache_path.name}")
-        if _GEMINI_REQUEST_LOCK.locked():
+        request_lock = _request_lock(fingerprint)
+        if request_lock.locked():
             log_func(f"{log_prefix}：已有 Gemini 请求正在执行，等待本地串行队列。")
+    else:
+        request_lock = _request_lock(fingerprint)
 
     extra_config = extra_config or {}
-    with _GEMINI_REQUEST_LOCK:
-        if cache_path.exists():
+    with request_lock:
+        cached = _load_gemini_cache(repository, cache_path, fingerprint)
+        if cached is not None:
             if log_func is not None:
                 log_func(f"{log_prefix}：等待后命中缓存：{cache_path.name}")
-            return cache_path.read_text(encoding="utf-8")
+            return cached
 
         if log_func is not None:
             log_func(f"{log_prefix}：请求已发出，当前正在等待 Gemini 返回结果。若此处长时间没有新日志，通常表示仍在等待云端响应，不是程序卡住。")
@@ -186,6 +224,7 @@ def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payloa
             token_estimate=estimate_gemini_request_tokens(system_prompt, contents),
             log_func=log_func,
             log_prefix=log_prefix,
+            deadline=extra_config.get("deadline"),
         )
         client_kwargs = {"api_key": api_key}
         if base_url:
@@ -205,7 +244,13 @@ def request_gemini_with_cache(cache_dir: Path, model_name, system_prompt, payloa
         response_text = (response.text or "").strip()
         if log_func is not None:
             log_func(f"{log_prefix}：Gemini 已返回响应，接口等待耗时 {time.perf_counter() - request_started_at:.1f} 秒。")
-        cache_path.write_text(response_text, encoding="utf-8")
+        if not response_text:
+            raise RuntimeError("Gemini returned an empty response")
+        repository.write(cache_path, {
+            "schemaVersion": 1,
+            "fingerprint": fingerprint,
+            "response": response_text,
+        })
         return response_text
 
 

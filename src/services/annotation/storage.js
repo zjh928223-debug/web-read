@@ -2,15 +2,18 @@
 
 import * as DIAGNOSTICS from './diagnostics.js';
 import { recordBestEffortFailure } from '../runtime/best-effort.js';
+import { createTypedError } from '../runtime/typed-error.js';
 
 const GENERATED_FILE = 'annotation.generated.json';
 const STATUS_FILE = 'annotation.status.json';
 const FULL_EXPORT_FILE = 'annotation-full-export.json';
+const BUNDLE_FILE = 'annotation.bundle.v2.json';
+const BUNDLE_SCHEMA = 'annotation-bundle.v2';
 const STORAGE_PREFIX = 'AnnotationGenerationStorage::';
 
 let directoryHandle = null;
 
-export { GENERATED_FILE, STATUS_FILE, FULL_EXPORT_FILE };
+export { GENERATED_FILE, STATUS_FILE, FULL_EXPORT_FILE, BUNDLE_FILE, BUNDLE_SCHEMA };
 
 function isAnnotationDebugEnabled() {
     try {
@@ -50,10 +53,23 @@ export async function loadBundle(scope, options = {}) {
     const statusKey = describeStorageTarget(normalizedScope, STATUS_FILE);
     const runtimeArtifacts = await inspectRuntimeArtifacts(normalizedScope);
     try {
-        const [generated, status] = await Promise.all([
-            loadJson(normalizedScope, GENERATED_FILE),
-            loadJson(normalizedScope, STATUS_FILE)
-        ]);
+        const envelope = await loadJson(normalizedScope, BUNDLE_FILE, { distinguishErrors: true });
+        let generated;
+        let status;
+        let loadState = 'loaded';
+        if (envelope) {
+            validateBundleEnvelope(envelope, normalizedScope);
+            generated = envelope.generated;
+            status = envelope.status;
+        } else {
+            const legacy = await Promise.all([
+                loadJson(normalizedScope, GENERATED_FILE),
+                loadJson(normalizedScope, STATUS_FILE)
+            ]);
+            generated = legacy[0];
+            status = legacy[1];
+            loadState = generated || status ? 'legacy' : 'not-found';
+        }
         emitDiagnostics('storage.load_bundle', {
             scope: normalizedScope,
             runId: options.runId,
@@ -67,6 +83,9 @@ export async function loadBundle(scope, options = {}) {
         const result = {
             generated: generated || createGeneratedJson(normalizedScope, []),
             status: status || createStatusJson(normalizedScope, {}),
+            loadState,
+            revision: envelope?.revision || 0,
+            commitId: envelope?.commitId || null,
             storageMode: getStorageMode(),
             runtimeArtifacts
         };
@@ -104,8 +123,10 @@ export async function saveBundle(scope, generated, status, options = {}) {
             generatedItemCount: Array.isArray(nextGenerated.items) ? nextGenerated.items.length : 0,
             statusBlockCount: countStatusBlocks(nextStatus)
         });
-        await saveJson(normalizedScope, GENERATED_FILE, nextGenerated);
-        await saveJson(normalizedScope, STATUS_FILE, nextStatus);
+        const existing = await loadJson(normalizedScope, BUNDLE_FILE, { distinguishErrors: true });
+        if (existing) validateBundleEnvelope(existing, normalizedScope);
+        const envelope = createBundleEnvelope(normalizedScope, nextGenerated, nextStatus, (existing?.revision || 0) + 1);
+        await saveJson(normalizedScope, BUNDLE_FILE, envelope);
         const runtimeArtifacts = await inspectRuntimeArtifacts(normalizedScope);
         emitAnnotationDebug('storage.save_bundle_complete', {
             scope: normalizedScope,
@@ -127,6 +148,8 @@ export async function saveBundle(scope, generated, status, options = {}) {
         return {
             generated: nextGenerated,
             status: nextStatus,
+            revision: envelope.revision,
+            commitId: envelope.commitId,
             storageMode: getStorageMode(),
             filenames: { generated: GENERATED_FILE, status: STATUS_FILE },
             runtimeArtifacts
@@ -201,13 +224,15 @@ export function normalizeScope(scope) {
     };
 }
 
-async function loadJson(scope, filename) {
+async function loadJson(scope, filename, options = {}) {
     if (directoryHandle) {
         try {
             const fileHandle = await directoryHandle.getFileHandle(filename);
             const file = await fileHandle.getFile();
             return JSON.parse(await file.text());
         } catch (error) {
+            if (options.distinguishErrors && isPermissionError(error)) throw annotationStorageError('permission', scope, filename);
+            if (options.distinguishErrors && !isNotFoundError(error)) throw annotationStorageError('corrupt', scope, filename);
             recordBestEffortFailure(error, {
                 operationId: 'annotation-storage-read',
                 reason: 'missing or unreadable optional annotation artifacts are represented as not loaded',
@@ -221,6 +246,7 @@ async function loadJson(scope, filename) {
         const raw = global.localStorage && global.localStorage.getItem(getLocalStorageKey(scope, filename));
         return raw ? JSON.parse(raw) : null;
     } catch (error) {
+        if (options.distinguishErrors) throw annotationStorageError('corrupt', scope, filename);
         recordBestEffortFailure(error, {
             operationId: 'annotation-storage-read',
             reason: 'unavailable fallback annotation storage returns no optional bundle instead of blocking reader startup',
@@ -228,6 +254,55 @@ async function loadJson(scope, filename) {
         });
         return null;
     }
+}
+
+function createBundleEnvelope(scope, generated, status, revision) {
+    const payload = JSON.stringify({ generated, status });
+    return {
+        schemaVersion: BUNDLE_SCHEMA,
+        scope: normalizeScope(scope),
+        revision,
+        commitId: `annotation-${Date.now()}-${revision}`,
+        checksum: checksum(payload),
+        generated,
+        status
+    };
+}
+
+function validateBundleEnvelope(value, scope) {
+    if (!value || value.schemaVersion !== BUNDLE_SCHEMA || !Number.isInteger(value.revision) || value.revision < 1
+        || !value.generated || !value.status
+        || value.checksum !== checksum(JSON.stringify({ generated: value.generated, status: value.status }))) {
+        throw annotationStorageError('corrupt', scope, BUNDLE_FILE);
+    }
+}
+
+function annotationStorageError(kind, scope, filename) {
+    return createTypedError({
+        code: kind === 'permission' ? 'ANNOTATION_STORAGE_PERMISSION' : 'ANNOTATION_STORAGE_CORRUPT',
+        category: kind === 'permission' ? 'permission' : 'storage',
+        message: kind === 'permission' ? 'Annotation storage permission is required' : 'Annotation storage is corrupt',
+        retryable: kind === 'permission',
+        operationId: `annotation-storage-${kind}`,
+        details: { scope: normalizeScope(scope), filename }
+    });
+}
+
+function isPermissionError(error) {
+    return ['NotAllowedError', 'SecurityError'].includes(error?.name);
+}
+
+function isNotFoundError(error) {
+    return error?.name === 'NotFoundError';
+}
+
+function checksum(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+        hash ^= value.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 async function saveJson(scope, filename, json) {
@@ -279,4 +354,4 @@ function normalizeText(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
-window.AnnotationGenerationStorage = { GENERATED_FILE, STATUS_FILE, FULL_EXPORT_FILE, setDirectoryHandle, getStorageMode, loadBundle, saveBundle, createGeneratedJson, createStatusJson, inspectRuntimeArtifacts, getLocalStorageKey, normalizeScope };
+window.AnnotationGenerationStorage = { GENERATED_FILE, STATUS_FILE, FULL_EXPORT_FILE, BUNDLE_FILE, BUNDLE_SCHEMA, setDirectoryHandle, getStorageMode, loadBundle, saveBundle, createGeneratedJson, createStatusJson, inspectRuntimeArtifacts, getLocalStorageKey, normalizeScope };

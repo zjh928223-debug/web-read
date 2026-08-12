@@ -2,6 +2,10 @@ import {
   FIRST_CONTACT_PREVIEW_SCHEMA,
   importVocabularyPreview,
 } from './passage-preview-import.js'
+import {
+  loadPassagePreviewDurableState,
+  updatePassagePreviewDurableState,
+} from './passage-preview-durable-state.js'
 
 export const IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY = 'vocabulary.ielts-daily-preview.allocations.v1'
 export const IELTS_DAILY_PREVIEW_CONTINUATION_KEY = 'vocabulary.ielts-daily-preview.continuation.v1'
@@ -20,7 +24,9 @@ const DEFAULT_BATCH_TITLE = '剑桥雅思阅读 · {date} · 首次接触'
 const FALLBACK_MEANING = '暂无本地中文释义'
 
 export function loadIeltsDailyPreviewAllocations(storage = globalThis.localStorage) {
-  const envelope = readJson(storage, IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, null)
+  const envelope = loadPassagePreviewDurableState(storage, {
+    allocations: readJson(storage, IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, null),
+  }).allocations
   return envelope?.schemaVersion === IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA
     ? normalizeAllocations(envelope)
     : emptyAllocations()
@@ -29,14 +35,17 @@ export function loadIeltsDailyPreviewAllocations(storage = globalThis.localStora
 export function saveIeltsDailyPreviewAllocations(allocations = {}, storage = globalThis.localStorage) {
   const normalized = normalizeAllocations(allocations)
   if (typeof storage?.setItem === 'function') {
-    storage.setItem(IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, JSON.stringify({
+    const envelope = {
       schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
       batches: Object.fromEntries(normalized.batches.map((batch) => [batch.date, {
         words: batch.words,
         ...(batch.candidateItems?.length ? { candidateItems: batch.candidateItems } : {}),
       }])),
       assignedLemmas: normalized.assignedLemmas,
-    }))
+    }
+    updatePassagePreviewDurableState((state) => ({ ...state, allocations: envelope }), storage, {
+      allocations: readJson(storage, IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, null),
+    })
   }
   return normalized
 }
@@ -137,22 +146,28 @@ export async function loadIeltsPreviewCandidateDetails({
 }
 
 export function loadIeltsDailyPreviewContinuation(storage = globalThis.localStorage) {
-  const saved = readJson(storage, IELTS_DAILY_PREVIEW_CONTINUATION_KEY, null)
+  const saved = loadPassagePreviewDurableState(storage, {
+    continuation: readJson(storage, IELTS_DAILY_PREVIEW_CONTINUATION_KEY, null),
+  }).continuation
   return normalizeContinuation(saved)
 }
 
 export function saveIeltsDailyPreviewContinuation(state = {}, storage = globalThis.localStorage) {
   const normalized = normalizeContinuation(state)
   if (typeof storage?.setItem === 'function') {
-    storage.setItem(IELTS_DAILY_PREVIEW_CONTINUATION_KEY, JSON.stringify(normalized))
+    updatePassagePreviewDurableState((state) => ({ ...state, continuation: normalized }), storage, {
+      continuation: readJson(storage, IELTS_DAILY_PREVIEW_CONTINUATION_KEY, null),
+    })
   }
   return normalized
 }
 
 export function loadIeltsDailyPreviewArchive(storage = globalThis.localStorage) {
-  const saved = readJson(storage, IELTS_DAILY_PREVIEW_ARCHIVE_KEY, null)
-  if (saved?.schemaVersion !== IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA || !Array.isArray(saved.entries)) return []
-  return saved.entries
+  const legacy = readJson(storage, IELTS_DAILY_PREVIEW_ARCHIVE_KEY, null)
+  const entries = loadPassagePreviewDurableState(storage, {
+    archive: legacy?.schemaVersion === IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA ? legacy.entries : [],
+  }).archive
+  return entries
     .filter((entry) => normalizeDate(entry?.date) && Array.isArray(entry?.items))
     .map((entry) => ({
       date: normalizeDate(entry.date),
@@ -173,10 +188,9 @@ export function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, 
   })
   const next = entries.slice(0, 30)
   if (typeof storage?.setItem === 'function') {
-    storage.setItem(IELTS_DAILY_PREVIEW_ARCHIVE_KEY, JSON.stringify({
-      schemaVersion: IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA,
-      entries: next,
-    }))
+    updatePassagePreviewDurableState((state) => ({ ...state, archive: next }), storage, {
+      archive: loadIeltsDailyPreviewArchive(storage),
+    })
   }
   return next
 }

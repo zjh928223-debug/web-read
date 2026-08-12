@@ -58,7 +58,7 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
   }
 
   async function registerItemInternal(normalizedItem, inputOptions = {}) {
-    const records = loadPassagePreviewAcquisitionRecords(storage)
+    const records = await rebuildRecordsFromCanonicalRepository()
     const previous = findRecord(records, normalizedItem)
     const introducedAt = previous?.introducedAt
       || normalizeIso(inputOptions.introducedAt)
@@ -75,6 +75,7 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
       phonetic: normalizedItem.phonetic || null,
       createdAt: introducedAt,
       target_id: targetId,
+      preview_item_id: normalizedItem.id,
       acquisition_identity: {
         source_id: sourceScope,
         target_id: targetId,
@@ -102,24 +103,15 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
       item: mergeItems(previous?.item, normalizedItem),
       updatedAt: nowIso(nowProvider),
     })
-    savePassagePreviewAcquisitionRecords(
-      records.filter((candidate) => (
-        candidate.itemKey !== record.itemKey
-        && candidate.itemKey !== previous?.itemKey
-        && candidate.previewItemId !== record.previewItemId
-      )).concat(record),
-      storage,
-    )
     return { record, result, state }
   }
 
   async function getDueChecks(inputOptions = {}) {
     if (typeof acquisitionRepository.loadSnapshot !== 'function') return []
     const now = Date.parse(normalizeIso(inputOptions.now) || nowIso(nowProvider))
-    const records = loadPassagePreviewAcquisitionRecords(storage)
     const snapshot = await acquisitionRepository.loadSnapshot()
-    return records
-      .map((record) => {
+    const records = rebuildRecordsFromSnapshot(snapshot)
+    return records.map((record) => {
         const pair = snapshot.by_learning_unit_id?.[record.learningUnitId]
         const state = pair?.acquisition_state
         if (!pair || !state) return null
@@ -227,17 +219,12 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
     }
 
     const nextState = await acquisitionRepository.getState(unit.learning_unit_id)
-    const records = loadPassagePreviewAcquisitionRecords(storage)
     const updated = normalizeRecord({
       ...record,
       status: nextState?.status || record.status,
       contextEvidenceId: nextState?.validated_anchor_id || record.contextEvidenceId,
       updatedAt: nowIso(nowProvider),
     })
-    savePassagePreviewAcquisitionRecords(
-      records.filter((candidate) => candidate.itemKey !== updated.itemKey).concat(updated),
-      storage,
-    )
     return {
       record: updated,
       status: nextState?.status || record.status,
@@ -251,8 +238,55 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
     registerItem,
     getDueChecks,
     recordDelayedCheck,
-    loadRecords: () => loadPassagePreviewAcquisitionRecords(storage),
+    loadRecords: rebuildRecordsFromCanonicalRepository,
+    rebuildRecords: rebuildRecordsFromCanonicalRepository,
   }
+
+  async function rebuildRecordsFromCanonicalRepository() {
+    if (typeof acquisitionRepository.loadSnapshot !== 'function') return []
+    return rebuildRecordsFromSnapshot(await acquisitionRepository.loadSnapshot())
+  }
+
+  function rebuildRecordsFromSnapshot(snapshot) {
+    const legacyByUnit = new Map(loadPassagePreviewAcquisitionRecords(storage).map((record) => [record.learningUnitId, record]))
+    return Object.values(snapshot?.by_learning_unit_id || {})
+      .filter((pair) => pair?.learning_unit?.extensions?.source === 'ielts-preview')
+      .map((pair) => recordFromCanonicalPair(pair, legacyByUnit.get(pair.learning_unit.learning_unit_id)))
+      .filter(Boolean)
+  }
+}
+
+function recordFromCanonicalPair(pair, legacy = null) {
+  const unit = pair?.learning_unit
+  const state = pair?.acquisition_state
+  if (!unit || !state) return null
+  const lemma = normalizeWord(unit.normalized_form)
+  if (!lemma) return null
+  const meaning = normalizeText(unit.target_sense?.gloss)
+  const item = normalizePreviewItem(legacy?.item || {
+    id: unit.extensions?.preview_item_id || '',
+    lemma,
+    word: lemma,
+    primaryMeaningZh: meaning,
+    pos: unit.target_sense?.part_of_speech || '',
+    targetSenseKey: unit.target_sense_key || '',
+  })
+  return normalizeRecord({
+    ...(legacy || {}),
+    previewItemId: item.id,
+    lemma,
+    word: item.word || lemma,
+    primaryMeaningZh: item.primaryMeaningZh || meaning,
+    pos: item.pos || unit.target_sense?.part_of_speech || '',
+    targetSenseKey: item.targetSenseKey || unit.target_sense_key || '',
+    learningUnitId: unit.learning_unit_id,
+    targetSenseId: unit.target_sense_id,
+    contextEvidenceId: state.validated_anchor_id,
+    introducedAt: state.introduced_at,
+    status: state.status,
+    updatedAt: unit.updated_at,
+    item,
+  })
 }
 
 function normalizePreviewItem(item = {}) {

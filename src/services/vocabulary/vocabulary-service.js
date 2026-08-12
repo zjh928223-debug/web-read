@@ -173,6 +173,9 @@ export function createVocabularyService(options = {}) {
             revision: 0,
             extensions: {
               source: options.source || 'article-settlement',
+              ...(options.source === 'ielts-preview' ? {
+                preview_item_id: normalizeNullableText(input.preview_item_id || input.previewItemId),
+              } : {}),
             },
           },
           event_id: identity.queueEventId,

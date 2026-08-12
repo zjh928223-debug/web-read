@@ -863,7 +863,12 @@ async function verifyWordnikSentenceEndpoint() {
 }
 
 async function importSource(relativePath) {
-  const source = read(relativePath)
+  let source = read(relativePath)
+  if (relativePath.endsWith('passage-preview-storage.js')) {
+    const durableSource = read('src/features/passage-preview/passage-preview-durable-state.js')
+    const durableUrl = `data:text/javascript;base64,${Buffer.from(durableSource).toString('base64')}`
+    source = source.replace("'./passage-preview-durable-state.js'", JSON.stringify(durableUrl))
+  }
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 }
 

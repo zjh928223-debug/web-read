@@ -64,7 +64,7 @@
 - [x] 7.5 实现 crash recovery 状态机，损坏 jobs/history 必须 quarantine/backup recovery 而非清空覆盖
 - [x] 7.6 建立 `ProcessSupervisor`，使用 lock、try/finally、进程树 terminate/kill timeout 和真实终态确认
 - [ ] 7.7 将 AI/backfill 改为 202 background job，增加 deadline、cancel、retry+jitter 和分资源限流
-- [ ] 7.8 修复 rate limiter 锁内 sleep 与缓存原子性，隔离空/截断 cache 文件
+- [x] 7.8 修复 rate limiter 锁内 sleep 与缓存原子性，隔离空/截断 cache 文件
 - [ ] 7.9 建立统一 `NativePicker` 的稳定 owner、cancel/error/timeout/kill 与前端 Abort/retry
 - [ ] 7.10 为 1/10/50 active jobs、上游 timeout/503、取消、重启和 picker 焦点变化建立压力测试
 
@@ -72,11 +72,11 @@
 
 - [x] 8.1 建立 marks/activity ledger，采用 coalesce、monotonic sequence、one-in-flight latest-wins 和 dirty/saved/error
 - [x] 8.2 移除 window event 与 MutationObserver 对同一 marks 改动的重复写通道
-- [ ] 8.3 将 legacy Vocabulary Snapshot writers 迁到统一 Unit of Work 或 revision/CAS，阻止 lost update
-- [ ] 8.4 对 Vocabulary unknown schema 实施显式拒绝、migration registry 和迁移前 row backup
-- [ ] 8.5 将 Passage Preview 多 localStorage key 合并为 batchId/revision envelope 或可恢复 transition
-- [ ] 8.6 移除 acquisition 以 localStorage 为权威索引的 orphan 路径，改为 canonical repository 查询/重建
-- [ ] 8.7 将 Annotation generated/status 合并为原子 envelope/commit manifest，区分 not-found、corrupt 和 permission
+- [x] 8.3 将 legacy Vocabulary Snapshot writers 迁到统一 Unit of Work 或 revision/CAS，阻止 lost update
+- [x] 8.4 对 Vocabulary unknown schema 实施显式拒绝、migration registry 和迁移前 row backup
+- [x] 8.5 将 Passage Preview 多 localStorage key 合并为 batchId/revision envelope 或可恢复 transition
+- [x] 8.6 移除 acquisition 以 localStorage 为权威索引的 orphan 路径，改为 canonical repository 查询/重建
+- [x] 8.7 将 Annotation generated/status 合并为原子 envelope/commit manifest，区分 not-found、corrupt 和 permission
 - [ ] 8.8 为所有领域建立 multi-tab、Quota、损坏、unknown version、关闭页面与 recovery 测试
 
 ## 9. 生命周期、错误反馈与可访问性

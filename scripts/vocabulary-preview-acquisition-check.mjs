@@ -166,6 +166,19 @@ async function runCoordinatorScenario(moduleApi) {
   const registered = await coordinator.registerItem(item, { introducedAt })
   assert.equal(registered.state.status, 'acquiring')
   assert.equal((await repository.loadSnapshot()).reviewStates.length, 0)
+  storage.setItem('vocabulary.passage-preview.acquisition.v1', JSON.stringify({
+    schemaVersion: 'passage-preview.acquisition.v1',
+    records: [{
+      ...registered.record,
+      learningUnitId: 'orphan-local-only',
+      previewItemId: 'orphan-preview',
+      lemma: 'orphan',
+      word: 'orphan',
+    }],
+  }))
+  const rebuilt = await coordinator.rebuildRecords()
+  assert.equal(rebuilt.some((record) => record.learningUnitId === 'orphan-local-only'), false)
+  assert.equal(rebuilt.some((record) => record.learningUnitId === registered.record.learningUnitId), true)
   const due = await coordinator.getDueChecks({ now: delayedAt })
   assert.equal(due.length, 1)
   const checked = await coordinator.recordDelayedCheck(due[0], {

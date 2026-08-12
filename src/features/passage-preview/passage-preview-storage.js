@@ -4,6 +4,12 @@ export const LEGACY_PASSAGE_PREVIEW_DATA_KEY = 'vocabulary.passage-preview.data.
 export const LEGACY_PASSAGE_PREVIEW_PROGRESS_KEY = 'vocabulary.passage-preview.progress.v1'
 
 export function loadPassagePreviewData(storage = globalThis.localStorage) {
+  const durable = loadPassagePreviewDurableState(storage, { data: loadLegacyData(storage) })
+  if (durable.data.length) return durable.data
+  return loadLegacyData(storage)
+}
+
+function loadLegacyData(storage) {
   const envelope = readJson(storage, PASSAGE_PREVIEW_DATA_KEY, null)
   return envelope?.schemaVersion === 'passage-preview.local-data.v2' && Array.isArray(envelope.items)
     ? envelope.items
@@ -15,20 +21,30 @@ export function hasLegacyPassagePreviewData(storage = globalThis.localStorage) {
 }
 
 export function savePassagePreviewData(items, storage = globalThis.localStorage) {
-  storage.setItem(PASSAGE_PREVIEW_DATA_KEY, JSON.stringify({
-    schemaVersion: 'passage-preview.local-data.v2',
-    items: Array.isArray(items) ? items : [],
-  }))
-  const existing = loadPassagePreviewProgress(storage)
-  savePassagePreviewProgress(existing, storage)
+  const data = Array.isArray(items) ? items : []
+  updatePassagePreviewDurableState((state) => ({
+    ...state,
+    batchId: derivePassagePreviewBatchId(data),
+    data,
+    progress: state.progress || createInitialPassagePreviewProgress(),
+  }), storage, { data: loadLegacyData(storage), progress: loadLegacyProgress(storage) })
 }
 
 export function loadPassagePreviewProgress(storage = globalThis.localStorage) {
+  const durable = loadPassagePreviewDurableState(storage, { progress: loadLegacyProgress(storage) })
+  return normalizeProgress(durable.progress)
+}
+
+function loadLegacyProgress(storage) {
   const saved = readJson(
     storage,
     PASSAGE_PREVIEW_PROGRESS_KEY,
     readJson(storage, LEGACY_PASSAGE_PREVIEW_PROGRESS_KEY, null),
   )
+  return saved
+}
+
+function normalizeProgress(saved) {
   const initial = createInitialPassagePreviewProgress()
   if (!saved || typeof saved !== 'object') return initial
   return {
@@ -44,10 +60,11 @@ export function loadPassagePreviewProgress(storage = globalThis.localStorage) {
 }
 
 export function savePassagePreviewProgress(progress, storage = globalThis.localStorage) {
-  storage.setItem(PASSAGE_PREVIEW_PROGRESS_KEY, JSON.stringify({
-    ...createInitialPassagePreviewProgress(),
-    ...progress,
-  }))
+  const normalized = normalizeProgress(progress)
+  updatePassagePreviewDurableState((state) => ({ ...state, progress: normalized }), storage, {
+    data: loadLegacyData(storage),
+    progress: loadLegacyProgress(storage),
+  })
 }
 
 export function createInitialPassagePreviewProgress() {
@@ -84,3 +101,8 @@ function readJson(storage, key, fallback) {
     return fallback
   }
 }
+import {
+  derivePassagePreviewBatchId,
+  loadPassagePreviewDurableState,
+  updatePassagePreviewDurableState,
+} from './passage-preview-durable-state.js'
