@@ -15,6 +15,7 @@ const isolatedPorts = Object.freeze({
 
 const included = [
   command('fast gate', process.execPath, ['scripts/verify-fast.mjs']),
+  command('persistence fault matrix evidence', process.execPath, ['scripts/persistence-fault-matrix.mjs']),
   command('frontend production build', npmCommand, ['run', 'build']),
   command('isolated development browser journeys', process.execPath, ['scripts/vite-verify.js'], {
     env: {

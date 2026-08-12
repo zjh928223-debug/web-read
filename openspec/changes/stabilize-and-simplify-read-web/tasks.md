@@ -31,14 +31,14 @@
 - [x] 4.2 实现以 `tx.oncomplete` 为成功条件的 transaction runner 和故障注入测试
 - [x] 4.3 删除/封闭公开 `clearDBStore()`，改为领域 allowlist keys 删除并验证不会清除其他数据
 - [x] 4.4 定义 versioned envelope、revision/contentId/checksum、unknown schema rejection 和 corrupt quarantine
-- [ ] 4.5 迁移当前假 await/request-success writers，并为 Quota、abort、关闭页面和多标签并发补测试
+- [x] 4.5 迁移当前假 await/request-success writers，并为 Quota、abort、关闭页面和多标签并发补测试
 - [x] 4.6 建立 `DurableJsonRepository` 的 temp+fsync+replace+backup+recovery 契约
 - [x] 4.7 将 SQLite builder 改为 temp build、integrity check、atomic swap 和 previous backup
 
 ## 5. Reader Session 与大媒体流式化
 
 - [x] 5.1 建立 `ReaderSessionLoad` generation token、AbortController、single-flight 和 typed load state
-- [ ] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
+- [x] 5.2 将 manifest/transcript/chunk/marks 改为并行 prepare、校验后单事务 commit
 - [x] 5.3 确保导入失败保留旧 session，且 UI load error 不得回写为 workflow job failed
 - [x] 5.4 为大媒体建立授权 URL/Range/ETag endpoint，manifest 明确 playable media 与 derived audio
 - [x] 5.5 从 loader 移除大 media Blob 下载和 IndexedDB 写入，并验证 300–540MB fixture 首次可播放预算

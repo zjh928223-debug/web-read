@@ -62,6 +62,15 @@ const loader = createYoutubeWorkflowLoader({
   processChunkData(value) { visible.chunk = value.s[0].chunks[0].en },
   validateTranscriptData: (value) => value,
   validateChunkData: (value) => value,
+  sessionPublisher: {
+    async captureVisibleSession() { return { ...visible } },
+    async publishPreparedSession(prepared) {
+      visible.audio = prepared.audioMeta.jobId
+      visible.transcript = prepared.transcript.segments[0].words[0].word
+      visible.chunk = prepared.chunkData.s[0].chunks[0].en
+    },
+    async restoreVisibleSession(snapshot) { Object.assign(visible, snapshot) },
+  },
   audioPlayer: {},
 })
 

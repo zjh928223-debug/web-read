@@ -41,6 +41,10 @@ class FakeTransaction {
         this.record = record
         return this.request
       },
+      delete: (key) => {
+        this.record = { deletedKey: key }
+        return this.request
+      },
     }
   }
 
@@ -62,14 +66,22 @@ class FakeTransaction {
 class FakeDatabase {
   constructor() {
     this.transactions = []
+    this.closeCalls = 0
+    this.transactionError = null
+    this.onversionchange = null
   }
 
   transaction(storeNames, mode) {
+    if (this.transactionError) throw this.transactionError
     assert.deepEqual(Array.from(storeNames), ['files'])
     assert.equal(mode, 'readwrite')
     const transaction = new FakeTransaction()
     this.transactions.push(transaction)
     return transaction
+  }
+
+  close() {
+    this.closeCalls += 1
   }
 }
 
@@ -152,6 +164,54 @@ export async function verifyTransactionWriterContract(createWriter) {
   }
 }
 
+export async function verifyTransactionDeleteContract(createDelete) {
+  {
+    const database = new FakeDatabase()
+    const remove = await createDelete(database)
+    const settlement = observeSettlement(remove('audioMeta'))
+    const transaction = database.transactions[0]
+    transaction.request.succeed()
+    await flushMicrotasks()
+    assert.equal(settlement.status, pending, 'delete request success must not resolve before transaction complete')
+    transaction.abort(Object.assign(new Error('quota exceeded'), { name: 'QuotaExceededError' }))
+    await flushMicrotasks()
+    assert.equal(settlement.status, 'rejected', 'quota abort must reject delete')
+    assert.equal(settlement.value.name, 'QuotaExceededError')
+  }
+
+  {
+    const database = new FakeDatabase()
+    const remove = await createDelete(database)
+    const settlement = observeSettlement(remove('chunkData'))
+    database.transactions[0].request.fail(new Error('delete request failed'))
+    await flushMicrotasks()
+    assert.equal(settlement.status, 'rejected', 'delete request error must reject delete')
+  }
+
+  {
+    const database = new FakeDatabase()
+    const remove = await createDelete(database)
+    const settlement = observeSettlement(remove('marks'))
+    database.transactions[0].fail(new Error('delete transaction failed'))
+    await flushMicrotasks()
+    assert.equal(settlement.status, 'rejected', 'delete transaction error must reject delete')
+  }
+
+  const closedDatabase = new FakeDatabase()
+  closedDatabase.transactionError = Object.assign(new Error('connection is closing'), { name: 'InvalidStateError' })
+  const closedRemove = await createDelete(closedDatabase)
+  await assert.rejects(closedRemove('audioMeta'), (error) => error.name === 'InvalidStateError')
+}
+
+async function verifyVersionChangeContract(createStore) {
+  const database = new FakeDatabase()
+  const store = await createStore(database)
+  assert.equal(typeof database.onversionchange, 'function', 'audio connection must install a versionchange handler')
+  database.onversionchange()
+  assert.equal(database.closeCalls, 1, 'versionchange must close the stale audio connection')
+  assert.equal(store.getDb(), null, 'versionchange must clear the stale audio connection')
+}
+
 function installIndexedDbOpen(database) {
   globalThis.indexedDB = {
     open() {
@@ -183,6 +243,11 @@ async function verifyCurrentPiniaStoreContract() {
     const store = await loadCurrentAudioStore(database)
     return store.saveToDB.bind(store)
   })
+  await verifyTransactionDeleteContract(async (database) => {
+    const store = await loadCurrentAudioStore(database)
+    return store.deleteFromDB.bind(store)
+  })
+  await verifyVersionChangeContract(loadCurrentAudioStore)
 }
 
 async function createLegacyFacade(database) {
@@ -203,11 +268,16 @@ async function createLegacyFacade(database) {
   }
   vm.runInNewContext(await readFile(sourceUrl, 'utf8'), context, { filename: 'src/stores/audio.js' })
   await context.window.__audioStore.initDB()
-  return context.window.saveToDB
+  return context.window.__audioStore
 }
 
 async function verifyLegacyFacadeContract() {
-  await verifyTransactionWriterContract(createLegacyFacade)
+  await verifyTransactionWriterContract(async (database) => (await createLegacyFacade(database)).saveToDB)
+  await verifyTransactionDeleteContract(async (database) => {
+    const facade = await createLegacyFacade(database)
+    return facade.deleteFromDB
+  })
+  await verifyVersionChangeContract(createLegacyFacade)
 }
 
 async function verifyReferenceWriterProvesHarness() {

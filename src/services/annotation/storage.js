@@ -125,6 +125,12 @@ export async function saveBundle(scope, generated, status, options = {}) {
         });
         const existing = await loadJson(normalizedScope, BUNDLE_FILE, { distinguishErrors: true });
         if (existing) validateBundleEnvelope(existing, normalizedScope);
+        if (options.expectedRevision !== undefined && options.expectedRevision !== (existing?.revision || 0)) {
+            throw annotationStorageError('conflict', normalizedScope, BUNDLE_FILE, {
+                expectedRevision: options.expectedRevision,
+                actualRevision: existing?.revision || 0
+            });
+        }
         const envelope = createBundleEnvelope(normalizedScope, nextGenerated, nextStatus, (existing?.revision || 0) + 1);
         await saveJson(normalizedScope, BUNDLE_FILE, envelope);
         const runtimeArtifacts = await inspectRuntimeArtifacts(normalizedScope);
@@ -270,21 +276,31 @@ function createBundleEnvelope(scope, generated, status, revision) {
 }
 
 function validateBundleEnvelope(value, scope) {
-    if (!value || value.schemaVersion !== BUNDLE_SCHEMA || !Number.isInteger(value.revision) || value.revision < 1
+    if (value && value.schemaVersion !== BUNDLE_SCHEMA) {
+        throw annotationStorageError('unknown-schema', scope, BUNDLE_FILE, { schemaVersion: value.schemaVersion ?? null });
+    }
+    if (!value || !Number.isInteger(value.revision) || value.revision < 1
         || !value.generated || !value.status
         || value.checksum !== checksum(JSON.stringify({ generated: value.generated, status: value.status }))) {
         throw annotationStorageError('corrupt', scope, BUNDLE_FILE);
     }
 }
 
-function annotationStorageError(kind, scope, filename) {
+function annotationStorageError(kind, scope, filename, details = {}) {
+    const definitions = {
+        permission: { code: 'ANNOTATION_STORAGE_PERMISSION', category: 'permission', message: 'Annotation storage permission is required', retryable: true },
+        conflict: { code: 'ANNOTATION_STORAGE_CONFLICT', category: 'conflict', message: 'Annotation storage changed in another owner', retryable: true },
+        'unknown-schema': { code: 'ANNOTATION_STORAGE_SCHEMA_UNSUPPORTED', category: 'validation', message: 'Annotation storage schema is unsupported', retryable: false },
+        corrupt: { code: 'ANNOTATION_STORAGE_CORRUPT', category: 'storage', message: 'Annotation storage is corrupt', retryable: false }
+    };
+    const definition = definitions[kind] || definitions.corrupt;
     return createTypedError({
-        code: kind === 'permission' ? 'ANNOTATION_STORAGE_PERMISSION' : 'ANNOTATION_STORAGE_CORRUPT',
-        category: kind === 'permission' ? 'permission' : 'storage',
-        message: kind === 'permission' ? 'Annotation storage permission is required' : 'Annotation storage is corrupt',
-        retryable: kind === 'permission',
+        code: definition.code,
+        category: definition.category,
+        message: definition.message,
+        retryable: definition.retryable,
         operationId: `annotation-storage-${kind}`,
-        details: { scope: normalizeScope(scope), filename }
+        details: { scope: normalizeScope(scope), filename, ...details }
     });
 }
 

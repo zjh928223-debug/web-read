@@ -35,6 +35,28 @@ const saved = await storageApi.saveBundle(
 )
 assert.equal(saved.revision, 1)
 assert.equal((await storageApi.loadBundle(scope)).generated.items[0].id, 'generated-1')
+const authoritativeText = local.getItem(storageApi.getLocalStorageKey(scope, storageApi.BUNDLE_FILE))
+
+local.failNextWrite(new DOMException('quota exceeded', 'QuotaExceededError'))
+await assert.rejects(
+  () => storageApi.saveBundle(scope, storageApi.createGeneratedJson(scope, [{ id: 'quota-lost' }]), {}),
+  (error) => error.name === 'QuotaExceededError',
+)
+assert.equal(local.getItem(storageApi.getLocalStorageKey(scope, storageApi.BUNDLE_FILE)), authoritativeText)
+
+const staleRevision = saved.revision
+await storageApi.saveBundle(scope, storageApi.createGeneratedJson(scope, [{ id: 'winner' }]), {}, { expectedRevision: staleRevision })
+await assert.rejects(
+  () => storageApi.saveBundle(scope, storageApi.createGeneratedJson(scope, [{ id: 'stale' }]), {}, { expectedRevision: staleRevision }),
+  (error) => error.code === 'ANNOTATION_STORAGE_CONFLICT',
+)
+assert.equal((await storageApi.loadBundle(scope)).generated.items[0].id, 'winner')
+
+local.setItem(storageApi.getLocalStorageKey(scope, storageApi.BUNDLE_FILE), JSON.stringify({ schemaVersion: 'annotation-bundle.v99', revision: 9 }))
+await assert.rejects(
+  () => storageApi.loadBundle(scope),
+  (error) => error.code === 'ANNOTATION_STORAGE_SCHEMA_UNSUPPORTED' && error.details.schemaVersion === 'annotation-bundle.v99',
+)
 
 local.setItem(storageApi.getLocalStorageKey(scope, storageApi.BUNDLE_FILE), '{corrupt')
 await assert.rejects(() => storageApi.loadBundle(scope), (error) => error.code === 'ANNOTATION_STORAGE_CORRUPT')
@@ -43,6 +65,9 @@ local.setItem(storageApi.getLocalStorageKey(scope, storageApi.GENERATED_FILE), J
 const legacy = await storageApi.loadBundle(scope)
 assert.equal(legacy.loadState, 'legacy')
 assert.equal(legacy.generated.items[0].id, 'legacy-1')
+
+await storageApi.saveBundle(scope, storageApi.createGeneratedJson(scope, [{ id: 'reload-safe' }]), {})
+assert.equal((await storageApi.loadBundle(scope)).generated.items[0].id, 'reload-safe', 'local commit must survive immediate page close/reload')
 
 storageApi.setDirectoryHandle({
   async getFileHandle() { throw new DOMException('denied', 'NotAllowedError') },
@@ -69,9 +94,11 @@ console.log('annotation atomic envelope contract passed')
 
 function memoryStorage() {
   const values = new Map()
+  let failure = null
   return {
     getItem(key) { return values.get(key) ?? null },
-    setItem(key, value) { values.set(key, String(value)) },
+    setItem(key, value) { if (failure) { const error = failure; failure = null; throw error } values.set(key, String(value)) },
     removeItem(key) { values.delete(key) },
+    failNextWrite(error) { failure = error },
   }
 }

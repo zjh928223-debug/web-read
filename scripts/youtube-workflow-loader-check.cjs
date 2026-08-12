@@ -32,6 +32,14 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function publisherFor(publish = async () => {}) {
+  return {
+    async captureVisibleSession() { return { old: true }; },
+    publishPreparedSession: publish,
+    async restoreVisibleSession() {},
+  };
+}
+
 function makeVerifiedFixture(jobId = 'verified-job') {
   const transcript = makeTranscript();
   const chunkData = { s: [{ id: 0, chunks: [{ a: 0, b: 2, en: 'Hello world', zh: '你好' }] }] };
@@ -127,6 +135,15 @@ async function main() {
         mediaCalls.push(['loadJobMedia', payload]);
       },
     },
+    sessionPublisher: publisherFor(async (prepared) => {
+      calls.push(['audioMeta', prepared.audioMeta.name]);
+      calls.push(['transcript', prepared.transcript.segments.length]);
+      calls.push(['chunkData', prepared.chunkData.s.length]);
+      calls.push(['applyReaderMarks', prepared.marks.length, { persist: false, contentId: prepared.contentId, revision: prepared.revision }]);
+      mediaCalls.push(['setAudioElement', true]);
+      mediaCalls.push(['loadJobMedia', prepared.media]);
+      calls.push(['resetChunkDisplay']);
+    }),
     annotationLightweightModule: {
       async importManualLightweightAnnotations(file, options = {}) {
         const parsed = JSON.parse(await file.text());
@@ -192,7 +209,10 @@ async function main() {
         return new Blob([kind === 'transcript' ? verifiedFixture.transcriptBytes : verifiedFixture.chunkBytes]);
       },
       async getReaderMarks() {
-        return { marks: verifiedFixture.marks, integrity: verifiedFixture.integrity.marks };
+        return {
+          marks: verifiedFixture.marks,
+          integrity: { algorithm: 'sha256', ...verifiedFixture.integrity.marks },
+        };
       },
       mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}`; },
       async probeMediaRange() { return { status: 206 }; },
@@ -208,6 +228,7 @@ async function main() {
     processChunkData: () => {},
     validateTranscriptData: (value) => value,
     validateChunkData: (value) => value,
+    sessionPublisher: publisherFor(),
   });
   const verifiedResult = await verifiedLoader.loadJobIntoReader('verified-job', { replacePolicy: 'replace-current' });
   assert.deepEqual(verifiedResult.identity, { status: 'verified' });
@@ -220,6 +241,72 @@ async function main() {
     sourceType: 'manual-mark',
   }]);
   assert.equal(verifiedCommits[0].options.expectedRevision, null);
+
+  async function assertIntegrityFailure(patch, expectedCode) {
+    const fixture = makeVerifiedFixture('negative-job');
+    let commits = 0;
+    let publishes = 0;
+    const manifest = {
+      jobId: 'negative-job', contentId: fixture.contentId, revision: fixture.revision,
+      integrity: fixture.integrity, files: {}, ...patch.manifest,
+    };
+    const negativeLoader = api.createYoutubeWorkflowLoader({
+      client: {
+        async getSession() { return manifest; },
+        async getFile(_jobId, kind) { return new Blob([patch[kind] || (kind === 'transcript' ? fixture.transcriptBytes : fixture.chunkBytes)]); },
+        async getReaderMarks() { return { marks: patch.marks || fixture.marks, integrity: patch.marksIntegrity === undefined ? { algorithm: 'sha256', ...fixture.integrity.marks } : patch.marksIntegrity }; },
+        mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}`; },
+        async probeMediaRange() { return { status: 206 }; },
+      },
+      hasCurrentContent: () => false,
+      readerSessionPersistence: { async loadCommitted() { return null; }, async commit() { commits += 1; } },
+      sessionPublisher: publisherFor(async () => { publishes += 1; }),
+      validateTranscriptData: (value) => value,
+      validateChunkData: (value) => value,
+    });
+    await assert.rejects(
+      () => negativeLoader.loadJobIntoReader('negative-job', { replacePolicy: 'replace-current' }),
+      (error) => error && error.code === expectedCode,
+    );
+    assert.equal(commits, 0);
+    assert.equal(publishes, 0);
+  }
+
+  await assertIntegrityFailure({ transcript: Buffer.concat([makeVerifiedFixture('negative-job').transcriptBytes, Buffer.from(' ')]) }, 'READER_SESSION_INTEGRITY_MISMATCH');
+  await assertIntegrityFailure({ chunkData: Buffer.concat([makeVerifiedFixture('negative-job').chunkBytes, Buffer.from(' ')]) }, 'READER_SESSION_INTEGRITY_MISMATCH');
+  await assertIntegrityFailure({ marks: [{ globalIndex: 1, word: 'tampered', start: 0.5, sourceType: 'manual-mark' }] }, 'READER_SESSION_INTEGRITY_MISMATCH');
+  await assertIntegrityFailure({ manifest: { revision: `sha256:${'0'.repeat(64)}` } }, 'READER_SESSION_REVISION_MISMATCH');
+  await assertIntegrityFailure({ manifest: { contentId: 'youtube-workflow:other-job' } }, 'READER_SESSION_IDENTITY_MISMATCH');
+  await assertIntegrityFailure({ marksIntegrity: { algorithm: 'sha512', ...makeVerifiedFixture('negative-job').integrity.marks } }, 'READER_SESSION_INTEGRITY_INVALID');
+
+  const noMarks = makeVerifiedFixture('negative-job');
+  noMarks.marks = [];
+  noMarks.integrity = { ...noMarks.integrity, marks: null };
+  noMarks.revision = `sha256:${sha256(Buffer.from(canonicalJson({ contentId: noMarks.contentId, integrity: noMarks.integrity })))}`;
+  let noMarksCommit = null;
+  const noMarksLoader = api.createYoutubeWorkflowLoader({
+    client: {
+      async getSession() { return { jobId: 'negative-job', contentId: noMarks.contentId, revision: noMarks.revision, integrity: noMarks.integrity, files: {} }; },
+      async getFile(_jobId, kind) { return new Blob([kind === 'transcript' ? noMarks.transcriptBytes : noMarks.chunkBytes]); },
+      async getReaderMarks() { return { marks: [], integrity: null }; },
+      mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}`; },
+      async probeMediaRange() { return { status: 206 }; },
+    },
+    hasCurrentContent: () => false,
+    readerSessionPersistence: { async loadCommitted() { return null; }, async commit(value) { noMarksCommit = value; } },
+    sessionPublisher: publisherFor(),
+    validateTranscriptData: (value) => value,
+    validateChunkData: (value) => value,
+  });
+  assert.equal((await noMarksLoader.loadJobIntoReader('negative-job', { replacePolicy: 'replace-current' })).identity.status, 'verified');
+  assert.deepEqual(noMarksCommit.marks, []);
+
+  const outOfRange = makeVerifiedFixture('negative-job');
+  outOfRange.marks = [{ globalIndex: 99, word: 'bad', start: 0.5, sourceType: 'manual-mark' }];
+  const outProjection = Buffer.from(canonicalJson([{ globalIndex: 99, sourceType: 'manual-mark', start: '0.5', word: 'bad' }]));
+  outOfRange.integrity = { ...outOfRange.integrity, marks: { bytes: outProjection.length, representation: 'marks-fields.v1', sha256: sha256(outProjection) } };
+  outOfRange.revision = `sha256:${sha256(Buffer.from(canonicalJson({ contentId: outOfRange.contentId, integrity: outOfRange.integrity })))}`;
+  await assertIntegrityFailure({ manifest: { integrity: outOfRange.integrity, revision: outOfRange.revision }, marks: outOfRange.marks, marksIntegrity: { algorithm: 'sha256', ...outOfRange.integrity.marks } }, 'READER_SESSION_MARK_OUT_OF_RANGE');
 
   const failedWrites = [];
   const badLoader = api.createYoutubeWorkflowLoader({
@@ -239,6 +326,7 @@ async function main() {
     processChunkData: () => {},
     validateTranscriptData: (data) => data,
     validateChunkData: (data) => data,
+    sessionPublisher: publisherFor(),
   });
 
   await assert.rejects(

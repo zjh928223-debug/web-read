@@ -91,10 +91,21 @@ try {
     const visible = { contentId: 'old', transcript: 'old', chunk: 'old', audio: 'old' }
     const client = createYoutubeWorkflowClient({ baseUrl })
     function loader(commit = persistence.commit) {
+      const sessionPublisher = {
+        async captureVisibleSession() { return structuredClone(visible) },
+        async publishPreparedSession(prepared) {
+          visible.audio = prepared.audioMeta.jobId
+          visible.contentId = prepared.audioMeta.jobId
+          visible.transcript = prepared.transcript.segments[0].words[0].word
+          visible.chunk = prepared.chunkData.s[0].chunks[0].en
+        },
+        async restoreVisibleSession(snapshot) { Object.assign(visible, snapshot) },
+      }
       return createYoutubeWorkflowLoader({
         client,
         hasCurrentContent: () => false,
-        readerSessionPersistence: { commit },
+        readerSessionPersistence: { commit, loadCommitted: persistence.loadCommitted },
+        sessionPublisher,
         applyCurrentAudioMeta(meta) { visible.audio = meta.jobId; visible.contentId = meta.jobId },
         processTranscript(value) { visible.transcript = value.segments[0].words[0].word },
         processChunkData(value) { visible.chunk = value.s[0].chunks[0].en },

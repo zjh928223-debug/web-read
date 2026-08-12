@@ -13,6 +13,8 @@ const included = [
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),
   command('best-effort failure policy', process.execPath, ['scripts/best-effort-check.mjs']),
+  command('audio IndexedDB transaction contract', process.execPath, ['scripts/audio-store-transaction-check.mjs']),
+  command('SRS pending candidate transaction contract', process.execPath, ['scripts/srs-pending-candidates-transaction-check.mjs']),
   command('supply-chain contract', process.execPath, ['scripts/supply-chain-gate.mjs']),
   command('playback helper behavior', process.execPath, ['scripts/playback-runtime-helpers-check.cjs']),
   command('playback single-owner boundary', process.execPath, ['scripts/playback-single-owner-check.cjs']),

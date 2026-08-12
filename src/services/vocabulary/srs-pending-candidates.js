@@ -77,12 +77,22 @@ function normalizePendingStore(store) {
 
 export function createInMemorySrsPendingCandidatesRepository(initialStore) {
   let store = normalizePendingStore(initialStore);
+  let mutationQueue = Promise.resolve();
   return createSrsPendingCandidatesRepository({
     async loadStore() {
       return store;
     },
     async saveStore(nextStore) {
       store = normalizePendingStore(nextStore);
+    },
+    updateStore(mutator) {
+      const mutation = mutationQueue.then(async () => {
+        const next = normalizePendingStore(await mutator(cloneVocabularyValue(store)));
+        store = next;
+        return cloneVocabularyValue(next);
+      });
+      mutationQueue = mutation.catch(() => {});
+      return mutation;
     },
   });
 }
@@ -107,7 +117,17 @@ export function createIndexedDbSrsPendingCandidatesRepository(options = {}) {
           db.createObjectStore(storeName, { keyPath: 'id' });
         }
       };
-      request.onsuccess = (event) => resolve(event.target.result);
+      request.onsuccess = (event) => {
+        const database = event.target.result;
+        database.onversionchange = () => {
+          database.close();
+          dbPromise = null;
+        };
+        resolve(database);
+      };
+    }).catch((error) => {
+      dbPromise = null;
+      throw error;
     });
     return dbPromise;
   }
@@ -126,22 +146,54 @@ export function createIndexedDbSrsPendingCandidatesRepository(options = {}) {
     });
   }
 
-  async function saveStore(store) {
+  async function updateStore(mutator) {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([storeName], 'readwrite');
       const objectStore = transaction.objectStore(storeName);
-      const request = objectStore.put({
-        id: storageKey,
-        content: normalizePendingStore(store),
-        timestamp: Date.now(),
-      });
-      request.onerror = () => reject(request.error || new Error('Failed to save SRS pending candidates'));
-      request.onsuccess = () => resolve();
+      let nextStore = null;
+      let settled = false;
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error || transaction.error || new Error('SRS pending candidates transaction failed'));
+      };
+      const readRequest = objectStore.get(storageKey);
+      readRequest.onerror = () => fail(readRequest.error || new Error('Failed to load SRS pending candidates for update'));
+      readRequest.onsuccess = () => {
+        try {
+          const current = normalizePendingStore(readRequest.result?.content);
+          const mutationResult = mutator(cloneVocabularyValue(current));
+          if (mutationResult && typeof mutationResult.then === 'function') {
+            throw new Error('IndexedDB SRS pending candidate mutations must be synchronous');
+          }
+          nextStore = normalizePendingStore(mutationResult);
+          const writeRequest = objectStore.put({
+            id: storageKey,
+            content: nextStore,
+            timestamp: Date.now(),
+          });
+          writeRequest.onerror = () => fail(writeRequest.error || new Error('Failed to save SRS pending candidates'));
+        } catch (error) {
+          try { transaction.abort(); } catch { /* Preserve the mutation error. */ }
+          fail(error);
+        }
+      };
+      transaction.onerror = () => fail(transaction.error);
+      transaction.onabort = () => fail(transaction.error || new Error('SRS pending candidates transaction aborted'));
+      transaction.oncomplete = () => {
+        if (settled) return;
+        settled = true;
+        resolve(cloneVocabularyValue(nextStore));
+      };
     });
   }
 
-  return createSrsPendingCandidatesRepository({ loadStore, saveStore });
+  async function saveStore(store) {
+    return updateStore(() => store);
+  }
+
+  return createSrsPendingCandidatesRepository({ loadStore, saveStore, updateStore });
 }
 
 export function createSrsPendingCandidatesRepository(storage) {
@@ -167,27 +219,34 @@ export function createSrsPendingCandidatesRepository(storage) {
   async function setPendingCandidates(scopeKey, group) {
     const normalizedScopeKey = normalizeText(scopeKey || group && group.scopeKey);
     if (!normalizedScopeKey) throw new Error('SRS pending candidates require a scope key');
-    const store = await loadStore();
     const normalizedGroup = normalizePendingGroup({
       ...group,
       scopeKey: normalizedScopeKey,
       updated_at: new Date(),
     });
-    if (!normalizedGroup) {
-      delete store.groups[normalizedScopeKey];
-    } else {
-      store.groups[normalizedScopeKey] = normalizedGroup;
-    }
-    await saveStore(store);
+    const store = await updateStore((current) => {
+      if (!normalizedGroup) delete current.groups[normalizedScopeKey];
+      else current.groups[normalizedScopeKey] = normalizedGroup;
+      return current;
+    });
     return cloneVocabularyValue(store.groups[normalizedScopeKey] || null);
   }
 
   async function clearPendingCandidates(scopeKey) {
     const normalizedScopeKey = normalizeText(scopeKey);
     if (!normalizedScopeKey) return;
+    await updateStore((store) => {
+      delete store.groups[normalizedScopeKey];
+      return store;
+    });
+  }
+
+  async function updateStore(mutator) {
+    if (typeof storage.updateStore === 'function') return storage.updateStore(mutator);
     const store = await loadStore();
-    delete store.groups[normalizedScopeKey];
-    await saveStore(store);
+    const next = normalizePendingStore(await mutator(store));
+    await saveStore(next);
+    return next;
   }
 
   return {

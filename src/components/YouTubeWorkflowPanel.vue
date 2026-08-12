@@ -542,6 +542,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
+import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
@@ -1008,23 +1009,39 @@ watch(cancelRecordsOpen, async (open) => {
 watch(cancelRecordsPending, (pending) => cancelRecordsDialogController.setBusy(pending))
 
 function makeLoader() {
-  return readerSessionLoader ||= createYoutubeWorkflowLoader({
-    client: youtubeWorkflowClient,
-    readerSessionPersistence: readerSessionPersistence,
-    applyCurrentAudioMeta(meta) {
-      if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
-      else if (window.__state) window.__state.currentAudioMeta = meta
-    },
+  if (readerSessionLoader) return readerSessionLoader
+  const audioPlayer = document.getElementById('audio-player')
+  const applyCurrentAudioMeta = (meta) => {
+    if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
+    else if (window.__state) window.__state.currentAudioMeta = meta
+  }
+  const publisher = createReaderSessionPublisher({
+    state: window.__state,
+    audioPlayer,
+    mediaSource: window.__mediaSource,
+    applyCurrentAudioMeta,
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,
-    audioPlayer: document.getElementById('audio-player'),
+    applyReaderMarks: replaceReaderMarksVisible,
+    syncReaderMarksVisuals: syncMarkedWordVisuals,
+    bridgeToPinia: window.bridgeToPinia,
+    resetChunkDisplay: resetChunkChineseDisplay,
+  })
+  readerSessionLoader = createYoutubeWorkflowLoader({
+    client: youtubeWorkflowClient,
+    readerSessionPersistence: readerSessionPersistence,
+    applyCurrentAudioMeta,
+    processTranscript: window.processTranscript,
+    processChunkData: window.processChunkData,
+    audioPlayer,
+    sessionPublisher: publisher,
     validateTranscriptData: window.DataUtils && window.DataUtils.validateTranscriptData,
     validateChunkData: window.DataUtils && window.DataUtils.validateChunkData,
     applyReaderMarks,
     annotationLightweightModule: window.__annotationLightweightModule,
-    resetChunkDisplay: resetChunkChineseDisplay,
     showToast: window.showToast
   })
+  return readerSessionLoader
 }
 
 async function checkHealth() {
@@ -2288,16 +2305,21 @@ function syncMarkedWordVisuals(marks) {
   })
 }
 
-async function applyReaderMarks(marks, options = {}) {
+function replaceReaderMarksVisible(marks) {
   const state = window.__state
-  if (!state || !(state.markedMap instanceof Map)) return
+  if (!state || !(state.markedMap instanceof Map)) return []
   const normalized = normalizeReaderMarks(marks)
   state.markedMap.clear()
   normalized.forEach((mark) => state.markedMap.set(mark.globalIndex, mark))
   syncMarkedWordVisuals(normalized)
+  if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
+  return normalized
+}
+
+async function applyReaderMarks(marks, options = {}) {
+  const normalized = replaceReaderMarksVisible(marks)
   if (options.persist !== false && typeof window.saveToDB === 'function') await window.saveToDB('marks', normalized)
   if (typeof window.syncAnnotationGenerationEntryStatus === 'function') await window.syncAnnotationGenerationEntryStatus()
-  if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
 }
 
 function submitCurrentReaderMarks() {

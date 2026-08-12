@@ -2,11 +2,21 @@ export const PASSAGE_PREVIEW_DURABLE_KEY = 'vocabulary.passage-preview.durable-s
 export const PASSAGE_PREVIEW_DURABLE_SCHEMA = 'passage-preview.durable-state.v1'
 
 export function loadPassagePreviewDurableState(storage = globalThis.localStorage, legacy = {}) {
-  const saved = readJson(storage, PASSAGE_PREVIEW_DURABLE_KEY)
-  if (saved?.schemaVersion === PASSAGE_PREVIEW_DURABLE_SCHEMA && Number.isInteger(saved.revision)) {
-    return normalizeState(saved)
+  const inspected = inspectPassagePreviewDurableState(storage, legacy)
+  if (inspected.status === 'unknown-schema') {
+    throw persistenceError('PASSAGE_PREVIEW_SCHEMA_UNSUPPORTED', 'Unsupported Passage Preview durable state schema', {
+      schemaVersion: inspected.schemaVersion,
+    })
   }
-  return normalizeState({
+  if (inspected.status === 'corrupt') {
+    throw persistenceError('PASSAGE_PREVIEW_STATE_CORRUPT', 'Passage Preview durable state is corrupt')
+  }
+  return inspected.state
+}
+
+export function inspectPassagePreviewDurableState(storage = globalThis.localStorage, legacy = {}) {
+  const result = readJson(storage, PASSAGE_PREVIEW_DURABLE_KEY)
+  const legacyState = normalizeState({
     schemaVersion: PASSAGE_PREVIEW_DURABLE_SCHEMA,
     revision: 0,
     batchId: legacy.batchId || null,
@@ -16,10 +26,28 @@ export function loadPassagePreviewDurableState(storage = globalThis.localStorage
     continuation: legacy.continuation || null,
     archive: legacy.archive || [],
   })
+  if (result.status === 'missing') return { status: 'not-found', state: legacyState }
+  if (result.status === 'corrupt') {
+    return { status: hasLegacyState(legacy) ? 'recovered-legacy' : 'corrupt', state: legacyState, error: result.error }
+  }
+  const saved = result.value
+  if (saved?.schemaVersion !== PASSAGE_PREVIEW_DURABLE_SCHEMA) {
+    return { status: 'unknown-schema', schemaVersion: saved?.schemaVersion ?? null, state: legacyState }
+  }
+  if (!Number.isInteger(saved.revision) || saved.revision < 0) {
+    return { status: 'corrupt', state: legacyState, error: persistenceError('PASSAGE_PREVIEW_STATE_CORRUPT', 'Passage Preview durable state is corrupt') }
+  }
+  return { status: 'loaded', state: normalizeState(saved) }
 }
 
-export function updatePassagePreviewDurableState(mutator, storage = globalThis.localStorage, legacy = {}) {
+export function updatePassagePreviewDurableState(mutator, storage = globalThis.localStorage, legacy = {}, options = {}) {
   const current = loadPassagePreviewDurableState(storage, legacy)
+  if (options.expectedRevision !== undefined && options.expectedRevision !== current.revision) {
+    throw persistenceError('PASSAGE_PREVIEW_REVISION_CONFLICT', 'Passage Preview durable state changed in another owner', {
+      expectedRevision: options.expectedRevision,
+      actualRevision: current.revision,
+    })
+  }
   const draft = structuredCloneValue(current)
   const changed = mutator(draft) || draft
   const next = normalizeState({ ...changed, revision: current.revision + 1 })
@@ -49,10 +77,19 @@ function normalizeState(value = {}) {
 function readJson(storage, key) {
   try {
     const raw = storage?.getItem(key)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
+    return raw ? { status: 'loaded', value: JSON.parse(raw) } : { status: 'missing', value: null }
+  } catch (error) {
+    return { status: 'corrupt', value: null, error }
   }
+}
+
+function hasLegacyState(legacy) {
+  return Boolean(legacy && (legacy.batchId || legacy.progress || legacy.allocations || legacy.continuation
+    || (Array.isArray(legacy.data) && legacy.data.length) || (Array.isArray(legacy.archive) && legacy.archive.length)))
+}
+
+function persistenceError(code, message, details = {}) {
+  return Object.assign(new Error(message), { name: 'PassagePreviewPersistenceError', code, ...details })
 }
 
 function structuredCloneValue(value) {

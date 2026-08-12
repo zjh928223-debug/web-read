@@ -16,8 +16,13 @@
         }
       };
       request.onsuccess = function (event) {
-        _db = event.target.result;
-        resolve(_db);
+        var database = event.target.result;
+        database.onversionchange = function () {
+          database.close();
+          if (_db === database) _db = null;
+        };
+        _db = database;
+        resolve(database);
       };
     });
   }
