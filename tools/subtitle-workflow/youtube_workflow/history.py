@@ -1,10 +1,16 @@
+import hashlib
+import json
 import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .core import build_history_item
-from .durable_json import DurableJsonRepository
+from .durable_json import (
+    DurableJsonRepository,
+    JsonRepositoryReadError,
+    JsonValidationError,
+)
 
 
 _JSON_REPOSITORY = DurableJsonRepository()
@@ -15,6 +21,85 @@ class WorkflowStateRecoveryError(RuntimeError):
         super().__init__(f"{domain} state is corrupt and has no valid backup")
         self.domain = domain
         self.outcome = outcome
+
+
+class WorkflowStateConflictError(RuntimeError):
+    def __init__(self, domain: str, conflicts: list[str], *, expected_revision: int, actual_revision: int):
+        message = f"{domain} state conflict at revision {actual_revision}; conflicting keys: {', '.join(conflicts)}"
+        super().__init__(message)
+        self.domain = domain
+        self.conflicts = tuple(conflicts)
+        self.expected_revision = expected_revision
+        self.actual_revision = actual_revision
+
+
+WORKFLOW_STATE_SCHEMA_VERSION = 1
+JOBS_DOMAIN = "workflow.jobs"
+HISTORY_DOMAIN = "workflow.history"
+
+
+def _canonical_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _payload_checksum(payload: dict) -> str:
+    return "sha256:" + hashlib.sha256(_canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def _make_envelope(domain: str, key: str, payload: dict, revision: int) -> dict:
+    envelope = {
+        "schemaVersion": WORKFLOW_STATE_SCHEMA_VERSION,
+        "domain": domain,
+        "revision": int(revision),
+        "updatedAt": datetime.now(timezone.utc).isoformat(),
+        "payload": payload,
+        "checksum": _payload_checksum(payload),
+    }
+    # Keep the old top-level collection aliases readable for older diagnostics
+    # and scripts. The envelope payload remains authoritative and checksummed.
+    envelope[key] = payload[key]
+    return envelope
+
+
+def _validate_envelope(value, *, domain: str, key: str):
+    if not isinstance(value, dict):
+        raise JsonValidationError("workflow state must be an object", error_code="WORKFLOW_STATE_INVALID")
+    if "schemaVersion" not in value:
+        legacy = value.get(key)
+        if isinstance(legacy, list):
+            return value
+        raise JsonValidationError("workflow legacy state has no collection", error_code="WORKFLOW_STATE_INVALID")
+    if value.get("schemaVersion") != WORKFLOW_STATE_SCHEMA_VERSION:
+        raise JsonValidationError(
+            f"unsupported workflow schema: {value.get('schemaVersion')}",
+            status="unsupported",
+            error_code="WORKFLOW_SCHEMA_UNSUPPORTED",
+        )
+    if value.get("domain") != domain:
+        raise JsonValidationError("workflow state domain mismatch", error_code="WORKFLOW_DOMAIN_MISMATCH")
+    payload = value.get("payload")
+    if not isinstance(payload, dict) or not isinstance(payload.get(key), list):
+        raise JsonValidationError("workflow state payload is invalid", error_code="WORKFLOW_STATE_INVALID")
+    if key in value and value[key] != payload[key]:
+        raise JsonValidationError("workflow state collection alias mismatch", error_code="WORKFLOW_CHECKSUM_MISMATCH")
+    if not isinstance(value.get("revision"), int) or value["revision"] < 1:
+        raise JsonValidationError("workflow state revision is invalid", error_code="WORKFLOW_STATE_INVALID")
+    expected = _payload_checksum(payload)
+    if value.get("checksum") != expected:
+        raise JsonValidationError("workflow state checksum mismatch", error_code="WORKFLOW_CHECKSUM_MISMATCH")
+    return value
+
+
+def _document_payload(document: dict, key: str) -> dict:
+    if "schemaVersion" in document:
+        return document["payload"]
+    return {key: list(document.get(key) or [])}
+
+
+def _document_revision(document: dict) -> int:
+    if "schemaVersion" not in document:
+        return 0
+    return int(document.get("revision") or 0)
 
 
 def _read_json(path: Path, fallback):
@@ -98,32 +183,199 @@ class WorkflowHistoryStore:
         self.lock = threading.RLock()
         self.json_repository = json_repository or DurableJsonRepository()
         self.last_read_outcomes = {}
+        self._known_revisions = {"jobs": 0, "history": 0}
+        self._known_payloads = {"jobs": {}, "history": {}}
+        self._protected_job_ids: set[str] = set()
+
+    def _validator(self, domain: str, key: str):
+        return lambda value: _validate_envelope(value, domain=domain, key=key)
+
+    def _record_outcome(self, domain: str, outcome) -> None:
+        self.last_read_outcomes[domain] = outcome
+        if outcome.status not in {"corrupt", "interrupted", "unsupported"} and isinstance(outcome.value, dict):
+            self._known_revisions[domain] = _document_revision(outcome.value)
+            key = "jobs" if domain == "jobs" else "items"
+            self._known_payloads[domain] = _document_payload(outcome.value, key)
+
+    def _save_domain(self, domain: str, path: Path, key: str, fallback: dict, transform) -> dict:
+        validator = self._validator(
+            JOBS_DOMAIN if domain == "jobs" else HISTORY_DOMAIN,
+            key,
+        )
+
+        def update(current, outcome):
+            if not isinstance(current, dict):
+                current = fallback
+            current_payload = _document_payload(current, key)
+            current_revision = _document_revision(current)
+            expected_revision = self._known_revisions.get(domain, current_revision)
+            next_payload = transform(current_payload, current_revision, expected_revision)
+            return _make_envelope(
+                JOBS_DOMAIN if domain == "jobs" else HISTORY_DOMAIN,
+                key,
+                next_payload,
+                current_revision + 1,
+            )
+
+        try:
+            value, outcome = self.json_repository.update(
+                path,
+                fallback,
+                update,
+                validator=validator,
+            )
+        except JsonRepositoryReadError as exc:
+            self._record_outcome(domain, exc.outcome)
+            self._require_recoverable(domain, path, exc.outcome)
+            raise
+        self._record_outcome(domain, outcome)
+        self._known_revisions[domain] = _document_revision(value)
+        self._known_payloads[domain] = _document_payload(value, key)
+        return value
 
     def load_jobs(self) -> list[dict]:
         with self.lock:
-            outcome = self.json_repository.read(self.jobs_path, {"jobs": []})
-            self.last_read_outcomes["jobs"] = outcome
+            outcome = self.json_repository.read(
+                self.jobs_path,
+                {"jobs": []},
+                validator=self._validator(JOBS_DOMAIN, "jobs"),
+            )
+            self._record_outcome("jobs", outcome)
             self._require_recoverable("jobs", self.jobs_path, outcome)
-            data = outcome.value
+            data = _document_payload(outcome.value, "jobs") if isinstance(outcome.value, dict) else {}
             jobs = data.get("jobs") if isinstance(data, dict) else []
+            self._protected_job_ids.clear()
             return list(jobs) if isinstance(jobs, list) else []
 
     def save_jobs(self, jobs: list[dict]) -> None:
         with self.lock:
-            self.json_repository.write(self.jobs_path, {"jobs": list(jobs)})
+            incoming = [item for item in jobs if isinstance(item, dict)]
+            base_jobs = self._known_payloads.get("jobs", {}).get("jobs") or []
+            base_by_id = {
+                str(item.get("jobId")): item
+                for item in base_jobs
+                if isinstance(item, dict) and item.get("jobId")
+            }
+            incoming_by_id = {
+                str(item.get("jobId")): item
+                for item in incoming
+                if isinstance(item, dict) and item.get("jobId")
+            }
+            expected_revision = self._known_revisions.get("jobs", 0)
+            protected_ids = set(self._protected_job_ids)
+            next_protected_ids = set()
+
+            def transform(current, outcome):
+                current_revision = _document_revision(outcome.value) if isinstance(outcome.value, dict) else 0
+                current_jobs = list(current.get("jobs") or []) if isinstance(current, dict) else []
+                current_by_id = {
+                    str(item.get("jobId")): item
+                    for item in current_jobs
+                    if isinstance(item, dict) and item.get("jobId")
+                }
+                if current_revision < expected_revision:
+                    raise WorkflowStateConflictError(
+                        "jobs",
+                        ["<revision>"],
+                        expected_revision=expected_revision,
+                        actual_revision=current_revision,
+                    )
+                if current_revision == expected_revision and not protected_ids:
+                    return _make_envelope(
+                        JOBS_DOMAIN,
+                        "jobs",
+                        {"jobs": list(incoming)},
+                        current_revision + 1,
+                    )
+
+                missing = object()
+                conflicts = []
+                merged = dict(current_by_id)
+                all_ids = sorted(set(base_by_id) | set(current_by_id) | set(incoming_by_id))
+                for job_id in all_ids:
+                    base_item = base_by_id.get(job_id, missing)
+                    current_item = current_by_id.get(job_id, missing)
+                    incoming_item = incoming_by_id.get(job_id, missing)
+                    protected = job_id in protected_ids
+
+                    if base_item is missing:
+                        if current_item is missing:
+                            if incoming_item is not missing:
+                                merged[job_id] = incoming_item
+                        elif incoming_item is missing:
+                            merged[job_id] = current_item
+                            next_protected_ids.add(job_id)
+                        elif current_item != incoming_item and not protected:
+                            conflicts.append(job_id)
+                        else:
+                            merged[job_id] = incoming_item
+                        continue
+
+                    current_changed = current_item != base_item
+                    incoming_changed = incoming_item != base_item
+                    if current_changed and incoming_changed and current_item != incoming_item:
+                        conflicts.append(job_id)
+                    elif incoming_changed:
+                        if incoming_item is missing:
+                            if protected:
+                                merged[job_id] = current_item
+                                next_protected_ids.add(job_id)
+                            else:
+                                merged.pop(job_id, None)
+                        else:
+                            merged[job_id] = incoming_item
+                    elif current_item is missing:
+                        merged.pop(job_id, None)
+                    else:
+                        merged[job_id] = current_item
+
+                if conflicts:
+                    raise WorkflowStateConflictError(
+                        "jobs",
+                        conflicts,
+                        expected_revision=expected_revision,
+                        actual_revision=current_revision,
+                    )
+                return _make_envelope(
+                    JOBS_DOMAIN,
+                    "jobs",
+                    {"jobs": list(merged.values())},
+                    current_revision + 1,
+                )
+
+            validator = self._validator(JOBS_DOMAIN, "jobs")
+            try:
+                value, outcome = self.json_repository.update(
+                    self.jobs_path,
+                    {"jobs": []},
+                    transform,
+                    validator=validator,
+                )
+            except JsonRepositoryReadError as exc:
+                self._record_outcome("jobs", exc.outcome)
+                self._require_recoverable("jobs", self.jobs_path, exc.outcome)
+                raise
+            self._record_outcome("jobs", outcome)
+            self._known_revisions["jobs"] = _document_revision(value)
+            self._known_payloads["jobs"] = _document_payload(value, "jobs")
+            self._protected_job_ids = next_protected_ids
 
     def load_history(self) -> list[dict]:
         with self.lock:
-            outcome = self.json_repository.read(self.history_path, {"items": []})
-            self.last_read_outcomes["history"] = outcome
+            outcome = self.json_repository.read(
+                self.history_path,
+                {"items": []},
+                validator=self._validator(HISTORY_DOMAIN, "items"),
+            )
+            self._record_outcome("history", outcome)
             self._require_recoverable("history", self.history_path, outcome)
-            data = outcome.value
+            data = _document_payload(outcome.value, "items") if isinstance(outcome.value, dict) else {}
             items = data.get("items") if isinstance(data, dict) else []
             return list(items) if isinstance(items, list) else []
 
     @staticmethod
     def _require_recoverable(domain: str, path: Path, outcome) -> None:
-        if outcome.status in {"corrupt", "interrupted"}:
+        if outcome.status in {"corrupt", "interrupted", "unsupported"}:
             raise WorkflowStateRecoveryError(domain, outcome)
         if outcome.status == "missing" and any(path.parent.glob(f"{path.name}.corrupt-*")):
             raise WorkflowStateRecoveryError(domain, outcome)
@@ -132,9 +384,24 @@ class WorkflowHistoryStore:
         item = build_history_item(manifest)
         job_id = item.get("jobId")
         with self.lock:
-            items = [entry for entry in self.load_history() if entry.get("jobId") != job_id]
-            items.insert(0, item)
-            self.json_repository.write(self.history_path, {"items": items})
+            def transform(current, current_revision, expected_revision):
+                existing = list(current.get("items") or []) if isinstance(current, dict) else []
+                if expected_revision < current_revision:
+                    base_items = self._known_payloads.get("history", {}).get("items") or []
+                    base_item = next((entry for entry in base_items if entry.get("jobId") == job_id), None)
+                    current_item = next((entry for entry in existing if entry.get("jobId") == job_id), None)
+                    if base_item != current_item and current_item != item:
+                        raise WorkflowStateConflictError(
+                            "history",
+                            [str(job_id)],
+                            expected_revision=expected_revision,
+                            actual_revision=current_revision,
+                        )
+                items = [entry for entry in existing if entry.get("jobId") != job_id]
+                items.insert(0, item)
+                return {"items": items}
+
+            self._save_domain("history", self.history_path, "items", {"items": []}, transform)
         return item
 
     def search_history(self, query: str = "", status: str = "", limit: int = 50) -> list[dict]:
@@ -163,13 +430,29 @@ class WorkflowHistoryStore:
     def delete_history_item(self, job_id: str, delete_files: bool = False) -> dict:
         removed = None
         with self.lock:
-            items = []
-            for item in self.load_history():
-                if item.get("jobId") == job_id:
-                    removed = item
-                else:
-                    items.append(item)
-            self.json_repository.write(self.history_path, {"items": items})
+            def transform(current, current_revision, expected_revision):
+                nonlocal removed
+                items = []
+                existing = list(current.get("items") or []) if isinstance(current, dict) else []
+                if expected_revision < current_revision:
+                    base_items = self._known_payloads.get("history", {}).get("items") or []
+                    base_item = next((entry for entry in base_items if entry.get("jobId") == job_id), None)
+                    current_item = next((entry for entry in existing if entry.get("jobId") == job_id), None)
+                    if base_item is not None and current_item != base_item:
+                        raise WorkflowStateConflictError(
+                            "history",
+                            [str(job_id)],
+                            expected_revision=expected_revision,
+                            actual_revision=current_revision,
+                        )
+                for item in existing:
+                    if item.get("jobId") == job_id:
+                        removed = item
+                    else:
+                        items.append(item)
+                return {"items": items}
+
+            self._save_domain("history", self.history_path, "items", {"items": []}, transform)
             self._remove_reader_index_item_locked(job_id)
         deleted_files = False
         if delete_files and removed and removed.get("outputDir"):
