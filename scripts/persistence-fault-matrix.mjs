@@ -15,8 +15,12 @@ const domains = [
     quota: 'failed transaction preserves the previous committed session',
     corrupt: 'malformed/checksum-invalid rows return corrupt and are quarantined',
     'unknown-version': 'unknown session schema is rejected and quarantined without source rewrite',
+    'page-close': 'real Chromium closes the writer after put success but before transaction completion and reloads only a whole old/new session',
     recovery: 'legacy/committed session reload returns an intact session',
-  }),
+  }, root, [
+    command(process.execPath, ['scripts/reader-session-persistence-check.mjs']),
+    command(process.execPath, ['scripts/reader-session-load-browser-journeys-check.mjs']),
+  ]),
   domain('marks-activity', process.execPath, ['scripts/latest-wins-ledger-check.mjs'], {
     recovery: 'failed latest intent remains dirty and succeeds through the public retry entry',
   }),
@@ -54,7 +58,7 @@ const cells = domains.flatMap((item) => conditions.map((condition) => ({
   condition,
   status: item.execution.exitCode === 0 && item.coverage[condition] ? 'pass' : 'gap',
   evidence: item.execution.exitCode === 0 ? (item.coverage[condition] || 'no executable public-entry evidence mapped') : `evidence command failed with exit ${item.execution.exitCode}`,
-  command: [item.executable, ...item.args],
+  command: item.commands.map((entry) => [entry.executable, ...entry.args]),
 })))
 const gaps = cells.filter((cell) => cell.status !== 'pass')
 const evidence = {
@@ -74,19 +78,40 @@ console.log(`evidence: ${outputPath}`)
 for (const gap of gaps) console.log(`  GAP ${gap.domain}/${gap.condition}: ${gap.evidence}`)
 if (domains.some((item) => item.execution.exitCode !== 0) || (requireComplete && gaps.length)) process.exitCode = 1
 
-function domain(name, executable, args, coverage, cwd = root) {
-  return { name, executable, args, coverage, cwd }
+function command(executable, args, cwd = root) {
+  return { executable, args, cwd }
+}
+
+function domain(name, executable, args, coverage, cwd = root, commands = null) {
+  return { name, executable, args, coverage, cwd, commands: commands || [command(executable, args, cwd)] }
 }
 
 function pythonCommand() {
   return process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
 }
 
-function run(item) {
+async function run(item) {
+  const began = Date.now()
+  const steps = []
+  for (const entry of item.commands) {
+    const result = await runCommand(entry)
+    steps.push(result)
+    if (result.exitCode !== 0) break
+  }
+  const failed = steps.find((step) => step.exitCode !== 0)
+  return { exitCode: failed?.exitCode || 0, signal: failed?.signal || null, durationMs: Date.now() - began, steps }
+}
+
+function runCommand(entry) {
   const began = Date.now()
   return new Promise((resolve, reject) => {
-    const child = spawn(item.executable, item.args, { cwd: item.cwd, env: process.env, windowsHide: true, stdio: 'inherit' })
+    const child = spawn(entry.executable, entry.args, { cwd: entry.cwd, env: process.env, windowsHide: true, stdio: 'inherit' })
     child.once('error', reject)
-    child.once('exit', (code, signal) => resolve({ exitCode: code ?? 1, signal: signal || null, durationMs: Date.now() - began }))
+    child.once('exit', (code, signal) => resolve({
+      command: [entry.executable, ...entry.args],
+      exitCode: code ?? 1,
+      signal: signal || null,
+      durationMs: Date.now() - began,
+    }))
   })
 }
