@@ -250,6 +250,48 @@ try {
   assert.equal(restored.session.audioMeta.jobId, 'reload')
   evidence.push({ journey: 'close-reload', outcome: 'new-session-fully-restored' })
 
+  let pageCloseBefore = await readReaderSessionSnapshot(page)
+  for (const closeAfterPut of [1, 3, 5]) {
+    const candidate = {
+      contentId: `page-close-new-${closeAfterPut}`,
+      revision: `page-close:${closeAfterPut}`,
+      audioMeta: {
+        jobId: `page-close-new-${closeAfterPut}`,
+        streamUrl: `${origin}/page-close-new-${closeAfterPut}`,
+      },
+      transcript: { segments: [{ words: [{ word: `page-close-new-${closeAfterPut}` }] }] },
+      chunkData: { s: [{ chunks: [{ en: `page-close-new-${closeAfterPut}` }] }] },
+      marks: [{ globalIndex: 0, word: `page-close-new-${closeAfterPut}` }],
+    }
+    const closeResult = await closeReaderPageDuringTransaction({
+      context,
+      origin,
+      candidate,
+      closeAfterPut,
+    })
+    assert.equal(closeResult.closeError, null)
+    assert.equal(closeResult.dialog.phase, 'put-success')
+    assert.equal(closeResult.dialog.putIndex, closeAfterPut)
+    assert.equal(closeResult.dialog.commitSettled, false)
+    assert.equal(closeResult.dialog.transactionComplete, false)
+    assert.equal(closeResult.commitSuccess, false, `writer events: ${closeResult.events.join(', ')}`)
+
+    const recovered = await readReaderSessionSnapshot(page)
+    assert.equal(recovered.restored.status, 'committed')
+    assert.ok(
+      [pageCloseBefore.restored.session.contentId, candidate.contentId].includes(recovered.restored.session.contentId),
+      `unexpected recovered content: ${recovered.restored.session.contentId}`,
+    )
+    assertReaderSessionSnapshotIsWhole(recovered)
+    evidence.push({
+      journey: `page-close-during-transaction-after-put-${closeAfterPut}`,
+      outcome: 'only-complete-old-or-new-revision-recovered',
+      recoveredContentId: recovered.restored.session.contentId,
+      recoveredRevision: recovered.restored.session.revision,
+    })
+    pageCloseBefore = recovered
+  }
+
   console.log(JSON.stringify({ status: 'passed', origin, journeys: evidence }, null, 2))
 } finally {
   await context.close()
@@ -264,4 +306,119 @@ function send(response, status, contentType, body) {
 
 function sendJson(response, status, value) {
   send(response, status, 'application/json', JSON.stringify(value))
+}
+
+async function closeReaderPageDuringTransaction({ context, origin, candidate, closeAfterPut }) {
+  const writer = await context.newPage()
+  const events = []
+  let dialog = null
+  let closeError = null
+  let writerClosedResolve
+  const writerClosed = new Promise((resolve) => { writerClosedResolve = resolve })
+  writer.on('console', (message) => events.push(message.text()))
+  writer.on('dialog', async (activeDialog) => {
+    dialog = JSON.parse(activeDialog.message())
+    try {
+      await writer.close()
+    } catch (error) {
+      closeError = error
+    }
+    try { await activeDialog.dismiss() } catch { /* Closing the page dismisses the dialog. */ }
+    writerClosedResolve()
+  })
+  await writer.goto(origin)
+  await writer.evaluate(async ({ candidate: session, closeAfterPut: stopAt }) => {
+    let commitSettled = false
+    let transactionComplete = false
+    const originalTransaction = IDBDatabase.prototype.transaction
+    IDBDatabase.prototype.transaction = function (...args) {
+      const transaction = originalTransaction.apply(this, args)
+      if (args[1] === 'readwrite') {
+        transaction.addEventListener('complete', () => { transactionComplete = true }, { once: true })
+      }
+      return transaction
+    }
+    const originalPut = IDBObjectStore.prototype.put
+    let putIndex = 0
+    IDBObjectStore.prototype.put = function (...args) {
+      const request = originalPut.apply(this, args)
+      const index = ++putIndex
+      request.addEventListener('success', () => {
+        if (index === stopAt) {
+          alert(JSON.stringify({ phase: 'put-success', putIndex: index, commitSettled, transactionComplete }))
+        }
+      }, { once: true })
+      return request
+    }
+    const { createReaderSessionPersistence } = await import('/src/services/persistence/reader-session-persistence.js')
+    const persistence = createReaderSessionPersistence()
+    const commit = persistence.commit(session)
+    globalThis.__pageCloseCommit = commit
+    commit.then(() => {
+      commitSettled = true
+      console.log('reader-page-close:commit-success')
+    }).catch((error) => {
+      console.log(`reader-page-close:commit-error:${error.name}:${error.code || ''}`)
+    })
+  }, { candidate, closeAfterPut })
+  await Promise.race([
+    writerClosed,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('page-close transaction signal timed out')), 10_000)),
+  ])
+  return {
+    dialog,
+    closeError,
+    commitSuccess: events.includes('reader-page-close:commit-success'),
+    events,
+  }
+}
+
+async function readReaderSessionSnapshot(page) {
+  return page.evaluate(async () => {
+    const { createReaderSessionPersistence } = await import('/src/services/persistence/reader-session-persistence.js')
+    const persistence = createReaderSessionPersistence()
+    const restored = await persistence.loadCommitted()
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('SeekPlayerDB', 1)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    const rows = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(['files'], 'readonly')
+      const store = transaction.objectStore('files')
+      const values = new Map()
+      for (const id of ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession']) {
+        const request = store.get(id)
+        request.onsuccess = () => values.set(id, request.result)
+        request.onerror = () => reject(request.error)
+      }
+      transaction.oncomplete = () => resolve(Object.fromEntries(values))
+      transaction.onerror = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error || new Error('reader session read transaction aborted'))
+    })
+    database.close()
+    return { restored, rows }
+  })
+}
+
+function assertReaderSessionSnapshotIsWhole(snapshot) {
+  const session = snapshot.restored.session
+  const rows = snapshot.rows
+  const ids = ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession']
+  assert.deepEqual(Object.keys(rows).sort(), ids.sort())
+  assert.equal(session.audioMeta.jobId, session.contentId)
+  assert.equal(session.transcript.segments[0].words[0].word, session.contentId)
+  assert.equal(session.chunkData.s[0].chunks[0].en, session.contentId)
+  assert.equal(session.marks[0].word, session.contentId)
+
+  const rowValues = ids.map((id) => rows[id])
+  assert.equal(new Set(rowValues.map((row) => row.contentId)).size, 1)
+  assert.equal(new Set(rowValues.map((row) => row.revision)).size, 1)
+  assert.equal(new Set(rowValues.map((row) => row.checksum)).size, 1)
+  assert.equal(rowValues[0].contentId, session.contentId)
+  assert.equal(rowValues[0].revision, session.revision)
+  assert.match(rowValues[0].checksum, /^sha256:[a-f0-9]{64}$/)
+  assert.equal(rows.readerSession.content.checksum, rowValues[0].checksum)
+  assert.equal(rows.readerSession.content.contentId, session.contentId)
+  assert.equal(rows.readerSession.content.revision, session.revision)
 }
