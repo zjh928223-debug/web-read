@@ -51,6 +51,7 @@ from .core import (
 from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
 from .process_supervisor import ProcessSupervisor
+from .reader_marks_activity import ReaderPersistenceError
 
 
 SERVICE_VERSION = "0.2.3"
@@ -2110,11 +2111,24 @@ class JobManager:
         job_id = str(payload.get("jobId") or payload.get("job_id") or "").strip()
         if not job_id:
             raise HTTPException(status_code=400, detail="jobId is required")
-        manifest = self._manifest_for_job(job_id)
+        manifest = self._raw_manifest_for_reader_record(job_id)
         if manifest.get("status") != "ready":
             raise HTTPException(status_code=409, detail="reader activity requires a ready job")
         try:
             return self.store.record_reader_activity(manifest, payload)
+        except ReaderPersistenceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    def get_reader_activity(self, job_id: str, *, recover: bool = False) -> dict:
+        manifest = self._raw_manifest_for_reader_record(job_id)
+        if manifest.get("status") != "ready":
+            raise HTTPException(status_code=409, detail="reader activity requires a ready job")
+        try:
+            return self.store.load_reader_activity(manifest, recover=recover)
+        except ReaderPersistenceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2629,49 +2643,65 @@ class JobManager:
         }
 
     def _reader_marks_path(self, job_id: str) -> Path:
-        manifest = self._manifest_for_job(job_id)
+        manifest = self._raw_manifest_for_reader_record(job_id)
         output_dir = Path(str(manifest.get("outputDir") or ""))
         if not output_dir:
             raise HTTPException(status_code=409, detail="job outputDir is missing")
         return output_dir / "_workflow" / "reader-marks.json"
 
-    def get_reader_marks(self, job_id: str) -> dict:
+    def _raw_manifest_for_reader_record(self, job_id: str) -> dict:
+        record = self.jobs.get(job_id)
+        if record and record.manifest:
+            return dict(record.manifest)
+        item = self.store.get_history_item(job_id)
+        manifest_path = Path(str(item.get("manifestPath", ""))) if item else None
+        if manifest_path and manifest_path.exists():
+            manifest = load_json_file(manifest_path)
+            if isinstance(manifest, dict):
+                return manifest
+        raise HTTPException(status_code=404, detail="job manifest not found")
+
+    def get_reader_marks(self, job_id: str, *, recover: bool = False) -> dict:
         path = self._reader_marks_path(job_id)
-        if not path.exists():
-            return {
-                "schemaVersion": 1,
-                "jobId": job_id,
-                "marks": [],
-                "markCount": 0,
-                "integrity": None,
-                "path": str(path),
-            }
         try:
-            payload = load_json_file(path)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"reader marks file is invalid: {exc}")
-        marks = normalize_reader_marks(payload.get("marks") if isinstance(payload, dict) else [])
+            result = self.store.reader_repository.read_marks(path, job_id, recover=recover)
+        except ReaderPersistenceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
+        marks = normalize_reader_marks(result["payload"].get("marks"))
         return {
-            "schemaVersion": 1,
+            "schemaVersion": result["schemaVersion"],
             "jobId": job_id,
-            "updatedAt": payload.get("updatedAt") if isinstance(payload, dict) else "",
+            "updatedAt": result["envelope"].get("updatedAt") or "",
+            "revision": result["revision"],
+            "checksum": result["checksum"],
             "marks": marks,
             "markCount": len(marks),
-            "integrity": marks_integrity(marks),
-            "path": str(path),
+            "integrity": marks_integrity(marks) if marks else None,
+            "path": result["path"],
+            "recovered": result["recovered"],
         }
 
     def save_reader_marks(self, job_id: str, payload: dict | None = None) -> dict:
-        marks = normalize_reader_marks((payload or {}).get("marks"))
-        manifest = self._manifest_for_job(job_id)
+        payload = payload or {}
+        marks = normalize_reader_marks(payload.get("marks"))
+        manifest = self._raw_manifest_for_reader_record(job_id)
         path = self._reader_marks_path(job_id)
-        document = {
-            "schemaVersion": 1,
-            "jobId": job_id,
-            "updatedAt": utc_now_iso(),
-            "marks": marks,
-        }
-        write_json_file(path, document)
+        expected_revision = payload.get("expectedRevision")
+        if expected_revision is not None:
+            try:
+                expected_revision = int(expected_revision)
+            except (TypeError, ValueError):
+                expected_revision = -1
+        try:
+            result = self.store.reader_repository.write_marks(
+                path,
+                job_id,
+                marks,
+                expected_revision=expected_revision,
+            )
+        except ReaderPersistenceError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
+        document = result["envelope"]
         validate_session_files(manifest, refresh_identity=True)
         output_dir = Path(str(manifest.get("outputDir") or ""))
         if output_dir:
@@ -2685,8 +2715,9 @@ class JobManager:
         return {
             **document,
             "markCount": len(marks),
-            "integrity": marks_integrity(marks),
-            "path": str(path),
+            "integrity": marks_integrity(marks) if marks else None,
+            "path": result["path"],
+            "recovered": result["recovered"],
         }
 
     def get_config(self) -> dict:
@@ -3523,6 +3554,10 @@ def create_app(
     def reader_activity(payload: dict | None = None):
         return manager.record_reader_activity(payload)
 
+    @app.get("/api/jobs/{job_id}/reader-activity")
+    def job_reader_activity(job_id: str, recover: bool = False):
+        return manager.get_reader_activity(job_id, recover=recover)
+
     @app.post("/api/jobs/snapshot")
     def jobs_snapshot(payload: dict | None = None):
         return manager.jobs_snapshot(payload)
@@ -3616,8 +3651,8 @@ def create_app(
         return manager.get_annotation_backfill_run_result(job_id, run_id)
 
     @app.get("/api/jobs/{job_id}/reader-marks")
-    def job_reader_marks(job_id: str):
-        return manager.get_reader_marks(job_id)
+    def job_reader_marks(job_id: str, recover: bool = False):
+        return manager.get_reader_marks(job_id, recover=recover)
 
     @app.post("/api/jobs/{job_id}/reader-marks")
     def save_job_reader_marks(job_id: str, payload: dict | None = None):

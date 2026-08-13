@@ -14,6 +14,7 @@ from .durable_json import (
     JsonRepositoryReadError,
     JsonValidationError,
 )
+from .reader_marks_activity import ReaderMarksActivityRepository
 
 
 _JSON_REPOSITORY = DurableJsonRepository()
@@ -337,6 +338,7 @@ class WorkflowHistoryStore:
         self.service_log_path = self.logs_dir / "service.log"
         self.lock = threading.RLock()
         self.json_repository = json_repository or DurableJsonRepository()
+        self.reader_repository = ReaderMarksActivityRepository(json_repository=self.json_repository)
         self.last_read_outcomes = {}
         self._known_revisions = {"jobs": 0, "history": 0}
         self._known_payloads = {"jobs": {}, "history": {}}
@@ -590,16 +592,67 @@ class WorkflowHistoryStore:
 
         now = datetime.now(timezone.utc).isoformat()
         event_type = str(payload.get("event") or "activity").strip() or "activity"
-        activity_path = output_dir / "_workflow" / "reader-activity.json"
+        activity_path = self.reader_repository.activity_path(output_dir)
+        expected_revision = payload.get("expectedRevision")
+        if expected_revision is not None:
+            try:
+                expected_revision = int(expected_revision)
+            except (TypeError, ValueError):
+                expected_revision = -1
+        operation_id = str(payload.get("activityOperationId") or "").strip() or None
+
+        def update(current):
+            return self._merge_reader_activity(item, current, payload, event_type, now)
+
         with self.lock:
-            activity = _read_json(activity_path, {})
-            if not isinstance(activity, dict):
-                activity = {}
-            activity = self._merge_reader_activity(item, activity, payload, event_type, now)
-            _write_json_atomic(activity_path, activity)
+            result = self.reader_repository.update_activity(
+                activity_path,
+                job_id,
+                expected_revision=expected_revision,
+                operation_id=operation_id,
+                update=update,
+            )
+            activity = result["payload"]
             summary = self._reader_summary_from_activity(activity)
+            summary.update({
+                "schemaVersion": result["schemaVersion"],
+                "revision": result["revision"],
+                "checksum": result["checksum"],
+                "path": result["path"],
+                "recovered": result["recovered"],
+                "idempotent": result["idempotent"],
+            })
             self._upsert_reader_index_item_locked(summary)
             return summary
+
+    def load_reader_activity(self, manifest: dict, *, recover: bool = False) -> dict:
+        item = build_history_item(manifest)
+        job_id = str(item.get("jobId") or "").strip()
+        output_dir = Path(str(item.get("outputDir") or ""))
+        if not job_id:
+            raise ValueError("jobId is required")
+        if not output_dir:
+            raise ValueError("outputDir is required")
+        result = self.reader_repository.read_activity(
+            self.reader_repository.activity_path(output_dir),
+            job_id,
+            recover=recover,
+        )
+        summary = self._reader_summary_from_activity(result["payload"])
+        summary.update({
+            key: value
+            for key, value in result["payload"].items()
+            if not key.startswith("_")
+        })
+        summary.update({
+            "schemaVersion": result["schemaVersion"],
+            "revision": result["revision"],
+            "checksum": result["checksum"],
+            "path": result["path"],
+            "recovered": result["recovered"],
+            "idempotent": result["idempotent"],
+        })
+        return summary
 
     def search_reader_recent(self, query: str = "", limit: int = 50) -> list[dict]:
         needle = str(query or "").strip().lower()

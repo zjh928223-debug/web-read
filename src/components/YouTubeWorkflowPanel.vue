@@ -684,6 +684,8 @@ const cancelRecordsActionGuard = createPendingActionGuard({ onChange: (pending) 
 const panelPending = computed(() => starting.value || legacyImportBusy.value)
 const readerMarksLedgers = new Map()
 const readerActivityLedgers = new Map()
+const readerMarksRevisions = new Map()
+const readerActivityRevisions = new Map()
 
 const readerSaveStateText = computed(() => {
   const states = [readerMarksSaveState.value, readerActivitySaveState.value]
@@ -808,8 +810,14 @@ async function handleWorkflowMutationConflict(error) {
 function getReaderMarksLedger(jobId) {
   if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
   const ledger = createLatestWinsLedger({
-    write(entry) {
-      return youtubeWorkflowClient.saveReaderMarks(entry.jobId, { marks: entry.marks })
+    async write(entry) {
+      const expectedRevision = readerMarksRevisions.get(jobId) ?? 0
+      const saved = await youtubeWorkflowClient.saveReaderMarks(entry.jobId, {
+        marks: entry.marks,
+        expectedRevision,
+      })
+      if (Number.isInteger(saved?.revision)) readerMarksRevisions.set(jobId, saved.revision)
+      return saved
     },
     createOperationId(sequence) {
       return `reader-marks-${jobId}-${Date.now()}-${sequence}`
@@ -829,11 +837,14 @@ function getReaderActivityLedger(jobId) {
   if (readerActivityLedgers.has(jobId)) return readerActivityLedgers.get(jobId)
   const ledger = createLatestWinsLedger({
     async write(entry, context) {
+      const expectedRevision = readerActivityRevisions.get(jobId) ?? 0
       const updated = await youtubeWorkflowClient.recordReaderActivity({
         ...entry.payload,
         activityOperationId: context.operationId,
-        activitySequence: context.sequence
+        activitySequence: context.sequence,
+        expectedRevision,
       })
+      if (Number.isInteger(updated?.revision)) readerActivityRevisions.set(jobId, updated.revision)
       mergeRecentReaderItem(updated)
       return updated
     },
@@ -1068,6 +1079,8 @@ onBeforeUnmount(() => {
   readerMarksLedgers.clear()
   readerActivityLedgers.forEach((ledger) => ledger.dispose())
   readerActivityLedgers.clear()
+  readerMarksRevisions.clear()
+  readerActivityRevisions.clear()
   diagnosticsDownloader.dispose()
 })
 
@@ -1186,6 +1199,9 @@ function makeLoader() {
     validateChunkData: window.DataUtils && window.DataUtils.validateChunkData,
     applyReaderMarks,
     annotationLightweightModule: window.__annotationLightweightModule,
+    onReaderMarksLoaded(payload) {
+      if (Number.isInteger(payload?.revision)) readerMarksRevisions.set(String(payload.jobId || currentJobId.value || ''), payload.revision)
+    },
     showToast: window.showToast
   })
   return readerSessionLoader
@@ -1840,6 +1856,8 @@ async function loadJob(job) {
     currentJobId.value = job.jobId
     loadedReadyJobs.add(job.jobId)
     startReaderSession(job)
+    const activity = await youtubeWorkflowClient.getReaderActivity(job.jobId)
+    if (Number.isInteger(activity?.revision)) readerActivityRevisions.set(job.jobId, activity.revision)
     await syncReaderActivity('open', { manifest: result && result.manifest })
     await refreshRecent()
     const audio = getAudio()
@@ -2573,7 +2591,10 @@ function handleBeforeUnload() {
   const payload = buildReaderActivityPayload('close')
   if (!payload) return
   readerUnloadFlushed = true
+  readerMarksSaveState.value = 'dirty'
+  readerActivitySaveState.value = 'dirty'
   payload.activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
+  payload.expectedRevision = readerActivityRevisions.get(payload.jobId) ?? 0
   try {
     sendJsonOnUnload(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, payload)
   } catch (error) {
@@ -2585,7 +2606,10 @@ function handleBeforeUnload() {
   try {
     sendJsonOnUnload(
       `${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`,
-      { marks: getCurrentReaderMarks() }
+      {
+        marks: getCurrentReaderMarks(),
+        expectedRevision: readerMarksRevisions.get(payload.jobId) ?? 0,
+      }
     )
   } catch (error) {
     recordBestEffortFailure(error, {

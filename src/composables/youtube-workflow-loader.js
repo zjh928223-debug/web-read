@@ -297,7 +297,10 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     if (typeof payload.jobId === 'string' && payload.jobId && payload.jobId !== jobId) {
       throw validationError('READER_SESSION_IDENTITY_MISMATCH', 'reader marks jobId does not match the requested job')
     }
-    return { marks: payload.marks, integrity: payload.integrity ?? null }
+    if (typeof deps.onReaderMarksLoaded === 'function') {
+      deps.onReaderMarksLoaded(payload)
+    }
+    return { marks: payload.marks, integrity: payload.integrity ?? null, revision: payload.revision ?? 0 }
   }
 
   async function prepareExpectedRevision() {

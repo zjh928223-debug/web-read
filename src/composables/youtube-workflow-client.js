@@ -320,8 +320,15 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
+    async getReaderActivity(jobId, options = {}) {
+      const params = options.recover ? '?recover=true' : ''
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-activity${params}`), {
+        signal: options.signal,
+      }))
+    },
     async getReaderMarks(jobId, options = {}) {
-      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
+      const params = options.recover ? '?recover=true' : ''
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks${params}`), {
         signal: options.signal,
       }))
     },
