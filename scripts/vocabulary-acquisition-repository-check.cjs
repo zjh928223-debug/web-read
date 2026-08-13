@@ -9,11 +9,15 @@ async function importP1Modules(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'read-web-p1-acquisition-'));
   try {
     const modelsSource = fs.readFileSync(path.join(sourceDir, 'vocabulary-learning-models.js'), 'utf8');
+    const persistenceSource = fs.readFileSync(path.join(sourceDir, 'vocabulary-persistence.js'), 'utf8');
     const repositorySource = fs.readFileSync(
       path.join(sourceDir, 'vocabulary-acquisition-repository.js'),
       'utf8',
-    ).replace("from './vocabulary-learning-models.js'", "from './vocabulary-learning-models.mjs'");
+    )
+      .replace("from './vocabulary-learning-models.js'", "from './vocabulary-learning-models.mjs'")
+      .replace("from './vocabulary-persistence.js'", "from './vocabulary-persistence.mjs'");
     fs.writeFileSync(path.join(tempDir, 'vocabulary-learning-models.mjs'), modelsSource);
+    fs.writeFileSync(path.join(tempDir, 'vocabulary-persistence.mjs'), persistenceSource);
     fs.writeFileSync(path.join(tempDir, 'vocabulary-acquisition-repository.mjs'), repositorySource);
     const models = await import(`${pathToFileURL(path.join(tempDir, 'vocabulary-learning-models.mjs')).href}?v=1`);
     const repository = await import(
@@ -171,6 +175,7 @@ function createFakeIndexedDb(options = {}) {
   }
 
   const database = {
+    version: 1,
     objectStoreNames: {
       contains(name) {
         return name === 'files';

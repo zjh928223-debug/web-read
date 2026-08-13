@@ -8,6 +8,7 @@ async function loadModules(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'read-web-legacy-migration-'))
   const sources = [
     'src/services/vocabulary/vocabulary-models.js',
+    'src/services/vocabulary/vocabulary-persistence.js',
     'src/services/vocabulary/vocabulary-repository.js',
     'src/services/vocabulary/vocabulary-learning-models.js',
     'src/services/vocabulary/vocabulary-acquisition-repository.js',

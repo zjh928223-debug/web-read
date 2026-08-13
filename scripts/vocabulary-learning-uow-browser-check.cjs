@@ -167,6 +167,9 @@ async function main() {
       first.rows.some((row) => row.id === 'vocabulary.learning-events.manifest.v1'),
       true,
     );
+    const acquisitionRow = first.rows.find((row) => row.id === 'vocabulary.acquisition.store.v1');
+    assert.match(acquisitionRow.checksum, /^sha256:[a-f0-9]{64}$/u);
+    assert.equal(acquisitionRow.revision, 1);
 
     await page.reload();
     const retry = await page.evaluate(async (command) => {

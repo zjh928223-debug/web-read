@@ -8,6 +8,7 @@ async function loadModules(repoRoot) {
   const files = [
     'vocabulary-models.js',
     'vocabulary-repository.js',
+    'vocabulary-persistence.js',
     'srs-scheduler.js',
     'vocabulary-learning-models.js',
     'vocabulary-acquisition-repository.js',

@@ -5,6 +5,13 @@ import {
   normalizeLookupKey,
   normalizeVocabularySnapshot,
 } from './vocabulary-models.js';
+import {
+  backupRowId,
+  checksumFor,
+  clonePersistenceValue,
+  hasValidChecksum,
+  makeQuarantineRow,
+} from './vocabulary-persistence.js';
 
 const DB_NAME = 'SeekPlayerDB';
 const DB_VERSION = 1;
@@ -21,6 +28,35 @@ function vocabularyPersistenceError(code, message, details = {}) {
   error.code = code;
   error.details = details;
   return error;
+}
+
+function normalizeIndexedDbError(error, operation) {
+  if (error?.name === 'VocabularyPersistenceError') return error;
+  if (error?.name === 'QuotaExceededError' || error?.code === 'QUOTA_EXCEEDED') {
+    return vocabularyPersistenceError('QUOTA_EXCEEDED', 'Vocabulary persistence quota was exceeded', { operation });
+  }
+  if (error?.name === 'InvalidStateError' || error?.name === 'TransactionInactiveError') {
+    return vocabularyPersistenceError('CONNECTION_CLOSED', 'Vocabulary persistence connection was closed', { operation });
+  }
+  if (error?.name === 'AbortError') {
+    return vocabularyPersistenceError('TRANSACTION_ABORTED', 'Vocabulary transaction was aborted', { operation });
+  }
+  return vocabularyPersistenceError('TRANSACTION_ABORTED', `Vocabulary ${operation} failed`, { operation });
+}
+
+function isPlainObject(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isCurrentSnapshotShape(snapshot) {
+  return isPlainObject(snapshot)
+    && snapshot.schemaVersion === CURRENT_SCHEMA_VERSION
+    && Array.isArray(snapshot.words)
+    && Array.isArray(snapshot.contexts)
+    && Array.isArray(snapshot.reviewStates)
+    && Array.isArray(snapshot.reviewLogs);
 }
 
 export function createInMemoryVocabularyRepository(initialSnapshot) {
@@ -58,40 +94,113 @@ export function createIndexedDbVocabularyRepository(options = {}) {
     if (!indexedDBApi) throw new Error('IndexedDB is unavailable for vocabulary storage');
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDBApi.open(dbName, dbVersion);
-      request.onerror = () => reject(request.error || new Error('Failed to open vocabulary IndexedDB'));
+      let request;
+      try {
+        request = indexedDBApi.open(dbName, dbVersion);
+      } catch (error) {
+        reject(normalizeIndexedDbError(error, 'open_database'));
+        return;
+      }
+      request.onerror = () => reject(normalizeIndexedDbError(request.error, 'open_database'));
+      request.onblocked = () => reject(vocabularyPersistenceError('CONNECTION_BLOCKED', 'Vocabulary database open was blocked', {
+        operation: 'open_database',
+      }));
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         if (!db.objectStoreNames.contains(storeName)) {
-          db.createObjectStore(storeName, { keyPath: 'id' });
+          try { request.transaction?.abort(); } catch { /* Existing schema is required. */ }
+          reject(vocabularyPersistenceError('UNKNOWN_SCHEMA', 'Vocabulary database schema is not initialized', {
+            operation: 'open_database',
+          }));
         }
       };
-      request.onsuccess = (event) => resolve(event.target.result);
+      request.onsuccess = (event) => {
+        const db = event.target.result;
+        try {
+          if (db.version !== dbVersion || !db.objectStoreNames.contains(storeName)) {
+            throw vocabularyPersistenceError('UNKNOWN_SCHEMA', 'Vocabulary database schema is unsupported', {
+              operation: 'validate_database',
+            });
+          }
+          const probe = db.transaction([storeName], 'readonly').objectStore(storeName);
+          if (probe.keyPath !== 'id') throw vocabularyPersistenceError('UNKNOWN_SCHEMA', 'Vocabulary files key path is unsupported', {
+            operation: 'validate_database',
+          });
+          db.onversionchange = () => {
+            db.close?.();
+            dbPromise = null;
+          };
+          resolve(db);
+        } catch (error) {
+          db.close?.();
+          reject(normalizeIndexedDbError(error, 'validate_database'));
+        }
+      };
     });
+    dbPromise.catch(() => { dbPromise = null; });
     return dbPromise;
+  }
+
+  function isValidSnapshotBackup(candidate) {
+    if (!candidate?.content
+      || candidate.content.schema_version !== 'vocabulary-backup.v1'
+      || candidate.content.sourceId !== storageKey
+      || !hasValidChecksum(candidate)) return false;
+    const sourceRow = candidate.content.sourceRow;
+    if (!sourceRow || sourceRow.id !== storageKey || !Object.prototype.hasOwnProperty.call(sourceRow, 'content')) {
+      return false;
+    }
+    if (sourceRow.checksum !== undefined && !hasValidChecksum(sourceRow)) return false;
+    const sourceVersion = sourceRow.content && typeof sourceRow.content === 'object'
+      ? sourceRow.content.schemaVersion
+      : undefined;
+    if (sourceVersion !== undefined && sourceVersion !== 0 && sourceVersion !== CURRENT_SCHEMA_VERSION) {
+      return false;
+    }
+    if (sourceVersion === CURRENT_SCHEMA_VERSION && !isCurrentSnapshotShape(sourceRow.content)) return false;
+    try {
+      normalizeVocabularySnapshot(sourceRow.content);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async function loadRecord(migrationAttempt = 0) {
     const db = await openDb();
-    const record = await new Promise((resolve, reject) => {
-      const transaction = db.transaction([storeName], 'readonly');
-      const store = transaction.objectStore(storeName);
-      const request = store.get(storageKey);
-      request.onerror = () => reject(request.error || new Error('Failed to load vocabulary snapshot'));
-      request.onsuccess = () => {
-        const row = request.result;
-        resolve({
-          snapshot: row && row.content ? row.content : null,
-          revision: Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0,
-        });
-      };
-    });
+    const row = await readRow(db, 'readonly', storageKey);
+    const record = {
+      snapshot: row && row.content ? row.content : null,
+      revision: Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0,
+      row,
+    };
     const snapshot = record.snapshot;
     const sourceVersion = snapshot && typeof snapshot === 'object' && snapshot.schemaVersion !== undefined
       ? snapshot.schemaVersion
       : 0;
-    if (sourceVersion === CURRENT_SCHEMA_VERSION || snapshot === null) return record;
-    if (!migrationRegistry.has(sourceVersion)) return record;
+    if (snapshot === null) return record;
+    if (sourceVersion === CURRENT_SCHEMA_VERSION) {
+      if (record.row?.checksum && !hasValidChecksum(record.row)) {
+        return recoverCorruptRecord(record.row, 'checksum-mismatch');
+      }
+      if (!isCurrentSnapshotShape(snapshot)) {
+        return recoverCorruptRecord(record.row, 'invalid-content');
+      }
+      try {
+        normalizeVocabularySnapshot(snapshot);
+      } catch {
+        return recoverCorruptRecord(record.row, 'invalid-content');
+      }
+      return record;
+    }
+    if (!migrationRegistry.has(sourceVersion)) {
+      throw vocabularyPersistenceError('UNKNOWN_SCHEMA', 'Vocabulary snapshot schema is unsupported', {
+        schemaVersion: sourceVersion,
+      });
+    }
+    if (record.row?.checksum && !hasValidChecksum(record.row)) {
+      return recoverCorruptRecord(record.row, 'checksum-mismatch');
+    }
     try {
       return await migrateRecord(record, sourceVersion);
     } catch (error) {
@@ -110,7 +219,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       });
     }
     const migrated = await migrate(cloneVocabularyValue(record.snapshot));
-    if (!migrated || typeof migrated !== 'object' || migrated.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    if (!isCurrentSnapshotShape(migrated)) {
       throw vocabularyPersistenceError('MIGRATION_INVALID', 'Vocabulary migration did not produce the current schema', {
         fromSchemaVersion: sourceVersion,
         toSchemaVersion: migrated?.schemaVersion ?? null,
@@ -136,29 +245,36 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           return;
         }
         const migratedAt = Number(now());
-        const backupId = `${storageKey}.backup:${sourceVersion}:${currentRevision}`;
+        const backupId = backupRowId(storageKey, currentRevision);
+        const migratedContent = normalizeVocabularySnapshot(migrated);
+        const backupContent = {
+          schema_version: 'vocabulary-backup.v1',
+          sourceId: storageKey,
+          sourceRow: cloneVocabularyValue(sourceRow),
+          createdAt: migratedAt,
+          fromSchemaVersion: sourceVersion,
+          toSchemaVersion: CURRENT_SCHEMA_VERSION,
+          migratedAt,
+        };
         const backupRequest = store.put({
           id: backupId,
-          content: {
-            schemaVersion: 1,
-            fromSchemaVersion: sourceVersion,
-            toSchemaVersion: CURRENT_SCHEMA_VERSION,
-            migratedAt,
-            sourceRow: cloneVocabularyValue(sourceRow),
-          },
-          timestamp: migratedAt,
+          content: backupContent,
+          revision: currentRevision,
+          timestamp: new Date(migratedAt).toISOString(),
+          checksum: checksumFor(backupContent),
         });
         backupRequest.onerror = () => rejectOnce(backupRequest.error || new Error('Failed to back up vocabulary migration source'));
         backupRequest.onsuccess = () => {
           migratedRecord = {
-            snapshot: normalizeVocabularySnapshot(migrated),
+            snapshot: migratedContent,
             revision: currentRevision + 1,
           };
           const writeRequest = store.put({
             id: storageKey,
             content: migratedRecord.snapshot,
             revision: migratedRecord.revision,
-            timestamp: migratedAt,
+            timestamp: new Date(migratedAt).toISOString(),
+            checksum: checksumFor(migratedRecord.snapshot),
             migratedFrom: sourceVersion,
             migrationBackupId: backupId,
           });
@@ -194,6 +310,14 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       readRequest.onsuccess = () => {
         const row = readRequest.result;
         const currentRevision = Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0;
+        if (row?.checksum && !hasValidChecksum(row)) {
+          rejectOnce(vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot checksum does not match its content', {
+            sourceId: storageKey,
+            revision: row.revision ?? null,
+          }));
+          try { transaction.abort(); } catch { /* Corrupt data is already classified. */ }
+          return;
+        }
         if (currentRevision !== expectedRevision) {
           rejectOnce(vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot revision changed', {
             expectedRevision,
@@ -203,24 +327,140 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           return;
         }
         nextRevision = currentRevision + 1;
-        const writeRequest = store.put({
+        const nextContent = normalizeVocabularySnapshot(snapshot);
+        const timestamp = new Date(Number(now())).toISOString();
+        const writes = [];
+        if (row && row.content && (row.checksum === undefined || hasValidChecksum(row))) {
+          const backupContent = {
+            schema_version: 'vocabulary-backup.v1',
+            sourceId: storageKey,
+            sourceRow: cloneVocabularyValue(row),
+            createdAt: Number(now()),
+          };
+          writes.push(store.put({
+            id: backupRowId(storageKey, currentRevision),
+            content: backupContent,
+            revision: currentRevision,
+            timestamp,
+            checksum: checksumFor(backupContent),
+          }));
+        }
+        writes.push(store.put({
           id: storageKey,
-          content: normalizeVocabularySnapshot(snapshot),
+          content: nextContent,
           revision: nextRevision,
-          timestamp: Number(now()),
+          timestamp,
+          checksum: checksumFor(nextContent),
+        }));
+        writes.forEach((writeRequest) => {
+          writeRequest.onerror = () => rejectOnce(normalizeIndexedDbError(writeRequest.error, 'write_snapshot'));
         });
-        writeRequest.onerror = () => rejectOnce(writeRequest.error || new Error('Failed to save vocabulary snapshot'));
       };
       transaction.oncomplete = () => {
         if (settled) return;
         settled = true;
         resolve(nextRevision);
       };
-      transaction.onerror = () => rejectOnce(transaction.error || new Error('Vocabulary transaction failed'));
+      transaction.onerror = () => rejectOnce(normalizeIndexedDbError(transaction.error, 'transaction'));
       transaction.onabort = () => {
-        if (!settled) rejectOnce(transaction.error || new Error('Vocabulary transaction aborted'));
+        if (!settled) rejectOnce(normalizeIndexedDbError(transaction.error, 'transaction'));
       };
 
+      function rejectOnce(error) {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      }
+    });
+  }
+
+  async function readRow(db, mode, id) {
+    return new Promise((resolve, reject) => {
+      let row;
+      let settled = false;
+      let transaction;
+      try {
+        transaction = db.transaction([storeName], mode);
+        const store = transaction.objectStore(storeName);
+        const request = store.get(id);
+        request.onerror = () => rejectOnce(normalizeIndexedDbError(request.error, 'read_snapshot'));
+        request.onsuccess = () => { row = request.result; };
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          resolve(row || null);
+        };
+        transaction.onerror = () => rejectOnce(normalizeIndexedDbError(transaction.error, 'read_snapshot'));
+        transaction.onabort = () => rejectOnce(normalizeIndexedDbError(transaction.error, 'read_snapshot'));
+      } catch (error) {
+        rejectOnce(normalizeIndexedDbError(error, 'read_snapshot'));
+      }
+      function rejectOnce(error) {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      }
+    });
+  }
+
+  async function recoverCorruptRecord(row, reason) {
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let recovered = null;
+      let recoveryError = null;
+      try {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const allRequest = store.getAll();
+        allRequest.onerror = () => rejectOnce(normalizeIndexedDbError(allRequest.error, 'recover_snapshot'));
+        allRequest.onsuccess = () => {
+          const rows = Array.isArray(allRequest.result) ? allRequest.result : [];
+          const backups = rows
+            .filter((candidate) => candidate?.id?.startsWith(`${storageKey}.backup:`))
+            .filter(isValidSnapshotBackup)
+            .sort((left, right) => Number(right.revision || 0) - Number(left.revision || 0));
+          const backup = backups[0];
+          const quarantine = makeQuarantineRow({
+            sourceId: storageKey,
+            sourceRow: row,
+            reason,
+            detectedAt: new Date(Number(now())).toISOString(),
+            details: { revision: row?.revision ?? null },
+          });
+          const quarantineRequest = store.put(quarantine);
+          quarantineRequest.onerror = () => rejectOnce(normalizeIndexedDbError(quarantineRequest.error, 'quarantine_snapshot'));
+          if (!backup) {
+            recoveryError = vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot is corrupt and has no valid backup', {
+              sourceId: storageKey,
+              quarantineId: quarantine.id,
+              reason,
+            });
+            return;
+          }
+          const sourceRow = backup.content.sourceRow;
+          recovered = {
+            snapshot: cloneVocabularyValue(sourceRow.content),
+            revision: Number(sourceRow.revision || backup.revision || 0),
+            row: sourceRow,
+          };
+          const restoreRequest = store.put({
+            ...clonePersistenceValue(sourceRow),
+            checksum: checksumFor(sourceRow.content),
+          });
+          restoreRequest.onerror = () => rejectOnce(normalizeIndexedDbError(restoreRequest.error, 'restore_snapshot'));
+        };
+        transaction.oncomplete = () => {
+          if (settled) return;
+          settled = true;
+          if (recoveryError) reject(recoveryError);
+          else resolve(recovered);
+        };
+        transaction.onerror = () => rejectOnce(normalizeIndexedDbError(transaction.error, 'recover_snapshot'));
+        transaction.onabort = () => rejectOnce(normalizeIndexedDbError(transaction.error, 'recover_snapshot'));
+      } catch (error) {
+        rejectOnce(normalizeIndexedDbError(error, 'recover_snapshot'));
+      }
       function rejectOnce(error) {
         if (settled) return;
         settled = true;

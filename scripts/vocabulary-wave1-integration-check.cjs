@@ -12,6 +12,7 @@ async function loadWave1Modules(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'read-web-wave1-integration-'));
   const sources = [
     ['src/services/vocabulary/vocabulary-learning-models.js', 'vocabulary-learning-models.mjs'],
+    ['src/services/vocabulary/vocabulary-persistence.js', 'vocabulary-persistence.mjs'],
     ['src/services/vocabulary/vocabulary-acquisition-repository.js', 'vocabulary-acquisition-repository.mjs'],
     ['src/services/vocabulary/vocabulary-context-evidence.js', 'vocabulary-context-evidence.mjs'],
     ['src/services/vocabulary/vocabulary-learning-events.js', 'vocabulary-learning-events.mjs'],
@@ -24,6 +25,7 @@ async function loadWave1Modules(repoRoot) {
     let source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
     source = source
       .replace("from './vocabulary-learning-models.js'", "from './vocabulary-learning-models.mjs'")
+      .replace("from './vocabulary-persistence.js'", "from './vocabulary-persistence.mjs'")
       .replace("from './srs-review-policy.js'", "from './srs-review-policy.mjs'");
     fs.writeFileSync(path.join(tempDir, stagedName), source);
   }
@@ -35,12 +37,12 @@ async function loadWave1Modules(repoRoot) {
     )));
     return {
       models: modules[0],
-      acquisition: modules[1],
-      contexts: modules[2],
-      events: modules[3],
-      policy: modules[4],
-      planner: modules[5],
-      legacy: modules[6],
+      acquisition: modules[2],
+      contexts: modules[3],
+      events: modules[4],
+      policy: modules[5],
+      planner: modules[6],
+      legacy: modules[7],
     };
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

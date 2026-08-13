@@ -4,6 +4,13 @@ import {
   normalizeAcquisitionState,
   normalizeLearningUnit,
 } from './vocabulary-learning-models.js';
+import {
+  backupRowId,
+  checksumFor,
+  clonePersistenceValue,
+  hasValidChecksum,
+  makeQuarantineRow,
+} from './vocabulary-persistence.js';
 
 const DB_NAME = 'SeekPlayerDB';
 const DB_VERSION = 1;
@@ -24,8 +31,13 @@ function fail(code, message, details = {}) {
   throw contractError(code, message, details);
 }
 
-function stableStorageError(operation) {
-  return contractError('TRANSACTION_ABORTED', 'IndexedDB operation failed', { operation });
+function stableStorageError(operation, cause) {
+  let code = 'TRANSACTION_ABORTED';
+  if (cause?.name === 'QuotaExceededError') code = 'QUOTA_EXCEEDED';
+  else if (cause?.name === 'InvalidStateError' || cause?.name === 'TransactionInactiveError') {
+    code = 'CONNECTION_CLOSED';
+  }
+  return contractError(code, 'IndexedDB operation failed', { operation });
 }
 
 function normalizeStorageError(error, operation) {
@@ -35,7 +47,7 @@ function normalizeStorageError(error, operation) {
     && isPlainObject(error.details)) {
     return error;
   }
-  return stableStorageError(operation);
+  return stableStorageError(operation, error);
 }
 
 function isPlainObject(value) {
@@ -178,6 +190,24 @@ function normalizeSeed(seed) {
     fail('INVALID_FIELD_TYPE', 'Acquisition repository seed must be { store }', { field: 'seed' });
   }
   return normalizeStore(seed.store);
+}
+
+function isValidAcquisitionBackup(row) {
+  if (!row?.content
+    || row.content.schema_version !== 'vocabulary-backup.v1'
+    || row.content.sourceId !== ACQUISITION_ROW_ID
+    || !hasValidChecksum(row)) return false;
+  const sourceRow = row.content.sourceRow;
+  if (!sourceRow || sourceRow.id !== ACQUISITION_ROW_ID || !Object.prototype.hasOwnProperty.call(sourceRow, 'content')) {
+    return false;
+  }
+  if (sourceRow.checksum !== undefined && !hasValidChecksum(sourceRow)) return false;
+  try {
+    normalizeStore(sourceRow.content);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function createCandidateState(learningUnitId) {
@@ -500,6 +530,28 @@ function bindAcquisitionRepositoryToTransactionInternal(rowPort, includeSnapshot
           row_id: ACQUISITION_ROW_ID,
         }));
       }
+      if (row.checksum !== undefined && !hasValidChecksum(row)) {
+        if (row.content?.schema_version !== ACQUISITION_STORE_SCHEMA) {
+          try {
+            normalizeStore(row.content);
+          } catch (error) {
+            if (error?.code === 'UNSUPPORTED_SCHEMA_VERSION') throw error;
+          }
+        }
+        rowPort.abort(contractError('CORRUPT', 'Acquisition store checksum does not match its content', {
+          row_id: ACQUISITION_ROW_ID,
+          sourceRow: clone(row),
+        }));
+      }
+      try {
+        normalizeStore(row.content);
+      } catch (error) {
+        if (error?.code === 'UNSUPPORTED_SCHEMA_VERSION') throw error;
+        rowPort.abort(contractError('CORRUPT', 'Acquisition store content is invalid', {
+          row_id: ACQUISITION_ROW_ID,
+          sourceRow: clone(row),
+        }));
+      }
       return row.content;
     },
     async saveStore(store) {
@@ -507,6 +559,7 @@ function bindAcquisitionRepositoryToTransactionInternal(rowPort, includeSnapshot
         id: ACQUISITION_ROW_ID,
         content: clone(store),
         timestamp: new Date().toISOString(),
+        checksum: checksumFor(store),
       });
     },
   });
@@ -526,7 +579,7 @@ function requestAsPromise(request, operation) {
   return new Promise((resolve, reject) => {
     try {
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(stableStorageError(operation));
+      request.onerror = () => reject(stableStorageError(operation, request.error));
     } catch (error) {
       reject(normalizeStorageError(error, operation));
     }
@@ -537,8 +590,8 @@ function transactionCompletion(transaction, operation) {
   return new Promise((resolve, reject) => {
     try {
       transaction.oncomplete = () => resolve();
-      transaction.onabort = () => reject(stableStorageError(operation));
-      transaction.onerror = () => reject(stableStorageError(operation));
+      transaction.onabort = () => reject(stableStorageError(operation, transaction.error));
+      transaction.onerror = () => reject(stableStorageError(operation, transaction.error));
     } catch (error) {
       reject(normalizeStorageError(error, operation));
     }
@@ -586,7 +639,9 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
         request.onsuccess = () => {
           try {
             const database = request.result;
-            if (!database.objectStoreNames || !database.objectStoreNames.contains('files')) {
+            if (database.version !== DB_VERSION
+              || !database.objectStoreNames
+              || !database.objectStoreNames.contains('files')) {
               try {
                 if (typeof database.close === 'function') database.close();
               } catch {
@@ -595,6 +650,10 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
               reject(stableStorageError('validate_database_schema'));
               return;
             }
+            database.onversionchange = () => {
+              database.close?.();
+              databasePromise = null;
+            };
             resolve(database);
           } catch {
             reject(stableStorageError('validate_database_schema'));
@@ -604,6 +663,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
         reject(normalizeStorageError(error, 'open_database'));
       }
     });
+    databasePromise.catch(() => { databasePromise = null; });
     return databasePromise;
   }
 
@@ -637,6 +697,21 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
       await completion.catch(() => undefined);
       throw contractError('TRANSACTION_ABORTED', 'Existing files object store must use keyPath "id"', {});
     }
+    let sourceRowRead = false;
+    let sourceRow = null;
+    let sourceBackupWritten = false;
+    const readSourceRow = async () => {
+      if (sourceRowRead) return sourceRow;
+      let request;
+      try {
+        request = objectStore.get(ACQUISITION_ROW_ID);
+      } catch (error) {
+        throw normalizeStorageError(error, 'read_acquisition_row');
+      }
+      sourceRow = (await requestAsPromise(request, 'read_acquisition_row')) || null;
+      sourceRowRead = true;
+      return sourceRow;
+    };
     const rowPort = {
       transaction_id: `acquisition-${mode}`,
       getRow(rowId) {
@@ -647,15 +722,55 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
           return Promise.reject(normalizeStorageError(error, 'read_acquisition_row'));
         }
         return requestAsPromise(request, 'read_acquisition_row')
-          .then((row) => row || null);
+          .then((row) => {
+            if (rowId === ACQUISITION_ROW_ID && !sourceRowRead) {
+              sourceRow = row || null;
+              sourceRowRead = true;
+            }
+            return row || null;
+          });
       },
-      putRow(row) {
+      async putRow(row) {
         if (mode !== 'readwrite') {
           throw contractError('TRANSACTION_ABORTED', 'Cannot write in a readonly transaction', {});
         }
+        let rowToWrite = row;
+        if (row.id === ACQUISITION_ROW_ID) {
+          const previousRow = await readSourceRow();
+          const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
+            ? previousRow.revision
+            : 0;
+          if (previousRow && !sourceBackupWritten) {
+            const backupContent = {
+              schema_version: 'vocabulary-backup.v1',
+              sourceId: ACQUISITION_ROW_ID,
+              sourceRow: clonePersistenceValue(previousRow),
+              createdAt: new Date().toISOString(),
+            };
+            let backupRequest;
+            try {
+              backupRequest = objectStore.put({
+                id: backupRowId(ACQUISITION_ROW_ID, currentRevision),
+                content: backupContent,
+                revision: currentRevision,
+                timestamp: backupContent.createdAt,
+                checksum: checksumFor(backupContent),
+              });
+            } catch (error) {
+              throw normalizeStorageError(error, 'backup_acquisition_row');
+            }
+            await requestAsPromise(backupRequest, 'backup_acquisition_row');
+            sourceBackupWritten = true;
+          }
+          rowToWrite = {
+            ...clonePersistenceValue(row),
+            revision: previousRow ? currentRevision + 1 : 1,
+            checksum: checksumFor(row.content),
+          };
+        }
         let request;
         try {
-          request = objectStore.put(row);
+          request = objectStore.put(rowToWrite);
         } catch (error) {
           return Promise.reject(normalizeStorageError(error, 'write_acquisition_row'));
         }
@@ -674,6 +789,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
     let result;
     try {
       result = await operation(boundRepository);
+      await completion;
     } catch (error) {
       try {
         transaction.abort();
@@ -683,40 +799,121 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
       await completion.catch(() => undefined);
       throw error;
     }
-    await completion;
     return result;
+  }
+
+  async function recoverCorruptAcquisitionRow(error) {
+    const database = await openDatabase();
+    let transaction;
+    try {
+      transaction = database.transaction(['files'], 'readwrite');
+    } catch (cause) {
+      throw normalizeStorageError(cause, 'recover_acquisition_row');
+    }
+    const completion = transactionCompletion(transaction, 'recover_acquisition_row');
+    const store = transaction.objectStore(STORE_NAME);
+    let recoveredStore = null;
+    let recoveryError = null;
+    let rowsRequest;
+    try {
+      rowsRequest = store.getAll();
+    } catch (cause) {
+      try { transaction.abort(); } catch { /* Preserve the classified read failure. */ }
+      await completion.catch(() => undefined);
+      throw normalizeStorageError(cause, 'recover_acquisition_row');
+    }
+    try {
+      await new Promise((resolve, reject) => {
+        rowsRequest.onsuccess = () => {
+          const rows = Array.isArray(rowsRequest.result) ? rowsRequest.result : [];
+          const backups = rows
+            .filter((row) => row?.id?.startsWith(`${ACQUISITION_ROW_ID}.backup:`))
+            .filter(isValidAcquisitionBackup)
+            .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')));
+          const backup = backups[0];
+          const quarantine = makeQuarantineRow({
+            sourceId: ACQUISITION_ROW_ID,
+            sourceRow: error.details?.sourceRow || null,
+            reason: 'checksum-mismatch',
+            detectedAt: new Date().toISOString(),
+            details: { code: error.code },
+          });
+          try {
+            store.put(quarantine);
+            if (!backup) {
+              recoveryError = contractError('CORRUPT', 'Acquisition store is corrupt and has no valid backup', {
+                row_id: ACQUISITION_ROW_ID,
+                quarantineId: quarantine.id,
+              });
+              resolve();
+              return;
+            }
+            const sourceRow = backup.content.sourceRow;
+            recoveredStore = normalizeStore(sourceRow.content);
+            store.put({
+              ...clonePersistenceValue(sourceRow),
+              checksum: checksumFor(sourceRow.content),
+            });
+            resolve();
+          } catch (cause) {
+            const classifiedError = normalizeStorageError(cause, 'recover_acquisition_row');
+            try { transaction.abort(); } catch { /* Preserve recovery error. */ }
+            reject(classifiedError);
+          }
+        };
+        rowsRequest.onerror = () => {
+          reject(normalizeStorageError(rowsRequest.error, 'recover_acquisition_row'));
+        };
+      });
+    } catch (cause) {
+      await completion.catch(() => undefined);
+      throw cause;
+    }
+    await completion;
+    if (recoveryError) throw recoveryError;
+    return clone(recoveredStore);
+  }
+
+  async function runRecoverableTransaction(mode, operation, retry = true) {
+    try {
+      return await runTransaction(mode, operation);
+    } catch (error) {
+      if (error?.code !== 'CORRUPT' || !retry) throw error;
+      await recoverCorruptAcquisitionRow(error);
+      return runRecoverableTransaction(mode, operation, false);
+    }
   }
 
   return {
     loadSnapshot() {
-      return runTransaction('readonly', (repository) => repository.loadSnapshot());
+      return runRecoverableTransaction('readonly', (repository) => repository.loadSnapshot());
     },
     getLearningUnit(learningUnitId) {
-      return runTransaction('readonly', (repository) => repository.getLearningUnit(learningUnitId));
+      return runRecoverableTransaction('readonly', (repository) => repository.getLearningUnit(learningUnitId));
     },
     findActiveByWordAndSense(wordId, targetSenseKey) {
-      return runTransaction(
+      return runRecoverableTransaction(
         'readonly',
         (repository) => repository.findActiveByWordAndSense(wordId, targetSenseKey),
       );
     },
     putLearningUnit(unit, expectedRevision) {
-      return runTransaction(
+      return runRecoverableTransaction(
         'readwrite',
         (repository) => repository.putLearningUnit(unit, expectedRevision),
       );
     },
     getState(learningUnitId) {
-      return runTransaction('readonly', (repository) => repository.getState(learningUnitId));
+      return runRecoverableTransaction('readonly', (repository) => repository.getState(learningUnitId));
     },
     putState(state, expectedRevision) {
-      return runTransaction('readwrite', (repository) => repository.putState(state, expectedRevision));
+      return runRecoverableTransaction('readwrite', (repository) => repository.putState(state, expectedRevision));
     },
     getAttempt(attemptId) {
-      return runTransaction('readonly', (repository) => repository.getAttempt(attemptId));
+      return runRecoverableTransaction('readonly', (repository) => repository.getAttempt(attemptId));
     },
     putAttempt(attempt) {
-      return runTransaction('readwrite', (repository) => repository.putAttempt(attempt));
+      return runRecoverableTransaction('readwrite', (repository) => repository.putAttempt(attempt));
     },
   };
 }

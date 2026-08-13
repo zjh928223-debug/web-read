@@ -3,8 +3,12 @@ import fs from 'node:fs/promises'
 
 const modelsSource = await fs.readFile(new URL('../src/services/vocabulary/vocabulary-models.js', import.meta.url), 'utf8')
 const modelsUrl = `data:text/javascript;base64,${Buffer.from(modelsSource).toString('base64')}`
+const persistenceSource = await fs.readFile(new URL('../src/services/vocabulary/vocabulary-persistence.js', import.meta.url), 'utf8')
+const persistenceUrl = `data:text/javascript;base64,${Buffer.from(persistenceSource).toString('base64')}`
+const { checksumFor } = await import(persistenceUrl)
 const repositorySource = (await fs.readFile(new URL('../src/services/vocabulary/vocabulary-repository.js', import.meta.url), 'utf8'))
   .replace("'./vocabulary-models.js'", `'${modelsUrl}'`)
+  .replace("'./vocabulary-persistence.js'", `'${persistenceUrl}'`)
 const { createIndexedDbVocabularyRepository } = await import(
   `data:text/javascript;base64,${Buffer.from(repositorySource).toString('base64')}`
 )
@@ -34,9 +38,14 @@ assert.equal(fake.rows.get('vocabulary.srs.store.v1').revision, 2)
 assert.equal('saveSnapshot' in first, false, 'blind whole-snapshot writers must not remain public')
 
 const beforeUnknown = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
+const backupIdsBeforeUnknown = [...fake.rows.keys()]
+  .filter((id) => id.startsWith('vocabulary.srs.store.v1.backup:'))
+  .sort()
+const unknownContent = { ...beforeUnknown.content, schemaVersion: 99 }
 fake.rows.set('vocabulary.srs.store.v1', {
   ...beforeUnknown,
-  content: { ...beforeUnknown.content, schemaVersion: 99 },
+  content: unknownContent,
+  checksum: checksumFor(unknownContent),
 })
 await assert.rejects(
   first.loadSnapshot(),
@@ -44,9 +53,9 @@ await assert.rejects(
     && error.code === 'UNKNOWN_SCHEMA'
     && error.details.schemaVersion === 99,
 )
-assert.equal(
-  [...fake.rows.keys()].some((id) => id.startsWith('vocabulary.srs.store.v1.backup:')),
-  false,
+assert.deepEqual(
+  [...fake.rows.keys()].filter((id) => id.startsWith('vocabulary.srs.store.v1.backup:')).sort(),
+  backupIdsBeforeUnknown,
   'unknown schemas must be rejected without rewriting or migrating the row',
 )
 fake.rows.set('vocabulary.srs.store.v1', beforeUnknown)

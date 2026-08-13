@@ -8,6 +8,7 @@ async function importVocabularyApi(repoRoot) {
   const files = [
     'vocabulary-models.js',
     'vocabulary-repository.js',
+    'vocabulary-persistence.js',
     'srs-candidates.js',
     'srs-pending-candidates.js',
     'preview-scan.js',

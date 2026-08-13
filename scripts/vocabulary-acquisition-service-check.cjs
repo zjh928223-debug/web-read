@@ -8,6 +8,7 @@ async function loadP6Modules(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'read-web-p6-check-'));
   const sources = [
     ['src/services/vocabulary/vocabulary-learning-models.js', 'vocabulary-learning-models.mjs'],
+    ['src/services/vocabulary/vocabulary-persistence.js', 'vocabulary-persistence.mjs'],
     ['src/services/vocabulary/vocabulary-acquisition-repository.js', 'vocabulary-acquisition-repository.mjs'],
     ['src/services/vocabulary/vocabulary-context-evidence.js', 'vocabulary-context-evidence.mjs'],
     ['src/services/vocabulary/vocabulary-learning-events.js', 'vocabulary-learning-events.mjs'],
@@ -19,6 +20,7 @@ async function loadP6Modules(repoRoot) {
       let source = fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
       source = source
         .replaceAll("from './vocabulary-learning-models.js'", "from './vocabulary-learning-models.mjs'")
+        .replaceAll("from './vocabulary-persistence.js'", "from './vocabulary-persistence.mjs'")
         .replaceAll("from './vocabulary-acquisition-repository.js'", "from './vocabulary-acquisition-repository.mjs'")
         .replaceAll("from './vocabulary-context-evidence.js'", "from './vocabulary-context-evidence.mjs'")
         .replaceAll("from './vocabulary-learning-events.js'", "from './vocabulary-learning-events.mjs'")
@@ -30,9 +32,9 @@ async function loadP6Modules(repoRoot) {
     )));
     return {
       models: modules[0],
-      contexts: modules[2],
-      uow: modules[4],
-      service: modules[5],
+      contexts: modules[3],
+      uow: modules[5],
+      service: modules[6],
     };
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

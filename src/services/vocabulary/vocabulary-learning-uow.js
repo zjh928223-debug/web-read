@@ -5,6 +5,8 @@ import { bindLearningEventRepositoryToTransaction } from './vocabulary-learning-
 export const VOCABULARY_LEARNING_CONTRACT_VERSION = 'vocabulary-learning-contracts.v1';
 export const VOCABULARY_REVIEW_ROW_ID = 'vocabulary.review.store.v2';
 export const VOCABULARY_COMMAND_RECEIPT_PREFIX = 'vocabulary.learning-command-receipt.v1:';
+const VOCABULARY_ACQUISITION_ROW_ID = 'vocabulary.acquisition.store.v1';
+const VOCABULARY_BACKUP_SCHEMA = 'vocabulary-backup.v1';
 
 const REVIEW_STORE_SCHEMA = 'review-store.v2';
 const REVIEW_STATE_SCHEMA = 'review-state.v2';
@@ -209,6 +211,7 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
   }
   const touchedRowIds = new Set();
   const eventIds = new Set();
+  const backedUpRowIds = new Set();
   const request = (idbRequest, operation) => new Promise((resolve, reject) => {
     idbRequest.onsuccess = () => resolve(idbRequest.result);
     idbRequest.onerror = () => reject(contractError(
@@ -231,7 +234,32 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
       utcTimestamp(row.timestamp, 'row.timestamp');
       canonicalJson(row.content);
       touchedRowIds.add(row.id);
-      await request(store.put(clone(row)), 'put_row');
+      const nextRow = clone(row);
+      if (row.id === VOCABULARY_ACQUISITION_ROW_ID) {
+        const previousRow = await request(store.get(row.id), 'get_row');
+        const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
+          ? previousRow.revision
+          : 0;
+        if (previousRow && !backedUpRowIds.has(row.id)) {
+          const backupContent = {
+            schema_version: VOCABULARY_BACKUP_SCHEMA,
+            sourceId: row.id,
+            sourceRow: clone(previousRow),
+            createdAt: row.timestamp,
+          };
+            await request(store.put({
+              id: `${row.id}.backup:${currentRevision}`,
+              content: backupContent,
+              revision: currentRevision,
+              timestamp: row.timestamp,
+              checksum: `sha256:${sha256Utf8(canonicalJson(backupContent))}`,
+            }), 'put_row');
+          backedUpRowIds.add(row.id);
+        }
+        nextRow.revision = previousRow ? currentRevision + 1 : 1;
+        nextRow.checksum = `sha256:${sha256Utf8(canonicalJson(row.content))}`;
+      }
+      await request(store.put(nextRow), 'put_row');
     },
     abort(error) {
       try {

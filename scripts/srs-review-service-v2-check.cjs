@@ -7,6 +7,7 @@ async function loadModules(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(repoRoot, '.tmp-p7-check-'));
   const sources = [
     'src/services/vocabulary/vocabulary-learning-models.js',
+    'src/services/vocabulary/vocabulary-persistence.js',
     'src/services/vocabulary/vocabulary-acquisition-repository.js',
     'src/services/vocabulary/vocabulary-context-evidence.js',
     'src/services/vocabulary/vocabulary-learning-events.js',
@@ -37,13 +38,13 @@ async function loadModules(repoRoot) {
     )));
     return {
       models: imported[0],
-      acquisition: imported[1],
-      events: imported[3],
-      uow: imported[4],
-      policy: imported[5],
-      planner: imported[6],
-      ledger: imported[7],
-      service: imported[8],
+      acquisition: imported[2],
+      events: imported[4],
+      uow: imported[5],
+      policy: imported[6],
+      planner: imported[7],
+      ledger: imported[8],
+      service: imported[9],
     };
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

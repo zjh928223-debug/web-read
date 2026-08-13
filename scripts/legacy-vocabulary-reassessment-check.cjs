@@ -37,6 +37,10 @@ async function loadModules() {
       'vocabulary-learning-models.mjs',
     ],
     [
+      'src/services/vocabulary/vocabulary-persistence.js',
+      'vocabulary-persistence.mjs',
+    ],
+    [
       'src/services/vocabulary/vocabulary-acquisition-repository.js',
       'vocabulary-acquisition-repository.mjs',
     ],
@@ -72,6 +76,10 @@ async function loadModules() {
         .replaceAll(
           "from './vocabulary-learning-models.js'",
           "from './vocabulary-learning-models.mjs'",
+        )
+        .replaceAll(
+          "from './vocabulary-persistence.js'",
+          "from './vocabulary-persistence.mjs'",
         )
         .replaceAll(
           "from './vocabulary-acquisition-repository.js'",
