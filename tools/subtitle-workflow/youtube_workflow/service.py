@@ -1672,13 +1672,20 @@ class JobManager:
         if len(job_ids) > 100:
             raise HTTPException(status_code=400, detail="at most 100 jobIds are allowed")
         with self.lock:
-            records = {job_id: self.jobs.get(job_id) for job_id in job_ids}
-        jobs = [records[job_id].public_snapshot() for job_id in job_ids if records[job_id] is not None]
-        missing_ids = [job_id for job_id in job_ids if records[job_id] is None]
+            if bool((payload or {}).get("includeAll")) or not job_ids:
+                records = list(self.jobs.values())
+                selected_jobs = [record.public_snapshot() for record in records]
+                missing_ids = []
+            else:
+                record_map = {job_id: self.jobs.get(job_id) for job_id in job_ids}
+                selected_jobs = [record_map[job_id].public_snapshot() for job_id in job_ids if record_map[job_id] is not None]
+                missing_ids = [job_id for job_id in job_ids if record_map[job_id] is None]
+            revision = self._jobs_revision_locked()
         return {
             "schemaVersion": 1,
             "snapshotAt": utc_now_iso(),
-            "jobs": jobs,
+            "revision": revision,
+            "jobs": selected_jobs,
             "missingJobIds": missing_ids,
         }
 
@@ -1690,11 +1697,19 @@ class JobManager:
             if record in self.pending:
                 self.pending = [item for item in self.pending if item.job_id != job_id]
                 self._mark_canceled(record, "任务已取消。")
-                return record.public_snapshot()
+                snapshot = record.public_snapshot()
+                snapshot["revision"] = self._jobs_revision_locked()
+                return snapshot
         runner = getattr(record, "runner", None)
         if runner is not None and hasattr(runner, "cancel"):
             runner.cancel()
-        return record.public_snapshot()
+        with record.lock:
+            cancellation_pending = record.status not in TERMINAL_STATUSES
+        if cancellation_pending:
+            self._record_changed(record, immediate=True)
+        snapshot = record.public_snapshot()
+        snapshot["revision"] = self._jobs_revision_locked()
+        return snapshot
 
     def prioritize_job(self, job_id: str, *, expected_revision: int | None = None) -> dict:
         record = self.get_job(job_id)
@@ -1705,7 +1720,10 @@ class JobManager:
             self.pending = [item for item in self.pending if item.job_id != job_id]
             self.pending.insert(0, record)
         record.add_event({"jobId": job_id, "status": "queued", "stage": "queued", "message": "已设为下一项处理。"})
-        return record.public_snapshot()
+        self._record_changed(record, immediate=True)
+        snapshot = record.public_snapshot()
+        snapshot["revision"] = self._jobs_revision_locked()
+        return snapshot
 
     def redo_job(self, job_id: str) -> dict:
         original = self.get_job(job_id)
@@ -3035,11 +3053,11 @@ def _is_loopback_host(value: str) -> bool:
         return False
 
 
-def _is_allowed_loopback_origin(value: str) -> bool:
+def _is_allowed_loopback_origin(value: str, extra_origins: set[str] | None = None) -> bool:
     if not value:
         return True
     parsed = urlsplit(value)
-    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() in {
+    allowed_origins = {
         "localhost:5173",
         "127.0.0.1:5173",
         "localhost:5174",
@@ -3047,6 +3065,11 @@ def _is_allowed_loopback_origin(value: str) -> bool:
         "localhost:4173",
         "127.0.0.1:4173",
     }
+    for origin in extra_origins or set():
+        parsed_origin = urlsplit(str(origin).strip())
+        if parsed_origin.scheme in {"http", "https"} and parsed_origin.netloc:
+            allowed_origins.add(parsed_origin.netloc.lower())
+    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() in allowed_origins
 
 
 def _expected_revision_from_request(request: Request) -> int | None:
@@ -3074,6 +3097,8 @@ def create_app(
         raise ValueError("Workflow service requires a loopback bind host")
     manager = manager or JobManager()
     access_token = str(access_token or os.getenv("READ_WEB_SERVICE_TOKEN") or "").strip()
+    configured_allowed_origin = str(os.getenv("READ_WEB_ALLOWED_ORIGIN") or "").strip()
+    extra_origins = {configured_allowed_origin} if configured_allowed_origin else set()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -3111,7 +3136,7 @@ def create_app(
     async def enforce_loopback_security(request, call_next):
         if not _is_loopback_host(request.headers.get("host", "")):
             return Response(status_code=400, content="invalid host")
-        if not _is_allowed_loopback_origin(request.headers.get("origin", "")):
+        if not _is_allowed_loopback_origin(request.headers.get("origin", ""), extra_origins):
             return Response(status_code=403, content="origin not allowed")
         is_health = request.url.path == "/api/health"
         supplied_token = request.headers.get("x-read-web-token", "")
@@ -3120,19 +3145,22 @@ def create_app(
         if access_token and not is_health and not secrets.compare_digest(supplied_token, access_token):
             return Response(status_code=401, content="access token required")
         return await call_next(request)
+    allowed_cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ]
+    if configured_allowed_origin and configured_allowed_origin not in allowed_cors_origins:
+        allowed_cors_origins.append(configured_allowed_origin)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5174",
-            "http://localhost:4173",
-            "http://127.0.0.1:4173",
-        ],
+        allow_origins=allowed_cors_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision"],
+        allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision", "if-match"],
     )
 
     @app.get("/api/health")

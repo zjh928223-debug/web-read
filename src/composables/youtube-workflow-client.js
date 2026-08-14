@@ -3,18 +3,54 @@ import { recordBestEffortFailure } from '../services/runtime/best-effort.js'
 const DEFAULT_BASE_URL = import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL
   || 'http://127.0.0.1:8765'
 const DEFAULT_ACCESS_TOKEN = import.meta.env?.VITE_READ_WEB_SERVICE_TOKEN || ''
+let operationSequence = 0
 
 function trimTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '')
+}
+
+export function createYoutubeWorkflowOperationKey(prefix = 'workflow') {
+  const normalizedPrefix = String(prefix || 'workflow').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'workflow'
+  try {
+    if (typeof globalThis.crypto?.randomUUID === 'function') {
+      return `${normalizedPrefix}-${globalThis.crypto.randomUUID()}`
+    }
+    if (typeof globalThis.crypto?.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16)
+      globalThis.crypto.getRandomValues(bytes)
+      return `${normalizedPrefix}-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
+    }
+  } catch (_error) {
+    // The monotonic in-memory fallback still remains stable for the pending action.
+  }
+  operationSequence += 1
+  return `${normalizedPrefix}-${operationSequence}`
+}
+
+function mutationHeaders(options = {}, { json = false, idempotent = false, revision = false } = {}) {
+  const headers = {}
+  if (json) headers['content-type'] = 'application/json'
+  const operationKey = options.idempotencyKey || options.operationKey
+  if (idempotent && operationKey) headers['Idempotency-Key'] = String(operationKey)
+  if (revision && options.expectedRevision !== undefined && options.expectedRevision !== null) {
+    const expectedRevision = Number(options.expectedRevision)
+    if (Number.isInteger(expectedRevision) && expectedRevision >= 0) {
+      headers['X-Expected-Revision'] = String(expectedRevision)
+      headers['If-Match'] = `"${expectedRevision}"`
+    }
+  }
+  return headers
 }
 
 async function readJsonResponse(response) {
   if (!response.ok) {
     let detail = ''
     let code = ''
+    let detailPayload = null
     try {
       const body = await response.json()
       if (body?.detail && typeof body.detail === 'object') {
+        detailPayload = body.detail
         detail = String(body.detail.message || '')
         code = String(body.detail.code || '')
       } else {
@@ -30,6 +66,15 @@ async function readJsonResponse(response) {
     const error = new Error(detail || `YouTube workflow service returned ${response.status}`)
     if (code) error.code = code
     error.status = response.status
+    if (detailPayload) {
+      error.detail = detailPayload
+      if (detailPayload.expectedRevision !== undefined) error.expectedRevision = detailPayload.expectedRevision
+      const actualRevision = detailPayload.currentRevision ?? detailPayload.actualRevision
+      if (actualRevision !== undefined) {
+        error.actualRevision = actualRevision
+        error.currentRevision = actualRevision
+      }
+    }
     throw error
   }
   return response.json()
@@ -105,11 +150,12 @@ export function createYoutubeWorkflowClient(options = {}) {
         body: JSON.stringify(payload || {})
       }))
     },
-    async createJob(payload) {
+    async createJob(payload, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs'), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
+        headers: mutationHeaders(options, { json: true, idempotent: true, revision: true }),
+        body: JSON.stringify(payload || {}),
+        ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
     async getJob(jobId) {
@@ -122,18 +168,22 @@ export function createYoutubeWorkflowClient(options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/snapshot'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ jobIds: uniqueIds }),
+        body: JSON.stringify({ jobIds: uniqueIds, ...(options.includeAll ? { includeAll: true } : {}) }),
         ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
-    async cancelJob(jobId) {
+    async cancelJob(jobId, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
-        method: 'POST'
+        method: 'POST',
+        headers: mutationHeaders(options, { idempotent: true, revision: true }),
+        ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
-    async prioritizeJob(jobId) {
+    async prioritizeJob(jobId, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/prioritize`), {
-        method: 'POST'
+        method: 'POST',
+        headers: mutationHeaders(options, { idempotent: true, revision: true }),
+        ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
     async redoJob(jobId) {
@@ -141,11 +191,12 @@ export function createYoutubeWorkflowClient(options = {}) {
         method: 'POST'
       }))
     },
-    async retryJob(jobId, payload = {}) {
+    async retryJob(jobId, payload = {}, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/retry`), {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
+        headers: mutationHeaders(options, { json: true, idempotent: true, revision: true }),
+        body: JSON.stringify(payload || {}),
+        ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
     async clearCanceledJobs() {

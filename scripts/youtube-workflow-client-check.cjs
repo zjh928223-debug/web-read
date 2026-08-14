@@ -158,6 +158,89 @@ async function main() {
   assert.equal(client.mediaUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/media/video?access_token=test-client-token');
   assert.equal(client.eventsUrl('job-1'), 'http://127.0.0.1:8765/api/jobs/job-1/events?access_token=test-client-token');
 
+  const protocolCalls = [];
+  const protocolClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    accessToken: 'test-client-token',
+    fetchImpl: async (url, options = {}) => {
+      protocolCalls.push({ url, options });
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return { jobId: 'job-1', status: 'queued', revision: 8 };
+        },
+      };
+    },
+  });
+  const mutationPayload = { url: 'https://youtube.example/protocol', geminiMode: 'mock' };
+  await protocolClient.createJob(mutationPayload, {
+    idempotencyKey: 'create-operation-1',
+    expectedRevision: 7,
+  });
+  await protocolClient.cancelJob('job-1', {
+    idempotencyKey: 'cancel-operation-1',
+    expectedRevision: 7,
+  });
+  await protocolClient.prioritizeJob('job-1', {
+    operationKey: 'prioritize-operation-1',
+    expectedRevision: 7,
+  });
+  await protocolClient.retryJob('job-1', { stage: 'translating' }, {
+    idempotencyKey: 'retry-operation-1',
+    expectedRevision: 7,
+  });
+  assert.deepEqual(
+    protocolCalls.map(({ options }) => ({
+      idempotencyKey: options.headers['Idempotency-Key'],
+      expectedRevision: options.headers['X-Expected-Revision'],
+      ifMatch: options.headers['If-Match'],
+      token: options.headers['X-Read-Web-Token'],
+    })),
+    [
+      { idempotencyKey: 'create-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+      { idempotencyKey: 'cancel-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+      { idempotencyKey: 'prioritize-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+      { idempotencyKey: 'retry-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+    ],
+  );
+  assert.ok(
+    protocolCalls.every(({ options }) => !String(options.body || '').includes('test-client-token')),
+    'authorization token must never enter a mutation body',
+  );
+
+  const conflictClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    accessToken: 'test-client-token',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 409,
+      async json() {
+        return {
+          detail: {
+            code: 'WORKFLOW_STATE_CONFLICT',
+            domain: 'jobs',
+            expectedRevision: 7,
+            currentRevision: 9,
+            message: 'state changed',
+          },
+        };
+      },
+    }),
+  });
+  await assert.rejects(
+    conflictClient.cancelJob('job-1', { expectedRevision: 7 }),
+    (error) => {
+      assert.equal(error.code, 'WORKFLOW_STATE_CONFLICT');
+      assert.equal(error.status, 409);
+      assert.equal(error.actualRevision, 9);
+      assert.equal(error.currentRevision, 9);
+      assert.equal(error.expectedRevision, 7);
+      assert.equal(error.detail.currentRevision, 9);
+      return true;
+    },
+  );
+
   const failingClient = api.createYoutubeWorkflowClient({
     baseUrl: 'http://127.0.0.1:8765',
     fetchImpl: async () => ({

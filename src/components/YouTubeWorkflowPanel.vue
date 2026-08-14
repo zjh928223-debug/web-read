@@ -38,6 +38,10 @@
           <span>当前后端地址：{{ youtubeWorkflowClient.baseUrl }}</span>
         </div>
 
+        <p v-if="workflowMutationNotice" class="youtube-workflow-hint" data-workflow-mutation-notice role="status" aria-live="polite" data-tone="warning">
+          {{ workflowMutationNotice }}
+        </p>
+
         <div class="youtube-workflow-layout">
           <nav class="youtube-workflow-section-tabs youtube-workflow-nav" aria-label="素材处理视图">
             <button type="button" data-view="add" :aria-pressed="workflowView === 'add'" :data-active="workflowView === 'add' ? 'true' : 'false'" @click="setWorkflowView('add')">
@@ -540,7 +544,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
+import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
@@ -598,6 +602,8 @@ const backendConfigNotice = ref('')
 const maintenanceInfo = ref(null)
 const showAdvanced = ref(false)
 const starting = ref(false)
+const workflowRevision = ref(null)
+const workflowMutationNotice = ref('')
 const queueJobs = ref([])
 const recentJobs = ref([])
 const recentQuery = ref('')
@@ -647,6 +653,7 @@ let panelDrag = null
 let capsuleDrag = null
 let capsuleMoved = false
 let linkSequence = 0
+const pendingWorkflowActions = new Map()
 let readerSessionId = ''
 let readerSessionStartedAt = ''
 let readerLastSyncAt = 0
@@ -677,6 +684,69 @@ const readerSaveStateText = computed(() => {
   return '学习记录已保存'
 })
 const readerSaveStateTone = computed(() => readerSaveStateText.value.includes('失败') ? 'warning' : 'muted')
+
+function rememberWorkflowRevision(payload) {
+  const revision = Number(payload && payload.revision)
+  if (!Number.isInteger(revision) || revision < 0) return
+  if (workflowRevision.value === null || revision >= workflowRevision.value) workflowRevision.value = revision
+}
+
+function getPendingWorkflowAction(actionId, descriptor = '') {
+  const key = String(actionId || '')
+  const normalizedDescriptor = String(descriptor || '')
+  const existing = pendingWorkflowActions.get(key)
+  if (existing && existing.descriptor === normalizedDescriptor) return existing
+  const action = {
+    key: createYoutubeWorkflowOperationKey(key || 'workflow-action'),
+    descriptor: normalizedDescriptor,
+    inFlight: null,
+  }
+  pendingWorkflowActions.set(key, action)
+  return action
+}
+
+function forgetPendingWorkflowAction(actionId) {
+  pendingWorkflowActions.delete(String(actionId || ''))
+}
+
+function workflowMutationOptions(action) {
+  return {
+    idempotencyKey: action.key,
+    expectedRevision: workflowRevision.value,
+  }
+}
+
+function runPendingWorkflowAction(actionId, descriptor, send) {
+  const action = getPendingWorkflowAction(actionId, descriptor)
+  if (!action.inFlight) {
+    action.inFlight = Promise.resolve()
+      .then(() => send(action))
+      .finally(() => {
+        action.inFlight = null
+      })
+  }
+  return action.inFlight
+}
+
+function isWorkflowMutationConflict(error) {
+  return Number(error && error.status) === 409 && (
+    error.code === 'WORKFLOW_STATE_CONFLICT'
+    || error.actualRevision !== undefined
+    || error.currentRevision !== undefined
+  )
+}
+
+async function handleWorkflowMutationConflict(error) {
+  const actualRevision = Number(error && (error.actualRevision ?? error.currentRevision))
+  if (Number.isInteger(actualRevision) && actualRevision >= 0) rememberWorkflowRevision({ revision: actualRevision })
+  try {
+    await refreshQueue()
+  } catch (_refreshError) {
+    // Keep the typed conflict and known revision visible when the refresh is also offline.
+  }
+  const revision = Number.isInteger(workflowRevision.value) ? `（当前 revision ${workflowRevision.value}）` : ''
+  workflowMutationNotice.value = `队列已被其他页面更新${revision}，已刷新权威状态；请重新点击操作重试。`
+}
 
 function getReaderMarksLedger(jobId) {
   if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
@@ -1155,6 +1225,8 @@ async function enqueueUrls() {
   if (!cards.length) return
   if (geminiMode.value === 'real' && !apiKey.value.trim() && !credentialStatus.value.stored) return
   starting.value = true
+  workflowMutationNotice.value = ''
+  let submittedCount = 0
   try {
     if (geminiMode.value === 'real' && rememberApiKey.value && apiKey.value.trim()) {
       await saveCredential({ silent: true })
@@ -1170,16 +1242,27 @@ async function enqueueUrls() {
         replacePolicy: 'ask'
       }
       if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
-      const job = await youtubeWorkflowClient.createJob(payload)
-      queueJobs.value.push(job)
+      const actionId = `create:${card.id}`
+      try {
+        const job = await runPendingWorkflowAction(actionId, card.id, (action) => {
+          return youtubeWorkflowClient.createJob(payload, workflowMutationOptions(action))
+        })
+        rememberWorkflowRevision(job)
+        updateJob(job)
+        linkCards.value = linkCards.value.filter((item) => item.id !== card.id)
+        forgetPendingWorkflowAction(actionId)
+        submittedCount += 1
+      } catch (err) {
+        if (isWorkflowMutationConflict(err)) await handleWorkflowMutationConflict(err)
+        else linkNotice.value = err && err.message ? err.message : String(err)
+        break
+      }
     }
-    const submittedIds = new Set(cards.map((card) => card.id))
-    linkCards.value = linkCards.value.filter((card) => !submittedIds.has(card.id))
-    linkNotice.value = ''
-    workflowView.value = 'queue'
-    startPolling()
-  } catch (err) {
-    window.alert(err && err.message ? err.message : String(err))
+    if (submittedCount) {
+      linkNotice.value = ''
+      workflowView.value = 'queue'
+      startPolling()
+    }
   } finally {
     starting.value = false
   }
@@ -1327,8 +1410,12 @@ async function refreshQueue() {
 }
 
 async function refreshJobsSnapshot(jobIds, signal) {
-  if (!jobIds.length) return []
-  const payload = await youtubeWorkflowClient.getJobsSnapshot(jobIds, { signal })
+  const ids = Array.isArray(jobIds) ? jobIds : []
+  const payload = await youtubeWorkflowClient.getJobsSnapshot(ids, {
+    signal,
+    includeAll: ids.length === 0,
+  })
+  rememberWorkflowRevision(payload)
   const jobs = payload && Array.isArray(payload.jobs) ? payload.jobs : []
   jobs.forEach(updateJob)
   return jobs
@@ -1485,6 +1572,7 @@ async function refreshJob(jobId) {
 }
 
 function updateJob(fresh) {
+  rememberWorkflowRevision(fresh)
   const index = queueJobs.value.findIndex((job) => job.jobId === fresh.jobId)
   const previous = index >= 0 ? queueJobs.value[index] : null
   if (index >= 0) queueJobs.value[index] = fresh
@@ -1900,22 +1988,52 @@ function recentOpenActionText(job) {
 }
 
 async function cancelJob(job) {
-  const canceled = await youtubeWorkflowClient.cancelJob(job.jobId)
-  updateJob(canceled)
+  const actionId = `cancel:${job.jobId}`
+  workflowMutationNotice.value = ''
+  try {
+    const canceled = await runPendingWorkflowAction(actionId, job.jobId, (action) => {
+      return youtubeWorkflowClient.cancelJob(job.jobId, workflowMutationOptions(action))
+    })
+    updateJob(canceled)
+    forgetPendingWorkflowAction(actionId)
+  } catch (err) {
+    if (isWorkflowMutationConflict(err)) await handleWorkflowMutationConflict(err)
+    else workflowMutationNotice.value = err && err.message ? err.message : String(err)
+  }
 }
 
 async function prioritizeJob(job) {
-  const updated = await youtubeWorkflowClient.prioritizeJob(job.jobId)
-  updateJob(updated)
+  const actionId = `prioritize:${job.jobId}`
+  workflowMutationNotice.value = ''
+  try {
+    const updated = await runPendingWorkflowAction(actionId, job.jobId, (action) => {
+      return youtubeWorkflowClient.prioritizeJob(job.jobId, workflowMutationOptions(action))
+    })
+    updateJob(updated)
+    forgetPendingWorkflowAction(actionId)
+  } catch (err) {
+    if (isWorkflowMutationConflict(err)) await handleWorkflowMutationConflict(err)
+    else workflowMutationNotice.value = err && err.message ? err.message : String(err)
+  }
 }
 
 async function retryJob(job, stage = 'translating') {
   const payload = { stage, model: model.value, baseUrl: baseUrl.value, videoPriority: videoPriority.value }
   if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
-  const retried = await youtubeWorkflowClient.retryJob(job.jobId, payload)
-  queueJobs.value.push(retried)
-  qualityModal.value = null
-  startPolling()
+  const actionId = `retry:${job.jobId}:${stage}`
+  workflowMutationNotice.value = ''
+  try {
+    const retried = await runPendingWorkflowAction(actionId, `${job.jobId}:${stage}`, (action) => {
+      return youtubeWorkflowClient.retryJob(job.jobId, payload, workflowMutationOptions(action))
+    })
+    updateJob(retried)
+    forgetPendingWorkflowAction(actionId)
+    qualityModal.value = null
+    startPolling()
+  } catch (err) {
+    if (isWorkflowMutationConflict(err)) await handleWorkflowMutationConflict(err)
+    else workflowMutationNotice.value = err && err.message ? err.message : String(err)
+  }
 }
 
 async function retryQualityJob(job, stage) {

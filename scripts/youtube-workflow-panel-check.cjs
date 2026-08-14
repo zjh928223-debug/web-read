@@ -7,6 +7,7 @@ async function main() {
   const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
   const panelPath = path.join(repoRoot, 'src', 'components', 'YouTubeWorkflowPanel.vue');
   const panelSource = fs.readFileSync(panelPath, 'utf8');
+  const clientSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'youtube-workflow-client.js'), 'utf8');
   const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   const stylesSource = fs.readFileSync(path.join(repoRoot, 'styles.css'), 'utf8');
   const backdropBlock = stylesSource.match(/\.youtube-workflow-backdrop\s*\{[^}]+\}/)?.[0] || '';
@@ -114,6 +115,9 @@ async function main() {
   assert.ok(panelSource.includes('startPanelDrag') && panelSource.includes('startCapsuleDrag'), 'panel and capsule should be draggable');
   assert.ok(panelSource.includes('prioritizeJob') && panelSource.includes('retryJob'), 'queued and failed jobs should expose priority actions');
   assert.ok(panelSource.includes('clearCanceledJobs'), 'canceled records should be clearable from a secondary view');
+  assert.ok(clientSource.includes('Idempotency-Key') && clientSource.includes('X-Expected-Revision') && clientSource.includes('If-Match'), 'workflow client should send durable mutation protocol headers');
+  assert.ok(panelSource.includes('workflowRevision') && panelSource.includes('createYoutubeWorkflowOperationKey'), 'panel should retain a known workflow revision and stable operation keys');
+  assert.ok(panelSource.includes('WORKFLOW_STATE_CONFLICT') && panelSource.includes('refreshQueue'), 'panel should refresh authoritative state before presenting a mutation conflict retry');
   assert.equal(panelSource.includes('<select v-model="geminiMode"'), false, 'mock/off/real mode selector should not be shown to users');
   assert.ok(panelSource.includes("const geminiMode = computed"), 'workflow mode should be computed from hidden dev controls');
   assert.ok(panelSource.includes("replacePolicy: 'ask'"), 'queue submission should not silently replace current content');
