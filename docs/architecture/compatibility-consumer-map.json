@@ -2,19 +2,19 @@
   "schemaVersion": 1,
   "capture": {
     "mode": "isolated-vite-runtime",
-    "port": 4784,
+    "port": 4571,
     "sourceRoot": "src + index.html",
     "consoleErrors": [],
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 76,
+    "compatibilitySurfaces": 75,
     "staticReaders": 33,
-    "staticWriters": 66,
-    "runtimeDefined": 68,
+    "staticWriters": 65,
+    "runtimeDefined": 67,
     "runtimeCalled": 3,
     "inlineHandlers": 0,
-    "loadedScripts": 20
+    "loadedScripts": 19
   },
   "surfaces": [
     {
@@ -151,10 +151,6 @@
         {
           "file": "src/main.js",
           "line": 108
-        },
-        {
-          "file": "src/stores/chunk.js",
-          "line": 3
         }
       ],
       "writes": [
@@ -168,24 +164,6 @@
         "defined": true,
         "type": "object",
         "reads": 4,
-        "calls": 0,
-        "assigned": true
-      }
-    },
-    {
-      "name": "__chunkStore",
-      "reads": [],
-      "writes": [
-        {
-          "file": "src/stores/chunk.js",
-          "line": 1
-        }
-      ],
-      "runtime": {
-        "name": "__chunkStore",
-        "defined": true,
-        "type": "object",
-        "reads": 0,
         "calls": 0,
         "assigned": true
       }
@@ -2013,11 +1991,6 @@
     },
     {
       "src": "/src/stores/marks.js",
-      "type": "module",
-      "inline": false
-    },
-    {
-      "src": "/src/stores/chunk.js",
       "type": "module",
       "inline": false
     },

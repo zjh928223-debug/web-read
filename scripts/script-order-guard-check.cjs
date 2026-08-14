@@ -13,7 +13,6 @@ const expectedScriptSrcs = [
   'src/stores/ui.js',
   'src/stores/audio.js',
   'src/stores/marks.js',
-  'src/stores/chunk.js',
   'src/stores/annotation.js',
   'src/composables/glass-effects.js',
   'src/composables/app-handlers.js',
@@ -36,6 +35,11 @@ assert.equal(
   fs.existsSync(path.join(repoRoot, 'src', 'stores', 'transcript.js')),
   false,
   'transcript compatibility store should be retired after its consumers moved to Pinia'
+);
+assert.equal(
+  fs.existsSync(path.join(repoRoot, 'src', 'stores', 'chunk.js')),
+  false,
+  'chunk compatibility store should be retired after its consumers moved to Pinia'
 );
 
 [
