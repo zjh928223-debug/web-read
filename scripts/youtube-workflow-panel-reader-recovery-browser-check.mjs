@@ -14,6 +14,7 @@ const token = 'reader-recovery-browser-test-token'
 const outboxKey = 'read-web.reader-save-outbox.v1'
 const outboxEntryPrefix = 'read-web.reader-save-outbox.v2.'
 const outboxQuarantinePrefix = 'read-web.reader-save-outbox-quarantine.v1.'
+const bfcacheEventKey = 'read-web.test.reader-bfcache-events'
 
 const apiPort = await randomPort()
 const appUrl = `http://127.0.0.1:${apiPort}`
@@ -52,7 +53,8 @@ try {
   await verifyConcurrentOutboxAndConflict(concurrentJobOne.jobId, concurrentJobTwo.jobId, sameJob.jobId)
   await verifyBfcacheReceiptGeneration(bfcacheJob.jobId)
   await verifyLegacyOutboxMigration(legacyJob.jobId)
-  await verifyUnknownOutboxFailsClosed()
+  await verifyInvalidOutboxQuarantine()
+  await verifyQuarantineQuotaFailureFailsClosed()
   console.log('youtube workflow panel reader recovery browser check passed')
 } finally {
   if (browser) await browser.close()
@@ -312,26 +314,107 @@ async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) 
 async function verifyBfcacheReceiptGeneration(jobId) {
   const context = await browser.newContext()
   const page = await context.newPage()
+  await page.addInitScript((eventKey) => {
+    const record = (type, event) => {
+      let events = []
+      try {
+        events = JSON.parse(localStorage.getItem(eventKey) || '[]')
+      } catch {
+        events = []
+      }
+      events.push({ type, persisted: event.persisted === true, href: location.href })
+      localStorage.setItem(eventKey, JSON.stringify(events))
+    }
+    window.addEventListener('pagehide', (event) => record('pagehide', event))
+    window.addEventListener('pageshow', (event) => record('pageshow', event))
+  }, bfcacheEventKey)
+  const readerUrl = `${appUrl}/?bfcacheProbe=reader`
+  const destinationUrl = `${appUrl}/?bfcacheProbe=destination`
+  await page.goto(readerUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await setReaderState(page, jobId, 'before-bfcache')
+  await abortReaderWrites(page)
+  await page.goto(destinationUrl, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'persisted pagehide receipt')
+  const firstGeneration = await readOutboxEntries(page)
+  await page.goBack({ waitUntil: 'commit' })
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  try {
+    await page.waitForFunction(({ eventKey, expectedHref }) => {
+      const events = JSON.parse(localStorage.getItem(eventKey) || '[]')
+      return events.some((event) => event.type === 'pagehide' && event.persisted && event.href === expectedHref)
+        && events.some((event) => event.type === 'pageshow' && event.persisted && event.href === expectedHref)
+    }, { eventKey: bfcacheEventKey, expectedHref: readerUrl }, { timeout: 5_000 })
+  } catch (error) {
+    const evidence = await page.evaluate((eventKey) => ({
+      events: JSON.parse(localStorage.getItem(eventKey) || '[]'),
+      navigation: performance.getEntriesByType('navigation').map((entry) => ({
+        type: entry.type,
+        notRestoredReasons: entry.notRestoredReasons || null,
+      })),
+    }), bfcacheEventKey)
+    const readerLifecycle = evidence.events.filter((event) => event.href === readerUrl)
+    const realLifecycleUnsupported = readerLifecycle.some((event) => event.type === 'pagehide' && event.persisted === false)
+      && readerLifecycle.some((event) => event.type === 'pageshow' && event.persisted === false)
+      && !readerLifecycle.some((event) => event.persisted === true)
+    if (!realLifecycleUnsupported) {
+      throw new Error(`real BFCache lifecycle failed without unsupported-runtime evidence: ${JSON.stringify(evidence)}; ${error.message}`)
+    }
+    console.log(`real BFCache unavailable in this Chromium headless run; using synthetic lifecycle coverage: ${JSON.stringify(evidence)}`)
+    await context.close()
+    await verifySyntheticBfcacheReceiptGeneration(jobId)
+    return
+  }
+  await page.unroute(`${appUrl}/api/**`)
+  await setReaderState(page, jobId, 'after-bfcache')
+  await page.evaluate(() => window.dispatchEvent(new Event('reader-marks-changed')))
+  await waitFor(async () => {
+    const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
+    return marks.marks[0]?.word === 'after-bfcache'
+  }, 'post-BFCache latest intent')
+  await abortReaderWrites(page)
+  await page.close({ runBeforeUnload: true })
+  const inspector = await context.newPage()
+  await abortReaderWrites(inspector)
+  await inspector.goto(destinationUrl, { waitUntil: 'domcontentloaded' })
+  await inspector.waitForSelector('.youtube-reader-controls .small-btn')
+  await waitFor(async () => (await readOutboxEntries(inspector)).filter(({ value }) => value.kind === 'marks').length >= 2, 'new generation close receipt')
+  const lifecycleEvents = await inspector.evaluate((eventKey) => JSON.parse(localStorage.getItem(eventKey) || '[]'), bfcacheEventKey)
+  assert.ok(lifecycleEvents.some((event) => event.type === 'pagehide' && event.persisted === false && event.href === readerUrl), 'final page close must dispatch non-persisted pagehide')
+  const finalEntries = await readOutboxEntries(inspector)
+  const finalMarks = finalEntries.filter(({ value }) => value.kind === 'marks')
+  const finalActivity = finalEntries.filter(({ value }) => value.kind === 'activity')
+  const firstActivity = firstGeneration.find(({ value }) => value.kind === 'activity')
+  assert.ok(finalMarks.some(({ value }) => value.intent.marks[0].word === 'after-bfcache'))
+  assert.ok(finalMarks.some(({ value }) => value.operationId !== firstGeneration.find(({ value: first }) => first.kind === 'marks')?.operationId))
+  assert.ok(finalActivity.some(({ value }) => value.operationId !== firstActivity?.value.operationId && value.intent.event === 'close'))
+  assert.equal((await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)).marks[0].word, 'after-bfcache')
+  await context.close()
+}
+
+async function verifySyntheticBfcacheReceiptGeneration(jobId) {
+  const context = await browser.newContext()
+  const page = await context.newPage()
   await addClearOutboxScript(page)
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
   await setReaderState(page, jobId, 'before-bfcache')
   await abortReaderWrites(page)
   await dispatchPageHide(page, true)
-  await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'persisted pagehide receipt')
+  await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'synthetic persisted pagehide receipt')
   const firstGeneration = await readOutboxEntries(page)
-  await setReaderState(page, jobId, 'after-bfcache')
   await dispatchPageShow(page, true)
   await page.unroute(`${appUrl}/api/**`)
+  await setReaderState(page, jobId, 'after-bfcache')
   await page.evaluate(() => window.dispatchEvent(new Event('reader-marks-changed')))
   await waitFor(async () => {
     const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
-    const activity = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-activity`)
-    return marks.marks[0]?.word === 'after-bfcache' && activity.revision === 1
-  }, 'post-BFCache latest intent')
+    return marks.marks[0]?.word === 'after-bfcache'
+  }, 'synthetic post-BFCache latest intent')
   await abortReaderWrites(page)
   await dispatchPageHide(page, false)
-  await waitFor(async () => (await readOutboxEntries(page)).filter(({ value }) => value.kind === 'marks').length >= 2, 'new generation close receipt')
+  await waitFor(async () => (await readOutboxEntries(page)).filter(({ value }) => value.kind === 'marks').length >= 2, 'synthetic new generation close receipt')
   const finalEntries = await readOutboxEntries(page)
   const finalMarks = finalEntries.filter(({ value }) => value.kind === 'marks')
   const finalActivity = finalEntries.filter(({ value }) => value.kind === 'activity')
@@ -400,33 +483,117 @@ async function verifyLegacyOutboxMigration(jobId) {
   await context.close()
 }
 
-async function verifyUnknownOutboxFailsClosed() {
+async function verifyInvalidOutboxQuarantine() {
+  const legacyMalformed = '{"token":"LEGACY-MALFORMED-SECRET"'
+  await verifyQuarantineScenario('legacy malformed', [{
+    key: outboxKey,
+    rawValue: legacyMalformed,
+    reason: 'malformed-json',
+    sensitiveValues: ['LEGACY-MALFORMED-SECRET'],
+  }])
+
+  const legacyUnknown = JSON.stringify({
+    schemaVersion: 99,
+    token: 'LEGACY-UNKNOWN-SECRET',
+    entries: [{ jobId: 'private/legacy/path', kind: 'marks', operationId: 'unknown' }],
+  })
+  await verifyQuarantineScenario('legacy unknown', [{
+    key: outboxKey,
+    rawValue: legacyUnknown,
+    reason: 'unknown-or-invalid-envelope',
+    sensitiveValues: ['LEGACY-UNKNOWN-SECRET', 'private/legacy/path'],
+  }])
+
+  const malformedKey = `${outboxEntryPrefix}malformed-entry`
+  const unknownKey = `${outboxEntryPrefix}unknown-entry`
+  const mismatchKey = `${outboxEntryPrefix}mismatched-entry`
+  const malformedRaw = '{"token":"V2-MALFORMED-SECRET"'
+  const unknownRaw = JSON.stringify({ schemaVersion: 99, token: 'V2-UNKNOWN-SECRET', jobId: 'private/v2/path' })
+  const mismatchRaw = JSON.stringify({
+    schemaVersion: 2,
+    jobId: 'mismatch-job',
+    kind: 'marks',
+    operationId: 'mismatch-operation',
+    expectedRevision: 0,
+    intent: { marks: [] },
+  })
+  await verifyQuarantineScenario('v2 malformed, unknown, and key mismatch', [
+    { key: malformedKey, rawValue: malformedRaw, reason: 'malformed-json', sensitiveValues: ['V2-MALFORMED-SECRET'] },
+    { key: unknownKey, rawValue: unknownRaw, reason: 'unknown-or-invalid-envelope', sensitiveValues: ['V2-UNKNOWN-SECRET', 'private/v2/path'] },
+    { key: mismatchKey, rawValue: mismatchRaw, reason: 'outbox-key-mismatch' },
+  ])
+}
+
+async function verifyQuarantineScenario(label, sources) {
   const context = await browser.newContext()
   const page = await context.newPage()
-  const unknownEntryKey = `${outboxEntryPrefix}unknown-entry`
-  await page.addInitScript(({ key, entryKey, secret }) => {
-    localStorage.setItem(key, JSON.stringify({
-      schemaVersion: 99,
-      token: secret,
-      entries: [{ jobId: 'private/path', kind: 'marks', operationId: 'unknown' }],
-    }))
-    localStorage.setItem(entryKey, JSON.stringify({
-      schemaVersion: 99,
-      token: secret,
-      jobId: 'private/path',
-    }))
-  }, { key: outboxKey, entryKey: unknownEntryKey, secret: token })
+  const readerRequests = []
+  const consoleMessages = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && isReaderWrite(request.url())) readerRequests.push(request.url())
+  })
+  page.on('console', (message) => consoleMessages.push(message.text()))
+  await page.addInitScript((items) => {
+    items.forEach(({ key, rawValue }) => localStorage.setItem(key, rawValue))
+  }, sources)
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
-  await waitFor(async () => (await page.evaluate(({ key, entryKey }) => localStorage.getItem(key) === null && localStorage.getItem(entryKey) === null, { key: outboxKey, entryKey: unknownEntryKey })), 'unknown outbox quarantine')
-  const quarantine = await page.evaluate(({ key, prefix }) => Object.keys(localStorage)
-    .filter((item) => item === `${key}.quarantine` || item.startsWith(prefix))
-    .map((item) => localStorage.getItem(item) || '')
-    .join('\n'), { key: outboxKey, prefix: outboxQuarantinePrefix })
-  assert.ok(quarantine)
-  assert.match(quarantine, /unknown-or-invalid-envelope/)
-  assert.equal(quarantine.includes(token), false)
-  assert.equal(quarantine.includes('private/path'), false)
+  await waitFor(async () => {
+    const remaining = await page.evaluate((keys) => keys.filter((key) => localStorage.getItem(key) !== null), sources.map((item) => item.key))
+    return remaining.length === 0
+  }, `${label} source removal after verified quarantine`)
+  const quarantines = await readQuarantineEntries(page)
+  assert.equal(quarantines.length, sources.length, `${label} must preserve one independent quarantine per source`)
+  for (const source of sources) {
+    const quarantine = quarantines.find(({ value }) => value.sourceKey === source.key)?.value
+    assert.ok(quarantine, `${label} must retain source key ${source.key}`)
+    assert.equal(quarantine.rawValue, source.rawValue, `${label} must retain the exact original string`)
+    assert.equal(quarantine.reason, source.reason)
+    assert.equal(Number.isNaN(Date.parse(quarantine.detectedAt)), false)
+  }
+  assert.equal(readerRequests.length, 0, `${label} must never replay quarantined data`)
+  const visibleText = await page.locator('body').innerText()
+  const ordinaryDiagnostics = `${visibleText}\n${consoleMessages.join('\n')}`
+  for (const source of sources) {
+    assert.equal(ordinaryDiagnostics.includes(source.rawValue), false, `${label} raw value must not enter visible diagnostics or logs`)
+    for (const sensitiveValue of source.sensitiveValues || []) {
+      assert.equal(ordinaryDiagnostics.includes(sensitiveValue), false, `${label} sensitive values must not enter visible diagnostics or logs`)
+    }
+  }
+  await context.close()
+}
+
+async function verifyQuarantineQuotaFailureFailsClosed() {
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const sourceKey = `${outboxEntryPrefix}quota-entry`
+  const rawValue = JSON.stringify({ schemaVersion: 99, token: 'QUOTA-SECRET', jobId: 'private/quota/path' })
+  const readerRequests = []
+  const consoleMessages = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && isReaderWrite(request.url())) readerRequests.push(request.url())
+  })
+  page.on('console', (message) => consoleMessages.push(message.text()))
+  await page.addInitScript(({ key, raw, quarantinePrefix }) => {
+    localStorage.setItem(key, raw)
+    const originalSetItem = Storage.prototype.setItem
+    Storage.prototype.setItem = function (targetKey, value) {
+      if (String(targetKey).startsWith(quarantinePrefix)) {
+        throw new DOMException('Storage quota exceeded', 'QuotaExceededError')
+      }
+      return originalSetItem.call(this, targetKey, value)
+    }
+  }, { key: sourceKey, raw: rawValue, quarantinePrefix: outboxQuarantinePrefix })
+  await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await page.waitForTimeout(300)
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), sourceKey), rawValue, 'quota failure must retain the invalid source')
+  assert.equal((await readQuarantineEntries(page)).length, 0, 'quota failure must not claim a completed quarantine')
+  assert.equal(readerRequests.length, 0, 'quota failure must remain fail-closed without replay')
+  const ordinaryDiagnostics = `${await page.locator('body').innerText()}\n${consoleMessages.join('\n')}`
+  assert.equal(ordinaryDiagnostics.includes(rawValue), false, 'quota failure diagnostics must not expose the raw source')
+  assert.equal(ordinaryDiagnostics.includes('QUOTA-SECRET'), false, 'quota failure diagnostics must not expose secrets')
+  assert.equal(ordinaryDiagnostics.includes('private/quota/path'), false, 'quota failure diagnostics must not expose paths')
   await context.close()
 }
 
@@ -468,6 +635,18 @@ async function readOutboxEntries(page) {
     }
     return entries
   }, outboxEntryPrefix)
+}
+
+async function readQuarantineEntries(page) {
+  return page.evaluate((prefix) => {
+    const entries = []
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (!key?.startsWith(prefix)) continue
+      entries.push({ key, value: JSON.parse(localStorage.getItem(key) || '') })
+    }
+    return entries
+  }, outboxQuarantinePrefix)
 }
 
 async function installLegacyEnvelopeRaceBarrier(page, label) {

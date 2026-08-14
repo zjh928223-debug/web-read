@@ -2801,30 +2801,40 @@ function isValidReaderOutboxRecord(record) {
   return schemaVersion === READER_OUTBOX_ENTRY_SCHEMA_VERSION && isValidReaderOutboxEntry(entry)
 }
 
-function quarantineReaderOutbox(reason, byteLength = 0, sourceKey = READER_OUTBOX_KEY) {
-  const quarantineKey = sourceKey === READER_OUTBOX_KEY
-    ? `${READER_OUTBOX_KEY}.quarantine`
-    : `${READER_OUTBOX_QUARANTINE_PREFIX}${readerOutboxKeyPart(sourceKey)}`
+function readerOutboxQuarantineKey(sourceKey) {
+  return `${READER_OUTBOX_QUARANTINE_PREFIX}${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 10)}.${readerOutboxKeyPart(sourceKey)}`
+}
+
+function quarantineReaderOutbox(reason, rawValue = '', sourceKey = READER_OUTBOX_KEY) {
+  const quarantineKey = readerOutboxQuarantineKey(sourceKey)
+  const serialized = JSON.stringify({
+    schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
+    sourceKey,
+    detectedAt: new Date().toISOString(),
+    reason: String(reason || 'invalid-envelope'),
+    rawValue: String(rawValue),
+  })
   try {
-    window.localStorage.setItem(quarantineKey, JSON.stringify({
-      schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
-      detectedAt: new Date().toISOString(),
-      reason: String(reason || 'invalid-envelope'),
-      byteLength: Number.isInteger(byteLength) ? byteLength : 0,
-    }))
+    window.localStorage.setItem(quarantineKey, serialized)
+    if (window.localStorage.getItem(quarantineKey) !== serialized) {
+      throw new Error('Reader outbox quarantine could not be verified')
+    }
   } catch (error) {
     recordBestEffortFailure(error, {
       operationId: 'reader-outbox-quarantine',
-      reason: 'invalid reader outbox is isolated without retaining untrusted payload bytes',
+      reason: 'reader outbox quarantine was unavailable; the invalid source remains blocked from replay',
     })
+    return false
   }
   try {
     window.localStorage.removeItem(sourceKey)
+    return true
   } catch (error) {
     recordBestEffortFailure(error, {
       operationId: 'reader-outbox-quarantine-remove',
-      reason: 'invalid reader outbox could not be removed; it will remain blocked from replay',
+      reason: 'reader outbox quarantine was preserved but the invalid source could not be removed; it remains blocked from replay',
     })
+    return false
   }
 }
 
@@ -2844,8 +2854,8 @@ function migrateLegacyReaderOutbox() {
   try {
     envelope = JSON.parse(raw)
   } catch (error) {
-    quarantineReaderOutbox('malformed-json', raw.length)
-    recordBestEffortFailure(error, {
+    quarantineReaderOutbox('malformed-json', raw)
+    recordBestEffortFailure(new Error('Reader outbox JSON could not be parsed'), {
       operationId: 'reader-outbox-legacy-parse',
       reason: 'malformed legacy reader outbox is quarantined without being replayed',
     })
@@ -2856,7 +2866,7 @@ function migrateLegacyReaderOutbox() {
     || envelope.schemaVersion !== READER_OUTBOX_SCHEMA_VERSION
     || !Array.isArray(envelope.entries)
     || !envelope.entries.every(isValidReaderOutboxEntry)) {
-    quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length)
+    quarantineReaderOutbox('unknown-or-invalid-envelope', raw)
     return true
   }
   try {
@@ -2899,18 +2909,18 @@ function readReaderOutbox() {
       raw = window.localStorage.getItem(key) || ''
       const record = JSON.parse(raw)
       if (!isValidReaderOutboxRecord(record)) {
-        quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length, key)
+        quarantineReaderOutbox('unknown-or-invalid-envelope', raw, key)
         continue
       }
       const { schemaVersion, ...entry } = record
       if (key !== readerOutboxEntryKey(entry)) {
-        quarantineReaderOutbox('outbox-key-mismatch', raw.length, key)
+        quarantineReaderOutbox('outbox-key-mismatch', raw, key)
         continue
       }
       entries.push(entry)
     } catch (error) {
-      quarantineReaderOutbox('malformed-json', raw.length, key)
-      recordBestEffortFailure(error, {
+      quarantineReaderOutbox('malformed-json', raw, key)
+      recordBestEffortFailure(new Error('Reader outbox entry JSON could not be parsed'), {
         operationId: 'reader-outbox-parse',
         reason: 'malformed reader outbox entry is quarantined without being replayed',
       })
