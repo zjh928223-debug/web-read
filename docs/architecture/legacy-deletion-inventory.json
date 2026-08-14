@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "change": "stabilize-and-simplify-read-web",
+  "task": "10.6",
+  "scope": "root annotation/chunk-note artifacts, retired rendering flags, and duplicate legacy surfaces",
+  "baseline": {
+    "gitSha": "68c286e25186398a82e25599b1b24f88fef2def9",
+    "staticLoadGraph": "index.html -> module graph; no root annotation/chunk-note script tags",
+    "runtimeLoadGraph": "src/main.js and src/composables/reader-runtime.js load focused owners; root candidates are not loaded",
+    "productionBuild": "Vite build must contain the current module owners and no root-script copy output"
+  },
+  "entries": [
+    {
+      "candidate": "annotation-bubble.js",
+      "kind": "root-artifact",
+      "staticConsumers": [],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": [
+        "scripts/annotation-bubble-module-check.cjs",
+        "scripts/annotation-bubble-resolver-check.cjs",
+        "scripts/legacy-root-copy-check.cjs",
+        "scripts/script-order-guard-check.cjs"
+      ],
+      "documentationReferences": [
+        "AGENTS.md (current architecture inventory)",
+        "PROJECT_MAP.md (retired surfaces)",
+        "openspec/changes/archive/2026-06-18-complete-appjs-decomposition/ (historical migration record)"
+      ],
+      "replacementOwner": "src/composables/annotation-bubble.js",
+      "replacementBehaviorTests": [
+        "verify:annotation-bubble-resolver",
+        "verify:transcript-interactions",
+        "verify:chunk-interactions",
+        "verify:vite",
+        "verify:production-preview"
+      ],
+      "deletionDecision": "delete",
+      "rationale": "The root IIFE is a duplicate of the Vite-owned annotation bubble module and has no current loader or caller. Historical migration documents remain archived separately.",
+      "blockers": []
+    },
+    {
+      "candidate": "annotation-api-settings-ui.js",
+      "kind": "root-artifact",
+      "staticConsumers": [],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": [
+        "scripts/app-window-facades-check.cjs",
+        "scripts/session-facades-check.cjs",
+        "scripts/legacy-root-copy-check.cjs",
+        "scripts/script-order-guard-check.cjs"
+      ],
+      "documentationReferences": [
+        "AGENTS.md (stale current-path entry to remove)",
+        "openspec/changes/archive/2026-06-18-complete-appjs-decomposition/ (historical migration record)",
+        "openspec/specs/local-annotation-api-settings-ui/spec.md (historical capability record)"
+      ],
+      "replacementOwner": null,
+      "replacementBehaviorTests": [
+        "verify:app-window-facades",
+        "verify:session-facades",
+        "verify:vite",
+        "verify:production-preview"
+      ],
+      "deletionDecision": "delete",
+      "rationale": "The settings UI and its global facade were retired before this cleanup. No current module, DOM entry, package command, or runtime loader consumes this root copy; archived specs preserve historical intent.",
+      "blockers": []
+    },
+    {
+      "candidate": "chunk-note-layout-core.js",
+      "kind": "root-artifact",
+      "staticConsumers": [],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": [
+        "scripts/chunk-interactions-check.cjs (legacy global assertion to remove)",
+        "scripts/legacy-root-copy-check.cjs",
+        "scripts/script-order-guard-check.cjs"
+      ],
+      "documentationReferences": [
+        "AGENTS.md (current architecture inventory)",
+        "PROJECT_MAP.md (retired surfaces)",
+        "ES_MODULE_PLAN.md (historical plan)",
+        "openspec/changes/archive/2026-06-18-complete-appjs-decomposition/ (historical migration record)"
+      ],
+      "replacementOwner": null,
+      "replacementBehaviorTests": [
+        "verify:chunk-interactions",
+        "verify:notes-wrapper-drain",
+        "verify:vite",
+        "verify:production-preview"
+      ],
+      "deletionDecision": "delete",
+      "rationale": "Chunk-note UI and its extracted layout module were retired. The only remaining source reference is an undefined legacy global fallback, which must be removed before deleting this artifact.",
+      "blockers": []
+    },
+    {
+      "candidate": "chunk-note-layout-helpers.js",
+      "kind": "root-artifact",
+      "staticConsumers": [],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": [
+        "scripts/chunk-interactions-check.cjs (legacy global assertion to remove)",
+        "scripts/legacy-root-copy-check.cjs",
+        "scripts/script-order-guard-check.cjs"
+      ],
+      "documentationReferences": [
+        "AGENTS.md (current architecture inventory)",
+        "PROJECT_MAP.md (retired surfaces)",
+        "ES_MODULE_PLAN.md (historical plan)",
+        "openspec/changes/archive/2026-06-18-complete-appjs-decomposition/ (historical migration record)"
+      ],
+      "replacementOwner": null,
+      "replacementBehaviorTests": [
+        "verify:chunk-interactions",
+        "verify:notes-wrapper-drain",
+        "verify:vite",
+        "verify:production-preview"
+      ],
+      "deletionDecision": "delete",
+      "rationale": "Chunk-note UI and its extracted layout helper were retired. No current module or loader consumes the root helper, and archived documents preserve its migration history.",
+      "blockers": []
+    },
+    {
+      "candidate": "window.__USE_VUE_RENDERING",
+      "kind": "legacy-flag",
+      "staticConsumers": [
+        "src/App.vue",
+        "src/main.js",
+        "src/components/TranscriptContainer.vue",
+        "src/components/ChunkModeView.vue",
+        "src/composables/render-mode.js",
+        "src/composables/transcript-state.js",
+        "src/pinia-stores/transcript.js"
+      ],
+      "runtimeLoaders": [
+        "src/composables/render-mode.js",
+        "src/main.js"
+      ],
+      "packageReferences": ["verify:render-mode"],
+      "testReferences": [
+        "scripts/render-mode-check.cjs",
+        "scripts/app-window-facades-check.cjs",
+        "scripts/transcript-state-check.cjs"
+      ],
+      "documentationReferences": ["AGENTS.md"],
+      "replacementOwner": "Vue App.vue reader views rendered unconditionally; legacy transcript container remains hidden by current startup behavior",
+      "replacementBehaviorTests": [
+        "verify:transcript-interactions",
+        "verify:chunk-interactions",
+        "verify:vite",
+        "verify:production-preview"
+      ],
+      "deletionDecision": "delete",
+      "rationale": "The flag has no user-facing toggle or supported false branch. Vue rendering is the sole current path; removing the flag and always mounting the two Vue views eliminates a dead branch without moving a compatibility state owner.",
+      "blockers": []
+    },
+    {
+      "candidate": "window.__chunkNoteLayout",
+      "kind": "legacy-surface",
+      "staticConsumers": ["src/components/ChunkModeView.vue"],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": ["scripts/chunk-interactions-check.cjs"],
+      "documentationReferences": [
+        "docs/architecture/compatibility-consumer-map.json",
+        "openspec/changes/archive/2026-06-18-complete-appjs-decomposition/ (historical migration record)"
+      ],
+      "replacementOwner": "ChunkModeView.vue chunkRef fallback using current chunk identity fields",
+      "replacementBehaviorTests": ["verify:chunk-interactions", "verify:vite"],
+      "deletionDecision": "delete",
+      "rationale": "The global is never written by the current runtime and the only read is an unreachable legacy fallback. The local fallback already covers current chunk identity behavior.",
+      "blockers": []
+    },
+    {
+      "candidate": "src/pinia-stores/chunk.js#chunkNoteVisible",
+      "kind": "duplicate-state-field",
+      "staticConsumers": [],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": ["scripts/legacy-deletion-gate.mjs"],
+      "documentationReferences": [],
+      "replacementOwner": null,
+      "replacementBehaviorTests": ["verify:chunk-state", "verify:chunk-interactions"],
+      "deletionDecision": "delete",
+      "rationale": "The field is present only on the Pinia chunk store, is not mirrored by the compatibility adapter, and has no runtime consumer after notes retirement.",
+      "blockers": []
+    },
+    {
+      "candidate": "src/utils/identity-storage-keys.js#getChunkNotesStorageKey + getChunkNoteDraftStorageKey",
+      "kind": "legacy-data-key",
+      "staticConsumers": [],
+      "runtimeLoaders": ["src/utils/identity-storage-keys.js (side-effect export)"],
+      "packageReferences": [],
+      "testReferences": [
+        "scripts/reader-bootstrap-runtime-check.cjs",
+        "scripts/reader-runtime-deps-check.cjs"
+      ],
+      "documentationReferences": [],
+      "replacementOwner": null,
+      "replacementBehaviorTests": ["verify:identity-storage-keys"],
+      "deletionDecision": "retain",
+      "rationale": "These names identify legacy local data and remain available for compatibility scans or future dry-run migration. They are not executable root artifacts.",
+      "blockers": ["data-migration compatibility value"]
+    },
+    {
+      "candidate": "styles.css#annotation-api-settings-*",
+      "kind": "orphan-style-block",
+      "staticConsumers": ["annotation-api-settings-ui.js (retired root template only)"],
+      "runtimeLoaders": [],
+      "packageReferences": [],
+      "testReferences": [],
+      "documentationReferences": [],
+      "replacementOwner": null,
+      "replacementBehaviorTests": ["verify:vite", "verify:production-preview"],
+      "deletionDecision": "delete",
+      "rationale": "No current HTML or module emits the settings panel markup. Removing the unreachable style block keeps the stylesheet aligned with the retired artifact deletion.",
+      "blockers": []
+    },
+    {
+      "candidate": "src/composables/render-mode.js + scripts/render-mode-check.cjs",
+      "kind": "duplicate-implementation-and-guard",
+      "staticConsumers": ["src/composables/reader-runtime.js (side-effect import only)"],
+      "runtimeLoaders": ["src/composables/reader-runtime.js", "src/main.js"],
+      "packageReferences": ["verify:render-mode"],
+      "testReferences": ["scripts/render-mode-check.cjs"],
+      "documentationReferences": ["AGENTS.md"],
+      "replacementOwner": "src/main.js + Vue reader components",
+      "replacementBehaviorTests": ["verify:vite", "verify:production-preview"],
+      "deletionDecision": "delete",
+      "rationale": "Once the rendering flag is removed, this module and its flag-only source-shape guard have no behavior left to own. Browser startup and reader interaction journeys replace the guard.",
+      "blockers": []
+    }
+  ]
+}

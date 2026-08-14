@@ -34,8 +34,7 @@ async function main() {
     ['chunkGap', '12px'],
     ['st.isChunkMode', 'true'],
     ['st.chunkCnVisible', 'true'],
-    ['st.chunkCnHoldMode', 'true'],
-    ['chunkNoteVisible', 'true']
+    ['st.chunkCnHoldMode', 'true']
   ]);
   const state = {
     chunkItems: [{ id: 1 }],

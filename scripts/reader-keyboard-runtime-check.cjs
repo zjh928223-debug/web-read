@@ -75,7 +75,6 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   assert.equal(moduleSource.includes('window.'), false, 'reader-keyboard-runtime should not read window globals');
   assert.equal(moduleSource.includes('document.'), false, 'reader-keyboard-runtime should not read document globals');
   [
-    'chunkNoteVisible',
     'hotkeyNotesInput',
     'hotkeyChunkNoteInput',
     'chunkNoteCtxAddBtn',

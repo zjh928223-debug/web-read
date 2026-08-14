@@ -11,6 +11,7 @@ const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
   command('Python dependency lock', pythonCommand, ['tools/subtitle-workflow/scripts/verify_python_lock.py']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
+  command('legacy deletion gate', process.execPath, ['scripts/legacy-deletion-gate.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),
   command('best-effort failure policy', process.execPath, ['scripts/best-effort-check.mjs']),
   command('audio IndexedDB transaction contract', process.execPath, ['scripts/audio-store-transaction-check.mjs']),

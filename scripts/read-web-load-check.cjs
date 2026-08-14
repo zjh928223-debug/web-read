@@ -74,6 +74,17 @@ async function main() {
     }));
   }, expectedGlobals);
 
+  const renderingOwnership = await page.evaluate(() => ({
+    vueTranscriptMounted: Boolean(document.querySelector('#transcript-vue-container')),
+    vueChunkMounted: Boolean(document.querySelector('#chunk-vue-container')),
+    legacyTranscriptHidden: (() => {
+      const element = document.getElementById('transcript-container');
+      if (!element) return false;
+      return element.hidden || getComputedStyle(element).display === 'none';
+    })(),
+    legacyRenderingFlagDefined: typeof window.__USE_VUE_RENDERING !== 'undefined',
+  }));
+
   const undefinedSymbols = symbolStatus.filter((item) => !item.defined);
   await page.screenshot({ path: screenshotPath, fullPage: true });
 
@@ -83,7 +94,11 @@ async function main() {
       && pageErrors.length === 0
       && requestFailures.length === 0
       && responseErrors.length === 0
-      && undefinedSymbols.length === 0,
+      && undefinedSymbols.length === 0
+      && renderingOwnership.vueTranscriptMounted
+      && renderingOwnership.vueChunkMounted
+      && renderingOwnership.legacyTranscriptHidden
+      && !renderingOwnership.legacyRenderingFlagDefined,
     mainResponse: gotoResponse ? {
       url: gotoResponse.url(),
       status: gotoResponse.status(),
@@ -96,6 +111,7 @@ async function main() {
     responseErrors,
     symbolStatus,
     undefinedSymbols,
+    renderingOwnership,
     screenshotPath
   };
 

@@ -8,10 +8,10 @@
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 74,
-    "staticReaders": 33,
-    "staticWriters": 64,
-    "runtimeDefined": 66,
+    "compatibilitySurfaces": 72,
+    "staticReaders": 31,
+    "staticWriters": 63,
+    "runtimeDefined": 65,
     "runtimeCalled": 3,
     "inlineHandlers": 0,
     "loadedScripts": 18
@@ -78,16 +78,16 @@
       "name": "__audioStore",
       "reads": [
         {
-          "file": "src/main.js",
-          "line": 78
-        },
-        {
-          "file": "src/main.js",
-          "line": 79
-        },
-        {
           "file": "src/stores/audio.js",
           "line": 112
+        },
+        {
+          "file": "src/main.js",
+          "line": 77
+        },
+        {
+          "file": "src/main.js",
+          "line": 78
         }
       ],
       "writes": [
@@ -106,45 +106,19 @@
       }
     },
     {
-      "name": "__chunkNoteLayout",
-      "reads": [
-        {
-          "file": "src/components/ChunkModeView.vue",
-          "line": 111
-        },
-        {
-          "file": "src/components/ChunkModeView.vue",
-          "line": 111
-        },
-        {
-          "file": "src/components/ChunkModeView.vue",
-          "line": 112
-        }
-      ],
-      "writes": [],
-      "runtime": {
-        "name": "__chunkNoteLayout",
-        "defined": false,
-        "type": "undefined",
-        "reads": 0,
-        "calls": 0,
-        "assigned": false
-      }
-    },
-    {
       "name": "__chunkState",
       "reads": [
         {
           "file": "src/main.js",
-          "line": 107
+          "line": 106
+        },
+        {
+          "file": "src/main.js",
+          "line": 106
         },
         {
           "file": "src/main.js",
           "line": 107
-        },
-        {
-          "file": "src/main.js",
-          "line": 108
         }
       ],
       "writes": [
@@ -167,15 +141,15 @@
       "reads": [
         {
           "file": "src/main.js",
-          "line": 110
+          "line": 109
+        },
+        {
+          "file": "src/main.js",
+          "line": 109
         },
         {
           "file": "src/main.js",
           "line": 110
-        },
-        {
-          "file": "src/main.js",
-          "line": 111
         }
       ],
       "writes": [
@@ -292,11 +266,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 89
+          "line": 88
         },
         {
           "file": "src/main.js",
-          "line": 90
+          "line": 89
         }
       ],
       "writes": [
@@ -489,26 +463,26 @@
           "line": 17
         },
         {
-          "file": "src/composables/transcript-state.js",
-          "line": 30
-        },
-        {
-          "file": "src/composables/transcript-state.js",
-          "line": 30
-        },
-        {
-          "file": "src/composables/transcript-state.js",
-          "line": 31
-        },
-        {
           "file": "src/composables/ui-facades.js",
           "line": 2
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 27
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 27
+        },
+        {
+          "file": "src/composables/transcript-state.js",
+          "line": 28
         }
       ],
       "writes": [
         {
           "file": "src/main.js",
-          "line": 97
+          "line": 96
         }
       ],
       "runtime": {
@@ -578,14 +552,6 @@
       "name": "__state",
       "reads": [
         {
-          "file": "src/components/ChunkModeView.vue",
-          "line": 89
-        },
-        {
-          "file": "src/components/TranscriptContainer.vue",
-          "line": 78
-        },
-        {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1321
         },
@@ -624,6 +590,14 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 3169
+        },
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 88
+        },
+        {
+          "file": "src/components/TranscriptContainer.vue",
+          "line": 77
         },
         {
           "file": "src/composables/chunk-controls-module.js",
@@ -680,11 +654,11 @@
       "reads": [
         {
           "file": "src/main.js",
-          "line": 55
+          "line": 54
         },
         {
           "file": "src/main.js",
-          "line": 56
+          "line": 55
         }
       ],
       "writes": [
@@ -707,21 +681,21 @@
       "reads": [
         {
           "file": "src/main.js",
-          "line": 104
+          "line": 103
+        },
+        {
+          "file": "src/main.js",
+          "line": 103
         },
         {
           "file": "src/main.js",
           "line": 104
-        },
-        {
-          "file": "src/main.js",
-          "line": 105
         }
       ],
       "writes": [
         {
           "file": "src/composables/transcript-state.js",
-          "line": 111
+          "line": 106
         }
       ],
       "runtime": {
@@ -738,11 +712,11 @@
       "reads": [
         {
           "file": "src/main.js",
-          "line": 68
+          "line": 67
         },
         {
           "file": "src/main.js",
-          "line": 69
+          "line": 68
         }
       ],
       "writes": [
@@ -761,54 +735,11 @@
       }
     },
     {
-      "name": "__USE_VUE_RENDERING",
-      "reads": [
-        {
-          "file": "src/App.vue",
-          "line": 141
-        },
-        {
-          "file": "src/composables/render-mode.js",
-          "line": 2
-        },
-        {
-          "file": "src/composables/render-mode.js",
-          "line": 5
-        },
-        {
-          "file": "src/main.js",
-          "line": 116
-        },
-        {
-          "file": "src/main.js",
-          "line": 118
-        }
-      ],
-      "writes": [
-        {
-          "file": "src/composables/render-mode.js",
-          "line": 3
-        },
-        {
-          "file": "src/main.js",
-          "line": 120
-        }
-      ],
-      "runtime": {
-        "name": "__USE_VUE_RENDERING",
-        "defined": true,
-        "type": "boolean",
-        "reads": 1,
-        "calls": 0,
-        "assigned": true
-      }
-    },
-    {
       "name": "__xxxStore",
       "reads": [
         {
           "file": "src/main.js",
-          "line": 41
+          "line": 40
         }
       ],
       "writes": [],
@@ -1642,7 +1573,7 @@
         },
         {
           "file": "src/main.js",
-          "line": 74
+          "line": 73
         }
       ],
       "runtime": {
@@ -1678,20 +1609,20 @@
           "line": 139
         },
         {
-          "file": "src/main.js",
-          "line": 67
-        },
-        {
-          "file": "src/main.js",
-          "line": 72
-        },
-        {
           "file": "src/stores/ui.js",
           "line": 3
         },
         {
           "file": "src/stores/ui.js",
           "line": 4
+        },
+        {
+          "file": "src/main.js",
+          "line": 66
+        },
+        {
+          "file": "src/main.js",
+          "line": 71
         }
       ],
       "writes": [
@@ -1705,7 +1636,7 @@
         },
         {
           "file": "src/main.js",
-          "line": 73
+          "line": 72
         }
       ],
       "runtime": {

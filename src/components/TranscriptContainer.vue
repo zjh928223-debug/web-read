@@ -1,6 +1,5 @@
 <template>
   <div
-    v-if="ts.useVueRendering"
     ref="rootElement"
     id="transcript-vue-container"
     class="reading-area"

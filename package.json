@@ -157,7 +157,7 @@
     "verify:app-window-facades": "node scripts/app-window-facades-check.cjs",
     "verify:session-facades": "node scripts/session-facades-check.cjs",
     "verify:ui-facades": "node scripts/ui-facades-check.cjs",
-    "verify:render-mode": "node scripts/render-mode-check.cjs",
+    "verify:legacy-deletion": "node scripts/legacy-deletion-gate.mjs",
     "verify:glass-effects": "node scripts/glass-effects-check.cjs",
     "verify:style-editor-module": "node scripts/style-editor-module-check.cjs",
     "verify:app-handlers": "node scripts/app-handlers-check.cjs",

@@ -49,7 +49,9 @@ assert.ok(componentSource.includes('classes.marked = true'), 'ChunkModeView shou
   assert.equal(componentSource.includes(pattern), false, `ChunkModeView.vue should not use ${pattern}`);
 });
 
-assert.ok(componentSource.includes('window.__chunkNoteLayout'), 'chunk note layout fallback is still owned by the root layout migration');
+assert.equal(componentSource.includes('window.__chunkNoteLayout'), false, 'ChunkModeView should not read the retired chunk-note layout global');
+assert.ok(componentSource.includes("if (chunk && chunk.noteId) return chunk.noteId"));
+assert.ok(componentSource.includes("return 'seg-' + segId"));
 
 assert.ok(moduleSource.includes('export function configureChunkInteractions'));
 assert.ok(moduleSource.includes('export function handleChunkWordClick'));

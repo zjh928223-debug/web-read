@@ -1,7 +1,6 @@
 (function () {
   var arrayFields = new Set(['segments', 'words', 'wordStarts']);
   var numberFields = new Set(['currentWordIndex', 'highlightMode', 'activeWordIdx', 'activeSegIdx']);
-  var booleanFields = new Set(['useVueRendering']);
   var fallback = {
     segments: [],
     words: [],
@@ -9,8 +8,7 @@
     currentWordIndex: -1,
     highlightMode: 2,
     activeWordIdx: -1,
-    activeSegIdx: -1,
-    useVueRendering: false
+    activeSegIdx: -1
   };
   var boundStore = null;
 
@@ -21,7 +19,6 @@
       if (!Number.isFinite(n)) return key === 'highlightMode' ? 2 : -1;
       return n;
     }
-    if (booleanFields.has(key)) return !!value;
     return value;
   }
 
@@ -80,8 +77,7 @@
         currentWordIndex: getField('currentWordIndex'),
         highlightMode: getField('highlightMode'),
         activeWordIdx: getField('activeWordIdx'),
-        activeSegIdx: getField('activeSegIdx'),
-        useVueRendering: getField('useVueRendering')
+        activeSegIdx: getField('activeSegIdx')
       };
     },
     resetFallback: function () {
@@ -92,8 +88,7 @@
         currentWordIndex: -1,
         highlightMode: 2,
         activeWordIdx: -1,
-        activeSegIdx: -1,
-        useVueRendering: false
+        activeSegIdx: -1
       };
       return api;
     }

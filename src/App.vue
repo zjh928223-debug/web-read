@@ -138,7 +138,7 @@ const srsReviewUiService = createSrsReviewSourceSelector({
 const dictionaryClient = createOptionalLocalDictionaryClient()
 
 onMounted(() => {
-  console.log('[vue] Phase 9 — Vue components active (__USE_VUE_RENDERING=' + window.__USE_VUE_RENDERING + ')')
+  console.log('[vue] Phase 9 — Vue components active')
 })
 
 function openStoredPassagePreviewLegacy() {

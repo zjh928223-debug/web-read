@@ -9,7 +9,6 @@ export const useTranscriptStore = defineStore('transcript', () => {
   const highlightMode = ref(2)
   const activeWordIdx = ref(-1)
   const activeSegIdx = ref(-1)
-  const useVueRendering = ref(false)
   const previewVocabularyWordIndexes = ref([])
 
   return {
@@ -20,7 +19,6 @@ export const useTranscriptStore = defineStore('transcript', () => {
     highlightMode,
     activeWordIdx,
     activeSegIdx,
-    useVueRendering,
     previewVocabularyWordIndexes
   }
 })

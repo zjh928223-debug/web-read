@@ -87,7 +87,7 @@ docs/NEXT_WORKSPACE.md
 - `reader-runtime-shell.js`
 - reader notes runtime/session/store/persistence
 - cloze UI 与手工 chunk 导入
-- root annotation/chunk-note 原型文件
+- former root annotation/chunk-note artifacts (deleted; see `docs/architecture/legacy-deletion-inventory.json`)
 
 历史文件若仍在 Git 中，只能作为追溯材料；不得从 `index.html` 或生产 build 重新接入。
 

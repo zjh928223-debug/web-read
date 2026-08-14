@@ -1,4 +1,4 @@
-import { createApp, watch } from 'vue'
+import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 
@@ -14,7 +14,6 @@ import './composables/transcript-state.js'
 import './composables/chunk-state.js'
 import './composables/cloze-state.js'
 import './composables/playback-state.js'
-import './composables/render-mode.js'
 import './composables/file-input-bindings.js'
 import './composables/annotation-bubble.js'
 import './services/annotation/target-source.js'
@@ -113,20 +112,12 @@ if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'functi
 
 console.log('[vue] Phase 8 adapter data synced to Pinia')
 
-// Sync reactive rendering flag — Pinia ref drives window.__USE_VUE_RENDERING
-// Also show/hide old vs Vue containers
-transcriptStore.useVueRendering = window.__USE_VUE_RENDERING || false
-function applyRenderMode(val) {
-  window.__USE_VUE_RENDERING = val
-  var oldContainer = document.getElementById('transcript-container')
-  if (oldContainer) {
-    oldContainer.style.display = val ? 'none' : ''
-  }
+// Vue owns both reader views. Keep the legacy DOM shell only as a hidden
+// compatibility anchor for runtime adapters that still need its element.
+const oldContainer = document.getElementById('transcript-container')
+if (oldContainer) {
+  oldContainer.style.display = 'none'
 }
-applyRenderMode(transcriptStore.useVueRendering)
-watch(function () { return transcriptStore.useVueRendering }, function (val) {
-  applyRenderMode(val)
-})
 
 // Sync Pinia store state from IIFE store (app.js has already called init())
 // Read current theme from localStorage to sync Pinia state

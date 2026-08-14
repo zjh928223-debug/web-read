@@ -5,7 +5,6 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const uiFacadesSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'ui-facades.js'), 'utf8');
-const renderModeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'render-mode.js'), 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
 const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'audio.js'), 'utf8');
 const keyboardModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
@@ -36,7 +35,6 @@ appWindowAssignments.forEach((name) => {
   'changeSpeed',
   'showToast',
   'showError',
-  '__USE_VUE_RENDERING',
   '__state',
   'toggleChunkBtn',
   'toggleChunkMode',
@@ -85,7 +83,6 @@ appWindowAssignments.forEach((name) => {
 assert.ok(controlsSource.includes('window.changeSpeed = changeSpeed;'), 'controls-module should own window.changeSpeed');
 assert.ok(uiFacadesSource.includes('window.showToast = showToast;'), 'ui-facades should own window.showToast');
 assert.ok(uiFacadesSource.includes('window.showError = showError;'), 'ui-facades should own window.showError');
-assert.ok(renderModeSource.includes('window.__USE_VUE_RENDERING = true;'), 'render-mode should own the default window.__USE_VUE_RENDERING value');
 assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'), 'runtime-state-facade should own window.__state');
 assert.equal(sessionInitSource.includes('window.toggleChunkBtn'), false, 'session-init should not read window.toggleChunkBtn');
 assert.ok(

@@ -52,7 +52,6 @@ const store = {
   highlightMode: 2,
   activeWordIdx: -1,
   activeSegIdx: -1,
-  useVueRendering: false,
 };
 api.bindPiniaStore(store);
 assert.equal(store.segments.length, 1);

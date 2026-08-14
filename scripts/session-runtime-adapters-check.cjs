@@ -43,7 +43,7 @@ async function main() {
     ['hotkey-input', { id: 'hotkey-input' }]
   ]);
   const windowObject = {
-    _ns: { chunkNoteVisible: true },
+    _ns: {},
     localStorage: { getItem() { return null; } },
     URL: { createObjectURL() { return 'blob:test'; } },
     Blob: function Blob() {},

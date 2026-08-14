@@ -57,7 +57,6 @@ const store = {
   chunkCNHoldMode: true,
   chunkFocusMode: true,
   chunkShadowVisible: true,
-  chunkNoteVisible: true,
   manualChunkStates: {},
   isHoldingChunkCn: false,
   holdPrevChunkCnVisible: null,

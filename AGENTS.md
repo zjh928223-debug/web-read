@@ -4,7 +4,7 @@
 
 Read-Web is a Vite-hosted Vue 3 + Pinia migration of a legacy plain HTML/JS language-learning reader.
 
-It supports audio playback, synchronized transcripts, AI chunk mode, marks, lightweight annotation import/export, and annotation API settings. Manual chunk import, cloze quizzes, sentence/chunk note UI, note sidebars, and the old notes/definition hotkey have been removed.
+It supports audio playback, synchronized transcripts, AI chunk mode, marks, and lightweight annotation import/export. Manual chunk import, cloze quizzes, sentence/chunk note UI, note sidebars, annotation API settings, and the old notes/definition hotkey have been removed.
 
 The codebase is still hybrid. Do not treat it as a clean Vue-only app.
 
@@ -31,7 +31,7 @@ index.html
 └── /src/main.js as type="module" for Vue + Pinia
 ```
 
-`src/main.js` also imports the 11 `src/utils/*.js` modules, `src/composables/annotation-bubble.js`, `src/composables/annotation-api-settings-ui.js`, and 14 `src/services/annotation/*.js` modules for side effects and ES module exports.
+`src/main.js` also imports the current utility modules, `src/composables/annotation-bubble.js`, and the annotation service modules for side effects and ES module exports.
 
 ## Runtime Architecture
 
@@ -52,7 +52,7 @@ Session startup flow is:
 src/composables/session-init.js thin session entry
   -> src/composables/session-runtime-assembly.js session assembly
   -> focused session-* modules for restore/startup/annotation import-export
-  -> public session compatibility facades plus explicit annotation lightweight/API settings wiring
+  -> public session compatibility facades plus explicit annotation lightweight wiring
 ```
 
 There is also a compatibility layer:
@@ -78,13 +78,13 @@ service loads lazily on the first query.
 
 ## Current Rendering State
 
-Vue rendering is enabled by default:
+Vue is the only current transcript/chunk rendering path. The legacy `#transcript-container`
+shell remains as a hidden compatibility anchor for adapters that still need its element; the
+retired `window.__USE_VUE_RENDERING` switch is no longer part of runtime state.
 
-```js
-window.__USE_VUE_RENDERING = true
-```
-
-The Vue components are active but thin. A lot of interaction still relies on `src/composables/reader-runtime-assembly.js` runtime assembly, focused `window.xxx` compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
+The Vue components are active but thin. A lot of interaction still relies on
+`src/composables/reader-runtime-assembly.js` runtime assembly, focused `window.xxx`
+compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy DOM behavior.
 
 ## Important Files
 
@@ -96,7 +96,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/session-init.js` - about 7 lines. Thin session entry only.
 - `src/composables/session-runtime-assembly.js` - about 61 lines. Session assembly over focused modules.
 - `src/composables/session-runtime-adapters.js` - behavior-bearing annotation/lifecycle adapters that privately resolve session DOM/global dependencies.
-- `src/composables/session-annotation-runtime.js` - about 134 lines. Annotation runtime assembly over generated index, context, marks, lightweight IO, and API settings modules.
+- `src/composables/session-annotation-runtime.js` - annotation runtime assembly over generated index, context, marks, and lightweight IO modules.
 - `src/composables/session-lifecycle-runtime.js` - about 102 lines. Startup cleanup, persisted restore, DB-ready startup, and UI settings restore assembly.
 - `src/composables/session-annotation-text.js` - annotation text normalization, sentence splitting, and context sentence resolution.
 - `src/composables/session-annotation-export-payload.js` - lightweight annotation export payload construction.
@@ -106,7 +106,6 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/session-annotation-marks.js` - annotation mark normalization, encoded target parsing, and mark rebuild runtime.
 - `src/composables/session-annotation-context.js` - annotation document context and target collection runtime.
 - `src/composables/session-annotation-lightweight-io.js` - session-side lightweight annotation import/export IO runtime.
-- `src/composables/session-annotation-api-settings-runtime.js` - annotation API settings UI session runtime.
 - `src/composables/session-restore-runtime.js` - persisted session restore runtime.
 - `src/composables/session-startup-runtime.js` - DB-ready startup orchestration.
 - `src/composables/session-startup-cleanup.js` - startup/persisted cleanup runtime.
@@ -129,7 +128,6 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
 - `src/composables/annotation-bubble-resolver.js` - generated/vocab annotation bubble hit resolution.
 - `src/composables/ui-facades.js` - early toast/error facade owner.
-- `src/composables/render-mode.js` - default Vue rendering flag owner.
 - `src/composables/pinia-bridge-module.js` - `bridgeToPinia` compatibility owner.
 - `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/highlight-controls-module.js` - highlight mode controls and temporary highlight window facade.
@@ -147,7 +145,7 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/pinia-stores/` - 8 real Pinia stores.
 - `src/stores/` - 4 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
-- Root `annotation-*.js` and `chunk-note-layout-*.js` - legacy root files no longer loaded by `index.html` or copied by Vite.
+- Former root annotation/chunk-note artifacts were deleted after the module migration; see `docs/architecture/legacy-deletion-inventory.json` and `npm run verify:legacy-deletion` for the evidence gate.
 - `styles.css` - global CSS loaded directly by `index.html`.
 
 ## Hard Constraints
@@ -213,7 +211,6 @@ npm run verify:session-annotation-generated-index  # Focused generated annotatio
 npm run verify:session-annotation-marks  # Focused annotation marks runtime check
 npm run verify:session-annotation-context  # Focused annotation document context check
 npm run verify:session-annotation-lightweight-io  # Focused annotation lightweight IO runtime check
-npm run verify:session-annotation-api-settings-runtime  # Focused annotation API settings runtime check
 npm run verify:session-startup-cleanup  # Focused startup cleanup runtime check
 npm run verify:session-restore-runtime  # Focused persisted session restore runtime check
 npm run verify:session-startup-runtime  # Focused DB-ready startup orchestration check
@@ -257,7 +254,7 @@ npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:render-facades  # Focused legacy render facade removal check
 npm run verify:script-order  # Focused index.html script order guard
 npm run verify:annotation-bubble  # Focused annotation bubble module check
-npm run verify:annotation-api-settings-ui  # Focused annotation API settings UI module check
+npm run verify:legacy-deletion  # Focused root artifact/legacy flag deletion gate
 npm run verify:legacy-root-copy  # Focused legacy root copy removal check
 npm run verify:production-preview  # Production preview load check against dist
 npm test             # Same as verify:vite

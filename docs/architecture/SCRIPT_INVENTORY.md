@@ -12,3 +12,6 @@ The machine-readable inventory is `script-inventory.json`. It covers executable 
 Valuable standalone behavior checks have explicit `verify:*` package commands and therefore do not
 appear in this package-external inventory. Run `npm run verify:script-inventory` after adding,
 renaming, or removing a script.
+
+Root legacy artifact and flag cleanup is tracked separately in
+`legacy-deletion-inventory.json` and enforced by `npm run verify:legacy-deletion`.

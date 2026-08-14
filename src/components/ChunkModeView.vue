@@ -1,6 +1,5 @@
 <template>
   <div
-    v-if="ts.useVueRendering"
     ref="rootElement"
     id="chunk-vue-container"
     class="reading-area chunk-mode"
@@ -108,9 +107,6 @@ export default {
     }
 
     function chunkRef(chunk, index) {
-      if (window.__chunkNoteLayout && typeof window.__chunkNoteLayout.getChunkRef === 'function') {
-        return window.__chunkNoteLayout.getChunkRef(chunk, index)
-      }
       if (chunk && chunk.noteId) return chunk.noteId
       var segId = chunk && Number.isFinite(Number(chunk.segId)) ? Number(chunk.segId) : -1
       var start = Math.round((Number(chunk && chunk.start) || 0) * 1000)
