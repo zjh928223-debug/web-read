@@ -8,8 +8,16 @@
     "scripts/perf/playback-scale-budget.mjs",
     "scripts/perf/playback-scale-journey.mjs",
     "scripts/read-web-load-check.cjs",
+    "scripts/reader-marks-activity-conflict-check.mjs",
     "scripts/srs-review-service-v2-check.cjs",
-    "scripts/vocabulary-learning-events-check.cjs"
+    "scripts/vocabulary-learning-events-check.cjs",
+    "scripts/vocabulary-learning-uow-faults-check.mjs",
+    "scripts/vocabulary-persistence-faults-check.mjs",
+    "scripts/vocabulary-repository-multi-page-browser-check.cjs",
+    "scripts/vocabulary-revision-watermark-browser-check.cjs",
+    "scripts/youtube-workflow-durable-protocol-check.mjs",
+    "scripts/youtube-workflow-operation-receipt-check.cjs",
+    "scripts/youtube-workflow-panel-reader-recovery-browser-check.mjs"
   ],
   "devTool": [
     "scripts/capture-next-baseline.ps1",
@@ -18,11 +26,7 @@
     "scripts/launch-learning-page.ps1",
     "scripts/launch-next-preview.ps1",
     "scripts/start-latest-reader.ps1",
-    "scripts/vocabulary-learning-uow-faults-check.mjs",
-    "scripts/vocabulary-persistence-faults-check.mjs",
-    "scripts/vocabulary-repository-browser-reopen-check.cjs",
-    "scripts/vocabulary-repository-multi-page-browser-check.cjs",
-    "scripts/vocabulary-revision-watermark-browser-check.cjs"
+    "scripts/vocabulary-repository-browser-reopen-check.cjs"
   ],
   "archiveDelete": [
     ".codex/actions/check-read26-load.sh",

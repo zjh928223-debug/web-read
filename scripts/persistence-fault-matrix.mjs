@@ -21,14 +21,32 @@ const domains = [
     command(process.execPath, ['scripts/reader-session-persistence-check.mjs']),
     command(process.execPath, ['scripts/reader-session-load-browser-journeys-check.mjs']),
   ]),
-  domain('marks-activity', process.execPath, ['scripts/latest-wins-ledger-check.mjs'], {
-    recovery: 'failed latest intent remains dirty and succeeds through the public retry entry',
-  }),
-  domain('vocabulary', process.execPath, ['scripts/vocabulary-snapshot-repository-check.mjs'], {
-    'multi-tab': 'two public repository instances serialize concurrent snapshot updates',
-    'unknown-version': 'unknown schema is rejected without rewriting the source row',
-    recovery: 'known legacy schema migrates with a pre-migration source backup',
-  }),
+  domain('marks-activity', process.execPath, ['scripts/reader-marks-activity-conflict-check.mjs'], Object.fromEntries(conditions.map((condition) => [condition, {
+    'multi-tab': 'two public browser pages retain independent operations and backend revision CAS keeps one same-job winner',
+    quota: 'public marks/activity repositories preserve the last committed revision when durable replace fails',
+    corrupt: 'public repositories quarantine the original corrupt value and recover only through an explicit backup path',
+    'unknown-version': 'unknown repository and outbox schemas fail closed without rewriting or replaying the source',
+    'page-close': 'authenticated keepalive writes retain a versioned per-operation outbox for reload; BFCache support is reported by the browser probe',
+    recovery: 'restart replays durable operation receipts and per-operation browser outbox entries idempotently',
+  }[condition]])), root, [
+    command(process.execPath, ['scripts/reader-marks-activity-conflict-check.mjs']),
+    command(process.execPath, ['scripts/youtube-workflow-panel-reader-recovery-browser-check.mjs']),
+    command(pythonCommand(), ['-m', 'unittest', 'tests.test_reader_marks_activity_persistence'], path.join(root, 'tools', 'subtitle-workflow')),
+  ]),
+  domain('vocabulary', process.execPath, ['scripts/vocabulary-snapshot-repository-check.mjs'], Object.fromEntries(conditions.map((condition) => [condition, {
+    'multi-tab': 'two real Chromium pages use revision CAS and retain one complete winner without mixed rows',
+    quota: 'public repository and learning unit-of-work preserve the prior snapshot on QuotaExceededError',
+    corrupt: 'checksum-invalid canonical rows retain a raw quarantine and recover from the last valid backup',
+    'unknown-version': 'unknown snapshot and watermark schemas fail closed without source rewrite',
+    'page-close': 'a real writer page closes before transaction completion and a fresh page observes only a complete old/new snapshot',
+    recovery: 'recovery advances the monotonic revision watermark and remains conflict-safe for stale tabs',
+  }[condition]])), root, [
+    command(process.execPath, ['scripts/vocabulary-snapshot-repository-check.mjs']),
+    command(process.execPath, ['scripts/vocabulary-persistence-faults-check.mjs']),
+    command(process.execPath, ['scripts/vocabulary-learning-uow-faults-check.mjs']),
+    command(process.execPath, ['scripts/vocabulary-repository-multi-page-browser-check.cjs']),
+    command(process.execPath, ['scripts/vocabulary-revision-watermark-browser-check.cjs']),
+  ]),
   domain('passage-preview', process.execPath, ['scripts/passage-preview-durable-state-check.mjs'], Object.fromEntries(conditions.map((condition) => [condition, {
     'multi-tab': 'expectedRevision rejects a stale writer',
     quota: 'failed synchronous write preserves the authoritative revision',
@@ -45,10 +63,19 @@ const domains = [
     'page-close': 'localStorage envelope survives immediate public reload',
     recovery: 'missing bundle loads legacy generated/status through loadBundle',
   }[condition]]))),
-  domain('workflow', pythonCommand(), ['-m', 'unittest', 'tests.test_durable_json_repository'], {
-    corrupt: 'public WorkflowStore load quarantines corrupt primary state',
-    recovery: 'public WorkflowStore load recovers a valid backup before accepting writes',
-  }, path.join(root, 'tools', 'subtitle-workflow')),
+  domain('workflow', pythonCommand(), ['-m', 'unittest', 'tests.test_durable_json_repository'], Object.fromEntries(conditions.map((condition) => [condition, {
+    'multi-tab': 'independent processes merge unrelated jobs and stale same-job mutations conflict',
+    quota: 'ENOSPC, replace and fsync failures preserve the last authoritative workflow envelope',
+    corrupt: 'corrupt primary state is quarantined with source evidence and recovers only from a valid backup',
+    'unknown-version': 'unknown jobs/history schemas fail closed and cannot be overwritten',
+    'page-close': 'real process termination and browser response loss leave a replayable complete operation receipt',
+    recovery: 'service restart replays create, cancel and prioritize receipts without duplicate mutation',
+  }[condition]])), path.join(root, 'tools', 'subtitle-workflow'), [
+    command(pythonCommand(), ['-m', 'unittest', 'tests.test_durable_json_repository', 'tests.test_workflow_durable_faults'], path.join(root, 'tools', 'subtitle-workflow')),
+    command(pythonCommand(), ['-m', 'unittest', 'tests.test_service_app.ServiceAppTests.test_cancel_and_prioritize_idempotency_receipts_replay_after_restart'], path.join(root, 'tools', 'subtitle-workflow')),
+    command(process.execPath, ['scripts/youtube-workflow-operation-receipt-check.cjs']),
+    command(process.execPath, ['scripts/youtube-workflow-durable-protocol-check.mjs']),
+  ]),
 ]
 
 const startedAt = new Date().toISOString()

@@ -1186,7 +1186,10 @@ onMounted(() => {
   syncVideoPreferred(videoPriority.value)
   bindPlaybackTracking()
   ensureCurrentJobFromAudioMeta()
-  void replayReaderOutbox()
+  observeBestEffort(replayReaderOutbox(), {
+    operationId: 'reader-outbox-startup-replay',
+    reason: 'reader outbox replay remains available for explicit retry after startup failure',
+  })
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('pagehide', handleReaderPageHide)
@@ -3103,7 +3106,7 @@ function replayReaderOutbox() {
 }
 
 function queueReaderKeepalive(entry) {
-  void observeBestEffort(readerOutboxRequest(entry, entry.expectedRevision, true), {
+  return observeBestEffort(readerOutboxRequest(entry, entry.expectedRevision, true), {
     operationId: `reader-outbox-keepalive-${entry.kind}`,
     reason: 'page close cannot await reader durability; the versioned outbox remains the recovery receipt',
   }).then((saved) => {
@@ -3148,11 +3151,17 @@ function handleBeforeUnload() {
   readerActivitySaveState.value = 'dirty'
   if (marksEntry) {
     writeReaderOutboxEntry(marksEntry)
-    queueReaderKeepalive(marksEntry)
+    observeBestEffort(queueReaderKeepalive(marksEntry), {
+      operationId: 'reader-outbox-marks-keepalive-settle',
+      reason: 'the persisted marks outbox remains authoritative when close-time settlement cannot finish',
+    })
   }
   if (activityEntry) {
     writeReaderOutboxEntry(activityEntry)
-    queueReaderKeepalive(activityEntry)
+    observeBestEffort(queueReaderKeepalive(activityEntry), {
+      operationId: 'reader-outbox-activity-keepalive-settle',
+      reason: 'the persisted activity outbox remains authoritative when close-time settlement cannot finish',
+    })
   }
 }
 

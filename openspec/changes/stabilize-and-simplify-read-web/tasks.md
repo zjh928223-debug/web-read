@@ -77,7 +77,7 @@
 - [x] 8.5 将 Passage Preview 多 localStorage key 合并为 batchId/revision envelope 或可恢复 transition
 - [x] 8.6 移除 acquisition 以 localStorage 为权威索引的 orphan 路径，改为 canonical repository 查询/重建
 - [x] 8.7 将 Annotation generated/status 合并为原子 envelope/commit manifest，区分 not-found、corrupt 和 permission
-- [ ] 8.8 为所有领域建立 multi-tab、Quota、损坏、unknown version、关闭页面与 recovery 测试
+- [x] 8.8 为所有领域建立 multi-tab、Quota、损坏、unknown version、关闭页面与 recovery 测试
 
 ## 9. 生命周期、错误反馈与可访问性
 
