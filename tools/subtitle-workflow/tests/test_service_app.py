@@ -2335,6 +2335,79 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(clear.json()["cleared"], 1)
             self.assertEqual(client.get(f"/api/jobs/{second['jobId']}").status_code, 404)
 
+    def test_cancel_and_prioritize_idempotency_receipts_replay_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            started_jobs = []
+            release_event = threading.Event()
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: SerialProbeRunner(started_jobs, release_event, Path(tmp)),
+                persistence_delay_seconds=10,
+            )
+            old_revision = None
+            second_job_id = None
+            with TestClient(create_app(manager)) as client:
+                first = client.post("/api/jobs", json={"url": "https://example.com/receipt-first", "geminiMode": "mock"}).json()
+                second = client.post("/api/jobs", json={"url": "https://example.com/receipt-second", "geminiMode": "mock"}).json()
+                second_job_id = second["jobId"]
+                self._wait_stage(client, first["jobId"], "downloading")
+                current = client.post("/api/jobs/snapshot", json={"jobIds": []}).json()
+                old_revision = current["revision"]
+                priority_headers = {
+                    "Idempotency-Key": "receipt-prioritize-key",
+                    "X-Expected-Revision": str(old_revision),
+                    "If-Match": f'"{old_revision}"',
+                }
+                priority = client.post(f"/api/jobs/{second_job_id}/prioritize", headers=priority_headers)
+                self.assertEqual(priority.status_code, 200)
+                replay = client.post(f"/api/jobs/{second_job_id}/prioritize", headers=priority_headers)
+                self.assertEqual(replay.status_code, 200)
+                self.assertTrue(replay.json()["idempotent"])
+                self.assertEqual(replay.json()["jobId"], second_job_id)
+
+                third = client.post("/api/jobs", json={"url": "https://example.com/receipt-third", "geminiMode": "mock"}).json()
+                reused_for_other_target = client.post(
+                    f"/api/jobs/{third['jobId']}/prioritize",
+                    headers=priority_headers,
+                )
+                self.assertEqual(reused_for_other_target.status_code, 409)
+                self.assertEqual(reused_for_other_target.json()["detail"]["code"], "WORKFLOW_IDEMPOTENCY_KEY_REUSED")
+
+                current = client.post("/api/jobs/snapshot", json={"jobIds": []}).json()
+                cancel_headers = {
+                    "Idempotency-Key": "receipt-cancel-key",
+                    "X-Expected-Revision": str(current["revision"]),
+                    "If-Match": f'"{current["revision"]}"',
+                }
+                canceled = client.post(f"/api/jobs/{second_job_id}/cancel", headers=cancel_headers)
+                self.assertEqual(canceled.status_code, 200)
+                cancel_replay = client.post(f"/api/jobs/{second_job_id}/cancel", headers=cancel_headers)
+                self.assertEqual(cancel_replay.status_code, 200)
+                self.assertTrue(cancel_replay.json()["idempotent"])
+                self.assertEqual(cancel_replay.json()["jobId"], second_job_id)
+                release_event.set()
+
+            restored_manager = JobManager(
+                config=config,
+                runner_factory=lambda: SerialProbeRunner([], threading.Event(), Path(tmp)),
+            )
+            try:
+                with TestClient(create_app(restored_manager)) as restored_client:
+                    replay_after_restart = restored_client.post(
+                        f"/api/jobs/{second_job_id}/prioritize",
+                        headers={
+                            "Idempotency-Key": "receipt-prioritize-key",
+                            "X-Expected-Revision": "0",
+                            "If-Match": '"0"',
+                        },
+                    )
+                    self.assertEqual(replay_after_restart.status_code, 200)
+                    self.assertTrue(replay_after_restart.json()["idempotent"])
+            finally:
+                if not restored_manager._persistence_closed:
+                    restored_manager.close()
+
     def test_failed_job_can_be_redone_as_new_priority_job(self):
         with tempfile.TemporaryDirectory() as tmp:
             started_jobs = []

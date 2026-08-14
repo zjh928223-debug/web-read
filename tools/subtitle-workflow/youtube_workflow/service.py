@@ -2,6 +2,7 @@ import json
 import io
 import hashlib
 import importlib.metadata
+import math
 import os
 import platform
 import random
@@ -13,6 +14,7 @@ import time
 import uuid
 import zipfile
 from collections import deque
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -61,6 +63,9 @@ DEFAULT_JOB_EVENT_LIMIT = 500
 DEFAULT_TERMINAL_SUMMARY_LIMIT = 5
 DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
 MAX_IDEMPOTENCY_KEY_LENGTH = 256
+MUTATION_RECEIPT_SCHEMA_VERSION = 1
+MAX_MUTATION_RECEIPTS = 32
+MUTATION_RECEIPT_TTL_SECONDS = 24 * 60 * 60
 AUDIO_EXTENSIONS = {
     ".aac",
     ".flac",
@@ -97,6 +102,16 @@ def _request_fingerprint(request: WorkflowRequest, *, operation: str, subject: s
     }
     if request.api_key:
         descriptor["apiKeyDigest"] = hashlib.sha256(request.api_key.encode("utf-8")).hexdigest()
+    canonical = json.dumps(descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _mutation_fingerprint(operation: str, target_job_id: str, payload: dict | None = None) -> str:
+    descriptor = {
+        "operation": str(operation or "").strip(),
+        "targetJobId": str(target_job_id or "").strip(),
+        "payload": payload or {},
+    }
     canonical = json.dumps(descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 IGNORED_IMPORT_JSON_NAMES = {
@@ -668,7 +683,85 @@ class JobRecord:
         self.retry_stage: str = ""
         self.retry_source_manifest: dict | None = None
         self.import_plan: dict | None = None
+        self.mutation_receipts: list[dict] = []
+        self._defer_persistence = False
         self.lock = threading.RLock()
+
+    def _prune_mutation_receipts_locked(self, now: float | None = None) -> None:
+        current_time = float(now if now is not None else time.time())
+        valid = []
+        for receipt in self.mutation_receipts:
+            if not isinstance(receipt, dict):
+                continue
+            if receipt.get("schemaVersion") != MUTATION_RECEIPT_SCHEMA_VERSION:
+                continue
+            if not str(receipt.get("operation") or "").strip():
+                continue
+            if not str(receipt.get("targetJobId") or "").strip():
+                continue
+            if not str(receipt.get("idempotencyKey") or "").strip():
+                continue
+            if not str(receipt.get("fingerprint") or "").strip():
+                continue
+            if not isinstance(receipt.get("result"), dict):
+                continue
+            try:
+                created_at = float(receipt.get("createdAt"))
+                expires_at = float(receipt.get("expiresAt"))
+                if not math.isfinite(created_at) or not math.isfinite(expires_at):
+                    continue
+                if created_at > current_time or expires_at <= created_at or expires_at <= current_time:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            valid.append(receipt)
+        valid.sort(key=lambda item: float(item["createdAt"]), reverse=True)
+        self.mutation_receipts = valid[:MAX_MUTATION_RECEIPTS]
+
+    def find_mutation_receipt(self, idempotency_key: str, fingerprint: str) -> dict | None:
+        with self.lock:
+            self._prune_mutation_receipts_locked()
+            for receipt in self.mutation_receipts:
+                if receipt.get("idempotencyKey") != idempotency_key:
+                    continue
+                if receipt.get("fingerprint") != fingerprint:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
+                            "message": "Idempotency-Key was already used for a different mutation",
+                        },
+                    )
+                return deepcopy(receipt)
+        return None
+
+    def remember_mutation_receipt(
+        self,
+        *,
+        operation: str,
+        target_job_id: str,
+        idempotency_key: str,
+        fingerprint: str,
+        result: dict,
+    ) -> None:
+        with self.lock:
+            self._prune_mutation_receipts_locked()
+            self.mutation_receipts = [
+                receipt for receipt in self.mutation_receipts
+                if receipt.get("idempotencyKey") != idempotency_key
+            ]
+            created_at = time.time()
+            self.mutation_receipts.append({
+                "schemaVersion": MUTATION_RECEIPT_SCHEMA_VERSION,
+                "operation": str(operation or "").strip(),
+                "targetJobId": str(target_job_id or "").strip(),
+                "idempotencyKey": str(idempotency_key or "").strip(),
+                "fingerprint": str(fingerprint or "").strip(),
+                "createdAt": created_at,
+                "expiresAt": created_at + MUTATION_RECEIPT_TTL_SECONDS,
+                "result": deepcopy(result),
+            })
+            self._prune_mutation_receipts_locked(created_at)
 
     def public_snapshot(self) -> dict:
         with self.lock:
@@ -725,6 +818,9 @@ class JobRecord:
             if self.idempotency_key:
                 snapshot["idempotencyKey"] = self.idempotency_key
                 snapshot["idempotencyFingerprint"] = self.idempotency_fingerprint
+            self._prune_mutation_receipts_locked()
+            if self.mutation_receipts:
+                snapshot["mutationReceipts"] = deepcopy(self.mutation_receipts)
             return snapshot
 
     def add_event(self, event: dict) -> None:
@@ -757,7 +853,7 @@ class JobRecord:
                 or self.stage != previous_stage
                 or self.status in TERMINAL_STATUSES
             )
-        if self.on_change and immediate_persistence:
+        if self.on_change and immediate_persistence and not self._defer_persistence:
             self.on_change(self, immediate=immediate_persistence)
 
     def _append_event_locked(self, event: dict) -> None:
@@ -785,6 +881,9 @@ class JobRecord:
             record.retry_of = str(snapshot.get("retryOf") or "")
             record.retry_stage = str(snapshot.get("retryStage") or "")
             record.import_plan = snapshot.get("importPlan") if isinstance(snapshot.get("importPlan"), dict) else None
+            raw_receipts = snapshot.get("mutationReceipts")
+            record.mutation_receipts = list(raw_receipts) if isinstance(raw_receipts, list) else []
+            record._prune_mutation_receipts_locked()
             summary = snapshot.get("terminalSummary")
             if not isinstance(summary, list):
                 summary = snapshot.get("logSummary") if isinstance(snapshot.get("logSummary"), list) else []
@@ -978,6 +1077,29 @@ class JobManager:
                 )
             return record
         return None
+
+    def _find_mutation_receipt_locked(self, key: str, fingerprint: str) -> dict | None:
+        if not key:
+            return None
+        for record in self.jobs.values():
+            if record.idempotency_key == key:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
+                        "message": "Idempotency-Key was already used for a different mutation",
+                    },
+                )
+            receipt = record.find_mutation_receipt(key, fingerprint)
+            if receipt is not None:
+                return receipt
+        return None
+
+    def _replay_mutation_receipt_locked(self, receipt: dict) -> dict:
+        snapshot = deepcopy(receipt.get("result") or {})
+        snapshot["revision"] = self._jobs_revision_locked()
+        snapshot["idempotent"] = True
+        return snapshot
 
     def create_job(
         self,
@@ -1689,41 +1811,85 @@ class JobManager:
             "missingJobIds": missing_ids,
         }
 
-    def cancel_job(self, job_id: str, *, expected_revision: int | None = None) -> dict:
-        record = self.get_job(job_id)
+    def cancel_job(
+        self,
+        job_id: str,
+        *,
+        idempotency_key: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict:
+        idempotency_key = _normalize_idempotency_key(idempotency_key)
+        fingerprint = _mutation_fingerprint("cancel", job_id)
         with self.lock:
+            existing = self._find_mutation_receipt_locked(idempotency_key, fingerprint)
+            if existing is not None:
+                return self._replay_mutation_receipt_locked(existing)
+            record = self.get_job(job_id)
             self._check_expected_revision_locked(expected_revision)
-            record.cancel_event.set()
-            if record in self.pending:
-                self.pending = [item for item in self.pending if item.job_id != job_id]
-                self._mark_canceled(record, "任务已取消。")
-                snapshot = record.public_snapshot()
-                snapshot["revision"] = self._jobs_revision_locked()
-                return snapshot
-        runner = getattr(record, "runner", None)
-        if runner is not None and hasattr(runner, "cancel"):
-            runner.cancel()
-        with record.lock:
-            cancellation_pending = record.status not in TERMINAL_STATUSES
-        if cancellation_pending:
-            self._record_changed(record, immediate=True)
-        snapshot = record.public_snapshot()
-        snapshot["revision"] = self._jobs_revision_locked()
-        return snapshot
+            with record.lock:
+                record._defer_persistence = True
+                try:
+                    record.cancel_event.set()
+                    runner = getattr(record, "runner", None)
+                    was_pending = record in self.pending
+                    if was_pending:
+                        self.pending = [item for item in self.pending if item.job_id != job_id]
+                        self._mark_canceled(record, "任务已取消。")
+                    elif runner is not None and hasattr(runner, "cancel"):
+                        runner.cancel()
+                    snapshot = record.public_snapshot()
+                    if idempotency_key:
+                        record.remember_mutation_receipt(
+                            operation="cancel",
+                            target_job_id=job_id,
+                            idempotency_key=idempotency_key,
+                            fingerprint=fingerprint,
+                            result=snapshot,
+                        )
+                    if was_pending or record.status not in TERMINAL_STATUSES or idempotency_key:
+                        self._persist_jobs_locked()
+                    snapshot["revision"] = self._jobs_revision_locked()
+                    return snapshot
+                finally:
+                    record._defer_persistence = False
 
-    def prioritize_job(self, job_id: str, *, expected_revision: int | None = None) -> dict:
-        record = self.get_job(job_id)
+    def prioritize_job(
+        self,
+        job_id: str,
+        *,
+        idempotency_key: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict:
+        idempotency_key = _normalize_idempotency_key(idempotency_key)
+        fingerprint = _mutation_fingerprint("prioritize", job_id)
         with self.lock:
+            existing = self._find_mutation_receipt_locked(idempotency_key, fingerprint)
+            if existing is not None:
+                return self._replay_mutation_receipt_locked(existing)
+            record = self.get_job(job_id)
             self._check_expected_revision_locked(expected_revision)
             if record not in self.pending:
                 raise HTTPException(status_code=409, detail="only queued jobs can be prioritized")
-            self.pending = [item for item in self.pending if item.job_id != job_id]
-            self.pending.insert(0, record)
-        record.add_event({"jobId": job_id, "status": "queued", "stage": "queued", "message": "已设为下一项处理。"})
-        self._record_changed(record, immediate=True)
-        snapshot = record.public_snapshot()
-        snapshot["revision"] = self._jobs_revision_locked()
-        return snapshot
+            with record.lock:
+                record._defer_persistence = True
+                try:
+                    self.pending = [item for item in self.pending if item.job_id != job_id]
+                    self.pending.insert(0, record)
+                    record.add_event({"jobId": job_id, "status": "queued", "stage": "queued", "message": "已设为下一项处理。"})
+                    snapshot = record.public_snapshot()
+                    if idempotency_key:
+                        record.remember_mutation_receipt(
+                            operation="prioritize",
+                            target_job_id=job_id,
+                            idempotency_key=idempotency_key,
+                            fingerprint=fingerprint,
+                            result=snapshot,
+                        )
+                    self._persist_jobs_locked()
+                    snapshot["revision"] = self._jobs_revision_locked()
+                    return snapshot
+                finally:
+                    record._defer_persistence = False
 
     def redo_job(self, job_id: str) -> dict:
         original = self.get_job(job_id)
@@ -3358,11 +3524,19 @@ def create_app(
 
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(job_id: str, request: Request):
-        return manager.cancel_job(job_id, expected_revision=_expected_revision_from_request(request))
+        return manager.cancel_job(
+            job_id,
+            idempotency_key=request.headers.get("idempotency-key"),
+            expected_revision=_expected_revision_from_request(request),
+        )
 
     @app.post("/api/jobs/{job_id}/prioritize")
     def prioritize_job(job_id: str, request: Request):
-        return manager.prioritize_job(job_id, expected_revision=_expected_revision_from_request(request))
+        return manager.prioritize_job(
+            job_id,
+            idempotency_key=request.headers.get("idempotency-key"),
+            expected_revision=_expected_revision_from_request(request),
+        )
 
     @app.post("/api/jobs/{job_id}/redo")
     def redo_job(job_id: str):

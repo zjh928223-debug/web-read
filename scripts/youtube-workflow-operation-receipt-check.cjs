@@ -1,0 +1,81 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+async function main() {
+  const repoRoot = path.resolve(__dirname, '..');
+  const source = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'workflow', 'operation-receipt.js'), 'utf8');
+  const encoded = Buffer.from(source, 'utf8').toString('base64');
+  const api = await import(`data:text/javascript;base64,${encoded}#${Date.now()}`);
+  const values = new Map();
+  const storage = {
+    get length() { return values.size; },
+    key(index) { return [...values.keys()][index] || null; },
+    getItem(key) { return values.has(key) ? values.get(key) : null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); },
+  };
+  const payload = {
+    url: 'https://example.com/private-video',
+    apiKey: 'SECRET-RECEIPT-KEY',
+    outputDir: 'D:/private/output',
+    videoPriority: true,
+  };
+  const first = api.writeWorkflowOperationReceipt({
+    actionType: 'create',
+    payload,
+    operationKey: 'create-operation-stable',
+    storage,
+    now: 1000,
+  });
+  const stored = [...values.values()][0];
+  assert.equal(stored.includes(payload.url), false, 'receipt must not persist URL text');
+  assert.equal(stored.includes(payload.apiKey), false, 'receipt must not persist API key');
+  assert.equal(stored.includes(payload.outputDir), false, 'receipt must not persist path text');
+  assert.deepEqual(
+    api.readWorkflowOperationReceipt({ actionType: 'create', payload, storage, now: 1001 }),
+    first,
+  );
+  assert.deepEqual(
+    api.readWorkflowOperationReceipt({
+      actionType: 'create',
+      payload: { url: payload.url, videoPriority: true },
+      storage,
+      now: 1001,
+    }),
+    first,
+    'reload retry without in-memory secrets or paths must reuse the same safe fingerprint',
+  );
+  assert.equal(
+    api.readWorkflowOperationReceipt({ actionType: 'create', payload: { ...payload, url: 'https://example.com/other' }, storage, now: 1001 }),
+    null,
+    'different safe fingerprint must not reuse the operation key',
+  );
+
+  values.set('read-web.workflow-operation-receipt.v1.corrupt', '{not-json');
+  values.set('read-web.workflow-operation-receipt.v1.unknown', JSON.stringify({ schemaVersion: 99, operationKey: 'leak' }));
+  api.cleanupWorkflowOperationReceipts({ storage, now: 1001 });
+  assert.equal(values.has('read-web.workflow-operation-receipt.v1.corrupt'), false);
+  assert.equal(values.has('read-web.workflow-operation-receipt.v1.unknown'), false);
+
+  api.writeWorkflowOperationReceipt({
+    actionType: 'retry',
+    targetJobId: 'job-1',
+    payload: { stage: 'translating' },
+    operationKey: 'retry-operation-expired',
+    storage,
+    now: 1000,
+  });
+  api.cleanupWorkflowOperationReceipts({ storage, now: 1000 + api.WORKFLOW_OPERATION_RECEIPT_TTL_MS + 1 });
+  assert.equal(
+    api.readWorkflowOperationReceipt({ actionType: 'retry', targetJobId: 'job-1', payload: { stage: 'translating' }, storage, now: 1000 + api.WORKFLOW_OPERATION_RECEIPT_TTL_MS + 1 }),
+    null,
+    'expired receipts must be removed before reuse',
+  );
+  console.log('youtube workflow operation receipt check passed');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

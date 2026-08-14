@@ -147,6 +147,9 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
   const requests = []
   const responses = []
   let firstCreateResponseDropped = false
+  let firstSnapshotDelayed = false
+  let offlineSnapshot = false
+  let dropPrioritizeResponse = false
   const pages = []
 
   function trackPage(page) {
@@ -175,7 +178,24 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
     await waitForHttp(appUrl)
 
     await context.route(`${backendUrl}/api/**`, async (route) => {
-      if (firstCreateResponseDropped || route.request().method() !== 'POST' || new URL(route.request().url()).pathname !== '/api/jobs') {
+      const pathname = new URL(route.request().url()).pathname
+      if (offlineSnapshot && pathname === '/api/jobs/snapshot') {
+        await route.abort('internetdisconnected')
+        return
+      }
+      if (dropPrioritizeResponse && route.request().method() === 'POST' && pathname.endsWith('/prioritize')) {
+        dropPrioritizeResponse = false
+        await route.fetch()
+        await route.abort('connectionreset')
+        return
+      }
+      if (!firstSnapshotDelayed && pathname === '/api/jobs/snapshot') {
+        firstSnapshotDelayed = true
+        await new Promise((resolve) => setTimeout(resolve, 350))
+        await route.continue()
+        return
+      }
+      if (firstCreateResponseDropped || route.request().method() !== 'POST' || pathname !== '/api/jobs') {
         await route.continue()
         return
       }
@@ -184,7 +204,7 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
       await route.abort('connectionreset')
     })
 
-    const page = await context.newPage()
+    let page = await context.newPage()
     trackPage(page)
     page.on('dialog', (dialog) => dialog.dismiss())
 
@@ -193,11 +213,26 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
     await page.locator('.youtube-workflow-form button[type="submit"]').waitFor({ state: 'visible' })
     await waitForFile(path.join(root, 'state', 'jobs.json'), (document) => document?.payload?.jobs?.length === 1)
     await page.waitForFunction(() => !document.querySelector('.youtube-workflow-form button[type="submit"]')?.disabled)
+    const receiptBeforeClose = await page.evaluate(() => Object.entries(localStorage)
+      .filter(([key]) => key.startsWith('read-web.workflow-operation-receipt.v1.')))
+    assert.equal(receiptBeforeClose.length, 1, 'uncertain create must leave one safe operation receipt before page close')
+    const receiptBytes = receiptBeforeClose[0][1]
+    assert.equal(receiptBytes.includes('ui-disconnect-first'), false, 'receipt must not persist URL text')
+    assert.equal(receiptBytes.includes(token), false, 'receipt must not persist the access token')
+    assert.equal(receiptBytes.includes('apiKey'), false, 'receipt must not persist API key fields')
 
     // The first POST was committed by the real backend, but the production UI
-    // received a connection reset. Clicking the same pending UI action must
-    // reuse its operation key rather than create a second job.
-    await page.locator('.youtube-workflow-form button[type="submit"]').click()
+    // received a connection reset. Closing and reopening the page before the
+    // user submits the same action must still reuse its receipt operation key.
+    await page.close()
+    page = await context.newPage()
+    trackPage(page)
+    page.on('dialog', (dialog) => dialog.dismiss())
+    await openWorkflowPanel(page, appUrl)
+    const receiptAfterReload = await page.evaluate(() => Object.entries(localStorage)
+      .filter(([key]) => key.startsWith('read-web.workflow-operation-receipt.v1.')))
+    assert.equal(receiptAfterReload.length, 1, 'reload must retain the pending safe operation receipt')
+    await submitUrl(page, 'https://example.com/ui-disconnect-first')
     await page.waitForTimeout(500)
     await page.locator('.youtube-workflow-queue-job').first().waitFor({ state: 'visible' })
     const durableAfterRetry = await waitForFile(
@@ -208,6 +243,8 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
     const createRequests = requests.filter((request) => request.url === '/api/jobs')
     assert.equal(createRequests.length, 2, 'disconnect scenario must issue exactly one initial POST and one retry')
     assert.equal(createRequests[0].headers['idempotency-key'], createRequests[1].headers['idempotency-key'], 'UI retry must reuse one stable idempotency key')
+    assert.ok(createRequests.every((request) => request.headers['x-expected-revision']), 'create must never be sent without an expected revision')
+    assert.ok(createRequests.every((request) => request.headers['if-match'] === `"${request.headers['x-expected-revision']}"`), 'create must send matching If-Match')
 
     await submitUrl(page, 'https://example.com/ui-mutation-first')
     await page.locator('.youtube-workflow-queue-job').nth(1).waitFor({ state: 'visible' })
@@ -237,10 +274,44 @@ uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="12
       'conflict must be visible as an explicit refresh-and-retry notice',
     )
 
+    await submitUrl(page, 'https://example.com/ui-prioritize-response-loss')
+    const responseLossRow = page.locator('.youtube-workflow-queue-job').filter({ hasText: 'ui-prioritize-response-loss' })
+    await responseLossRow.waitFor({ state: 'visible' })
+    await page.waitForFunction(() => document.querySelectorAll('.youtube-workflow-queue-job[data-status="queued"]').length >= 1)
+    dropPrioritizeResponse = true
+    await responseLossRow.getByRole('button', { name: '置顶' }).click()
+    await page.locator('[data-workflow-mutation-notice]').waitFor({ state: 'visible' })
+    const prioritizeCountAfterDroppedResponse = requests.filter((request) => request.url.endsWith('/prioritize')).length
+    await responseLossRow.getByRole('button', { name: '置顶' }).click()
+    await page.waitForResponse((response) => response.url().endsWith('/prioritize') && response.status() === 200)
+    const prioritizeAfterResponseLoss = requests.filter((request) => request.url.endsWith('/prioritize'))
+    assert.equal(prioritizeAfterResponseLoss.length, prioritizeCountAfterDroppedResponse + 1)
+    assert.equal(
+      prioritizeAfterResponseLoss.at(-1).headers['idempotency-key'],
+      prioritizeAfterResponseLoss.at(-2).headers['idempotency-key'],
+      'prioritize response-loss retry must replay the same backend receipt',
+    )
+
+    offlineSnapshot = true
+    await page.getByRole('button', { name: '刷新' }).click()
+    await page.waitForTimeout(300)
+    const prioritizeCountBeforeBlockedRetry = requests.filter((request) => request.url.endsWith('/prioritize')).length
+    await page.getByRole('button', { name: '置顶' }).first().click()
+    await page.locator('[data-workflow-mutation-notice]').waitFor({ state: 'visible' })
+    await page.waitForTimeout(300)
+    assert.equal(
+      requests.filter((request) => request.url.endsWith('/prioritize')).length,
+      prioritizeCountBeforeBlockedRetry,
+      'failed authoritative refresh must block a protected mutation without sending a request',
+    )
+    offlineSnapshot = false
+
     for (const request of requests) {
       assert.equal(request.headers['x-read-web-token'], token, 'production client must send the configured access token')
       assert.equal(request.body.includes(token), false, 'access token must not enter request persistence payloads')
     }
+    const mutationRequests = requests.filter((request) => request.url === '/api/jobs' || request.url.endsWith('/prioritize'))
+    assert.ok(mutationRequests.every((request) => request.headers['idempotency-key']), 'protected mutation must carry an idempotency key')
     const persistedText = [
       path.join(root, 'state', 'jobs.json'),
       path.join(root, 'state', 'logs', 'service.log'),
