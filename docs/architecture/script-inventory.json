@@ -3,6 +3,7 @@
   "scope": "Executable files under scripts/ that are not referenced directly by package.json scripts",
   "releaseGate": [
     "scripts/aria-edge-tts-live-check.cjs",
+    "scripts/lib/read-web-production-backup.mjs",
     "scripts/passage-preview-browser-check.cjs",
     "scripts/perf/browser-journeys.mjs",
     "scripts/perf/playback-scale-budget.mjs",

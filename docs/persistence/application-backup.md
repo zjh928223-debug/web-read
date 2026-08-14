@@ -3,10 +3,10 @@
 The application backup boundary is intentionally adapter-driven. A backup is
 not considered complete unless all six durable domains provide an adapter:
 
-- `reader-session` — the small `SeekPlayerDB/files` reader rows and quarantine evidence;
-- `marks-activity` — the reader marks/activity ledger. The workflow service
-  exposes `ReaderMarksActivityBackupAdapter`; the browser boundary requires
-  its cross-process adapter explicitly;
+- `reader-session` — the small `SeekPlayerDB/files` reader rows, quarantine evidence,
+  and the durable `read-web.reader-save-outbox.v1` / `.v2.*` receipts;
+- `marks-activity` — the reader marks/activity ledger. The production
+  composition bridges the workflow service's `ReaderMarksActivityBackupAdapter`;
 - `vocabulary-srs` — vocabulary, review, acquisition, SRS, learning-event and personalization rows;
 - `passage-preview` — the durable preview envelope and known legacy/continuation localStorage keys;
 - `annotation` — scoped generated/status/bundle localStorage or audio-folder records;
@@ -41,9 +41,9 @@ Blob/ArrayBuffer/typed-array content is rejected.
 
 `verifyBackupArtifact` reparses the artifact and independently recomputes
 record, domain, manifest and artifact checksums, counts, registry, references
-and media policy. `dryRunRestore` is read-only and reports each domain as `keep`,
-`restore`, `merge` or `blocked`, including schema, reference, capacity and
-newer-target-revision conflicts. Capacity accounts for the restore artifact and
+and media policy. `dryRunRestore` is read-only and reports each domain and
+record as `keep`, `restore`, `merge` or `blocked`, including schema, reference,
+capacity, newer-record-revision and content-id conflicts. Capacity accounts for the restore artifact and
 the migration-before rollback copy unless the target explicitly declares a
 separate rollback store.
 
@@ -54,6 +54,9 @@ completed retry is a no-op and an interrupted/failed retry reuses the original
 rollback backup before attempting the commit again.
 
 The public contract and fault matrix are exercised by
-`npm run verify:application-backup`; the isolated rehearsal is part of
-`verify:release`. These checks use fixture adapters only and never restore
-real daily data.
+`npm run verify:application-backup`. The production composition in
+`scripts/lib/read-web-production-backup.mjs` joins the isolated browser
+profile adapters with the Python marks/activity and workflow bridge, and
+`scripts/application-backup-release-rehearsal.mjs` drives that public entry
+through an on-disk journal/rollback/quarantine target. It uses generated
+temporary fixture directories only and never restores real daily data.
