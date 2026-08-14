@@ -2,19 +2,19 @@
   "schemaVersion": 1,
   "capture": {
     "mode": "isolated-vite-runtime",
-    "port": 4571,
+    "port": 4663,
     "sourceRoot": "src + index.html",
     "consoleErrors": [],
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 75,
+    "compatibilitySurfaces": 74,
     "staticReaders": 33,
-    "staticWriters": 65,
-    "runtimeDefined": 67,
+    "staticWriters": 64,
+    "runtimeDefined": 66,
     "runtimeCalled": 3,
     "inlineHandlers": 0,
-    "loadedScripts": 19
+    "loadedScripts": 18
   },
   "surfaces": [
     {
@@ -40,24 +40,6 @@
         "defined": true,
         "type": "object",
         "reads": 2,
-        "calls": 0,
-        "assigned": true
-      }
-    },
-    {
-      "name": "__annotationStore",
-      "reads": [],
-      "writes": [
-        {
-          "file": "src/stores/annotation.js",
-          "line": 2
-        }
-      ],
-      "runtime": {
-        "name": "__annotationStore",
-        "defined": true,
-        "type": "object",
-        "reads": 0,
         "calls": 0,
         "assigned": true
       }
@@ -1991,11 +1973,6 @@
     },
     {
       "src": "/src/stores/marks.js",
-      "type": "module",
-      "inline": false
-    },
-    {
-      "src": "/src/stores/annotation.js",
       "type": "module",
       "inline": false
     },
