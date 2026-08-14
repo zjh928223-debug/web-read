@@ -18,10 +18,8 @@ assert.match(source, /window\.addEventListener\('reader-marks-changed', handleRe
 assert.doesNotMatch(source, /MutationObserver/)
 assert.doesNotMatch(source, /markCountObserver/)
 assert.doesNotMatch(source, /bindMarkCountTracking/)
-assert.equal(
-  (source.match(/saveReaderMarks\(/g) || []).length,
-  1,
-  'reader marks should have one ordinary write owner; unload beacon remains a separate last-chance transport',
-)
+assert.match(source, /async write\(entry, context\)\s*\{[\s\S]*?youtubeWorkflowClient\.saveReaderMarks\(/)
+assert.match(source, /youtubeWorkflowClient\.keepaliveReaderMarks\(/)
+assert.doesNotMatch(source, /sendBeacon/)
 
 console.log('workflow reader marks ledger contract passed')

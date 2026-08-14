@@ -577,6 +577,8 @@ const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
 const PANEL_MAX_SIZE = { width: 720, height: 860 }
 const PANEL_DEFAULT_MARGIN = 24
 const READER_SYNC_INTERVAL_MS = 15000
+const READER_OUTBOX_KEY = 'read-web.reader-save-outbox.v1'
+const READER_OUTBOX_SCHEMA_VERSION = 1
 
 const panelOpen = ref(false)
 const panelShrunk = ref(false)
@@ -677,6 +679,7 @@ let playbackTrackedMedia = null
 let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
 let readerUnloadFlushed = false
+let readerOutboxReplayPromise = null
 const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
 const panelDialogController = createDialogController()
@@ -716,23 +719,49 @@ function updateReaderConflictVisibility() {
   )
 }
 
-async function loadReaderConflict(kind, jobId, error, localIntent, context) {
+function setReaderConflictNotice(conflict) {
+  if (currentJobId.value !== conflict.jobId) return
+  readerActivityNotice.value = conflict.authoritative
+    ? '检测到其他标签页更新；本地最新意图仍未丢失，请确认后重试'
+    : '检测到并发冲突，权威版本暂时无法读取，请稍后重试'
+}
+
+function fetchReaderConflictAuthority(conflict) {
+  if (conflict.authorityFetch) return conflict.authorityFetch
+  conflict.authorityFetch = (async () => {
+    try {
+      conflict.authoritative = conflict.kind === 'marks'
+        ? await youtubeWorkflowClient.getReaderMarks(conflict.jobId)
+        : await youtubeWorkflowClient.getReaderActivity(conflict.jobId)
+      conflict.reloadError = null
+      return conflict.authoritative
+    } catch (reloadError) {
+      conflict.reloadError = reloadError
+      return null
+    } finally {
+      conflict.authorityFetch = null
+      setReaderConflictNotice(conflict)
+    }
+  })()
+  return conflict.authorityFetch
+}
+
+async function loadReaderConflict(kind, jobId, error, localIntent, context, options = {}) {
   const key = `${kind}:${jobId}`
-  const conflict = { kind, jobId, error, localIntent, context, authoritative: null }
+  const conflict = {
+    kind,
+    jobId,
+    error,
+    localIntent,
+    context,
+    authoritative: null,
+    authorityFetch: null,
+    resolvePromise: null,
+    retry: typeof options.retry === 'function' ? options.retry : null,
+  }
   readerConflicts.set(key, conflict)
   updateReaderConflictVisibility()
-  try {
-    conflict.authoritative = kind === 'marks'
-      ? await youtubeWorkflowClient.getReaderMarks(jobId)
-      : await youtubeWorkflowClient.getReaderActivity(jobId)
-  } catch (reloadError) {
-    conflict.reloadError = reloadError
-  }
-  if (currentJobId.value === jobId) {
-    readerActivityNotice.value = conflict.authoritative
-      ? '检测到其他标签页更新；本地最新意图仍未丢失，请确认后重试'
-      : '检测到并发冲突，权威版本暂时无法读取，请稍后重试'
-  }
+  await fetchReaderConflictAuthority(conflict)
 }
 
 function clearReaderConflict(kind, jobId) {
@@ -744,21 +773,29 @@ async function resolveReaderConflict() {
   const currentConflicts = [...readerConflicts.values()].filter(
     (conflict) => conflict.jobId === currentJobId.value,
   )
-  const retries = []
-  for (const conflict of currentConflicts) {
-    if (!conflict.authoritative || !Number.isInteger(conflict.authoritative.revision)) continue
-    if (conflict.kind === 'marks') readerMarksRevisions.set(conflict.jobId, conflict.authoritative.revision)
-    else readerActivityRevisions.set(conflict.jobId, conflict.authoritative.revision)
-    const ledger = conflict.kind === 'marks'
-      ? getReaderMarksLedger(conflict.jobId)
-      : getReaderActivityLedger(conflict.jobId)
-    retries.push(ledger.resolveConflict())
-  }
+  const retries = currentConflicts.map((conflict) => {
+    if (conflict.resolvePromise) return conflict.resolvePromise
+    conflict.resolvePromise = (async () => {
+      const authoritative = conflict.authoritative || await fetchReaderConflictAuthority(conflict)
+      if (!authoritative || !Number.isInteger(authoritative.revision)) return false
+      if (conflict.kind === 'marks') readerMarksRevisions.set(conflict.jobId, authoritative.revision)
+      else readerActivityRevisions.set(conflict.jobId, authoritative.revision)
+      if (conflict.retry) return conflict.retry(authoritative.revision)
+      const ledger = conflict.kind === 'marks'
+        ? getReaderMarksLedger(conflict.jobId)
+        : getReaderActivityLedger(conflict.jobId)
+      return ledger.resolveConflict()
+    })().finally(() => {
+      conflict.resolvePromise = null
+    })
+    return conflict.resolvePromise
+  })
   if (!retries.length) {
     readerActivityNotice.value = '正在读取权威版本，请稍后再次确认'
     return
   }
-  await Promise.all(retries)
+  const results = await Promise.all(retries)
+  if (!results.some(Boolean)) readerActivityNotice.value = '正在读取权威版本，请稍后再次确认'
 }
 
 function rememberWorkflowRevision(payload) {
@@ -895,7 +932,10 @@ function getReaderMarksLedger(jobId) {
       else if (state.status === 'error') readerActivityNotice.value = '标记保存失败，将在下次修改时重试'
       else if (state.status === 'saved') {
         clearReaderConflict('marks', jobId)
-        if (readerActivityNotice.value.startsWith('标记保存失败') || readerActivityNotice.value.startsWith('标记存在并发冲突')) readerActivityNotice.value = ''
+        if (readerActivityNotice.value.startsWith('标记保存失败')
+          || readerActivityNotice.value.startsWith('标记存在并发冲突')
+          || readerActivityNotice.value.includes('本地最新意图仍未丢失')
+          || readerActivityNotice.value.includes('最新进度仍保留')) readerActivityNotice.value = ''
       }
     },
     onConflict(error, localIntent, context) {
@@ -931,7 +971,10 @@ function getReaderActivityLedger(jobId) {
       else if (state.status === 'error') readerActivityNotice.value = '进度保存失败，将保留最新进度重试'
       else if (state.status === 'saved') {
         clearReaderConflict('activity', jobId)
-        if (readerActivityNotice.value.startsWith('进度保存失败') || readerActivityNotice.value.startsWith('进度存在并发冲突')) readerActivityNotice.value = ''
+        if (readerActivityNotice.value.startsWith('进度保存失败')
+          || readerActivityNotice.value.startsWith('进度存在并发冲突')
+          || readerActivityNotice.value.includes('本地最新意图仍未丢失')
+          || readerActivityNotice.value.includes('最新进度仍保留')) readerActivityNotice.value = ''
       }
     },
     onConflict(error, localIntent, context) {
@@ -1129,6 +1172,8 @@ onMounted(() => {
   cleanupWorkflowOperationReceipts()
   syncVideoPreferred(videoPriority.value)
   bindPlaybackTracking()
+  ensureCurrentJobFromAudioMeta()
+  void replayReaderOutbox()
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
   window.addEventListener('beforeunload', handleBeforeUnload)
   window.addEventListener('pagehide', handleBeforeUnload)
@@ -2454,12 +2499,16 @@ function playbackState() {
 }
 
 function ensureCurrentJobFromAudioMeta() {
-  if (currentJobId.value) return
+  if (currentJobId.value) {
+    updateReaderConflictVisibility()
+    return
+  }
   const meta = window.__state && window.__state.currentAudioMeta
   const jobId = meta && meta.source === 'youtube-workflow' ? String(meta.jobId || '') : ''
   if (!jobId) return
   currentJobId.value = jobId
   startReaderSession({ jobId })
+  updateReaderConflictVisibility()
 }
 
 function handlePlay() {
@@ -2648,24 +2697,313 @@ function handleReaderMarksChanged() {
   syncReaderActivity('annotation')
 }
 
-function sendJsonOnUnload(url, payload) {
-  if (!url || !payload) return false
-  const text = JSON.stringify(payload)
-  const blob = new Blob([text], { type: 'application/json' })
-  if (navigator.sendBeacon && navigator.sendBeacon(url, blob)) return true
-  if (typeof fetch === 'function') {
-    observeBestEffort(fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: text,
-      keepalive: true
-    }), {
-      operationId: 'panel-unload-fetch',
-      reason: 'page unload cannot await fallback delivery; the next session will retry dirty ledger state',
-    })
-    return true
+function isPlainReaderOutboxObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isSafeReaderOutboxText(value, maxLength = 200) {
+  const text = String(value || '')
+  return !!text && text.length <= maxLength && !/[\\/]/.test(text) && !/[\u0000-\u001f]/.test(text)
+}
+
+function hasOnlyReaderOutboxKeys(value, allowed) {
+  return Object.keys(value).every((key) => allowed.includes(key))
+}
+
+function isValidReaderOutboxEntry(entry) {
+  if (!isPlainReaderOutboxObject(entry)
+    || !hasOnlyReaderOutboxKeys(entry, ['jobId', 'kind', 'operationId', 'expectedRevision', 'intent'])
+    || !isSafeReaderOutboxText(entry.jobId)
+    || !['marks', 'activity'].includes(entry.kind)
+    || !isSafeReaderOutboxText(entry.operationId)
+    || !Number.isInteger(entry.expectedRevision)
+    || entry.expectedRevision < 0
+    || !isPlainReaderOutboxObject(entry.intent)) return false
+  if (entry.kind === 'marks') {
+    return hasOnlyReaderOutboxKeys(entry.intent, ['marks'])
+      && Array.isArray(entry.intent.marks)
+      && entry.intent.marks.every((mark) => isPlainReaderOutboxObject(mark)
+        && hasOnlyReaderOutboxKeys(mark, ['globalIndex', 'word', 'start', 'sourceType'])
+        && Number.isInteger(mark.globalIndex)
+        && mark.globalIndex >= 0
+        && typeof mark.word === 'string'
+        && typeof mark.sourceType === 'string'
+        && (mark.start === null || Number.isFinite(mark.start)))
   }
-  return false
+  return hasOnlyReaderOutboxKeys(entry.intent, [
+    'event',
+    'sessionId',
+    'sessionStartedAt',
+    'positionSeconds',
+    'durationSeconds',
+    'intervals',
+    'coverageRatio',
+    'markCount',
+  ])
+    && typeof entry.intent.event === 'string'
+    && typeof entry.intent.sessionId === 'string'
+    && typeof entry.intent.sessionStartedAt === 'string'
+    && Number.isFinite(entry.intent.positionSeconds)
+    && Number.isFinite(entry.intent.durationSeconds)
+    && Number.isFinite(entry.intent.coverageRatio)
+    && Number.isInteger(entry.intent.markCount)
+    && entry.intent.markCount >= 0
+    && Array.isArray(entry.intent.intervals)
+    && entry.intent.intervals.every((interval) => Array.isArray(interval)
+      && interval.length === 2
+      && interval.every((value) => Number.isFinite(value)))
+}
+
+function quarantineReaderOutbox(reason, byteLength = 0) {
+  try {
+    window.localStorage.setItem(`${READER_OUTBOX_KEY}.quarantine`, JSON.stringify({
+      schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
+      detectedAt: new Date().toISOString(),
+      reason: String(reason || 'invalid-envelope'),
+      byteLength: Number.isInteger(byteLength) ? byteLength : 0,
+    }))
+    window.localStorage.removeItem(READER_OUTBOX_KEY)
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-quarantine',
+      reason: 'invalid reader outbox is isolated without retaining untrusted payload bytes',
+    })
+  }
+}
+
+function readReaderOutbox() {
+  let raw = ''
+  try {
+    raw = window.localStorage.getItem(READER_OUTBOX_KEY) || ''
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-read',
+      reason: 'reader outbox is unavailable; current in-memory intent remains dirty',
+    })
+    return { valid: false, entries: [] }
+  }
+  if (!raw) return { valid: true, entries: [] }
+  try {
+    const envelope = JSON.parse(raw)
+    if (!isPlainReaderOutboxObject(envelope)
+      || !hasOnlyReaderOutboxKeys(envelope, ['schemaVersion', 'entries'])
+      || envelope.schemaVersion !== READER_OUTBOX_SCHEMA_VERSION
+      || !Array.isArray(envelope.entries)
+      || !envelope.entries.every(isValidReaderOutboxEntry)) {
+      quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length)
+      return { valid: false, entries: [] }
+    }
+    return { valid: true, entries: envelope.entries }
+  } catch (error) {
+    quarantineReaderOutbox('malformed-json', raw.length)
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-parse',
+      reason: 'malformed reader outbox is quarantined without being replayed',
+    })
+    return { valid: false, entries: [] }
+  }
+}
+
+function writeReaderOutboxEntry(entry) {
+  if (!isValidReaderOutboxEntry(entry)) return false
+  const current = readReaderOutbox()
+  if (!current.valid) return false
+  const entries = [
+    ...current.entries.filter((item) => item.jobId !== entry.jobId || item.kind !== entry.kind),
+    entry,
+  ]
+  try {
+    window.localStorage.setItem(READER_OUTBOX_KEY, JSON.stringify({
+      schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
+      entries,
+    }))
+    return true
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-write',
+      reason: 'reader outbox write failed; save state remains dirty for explicit retry',
+    })
+    return false
+  }
+}
+
+function removeReaderOutboxEntry(entry) {
+  const current = readReaderOutbox()
+  if (!current.valid) return false
+  const entries = current.entries.filter((item) => !(
+    item.jobId === entry.jobId
+      && item.kind === entry.kind
+      && item.operationId === entry.operationId
+  ))
+  try {
+    if (entries.length) {
+      window.localStorage.setItem(READER_OUTBOX_KEY, JSON.stringify({
+        schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
+        entries,
+      }))
+    } else {
+      window.localStorage.removeItem(READER_OUTBOX_KEY)
+    }
+    return true
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-remove',
+      reason: 'successful reader replay could not remove its outbox receipt',
+    })
+    return false
+  }
+}
+
+function readerOutboxMarks(marks) {
+  return (Array.isArray(marks) ? marks : []).map((mark) => ({
+    globalIndex: Number(mark.globalIndex),
+    word: String(mark.word || ''),
+    start: Number.isFinite(Number(mark.start)) ? Number(mark.start) : null,
+    sourceType: String(mark.sourceType || 'manual-mark'),
+  }))
+}
+
+function readerOutboxActivity(payload) {
+  return {
+    event: String(payload.event || 'progress'),
+    sessionId: String(payload.sessionId || ''),
+    sessionStartedAt: String(payload.sessionStartedAt || ''),
+    positionSeconds: Number.isFinite(Number(payload.positionSeconds)) ? Number(payload.positionSeconds) : 0,
+    durationSeconds: Number.isFinite(Number(payload.durationSeconds)) ? Number(payload.durationSeconds) : 0,
+    intervals: Array.isArray(payload.intervals)
+      ? payload.intervals
+        .filter((interval) => Array.isArray(interval) && interval.length === 2)
+        .map((interval) => [Number(interval[0]), Number(interval[1])])
+        .filter((interval) => interval.every((value) => Number.isFinite(value)))
+      : [],
+    coverageRatio: Number.isFinite(Number(payload.coverageRatio)) ? Number(payload.coverageRatio) : 0,
+    markCount: Number.isInteger(Number(payload.markCount)) ? Math.max(0, Number(payload.markCount)) : 0,
+  }
+}
+
+function createReaderOutboxEntry(kind, payload, operationId, expectedRevision) {
+  const jobId = String(payload && payload.jobId || '').trim()
+  if (!jobId || !isSafeReaderOutboxText(operationId) || !Number.isInteger(expectedRevision) || expectedRevision < 0) return null
+  const entry = {
+    jobId,
+    kind,
+    operationId,
+    expectedRevision,
+    intent: kind === 'marks'
+      ? { marks: readerOutboxMarks(payload.marks) }
+      : readerOutboxActivity(payload),
+  }
+  return isValidReaderOutboxEntry(entry) ? entry : null
+}
+
+function readerOutboxRequest(entry, expectedRevision, keepalive = false) {
+  if (entry.kind === 'marks') {
+    const payload = {
+      marks: entry.intent.marks,
+      expectedRevision,
+      operationId: entry.operationId,
+    }
+    return keepalive
+      ? youtubeWorkflowClient.keepaliveReaderMarks(entry.jobId, payload)
+      : youtubeWorkflowClient.saveReaderMarks(entry.jobId, payload)
+  }
+  const payload = {
+    ...entry.intent,
+    jobId: entry.jobId,
+    expectedRevision,
+    activityOperationId: entry.operationId,
+  }
+  return keepalive
+    ? youtubeWorkflowClient.keepaliveReaderActivity(payload)
+    : youtubeWorkflowClient.recordReaderActivity(payload)
+}
+
+function isReaderConflictError(error) {
+  return error?.category === 'conflict' || String(error?.code || '').endsWith('_REVISION_CONFLICT')
+}
+
+function setReaderOutboxState(entry, status, notice = '') {
+  if (currentJobId.value !== entry.jobId) return
+  if (entry.kind === 'marks') readerMarksSaveState.value = status
+  else readerActivitySaveState.value = status
+  if (notice) readerActivityNotice.value = notice
+}
+
+function clearReaderOutboxSuccessNotice() {
+  if (readerActivityNotice.value.includes('本地最新意图仍未丢失')
+    || readerActivityNotice.value.includes('最新进度仍保留')
+    || readerActivityNotice.value.includes('权威版本暂时无法读取')) readerActivityNotice.value = ''
+}
+
+function settleReaderOutboxSuccess(entry, saved) {
+  if (Number.isInteger(saved?.revision)) {
+    if (entry.kind === 'marks') readerMarksRevisions.set(entry.jobId, saved.revision)
+    else readerActivityRevisions.set(entry.jobId, saved.revision)
+  }
+  if (entry.kind === 'activity') mergeRecentReaderItem(saved)
+  if (!removeReaderOutboxEntry(entry)) {
+    setReaderOutboxState(entry, 'error', '学习记录已提交，但本地恢复凭据未能清除，请稍后重试')
+    return false
+  }
+  clearReaderConflict(entry.kind, entry.jobId)
+  setReaderOutboxState(entry, 'saved')
+  clearReaderOutboxSuccessNotice()
+  return true
+}
+
+async function retryReaderOutboxEntry(entry, expectedRevision) {
+  try {
+    return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, expectedRevision))
+  } catch (error) {
+    setReaderOutboxState(entry, 'conflict', '学习记录存在并发冲突，需确认后重试')
+    return false
+  }
+}
+
+async function replayReaderOutboxEntry(entry) {
+  setReaderOutboxState(entry, 'dirty')
+  try {
+    return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, entry.expectedRevision))
+  } catch (error) {
+    if (isReaderConflictError(error)) {
+      setReaderOutboxState(entry, 'conflict', '学习记录存在并发冲突，需确认后重试')
+      const localIntent = entry.kind === 'marks'
+        ? { jobId: entry.jobId, marks: entry.intent.marks }
+        : { jobId: entry.jobId, payload: { ...entry.intent, jobId: entry.jobId } }
+      await loadReaderConflict(
+        entry.kind,
+        entry.jobId,
+        error,
+        localIntent,
+        { operationId: entry.operationId },
+        { retry: (revision) => retryReaderOutboxEntry(entry, revision) },
+      )
+      return false
+    }
+    setReaderOutboxState(entry, 'error', '学习记录保存失败，保留待重试')
+    return false
+  }
+}
+
+function replayReaderOutbox() {
+  if (readerOutboxReplayPromise) return readerOutboxReplayPromise
+  readerOutboxReplayPromise = (async () => {
+    const outbox = readReaderOutbox()
+    if (!outbox.valid) return
+    await Promise.all(outbox.entries.map((entry) => replayReaderOutboxEntry(entry)))
+  })().finally(() => {
+    readerOutboxReplayPromise = null
+  })
+  return readerOutboxReplayPromise
+}
+
+function queueReaderKeepalive(entry) {
+  void observeBestEffort(readerOutboxRequest(entry, entry.expectedRevision, true), {
+    operationId: `reader-outbox-keepalive-${entry.kind}`,
+    reason: 'page close cannot await reader durability; the versioned outbox remains the recovery receipt',
+  }).then((saved) => {
+    if (saved) settleReaderOutboxSuccess(entry, saved)
+  })
 }
 
 function handleBeforeUnload() {
@@ -2673,33 +3011,30 @@ function handleBeforeUnload() {
   ensureCurrentJobFromAudioMeta()
   const payload = buildReaderActivityPayload('close')
   if (!payload) return
+  const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
+  const marksEntry = createReaderOutboxEntry(
+    'marks',
+    { jobId: payload.jobId, marks: getCurrentReaderMarks() },
+    `reader-marks-${payload.jobId}-${payload.sessionId}-close`,
+    readerMarksRevisions.get(payload.jobId) ?? 0,
+  )
+  const activityEntry = createReaderOutboxEntry(
+    'activity',
+    payload,
+    activityOperationId,
+    readerActivityRevisions.get(payload.jobId) ?? 0,
+  )
+  if (!marksEntry && !activityEntry) return
   readerUnloadFlushed = true
   readerMarksSaveState.value = 'dirty'
   readerActivitySaveState.value = 'dirty'
-  payload.activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
-  payload.expectedRevision = readerActivityRevisions.get(payload.jobId) ?? 0
-  try {
-    sendJsonOnUnload(`${youtubeWorkflowClient.baseUrl}/api/reader/activity`, payload)
-  } catch (error) {
-    recordBestEffortFailure(error, {
-      operationId: 'panel-unload-fetch',
-      reason: 'page unload cannot await activity delivery; the next session restores persisted activity',
-    })
+  if (marksEntry) {
+    writeReaderOutboxEntry(marksEntry)
+    queueReaderKeepalive(marksEntry)
   }
-  try {
-    sendJsonOnUnload(
-      `${youtubeWorkflowClient.baseUrl}/api/jobs/${encodeURIComponent(payload.jobId)}/reader-marks`,
-      {
-        marks: getCurrentReaderMarks(),
-        expectedRevision: readerMarksRevisions.get(payload.jobId) ?? 0,
-        operationId: `reader-marks-${payload.jobId}-${payload.sessionId}-close`,
-      }
-    )
-  } catch (error) {
-    recordBestEffortFailure(error, {
-      operationId: 'panel-unload-fetch',
-      reason: 'page unload cannot await marks delivery; dirty marks remain eligible for the next ledger retry',
-    })
+  if (activityEntry) {
+    writeReaderOutboxEntry(activityEntry)
+    queueReaderKeepalive(activityEntry)
   }
 }
 

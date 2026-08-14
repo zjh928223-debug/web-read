@@ -140,7 +140,8 @@ async function main() {
   assert.equal(panelSource.includes("error: { category: 'output'"), false, 'reader import errors must not rewrite the workflow job as failed');
   assert.ok(panelSource.includes('reader-marks-changed'), 'workflow panel should sync reader marks when the reader mark state changes');
   assert.ok(panelSource.includes("window.addEventListener('pagehide', handleBeforeUnload)"), 'workflow panel should save reader marks when the page is hidden or closed');
-  assert.ok(panelSource.includes('sendJsonOnUnload'), 'workflow panel should use unload-safe JSON delivery for final reader mark sync');
+  assert.ok(panelSource.includes('keepaliveReaderMarks') && panelSource.includes('keepaliveReaderActivity'), 'workflow panel should use the authorized production client for unload-safe reader sync');
+  assert.ok(panelSource.includes('READER_OUTBOX_KEY') && panelSource.includes('writeReaderOutboxEntry'), 'workflow panel should persist a versioned reader outbox before unload delivery');
   assert.equal(panelSource.includes('切换到阅读器'), false, 'open action should not use ambiguous switch-to-reader wording');
   assert.equal(panelSource.includes('YouTube URL'), false, 'URL label should not be YouTube-specific');
 

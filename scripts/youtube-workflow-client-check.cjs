@@ -240,6 +240,17 @@ async function main() {
       return true;
     },
   );
+  const keepaliveStart = calls.length;
+  await client.keepaliveReaderActivity({ jobId: 'job-1', event: 'close', activityOperationId: 'keepalive-activity' });
+  await client.keepaliveReaderMarks('job-1', { marks: [], operationId: 'keepalive-marks' });
+  const keepaliveCalls = calls.slice(keepaliveStart);
+  assert.deepEqual(keepaliveCalls.map((call) => call.url), [
+    'http://127.0.0.1:8765/api/reader/activity',
+    'http://127.0.0.1:8765/api/jobs/job-1/reader-marks',
+  ]);
+  assert.ok(keepaliveCalls.every((call) => call.options.keepalive === true));
+  assert.ok(keepaliveCalls.every((call) => call.options.headers['X-Read-Web-Token'] === 'test-client-token'));
+  assert.ok(keepaliveCalls.every((call) => !call.url.includes('access_token=')));
 
   const failingClient = api.createYoutubeWorkflowClient({
     baseUrl: 'http://127.0.0.1:8765',

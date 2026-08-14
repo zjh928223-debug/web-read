@@ -113,6 +113,26 @@ export function createYoutubeWorkflowClient(options = {}) {
     return url.href
   }
 
+  async function requestReaderActivity(payload = {}, options = {}) {
+    return readJsonResponse(await fetchImpl(apiUrl('/api/reader/activity'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.keepalive ? { keepalive: true } : {}),
+    }))
+  }
+
+  async function requestReaderMarks(jobId, payload = {}, options = {}) {
+    return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+      ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.keepalive ? { keepalive: true } : {}),
+    }))
+  }
+
   return {
     baseUrl,
     async health() {
@@ -324,12 +344,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       params.set('limit', options.limit || 50)
       return readJsonResponse(await fetchImpl(apiUrl(`/api/reader/recent?${params.toString()}`)))
     },
-    async recordReaderActivity(payload = {}) {
-      return readJsonResponse(await fetchImpl(apiUrl('/api/reader/activity'), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
-      }))
+    async recordReaderActivity(payload = {}, options = {}) {
+      return requestReaderActivity(payload, options)
+    },
+    async keepaliveReaderActivity(payload = {}) {
+      return requestReaderActivity(payload, { keepalive: true })
     },
     async getReaderActivity(jobId, options = {}) {
       const params = options.recover ? '?recover=true' : ''
@@ -343,12 +362,11 @@ export function createYoutubeWorkflowClient(options = {}) {
         signal: options.signal,
       }))
     },
-    async saveReaderMarks(jobId, payload = {}) {
-      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {})
-      }))
+    async saveReaderMarks(jobId, payload = {}, options = {}) {
+      return requestReaderMarks(jobId, payload, options)
+    },
+    async keepaliveReaderMarks(jobId, payload = {}) {
+      return requestReaderMarks(jobId, payload, { keepalive: true })
     },
     async startAnnotationBackfill(jobId, payload = {}, options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/annotation-backfill`), {
