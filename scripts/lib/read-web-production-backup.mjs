@@ -215,13 +215,26 @@ async function cleanupStalePathClaims(lockPath, staleAfterMs) {
 }
 
 async function waitForPathLockClaimTestBarrier(ownerToken) {
+  if (process.env.READ_WEB_BACKUP_TEST_MODE !== '1') return
   const barrierDir = process.env.READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_DIR
   if (!barrierDir) return
   const resolvedBarrierDir = path.resolve(barrierDir)
   await mkdir(resolvedBarrierDir, { recursive: true })
   await writeJsonAtomic(path.join(resolvedBarrierDir, 'claim-ready.json'), { ownerToken })
   const releasePath = path.join(resolvedBarrierDir, 'release.json')
-  while (!await pathExists(releasePath)) await delay(10)
+  const deadline = Date.now() + pathLockNumber(
+    'READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_TIMEOUT_MS',
+    5_000,
+    100,
+  )
+  while (!await pathExists(releasePath)) {
+    if (Date.now() >= deadline) {
+      const error = new Error('Timed out waiting for the backup lock claim test barrier')
+      error.code = 'BACKUP_PATH_LOCK_TEST_BARRIER_TIMEOUT'
+      throw error
+    }
+    await delay(10)
+  }
 }
 
 async function releasePathLock(lockPath, ownerToken) {
@@ -273,14 +286,14 @@ async function withPathMutex(filePath, operation, options = {}) {
       })
       await waitForPathLockClaimTestBarrier(ownerToken)
       await rename(claimPath, lockPath)
-      const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
-      try {
-        return await operation()
-      } finally {
-        await stopHeartbeat()
-      }
     } catch (error) {
-      if (!['EEXIST', 'ENOTEMPTY', 'EISDIR', 'EPERM', 'EACCES'].includes(error?.code)) throw error
+      await rm(claimPath, { recursive: true, force: true }).catch(() => {})
+      const renameContention = error?.syscall === 'rename'
+        && path.resolve(error?.path || '') === path.resolve(claimPath)
+        && path.resolve(error?.dest || '') === path.resolve(lockPath)
+      const contention = ['EEXIST', 'ENOTEMPTY', 'EISDIR', 'EPERM', 'EACCES'].includes(error?.code)
+        && (renameContention || await pathExists(lockPath))
+      if (!contention) throw error
       await recoverStalePathLock(lockPath, staleAfterMs)
       if (Date.now() >= deadline) {
         const lockError = new Error('Timed out waiting for an isolated backup path lock')
@@ -289,7 +302,13 @@ async function withPathMutex(filePath, operation, options = {}) {
       }
       await delay(Math.min(retryMs, Math.max(1, deadline - Date.now())))
       continue
+    }
+    await rm(claimPath, { recursive: true, force: true }).catch(() => {})
+    const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
+    try {
+      return await operation()
     } finally {
+      await stopHeartbeat()
       await rm(claimPath, { recursive: true, force: true }).catch(() => {})
       await releasePathLock(lockPath, ownerToken)
     }

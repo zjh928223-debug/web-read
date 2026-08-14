@@ -421,6 +421,17 @@ async function runPathLockSafetyChecks({ profileDir, target }) {
       heartbeatAt: oldHeartbeat,
     })}\n`, 'utf8')
     await target.writeJournal({ restoreId: 'stale-lock-must-recover', status: 'started', appliedDomains: [] })
+
+    await rm(target.quarantineDir, { recursive: true, force: true })
+    await writeFile(target.quarantineDir, 'not-a-directory', 'utf8')
+    const operationFailureStartedAt = Date.now()
+    await assert.rejects(
+      target.quarantine.write({ restoreId: 'operation-error', kind: 'fault-injection' }),
+      (error) => error?.code !== 'BACKUP_PATH_LOCK_TIMEOUT',
+    )
+    assert.ok(Date.now() - operationFailureStartedAt < 1_000, 'operation filesystem errors must not be retried as lock contention')
+    await rm(target.quarantineDir, { force: true })
+    await mkdir(target.quarantineDir, { recursive: true })
   } finally {
     await rm(lockPath, { recursive: true, force: true })
     if (previousTimeout === undefined) delete process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
@@ -442,6 +453,8 @@ async function runPathLockClaimCrashCheck(root) {
       READ_WEB_BACKUP_LOCK_STALE_AFTER_MS: '1000',
       READ_WEB_BACKUP_LOCK_TIMEOUT_MS: '5000',
       READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_DIR: barrierDir,
+      READ_WEB_BACKUP_TEST_MODE: '1',
+      READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_TIMEOUT_MS: '5000',
     },
   })
   await waitForPath(path.join(barrierDir, 'claim-ready.json'))
