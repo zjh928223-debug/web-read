@@ -13,7 +13,6 @@ const expectedScriptSrcs = [
   'src/stores/ui.js',
   'src/stores/audio.js',
   'src/stores/marks.js',
-  'src/stores/transcript.js',
   'src/stores/chunk.js',
   'src/stores/annotation.js',
   'src/composables/glass-effects.js',
@@ -33,6 +32,11 @@ const expectedScriptSrcs = [
 assert.deepEqual(scriptSrcs, expectedScriptSrcs, 'index.html script order should match the current Phase 5 guardrail');
 assert.equal(fs.existsSync(rootAppPath), false, 'root app.js should be deleted');
 assert.equal(scriptSrcs.includes('app.js'), false, 'index.html should not load root app.js');
+assert.equal(
+  fs.existsSync(path.join(repoRoot, 'src', 'stores', 'transcript.js')),
+  false,
+  'transcript compatibility store should be retired after its consumers moved to Pinia'
+);
 
 [
   'src/stores/cloze.js',
