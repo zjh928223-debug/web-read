@@ -10,11 +10,12 @@ const stages = [
   ['browser baseline diff and budget gate', process.execPath, ['scripts/perf/performance-budget-gate.mjs']],
   ['offline 1k/10k playback scale gate', process.execPath, ['scripts/perf/run-playback-scale-gate.mjs']],
   ['isolated backend HTTP benchmark', 'python', ['scripts/perf/backend-http-benchmark.py']],
+  ['isolated application backup/restore rehearsal', process.execPath, ['scripts/application-backup-release-rehearsal.mjs']],
   ['release manifest', process.execPath, ['scripts/generate-release-manifest.mjs']],
 ]
 
 const pending = [
-  'backup/restore and shortcut rollback rehearsal',
+  'shortcut rollback rehearsal (12.7)',
 ]
 
 console.log('verify-release included:')

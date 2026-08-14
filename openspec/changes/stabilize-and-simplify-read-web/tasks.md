@@ -113,8 +113,8 @@
 
 ## 12. 备份、迁移与发布验收
 
-- [ ] 12.1 实现版本化全应用 backup manifest、逐域 checksum、媒体引用策略和导入 dry-run
-- [ ] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
+- [x] 12.1 实现版本化全应用 backup manifest、逐域 checksum、媒体引用策略和导入 dry-run
+- [x] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
 - [ ] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
 - [ ] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [ ] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
