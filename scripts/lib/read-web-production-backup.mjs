@@ -11,7 +11,12 @@ const PROFILE_SCHEMA_VERSION = 1
 const APPLICATION_STATE_FILE = 'application-state.json'
 const BROWSER_PROFILE_FILE = 'browser-profile.json'
 const JOURNAL_SCHEMA_VERSION = 1
-const PATH_MUTEXES = new Map()
+const PATH_LOCK_SCHEMA_VERSION = 1
+const PATH_LOCK_SUFFIX = '.read-web-path.lock'
+const PATH_LOCK_TIMEOUT_MS = 30_000
+const PATH_LOCK_STALE_AFTER_MS = 60_000
+const PATH_LOCK_RETRY_MS = 15
+const PATH_LOCK_HEARTBEAT_MS = 1_000
 
 let backupModulesPromise
 
@@ -61,27 +66,183 @@ function pathMutexKey(filePath) {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved
 }
 
-async function withPathMutex(filePath, operation) {
-  const key = pathMutexKey(filePath)
-  const state = PATH_MUTEXES.get(key) || { tail: Promise.resolve() }
-  PATH_MUTEXES.set(key, state)
-  const previous = state.tail
-  let release
-  const current = new Promise((resolve) => { release = resolve })
-  const queued = previous.then(() => current)
-  state.tail = queued
-  await previous
+function pathLockPath(filePath) {
+  return `${pathMutexKey(filePath)}${PATH_LOCK_SUFFIX}`
+}
+
+function pathLockNumber(name, fallback, minimum) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
+}
+
+function pathLockTimeout(options = {}) {
+  return Number.isFinite(options.timeoutMs)
+    ? Math.max(100, Math.floor(options.timeoutMs))
+    : pathLockNumber('READ_WEB_BACKUP_LOCK_TIMEOUT_MS', PATH_LOCK_TIMEOUT_MS, 100)
+}
+
+function pathLockStaleAfter(options = {}) {
+  return Number.isFinite(options.staleAfterMs)
+    ? Math.max(1_000, Math.floor(options.staleAfterMs))
+    : pathLockNumber('READ_WEB_BACKUP_LOCK_STALE_AFTER_MS', PATH_LOCK_STALE_AFTER_MS, 1_000)
+}
+
+async function readPathLockMetadata(lockPath) {
   try {
-    return await operation()
+    const raw = await readFile(path.join(lockPath, 'owner.json'), 'utf8')
+    const value = JSON.parse(raw)
+    if (!value || typeof value !== 'object' || value.schemaVersion !== PATH_LOCK_SCHEMA_VERSION
+      || typeof value.ownerToken !== 'string' || !value.ownerToken
+      || !Number.isInteger(value.pid) || value.pid <= 0
+      || typeof value.acquiredAt !== 'string' || typeof value.heartbeatAt !== 'string') return null
+    return value
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    return null
+  }
+}
+
+async function writePathLockMetadata(lockPath, metadata) {
+  const ownerPath = path.join(lockPath, 'owner.json')
+  const temporary = `${ownerPath}.tmp-${metadata.ownerToken}`
+  let handle
+  try {
+    handle = await open(temporary, 'wx')
+    await handle.writeFile(`${JSON.stringify(metadata)}\n`, 'utf8')
+    await handle.sync()
+    await handle.close()
+    handle = null
+    await renameWithRetry(temporary, ownerPath)
   } finally {
-    release()
-    if (state.tail === queued) PATH_MUTEXES.delete(key)
+    await handle?.close().catch(() => {})
+    await rm(temporary, { force: true }).catch(() => {})
+  }
+}
+
+function processIsAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error?.code === 'EPERM'
+  }
+}
+
+async function pathLockAge(lockPath, metadata) {
+  const value = Date.parse(metadata?.heartbeatAt || metadata?.acquiredAt || '')
+  if (Number.isFinite(value)) return Date.now() - value
+  try {
+    const lockStat = await stat(path.join(lockPath, 'owner.json'))
+    return Date.now() - lockStat.mtimeMs
+  } catch (error) {
+    if (error?.code !== 'ENOENT') return 0
+    try {
+      const lockStat = await stat(lockPath)
+      return Date.now() - lockStat.mtimeMs
+    } catch { return 0 }
+  }
+}
+
+async function recoverStalePathLock(lockPath, staleAfterMs) {
+  const first = await readPathLockMetadata(lockPath)
+  // A missing/corrupt lease record is not enough evidence that an active
+  // owner is gone. Leave it alone and let the bounded acquisition timeout
+  // fail closed; only a complete, stable owner record can be recovered.
+  if (!first) return false
+  const age = await pathLockAge(lockPath, first)
+  if (age < staleAfterMs) return false
+  if (first?.pid && processIsAlive(first.pid)) return false
+  const second = await readPathLockMetadata(lockPath)
+  if (!second || second.ownerToken !== first.ownerToken) return false
+  if (second.pid && processIsAlive(second.pid)) return false
+  try {
+    await rm(lockPath, { recursive: true, force: true })
+    return true
+  } catch { return false }
+}
+
+async function releasePathLock(lockPath, ownerToken) {
+  const metadata = await readPathLockMetadata(lockPath)
+  if (metadata && metadata.ownerToken !== ownerToken) return
+  await rm(lockPath, { recursive: true, force: true })
+}
+
+function startPathLockHeartbeat(lockPath, ownerToken) {
+  let stopped = false
+  let pending = Promise.resolve()
+  const beat = () => {
+    pending = pending.then(async () => {
+      if (stopped) return
+      const metadata = await readPathLockMetadata(lockPath)
+      if (metadata?.ownerToken !== ownerToken) return
+      await writePathLockMetadata(lockPath, {
+        ...metadata,
+        heartbeatAt: new Date().toISOString(),
+      })
+    }).catch(() => {})
+  }
+  const timer = setInterval(beat, PATH_LOCK_HEARTBEAT_MS)
+  timer.unref?.()
+  return async () => {
+    stopped = true
+    clearInterval(timer)
+    await pending
+  }
+}
+
+async function withPathMutex(filePath, operation, options = {}) {
+  const lockPath = pathLockPath(filePath)
+  const timeoutMs = pathLockTimeout(options)
+  const staleAfterMs = pathLockStaleAfter(options)
+  const retryMs = Number.isFinite(options.retryMs) ? Math.max(1, Math.floor(options.retryMs)) : PATH_LOCK_RETRY_MS
+  await mkdir(path.dirname(lockPath), { recursive: true })
+  const deadline = Date.now() + timeoutMs
+  const ownerToken = randomUUID()
+  while (true) {
+    try {
+      await mkdir(lockPath)
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error
+      await recoverStalePathLock(lockPath, staleAfterMs)
+      if (Date.now() >= deadline) {
+        const lockError = new Error('Timed out waiting for an isolated backup path lock')
+        lockError.code = 'BACKUP_PATH_LOCK_TIMEOUT'
+        throw lockError
+      }
+      await delay(Math.min(retryMs, Math.max(1, deadline - Date.now())))
+      continue
+    }
+    const acquiredAt = new Date().toISOString()
+    try {
+      await writePathLockMetadata(lockPath, {
+        schemaVersion: PATH_LOCK_SCHEMA_VERSION,
+        ownerToken,
+        pid: process.pid,
+        acquiredAt,
+        heartbeatAt: acquiredAt,
+      })
+      const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
+      try {
+        return await operation()
+      } finally {
+        await stopHeartbeat()
+      }
+    } finally {
+      await releasePathLock(lockPath, ownerToken)
+    }
   }
 }
 
 async function delay(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
+
+/*
+ * The lock is intentionally a directory created with mkdir: creation is an
+ * atomic operation on Windows and POSIX. owner.json is a lease record, not a
+ * deletion signal; stale recovery only removes a lease whose owner process is
+ * gone and whose heartbeat has exceeded the bounded lease age.
+ */
 
 async function renameWithRetry(temporary, absolute) {
   const retryDelays = [0, 5, 15, 35, 75, 150]
@@ -187,8 +348,8 @@ const JOURNAL_STATUS_RANK = Object.freeze({
   committing: 3,
   committed: 4,
   completed: 5,
-  'rolled-back': 1,
-  'rollback-failed': 6,
+  'rolled-back': 6,
+  'rollback-failed': 7,
 })
 
 function mergeJournalEntry(previous, incoming) {
@@ -497,17 +658,20 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
           const filePath = path.join(rollbackDir, `${safeFilePart(entry.restoreId)}.json`)
           const existing = await readJsonIfPresent(filePath, 'RESTORE_ROLLBACK_CORRUPT')
           if (existing) {
-            if (existing.artifact?.artifactChecksum === entry.artifact?.artifactChecksum) return
+            if (existing.artifact?.artifactChecksum === entry.artifact?.artifactChecksum) return clone(existing)
             const error = new Error(`Rollback backup already exists for ${entry.restoreId}`)
             error.code = 'RESTORE_ID_CONFLICT'
             throw error
           }
           const current = await readStateUnlocked()
-          await writeJsonAtomic(filePath, {
+          const value = {
             schemaVersion: 1,
             ...entry,
             rawState: current,
-          })
+            expectedBaseRevision: current.revision,
+          }
+          await writeJsonAtomic(filePath, value)
+          return clone(value)
         })
       },
       async read({ restoreId }) {
@@ -532,8 +696,16 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
         })
       },
     },
-    async beginTransaction({ restoreId, signal }) {
+    async beginTransaction({ restoreId, signal, expectedBaseRevision }) {
       const current = await withPathMutex(profileDir, readStateUnlocked)
+      if (Number.isInteger(expectedBaseRevision) && current.revision !== expectedBaseRevision) {
+        const error = new Error(`Restore base revision ${expectedBaseRevision} is stale; current is ${current.revision}`)
+        error.code = 'RESTORE_REVISION_CONFLICT'
+        error.baseRevision = expectedBaseRevision
+        error.currentRevision = current.revision
+        error.targetUnchanged = true
+        throw error
+      }
       const baseRevision = current.revision
       let staged = clone(current)
       let appliedCount = 0
@@ -614,6 +786,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
         const next = createStateEnvelope(domains, current.revision + 1)
         await writeJsonAtomic(statePath, next)
         stateRef.value = next
+        return { revision: next.revision, checksum: next.checksum }
       })
     },
     async verifyApplied({ artifact }) {

@@ -14,6 +14,7 @@ const READER_SAVE_OUTBOX_LEGACY_QUARANTINE_KEY = `${READER_SAVE_OUTBOX_V1_KEY}.q
 const READER_SAVE_OUTBOX_NAMESPACE = 'read-web.reader-save-outbox.'
 const OUTBOX_QUARANTINE_RECOVERY_SCHEMA = 1
 const OUTBOX_QUARANTINE_RECOVERY_ALGORITHM = 'AES-256-GCM'
+const OUTBOX_QUARANTINE_KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const PASSAGE_PREVIEW_STORAGE_KEYS = Object.freeze([
   { key: 'vocabulary.passage-preview.durable-state.v1', schemaVersion: 'passage-preview.durable-state.v1', requiredRevision: true },
   { key: 'vocabulary.passage-preview.data.v2', schemaVersion: 'passage-preview.local-data.v2', allowLegacyValue: true },
@@ -41,7 +42,15 @@ export const READ_WEB_READER_SAVE_OUTBOX_KEYS = Object.freeze({
 
 export function createReaderSaveOutboxQuarantineProtector(options = {}) {
   const keyMaterial = options.key
-  const keyId = String(options.keyId || '').trim()
+  const hasKeyId = Object.prototype.hasOwnProperty.call(options, 'keyId')
+  const rawKeyId = String(options.keyId ?? '')
+  const keyId = rawKeyId.trim()
+  if (hasKeyId && (rawKeyId !== keyId || !OUTBOX_QUARANTINE_KEY_ID_PATTERN.test(keyId))) {
+    throw outboxError(
+      'BACKUP_READER_OUTBOX_QUARANTINE_KEY_ID_INVALID',
+      'Reader outbox quarantine keyId must be a short ASCII safety label, not a path or URL',
+    )
+  }
   return {
     async encrypt(rawValue, metadata) {
       if (!keyMaterial || !keyId) {
@@ -281,6 +290,9 @@ function validateQuarantineRecoveryEnvelope(value) {
     || typeof value.iv !== 'string' || typeof value.ciphertext !== 'string'
     || Object.prototype.hasOwnProperty.call(value, 'rawValue')) {
     throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Encrypted reader outbox quarantine envelope is invalid')
+  }
+  if (!OUTBOX_QUARANTINE_KEY_ID_PATTERN.test(value.keyId)) {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Encrypted reader outbox quarantine keyId is unsafe')
   }
   normalizeQuarantineMetadata(value)
   return value

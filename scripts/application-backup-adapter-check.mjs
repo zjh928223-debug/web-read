@@ -139,7 +139,17 @@ await assert.rejects(
   'quarantined raw evidence must fail closed when no recovery protector is configured',
 )
 assert.equal(JSON.parse(storage.getItem(quarantineKey)).rawValue, quarantinedRawValue)
+await assert.rejects(
+  createReaderSaveOutboxQuarantineProtector().encrypt(quarantinedRawValue, {
+    sourceKey: quarantineKey,
+    detectedAt: '2026-08-14T00:00:00.000Z',
+    reason: 'malformed-json',
+  }),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_KEY_REQUIRED',
+  'a missing quarantine protector must fail closed without exposing raw evidence',
+)
 const quarantineProtector = createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: 'fixture-key-1' })
+const freshQuarantineProtector = createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: 'fixture-key-1' })
 const protectedAdapters = createReadWebApplicationBackupAdapters({
   ...options,
   readerSaveOutboxQuarantineProtector: quarantineProtector,
@@ -154,6 +164,29 @@ assert.ok(quarantineRecord)
 assert.equal(JSON.stringify(protectedArtifact).includes('quarantine-secret'), false)
 assert.equal((await protectedService.verifyBackup(JSON.stringify(protectedArtifact))).valid, true)
 assert.equal(await quarantineProtector.decrypt(quarantineRecord.payload.recovery), quarantinedRawValue)
+assert.equal(await freshQuarantineProtector.decrypt(quarantineRecord.payload.recovery), quarantinedRawValue)
+await assert.rejects(
+  createReaderSaveOutboxQuarantineProtector({ key: 'wrong-recovery-key', keyId: 'fixture-key-1' }).decrypt(quarantineRecord.payload.recovery),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_DECRYPT_FAILED',
+)
+await assert.rejects(
+  createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: 'another-key' }).decrypt(quarantineRecord.payload.recovery),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_KEY_MISMATCH',
+)
+for (const unsafeKeyId of ['../fixture-key', 'https://example.test/key', 'fixture/key', 'fixture\nkey', '']) {
+  assert.throws(
+    () => createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: unsafeKeyId }),
+    (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_KEY_ID_INVALID',
+  )
+}
+assert.throws(
+  () => createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: 'x'.repeat(65) }),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_KEY_ID_INVALID',
+)
+assert.equal(JSON.stringify(protectedArtifact).includes('rawValue'), false)
+assert.equal(JSON.stringify(protectedArtifact).includes('fixture-recovery-key'), false)
+assert.equal(JSON.stringify(protectedArtifact).includes('C:\\'), false)
+assert.equal(JSON.stringify(protectedArtifact).includes('/home/'), false)
 assert.equal((await protectedAdapters['reader-session'].collect()).records.length, 8)
 storage.removeItem(quarantineKey)
 

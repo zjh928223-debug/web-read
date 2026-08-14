@@ -821,7 +821,12 @@ async function readRollbackBackup(target, restoreId) {
 
 async function writeRollbackBackup(target, restoreId, artifact) {
   if (typeof target?.rollbackStore?.write !== 'function') throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target must provide a durable rollback backup store')
-  await target.rollbackStore.write({ restoreId, artifact, createdAt: new Date().toISOString() })
+  return target.rollbackStore.write({ restoreId, artifact, createdAt: new Date().toISOString() })
+}
+
+function rollbackBaseRevision(entry) {
+  const revision = entry?.rawState?.revision ?? entry?.expectedBaseRevision
+  return Number.isInteger(revision) && revision >= 0 ? revision : null
 }
 
 async function quarantineArtifact(target, entry) {
@@ -1226,8 +1231,30 @@ export function createApplicationBackupService(options = {}) {
         throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'The rollback backup is corrupt and cannot be used safely', { restoreId })
       }
     }
-    if (priorJournal && rollbackEntry?.artifact) {
-      await target.restoreSnapshot(rollbackEntry.artifact, { restoreId, reason: 'restore-retry-recover-baseline' })
+    if (rollbackEntry?.artifact && rollbackBaseRevision(rollbackEntry) === null) {
+      await quarantineArtifact(target, {
+        restoreId,
+        kind: 'invalid-rollback-backup',
+        reason: 'RESTORE_ROLLBACK_BASE_REVISION_MISSING',
+      })
+      throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'The rollback backup has no bound base revision', { restoreId })
+    }
+    if (priorJournal?.status === 'committed') {
+      if (!Number.isInteger(priorJournal.committedRevision)) {
+        throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'A committed restore has no durable committed revision evidence', { restoreId })
+      }
+      try {
+        await target.restoreSnapshot(rollbackEntry.artifact, {
+          restoreId,
+          reason: 'restore-retry-recover-baseline',
+          expectedRevision: priorJournal.committedRevision,
+        })
+      } catch (error) {
+        if (error?.code === 'RESTORE_REVISION_CONFLICT') {
+          throw backupError('RESTORE_REVISION_CONFLICT', 'Concurrent data changed after the restore commit; manual recovery is required', { restoreId })
+        }
+        throw backupError('RESTORE_ROLLBACK_FAILED', 'A committed restore could not recover its baseline safely', { restoreId })
+      }
     }
     const dryRun = await dryRunRestoreForService({
       artifact: sourceArtifact,
@@ -1249,7 +1276,13 @@ export function createApplicationBackupService(options = {}) {
       const rollbackArtifact = await createBackup({ adapters: targetAdapters, now })
       await assertValidBackupArtifact(rollbackArtifact, { requiredDomains })
       await writeRollbackBackup(target, restoreId, rollbackArtifact)
-      rollbackEntry = { artifact: rollbackArtifact }
+      rollbackEntry = await readRollbackBackup(target, restoreId)
+    }
+    const expectedBaseRevision = Number.isInteger(priorJournal?.rollbackRevision)
+      ? priorJournal.rollbackRevision
+      : rollbackBaseRevision(rollbackEntry)
+    if (!Number.isInteger(expectedBaseRevision)) {
+      throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'Restore cannot start without a durable rollback base revision', { restoreId })
     }
     const started = {
       schemaVersion: 1,
@@ -1257,6 +1290,7 @@ export function createApplicationBackupService(options = {}) {
       status: 'started',
       artifactChecksum: sourceArtifact.artifactChecksum,
       rollbackBackupChecksum: rollbackEntry.artifact.artifactChecksum,
+      expectedBaseRevision,
       appliedDomains: [],
       startedAt: new Date().toISOString(),
     }
@@ -1269,6 +1303,7 @@ export function createApplicationBackupService(options = {}) {
         artifact: sourceArtifact,
         dryRun,
         signal: restoreOptions.signal,
+        expectedBaseRevision,
       })
       if (!transaction || typeof transaction.applyDomain !== 'function' || typeof transaction.commit !== 'function') {
         throw backupError('RESTORE_ATOMIC_UNAVAILABLE', 'Restore transaction does not expose applyDomain and commit')
@@ -1288,8 +1323,16 @@ export function createApplicationBackupService(options = {}) {
       }
       if (restoreOptions.signal?.aborted) throw backupError('RESTORE_INTERRUPTED', 'Restore was interrupted before commit')
       await writeJournal({ ...started, status: 'committing', appliedDomains })
-      await transaction.commit()
-      await writeJournal({ ...started, status: 'committed', appliedDomains })
+      const commitResult = await transaction.commit()
+      const committedRevision = Number.isInteger(transaction.committedRevision)
+        ? transaction.committedRevision
+        : (Number.isInteger(commitResult?.revision) ? commitResult.revision : null)
+      await writeJournal({
+        ...started,
+        status: 'committed',
+        appliedDomains,
+        ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
+      })
       if (typeof target.verifyApplied === 'function') {
         const applied = await target.verifyApplied({ restoreId, artifact: sourceArtifact, report: dryRun })
         if (applied === false || applied?.ok === false) throw backupError('RESTORE_POST_VERIFY_FAILED', 'Restored target did not match the backup artifact')
@@ -1300,17 +1343,19 @@ export function createApplicationBackupService(options = {}) {
     } catch (error) {
       let rollbackError = null
       try { await transaction?.rollback?.() } catch (rollbackFailure) { rollbackError = rollbackFailure }
-      const shouldRestoreSnapshot = !['RESTORE_INTERRUPTED', 'RESTORE_REVISION_CONFLICT'].includes(error?.code)
-        && error?.code !== 'RESTORE_ATOMIC_UNAVAILABLE'
+      const committedRevision = Number.isInteger(transaction?.committedRevision)
+        ? transaction.committedRevision
+        : (Number.isInteger(error?.committedRevision) ? error.committedRevision : null)
+      const shouldRestoreSnapshot = Number.isInteger(committedRevision)
+      let rollbackRevision = null
       if (shouldRestoreSnapshot) {
         try {
-          await target.restoreSnapshot(rollbackEntry.artifact, {
+          const rollbackResult = await target.restoreSnapshot(rollbackEntry.artifact, {
             restoreId,
             reason: 'restore-failed',
-            expectedRevision: Number.isInteger(transaction?.committedRevision)
-              ? transaction.committedRevision
-              : undefined,
+            expectedRevision: committedRevision,
           })
+          rollbackRevision = Number.isInteger(rollbackResult?.revision) ? rollbackResult.revision : null
         } catch (rollbackFailure) { rollbackError = rollbackError || rollbackFailure }
       }
       let quarantineError = null
@@ -1327,13 +1372,20 @@ export function createApplicationBackupService(options = {}) {
         ...started,
         status: failedStatus,
         failureCode: error?.code || 'RESTORE_FAILED',
+        ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
+        ...(Number.isInteger(rollbackRevision) ? { rollbackRevision } : {}),
         rollbackComplete: !rollbackError,
         quarantineComplete: !quarantineError,
         failedAt: new Date().toISOString(),
       }
       await writeJournal(failedJournal)
       if (rollbackError) {
-        throw backupError('RESTORE_ROLLBACK_FAILED', 'Restore failed and rollback could not be confirmed', { restoreId })
+        const code = rollbackError.code === 'RESTORE_REVISION_CONFLICT'
+          ? 'RESTORE_REVISION_CONFLICT'
+          : 'RESTORE_ROLLBACK_FAILED'
+        throw backupError(code, code === 'RESTORE_REVISION_CONFLICT'
+          ? 'Concurrent data changed before rollback could be applied; manual recovery is required'
+          : 'Restore failed and rollback could not be confirmed', { restoreId })
       }
       throw backupError(error?.code || 'RESTORE_FAILED', error?.message || 'Restore failed; target was rolled back', { restoreId })
     }

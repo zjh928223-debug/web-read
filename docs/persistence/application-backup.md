@@ -55,10 +55,17 @@ the migration-before rollback copy unless the target explicitly declares a
 separate rollback store.
 
 `restore` requires an explicitly isolated target with an atomic transaction,
-durable journal, migration-before rollback backup, post-failure snapshot
-rollback and corrupt quarantine. A `restoreId` makes retries idempotent; a
-completed retry is a no-op and an interrupted/failed retry reuses the original
-rollback backup before attempting the commit again.
+durable journal, migration-before rollback backup and corrupt quarantine. The
+rollback entry stores the target's raw state revision; `beginTransaction` must
+compare that expected base revision while holding the target lock. A failed
+transaction before a durable commit is never allowed to restore an old
+snapshot. Snapshot rollback is attempted only when the transaction exposes a
+committed revision (or equivalent partial-commit evidence), and the rollback
+itself uses an expected-revision CAS. If another writer advances the target,
+restore returns a revision conflict/manual-recovery outcome and leaves the
+newer state intact. A `restoreId` makes retries idempotent; a completed retry
+is a no-op and an interrupted/failed retry reuses the original rollback backup
+only when its journal evidence is safe.
 
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
@@ -70,5 +77,6 @@ atomic state, journal, rollback and quarantine files, but
 `application-state.json` is not yet the browser's application-readable
 IndexedDB/localStorage/workflow target. The rehearsal therefore proves the
 engine's checks, CAS and rollback semantics only; real domain target adapters
-remain task 12.3. It uses generated temporary fixture directories only and
-never restores real daily data.
+remain tasks 12.2 and 12.3. It is not a full application restore release pass,
+and it uses generated temporary fixture directories only; it never restores
+real daily data.

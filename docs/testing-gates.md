@@ -58,7 +58,7 @@ node scripts/verify-full.mjs --list
 
 Full gate 不启动真实 Material Workflow service。当前 Python suite 使用 in-process FastAPI Adapter；独立 `8766` production host、Material panel、SRS/Preview 浏览器 journey、故障注入与资源生命周期覆盖将在相应实现完成后加入。
 
-## Release gate（尚未实现）
+## Release gate（当前明确阻断）
 
 `verify-release` 不应只是 `verify-full` 的别名。其最低范围为：
 
@@ -68,7 +68,9 @@ Full gate 不启动真实 Material Workflow service。当前 Python suite 使用
 - production host `8766`、Release Manifest 与 artifact hash；
 - 全应用 backup/restore、migration dry-run 和 rollback drill。
 
-在这些能力存在前，Full gate 通过不代表可以切换桌面快捷方式或接触真实学习数据。
+当前 `verify-release` 会先列出并阻断未完成的 12.2、12.3 和 12.7；`--list` 只查看清单并以成功退出，默认执行以非零退出表示不可发布。`npm run verify:backup-restore-rehearsal` 的产物明确标记为 **isolated application-state foundation**，只证明临时 `application-state.json`、journal、rollback 和 quarantine 文件的校验/CAS/故障语义，不证明真实 IndexedDB/localStorage/workflow profile 的全应用恢复。该 rehearsal 由 `package.json` 的 `verify:backup-restore-rehearsal` 直接拥有，不能替代 12.2/12.3。
+
+在 12.2、12.3 和其余 pending gates 完成前，任何 Full/基础 rehearsal 通过都不代表可以切换桌面快捷方式或接触真实学习数据。
 
 ## 已知基线问题
 

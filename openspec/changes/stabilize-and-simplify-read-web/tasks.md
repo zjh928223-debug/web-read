@@ -122,8 +122,9 @@
 - [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
 - [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
-> 12.2 remains unchecked: the current isolated restore-engine foundation proves
-> atomic file/journal/CAS/rollback behavior in generated temporary directories,
-> but its canonical `application-state.json` is not an application-readable
-> browser IndexedDB/localStorage/workflow target. Real domain target adapters and
-> end-to-end application recovery remain task 12.3.
+> 12.2 and 12.3 remain unchecked: the current isolated application-state
+> foundation proves atomic file/journal/CAS/rollback behavior in generated
+> temporary directories, but its canonical `application-state.json` is not an
+> application-readable browser IndexedDB/localStorage/workflow target. Real
+> domain target adapters and end-to-end application recovery remain pending;
+> the foundation rehearsal MUST NOT be described as a full restore release pass.

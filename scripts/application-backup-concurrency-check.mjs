@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -30,9 +32,28 @@ const initialDomains = Object.fromEntries(requiredDomains.map((key) => [key, {
   mediaReferences: [],
 }]))
 
+// TDD RED evidence captured before the cross-process lock: the old
+// in-process PATH_MUTEXES implementation ran this same two-process barrier
+// workload to 87/96 journal entries (AssertionError: 87 !== 96). Keep the
+// barrier and exact-count assertions as the regression proof.
+
+if (process.argv[2] === '--child-worker') {
+  await runChildWorker({
+    workerId: process.argv[3],
+    profileDir: process.argv[4],
+    barrierDir: process.argv[5],
+    rounds: Number(process.argv[6] || 12),
+    writesPerRound: Number(process.argv[7] || 4),
+    resultPath: process.argv[8],
+  })
+  process.exit(0)
+}
+
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-backup-concurrency-'))
 
 try {
+  await runCrossProcessConcurrency(root)
+
   const profileDir = path.join(root, 'profile')
   const first = await createIsolatedProfileRestoreTarget({ profileDir, initialDomains })
   const second = await createIsolatedProfileRestoreTarget({ profileDir })
@@ -143,6 +164,8 @@ try {
   assert.equal(Object.keys(publicJournal.entries).length, 2)
   assert.equal(publicJournal.checksum, checksum(publicJournal, ['schemaVersion', 'revision', 'entries']))
 
+  await runRollbackTimingChecks({ root, sourceService: publicService, artifact: publicArtifact })
+
   const interruptedController = new AbortController()
   interruptedController.abort()
   const interrupted = await second.beginTransaction({ restoreId: 'interrupted', signal: interruptedController.signal })
@@ -154,9 +177,219 @@ try {
   assert.equal((await restarted.readJournal({ restoreId: 'concurrent-49' })).status, 'started')
   assert.deepEqual(await restarted.readState(), state)
 
-  console.log('Application backup concurrency checks passed.')
+  console.log('Application backup concurrency checks passed (child-process barrier; old PATH_MUTEXES RED baseline was 87/96).')
 } finally {
   await rm(root, { recursive: true, force: true })
+}
+
+async function runRollbackTimingChecks({ root, sourceService, artifact }) {
+  const preBeginProfile = path.join(root, 'rollback-pre-begin-profile')
+  const preBeginTarget = await createIsolatedProfileRestoreTarget({ profileDir: preBeginProfile, initialDomains })
+  const preBeginWriter = await createIsolatedProfileRestoreTarget({ profileDir: preBeginProfile })
+  const originalBegin = preBeginTarget.beginTransaction.bind(preBeginTarget)
+  preBeginTarget.beginTransaction = async (options) => {
+    const writerTransaction = await preBeginWriter.beginTransaction({ restoreId: 'concurrent-pre-begin-writer' })
+    await writerTransaction.applyDomain('workflow', domainWithRecord('concurrent-pre-begin-writer'))
+    await writerTransaction.commit()
+    return originalBegin(options)
+  }
+  await assert.rejects(
+    sourceService.restore(artifact, { target: preBeginTarget, restoreId: 'rollback-pre-begin' }),
+    { code: 'RESTORE_REVISION_CONFLICT' },
+  )
+  const preBeginState = await preBeginTarget.readState()
+  assert.equal(preBeginState.revision, 1)
+  assert.equal(preBeginState.domains.workflow.records[0].id, 'concurrent-pre-begin-writer')
+  const preBeginJournal = JSON.parse(await readFile(preBeginTarget.journalPath, 'utf8'))
+  assert.equal(preBeginJournal.entries['rollback-pre-begin'].status, 'rolled-back')
+  assert.equal(preBeginJournal.entries['rollback-pre-begin'].failureCode, 'RESTORE_REVISION_CONFLICT')
+  assert.equal(Object.hasOwn(preBeginJournal.entries['rollback-pre-begin'], 'rollbackRevision'), false)
+
+  const postCommitProfile = path.join(root, 'rollback-post-commit-profile')
+  const postCommitTarget = await createIsolatedProfileRestoreTarget({ profileDir: postCommitProfile, initialDomains })
+  const postCommitWriter = await createIsolatedProfileRestoreTarget({ profileDir: postCommitProfile })
+  const postCommitBegin = postCommitTarget.beginTransaction.bind(postCommitTarget)
+  postCommitTarget.beginTransaction = async (options) => {
+    const transaction = await postCommitBegin(options)
+    const originalCommit = transaction.commit.bind(transaction)
+    transaction.commit = async () => {
+      const result = await originalCommit()
+      const writerTransaction = await postCommitWriter.beginTransaction({ restoreId: 'concurrent-post-commit-writer' })
+      await writerTransaction.applyDomain('workflow', domainWithRecord('concurrent-post-commit-writer'))
+      await writerTransaction.commit()
+      const error = new Error('synthetic write-then-fail after concurrent commit')
+      error.code = 'RESTORE_COMMIT_FAILED'
+      error.committedRevision = transaction.committedRevision
+      throw error
+    }
+    return transaction
+  }
+  await assert.rejects(
+    sourceService.restore(artifact, { target: postCommitTarget, restoreId: 'rollback-post-commit' }),
+    { code: 'RESTORE_REVISION_CONFLICT' },
+  )
+  const postCommitState = await postCommitTarget.readState()
+  assert.equal(postCommitState.revision, 2)
+  assert.equal(postCommitState.domains.workflow.records[0].id, 'concurrent-post-commit-writer')
+  const postCommitJournal = JSON.parse(await readFile(postCommitTarget.journalPath, 'utf8'))
+  const postCommitEntry = postCommitJournal.entries['rollback-post-commit']
+  assert.equal(postCommitEntry.status, 'rollback-failed')
+  assert.equal(postCommitEntry.failureCode, 'RESTORE_COMMIT_FAILED')
+  assert.equal(postCommitEntry.committedRevision, 1)
+  assert.equal(postCommitEntry.rollbackComplete, false)
+  assert.equal(Object.hasOwn(postCommitEntry, 'rollbackRevision'), false)
+  assert.equal(postCommitJournal.checksum, checksum(postCommitJournal, ['schemaVersion', 'revision', 'entries']))
+}
+
+async function runCrossProcessConcurrency(root) {
+  const profileDir = path.join(root, 'cross-process-profile')
+  const barrierDir = path.join(root, 'cross-process-barriers')
+  await mkdir(barrierDir, { recursive: true })
+  const initialTarget = await createIsolatedProfileRestoreTarget({ profileDir, initialDomains })
+  const rounds = 12
+  const writesPerRound = 4
+  const workers = ['alpha', 'beta'].map((workerId) => {
+    const resultPath = path.join(barrierDir, `result-${workerId}.json`)
+    return spawnWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound, resultPath })
+  })
+  const results = await Promise.all(workers)
+  for (const result of results) {
+    assert.equal(result.code, 0, `child process ${result.workerId} failed: ${result.stderr || result.stdout}`)
+  }
+
+  const target = await createIsolatedProfileRestoreTarget({ profileDir })
+  const journal = JSON.parse(await readFile(target.journalPath, 'utf8'))
+  assert.equal(Object.keys(journal.entries).length, rounds * writesPerRound * 2)
+  assert.equal(journal.revision, rounds * writesPerRound * 2)
+  for (const workerId of ['alpha', 'beta']) {
+    for (let round = 0; round < rounds; round += 1) {
+      for (let write = 0; write < writesPerRound; write += 1) {
+        assert.equal(journal.entries[`cross-process-${workerId}-${round}-${write}`].status, 'started')
+      }
+    }
+  }
+  assert.equal(journal.checksum, checksum(journal, ['schemaVersion', 'revision', 'entries']))
+  await runPathLockSafetyChecks({ profileDir, target: initialTarget })
+
+  const commitResults = results.map((result) => JSON.parse(result.result))
+  assert.equal(commitResults.filter((result) => result.commitCode === 'fulfilled').length, 1)
+  assert.equal(commitResults.filter((result) => result.commitCode === 'RESTORE_REVISION_CONFLICT').length, 1)
+  const state = await target.readState()
+  assert.equal(state.revision, 1)
+  assert.ok(['cross-process-alpha', 'cross-process-beta'].includes(state.domains.workflow.records[0]?.id))
+  assert.equal(state.checksum, checksum(state, ['schemaVersion', 'revision', 'domains']))
+}
+
+async function runPathLockSafetyChecks({ profileDir, target }) {
+  const lockBase = path.resolve(profileDir)
+  const lockPath = `${process.platform === 'win32' ? lockBase.toLowerCase() : lockBase}.read-web-path.lock`
+  const ownerPath = path.join(lockPath, 'owner.json')
+  const oldHeartbeat = new Date(Date.now() - 10_000).toISOString()
+  const previousTimeout = process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
+  const previousStaleAfter = process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS
+  try {
+    process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = '100'
+    process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS = '1000'
+    await mkdir(lockPath, { recursive: true })
+    await writeFile(ownerPath, `${JSON.stringify({
+      schemaVersion: 1,
+      ownerToken: 'active-owner-token',
+      pid: process.pid,
+      acquiredAt: oldHeartbeat,
+      heartbeatAt: oldHeartbeat,
+    })}\n`, 'utf8')
+    await assert.rejects(
+      target.writeJournal({ restoreId: 'active-lock-must-survive', status: 'started', appliedDomains: [] }),
+      { code: 'BACKUP_PATH_LOCK_TIMEOUT' },
+    )
+    assert.equal(JSON.parse(await readFile(ownerPath, 'utf8')).ownerToken, 'active-owner-token')
+
+    await rm(lockPath, { recursive: true, force: true })
+    await mkdir(lockPath, { recursive: true })
+    await writeFile(ownerPath, `${JSON.stringify({
+      schemaVersion: 1,
+      ownerToken: 'dead-owner-token',
+      pid: Number.MAX_SAFE_INTEGER,
+      acquiredAt: oldHeartbeat,
+      heartbeatAt: oldHeartbeat,
+    })}\n`, 'utf8')
+    await target.writeJournal({ restoreId: 'stale-lock-must-recover', status: 'started', appliedDomains: [] })
+  } finally {
+    await rm(lockPath, { recursive: true, force: true })
+    if (previousTimeout === undefined) delete process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
+    else process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = previousTimeout
+    if (previousStaleAfter === undefined) delete process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS
+    else process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS = previousStaleAfter
+  }
+}
+
+function spawnWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound, resultPath }) {
+  const scriptPath = fileURLToPath(import.meta.url)
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      scriptPath,
+      '--child-worker',
+      workerId,
+      profileDir,
+      barrierDir,
+      String(rounds),
+      String(writesPerRound),
+      resultPath,
+    ], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk) => { stdout += chunk })
+    child.stderr.on('data', (chunk) => { stderr += chunk })
+    const timeout = setTimeout(() => child.kill(), 30_000)
+    child.once('error', (error) => { clearTimeout(timeout); reject(error) })
+    child.once('exit', async (code, signal) => {
+      clearTimeout(timeout)
+      const result = await readFile(resultPath, 'utf8').catch(() => '')
+      resolve({ workerId, code: code ?? 1, signal, stdout, stderr, result })
+    })
+  })
+}
+
+async function runChildWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound, resultPath }) {
+  const target = await createIsolatedProfileRestoreTarget({ profileDir })
+  for (let round = 0; round < rounds; round += 1) {
+    await barrier(barrierDir, `journal-${round}`, workerId)
+    await Promise.all(Array.from({ length: writesPerRound }, (_, write) => target.writeJournal({
+      restoreId: `cross-process-${workerId}-${round}-${write}`,
+      status: 'started',
+      appliedDomains: [],
+    })))
+    await barrier(barrierDir, `journal-done-${round}`, workerId)
+  }
+
+  const transaction = await target.beginTransaction({ restoreId: `cross-process-${workerId}` })
+  await barrier(barrierDir, 'transaction-begun', workerId)
+  await transaction.applyDomain('workflow', domainWithRecord(`cross-process-${workerId}`))
+  let commitCode = 'fulfilled'
+  try {
+    await transaction.commit()
+  } catch (error) {
+    commitCode = error?.code || 'UNKNOWN_COMMIT_ERROR'
+  }
+  await writeFile(resultPath, `${JSON.stringify({ workerId, commitCode })}\n`, 'utf8')
+}
+
+async function barrier(root, name, workerId) {
+  await mkdir(path.join(root, `${name}-${workerId}`), { recursive: false }).catch((error) => {
+    if (error?.code !== 'EEXIST') throw error
+  })
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const entries = await readdir(root)
+    if (entries.filter((entry) => entry.startsWith(`${name}-`)).length >= 2) return
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error(`barrier timed out: ${name}`)
 }
 
 function domainWithRecord(id) {

@@ -198,15 +198,17 @@ function createRestoreTarget(adapters) {
   const target = {
     isolated: true,
     capacityBytes: 10_000_000,
+    revision: 0,
     rollbackWrites: 0,
     transactionCommits: 0,
     journal: { attempts: 0, last: null },
     rollbackStore: {
       async write(entry) {
         target.rollbackWrites += 1
-        target.rollback = entry.artifact
+        target.rollback = { ...entry, rawState: { revision: target.revision } }
+        return target.rollback
       },
-      async read() { return target.rollback ? { artifact: target.rollback } : null },
+      async read() { return target.rollback ? structuredClone(target.rollback) : null },
     },
     async readJournal() { return target.journal.last },
     quarantine: { entries: [], async write(entry) { this.entries.push(entry) } },
@@ -214,9 +216,12 @@ function createRestoreTarget(adapters) {
       target.journal.last = entry
       target.journal.attempts += entry.status === 'started' ? 1 : 0
     },
-    async beginTransaction() {
+    async beginTransaction({ expectedBaseRevision } = {}) {
+      if (Number.isInteger(expectedBaseRevision) && expectedBaseRevision !== target.revision) {
+        throw Object.assign(new Error('stale restore base revision'), { code: 'RESTORE_REVISION_CONFLICT' })
+      }
       const staged = new Map()
-      return {
+      const transaction = {
         async applyDomain(key, value) { staged.set(key, structuredClone(value)) },
         async commit() {
           for (const [key, value] of staged) {
@@ -225,16 +230,24 @@ function createRestoreTarget(adapters) {
             adapters[key].writes += 1
           }
           target.transactionCommits += 1
+          target.revision += 1
+          transaction.committedRevision = target.revision
         },
         async rollback() { staged.clear() },
       }
+      return transaction
     },
-    async restoreSnapshot(artifact) {
+    async restoreSnapshot(artifact, context = {}) {
+      if (Number.isInteger(context.expectedRevision) && target.revision !== context.expectedRevision) {
+        throw Object.assign(new Error('stale rollback revision'), { code: 'RESTORE_REVISION_CONFLICT' })
+      }
       for (const key of APPLICATION_BACKUP_REQUIRED_DOMAINS) {
         const domain = artifact.domains[key]
         adapters[key].records = structuredClone(domain.records)
         adapters[key].revision = domain.revision
       }
+      target.revision += 1
+      return { revision: target.revision }
     },
   }
   return target

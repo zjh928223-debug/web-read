@@ -19,7 +19,7 @@ const outputPath = path.resolve(
 const rehearsalRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-backup-rehearsal-'))
 const evidence = {
   schemaVersion: 2,
-  kind: 'isolated-production-application-backup-restore-rehearsal',
+  kind: 'isolated-application-state-foundation-rehearsal',
   startedAt: new Date().toISOString(),
   realDataTouched: false,
   reservedDailyPortsTouched: false,
@@ -117,7 +117,7 @@ try {
   assert.equal((await target.readState()).domains.workflow.records.length, artifact.domains.workflow.records.length)
   const retry = await composition.service.restore(artifact, { target, restoreId: 'production-rehearsal-success' })
   assert.equal(retry.status, 'already-complete')
-  evidence.checks.push({ name: 'isolated restore-engine foundation directory restore and idempotent retry', passed: true })
+  evidence.checks.push({ name: 'isolated application-state foundation directory restore and idempotent retry (not full application restore)', passed: true })
 
   const failureTarget = await createIsolatedProfileRestoreTarget({
     profileDir: path.join(rehearsalRoot, 'target-failure'),
@@ -140,7 +140,7 @@ try {
   assert.equal(recovered.status, 'completed')
   const completedRetry = await composition.service.restore(artifact, { target: failureTarget, restoreId: 'production-rehearsal-failure' })
   assert.equal(completedRetry.status, 'already-complete')
-  evidence.checks.push({ name: 'replace failure rolls back old values and retry is idempotent', passed: true })
+  evidence.checks.push({ name: 'replace failure rollback evidence and retry are idempotent within the foundation target', passed: true })
 
   const interruptionTarget = await createIsolatedProfileRestoreTarget({
     profileDir: path.join(rehearsalRoot, 'target-interruption'),

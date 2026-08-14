@@ -197,29 +197,46 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
     isolated: true,
     adapters: state.adapters,
     capacityBytes: 10_000_000,
+    revision: 0,
     rollbackWrites: 0,
     journal: { last: null },
     quarantine: { entries: [], async write(entry) { this.entries.push(entry) } },
     rollbackStore: {
-      async write(entry) { target.rollbackWrites += 1; target.rollback = entry.artifact },
-      async read() { return target.rollback ? { artifact: target.rollback } : null },
+      async write(entry) {
+        target.rollbackWrites += 1
+        target.rollback = { ...entry, rawState: { revision: target.revision } }
+        return target.rollback
+      },
+      async read() { return target.rollback ? structuredClone(target.rollback) : null },
     },
     async readJournal() { return target.journal.last },
     async writeJournal(entry) { target.journal.last = entry },
-    async beginTransaction() {
+    async beginTransaction({ expectedBaseRevision } = {}) {
+      if (Number.isInteger(expectedBaseRevision) && expectedBaseRevision !== target.revision) {
+        throw Object.assign(new Error('stale restore base revision'), {
+          code: 'RESTORE_REVISION_CONFLICT',
+          currentRevision: target.revision,
+          baseRevision: expectedBaseRevision,
+        })
+      }
       const staged = new Map()
-      return {
+      const transaction = {
         async applyDomain(key, domain) { staged.set(key, structuredClone(domain)); target.onApply?.(key) },
         async commit() {
           if (commitMode === 'write-then-fail' || (commitMode === 'fail-once' && !target.failed)) {
             target.failed = true
             applyStaged(staged)
-            throw Object.assign(new Error('replace failed'), { code: 'RESTORE_COMMIT_FAILED' })
+            target.revision += 1
+            transaction.committedRevision = target.revision
+            throw Object.assign(new Error('replace failed'), { code: 'RESTORE_COMMIT_FAILED', committedRevision: transaction.committedRevision })
           }
           applyStaged(staged)
+          target.revision += 1
+          transaction.committedRevision = target.revision
         },
         async rollback() { staged.clear() },
       }
+      return transaction
       function applyStaged(stagedValues) {
         for (const [key, domain] of stagedValues) {
           state.adapters[key].records = structuredClone(domain.records)
@@ -228,11 +245,20 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
         }
       }
     },
-    async restoreSnapshot(backup) {
+    async restoreSnapshot(backup, context = {}) {
+      if (Number.isInteger(context.expectedRevision) && target.revision !== context.expectedRevision) {
+        throw Object.assign(new Error('stale rollback revision'), {
+          code: 'RESTORE_REVISION_CONFLICT',
+          currentRevision: target.revision,
+          expectedRevision: context.expectedRevision,
+        })
+      }
       for (const key of APPLICATION_BACKUP_REQUIRED_DOMAINS) {
         state.adapters[key].records = structuredClone(backup.domains[key].records)
         state.adapters[key].revision = backup.domains[key].revision
       }
+      target.revision += 1
+      return { revision: target.revision }
     },
   }
   if (missingJournalReader) delete target.readJournal
