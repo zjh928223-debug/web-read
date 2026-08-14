@@ -117,21 +117,24 @@ try {
   assert.equal((await target.readState()).domains.workflow.records.length, artifact.domains.workflow.records.length)
   const retry = await composition.service.restore(artifact, { target, restoreId: 'production-rehearsal-success' })
   assert.equal(retry.status, 'already-complete')
-  evidence.checks.push({ name: 'real isolated directory restore and idempotent retry', passed: true })
+  evidence.checks.push({ name: 'isolated restore-engine foundation directory restore and idempotent retry', passed: true })
 
   const failureTarget = await createIsolatedProfileRestoreTarget({
     profileDir: path.join(rehearsalRoot, 'target-failure'),
     initialDomains: createFailureBaseline(composition.requiredDomains, artifact),
     faults: { commit: 'fail-once' },
   })
-  const beforeFailure = await targetStateJson(failureTarget)
+  const beforeFailureState = await failureTarget.readState()
   const failureDryRun = await composition.service.dryRunRestore(artifact, { target: failureTarget })
   assert.equal(failureDryRun.ok, true, JSON.stringify(failureDryRun))
   await assert.rejects(
     composition.service.restore(artifact, { target: failureTarget, restoreId: 'production-rehearsal-failure' }),
     (error) => error?.code === 'RESTORE_COMMIT_FAILED',
   )
-  assert.deepEqual(await targetStateJson(failureTarget), beforeFailure)
+  const afterFailureState = await failureTarget.readState()
+  assert.deepEqual(afterFailureState.domains, beforeFailureState.domains)
+  assert.ok(afterFailureState.revision > beforeFailureState.revision)
+  assert.notEqual(afterFailureState.checksum, beforeFailureState.checksum)
   failureTarget.setFaults({})
   const recovered = await composition.service.restore(artifact, { target: failureTarget, restoreId: 'production-rehearsal-failure' })
   assert.equal(recovered.status, 'completed')
@@ -144,14 +147,17 @@ try {
     initialDomains: createFailureBaseline(composition.requiredDomains, artifact),
     faults: { interruptAfterDomain: 1 },
   })
-  const beforeInterruption = await targetStateJson(interruptionTarget)
+  const beforeInterruptionState = await interruptionTarget.readState()
   const interruptionDryRun = await composition.service.dryRunRestore(artifact, { target: interruptionTarget })
   assert.equal(interruptionDryRun.ok, true, JSON.stringify(interruptionDryRun))
   await assert.rejects(
     composition.service.restore(artifact, { target: interruptionTarget, restoreId: 'production-rehearsal-interruption' }),
     (error) => error?.code === 'RESTORE_INTERRUPTED',
   )
-  assert.deepEqual(await targetStateJson(interruptionTarget), beforeInterruption)
+  const afterInterruptionState = await interruptionTarget.readState()
+  assert.deepEqual(afterInterruptionState.domains, beforeInterruptionState.domains)
+  assert.equal(afterInterruptionState.revision, beforeInterruptionState.revision)
+  assert.equal(afterInterruptionState.checksum, beforeInterruptionState.checksum)
   interruptionTarget.setFaults({})
   assert.equal((await composition.service.restore(artifact, {
     target: interruptionTarget,

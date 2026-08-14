@@ -12,6 +12,7 @@ const runtimeUrl = `data:text/javascript;base64,${Buffer.from(
 const {
   createReadWebApplicationBackupAdapters,
   createReadWebApplicationBackupService,
+  createReaderSaveOutboxQuarantineProtector,
 } = await import(runtimeUrl)
 
 class MapStorage {
@@ -123,6 +124,39 @@ await assert.rejects(
 )
 storage.removeItem('read-web.reader-save-outbox.v3')
 
+const quarantineKey = 'read-web.reader-save-outbox-quarantine.v1.corrupt-1'
+const quarantinedRawValue = JSON.stringify({ token: 'quarantine-secret' })
+storage.setItem(quarantineKey, JSON.stringify({
+  schemaVersion: 1,
+  sourceKey: 'read-web.reader-save-outbox.v2.corrupt-1',
+  detectedAt: '2026-08-14T00:00:00.000Z',
+  reason: 'malformed-json',
+  rawValue: quarantinedRawValue,
+}))
+await assert.rejects(
+  adapters['reader-session'].collect(),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_QUARANTINE_UNRECOVERABLE',
+  'quarantined raw evidence must fail closed when no recovery protector is configured',
+)
+assert.equal(JSON.parse(storage.getItem(quarantineKey)).rawValue, quarantinedRawValue)
+const quarantineProtector = createReaderSaveOutboxQuarantineProtector({ key: 'fixture-recovery-key', keyId: 'fixture-key-1' })
+const protectedAdapters = createReadWebApplicationBackupAdapters({
+  ...options,
+  readerSaveOutboxQuarantineProtector: quarantineProtector,
+})
+const protectedService = createReadWebApplicationBackupService({
+  ...options,
+  readerSaveOutboxQuarantineProtector: quarantineProtector,
+})
+const protectedArtifact = await protectedService.createBackup()
+const quarantineRecord = protectedArtifact.domains['reader-session'].records.find((record) => record.id.startsWith('reader-save-outbox:quarantine:'))
+assert.ok(quarantineRecord)
+assert.equal(JSON.stringify(protectedArtifact).includes('quarantine-secret'), false)
+assert.equal((await protectedService.verifyBackup(JSON.stringify(protectedArtifact))).valid, true)
+assert.equal(await quarantineProtector.decrypt(quarantineRecord.payload.recovery), quarantinedRawValue)
+assert.equal((await protectedAdapters['reader-session'].collect()).records.length, 8)
+storage.removeItem(quarantineKey)
+
 assert.throws(
   () => createReadWebApplicationBackupService({
     applicationPersistence: { async getAllRows() { return rows } },
@@ -130,6 +164,15 @@ assert.throws(
   }),
   (error) => error?.code === 'BACKUP_ADAPTER_MISSING',
   'cross-process marks/activity and workflow adapters must be required explicitly',
+)
+assert.throws(
+  () => createReadWebApplicationBackupService({
+    applicationPersistence: { async getAllRows() { return rows } },
+    marksActivityAdapter,
+    workflowAdapter,
+  }),
+  (error) => error?.code === 'BACKUP_ADAPTER_MISSING',
+  'a missing localStorage owner must fail closed instead of omitting the durable reader outbox',
 )
 
 await assert.rejects(

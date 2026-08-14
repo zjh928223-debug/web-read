@@ -19,6 +19,7 @@ const included = [
   command('application backup manifest and verifier contract', process.execPath, ['scripts/application-backup-check.mjs']),
   command('application backup adapter coverage contract', process.execPath, ['scripts/application-backup-adapter-check.mjs']),
   command('application backup restore fault contract', process.execPath, ['scripts/application-backup-fault-injection-check.mjs']),
+  command('application backup path concurrency contract', process.execPath, ['scripts/application-backup-concurrency-check.mjs']),
   command('supply-chain contract', process.execPath, ['scripts/supply-chain-gate.mjs']),
   command('playback helper behavior', process.execPath, ['scripts/playback-runtime-helpers-check.cjs']),
   command('playback single-owner boundary', process.execPath, ['scripts/playback-single-owner-check.cjs']),

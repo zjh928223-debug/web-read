@@ -1300,7 +1300,19 @@ export function createApplicationBackupService(options = {}) {
     } catch (error) {
       let rollbackError = null
       try { await transaction?.rollback?.() } catch (rollbackFailure) { rollbackError = rollbackFailure }
-      try { await target.restoreSnapshot(rollbackEntry.artifact, { restoreId, reason: 'restore-failed' }) } catch (rollbackFailure) { rollbackError = rollbackError || rollbackFailure }
+      const shouldRestoreSnapshot = !['RESTORE_INTERRUPTED', 'RESTORE_REVISION_CONFLICT'].includes(error?.code)
+        && error?.code !== 'RESTORE_ATOMIC_UNAVAILABLE'
+      if (shouldRestoreSnapshot) {
+        try {
+          await target.restoreSnapshot(rollbackEntry.artifact, {
+            restoreId,
+            reason: 'restore-failed',
+            expectedRevision: Number.isInteger(transaction?.committedRevision)
+              ? transaction.committedRevision
+              : undefined,
+          })
+        } catch (rollbackFailure) { rollbackError = rollbackError || rollbackFailure }
+      }
       let quarantineError = null
       try {
         await quarantineArtifact(target, {

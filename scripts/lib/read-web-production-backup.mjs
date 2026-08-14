@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
@@ -9,6 +10,8 @@ const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
 const PROFILE_SCHEMA_VERSION = 1
 const APPLICATION_STATE_FILE = 'application-state.json'
 const BROWSER_PROFILE_FILE = 'browser-profile.json'
+const JOURNAL_SCHEMA_VERSION = 1
+const PATH_MUTEXES = new Map()
 
 let backupModulesPromise
 
@@ -53,6 +56,49 @@ function canonicalJson(value) {
   return JSON.stringify(String(value))
 }
 
+function pathMutexKey(filePath) {
+  const resolved = path.resolve(filePath)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+async function withPathMutex(filePath, operation) {
+  const key = pathMutexKey(filePath)
+  const state = PATH_MUTEXES.get(key) || { tail: Promise.resolve() }
+  PATH_MUTEXES.set(key, state)
+  const previous = state.tail
+  let release
+  const current = new Promise((resolve) => { release = resolve })
+  const queued = previous.then(() => current)
+  state.tail = queued
+  await previous
+  try {
+    return await operation()
+  } finally {
+    release()
+    if (state.tail === queued) PATH_MUTEXES.delete(key)
+  }
+}
+
+async function delay(milliseconds) {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+async function renameWithRetry(temporary, absolute) {
+  const retryDelays = [0, 5, 15, 35, 75, 150]
+  let lastError
+  for (const milliseconds of retryDelays) {
+    if (milliseconds) await delay(milliseconds)
+    try {
+      await rename(temporary, absolute)
+      return
+    } catch (error) {
+      lastError = error
+      if (!['EPERM', 'EACCES', 'EBUSY'].includes(error?.code) || milliseconds === retryDelays.at(-1)) throw error
+    }
+  }
+  throw lastError
+}
+
 async function writeJsonAtomic(filePath, value) {
   const absolute = path.resolve(filePath)
   await mkdir(path.dirname(absolute), { recursive: true })
@@ -64,11 +110,105 @@ async function writeJsonAtomic(filePath, value) {
     await handle.sync()
     await handle.close()
     handle = null
-    await rename(temporary, absolute)
+    await renameWithRetry(temporary, absolute)
   } catch (error) {
     await handle?.close().catch(() => {})
     await rm(temporary, { force: true }).catch(() => {})
     throw error
+  }
+}
+
+function stateChecksum(value) {
+  const core = {
+    schemaVersion: value.schemaVersion,
+    revision: value.revision,
+    domains: value.domains,
+  }
+  return `sha256:${createHash('sha256').update(canonicalJson(core)).digest('hex')}`
+}
+
+function createStateEnvelope(domains, revision = 0) {
+  const value = {
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    revision,
+    domains: clone(domains),
+  }
+  return { ...value, checksum: stateChecksum(value) }
+}
+
+function assertStateEnvelope(value, label = 'application state') {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.schemaVersion !== PROFILE_SCHEMA_VERSION
+    || !Number.isInteger(value.revision) || value.revision < 0
+    || !value.domains || typeof value.domains !== 'object' || Array.isArray(value.domains)
+    || typeof value.checksum !== 'string'
+    || value.checksum !== stateChecksum(value)) {
+    const error = new Error(`${label} has an invalid schema, revision, or checksum`)
+    error.code = value?.schemaVersion !== PROFILE_SCHEMA_VERSION
+      ? 'RESTORE_TARGET_UNKNOWN_SCHEMA'
+      : 'RESTORE_TARGET_STATE_CHECKSUM_MISMATCH'
+    throw error
+  }
+  return value
+}
+
+function emptyJournal() {
+  const value = { schemaVersion: JOURNAL_SCHEMA_VERSION, revision: 0, entries: {} }
+  return { ...value, checksum: journalChecksum(value) }
+}
+
+function journalChecksum(value) {
+  const core = {
+    schemaVersion: value.schemaVersion,
+    revision: value.revision,
+    entries: value.entries,
+  }
+  return `sha256:${createHash('sha256').update(canonicalJson(core)).digest('hex')}`
+}
+
+function assertJournalEnvelope(value) {
+  if (!value) return emptyJournal()
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.schemaVersion !== JOURNAL_SCHEMA_VERSION
+    || !Number.isInteger(value.revision) || value.revision < 0
+    || !value.entries || typeof value.entries !== 'object' || Array.isArray(value.entries)
+    || typeof value.checksum !== 'string'
+    || value.checksum !== journalChecksum(value)) {
+    const error = new Error('Isolated restore journal schema or checksum is invalid')
+    error.code = 'RESTORE_JOURNAL_CORRUPT'
+    throw error
+  }
+  return value
+}
+
+const JOURNAL_STATUS_RANK = Object.freeze({
+  started: 1,
+  applying: 2,
+  committing: 3,
+  committed: 4,
+  completed: 5,
+  'rolled-back': 1,
+  'rollback-failed': 6,
+})
+
+function mergeJournalEntry(previous, incoming) {
+  if (!previous) return clone(incoming)
+  const previousStatus = String(previous.status || '')
+  const incomingStatus = String(incoming.status || '')
+  if (previousStatus === 'completed' && incomingStatus !== 'completed') return clone(previous)
+  if (previousStatus === 'rollback-failed' && incomingStatus !== 'completed') return clone(previous)
+  if (previousStatus === 'rolled-back' && incomingStatus === 'started') return clone(incoming)
+  const previousRank = JOURNAL_STATUS_RANK[previousStatus] || 0
+  const incomingRank = JOURNAL_STATUS_RANK[incomingStatus] || 0
+  const winner = incomingRank >= previousRank ? incoming : previous
+  return {
+    ...clone(previous),
+    ...(incomingRank >= previousRank ? clone(incoming) : {}),
+    appliedDomains: [...new Set([
+      ...(Array.isArray(previous.appliedDomains) ? previous.appliedDomains : []),
+      ...(Array.isArray(incoming.appliedDomains) ? incoming.appliedDomains : []),
+    ])],
+    status: winner.status,
   }
 }
 
@@ -120,7 +260,9 @@ export async function writeIsolatedBrowserProfile(profileDir, profile) {
     localStorage: profile?.localStorage || {},
     indexedDbRows: profile?.indexedDbRows || [],
   }, 'browser profile')
-  await writeJsonAtomic(path.join(profileDir, BROWSER_PROFILE_FILE), state)
+  await withPathMutex(profileDir, async () => {
+    await writeJsonAtomic(path.join(profileDir, BROWSER_PROFILE_FILE), state)
+  })
   return state
 }
 
@@ -242,27 +384,35 @@ function normalizedInitialDomains(domains, requiredDomains) {
   ]))
 }
 
-function createFileDomainAdapters(stateRef, requiredDomains, statePath) {
+function createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir) {
   return Object.fromEntries(requiredDomains.map((key) => [key, {
     key,
     schemaVersion: 1,
     adapterVersion: 1,
     supportedSchemaVersions: [1],
     async collect() {
-      const latest = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
-      if (!latest || latest.schemaVersion !== PROFILE_SCHEMA_VERSION || !latest.domains?.[key]) {
-        const error = new Error(`Isolated restore target is missing domain ${key}`)
-        error.code = 'RESTORE_TARGET_DOMAIN_MISSING'
-        throw error
-      }
-      stateRef.value = latest
-      return clone(latest.domains[key])
+      return withPathMutex(profileDir, async () => {
+        const latest = assertStateEnvelope(
+          await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT'),
+          'Isolated restore target state',
+        )
+        if (!latest.domains?.[key]) {
+          const error = new Error(`Isolated restore target is missing domain ${key}`)
+          error.code = 'RESTORE_TARGET_DOMAIN_MISSING'
+          throw error
+        }
+        stateRef.value = latest
+        return clone(latest.domains[key])
+      })
     },
   }]))
 }
 
 function safeFilePart(value) {
-  return String(value || 'restore').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 160)
+  const raw = String(value || 'restore')
+  const safe = raw.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
+  const digest = createHash('sha256').update(raw).digest('hex').slice(0, 16)
+  return `${safe || 'restore'}-${digest}`
 }
 
 export async function createIsolatedProfileRestoreTarget(options = {}) {
@@ -273,84 +423,132 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   const journalPath = path.join(profileDir, 'restore-journal.json')
   const rollbackDir = path.join(profileDir, 'rollback')
   const quarantineDir = path.join(profileDir, 'quarantine')
-  const existing = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
   const stateRef = {
-    value: existing && existing.schemaVersion === PROFILE_SCHEMA_VERSION
-      ? existing
-      : { schemaVersion: PROFILE_SCHEMA_VERSION, domains: normalizedInitialDomains(options.initialDomains, requiredDomains) },
-  }
-  if (!existing) await writeJsonAtomic(statePath, stateRef.value)
-  if (existing && existing.schemaVersion !== PROFILE_SCHEMA_VERSION) {
-    const error = new Error('Isolated restore target has an unsupported state schema')
-    error.code = 'RESTORE_TARGET_UNKNOWN_SCHEMA'
-    throw error
+    value: await withPathMutex(profileDir, async () => {
+      const existing = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
+      if (existing) return assertStateEnvelope(existing, 'Isolated restore target state')
+      const initial = createStateEnvelope(normalizedInitialDomains(options.initialDomains, requiredDomains), 0)
+      await writeJsonAtomic(statePath, initial)
+      return initial
+    }),
   }
   let faultState = { ...(options.faults || {}) }
+
+  async function readStateUnlocked() {
+    return assertStateEnvelope(
+      await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT'),
+      'Isolated restore target state',
+    )
+  }
+
+  async function readJournalUnlocked() {
+    return assertJournalEnvelope(await readJsonIfPresent(journalPath, 'RESTORE_JOURNAL_CORRUPT'))
+  }
+
+  async function readRollbackUnlocked(restoreId) {
+    const value = await readJsonIfPresent(
+      path.join(rollbackDir, `${safeFilePart(restoreId)}.json`),
+      'RESTORE_ROLLBACK_CORRUPT',
+    )
+    if (value?.rawState) assertStateEnvelope(value.rawState, 'Isolated rollback state')
+    return value
+  }
 
   const target = {
     isolated: true,
     profileDir,
+    statePath,
+    journalPath,
+    rollbackDir,
+    quarantineDir,
     rollbackStoreSeparate: true,
     capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024,
-    adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath),
+    adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir),
     faults: faultState,
     async estimateCapacity({ requiredBytes }) {
       return { ok: target.capacityBytes >= requiredBytes, availableBytes: target.capacityBytes }
     },
     async readJournal({ restoreId }) {
-      const value = await readJsonIfPresent(journalPath, 'RESTORE_JOURNAL_CORRUPT')
-      if (!value) return null
-      if (value.schemaVersion !== 1 || !value.entries || typeof value.entries !== 'object') {
-        const error = new Error('Isolated restore journal schema is invalid')
-        error.code = 'RESTORE_JOURNAL_CORRUPT'
-        throw error
-      }
-      return value.entries[restoreId] || null
+      return withPathMutex(profileDir, async () => clone((await readJournalUnlocked()).entries[restoreId] || null))
     },
     async writeJournal(entry) {
-      const value = await readJsonIfPresent(journalPath, 'RESTORE_JOURNAL_CORRUPT')
-        || { schemaVersion: 1, entries: {} }
-      if (value.schemaVersion !== 1 || !value.entries || typeof value.entries !== 'object') {
-        const error = new Error('Isolated restore journal schema is invalid')
-        error.code = 'RESTORE_JOURNAL_CORRUPT'
+      if (!entry?.restoreId) {
+        const error = new Error('Restore journal entries require restoreId')
+        error.code = 'RESTORE_JOURNAL_INVALID'
         throw error
       }
-      value.entries[entry.restoreId] = clone(entry)
-      await writeJsonAtomic(journalPath, value)
+      return withPathMutex(profileDir, async () => {
+        const value = await readJournalUnlocked()
+        const entries = {
+          ...value.entries,
+          [entry.restoreId]: mergeJournalEntry(value.entries[entry.restoreId], entry),
+        }
+        const next = {
+          schemaVersion: JOURNAL_SCHEMA_VERSION,
+          revision: value.revision + 1,
+          entries,
+        }
+        await writeJsonAtomic(journalPath, { ...next, checksum: journalChecksum(next) })
+      })
     },
     rollbackStore: {
       async write(entry) {
-        const current = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
-        await writeJsonAtomic(path.join(rollbackDir, `${safeFilePart(entry.restoreId)}.json`), {
-          ...entry,
-          rawState: current,
+        return withPathMutex(profileDir, async () => {
+          const filePath = path.join(rollbackDir, `${safeFilePart(entry.restoreId)}.json`)
+          const existing = await readJsonIfPresent(filePath, 'RESTORE_ROLLBACK_CORRUPT')
+          if (existing) {
+            if (existing.artifact?.artifactChecksum === entry.artifact?.artifactChecksum) return
+            const error = new Error(`Rollback backup already exists for ${entry.restoreId}`)
+            error.code = 'RESTORE_ID_CONFLICT'
+            throw error
+          }
+          const current = await readStateUnlocked()
+          await writeJsonAtomic(filePath, {
+            schemaVersion: 1,
+            ...entry,
+            rawState: current,
+          })
         })
       },
       async read({ restoreId }) {
-        return readJsonIfPresent(path.join(rollbackDir, `${safeFilePart(restoreId)}.json`), 'RESTORE_ROLLBACK_CORRUPT')
+        return withPathMutex(profileDir, () => readRollbackUnlocked(restoreId))
       },
     },
     quarantine: {
       async write(entry) {
-        const fileName = `${Date.now().toString(36)}-${safeFilePart(entry.restoreId)}-${safeFilePart(entry.kind)}.json`
-        await writeJsonAtomic(path.join(quarantineDir, fileName), entry)
+        return withPathMutex(profileDir, async () => {
+          const quarantineId = randomUUID()
+          const core = {
+            schemaVersion: 1,
+            quarantineId,
+            quarantinedAt: entry.quarantinedAt || new Date().toISOString(),
+            ...entry,
+          }
+          const fileName = `${Date.now().toString(36)}-${safeFilePart(entry.restoreId)}-${safeFilePart(entry.kind)}-${quarantineId}.json`
+          await writeJsonAtomic(path.join(quarantineDir, fileName), {
+            ...core,
+            checksum: `sha256:${createHash('sha256').update(canonicalJson(core)).digest('hex')}`,
+          })
+        })
       },
     },
     async beginTransaction({ restoreId, signal }) {
-      const current = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
-      if (!current || current.schemaVersion !== PROFILE_SCHEMA_VERSION) {
-        const error = new Error('Isolated restore target state is unavailable')
-        error.code = 'RESTORE_TARGET_STATE_CORRUPT'
-        throw error
-      }
+      const current = await withPathMutex(profileDir, readStateUnlocked)
+      const baseRevision = current.revision
       let staged = clone(current)
       let appliedCount = 0
       let rolledBack = false
+      let committedRevision = null
       return {
         async applyDomain(key, domain) {
           if (signal?.aborted) {
             const error = new Error('Restore was interrupted while staging a domain')
             error.code = 'RESTORE_INTERRUPTED'
+            throw error
+          }
+          if (!requiredDomains.includes(key)) {
+            const error = new Error(`Restore attempted to stage unknown domain ${key}`)
+            error.code = 'RESTORE_UNKNOWN_DOMAIN'
             throw error
           }
           staged.domains[key] = clone(domain)
@@ -368,48 +566,69 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             error.code = 'RESTORE_INTERRUPTED'
             throw error
           }
-          await writeJsonAtomic(statePath, staged)
-          stateRef.value = staged
-          if (faultState.commit === 'write-then-fail'
-            || (faultState.commit === 'fail-once' && !faultState.failed)) {
-            faultState.failed = true
-            const error = new Error(`Restore commit fault injected for ${restoreId}`)
-            error.code = 'RESTORE_COMMIT_FAILED'
-            throw error
-          }
+          return withPathMutex(profileDir, async () => {
+            const latest = await readStateUnlocked()
+            if (latest.revision !== baseRevision) {
+              const error = new Error(`Restore base revision ${baseRevision} is stale; current is ${latest.revision}`)
+              error.code = 'RESTORE_REVISION_CONFLICT'
+              error.baseRevision = baseRevision
+              error.currentRevision = latest.revision
+              error.targetUnchanged = true
+              throw error
+            }
+            const next = createStateEnvelope(staged.domains, latest.revision + 1)
+            await writeJsonAtomic(statePath, next)
+            stateRef.value = next
+            committedRevision = next.revision
+            if (faultState.commit === 'write-then-fail'
+              || (faultState.commit === 'fail-once' && !faultState.failed)) {
+              faultState.failed = true
+              const error = new Error(`Restore commit fault injected for ${restoreId}`)
+              error.code = 'RESTORE_COMMIT_FAILED'
+              error.committedRevision = committedRevision
+              throw error
+            }
+          })
         },
         async rollback() {
           rolledBack = true
           staged = clone(current)
         },
         get rolledBack() { return rolledBack },
+        get baseRevision() { return baseRevision },
+        get committedRevision() { return committedRevision },
       }
     },
     async restoreSnapshot(artifact, context = {}) {
-      const rollback = context.restoreId
-        ? await target.rollbackStore.read({ restoreId: context.restoreId })
-        : null
-      const next = rollback?.rawState && String(context.reason || '').startsWith('restore-')
-        ? rollback.rawState
-        : {
-            schemaVersion: PROFILE_SCHEMA_VERSION,
-            domains: normalizedInitialDomains(artifact.domains, requiredDomains),
-          }
-      await writeJsonAtomic(statePath, next)
-      stateRef.value = next
+      return withPathMutex(profileDir, async () => {
+        const current = await readStateUnlocked()
+        if (Number.isInteger(context.expectedRevision) && current.revision !== context.expectedRevision) {
+          const error = new Error(`Rollback expected revision ${context.expectedRevision}; current is ${current.revision}`)
+          error.code = 'RESTORE_REVISION_CONFLICT'
+          throw error
+        }
+        const rollback = context.restoreId ? await readRollbackUnlocked(context.restoreId) : null
+        const domains = rollback?.rawState?.domains && String(context.reason || '').startsWith('restore-')
+          ? rollback.rawState.domains
+          : normalizedInitialDomains(artifact.domains, requiredDomains)
+        const next = createStateEnvelope(domains, current.revision + 1)
+        await writeJsonAtomic(statePath, next)
+        stateRef.value = next
+      })
     },
     async verifyApplied({ artifact }) {
-      const latest = await readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
-      if (!latest || latest.schemaVersion !== PROFILE_SCHEMA_VERSION) return { ok: false, reason: 'state-missing' }
-      for (const key of requiredDomains) {
-        if (canonicalJson(latest.domains?.[key]) !== canonicalJson(artifact.domains[key])) {
-          return { ok: false, reason: `domain-mismatch:${key}` }
+      return withPathMutex(profileDir, async () => {
+        const latest = await readStateUnlocked()
+        for (const key of requiredDomains) {
+          if (canonicalJson(latest.domains?.[key]) !== canonicalJson(artifact.domains[key])) {
+            return { ok: false, reason: `domain-mismatch:${key}` }
+          }
         }
-      }
-      return { ok: true }
+        return { ok: true, revision: latest.revision, checksum: latest.checksum }
+      })
     },
     async readState() {
-      return readJsonIfPresent(statePath, 'RESTORE_TARGET_STATE_CORRUPT')
+      return withPathMutex(profileDir, async () => clone(await readStateUnlocked()))
     },
     setFaults(nextFaults = {}) {
       faultState = { ...nextFaults }
@@ -435,6 +654,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   const adapters = readWebBackup.createReadWebApplicationBackupAdapters({
     applicationPersistence: browser.persistence,
     storage: browser.storage,
+    readerSaveOutboxQuarantineProtector: options.readerSaveOutboxQuarantineProtector,
     marksActivityAdapter: pythonAdapters['marks-activity'],
     workflowAdapter: pythonAdapters.workflow,
   })
@@ -450,7 +670,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     },
   })
   return Object.freeze({
-    kind: 'read-web-production-backup-composition',
+    kind: 'read-web-isolated-restore-engine-foundation',
     requiredDomains: [...service.requiredDomains],
     adapters,
     service,

@@ -12,6 +12,8 @@ const READER_SAVE_OUTBOX_V2_PREFIX = 'read-web.reader-save-outbox.v2.'
 const READER_SAVE_OUTBOX_QUARANTINE_PREFIX = 'read-web.reader-save-outbox-quarantine.v1.'
 const READER_SAVE_OUTBOX_LEGACY_QUARANTINE_KEY = `${READER_SAVE_OUTBOX_V1_KEY}.quarantine`
 const READER_SAVE_OUTBOX_NAMESPACE = 'read-web.reader-save-outbox.'
+const OUTBOX_QUARANTINE_RECOVERY_SCHEMA = 1
+const OUTBOX_QUARANTINE_RECOVERY_ALGORITHM = 'AES-256-GCM'
 const PASSAGE_PREVIEW_STORAGE_KEYS = Object.freeze([
   { key: 'vocabulary.passage-preview.durable-state.v1', schemaVersion: 'passage-preview.durable-state.v1', requiredRevision: true },
   { key: 'vocabulary.passage-preview.data.v2', schemaVersion: 'passage-preview.local-data.v2', allowLegacyValue: true },
@@ -36,6 +38,68 @@ export const READ_WEB_READER_SAVE_OUTBOX_KEYS = Object.freeze({
   v2Prefix: READER_SAVE_OUTBOX_V2_PREFIX,
   quarantinePrefix: READER_SAVE_OUTBOX_QUARANTINE_PREFIX,
 })
+
+export function createReaderSaveOutboxQuarantineProtector(options = {}) {
+  const keyMaterial = options.key
+  const keyId = String(options.keyId || '').trim()
+  return {
+    async encrypt(rawValue, metadata) {
+      if (!keyMaterial || !keyId) {
+        throw outboxError(
+          'BACKUP_READER_OUTBOX_QUARANTINE_KEY_REQUIRED',
+          'Recoverable reader outbox quarantine export requires an encryption key and keyId',
+        )
+      }
+      const cryptoApi = getQuarantineCrypto()
+      const key = await importQuarantineKey(cryptoApi, keyMaterial)
+      const iv = new Uint8Array(12)
+      cryptoApi.getRandomValues(iv)
+      const normalizedMetadata = normalizeQuarantineMetadata(metadata)
+      const ciphertext = await cryptoApi.subtle.encrypt(
+        { name: 'AES-GCM', iv, additionalData: quarantineAssociatedData(normalizedMetadata) },
+        key,
+        new TextEncoder().encode(String(rawValue)),
+      )
+      return {
+        schemaVersion: OUTBOX_QUARANTINE_RECOVERY_SCHEMA,
+        strategy: 'encrypted-sensitive-sidecar',
+        algorithm: OUTBOX_QUARANTINE_RECOVERY_ALGORITHM,
+        keyId,
+        ...normalizedMetadata,
+        iv: encodeQuarantineBase64(new Uint8Array(iv)),
+        ciphertext: encodeQuarantineBase64(new Uint8Array(ciphertext)),
+      }
+    },
+    async decrypt(envelope) {
+      if (!keyMaterial || !keyId) {
+        throw outboxError(
+          'BACKUP_READER_OUTBOX_QUARANTINE_KEY_REQUIRED',
+          'Reader outbox quarantine decryption requires an encryption key and keyId',
+        )
+      }
+      validateQuarantineRecoveryEnvelope(envelope)
+      if (envelope.keyId !== keyId) {
+        throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_KEY_MISMATCH', 'Reader outbox quarantine keyId does not match')
+      }
+      const cryptoApi = getQuarantineCrypto()
+      const key = await importQuarantineKey(cryptoApi, keyMaterial)
+      try {
+        const plaintext = await cryptoApi.subtle.decrypt(
+          {
+            name: 'AES-GCM',
+            iv: decodeQuarantineBase64(envelope.iv),
+            additionalData: quarantineAssociatedData(normalizeQuarantineMetadata(envelope)),
+          },
+          key,
+          decodeQuarantineBase64(envelope.ciphertext),
+        )
+        return new TextDecoder().decode(plaintext)
+      } catch (error) {
+        throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_DECRYPT_FAILED', 'Reader outbox quarantine decryption failed', { cause: error?.code })
+      }
+    },
+  }
+}
 
 /**
  * Assemble the six durable domains used by Read-Web. Low-level callers may
@@ -74,14 +138,17 @@ export function createReadWebApplicationBackupAdapters(options = {}) {
               || String(row?.id || '').startsWith('readerSessionQuarantine:'),
           })
     : null
-  const readerOutboxAdapter = storage ? createReaderSaveOutboxDomainAdapter({ storage }) : null
+  const readerOutboxAdapter = storage ? createReaderSaveOutboxDomainAdapter({
+    storage,
+    quarantineProtector: options.readerSaveOutboxQuarantineProtector || options.outboxQuarantineProtector,
+  }) : null
   const readerSessionAdapter = explicit['reader-session']
     ? (readerOutboxAdapter
         ? combineDomainAdapters(explicit['reader-session'], readerOutboxAdapter, 'reader-session')
-        : explicit['reader-session'])
+        : null)
     : (indexedDbReaderSessionAdapter && readerOutboxAdapter
         ? combineDomainAdapters(indexedDbReaderSessionAdapter, readerOutboxAdapter, 'reader-session')
-        : indexedDbReaderSessionAdapter)
+        : (indexedDbReaderSessionAdapter || readerOutboxAdapter || null))
 
   const adapters = {
     'reader-session': readerSessionAdapter,
@@ -148,6 +215,75 @@ function outboxKeyPart(value) {
   return Array.from(String(value || ''))
     .map((character) => character.codePointAt(0).toString(16))
     .join('_')
+}
+
+function getQuarantineCrypto() {
+  const cryptoApi = globalThis.crypto
+  if (!cryptoApi?.subtle || typeof cryptoApi.getRandomValues !== 'function') {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CRYPTO_UNAVAILABLE', 'Web Crypto AES-GCM is required for reader outbox quarantine recovery')
+  }
+  return cryptoApi
+}
+
+function encodeQuarantineBase64(bytes) {
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  if (typeof btoa !== 'function') throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CRYPTO_UNAVAILABLE', 'Base64 encoding is unavailable')
+  return btoa(binary)
+}
+
+function decodeQuarantineBase64(value) {
+  if (typeof value !== 'string' || typeof atob !== 'function') {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Encrypted reader outbox quarantine base64 is invalid')
+  }
+  try {
+    const binary = atob(value)
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  } catch {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Encrypted reader outbox quarantine base64 is invalid')
+  }
+}
+
+async function importQuarantineKey(cryptoApi, keyMaterial) {
+  if (keyMaterial && typeof keyMaterial === 'object' && keyMaterial.type === 'secret') return keyMaterial
+  let bytes
+  if (typeof keyMaterial === 'string') bytes = new TextEncoder().encode(keyMaterial)
+  else if (keyMaterial instanceof Uint8Array) bytes = keyMaterial
+  else if (keyMaterial instanceof ArrayBuffer) bytes = new Uint8Array(keyMaterial)
+  else if (ArrayBuffer.isView(keyMaterial)) bytes = new Uint8Array(keyMaterial.buffer, keyMaterial.byteOffset, keyMaterial.byteLength)
+  else throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_KEY_REQUIRED', 'Reader outbox quarantine key material is invalid')
+  const digest = await cryptoApi.subtle.digest('SHA-256', bytes)
+  return cryptoApi.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+}
+
+function normalizeQuarantineMetadata(value = {}) {
+  const sourceKey = String(value.sourceKey || '')
+  const detectedAt = String(value.detectedAt || '')
+  const rawReason = String(value.reason || '')
+  const reason = /^[A-Za-z0-9_.:-]{1,160}$/.test(rawReason) ? rawReason : '[REDACTED_REASON]'
+  if (!sourceKey || sourceKey.length > 512 || /[\u0000-\u001f]/.test(sourceKey)
+    || !detectedAt || detectedAt.length > 128) {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Reader outbox quarantine metadata is invalid')
+  }
+  return { sourceKey, detectedAt, reason }
+}
+
+function quarantineAssociatedData(metadata) {
+  return new TextEncoder().encode(JSON.stringify(normalizeQuarantineMetadata(metadata)))
+}
+
+function validateQuarantineRecoveryEnvelope(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.schemaVersion !== OUTBOX_QUARANTINE_RECOVERY_SCHEMA
+    || value.strategy !== 'encrypted-sensitive-sidecar'
+    || value.algorithm !== OUTBOX_QUARANTINE_RECOVERY_ALGORITHM
+    || typeof value.keyId !== 'string' || !value.keyId
+    || typeof value.iv !== 'string' || typeof value.ciphertext !== 'string'
+    || Object.prototype.hasOwnProperty.call(value, 'rawValue')) {
+    throw outboxError('BACKUP_READER_OUTBOX_QUARANTINE_CORRUPT', 'Encrypted reader outbox quarantine envelope is invalid')
+  }
+  normalizeQuarantineMetadata(value)
+  return value
 }
 
 function expectedOutboxEntryKey(entry) {
@@ -219,7 +355,7 @@ function createOutboxRecord(id, schemaVersion, entry, sourceKey) {
   }
 }
 
-function parseOutboxQuarantine(raw, key) {
+async function parseOutboxQuarantine(raw, key, quarantineProtector) {
   const value = parseOutboxJson(raw, key)
   if (!isPlainObject(value)
     || value.schemaVersion !== 1
@@ -229,6 +365,20 @@ function parseOutboxQuarantine(raw, key) {
     || typeof value.rawValue !== 'string') {
     throw outboxError('BACKUP_READER_OUTBOX_CORRUPT', `Reader save outbox quarantine ${key} is invalid`, { key })
   }
+  const metadata = normalizeQuarantineMetadata({
+    sourceKey: value.sourceKey,
+    detectedAt: value.detectedAt,
+    reason: value.reason,
+  })
+  if (typeof quarantineProtector?.encrypt !== 'function') {
+    throw outboxError(
+      'BACKUP_READER_OUTBOX_QUARANTINE_UNRECOVERABLE',
+      `Reader save outbox quarantine ${key} requires an encryption protector; raw evidence remains in the source profile`,
+      { key },
+    )
+  }
+  const recovery = await quarantineProtector.encrypt(value.rawValue, metadata)
+  validateQuarantineRecoveryEnvelope(recovery)
   return {
     id: `reader-save-outbox:quarantine:${key}`,
     schemaVersion: 'reader-save-outbox-quarantine.v1',
@@ -236,11 +386,15 @@ function parseOutboxQuarantine(raw, key) {
     contentId: null,
     payload: {
       schemaVersion: 1,
-      sourceKey: value.sourceKey,
-      detectedAt: value.detectedAt,
-      reason: value.reason,
+      ...metadata,
+      recovery,
     },
-    references: [],
+    references: [{
+      type: 'reader-save-outbox-quarantine',
+      sourceKey: metadata.sourceKey,
+      strategy: recovery.strategy,
+      keyId: recovery.keyId,
+    }],
     mediaReferences: [],
     sourceKey: key,
   }
@@ -248,6 +402,7 @@ function parseOutboxQuarantine(raw, key) {
 
 function createReaderSaveOutboxDomainAdapter(options = {}) {
   const storage = options.storage
+  const quarantineProtector = options.quarantineProtector
   if (!storage || typeof storage.getItem !== 'function') {
     throw outboxError('BACKUP_STORAGE_UNAVAILABLE', 'Reader save outbox adapter requires storage')
   }
@@ -310,7 +465,7 @@ function createReaderSaveOutboxDomainAdapter(options = {}) {
       }
       for (const key of keys.filter((candidate) => candidate === READER_SAVE_OUTBOX_LEGACY_QUARANTINE_KEY
         || candidate.startsWith(READER_SAVE_OUTBOX_QUARANTINE_PREFIX)).sort()) {
-        records.push(parseOutboxQuarantine(storage.getItem(key) || '', key))
+        records.push(await parseOutboxQuarantine(storage.getItem(key) || '', key, quarantineProtector))
       }
       return {
         schemaVersion: 1,

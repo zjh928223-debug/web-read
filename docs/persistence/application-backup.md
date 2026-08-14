@@ -39,6 +39,13 @@ credentials, temporary files and binary values are never exported. Media uses
 `identity-metadata-rebind` references with a strict reference ceiling; complete
 Blob/ArrayBuffer/typed-array content is rejected.
 
+Reader save-outbox quarantine evidence is fail-closed unless the caller provides
+an AES-GCM recovery protector. With a protector, the raw quarantined value is
+recoverable from an encrypted sensitive-sidecar envelope, while the ordinary
+artifact contains only ciphertext, key identity and safe metadata. Without a
+protector, export stops and the original value remains in the source profile;
+it is never silently dropped or copied in plaintext.
+
 `verifyBackupArtifact` reparses the artifact and independently recomputes
 record, domain, manifest and artifact checksums, counts, registry, references
 and media policy. `dryRunRestore` is read-only and reports each domain and
@@ -54,9 +61,14 @@ completed retry is a no-op and an interrupted/failed retry reuses the original
 rollback backup before attempting the commit again.
 
 The public contract and fault matrix are exercised by
-`npm run verify:application-backup`. The production composition in
-`scripts/lib/read-web-production-backup.mjs` joins the isolated browser
-profile adapters with the Python marks/activity and workflow bridge, and
-`scripts/application-backup-release-rehearsal.mjs` drives that public entry
-through an on-disk journal/rollback/quarantine target. It uses generated
-temporary fixture directories only and never restores real daily data.
+`npm run verify:application-backup`; the path-scoped concurrency stress is
+`npm run verify:application-backup-concurrency`. The composition in
+`scripts/lib/read-web-production-backup.mjs` joins the browser profile adapters
+with the Python marks/activity and workflow bridge. Its current target is an
+**isolated restore-engine foundation**: it is a real temporary directory with
+atomic state, journal, rollback and quarantine files, but
+`application-state.json` is not yet the browser's application-readable
+IndexedDB/localStorage/workflow target. The rehearsal therefore proves the
+engine's checks, CAS and rollback semantics only; real domain target adapters
+remain task 12.3. It uses generated temporary fixture directories only and
+never restores real daily data.
