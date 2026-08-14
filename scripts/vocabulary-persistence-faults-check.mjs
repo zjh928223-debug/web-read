@@ -8,8 +8,10 @@ const repoRoot = path.resolve(import.meta.dirname, '..')
 const loaded = await loadModules(repoRoot)
 
 await runSnapshotScenarios(loaded)
+await runMonotonicSnapshotCasScenario(loaded)
 await runAcquisitionScenarios(loaded)
 await runNoBackupQuarantineScenario(loaded)
+await runQuarantineStructuredCloneScenarios(loaded)
 
 console.log('Vocabulary persistence fault checks passed (checksum, quarantine, recovery, quota, close, schema)')
 
@@ -49,6 +51,10 @@ async function runSnapshotScenarios(api) {
   )
 
   const committed = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
+  const backupForRecovery = structuredClone(fake.rows.get(
+    `vocabulary.srs.store.v1.backup:${committed.revision - 1}`,
+  ))
+  assert.ok(backupForRecovery, 'the damaged revision must have a valid immediately previous backup')
   fake.rows.set('vocabulary.srs.store.v1', {
     ...committed,
     content: { ...committed.content, words: [word('snapshot-corrupt', 'corrupt')] },
@@ -66,7 +72,9 @@ async function runSnapshotScenarios(api) {
     ['alpha', 'beta'],
     'a corrupt current snapshot must recover the previous valid backup',
   )
-  assert.equal(fake.rows.get('vocabulary.srs.store.v1').revision, committed.revision - 1)
+  const recoveredRow = fake.rows.get('vocabulary.srs.store.v1')
+  assert.ok(recoveredRow.revision > corruptRow.revision, 'recovery must advance past the damaged revision')
+  assert.ok(recoveredRow.revision > backupForRecovery.revision, 'recovery must advance past the backup revision')
 
   const beforeUnknown = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
   const unknownContent = { ...beforeUnknown.content, schemaVersion: 99 }
@@ -117,6 +125,79 @@ async function runSnapshotScenarios(api) {
   fake.triggerVersionChange()
   await first.loadSnapshot()
   assert.ok(fake.openCalls.length >= 2, 'versionchange/page-close recovery must reopen the database')
+}
+
+async function runMonotonicSnapshotCasScenario(api) {
+  const fake = createFakeIndexedDb()
+  const seed = api.snapshot.createIndexedDbVocabularyRepository({ indexedDBApi: fake.indexedDBApi })
+  await seed.updateSnapshot((snapshot) => {
+    snapshot.words.push(word('monotonic-one', 'one'))
+    return 'one'
+  })
+  await seed.updateSnapshot((snapshot) => {
+    snapshot.words.push(word('monotonic-two', 'two'))
+    return 'two'
+  })
+  await seed.updateSnapshot((snapshot) => {
+    snapshot.words.push(word('monotonic-three', 'three'))
+    return 'three'
+  })
+
+  const damagedRevisionThree = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
+  const validBackupRevisionTwo = structuredClone(
+    fake.rows.get('vocabulary.srs.store.v1.backup:2'),
+  )
+  assert.equal(damagedRevisionThree.revision, 3)
+  assert.equal(validBackupRevisionTwo.revision, 2)
+
+  // This owner has observed expectedRevision=2 and pauses before its CAS.
+  fake.rows.set('vocabulary.srs.store.v1', structuredClone(validBackupRevisionTwo.content.sourceRow))
+  const staleOwner = api.snapshot.createIndexedDbVocabularyRepository({ indexedDBApi: fake.indexedDBApi })
+  let releaseStaleOwner
+  let staleOwnerStarted
+  const staleOwnerStart = new Promise((resolve) => { staleOwnerStarted = resolve })
+  const gate = new Promise((resolve) => { releaseStaleOwner = resolve })
+  let mutatorCalls = 0
+  const staleWrite = staleOwner.updateSnapshot(async (snapshot) => {
+    mutatorCalls += 1
+    if (mutatorCalls === 1) {
+      staleOwnerStarted()
+      await gate
+    }
+    snapshot.words.push(word('monotonic-stale-owner', 'stale-owner'))
+    return 'stale-owner'
+  })
+  await staleOwnerStart
+
+  fake.rows.set('vocabulary.srs.store.v1', {
+    ...damagedRevisionThree,
+    content: { ...damagedRevisionThree.content, words: [word('monotonic-damaged', 'damaged')] },
+    checksum: `sha256:${'0'.repeat(64)}`,
+  })
+  const recoveryOwner = api.snapshot.createIndexedDbVocabularyRepository({ indexedDBApi: fake.indexedDBApi })
+  await recoveryOwner.loadSnapshot()
+  const recovered = fake.rows.get('vocabulary.srs.store.v1')
+  assert.ok(recovered.revision > 3, 'recovery must not reuse revision 2 or 3')
+  await assert.rejects(
+    staleOwner.compareAndSwap(
+      { ...validBackupRevisionTwo.content.sourceRow.content },
+      2,
+    ),
+    (error) => error?.code === 'REVISION_CONFLICT',
+    'the old owner expectedRevision=2 must not CAS after recovery',
+  )
+
+  releaseStaleOwner()
+  await staleWrite
+  assert.equal(
+    mutatorCalls,
+    2,
+    'an owner that observed revision 2 must lose its first CAS after recovery rather than ABA-success',
+  )
+  assert.ok(
+    fake.rows.get('vocabulary.srs.store.v1').revision > recovered.revision,
+    'the retried stale owner must commit after the recovery revision',
+  )
 }
 
 async function runAcquisitionScenarios(api) {
@@ -317,6 +398,41 @@ async function runNoBackupQuarantineScenario(api) {
   ))
   assert.ok(quarantine, 'corrupt rows without a backup must still leave typed quarantine evidence')
   assert.deepEqual(quarantine.content.sourceRow, corruptRow)
+}
+
+async function runQuarantineStructuredCloneScenarios(api) {
+  const candidates = [
+    undefined,
+    {
+      id: 'structured-clone-corrupt',
+      content: {
+        undefinedValue: undefined,
+        dateValue: new Date('2026-08-13T00:00:00.000Z'),
+        blobValue: new Blob(['secret-token'], { type: 'text/plain' }),
+        bufferValue: new Uint8Array([1, 2, 3]).buffer,
+      },
+      timestamp: '2026-08-13T00:04:00.000Z',
+    },
+  ]
+  for (const sourceRow of candidates) {
+    const make = () => api.persistence.makeQuarantineRow({
+      sourceId: 'vocabulary.structured-clone-corrupt',
+      sourceRow,
+      reason: 'checksum-mismatch',
+      detectedAt: '2026-08-13T00:04:00.000Z',
+    })
+    assert.doesNotThrow(make, 'quarantine evidence must tolerate structured-clone values')
+    const row = make()
+    const sameRow = api.persistence.makeQuarantineRow({
+      sourceId: 'vocabulary.structured-clone-corrupt',
+      sourceRow: sourceRow === undefined ? undefined : structuredClone(sourceRow),
+      reason: 'checksum-mismatch',
+      detectedAt: '2030-01-01T00:00:00.000Z',
+    })
+    assert.equal(row.id, sameRow.id, 'quarantine evidence IDs must not depend on detection time')
+    assert.equal(row.checksum, api.persistence.checksumFor(row.content))
+    assert.doesNotMatch(JSON.stringify(row.content), /secret-token/u, 'typed fallback evidence must not leak blob data')
+  }
 }
 
 async function loadModules(root) {

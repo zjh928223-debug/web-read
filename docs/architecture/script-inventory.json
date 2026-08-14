@@ -17,7 +17,11 @@
     "scripts/download-mdict-supplements.ps1",
     "scripts/launch-learning-page.ps1",
     "scripts/launch-next-preview.ps1",
-    "scripts/start-latest-reader.ps1"
+    "scripts/start-latest-reader.ps1",
+    "scripts/vocabulary-learning-uow-faults-check.mjs",
+    "scripts/vocabulary-persistence-faults-check.mjs",
+    "scripts/vocabulary-repository-browser-reopen-check.cjs",
+    "scripts/vocabulary-repository-multi-page-browser-check.cjs"
   ],
   "archiveDelete": [
     ".codex/actions/check-read26-load.sh",

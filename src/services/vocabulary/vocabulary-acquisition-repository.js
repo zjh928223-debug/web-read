@@ -607,6 +607,13 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
   const indexedDBApi = options.indexedDBApi
     || (typeof globalThis !== 'undefined' ? globalThis.indexedDB : null);
   let databasePromise = null;
+  let highestObservedRevision = 0;
+
+  function rememberRevision(revision) {
+    if (Number.isInteger(revision) && revision >= 0) {
+      highestObservedRevision = Math.max(highestObservedRevision, revision);
+    }
+  }
 
   function openDatabase() {
     if (!indexedDBApi || typeof indexedDBApi.open !== 'function') {
@@ -709,6 +716,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
         throw normalizeStorageError(error, 'read_acquisition_row');
       }
       sourceRow = (await requestAsPromise(request, 'read_acquisition_row')) || null;
+      rememberRevision(sourceRow?.revision);
       sourceRowRead = true;
       return sourceRow;
     };
@@ -727,6 +735,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
               sourceRow = row || null;
               sourceRowRead = true;
             }
+            if (rowId === ACQUISITION_ROW_ID) rememberRevision(row?.revision);
             return row || null;
           });
       },
@@ -740,6 +749,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
           const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
             ? previousRow.revision
             : 0;
+          rememberRevision(currentRevision);
           if (previousRow && !sourceBackupWritten) {
             const backupContent = {
               schema_version: 'vocabulary-backup.v1',
@@ -762,9 +772,13 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
             await requestAsPromise(backupRequest, 'backup_acquisition_row');
             sourceBackupWritten = true;
           }
+          const nextRevision = previousRow
+            ? Math.max(currentRevision, highestObservedRevision) + 1
+            : Math.max(1, highestObservedRevision + 1);
+          rememberRevision(nextRevision);
           rowToWrite = {
             ...clonePersistenceValue(row),
-            revision: previousRow ? currentRevision + 1 : 1,
+            revision: nextRevision,
             checksum: checksumFor(row.content),
           };
         }
@@ -829,7 +843,18 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
           const backups = rows
             .filter((row) => row?.id?.startsWith(`${ACQUISITION_ROW_ID}.backup:`))
             .filter(isValidAcquisitionBackup)
-            .sort((left, right) => String(right.timestamp || '').localeCompare(String(left.timestamp || '')));
+            .sort((left, right) => {
+              const rightRevision = Math.max(
+                Number.isInteger(right.revision) ? right.revision : 0,
+                Number.isInteger(right.content?.sourceRow?.revision) ? right.content.sourceRow.revision : 0,
+              );
+              const leftRevision = Math.max(
+                Number.isInteger(left.revision) ? left.revision : 0,
+                Number.isInteger(left.content?.sourceRow?.revision) ? left.content.sourceRow.revision : 0,
+              );
+              return rightRevision - leftRevision
+                || String(right.timestamp || '').localeCompare(String(left.timestamp || ''));
+            });
           const backup = backups[0];
           const quarantine = makeQuarantineRow({
             sourceId: ACQUISITION_ROW_ID,
@@ -849,9 +874,24 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
               return;
             }
             const sourceRow = backup.content.sourceRow;
+            const damagedRevision = Number.isInteger(error.details?.sourceRow?.revision)
+              ? error.details.sourceRow.revision
+              : 0;
+            const backupRevision = Number.isInteger(backup.revision) ? backup.revision : 0;
+            const sourceRevision = Number.isInteger(sourceRow.revision) ? sourceRow.revision : 0;
+            const recoveryRevision = Math.max(
+              highestObservedRevision,
+              damagedRevision,
+              backupRevision,
+              sourceRevision,
+            ) + 1;
+            rememberRevision(recoveryRevision);
+            const recoveryTimestamp = new Date().toISOString();
             recoveredStore = normalizeStore(sourceRow.content);
             store.put({
               ...clonePersistenceValue(sourceRow),
+              revision: recoveryRevision,
+              timestamp: recoveryTimestamp,
               checksum: checksumFor(sourceRow.content),
             });
             resolve();

@@ -38,6 +38,9 @@ function normalizeIndexedDbError(error, operation) {
   if (error?.name === 'InvalidStateError' || error?.name === 'TransactionInactiveError') {
     return vocabularyPersistenceError('CONNECTION_CLOSED', 'Vocabulary persistence connection was closed', { operation });
   }
+  if (error?.name === 'VersionError' || error?.name === 'NotFoundError') {
+    return vocabularyPersistenceError('UNKNOWN_SCHEMA', 'Vocabulary persistence schema is unsupported', { operation });
+  }
   if (error?.name === 'AbortError') {
     return vocabularyPersistenceError('TRANSACTION_ABORTED', 'Vocabulary transaction was aborted', { operation });
   }
@@ -89,6 +92,13 @@ export function createIndexedDbVocabularyRepository(options = {}) {
   const migrationRegistry = options.migrationRegistry || DEFAULT_MIGRATIONS;
   const now = options.now || Date.now;
   let dbPromise = null;
+  let highestObservedRevision = 0;
+
+  function rememberRevision(revision) {
+    if (Number.isInteger(revision) && revision >= 0) {
+      highestObservedRevision = Math.max(highestObservedRevision, revision);
+    }
+  }
 
   function openDb() {
     if (!indexedDBApi) throw new Error('IndexedDB is unavailable for vocabulary storage');
@@ -174,6 +184,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       revision: Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0,
       row,
     };
+    rememberRevision(record.revision);
     const snapshot = record.snapshot;
     const sourceVersion = snapshot && typeof snapshot === 'object' && snapshot.schemaVersion !== undefined
       ? snapshot.schemaVersion
@@ -267,8 +278,9 @@ export function createIndexedDbVocabularyRepository(options = {}) {
         backupRequest.onsuccess = () => {
           migratedRecord = {
             snapshot: migratedContent,
-            revision: currentRevision + 1,
+            revision: Math.max(currentRevision, highestObservedRevision) + 1,
           };
+          rememberRevision(migratedRecord.revision);
           const writeRequest = store.put({
             id: storageKey,
             content: migratedRecord.snapshot,
@@ -310,6 +322,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       readRequest.onsuccess = () => {
         const row = readRequest.result;
         const currentRevision = Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0;
+        rememberRevision(currentRevision);
         if (row?.checksum && !hasValidChecksum(row)) {
           rejectOnce(vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot checksum does not match its content', {
             sourceId: storageKey,
@@ -326,7 +339,8 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           try { transaction.abort(); } catch { /* Conflict is already reported. */ }
           return;
         }
-        nextRevision = currentRevision + 1;
+        nextRevision = Math.max(currentRevision, highestObservedRevision) + 1;
+        rememberRevision(nextRevision);
         const nextContent = normalizeVocabularySnapshot(snapshot);
         const timestamp = new Date(Number(now())).toISOString();
         const writes = [];
@@ -419,7 +433,17 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           const backups = rows
             .filter((candidate) => candidate?.id?.startsWith(`${storageKey}.backup:`))
             .filter(isValidSnapshotBackup)
-            .sort((left, right) => Number(right.revision || 0) - Number(left.revision || 0));
+            .sort((left, right) => {
+              const rightRevision = Math.max(
+                Number.isInteger(right.revision) ? right.revision : 0,
+                Number.isInteger(right.content?.sourceRow?.revision) ? right.content.sourceRow.revision : 0,
+              );
+              const leftRevision = Math.max(
+                Number.isInteger(left.revision) ? left.revision : 0,
+                Number.isInteger(left.content?.sourceRow?.revision) ? left.content.sourceRow.revision : 0,
+              );
+              return rightRevision - leftRevision;
+            });
           const backup = backups[0];
           const quarantine = makeQuarantineRow({
             sourceId: storageKey,
@@ -439,15 +463,35 @@ export function createIndexedDbVocabularyRepository(options = {}) {
             return;
           }
           const sourceRow = backup.content.sourceRow;
+          const backupRevision = Number.isInteger(backup.revision) && backup.revision >= 0
+            ? backup.revision
+            : 0;
+          const sourceRevision = Number.isInteger(sourceRow.revision) && sourceRow.revision >= 0
+            ? sourceRow.revision
+            : 0;
+          const damagedRevision = Number.isInteger(row?.revision) && row.revision >= 0
+            ? row.revision
+            : 0;
+          const recoveryRevision = Math.max(
+            highestObservedRevision,
+            damagedRevision,
+            backupRevision,
+            sourceRevision,
+          ) + 1;
+          rememberRevision(recoveryRevision);
+          const recoveryTimestamp = new Date(Number(now())).toISOString();
+          const recoveredRow = {
+            ...clonePersistenceValue(sourceRow),
+            revision: recoveryRevision,
+            timestamp: recoveryTimestamp,
+            checksum: checksumFor(sourceRow.content),
+          };
           recovered = {
             snapshot: cloneVocabularyValue(sourceRow.content),
-            revision: Number(sourceRow.revision || backup.revision || 0),
-            row: sourceRow,
+            revision: recoveryRevision,
+            row: recoveredRow,
           };
-          const restoreRequest = store.put({
-            ...clonePersistenceValue(sourceRow),
-            checksum: checksumFor(sourceRow.content),
-          });
+          const restoreRequest = store.put(recoveredRow);
           restoreRequest.onerror = () => rejectOnce(normalizeIndexedDbError(restoreRequest.error, 'restore_snapshot'));
         };
         transaction.oncomplete = () => {
@@ -495,6 +539,15 @@ export function createVocabularyRepository(storage) {
       }
     }
     throw vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot update retry limit reached');
+  }
+
+  async function compareAndSwapSnapshot(nextSnapshot, expectedRevision) {
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+      throw vocabularyPersistenceError('INVALID_FIELD_TYPE', 'Vocabulary expected revision is invalid', {
+        expectedRevision,
+      });
+    }
+    return storage.compareAndSwap(normalizeKnownSnapshot(nextSnapshot), expectedRevision);
   }
 
   function normalizeKnownSnapshot(snapshot) {
@@ -550,6 +603,7 @@ export function createVocabularyRepository(storage) {
   return {
     loadSnapshot,
     updateSnapshot,
+    compareAndSwap: compareAndSwapSnapshot,
     findWordByLemma,
     getWord,
     getReviewState,

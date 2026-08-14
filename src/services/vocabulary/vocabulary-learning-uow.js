@@ -1,6 +1,12 @@
 import { bindAcquisitionRepositoryToTransaction } from './vocabulary-acquisition-repository.js';
 import { bindContextEvidenceRepositoryToTransaction } from './vocabulary-context-evidence.js';
 import { bindLearningEventRepositoryToTransaction } from './vocabulary-learning-events.js';
+import {
+  checksumFor,
+  clonePersistenceValue,
+  hasValidChecksum,
+  makeQuarantineRow,
+} from './vocabulary-persistence.js';
 
 export const VOCABULARY_LEARNING_CONTRACT_VERSION = 'vocabulary-learning-contracts.v1';
 export const VOCABULARY_REVIEW_ROW_ID = 'vocabulary.review.store.v2';
@@ -17,9 +23,15 @@ const EVENT_PARTITION = /^\d{4}-(?:0[1-9]|1[0-2])$/u;
 const REVIEW_STATES = new Set(['new', 'learning', 'review', 'relearning']);
 const rowPortMetadata = new WeakMap();
 let transactionSequence = 0;
+let highestObservedRevision = 0;
 
 function clone(value) {
-  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+  if (value === undefined) return undefined;
+  try {
+    return structuredClone(value);
+  } catch {
+    return { type: 'uncloneable', constructor: value?.constructor?.name || typeof value };
+  }
 }
 
 function isPlainObject(value) {
@@ -43,11 +55,57 @@ function fail(code, message, details = {}) {
 function normalizeThrown(error, operation = 'unit_of_work') {
   if (error?.name === 'VocabularyLearningContractError'
     || error?.name === 'ContractError') {
-    return error;
+    const mappedCode = mapContractCode(error.code);
+    if (mappedCode === error.code) return error;
+    return contractError(mappedCode, error.message, {
+      ...(isPlainObject(error.details) ? error.details : {}),
+      operation,
+    });
   }
-  return contractError('TRANSACTION_ABORTED', 'Vocabulary learning transaction aborted', {
-    operation,
-  });
+  if (error?.name === 'VocabularyPersistenceError' && typeof error.code === 'string') {
+    return contractError(mapContractCode(error.code), error.message, {
+      ...(isPlainObject(error.details) ? error.details : {}),
+      operation,
+    });
+  }
+  return normalizeStorageError(error, operation);
+}
+
+function mapContractCode(code) {
+  if (code === 'UNSUPPORTED_SCHEMA_VERSION' || code === 'MIGRATION_NOT_REGISTERED') return 'UNKNOWN_SCHEMA';
+  if (code === 'CONCURRENT_MODIFICATION') return 'REVISION_CONFLICT';
+  return code;
+}
+
+function normalizeStorageError(error, operation) {
+  if (error?.name === 'VocabularyLearningContractError' && error.code) {
+    return normalizeThrown(error, operation);
+  }
+  if (error?.code && ['QUOTA_EXCEEDED', 'CONNECTION_CLOSED', 'CORRUPT', 'UNKNOWN_SCHEMA', 'REVISION_CONFLICT'].includes(error.code)) {
+    return contractError(error.code, error.message || 'Vocabulary persistence operation failed', {
+      ...(isPlainObject(error.details) ? error.details : {}),
+      operation,
+    });
+  }
+  if (error?.name === 'QuotaExceededError') {
+    return contractError('QUOTA_EXCEEDED', 'Vocabulary persistence quota was exceeded', { operation });
+  }
+  if (error?.name === 'InvalidStateError' || error?.name === 'TransactionInactiveError') {
+    return contractError('CONNECTION_CLOSED', 'Vocabulary persistence connection was closed', { operation });
+  }
+  if (error?.name === 'AbortError' && /closed|connection|versionchange/iu.test(String(error?.message || ''))) {
+    return contractError('CONNECTION_CLOSED', 'Vocabulary persistence connection was closed', { operation });
+  }
+  if (error?.name === 'VersionError' || error?.name === 'NotFoundError') {
+    return contractError('UNKNOWN_SCHEMA', 'Vocabulary persistence schema is unsupported', { operation });
+  }
+  return contractError('TRANSACTION_ABORTED', 'Vocabulary learning transaction aborted', { operation });
+}
+
+function rememberRevision(revision) {
+  if (Number.isInteger(revision) && revision >= 0) {
+    highestObservedRevision = Math.max(highestObservedRevision, revision);
+  }
 }
 
 function requiredId(value, field) {
@@ -196,6 +254,37 @@ function validateFileRow(row, rowId) {
   return clone(row);
 }
 
+function expectedSchemaForRow(rowId) {
+  if (rowId === VOCABULARY_ACQUISITION_ROW_ID) return 'acquisition-store.v1';
+  if (rowId === VOCABULARY_REVIEW_ROW_ID) return REVIEW_STORE_SCHEMA;
+  if (rowId === 'vocabulary.context-evidence.store.v1') return 'context-evidence-store.v1';
+  if (rowId === 'vocabulary.learning-events.manifest.v1') return 'learning-event-manifest.v1';
+  if (rowId === 'vocabulary.review-session-ledgers.v1') return 'review-session-ledger-store.v1';
+  if (typeof rowId === 'string' && /^vocabulary\.learning-events\.v1\.\d{4}-\d{2}\.\d{4}$/u.test(rowId)) {
+    return 'learning-event-shard.v1';
+  }
+  return null;
+}
+
+function assertKnownRowSchema(row) {
+  const actual = row?.content?.schema_version ?? row?.content?.schemaVersion;
+  if (actual === undefined || actual === null) return;
+  const expected = expectedSchemaForRow(row.id);
+  if (expected && actual !== expected) {
+    fail('UNKNOWN_SCHEMA', 'Vocabulary learning row schema is unsupported', {
+      row_id: row.id,
+      schema_version: actual,
+    });
+  }
+  if (row.content?.schemaVersion !== undefined
+    && (!Number.isInteger(row.content.schemaVersion) || row.content.schemaVersion > 1)) {
+    fail('UNKNOWN_SCHEMA', 'Vocabulary learning row schema is unsupported', {
+      row_id: row.id,
+      schema_version: row.content.schemaVersion,
+    });
+  }
+}
+
 export function createVocabularyLearningTransactionRowPort(transaction, transaction_id) {
   requiredId(transaction_id, 'transaction_id');
   if (!transaction || typeof transaction.objectStore !== 'function' || typeof transaction.abort !== 'function') {
@@ -213,12 +302,12 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
   const eventIds = new Set();
   const backedUpRowIds = new Set();
   const request = (idbRequest, operation) => new Promise((resolve, reject) => {
-    idbRequest.onsuccess = () => resolve(idbRequest.result);
-    idbRequest.onerror = () => reject(contractError(
-      'TRANSACTION_ABORTED',
-      'IndexedDB request failed',
-      { operation },
-    ));
+    try {
+      idbRequest.onsuccess = () => resolve(idbRequest.result);
+      idbRequest.onerror = () => reject(normalizeStorageError(idbRequest.error, operation));
+    } catch (error) {
+      reject(normalizeStorageError(error, operation));
+    }
   });
   const port = {
     transaction_id,
@@ -226,7 +315,18 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
       requiredId(row_id, 'row_id');
       touchedRowIds.add(row_id);
       const row = await request(store.get(row_id), 'get_row');
-      return row === undefined ? null : validateFileRow(row, row_id);
+      if (row === undefined || row === null) return null;
+      const validated = validateFileRow(row, row_id);
+      rememberRevision(validated.revision);
+      assertKnownRowSchema(validated);
+      if (validated.checksum !== undefined && !hasValidChecksum(validated)) {
+        fail('CORRUPT', 'Vocabulary learning row checksum does not match its content', {
+          row_id: row_id,
+          sourceRow: validated,
+          reason: 'checksum-mismatch',
+        });
+      }
+      return validated;
     },
     async putRow(row) {
       if (!isPlainObject(row)) fail('INVALID_FIELD_TYPE', 'FileRow must be an object', { field: 'row' });
@@ -240,6 +340,7 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
         const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
           ? previousRow.revision
           : 0;
+        rememberRevision(currentRevision);
         if (previousRow && !backedUpRowIds.has(row.id)) {
           const backupContent = {
             schema_version: VOCABULARY_BACKUP_SCHEMA,
@@ -256,7 +357,10 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
             }), 'put_row');
           backedUpRowIds.add(row.id);
         }
-        nextRow.revision = previousRow ? currentRevision + 1 : 1;
+        nextRow.revision = previousRow
+          ? Math.max(currentRevision, highestObservedRevision) + 1
+          : Math.max(1, highestObservedRevision + 1);
+        rememberRevision(nextRow.revision);
         nextRow.checksum = `sha256:${sha256Utf8(canonicalJson(row.content))}`;
       }
       await request(store.put(nextRow), 'put_row');
@@ -568,18 +672,140 @@ async function executeWithRowPort(rowPort, command, execute, now) {
 
 function transactionCompletion(transaction) {
   return new Promise((resolve, reject) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () => reject(contractError(
-      'TRANSACTION_ABORTED',
-      'Vocabulary learning transaction aborted',
-      { operation: 'transaction' },
-    ));
-    transaction.onerror = () => reject(contractError(
-      'TRANSACTION_ABORTED',
-      'Vocabulary learning transaction failed',
-      { operation: 'transaction' },
-    ));
+    try {
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(normalizeStorageError(
+        transaction.error,
+        'transaction',
+      ));
+      transaction.onerror = () => reject(normalizeStorageError(
+        transaction.error,
+        'transaction',
+      ));
+    } catch (error) {
+      reject(normalizeStorageError(error, 'transaction'));
+    }
   });
+}
+
+function requestResult(idbRequest, operation) {
+  return new Promise((resolve, reject) => {
+    try {
+      idbRequest.onsuccess = () => resolve(idbRequest.result);
+      idbRequest.onerror = () => reject(normalizeStorageError(idbRequest.error, operation));
+    } catch (error) {
+      reject(normalizeStorageError(error, operation));
+    }
+  });
+}
+
+function validVocabularyBackup(candidate, sourceId) {
+  if (!candidate?.content
+    || candidate.content.schema_version !== VOCABULARY_BACKUP_SCHEMA
+    || candidate.content.sourceId !== sourceId
+    || !hasValidChecksum(candidate)) return false;
+  const sourceRow = candidate.content.sourceRow;
+  if (!sourceRow
+    || sourceRow.id !== sourceId
+    || !Object.prototype.hasOwnProperty.call(sourceRow, 'content')) return false;
+  return sourceRow.checksum === undefined || hasValidChecksum(sourceRow);
+}
+
+function recoveryTimestamp(now) {
+  try {
+    const value = now();
+    if (typeof value === 'string'
+      && UTC_TIMESTAMP.test(value)
+      && !Number.isNaN(Date.parse(value))
+      && new Date(value).toISOString() === value) {
+      return value;
+    }
+  } catch {
+    // Recovery uses a fresh timestamp when the caller clock is unavailable.
+  }
+  return new Date().toISOString();
+}
+
+async function recoverCorruptVocabularyRow(indexedDBApi, error, now) {
+  const sourceId = error.details?.row_id || error.details?.sourceRow?.id;
+  if (typeof sourceId !== 'string' || sourceId.length === 0) {
+    throw contractError('CORRUPT', 'Vocabulary learning row is corrupt', {
+      operation: 'recover_corrupt_row',
+    });
+  }
+  const database = await openExistingDatabase(indexedDBApi);
+  let transaction;
+  let completion;
+  let recoveryError = null;
+  try {
+    transaction = database.transaction(['files'], 'readwrite');
+    completion = transactionCompletion(transaction);
+    const store = transaction.objectStore('files');
+    const rows = await requestResult(store.getAll(), 'recover_corrupt_row');
+    const allRows = Array.isArray(rows) ? rows : [];
+    allRows.forEach((row) => rememberRevision(row?.revision));
+    const sourceRow = error.details?.sourceRow
+      || allRows.find((row) => row?.id === sourceId)
+      || null;
+    const backups = allRows
+      .filter((row) => row?.id?.startsWith(`${sourceId}.backup:`))
+      .filter((row) => validVocabularyBackup(row, sourceId))
+      .sort((left, right) => {
+        const rightRevision = Math.max(
+          Number.isInteger(right.revision) ? right.revision : 0,
+          Number.isInteger(right.content?.sourceRow?.revision) ? right.content.sourceRow.revision : 0,
+        );
+        const leftRevision = Math.max(
+          Number.isInteger(left.revision) ? left.revision : 0,
+          Number.isInteger(left.content?.sourceRow?.revision) ? left.content.sourceRow.revision : 0,
+        );
+        return rightRevision - leftRevision
+          || String(right.timestamp || '').localeCompare(String(left.timestamp || ''));
+      });
+    const quarantine = makeQuarantineRow({
+      sourceId,
+      sourceRow,
+      reason: error.details?.reason || 'checksum-mismatch',
+      detectedAt: recoveryTimestamp(now),
+      details: { code: error.code, operation: 'vocabulary-learning-uow' },
+    });
+    await requestResult(store.put(quarantine), 'quarantine_corrupt_row');
+    const backup = backups[0];
+    if (!backup) {
+      recoveryError = contractError('CORRUPT', 'Vocabulary learning row is corrupt and has no valid backup', {
+        row_id: sourceId,
+        quarantineId: quarantine.id,
+      });
+    } else {
+      const backupSourceRow = backup.content.sourceRow;
+      const damagedRevision = Number.isInteger(sourceRow?.revision) ? sourceRow.revision : 0;
+      const backupRevision = Number.isInteger(backup.revision) ? backup.revision : 0;
+      const sourceRevision = Number.isInteger(backupSourceRow.revision) ? backupSourceRow.revision : 0;
+      const nextRevision = Math.max(
+        highestObservedRevision,
+        damagedRevision,
+        backupRevision,
+        sourceRevision,
+      ) + 1;
+      rememberRevision(nextRevision);
+      await requestResult(store.put({
+        ...clonePersistenceValue(backupSourceRow),
+        revision: nextRevision,
+        timestamp: recoveryTimestamp(now),
+        checksum: checksumFor(backupSourceRow.content),
+      }), 'restore_corrupt_row');
+    }
+    await completion;
+  } catch (cause) {
+    try { transaction?.abort(); } catch { /* Preserve the classified recovery error. */ }
+    if (transaction) {
+      await completion?.catch(() => undefined);
+    }
+    throw normalizeThrown(cause, 'recover_corrupt_row');
+  } finally {
+    database.close?.();
+  }
+  if (recoveryError) throw recoveryError;
 }
 
 function openExistingDatabase(indexedDBApi) {
@@ -589,35 +815,51 @@ function openExistingDatabase(indexedDBApi) {
     }));
   }
   return new Promise((resolve, reject) => {
-    const request = indexedDBApi.open('SeekPlayerDB', 1);
+    let request;
+    let schemaRejected = false;
+    try {
+      request = indexedDBApi.open('SeekPlayerDB', 1);
+    } catch (error) {
+      reject(normalizeStorageError(error, 'open_database'));
+      return;
+    }
     request.onupgradeneeded = () => {
+      schemaRejected = true;
       try {
         request.transaction?.abort();
       } catch {
         // Never create or upgrade the database from this module.
       }
-      reject(contractError('TRANSACTION_ABORTED', 'Existing SeekPlayerDB schema is required', {
+      reject(contractError('UNKNOWN_SCHEMA', 'Existing SeekPlayerDB schema is required', {
         operation: 'open_database',
       }));
     };
-    request.onerror = () => reject(contractError(
-      'TRANSACTION_ABORTED',
-      'Could not open SeekPlayerDB',
-      { operation: 'open_database' },
-    ));
+    request.onblocked = () => reject(contractError('CONNECTION_CLOSED', 'SeekPlayerDB open was blocked', {
+      operation: 'open_database',
+    }));
+    request.onerror = () => reject(schemaRejected
+      ? contractError('UNKNOWN_SCHEMA', 'Existing SeekPlayerDB schema is required', {
+        operation: 'open_database',
+      })
+      : normalizeStorageError(request.error, 'open_database'));
     request.onsuccess = () => {
       const database = request.result;
       try {
         if (database.version !== 1 || !database.objectStoreNames.contains('files')) {
-          throw new Error('schema');
+          throw contractError('UNKNOWN_SCHEMA', 'SeekPlayerDB schema is incompatible', {
+            operation: 'validate_schema',
+          });
         }
         const transaction = database.transaction(['files'], 'readonly');
-        if (transaction.objectStore('files').keyPath !== 'id') throw new Error('keyPath');
-      } catch {
+        if (transaction.objectStore('files').keyPath !== 'id') {
+          throw contractError('UNKNOWN_SCHEMA', 'SeekPlayerDB files key path is incompatible', {
+            operation: 'validate_schema',
+          });
+        }
+        database.onversionchange = () => database.close?.();
+      } catch (error) {
         database.close?.();
-        reject(contractError('TRANSACTION_ABORTED', 'SeekPlayerDB schema is incompatible', {
-          operation: 'validate_schema',
-        }));
+        reject(normalizeThrown(error, 'validate_schema'));
         return;
       }
       resolve(database);
@@ -639,32 +881,39 @@ export async function runVocabularyLearningUnitOfWork(
   const now = dependencies.now ?? (() => new Date().toISOString());
   const indexedDBApi = dependencies.indexedDBApi
     ?? (typeof globalThis !== 'undefined' ? globalThis.indexedDB : null);
-  const database = await openExistingDatabase(indexedDBApi);
-  const transaction = database.transaction(['files'], 'readwrite');
-  const completion = transactionCompletion(transaction);
-  const rowPort = createVocabularyLearningTransactionRowPort(
-    transaction,
-    `vocabulary-learning-${++transactionSequence}`,
-  );
-  let result;
-  try {
-    result = await executeWithRowPort(rowPort, command, execute, now);
-  } catch (error) {
+  const runAttempt = async (allowRecovery) => {
+    const database = await openExistingDatabase(indexedDBApi);
+    let transaction;
+    let completion;
     try {
-      transaction.abort();
-    } catch {
-      // The transaction may already have aborted.
+      transaction = database.transaction(['files'], 'readwrite');
+      completion = transactionCompletion(transaction);
+      const rowPort = createVocabularyLearningTransactionRowPort(
+        transaction,
+        `vocabulary-learning-${++transactionSequence}`,
+      );
+      const result = await executeWithRowPort(rowPort, command, execute, now);
+      await completion;
+      return clone(result);
+    } catch (error) {
+      const normalized = normalizeThrown(error);
+      try {
+        transaction?.abort();
+      } catch {
+        // The transaction may already have aborted.
+      }
+      if (completion) await completion.catch(() => undefined);
+      if (allowRecovery && normalized.code === 'CORRUPT') {
+        database.close?.();
+        await recoverCorruptVocabularyRow(indexedDBApi, normalized, now);
+        return runAttempt(false);
+      }
+      throw normalized;
+    } finally {
+      database.close?.();
     }
-    await completion.catch(() => undefined);
-    database.close?.();
-    throw normalizeThrown(error);
-  }
-  try {
-    await completion;
-  } finally {
-    database.close?.();
-  }
-  return clone(result);
+  };
+  return runAttempt(true);
 }
 
 export function createInMemoryVocabularyLearningUnitOfWorkRunner(options = {}) {

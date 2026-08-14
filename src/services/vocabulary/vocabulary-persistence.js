@@ -93,23 +93,112 @@ export function backupRowId(sourceId, revision) {
 }
 
 export function quarantineRowId(sourceId, sourceRow, reason) {
-  return `vocabulary.corrupt.quarantine.v1:${sha256Utf8(canonicalJson({ sourceId, sourceRow, reason }))}`
+  let fingerprint
+  try {
+    fingerprint = sha256Utf8(canonicalJson({ sourceId, sourceRow, reason }))
+  } catch {
+    fingerprint = sha256Utf8(
+      canonicalJson({
+        sourceId: evidenceMetadata(sourceId),
+        sourceRow: evidenceMetadata(sourceRow),
+        reason: evidenceMetadata(reason),
+      }),
+    )
+  }
+  return `vocabulary.corrupt.quarantine.v1:${fingerprint}`
 }
 
 export function makeQuarantineRow({ sourceId, sourceRow, reason, detectedAt, details = {} }) {
-  const content = {
+  const timestamp = typeof detectedAt === 'string' ? detectedAt : '1970-01-01T00:00:00.000Z'
+  const sourceClone = tryClonePersistenceValue(sourceRow)
+  const detailsClone = tryClonePersistenceValue(details)
+  let content = {
     schema_version: 'vocabulary-corrupt-quarantine.v1',
     sourceId,
-    sourceRow: clonePersistenceValue(sourceRow),
+    sourceRow: sourceClone.ok ? sourceClone.value : sourceClone.fallback,
     reason,
-    detectedAt,
-    details: clonePersistenceValue(details),
+    detectedAt: timestamp,
+    details: detailsClone.ok ? detailsClone.value : detailsClone.fallback,
+  }
+  try {
+    checksumFor(content)
+  } catch {
+    content = {
+      schema_version: 'vocabulary-corrupt-quarantine.v1',
+      sourceId: evidenceMetadata(sourceId),
+      sourceRow: evidenceMetadata(sourceRow),
+      reason: evidenceMetadata(reason),
+      detectedAt: timestamp,
+      details: evidenceMetadata(details),
+    }
   }
   return {
     id: quarantineRowId(sourceId, sourceRow, reason),
     content,
-    timestamp: detectedAt,
+    timestamp,
     checksum: checksumFor(content),
+  }
+}
+
+function tryClonePersistenceValue(value) {
+  try {
+    return { ok: true, value: clonePersistenceValue(value) }
+  } catch {
+    return { ok: false, fallback: evidenceMetadata(value) }
+  }
+}
+
+function evidenceMetadata(value, seen = new WeakSet()) {
+  if (value === undefined) return { type: 'undefined' }
+  if (value === null) return { type: 'null' }
+  if (typeof value === 'string') return { type: 'string', length: value.length, sha256: sha256Utf8(value) }
+  if (typeof value === 'boolean') return { type: 'boolean', value }
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return { type: 'number', value: 'NaN' }
+    if (value === Number.POSITIVE_INFINITY) return { type: 'number', value: '+Infinity' }
+    if (value === Number.NEGATIVE_INFINITY) return { type: 'number', value: '-Infinity' }
+    if (Object.is(value, -0)) return { type: 'number', value: '-0' }
+    return { type: 'number', value }
+  }
+  if (typeof value === 'bigint') return { type: 'bigint', value: String(value) }
+  if (typeof value === 'symbol') return { type: 'symbol' }
+  if (typeof value === 'function') return { type: 'function' }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? { type: 'Date', value: 'Invalid Date' }
+      : { type: 'Date', value: value.toISOString() }
+  }
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    return { type: 'Blob', size: value.size, mimeType: value.type }
+  }
+  if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer) {
+    return { type: 'ArrayBuffer', byteLength: value.byteLength }
+  }
+  if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(value)) {
+    return {
+      type: value.constructor?.name || 'ArrayBufferView',
+      byteLength: value.byteLength,
+      byteOffset: value.byteOffset,
+      length: value.length ?? null,
+    }
+  }
+  if (typeof value !== 'object') return { type: typeof value }
+  if (seen.has(value)) return { type: 'cycle' }
+  seen.add(value)
+  try {
+    if (Array.isArray(value)) {
+      return { type: 'Array', length: value.length, items: value.map((item) => evidenceMetadata(item, seen)) }
+    }
+    const keys = Object.keys(value).sort(compareUnicodeCodePoints)
+    return {
+      type: 'Object',
+      constructor: value.constructor?.name || 'Object',
+      keys: keys.map((key) => ({ key, value: evidenceMetadata(value[key], seen) })),
+    }
+  } catch {
+    return { type: 'Object', constructor: 'uninspectable' }
+  } finally {
+    seen.delete(value)
   }
 }
 

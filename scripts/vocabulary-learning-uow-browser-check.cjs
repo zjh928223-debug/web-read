@@ -374,6 +374,229 @@ async function main() {
     assert.equal(requestFailure.error.code, 'TRANSACTION_ABORTED');
     assert.deepEqual(requestFailure.after, requestFailure.before);
 
+    const productionFaults = await page.evaluate(async () => {
+      const uow = await import('/src/services/vocabulary/vocabulary-learning-uow.js');
+      const persistence = await import('/src/services/vocabulary/vocabulary-persistence.js');
+      const readRows = () => new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(['files'], 'readonly');
+          const rowsRequest = transaction.objectStore('files').getAll();
+          rowsRequest.onerror = () => reject(rowsRequest.error);
+          rowsRequest.onsuccess = () => {
+            transaction.oncomplete = () => {
+              database.close();
+              resolve(rowsRequest.result);
+            };
+            transaction.onerror = () => reject(transaction.error);
+          };
+        };
+      });
+      const writeRows = (mutate) => new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(['files'], 'readwrite');
+          const store = transaction.objectStore('files');
+          try {
+            mutate(store);
+          } catch (error) {
+            transaction.abort();
+            reject(error);
+            return;
+          }
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+          transaction.onabort = () => reject(transaction.error);
+        };
+      });
+      const baseRows = await readRows();
+      const baseAcquisition = baseRows.find((row) => row.id === 'vocabulary.acquisition.store.v1');
+      const backupContent = {
+        schema_version: 'vocabulary-backup.v1',
+        sourceId: baseAcquisition.id,
+        sourceRow: { ...baseAcquisition, revision: 1 },
+        createdAt: '2026-07-20T11:00:00.000Z',
+      };
+      const corruptContent = { ...baseAcquisition.content, by_learning_unit_id: {} };
+      const corruptRow = {
+        ...baseAcquisition,
+        revision: 3,
+        content: corruptContent,
+        checksum: `sha256:${'0'.repeat(64)}`,
+      };
+      await writeRows((store) => {
+        store.put({
+          id: `${baseAcquisition.id}.backup:1`,
+          content: backupContent,
+          revision: 1,
+          timestamp: backupContent.createdAt,
+          checksum: persistence.checksumFor(backupContent),
+        });
+        store.put(corruptRow);
+      });
+      let recoveryCalls = 0;
+      const recovered = await uow.runVocabularyLearningUnitOfWork(
+        { now: () => '2026-07-20T11:00:01.000Z' },
+        {
+          command_id: 'browser-command-uow-corrupt-recovery',
+          command_type: 'browser_uow_corrupt_recovery',
+          correlation_id: 'browser-correlation-uow-corrupt-recovery',
+          event_partition: '2026-07',
+          payload: { synthetic: true },
+        },
+        async (bound) => {
+          recoveryCalls += 1;
+          return bound.acquisition.getLearningUnit('browser-unit-candidate');
+        },
+      );
+      const afterRecovery = await readRows();
+      const recoveredRow = afterRecovery.find((row) => row.id === baseAcquisition.id);
+      const recoveryQuarantine = afterRecovery.find((row) => row.id.startsWith('vocabulary.corrupt.quarantine.v1:'));
+
+      const noBackupContent = { ...recoveredRow.content, by_learning_unit_id: {} };
+      await writeRows((store) => {
+        afterRecovery
+          .filter((row) => row.id.startsWith(`${baseAcquisition.id}.backup:`))
+          .forEach((row) => store.delete(row.id));
+        store.put({
+          ...recoveredRow,
+          revision: 7,
+          content: noBackupContent,
+          checksum: `sha256:${'0'.repeat(64)}`,
+        });
+      });
+      let noBackupError;
+      try {
+        await uow.runVocabularyLearningUnitOfWork(
+          { now: () => '2026-07-20T11:00:02.000Z' },
+          {
+            command_id: 'browser-command-uow-corrupt-no-backup',
+            command_type: 'browser_uow_corrupt_no_backup',
+            correlation_id: 'browser-correlation-uow-corrupt-no-backup',
+            event_partition: '2026-07',
+            payload: { synthetic: true },
+          },
+          (bound) => bound.acquisition.getLearningUnit('browser-unit-candidate'),
+        );
+      } catch (error) {
+        noBackupError = error.code;
+      }
+      const afterNoBackup = await readRows();
+      const noBackupRow = afterNoBackup.find((row) => row.id === baseAcquisition.id);
+
+      const unknownContent = { ...noBackupRow.content, schema_version: 'acquisition-store.v99' };
+      const unknownRow = {
+        ...noBackupRow,
+        content: unknownContent,
+        checksum: persistence.checksumFor(unknownContent),
+      };
+      await writeRows((store) => store.put(unknownRow));
+      let unknownError;
+      try {
+        await uow.runVocabularyLearningUnitOfWork(
+          { now: () => '2026-07-20T11:00:03.000Z' },
+          {
+            command_id: 'browser-command-uow-unknown-schema',
+            command_type: 'browser_uow_unknown_schema',
+            correlation_id: 'browser-correlation-uow-unknown-schema',
+            event_partition: '2026-07',
+            payload: { synthetic: true },
+          },
+          (bound) => bound.acquisition.getLearningUnit('browser-unit-candidate'),
+        );
+      } catch (error) {
+        unknownError = error.code;
+      }
+      const unknownStored = (await readRows()).find((row) => row.id === baseAcquisition.id);
+
+      const faultProbe = async (faultName, commandId) => {
+        const originalPut = IDBObjectStore.prototype.put;
+        let injected = false;
+        IDBObjectStore.prototype.put = function injectedPut(...args) {
+          if (!injected && this.transaction.mode === 'readwrite') {
+            injected = true;
+            throw new DOMException('injected vocabulary fault', faultName);
+          }
+          return originalPut.apply(this, args);
+        };
+        let code;
+        try {
+          await uow.runVocabularyLearningUnitOfWork(
+            { now: () => '2026-07-20T11:00:04.000Z' },
+            {
+              command_id: commandId,
+              command_type: `browser_${faultName}`,
+              correlation_id: `${commandId}:correlation`,
+              event_partition: '2026-07',
+              payload: { synthetic: true },
+            },
+            (bound) => bound.review.putInitial({
+              schema_version: 'review-state.v2',
+              review_state_id: `${commandId}:review`,
+              learning_unit_id: `${commandId}:learning`,
+              word_id: `${commandId}:word`,
+              state: 'new',
+              due_at: '2026-07-20T11:00:04.000Z',
+              stability: 0,
+              difficulty: 5,
+              elapsed_days: 0,
+              scheduled_days: 0,
+              reps: 0,
+              lapses: 0,
+              learning_steps: 0,
+              last_review_at: null,
+              scheduler_version: 'fsrs.v1',
+              scheduler_parameters_version: 'fsrs-parameters.v1',
+              created_at: '2026-07-20T11:00:04.000Z',
+              updated_at: '2026-07-20T11:00:04.000Z',
+              revision: 0,
+              extensions: {},
+            }),
+          );
+        } catch (error) {
+          code = error.code;
+        } finally {
+          IDBObjectStore.prototype.put = originalPut;
+        }
+        return code;
+      };
+      const quotaError = await faultProbe('QuotaExceededError', 'browser-command-uow-quota');
+      const closeError = await faultProbe('InvalidStateError', 'browser-command-uow-close');
+      return {
+        recovered: recovered.learning_unit_id,
+        recoveryCalls,
+        recoveredRevision: recoveredRow.revision,
+        damagedRevision: corruptRow.revision,
+        recoveryQuarantine: Boolean(recoveryQuarantine),
+        noBackupError,
+        noBackupRevision: noBackupRow.revision,
+        unknownError,
+        unknownUnchanged: JSON.stringify(unknownStored) === JSON.stringify(unknownRow),
+        quotaError,
+        closeError,
+      };
+    });
+    assert.deepEqual(productionFaults, {
+      recovered: 'browser-unit-candidate',
+      recoveryCalls: 2,
+      recoveredRevision: 4,
+      damagedRevision: 3,
+      recoveryQuarantine: true,
+      noBackupError: 'CORRUPT',
+      noBackupRevision: 7,
+      unknownError: 'UNKNOWN_SCHEMA',
+      unknownUnchanged: true,
+      quotaError: 'QUOTA_EXCEEDED',
+      closeError: 'CONNECTION_CLOSED',
+    });
+
     const schemaResults = await page.evaluate(async () => {
       const uow = await import('/src/services/vocabulary/vocabulary-learning-uow.js');
       const deleteDatabase = () => new Promise((resolve, reject) => {
@@ -428,10 +651,10 @@ async function main() {
       return { missingDatabase, missingStore, wrongKeyPath, wrongVersion };
     });
     assert.deepEqual(schemaResults, {
-      missingDatabase: 'TRANSACTION_ABORTED',
-      missingStore: 'TRANSACTION_ABORTED',
-      wrongKeyPath: 'TRANSACTION_ABORTED',
-      wrongVersion: 'TRANSACTION_ABORTED',
+      missingDatabase: 'UNKNOWN_SCHEMA',
+      missingStore: 'UNKNOWN_SCHEMA',
+      wrongKeyPath: 'UNKNOWN_SCHEMA',
+      wrongVersion: 'UNKNOWN_SCHEMA',
     });
 
     console.log('Vocabulary learning production IndexedDB browser verification passed.');
