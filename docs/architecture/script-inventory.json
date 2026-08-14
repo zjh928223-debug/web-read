@@ -21,7 +21,8 @@
     "scripts/vocabulary-learning-uow-faults-check.mjs",
     "scripts/vocabulary-persistence-faults-check.mjs",
     "scripts/vocabulary-repository-browser-reopen-check.cjs",
-    "scripts/vocabulary-repository-multi-page-browser-check.cjs"
+    "scripts/vocabulary-repository-multi-page-browser-check.cjs",
+    "scripts/vocabulary-revision-watermark-browser-check.cjs"
   ],
   "archiveDelete": [
     ".codex/actions/check-read26-load.sh",

@@ -84,6 +84,84 @@ export function hasValidChecksum(row) {
   }
 }
 
+export const VOCABULARY_REVISION_WATERMARK_ROW_ID = 'vocabulary.revision-watermark.v1'
+export const VOCABULARY_REVISION_WATERMARK_SCHEMA = 'vocabulary-revision-watermark.v1'
+
+function revisionWatermarkError(code, message, details = {}) {
+  const error = new Error(message)
+  error.name = 'VocabularyRevisionWatermarkError'
+  error.code = code
+  error.details = details
+  return error
+}
+
+export function makeRevisionWatermarkRow(revision, timestamp) {
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw revisionWatermarkError('CORRUPT', 'Revision watermark must contain a non-negative integer', {
+      revision,
+    })
+  }
+  const content = {
+    schema_version: VOCABULARY_REVISION_WATERMARK_SCHEMA,
+    revision,
+  }
+  return {
+    id: VOCABULARY_REVISION_WATERMARK_ROW_ID,
+    content,
+    revision,
+    timestamp,
+    checksum: checksumFor(content),
+  }
+}
+
+export function parseRevisionWatermarkRow(row) {
+  if (row === undefined || row === null) return { present: false, revision: 0, row: null }
+  if (row.id !== VOCABULARY_REVISION_WATERMARK_ROW_ID
+    || !row.content
+    || typeof row.content !== 'object'
+    || Array.isArray(row.content)) {
+    throw revisionWatermarkError('CORRUPT', 'Revision watermark row is malformed', {
+      row_id: row?.id ?? null,
+    })
+  }
+  if (row.content.schema_version !== VOCABULARY_REVISION_WATERMARK_SCHEMA) {
+    throw revisionWatermarkError('UNKNOWN_SCHEMA', 'Revision watermark schema is unsupported', {
+      row_id: row.id,
+      schema_version: row.content.schema_version ?? null,
+    })
+  }
+  if (Object.keys(row.content).some((key) => !['schema_version', 'revision'].includes(key))) {
+    throw revisionWatermarkError('UNKNOWN_SCHEMA', 'Revision watermark schema has unknown fields', {
+      row_id: row.id,
+    })
+  }
+  if (!Number.isInteger(row.revision) || row.revision < 0
+    || !Number.isInteger(row.content.revision) || row.content.revision < 0
+    || row.revision !== row.content.revision
+    || typeof row.timestamp !== 'string'
+    || !hasValidChecksum(row)) {
+    throw revisionWatermarkError('CORRUPT', 'Revision watermark checksum or revision is invalid', {
+      row_id: row.id,
+      revision: row.revision ?? null,
+    })
+  }
+  return { present: true, revision: row.revision, row }
+}
+
+export function maxPersistedRevision(rows) {
+  let maximum = 0
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (row?.id === VOCABULARY_REVISION_WATERMARK_ROW_ID) continue
+    if (Number.isInteger(row?.revision) && row.revision >= 0) {
+      maximum = Math.max(maximum, row.revision)
+    }
+    if (Number.isInteger(row?.content?.sourceRow?.revision) && row.content.sourceRow.revision >= 0) {
+      maximum = Math.max(maximum, row.content.sourceRow.revision)
+    }
+  }
+  return maximum
+}
+
 export function clonePersistenceValue(value) {
   return value === undefined ? undefined : structuredClone(value)
 }

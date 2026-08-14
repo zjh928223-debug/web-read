@@ -225,6 +225,151 @@ async function main() {
     );
     assert.equal(finalState.checksumValid, true);
     assert.equal(finalState.completeRows.every((row) => row.checksumValid), true);
+
+    // P1 regression: a fresh page must not reuse a damaged row's lost revision
+    // when the stale page still holds the pre-corruption CAS token.
+    for (let expectedRevision = finalState.revision; expectedRevision < 6; expectedRevision += 1) {
+      await reader.evaluate(async (revision) => {
+        const module = await import('/src/services/vocabulary/vocabulary-repository.js');
+        const repository = module.createIndexedDbVocabularyRepository();
+        const snapshot = await repository.loadSnapshot();
+        await repository.compareAndSwap({
+          ...snapshot,
+          words: [...snapshot.words, {
+            id: `multi-revision-${revision + 1}`,
+            word: `revision-${revision + 1}`,
+            lemma: `revision-${revision + 1}`,
+            lookup_key: `revision-${revision + 1}`,
+            entry_type: 'word',
+            language: 'en',
+            status: 'new',
+            tags: [],
+            created_at: '2026-08-13T00:00:00.000Z',
+            updated_at: '2026-08-13T00:00:00.000Z',
+          }],
+        }, revision);
+      }, expectedRevision);
+    }
+
+    const stalePage = await context.newPage();
+    await stalePage.goto(server.origin);
+    const staleRevision = await stalePage.evaluate(async () => {
+      const module = await import('/src/services/vocabulary/vocabulary-repository.js');
+      const repository = module.createIndexedDbVocabularyRepository();
+      window.__staleVocabularyRepository = repository;
+      window.__staleVocabularySnapshot = await repository.loadSnapshot();
+      const requestResult = (request) => new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const openRequest = indexedDB.open('SeekPlayerDB', 1);
+      const database = await requestResult(openRequest);
+      const transaction = database.transaction(['files'], 'readonly');
+      const row = await requestResult(transaction.objectStore('files').get('vocabulary.srs.store.v1'));
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('stale revision read aborted'));
+      });
+      database.close();
+      return row.revision;
+    });
+    assert.equal(staleRevision, 6, 'stale page must pause after reading canonical revision 6');
+
+    await reader.evaluate(async () => {
+      const requestResult = (request) => new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const openRequest = indexedDB.open('SeekPlayerDB', 1);
+      const database = await requestResult(openRequest);
+      const transaction = database.transaction(['files'], 'readwrite');
+      const store = transaction.objectStore('files');
+      const row = await requestResult(store.get('vocabulary.srs.store.v1'));
+      delete row.revision;
+      row.content = { damaged: true };
+      row.checksum = 'sha256:' + '0'.repeat(64);
+      await requestResult(store.put(row));
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('damage transaction aborted'));
+      });
+      database.close();
+    });
+
+    const recoveryPage = await context.newPage();
+    await recoveryPage.goto(server.origin);
+    const recoveredRevision = await recoveryPage.evaluate(async () => {
+      const module = await import('/src/services/vocabulary/vocabulary-repository.js');
+      const repository = module.createIndexedDbVocabularyRepository();
+      await repository.loadSnapshot();
+      const requestResult = (request) => new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const openRequest = indexedDB.open('SeekPlayerDB', 1);
+      const database = await requestResult(openRequest);
+      const transaction = database.transaction(['files'], 'readonly');
+      const row = await requestResult(transaction.objectStore('files').get('vocabulary.srs.store.v1'));
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('recovery read aborted'));
+      });
+      database.close();
+      return row.revision;
+    });
+    assert.ok(recoveredRevision > 6, `fresh recovery reused a stale revision: ${recoveredRevision}`);
+
+    const staleCasResult = await stalePage.evaluate(async () => window.__staleVocabularyRepository.compareAndSwap({
+      ...window.__staleVocabularySnapshot,
+      words: [...window.__staleVocabularySnapshot.words, {
+        id: 'multi-stale-owner',
+        word: 'stale-owner',
+        lemma: 'stale-owner',
+        lookup_key: 'stale-owner',
+        entry_type: 'word',
+        language: 'en',
+        status: 'new',
+        tags: [],
+        created_at: '2026-08-13T00:00:00.000Z',
+        updated_at: '2026-08-13T00:00:00.000Z',
+      }],
+    }, 6).then(
+      (revision) => ({ ok: true, revision }),
+      (error) => ({ ok: false, code: error?.code ?? null }),
+    ));
+    assert.deepEqual(
+      staleCasResult,
+      { ok: false, code: 'REVISION_CONFLICT' },
+      `stale page unexpectedly reused expectedRevision=6: ${JSON.stringify(staleCasResult)}`,
+    );
+
+    await recoveryPage.close();
+    const reopenedPage = await context.newPage();
+    await reopenedPage.goto(server.origin);
+    const reopenedRevision = await reopenedPage.evaluate(async () => {
+      const module = await import('/src/services/vocabulary/vocabulary-repository.js');
+      const repository = module.createIndexedDbVocabularyRepository();
+      await repository.loadSnapshot();
+      const requestResult = (request) => new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const openRequest = indexedDB.open('SeekPlayerDB', 1);
+      const database = await requestResult(openRequest);
+      const transaction = database.transaction(['files'], 'readonly');
+      const row = await requestResult(transaction.objectStore('files').get('vocabulary.srs.store.v1'));
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error || new Error('reopen read aborted'));
+      });
+      database.close();
+      return row.revision;
+    });
+    assert.ok(reopenedRevision >= recoveredRevision, 'reopened page must preserve monotonic recovery revision');
     console.log('Vocabulary repository real Chromium multi-page CAS verification passed.');
   } finally {
     if (context) await context.close();

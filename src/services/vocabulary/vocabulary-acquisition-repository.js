@@ -10,6 +10,10 @@ import {
   clonePersistenceValue,
   hasValidChecksum,
   makeQuarantineRow,
+  makeRevisionWatermarkRow,
+  maxPersistedRevision,
+  parseRevisionWatermarkRow,
+  VOCABULARY_REVISION_WATERMARK_ROW_ID,
 } from './vocabulary-persistence.js';
 
 const DB_NAME = 'SeekPlayerDB';
@@ -46,6 +50,12 @@ function normalizeStorageError(error, operation) {
     && typeof error.message === 'string'
     && isPlainObject(error.details)) {
     return error;
+  }
+  if (error?.name === 'VocabularyRevisionWatermarkError' && error.code) {
+    return contractError(error.code, error.message, {
+      ...(isPlainObject(error.details) ? error.details : {}),
+      operation,
+    });
   }
   return stableStorageError(operation, error);
 }
@@ -707,6 +717,28 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
     let sourceRowRead = false;
     let sourceRow = null;
     let sourceBackupWritten = false;
+    let watermarkRead = false;
+    let watermarkRevision = 0;
+    let highestWrittenRevision = 0;
+    const readRevisionWatermark = async () => {
+      if (watermarkRead) return watermarkRevision;
+      let request;
+      try {
+        request = objectStore.get(VOCABULARY_REVISION_WATERMARK_ROW_ID);
+      } catch (error) {
+        throw normalizeStorageError(error, 'read_revision_watermark');
+      }
+      const row = await requestAsPromise(request, 'read_revision_watermark');
+      try {
+        const parsed = parseRevisionWatermarkRow(row);
+        watermarkRevision = parsed.revision;
+        rememberRevision(watermarkRevision);
+        watermarkRead = true;
+        return watermarkRevision;
+      } catch (error) {
+        throw normalizeStorageError(error, 'read_revision_watermark');
+      }
+    };
     const readSourceRow = async () => {
       if (sourceRowRead) return sourceRow;
       let request;
@@ -736,7 +768,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
               sourceRowRead = true;
             }
             if (rowId === ACQUISITION_ROW_ID) rememberRevision(row?.revision);
-            return row || null;
+            return readRevisionWatermark().then(() => row || null);
           });
       },
       async putRow(row) {
@@ -745,6 +777,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
         }
         let rowToWrite = row;
         if (row.id === ACQUISITION_ROW_ID) {
+          const persistedWatermarkRevision = await readRevisionWatermark();
           const previousRow = await readSourceRow();
           const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
             ? previousRow.revision
@@ -773,9 +806,10 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
             sourceBackupWritten = true;
           }
           const nextRevision = previousRow
-            ? Math.max(currentRevision, highestObservedRevision) + 1
-            : Math.max(1, highestObservedRevision + 1);
+            ? Math.max(currentRevision, highestObservedRevision, persistedWatermarkRevision) + 1
+            : Math.max(1, highestObservedRevision, persistedWatermarkRevision + 1);
           rememberRevision(nextRevision);
+          highestWrittenRevision = Math.max(highestWrittenRevision, nextRevision);
           rowToWrite = {
             ...clonePersistenceValue(row),
             revision: nextRevision,
@@ -788,7 +822,21 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
         } catch (error) {
           return Promise.reject(normalizeStorageError(error, 'write_acquisition_row'));
         }
-        return requestAsPromise(request, 'write_acquisition_row').then(() => undefined);
+        await requestAsPromise(request, 'write_acquisition_row');
+        if (row.id === ACQUISITION_ROW_ID) {
+          const watermarkTimestamp = typeof rowToWrite.timestamp === 'string'
+            ? rowToWrite.timestamp
+            : new Date().toISOString();
+          try {
+            objectStore.put(makeRevisionWatermarkRow(
+              Math.max(watermarkRevision, highestWrittenRevision),
+              watermarkTimestamp,
+            ));
+          } catch (error) {
+            throw normalizeStorageError(error, 'write_revision_watermark');
+          }
+          watermarkRevision = Math.max(watermarkRevision, highestWrittenRevision);
+        }
       },
       abort(error) {
         try {
@@ -840,6 +888,18 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
       await new Promise((resolve, reject) => {
         rowsRequest.onsuccess = () => {
           const rows = Array.isArray(rowsRequest.result) ? rowsRequest.result : [];
+          let watermark;
+          try {
+            watermark = parseRevisionWatermarkRow(rows.find(
+              (row) => row?.id === VOCABULARY_REVISION_WATERMARK_ROW_ID,
+            ));
+          } catch (cause) {
+            try { transaction.abort(); } catch { /* Watermark failures are fail-closed. */ }
+            reject(normalizeStorageError(cause, 'read_revision_watermark'));
+            return;
+          }
+          rememberRevision(watermark.revision);
+          const persistedRevision = maxPersistedRevision(rows);
           const backups = rows
             .filter((row) => row?.id?.startsWith(`${ACQUISITION_ROW_ID}.backup:`))
             .filter(isValidAcquisitionBackup)
@@ -865,22 +925,32 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
           });
           try {
             store.put(quarantine);
-            if (!backup) {
+            const damagedRevisionKnown = Number.isInteger(error.details?.sourceRow?.revision)
+              && error.details.sourceRow.revision >= 0;
+            if (!backup || (!watermark.present && !damagedRevisionKnown)) {
               recoveryError = contractError('CORRUPT', 'Acquisition store is corrupt and has no valid backup', {
                 row_id: ACQUISITION_ROW_ID,
                 quarantineId: quarantine.id,
+                watermarkMissing: !watermark.present,
               });
               resolve();
               return;
             }
             const sourceRow = backup.content.sourceRow;
             const damagedRevision = Number.isInteger(error.details?.sourceRow?.revision)
+              && error.details.sourceRow.revision >= 0
               ? error.details.sourceRow.revision
               : 0;
-            const backupRevision = Number.isInteger(backup.revision) ? backup.revision : 0;
-            const sourceRevision = Number.isInteger(sourceRow.revision) ? sourceRow.revision : 0;
+            const backupRevision = Number.isInteger(backup.revision) && backup.revision >= 0
+              ? backup.revision
+              : 0;
+            const sourceRevision = Number.isInteger(sourceRow.revision) && sourceRow.revision >= 0
+              ? sourceRow.revision
+              : 0;
             const recoveryRevision = Math.max(
               highestObservedRevision,
+              watermark.revision,
+              persistedRevision,
               damagedRevision,
               backupRevision,
               sourceRevision,
@@ -894,6 +964,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
               timestamp: recoveryTimestamp,
               checksum: checksumFor(sourceRow.content),
             });
+            store.put(makeRevisionWatermarkRow(recoveryRevision, recoveryTimestamp));
             resolve();
           } catch (cause) {
             const classifiedError = normalizeStorageError(cause, 'recover_acquisition_row');

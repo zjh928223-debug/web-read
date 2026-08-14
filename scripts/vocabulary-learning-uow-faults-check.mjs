@@ -24,6 +24,7 @@ async function runUowFaultScenarios(modules) {
           checksum: `sha256:${'0'.repeat(64)}`,
         },
         backup,
+        watermarkRow(modules, 6),
       ],
     })
     let calls = 0
@@ -37,7 +38,10 @@ async function runUowFaultScenarios(modules) {
     )
     assert.equal(result.learning_unit_id, 'uow-unit')
     assert.equal(calls, 2, 'corrupt UoW rows must recover and explicitly retry once')
-    assert.ok(fake.rows.get(current.id).revision > current.revision)
+    assert.ok(fake.rows.get(current.id).revision > 6)
+    assert.ok(fake.rows.get(current.id).revision <= fake.rows.get(
+      modules.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID,
+    ).revision)
     assert.ok([...fake.rows.values()].some((row) => row.id.startsWith('vocabulary.corrupt.quarantine.v1:')))
   }
 
@@ -84,6 +88,55 @@ async function runUowFaultScenarios(modules) {
   }
 
   {
+    const watermark = watermarkRow(modules, 6)
+    const corruptWatermark = {
+      ...watermark,
+      checksum: `sha256:${'0'.repeat(64)}`,
+    }
+    const fake = createFakeIndexedDb({ rows: [current, corruptWatermark] })
+    await assert.rejects(
+      modules.uow.runVocabularyLearningUnitOfWork(
+        { indexedDBApi: fake.indexedDBApi, now: () => now },
+        command('uow-corrupt-watermark'),
+        (bound) => bound.acquisition.getLearningUnit('uow-unit'),
+      ),
+      (error) => error?.code === 'CORRUPT',
+    )
+    assert.deepEqual(fake.rows.get(current.id), current)
+    assert.deepEqual(
+      fake.rows.get(modules.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID),
+      corruptWatermark,
+    )
+  }
+
+  {
+    const watermark = watermarkRow(modules, 6)
+    const unknownContent = {
+      ...watermark.content,
+      schema_version: 'vocabulary-revision-watermark.v99',
+    }
+    const unknownWatermark = {
+      ...watermark,
+      content: unknownContent,
+      checksum: modules.persistence.checksumFor(unknownContent),
+    }
+    const fake = createFakeIndexedDb({ rows: [current, unknownWatermark] })
+    await assert.rejects(
+      modules.uow.runVocabularyLearningUnitOfWork(
+        { indexedDBApi: fake.indexedDBApi, now: () => now },
+        command('uow-unknown-watermark'),
+        (bound) => bound.acquisition.getLearningUnit('uow-unit'),
+      ),
+      (error) => error?.code === 'UNKNOWN_SCHEMA',
+    )
+    assert.deepEqual(fake.rows.get(current.id), current)
+    assert.deepEqual(
+      fake.rows.get(modules.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID),
+      unknownWatermark,
+    )
+  }
+
+  {
     const fake = createFakeIndexedDb({ fault: 'quota' })
     await assert.rejects(
       modules.uow.runVocabularyLearningUnitOfWork(
@@ -104,6 +157,33 @@ async function runUowFaultScenarios(modules) {
         (bound) => bound.review.putInitial(reviewState(now, 'uow-connection-close')),
       ),
       (error) => error?.code === 'CONNECTION_CLOSED',
+    )
+  }
+
+  {
+    const stableRow = acquisitionRow(modules, 3)
+    const stableWatermark = watermarkRow(modules, 6)
+    const fake = createFakeIndexedDb({
+      rows: [stableRow, stableWatermark],
+      fault: 'connection-close',
+    })
+    const beforeRows = [...fake.rows.entries()].map(([id, row]) => [id, structuredClone(row)])
+    const currentUnit = stableRow.content.by_learning_unit_id['uow-unit'].learning_unit
+    await assert.rejects(
+      modules.uow.runVocabularyLearningUnitOfWork(
+        { indexedDBApi: fake.indexedDBApi, now: () => now },
+        command('uow-atomic-close'),
+        (bound) => bound.acquisition.putLearningUnit({
+          ...currentUnit,
+          updated_at: '2026-08-13T00:01:00.000Z',
+        }, 0),
+      ),
+      (error) => error?.code === 'CONNECTION_CLOSED',
+    )
+    assert.deepEqual(
+      [...fake.rows.entries()],
+      beforeRows,
+      'UoW abort must roll back canonical acquisition and revision watermark together',
     )
   }
 
@@ -224,6 +304,13 @@ function acquisitionBackup(modules, row, revision) {
     timestamp: '2026-08-13T00:00:00.000Z',
     checksum: modules.persistence.checksumFor(content),
   }
+}
+
+function watermarkRow(modules, revision) {
+  return modules.persistence.makeRevisionWatermarkRow(
+    revision,
+    '2026-08-13T00:00:00.000Z',
+  )
 }
 
 function reviewState(timestamp, suffix) {

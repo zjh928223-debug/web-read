@@ -11,6 +11,10 @@ import {
   clonePersistenceValue,
   hasValidChecksum,
   makeQuarantineRow,
+  makeRevisionWatermarkRow,
+  maxPersistedRevision,
+  parseRevisionWatermarkRow,
+  VOCABULARY_REVISION_WATERMARK_ROW_ID,
 } from './vocabulary-persistence.js';
 
 const DB_NAME = 'SeekPlayerDB';
@@ -32,6 +36,12 @@ function vocabularyPersistenceError(code, message, details = {}) {
 
 function normalizeIndexedDbError(error, operation) {
   if (error?.name === 'VocabularyPersistenceError') return error;
+  if (error?.name === 'VocabularyRevisionWatermarkError') {
+    return vocabularyPersistenceError(error.code, error.message, {
+      ...(error.details || {}),
+      operation,
+    });
+  }
   if (error?.name === 'QuotaExceededError' || error?.code === 'QUOTA_EXCEEDED') {
     return vocabularyPersistenceError('QUOTA_EXCEEDED', 'Vocabulary persistence quota was exceeded', { operation });
   }
@@ -179,6 +189,13 @@ export function createIndexedDbVocabularyRepository(options = {}) {
   async function loadRecord(migrationAttempt = 0) {
     const db = await openDb();
     const row = await readRow(db, 'readonly', storageKey);
+    const watermarkRow = await readRow(db, 'readonly', VOCABULARY_REVISION_WATERMARK_ROW_ID);
+    try {
+      const watermark = parseRevisionWatermarkRow(watermarkRow);
+      rememberRevision(watermark.revision);
+    } catch (error) {
+      throw normalizeIndexedDbError(error, 'read_revision_watermark');
+    }
     const record = {
       snapshot: row && row.content ? row.content : null,
       revision: Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0,
@@ -246,51 +263,73 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       readRequest.onerror = () => rejectOnce(readRequest.error || new Error('Failed to verify vocabulary migration source'));
       readRequest.onsuccess = () => {
         const sourceRow = readRequest.result;
-        const currentRevision = Number.isInteger(sourceRow?.revision) && sourceRow.revision >= 0 ? sourceRow.revision : 0;
-        if (currentRevision !== record.revision) {
-          rejectOnce(vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot changed before migration', {
-            expectedRevision: record.revision,
-            actualRevision: currentRevision,
-          }));
-          try { transaction.abort(); } catch { /* Conflict is already reported. */ }
-          return;
-        }
-        const migratedAt = Number(now());
-        const backupId = backupRowId(storageKey, currentRevision);
-        const migratedContent = normalizeVocabularySnapshot(migrated);
-        const backupContent = {
-          schema_version: 'vocabulary-backup.v1',
-          sourceId: storageKey,
-          sourceRow: cloneVocabularyValue(sourceRow),
-          createdAt: migratedAt,
-          fromSchemaVersion: sourceVersion,
-          toSchemaVersion: CURRENT_SCHEMA_VERSION,
-          migratedAt,
-        };
-        const backupRequest = store.put({
-          id: backupId,
-          content: backupContent,
-          revision: currentRevision,
-          timestamp: new Date(migratedAt).toISOString(),
-          checksum: checksumFor(backupContent),
-        });
-        backupRequest.onerror = () => rejectOnce(backupRequest.error || new Error('Failed to back up vocabulary migration source'));
-        backupRequest.onsuccess = () => {
-          migratedRecord = {
-            snapshot: migratedContent,
-            revision: Math.max(currentRevision, highestObservedRevision) + 1,
+        const watermarkRequest = store.get(VOCABULARY_REVISION_WATERMARK_ROW_ID);
+        watermarkRequest.onerror = () => rejectOnce(normalizeIndexedDbError(
+          watermarkRequest.error,
+          'read_revision_watermark',
+        ));
+        watermarkRequest.onsuccess = () => {
+          let watermark;
+          try {
+            watermark = parseRevisionWatermarkRow(watermarkRequest.result);
+          } catch (error) {
+            rejectOnce(normalizeIndexedDbError(error, 'read_revision_watermark'));
+            try { transaction.abort(); } catch { /* Watermark failures are fail-closed. */ }
+            return;
+          }
+          rememberRevision(watermark.revision);
+          const currentRevision = Number.isInteger(sourceRow?.revision) && sourceRow.revision >= 0 ? sourceRow.revision : 0;
+          if (currentRevision !== record.revision) {
+            rejectOnce(vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot changed before migration', {
+              expectedRevision: record.revision,
+              actualRevision: currentRevision,
+            }));
+            try { transaction.abort(); } catch { /* Conflict is already reported. */ }
+            return;
+          }
+          const migratedAt = Number(now());
+          const timestamp = new Date(migratedAt).toISOString();
+          const backupId = backupRowId(storageKey, currentRevision);
+          const migratedContent = normalizeVocabularySnapshot(migrated);
+          const backupContent = {
+            schema_version: 'vocabulary-backup.v1',
+            sourceId: storageKey,
+            sourceRow: cloneVocabularyValue(sourceRow),
+            createdAt: migratedAt,
+            fromSchemaVersion: sourceVersion,
+            toSchemaVersion: CURRENT_SCHEMA_VERSION,
+            migratedAt,
           };
-          rememberRevision(migratedRecord.revision);
-          const writeRequest = store.put({
-            id: storageKey,
-            content: migratedRecord.snapshot,
-            revision: migratedRecord.revision,
-            timestamp: new Date(migratedAt).toISOString(),
-            checksum: checksumFor(migratedRecord.snapshot),
-            migratedFrom: sourceVersion,
-            migrationBackupId: backupId,
+          const backupRequest = store.put({
+            id: backupId,
+            content: backupContent,
+            revision: currentRevision,
+            timestamp,
+            checksum: checksumFor(backupContent),
           });
-          writeRequest.onerror = () => rejectOnce(writeRequest.error || new Error('Failed to write migrated vocabulary snapshot'));
+          backupRequest.onerror = () => rejectOnce(backupRequest.error || new Error('Failed to back up vocabulary migration source'));
+          backupRequest.onsuccess = () => {
+            migratedRecord = {
+              snapshot: migratedContent,
+              revision: Math.max(currentRevision, highestObservedRevision, watermark.revision) + 1,
+            };
+            rememberRevision(migratedRecord.revision);
+            const writeRequest = store.put({
+              id: storageKey,
+              content: migratedRecord.snapshot,
+              revision: migratedRecord.revision,
+              timestamp,
+              checksum: checksumFor(migratedRecord.snapshot),
+              migratedFrom: sourceVersion,
+              migrationBackupId: backupId,
+            });
+            writeRequest.onerror = () => rejectOnce(writeRequest.error || new Error('Failed to write migrated vocabulary snapshot'));
+            const watermarkWrite = store.put(makeRevisionWatermarkRow(migratedRecord.revision, timestamp));
+            watermarkWrite.onerror = () => rejectOnce(normalizeIndexedDbError(
+              watermarkWrite.error,
+              'write_revision_watermark',
+            ));
+          };
         };
       };
       transaction.oncomplete = () => {
@@ -321,54 +360,71 @@ export function createIndexedDbVocabularyRepository(options = {}) {
       readRequest.onerror = () => rejectOnce(readRequest.error || new Error('Failed to load vocabulary revision'));
       readRequest.onsuccess = () => {
         const row = readRequest.result;
-        const currentRevision = Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0;
-        rememberRevision(currentRevision);
-        if (row?.checksum && !hasValidChecksum(row)) {
-          rejectOnce(vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot checksum does not match its content', {
-            sourceId: storageKey,
-            revision: row.revision ?? null,
-          }));
-          try { transaction.abort(); } catch { /* Corrupt data is already classified. */ }
-          return;
-        }
-        if (currentRevision !== expectedRevision) {
-          rejectOnce(vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot revision changed', {
-            expectedRevision,
-            actualRevision: currentRevision,
-          }));
-          try { transaction.abort(); } catch { /* Conflict is already reported. */ }
-          return;
-        }
-        nextRevision = Math.max(currentRevision, highestObservedRevision) + 1;
-        rememberRevision(nextRevision);
-        const nextContent = normalizeVocabularySnapshot(snapshot);
-        const timestamp = new Date(Number(now())).toISOString();
-        const writes = [];
-        if (row && row.content && (row.checksum === undefined || hasValidChecksum(row))) {
-          const backupContent = {
-            schema_version: 'vocabulary-backup.v1',
-            sourceId: storageKey,
-            sourceRow: cloneVocabularyValue(row),
-            createdAt: Number(now()),
-          };
+        const watermarkRequest = store.get(VOCABULARY_REVISION_WATERMARK_ROW_ID);
+        watermarkRequest.onerror = () => rejectOnce(normalizeIndexedDbError(
+          watermarkRequest.error,
+          'read_revision_watermark',
+        ));
+        watermarkRequest.onsuccess = () => {
+          let watermark;
+          try {
+            watermark = parseRevisionWatermarkRow(watermarkRequest.result);
+          } catch (error) {
+            rejectOnce(normalizeIndexedDbError(error, 'read_revision_watermark'));
+            try { transaction.abort(); } catch { /* Watermark failures are fail-closed. */ }
+            return;
+          }
+          rememberRevision(watermark.revision);
+          const currentRevision = Number.isInteger(row?.revision) && row.revision >= 0 ? row.revision : 0;
+          rememberRevision(currentRevision);
+          if (row?.checksum && !hasValidChecksum(row)) {
+            rejectOnce(vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot checksum does not match its content', {
+              sourceId: storageKey,
+              revision: row.revision ?? null,
+            }));
+            try { transaction.abort(); } catch { /* Corrupt data is already classified. */ }
+            return;
+          }
+          if (currentRevision !== expectedRevision) {
+            rejectOnce(vocabularyPersistenceError('REVISION_CONFLICT', 'Vocabulary snapshot revision changed', {
+              expectedRevision,
+              actualRevision: currentRevision,
+            }));
+            try { transaction.abort(); } catch { /* Conflict is already reported. */ }
+            return;
+          }
+          nextRevision = Math.max(currentRevision, highestObservedRevision, watermark.revision) + 1;
+          rememberRevision(nextRevision);
+          const nextContent = normalizeVocabularySnapshot(snapshot);
+          const timestamp = new Date(Number(now())).toISOString();
+          const writes = [];
+          if (row && row.content && (row.checksum === undefined || hasValidChecksum(row))) {
+            const backupContent = {
+              schema_version: 'vocabulary-backup.v1',
+              sourceId: storageKey,
+              sourceRow: cloneVocabularyValue(row),
+              createdAt: Number(now()),
+            };
+            writes.push(store.put({
+              id: backupRowId(storageKey, currentRevision),
+              content: backupContent,
+              revision: currentRevision,
+              timestamp,
+              checksum: checksumFor(backupContent),
+            }));
+          }
           writes.push(store.put({
-            id: backupRowId(storageKey, currentRevision),
-            content: backupContent,
-            revision: currentRevision,
+            id: storageKey,
+            content: nextContent,
+            revision: nextRevision,
             timestamp,
-            checksum: checksumFor(backupContent),
+            checksum: checksumFor(nextContent),
           }));
-        }
-        writes.push(store.put({
-          id: storageKey,
-          content: nextContent,
-          revision: nextRevision,
-          timestamp,
-          checksum: checksumFor(nextContent),
-        }));
-        writes.forEach((writeRequest) => {
-          writeRequest.onerror = () => rejectOnce(normalizeIndexedDbError(writeRequest.error, 'write_snapshot'));
-        });
+          writes.push(store.put(makeRevisionWatermarkRow(nextRevision, timestamp)));
+          writes.forEach((writeRequest) => {
+            writeRequest.onerror = () => rejectOnce(normalizeIndexedDbError(writeRequest.error, 'write_snapshot'));
+          });
+        };
       };
       transaction.oncomplete = () => {
         if (settled) return;
@@ -430,6 +486,18 @@ export function createIndexedDbVocabularyRepository(options = {}) {
         allRequest.onerror = () => rejectOnce(normalizeIndexedDbError(allRequest.error, 'recover_snapshot'));
         allRequest.onsuccess = () => {
           const rows = Array.isArray(allRequest.result) ? allRequest.result : [];
+          let watermark;
+          try {
+            watermark = parseRevisionWatermarkRow(rows.find(
+              (candidate) => candidate?.id === VOCABULARY_REVISION_WATERMARK_ROW_ID,
+            ));
+          } catch (error) {
+            rejectOnce(normalizeIndexedDbError(error, 'read_revision_watermark'));
+            try { transaction.abort(); } catch { /* Watermark failures are fail-closed. */ }
+            return;
+          }
+          rememberRevision(watermark.revision);
+          const persistedRevision = maxPersistedRevision(rows);
           const backups = rows
             .filter((candidate) => candidate?.id?.startsWith(`${storageKey}.backup:`))
             .filter(isValidSnapshotBackup)
@@ -454,11 +522,13 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           });
           const quarantineRequest = store.put(quarantine);
           quarantineRequest.onerror = () => rejectOnce(normalizeIndexedDbError(quarantineRequest.error, 'quarantine_snapshot'));
-          if (!backup) {
+          const damagedRevisionKnown = Number.isInteger(row?.revision) && row.revision >= 0;
+          if (!backup || (!watermark.present && !damagedRevisionKnown)) {
             recoveryError = vocabularyPersistenceError('CORRUPT', 'Vocabulary snapshot is corrupt and has no valid backup', {
               sourceId: storageKey,
               quarantineId: quarantine.id,
               reason,
+              watermarkMissing: !watermark.present,
             });
             return;
           }
@@ -474,6 +544,8 @@ export function createIndexedDbVocabularyRepository(options = {}) {
             : 0;
           const recoveryRevision = Math.max(
             highestObservedRevision,
+            watermark.revision,
+            persistedRevision,
             damagedRevision,
             backupRevision,
             sourceRevision,
@@ -493,6 +565,11 @@ export function createIndexedDbVocabularyRepository(options = {}) {
           };
           const restoreRequest = store.put(recoveredRow);
           restoreRequest.onerror = () => rejectOnce(normalizeIndexedDbError(restoreRequest.error, 'restore_snapshot'));
+          const watermarkRequest = store.put(makeRevisionWatermarkRow(recoveryRevision, recoveryTimestamp));
+          watermarkRequest.onerror = () => rejectOnce(normalizeIndexedDbError(
+            watermarkRequest.error,
+            'write_revision_watermark',
+          ));
         };
         transaction.oncomplete = () => {
           if (settled) return;

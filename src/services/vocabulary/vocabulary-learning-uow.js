@@ -6,6 +6,10 @@ import {
   clonePersistenceValue,
   hasValidChecksum,
   makeQuarantineRow,
+  makeRevisionWatermarkRow,
+  maxPersistedRevision,
+  parseRevisionWatermarkRow,
+  VOCABULARY_REVISION_WATERMARK_ROW_ID,
 } from './vocabulary-persistence.js';
 
 export const VOCABULARY_LEARNING_CONTRACT_VERSION = 'vocabulary-learning-contracts.v1';
@@ -301,6 +305,8 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
   const touchedRowIds = new Set();
   const eventIds = new Set();
   const backedUpRowIds = new Set();
+  let watermarkRead = false;
+  let watermarkRevision = 0;
   const request = (idbRequest, operation) => new Promise((resolve, reject) => {
     try {
       idbRequest.onsuccess = () => resolve(idbRequest.result);
@@ -309,13 +315,34 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
       reject(normalizeStorageError(error, operation));
     }
   });
+  const readRevisionWatermark = async () => {
+    if (watermarkRead) return watermarkRevision;
+    let row;
+    try {
+      row = await request(store.get(VOCABULARY_REVISION_WATERMARK_ROW_ID), 'read_revision_watermark');
+    } catch (error) {
+      throw normalizeThrown(error, 'read_revision_watermark');
+    }
+    try {
+      const parsed = parseRevisionWatermarkRow(row);
+      watermarkRevision = parsed.revision;
+      rememberRevision(watermarkRevision);
+      watermarkRead = true;
+      return watermarkRevision;
+    } catch (error) {
+      throw normalizeThrown(error, 'read_revision_watermark');
+    }
+  };
   const port = {
     transaction_id,
     async getRow(row_id) {
       requiredId(row_id, 'row_id');
       touchedRowIds.add(row_id);
       const row = await request(store.get(row_id), 'get_row');
-      if (row === undefined || row === null) return null;
+      if (row === undefined || row === null) {
+        await readRevisionWatermark();
+        return null;
+      }
       const validated = validateFileRow(row, row_id);
       rememberRevision(validated.revision);
       assertKnownRowSchema(validated);
@@ -326,6 +353,7 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
           reason: 'checksum-mismatch',
         });
       }
+      await readRevisionWatermark();
       return validated;
     },
     async putRow(row) {
@@ -335,6 +363,7 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
       canonicalJson(row.content);
       touchedRowIds.add(row.id);
       const nextRow = clone(row);
+      const persistedWatermarkRevision = await readRevisionWatermark();
       if (row.id === VOCABULARY_ACQUISITION_ROW_ID) {
         const previousRow = await request(store.get(row.id), 'get_row');
         const currentRevision = Number.isInteger(previousRow?.revision) && previousRow.revision >= 0
@@ -358,12 +387,40 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
           backedUpRowIds.add(row.id);
         }
         nextRow.revision = previousRow
-          ? Math.max(currentRevision, highestObservedRevision) + 1
-          : Math.max(1, highestObservedRevision + 1);
+          ? Math.max(currentRevision, highestObservedRevision, persistedWatermarkRevision) + 1
+          : Math.max(1, highestObservedRevision, persistedWatermarkRevision + 1);
         rememberRevision(nextRow.revision);
         nextRow.checksum = `sha256:${sha256Utf8(canonicalJson(row.content))}`;
       }
-      await request(store.put(nextRow), 'put_row');
+      const candidateRevision = Number.isInteger(nextRow.revision) && nextRow.revision >= 0
+        ? nextRow.revision
+        : 0;
+      const nextWatermarkRevision = Math.max(
+        persistedWatermarkRevision,
+        highestObservedRevision,
+        candidateRevision,
+      ) + 1;
+      let rowRequest;
+      try {
+        rowRequest = store.put(nextRow);
+      } catch (error) {
+        throw normalizeThrown(error, 'put_row');
+      }
+      watermarkRevision = nextWatermarkRevision;
+      rememberRevision(nextWatermarkRevision);
+      await new Promise((resolve, reject) => {
+        rowRequest.onsuccess = () => {
+          try {
+            // Queue the watermark while the canonical request is still in its
+            // success event; both writes therefore share the same transaction.
+            store.put(makeRevisionWatermarkRow(nextWatermarkRevision, row.timestamp));
+            resolve();
+          } catch (error) {
+            reject(normalizeThrown(error, 'write_revision_watermark'));
+          }
+        };
+        rowRequest.onerror = () => reject(normalizeStorageError(rowRequest.error, 'put_row'));
+      });
     },
     abort(error) {
       try {
@@ -743,6 +800,16 @@ async function recoverCorruptVocabularyRow(indexedDBApi, error, now) {
     const store = transaction.objectStore('files');
     const rows = await requestResult(store.getAll(), 'recover_corrupt_row');
     const allRows = Array.isArray(rows) ? rows : [];
+    let watermark;
+    try {
+      watermark = parseRevisionWatermarkRow(allRows.find(
+        (row) => row?.id === VOCABULARY_REVISION_WATERMARK_ROW_ID,
+      ));
+    } catch (cause) {
+      throw normalizeThrown(cause, 'read_revision_watermark');
+    }
+    rememberRevision(watermark.revision);
+    const persistedRevision = maxPersistedRevision(allRows);
     allRows.forEach((row) => rememberRevision(row?.revision));
     const sourceRow = error.details?.sourceRow
       || allRows.find((row) => row?.id === sourceId)
@@ -771,29 +838,56 @@ async function recoverCorruptVocabularyRow(indexedDBApi, error, now) {
     });
     await requestResult(store.put(quarantine), 'quarantine_corrupt_row');
     const backup = backups[0];
-    if (!backup) {
+    const damagedRevisionKnown = Number.isInteger(sourceRow?.revision) && sourceRow.revision >= 0;
+    if (!backup || (!watermark.present && !damagedRevisionKnown)) {
       recoveryError = contractError('CORRUPT', 'Vocabulary learning row is corrupt and has no valid backup', {
         row_id: sourceId,
         quarantineId: quarantine.id,
+        watermarkMissing: !watermark.present,
       });
     } else {
       const backupSourceRow = backup.content.sourceRow;
-      const damagedRevision = Number.isInteger(sourceRow?.revision) ? sourceRow.revision : 0;
-      const backupRevision = Number.isInteger(backup.revision) ? backup.revision : 0;
-      const sourceRevision = Number.isInteger(backupSourceRow.revision) ? backupSourceRow.revision : 0;
+      const damagedRevision = Number.isInteger(sourceRow?.revision) && sourceRow.revision >= 0
+        ? sourceRow.revision
+        : 0;
+      const backupRevision = Number.isInteger(backup.revision) && backup.revision >= 0
+        ? backup.revision
+        : 0;
+      const sourceRevision = Number.isInteger(backupSourceRow.revision) && backupSourceRow.revision >= 0
+        ? backupSourceRow.revision
+        : 0;
       const nextRevision = Math.max(
         highestObservedRevision,
+        watermark.revision,
+        persistedRevision,
         damagedRevision,
         backupRevision,
         sourceRevision,
       ) + 1;
       rememberRevision(nextRevision);
-      await requestResult(store.put({
-        ...clonePersistenceValue(backupSourceRow),
-        revision: nextRevision,
-        timestamp: recoveryTimestamp(now),
-        checksum: checksumFor(backupSourceRow.content),
-      }), 'restore_corrupt_row');
+      const recoveredAt = recoveryTimestamp(now);
+      let restoreRequest;
+      try {
+        restoreRequest = store.put({
+          ...clonePersistenceValue(backupSourceRow),
+          revision: nextRevision,
+          timestamp: recoveredAt,
+          checksum: checksumFor(backupSourceRow.content),
+        });
+      } catch (cause) {
+        throw normalizeThrown(cause, 'restore_corrupt_row');
+      }
+      restoreRequest.onerror = () => {
+        try { transaction.abort(); } catch { /* Completion reports the stable failure. */ }
+      };
+      restoreRequest.onsuccess = () => {
+        try {
+          store.put(makeRevisionWatermarkRow(nextRevision, recoveredAt));
+        } catch (cause) {
+          try { transaction.abort(); } catch { /* Completion reports the stable failure. */ }
+          void normalizeThrown(cause, 'write_revision_watermark');
+        }
+      };
     }
     await completion;
   } catch (cause) {

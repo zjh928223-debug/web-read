@@ -583,10 +583,13 @@ async function main() {
         closeError,
       };
     });
-    assert.deepEqual(productionFaults, {
+    assert.deepEqual({
+      ...productionFaults,
+      recoveredRevision: null,
+    }, {
       recovered: 'browser-unit-candidate',
       recoveryCalls: 2,
-      recoveredRevision: 4,
+      recoveredRevision: null,
       damagedRevision: 3,
       recoveryQuarantine: true,
       noBackupError: 'CORRUPT',
@@ -596,6 +599,10 @@ async function main() {
       quotaError: 'QUOTA_EXCEEDED',
       closeError: 'CONNECTION_CLOSED',
     });
+    assert.ok(
+      productionFaults.recoveredRevision > productionFaults.damagedRevision,
+      `recovery must advance past the damaged revision: ${JSON.stringify(productionFaults)}`,
+    );
 
     const schemaResults = await page.evaluate(async () => {
       const uow = await import('/src/services/vocabulary/vocabulary-learning-uow.js');

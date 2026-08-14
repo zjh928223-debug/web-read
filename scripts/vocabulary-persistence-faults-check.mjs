@@ -33,6 +33,10 @@ async function runSnapshotScenarios(api) {
   const firstRow = fake.rows.get('vocabulary.srs.store.v1')
   assert.match(firstRow.checksum, /^sha256:[a-f0-9]{64}$/u)
   assert.equal(firstRow.revision, 1)
+  const firstWatermark = fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID)
+  assert.equal(firstWatermark.content.schema_version, api.persistence.VOCABULARY_REVISION_WATERMARK_SCHEMA)
+  assert.equal(firstWatermark.revision, 1)
+  assert.equal(firstWatermark.checksum, api.persistence.checksumFor(firstWatermark.content))
 
   await Promise.all([
     first.updateSnapshot((snapshot) => {
@@ -73,8 +77,11 @@ async function runSnapshotScenarios(api) {
     'a corrupt current snapshot must recover the previous valid backup',
   )
   const recoveredRow = fake.rows.get('vocabulary.srs.store.v1')
+  const recoveredWatermark = fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID)
   assert.ok(recoveredRow.revision > corruptRow.revision, 'recovery must advance past the damaged revision')
   assert.ok(recoveredRow.revision > backupForRecovery.revision, 'recovery must advance past the backup revision')
+  assert.ok(recoveredRow.revision <= recoveredWatermark.revision)
+  assert.equal(recoveredWatermark.checksum, api.persistence.checksumFor(recoveredWatermark.content))
 
   const beforeUnknown = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
   const unknownContent = { ...beforeUnknown.content, schemaVersion: 99 }
@@ -95,8 +102,36 @@ async function runSnapshotScenarios(api) {
   )
   fake.rows.set('vocabulary.srs.store.v1', beforeUnknown)
 
+  const canonicalBeforeWatermarkFault = structuredClone(fake.rows.get('vocabulary.srs.store.v1'))
+  const validWatermark = structuredClone(fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID))
+  const unknownWatermarkContent = {
+    ...validWatermark.content,
+    schema_version: 'vocabulary-revision-watermark.v99',
+  }
+  fake.rows.set(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID, {
+    ...validWatermark,
+    content: unknownWatermarkContent,
+    checksum: api.persistence.checksumFor(unknownWatermarkContent),
+  })
+  await assert.rejects(
+    first.loadSnapshot(),
+    (error) => error?.code === 'UNKNOWN_SCHEMA',
+  )
+  assert.deepEqual(fake.rows.get('vocabulary.srs.store.v1'), canonicalBeforeWatermarkFault)
+  fake.rows.set(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID, {
+    ...validWatermark,
+    checksum: `sha256:${'0'.repeat(64)}`,
+  })
+  await assert.rejects(
+    first.loadSnapshot(),
+    (error) => error?.code === 'CORRUPT',
+  )
+  assert.deepEqual(fake.rows.get('vocabulary.srs.store.v1'), canonicalBeforeWatermarkFault)
+  fake.rows.set(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID, validWatermark)
+
   fake.fault = 'quota'
   const snapshotBeforeQuota = await first.loadSnapshot()
+  const watermarkBeforeQuota = structuredClone(fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID))
   await assert.rejects(
     first.updateSnapshot((snapshot) => {
       snapshot.words.push(word('snapshot-quota', 'quota'))
@@ -109,8 +144,10 @@ async function runSnapshotScenarios(api) {
     snapshotBeforeQuota,
   )
   assert.equal(fake.rows.get('vocabulary.srs.store.v1').revision, beforeUnknown.revision)
+  assert.deepEqual(fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID), watermarkBeforeQuota)
   fake.fault = null
 
+  const watermarkBeforeAbort = structuredClone(fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID))
   fake.fault = 'abort-after-put'
   await assert.rejects(
     first.updateSnapshot((snapshot) => {
@@ -120,6 +157,7 @@ async function runSnapshotScenarios(api) {
     (error) => error?.code === 'TRANSACTION_ABORTED' || error?.code === 'CONNECTION_CLOSED',
   )
   assert.equal(fake.rows.get('vocabulary.srs.store.v1').revision, beforeUnknown.revision)
+  assert.deepEqual(fake.rows.get(api.persistence.VOCABULARY_REVISION_WATERMARK_ROW_ID), watermarkBeforeAbort)
   fake.fault = null
 
   fake.triggerVersionChange()
