@@ -30,8 +30,9 @@ const row = {
 
 await persistence.put('session', row)
 assert.deepEqual(await persistence.get('session', row.id), row)
+assert.deepEqual(await persistence.getAllRows(), [row])
 assert.equal(fake.openCalls.length, 1, 'one persistence instance must share one database open')
-assert.equal(fake.completedTransactions, 2)
+assert.equal(fake.completedTransactions, 3)
 
 await assert.rejects(
   persistence.put('session', { id: 'other:current', schema: 'reader-session.v1' }),
@@ -143,6 +144,9 @@ function createFakeIndexedDb(options = {}) {
             keyPath: 'id',
             get(key) {
               return request(() => structuredClone(rows.get(key)))
+            },
+            getAll() {
+              return request(() => structuredClone([...rows.values()]))
             },
             put(value) {
               return request(() => {

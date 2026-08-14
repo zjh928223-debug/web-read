@@ -171,6 +171,13 @@ export function createApplicationPersistence(options = {}) {
       return rows
     },
 
+    async getAllRows() {
+      const rows = await runTransaction('readonly', 'get_all_rows', (store) => (
+        requestPromise(store.getAll(), 'get_all_rows')
+      ))
+      return Array.isArray(rows) ? rows : []
+    },
+
     async put(typeName, row) {
       validateRow(typeName, row)
       await runTransaction('readwrite', `put:${typeName}`, (store) => (
