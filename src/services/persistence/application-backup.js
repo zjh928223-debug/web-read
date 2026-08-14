@@ -18,6 +18,7 @@ const REQUIRED_DOMAINS = Object.freeze([
 const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|private[_-]?key|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$)/i
 const SENSITIVE_URL_PARAMETER = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$|signature|^sig$)/i
 const EMBEDDED_MEDIA_KEY = /(?:blob|arraybuffer|typedarray|binary|base64|datauri|inline(?:data|media)?|media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))/i
+const PRIVATE_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|private|var|tmp)\/)/i
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
@@ -46,7 +47,7 @@ function classifyBackupError(code) {
   if (String(code).includes('QUOTA') || String(code).includes('CAPACITY')) return 'storage'
   if (String(code).includes('CONFLICT') || String(code).includes('REVISION')) return 'conflict'
   if (String(code).includes('TARGET') || String(code).includes('RESTORE')) return 'storage'
-  if (String(code).includes('SECRET') || String(code).includes('BINARY') || String(code).includes('MEDIA')) return 'validation'
+  if (String(code).includes('SECRET') || String(code).includes('BINARY') || String(code).includes('MEDIA') || String(code).includes('PATH')) return 'validation'
   return 'internal'
 }
 
@@ -189,6 +190,10 @@ function looksLikeUrl(value) {
   return typeof value === 'string' && /^(?:https?|wss?):\/\//i.test(value.trim())
 }
 
+function looksLikePrivatePath(value) {
+  return typeof value === 'string' && PRIVATE_PATH_VALUE.test(value.trim())
+}
+
 export function redactUrl(value) {
   if (!looksLikeUrl(value)) return value
   try {
@@ -214,7 +219,14 @@ function createSanitizeState() {
 function sanitizeValue(value, state, path = '$', seen = new WeakSet()) {
   assertNoBinaryValue(value, path)
   if (value === null || value === undefined) return value
-  if (typeof value === 'string') return looksLikeUrl(value) ? redactUrl(value) : value
+  if (typeof value === 'string') {
+    if (looksLikeUrl(value)) return redactUrl(value)
+    if (looksLikePrivatePath(value)) {
+      state.redactions += 1
+      return '[REDACTED_PATH]'
+    }
+    return value
+  }
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (typeof value === 'bigint') return String(value)
   if (value instanceof Date) return value.toISOString()
@@ -579,6 +591,9 @@ function rejectUnsafeVerificationValue(value, path = '$', seen = new WeakSet()) 
     if (typeof value === 'string' && /^data:/i.test(value.trim())) {
       throw backupError('BACKUP_MEDIA_PAYLOAD_REJECTED', `Inline media data found at ${path}`)
     }
+    if (looksLikePrivatePath(value)) {
+      throw backupError('BACKUP_PRIVATE_PATH_PRESENT', `Private machine path found at ${path}`)
+    }
     if (looksLikeUrl(value)) {
       const redacted = redactUrl(value)
       if (redacted !== value) throw backupError('BACKUP_SECRET_PRESENT', `Credential-bearing URL found at ${path}`)
@@ -790,7 +805,7 @@ export async function assertValidBackupArtifact(input, options = {}) {
 function targetJournalReader(target) {
   if (typeof target?.readJournal === 'function') return target.readJournal.bind(target)
   if (typeof target?.journal?.read === 'function') return target.journal.read.bind(target.journal)
-  return async () => null
+  return null
 }
 
 function targetJournalWriter(target) {
@@ -859,6 +874,95 @@ async function validateReferences(adapter, key, domain, target) {
   }
 }
 
+function resolutionForRecord(resolution, recordId) {
+  if (typeof resolution === 'string') return resolution
+  if (!resolution || typeof resolution !== 'object') return null
+  if (resolution.records && typeof resolution.records === 'object') {
+    const value = resolution.records[recordId]
+    if (typeof value === 'string') return value
+    if (value && typeof value === 'object' && typeof value.decision === 'string') return value.decision
+  }
+  return typeof resolution.decision === 'string' ? resolution.decision : null
+}
+
+function recordConflictReason(record, targetRecord) {
+  if (!targetRecord) return null
+  if (record.contentId !== targetRecord.contentId
+    && (record.contentId !== null && record.contentId !== undefined
+      || targetRecord.contentId !== null && targetRecord.contentId !== undefined)) {
+    return 'record-content-id-conflict'
+  }
+  if (compareRevisions(targetRecord.revision, record.revision) > 0) return 'newer-target-record-revision'
+  if (compareRevisions(targetRecord.revision, record.revision) === 0) return 'record-same-revision-different-content'
+  return null
+}
+
+function buildRecordDryRunReport(sourceRecords, targetRecords, resolution) {
+  const targetById = new Map(targetRecords.map((record) => [record.id, record]))
+  const sourceIds = new Set(sourceRecords.map((record) => record.id))
+  const reports = []
+  for (const sourceRecord of sourceRecords) {
+    const targetRecord = targetById.get(sourceRecord.id) || null
+    const explicit = resolutionForRecord(resolution, sourceRecord.id)
+    const conflictReason = recordConflictReason(sourceRecord, targetRecord)
+    let decision = 'restore'
+    let reason = targetRecord ? 'backup-is-newer' : 'target-record-missing'
+    if (targetRecord?.checksum === sourceRecord.checksum) {
+      decision = 'keep'
+      reason = 'already-current'
+    } else if (explicit === 'keep') {
+      decision = 'keep'
+      reason = conflictReason ? `explicit-keep-${conflictReason}` : 'explicit-keep'
+    } else if (explicit === 'restore') {
+      decision = 'restore'
+      reason = conflictReason ? `explicit-restore-${conflictReason}` : 'explicit-restore'
+    } else if (explicit === 'merge') {
+      decision = 'merge'
+      reason = conflictReason ? `explicit-merge-${conflictReason}` : 'explicit-merge'
+    } else if (conflictReason) {
+      decision = 'blocked'
+      reason = conflictReason
+    }
+    reports.push({
+      id: sourceRecord.id,
+      decision,
+      reason,
+      sourceRevision: sourceRecord.revision,
+      targetRevision: targetRecord?.revision ?? null,
+      sourceContentId: sourceRecord.contentId ?? null,
+      targetContentId: targetRecord?.contentId ?? null,
+      sourceChecksum: sourceRecord.checksum,
+      targetChecksum: targetRecord?.checksum ?? null,
+    })
+  }
+  for (const targetRecord of targetRecords) {
+    if (sourceIds.has(targetRecord.id)) continue
+    const explicit = resolutionForRecord(resolution, targetRecord.id)
+    const decision = explicit === 'restore' ? 'restore' : explicit === 'merge' ? 'merge' : explicit === 'keep' ? 'keep' : 'blocked'
+    reports.push({
+      id: targetRecord.id,
+      decision,
+      reason: decision === 'blocked' ? 'target-record-not-in-backup' : `explicit-${decision}-target-record-not-in-backup`,
+      sourceRevision: null,
+      targetRevision: targetRecord.revision,
+      sourceContentId: null,
+      targetContentId: targetRecord.contentId ?? null,
+      sourceChecksum: null,
+      targetChecksum: targetRecord.checksum,
+    })
+  }
+  return reports
+}
+
+function domainReasonForRecordConflict(recordReports) {
+  const firstBlocked = recordReports.find((record) => record.decision === 'blocked')
+  if (!firstBlocked) return null
+  if (firstBlocked.reason === 'newer-target-record-revision') return 'newer-target-revision'
+  if (firstBlocked.reason === 'record-content-id-conflict') return 'record-content-id-conflict'
+  if (firstBlocked.reason === 'record-same-revision-different-content') return 'same-revision-different-content'
+  return firstBlocked.reason
+}
+
 async function dryRunRestoreForService({ artifact, adapters, requiredDomains, limits, target, resolutions = {} }) {
   const verification = await assertValidBackupArtifact(artifact, { requiredDomains })
   const source = verification.artifact
@@ -871,14 +975,19 @@ async function dryRunRestoreForService({ artifact, adapters, requiredDomains, li
     const sourceRevision = sourceDomain.revision ?? maxRecordRevision(sourceDomain.records)
     const targetRevision = current.revision ?? maxRecordRevision(current.records)
     const sameChecksum = current.checksum === source.manifest.domainChecksums[key]
-    const requested = resolutions?.[key] || target?.resolutions?.[key] || null
+    const resolution = resolutions?.[key] ?? target?.resolutions?.[key] ?? null
+    const requested = typeof resolution === 'string' ? resolution : resolution?.decision || null
     const referenceResult = await validateReferences(adapter, key, sourceDomain, target)
+    const recordReports = buildRecordDryRunReport(sourceDomain.records, current.records, resolution)
+    const recordBlocked = recordReports.filter((record) => record.decision === 'blocked')
     let decision = 'blocked'
     let reason = 'revision-conflict'
     if (!isSupportedSchema(adapter, sourceDomain.schemaVersion)) {
       reason = 'unsupported-schema'
     } else if (!referenceResult.ok) {
       reason = referenceResult.reason
+    } else if (recordBlocked.length) {
+      reason = domainReasonForRecordConflict(recordReports) || 'record-conflict'
     } else if (sameChecksum) {
       decision = 'keep'
       reason = 'already-current'
@@ -914,6 +1023,8 @@ async function dryRunRestoreForService({ artifact, adapters, requiredDomains, li
       sourceRecordCount: sourceDomain.records.length,
       targetRecordCount: current.records.length,
       reference: referenceResult,
+      records: recordReports,
+      blockedRecordCount: recordBlocked.length,
     })
   }
   if (!capacityResult.ok) {
@@ -933,8 +1044,16 @@ async function dryRunRestoreForService({ artifact, adapters, requiredDomains, li
     sizeBytes: verification.summary.sizeBytes,
     capacity: capacityResult,
     domains,
-    blocked: blocked.map((domain) => ({ domain: domain.key, reason: domain.reason })),
-    conflictCount: domains.filter((domain) => domain.reason.includes('revision') || domain.reason.includes('content')).length,
+    blocked: blocked.flatMap((domain) => {
+      const entries = [{ domain: domain.key, reason: domain.reason }]
+      for (const record of domain.records || []) {
+        if (record.decision === 'blocked') entries.push({ domain: domain.key, recordId: record.id, reason: record.reason })
+      }
+      return entries
+    }),
+    conflictCount: domains.reduce((count, domain) => count
+      + (domain.reason.includes('revision') || domain.reason.includes('content') ? 1 : 0)
+      + (domain.records || []).filter((record) => record.decision === 'blocked').length, 0),
     referenceCount: Object.values(source.manifest.references || {}).reduce((count, values) => count + values.length, 0),
     mediaReferences: source.manifest.mediaReferences,
   }
@@ -1048,7 +1167,19 @@ export function createApplicationBackupService(options = {}) {
     const sourceArtifact = verification.artifact
     const readJournal = targetJournalReader(target)
     const writeJournal = targetJournalWriter(target)
-    const priorJournal = await readJournal({ restoreId })
+    let priorJournal
+    try {
+      priorJournal = await readJournal({ restoreId })
+    } catch (error) {
+      try {
+        await quarantineArtifact(target, {
+          restoreId,
+          kind: 'invalid-journal',
+          reason: error?.code || 'RESTORE_JOURNAL_CORRUPT',
+        })
+      } catch { /* Preserve the durable-journal failure below. */ }
+      throw backupError('RESTORE_JOURNAL_UNAVAILABLE', 'Restore journal could not be read safely', { restoreId })
+    }
     if (priorJournal?.artifactChecksum && priorJournal.artifactChecksum !== sourceArtifact.artifactChecksum) {
       throw backupError('RESTORE_ID_CONFLICT', 'Restore id was already used for another backup artifact')
     }
@@ -1057,10 +1188,29 @@ export function createApplicationBackupService(options = {}) {
       throw backupError('RESTORE_ROLLBACK_FAILED', 'A previous restore attempt did not confirm rollback; manual recovery is required', { restoreId })
     }
     if (priorJournal && !['started', 'applying', 'committing', 'committed', 'rolled-back'].includes(priorJournal.status)) {
+      try {
+        await quarantineArtifact(target, {
+          restoreId,
+          kind: 'invalid-journal',
+          reason: 'RESTORE_JOURNAL_INVALID',
+        })
+      } catch { /* Preserve the journal validation failure below. */ }
       throw backupError('RESTORE_JOURNAL_INVALID', 'Restore journal has an unsupported status', { restoreId })
     }
 
-    let rollbackEntry = await readRollbackBackup(target, restoreId)
+    let rollbackEntry
+    try {
+      rollbackEntry = await readRollbackBackup(target, restoreId)
+    } catch (error) {
+      try {
+        await quarantineArtifact(target, {
+          restoreId,
+          kind: 'invalid-rollback-backup',
+          reason: error?.code || 'RESTORE_ROLLBACK_CORRUPT',
+        })
+      } catch { /* Preserve the durable rollback failure below. */ }
+      throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'The rollback backup could not be read safely', { restoreId })
+    }
     if (priorJournal && !rollbackEntry?.artifact) {
       throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'An incomplete restore has no durable rollback backup', { restoreId })
     }

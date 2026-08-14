@@ -33,6 +33,20 @@ const newerReport = await newerService.dryRunRestore(artifact, {
 })
 assert.equal(newerReport.ok, false)
 assert.ok(newerReport.blocked.some((item) => item.reason === 'newer-target-revision'))
+assert.ok(newerReport.domains.some((domain) => domain.records.some((record) => (
+  record.decision === 'blocked'
+    && record.reason === 'newer-target-record-revision'
+    && record.targetRevision === 2
+))))
+
+const contentConflictState = createState('source')
+contentConflictState.adapters['reader-session'].records[0].contentId = 'different-content'
+const contentConflictService = createApplicationBackupService({ adapters: contentConflictState.adapters })
+const contentConflictReport = await contentConflictService.dryRunRestore(artifact, {
+  target: { isolated: true, adapters: contentConflictState.adapters, capacityBytes: 10_000_000 },
+})
+assert.equal(contentConflictReport.ok, false)
+assert.ok(contentConflictReport.blocked.some((item) => item.reason === 'record-content-id-conflict'))
 
 const unknownSchema = structuredClone(artifact)
 unknownSchema.domains['reader-session'].schemaVersion = 99
@@ -98,6 +112,15 @@ await assert.rejects(
   { code: 'RESTORE_ROLLBACK_UNAVAILABLE' },
 )
 assert.equal(missingRollbackState.writes, 0)
+
+const missingJournalReaderState = createState('empty')
+const missingJournalReaderTarget = createTarget(missingJournalReaderState, { missingJournalReader: true })
+const missingJournalReaderService = createApplicationBackupService({ adapters: missingJournalReaderState.adapters, target: missingJournalReaderTarget })
+await assert.rejects(
+  missingJournalReaderService.restore(artifact, { restoreId: 'missing-journal-reader' }),
+  { code: 'RESTORE_JOURNAL_UNAVAILABLE' },
+)
+assert.equal(missingJournalReaderState.writes, 0)
 
 const rollbackFailedState = createState('empty')
 const rollbackFailedTarget = createTarget(rollbackFailedState, { commitMode: 'success' })
@@ -169,7 +192,7 @@ function snapshotState(state) {
   }]))
 }
 
-function createTarget(state, { commitMode = 'success' } = {}) {
+function createTarget(state, { commitMode = 'success', missingJournalReader = false } = {}) {
   const target = {
     isolated: true,
     adapters: state.adapters,
@@ -212,5 +235,6 @@ function createTarget(state, { commitMode = 'success' } = {}) {
       }
     },
   }
+  if (missingJournalReader) delete target.readJournal
   return target
 }

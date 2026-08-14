@@ -43,6 +43,8 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
                 "model": "test-model",
                 "proxyUrl": "https://user:password@example.test:8443/?token=secret",
                 "cookiesPath": str(root / "cookies.txt"),
+                "ytDlpPath": r"C:\Users\private-machine\tools\yt-dlp.exe",
+                "whisperxPath": "/home/private-machine/.venv/bin/whisperx",
             }), encoding="utf-8")
             (workflow_dir / "reader-activity.json").write_text(json.dumps({"schemaVersion": 1, "revision": 2, "payload": {"jobId": "job-1"}}), encoding="utf-8")
             (job_dir / "transcript.json").write_text(json.dumps({"schemaVersion": 1, "revision": 1, "segments": []}), encoding="utf-8")
@@ -56,6 +58,8 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
             self.assertNotIn("secret", serialized)
             self.assertNotIn("password", serialized)
             self.assertNotIn("cookies.txt", serialized)
+            self.assertNotIn("private-machine", serialized)
+            self.assertIn("[REDACTED_PATH]", serialized)
             self.assertNotIn("not copied into backup", serialized)
             self.assertTrue(any(snapshot_ref["strategy"] == "identity-metadata-rebind" for snapshot_ref in snapshot["mediaReferences"]))
 

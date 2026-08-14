@@ -13,6 +13,8 @@ import hashlib
 import json
 import os
 import re
+import argparse
+import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -31,6 +33,16 @@ _SENSITIVE_KEY = re.compile(
 _SENSITIVE_QUERY_KEY = re.compile(
     r"(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|"
     r"proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$|signature|^sig$)",
+    re.IGNORECASE,
+)
+_MACHINE_PATH_KEY = re.compile(
+    r"(?:ytdlppath|yt[_-]?dlp[_-]?path|whisperxpath|whisper[_-]?x[_-]?path|"
+    r"ffmpegpath|pythonpath|nodepath|executablepath|binarypath|toolpath|"
+    r"interpreterpath|venvpath|virtualenvpath|homedir|userdir|workdir|datadir|statedir)",
+    re.IGNORECASE,
+)
+_ABSOLUTE_MACHINE_PATH = re.compile(
+    r"^(?:[a-zA-Z]:[\\/]|\\\\|/(?:Users|home|private|var|tmp)/)",
     re.IGNORECASE,
 )
 _MEDIA_SUFFIXES = {
@@ -91,6 +103,15 @@ def _safe_relative(value, root: Path | None):
         return None
 
 
+def _looks_like_absolute_machine_path(value: str) -> bool:
+    if _ABSOLUTE_MACHINE_PATH.match(value.strip()):
+        return True
+    try:
+        return Path(value).expanduser().is_absolute()
+    except (OSError, ValueError):
+        return False
+
+
 def _reject_binary(value, path: str = "$") -> None:
     if isinstance(value, (bytes, bytearray, memoryview)):
         raise WorkflowBackupError(
@@ -114,6 +135,9 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
             raise WorkflowBackupError("WORKFLOW_BACKUP_MEDIA_PAYLOAD_REJECTED", f"inline media data is not allowed at {key}")
         if value.startswith(("http://", "https://", "ws://", "wss://")):
             return _redact_url(value)
+        if _looks_like_absolute_machine_path(value):
+            relative = _safe_relative(value, output_root)
+            return relative if relative is not None else "[REDACTED_PATH]"
         return value
     if isinstance(value, list):
         return [_sanitize(item, output_root=output_root, key=key) for item in value]
@@ -137,6 +161,9 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
                 relative = _safe_relative(child, output_root)
                 if relative is not None:
                     result[normalized_key] = relative
+                continue
+            if _MACHINE_PATH_KEY.search(lowered):
+                result[normalized_key] = "[REDACTED_PATH]"
                 continue
             result[normalized_key] = _sanitize(child, output_root=output_root, key=normalized_key)
         return result
@@ -505,3 +532,43 @@ def verify_workflow_records(snapshot: dict, *, max_record_bytes: int = DEFAULT_M
         if checksum != _checksum(unsigned):
             raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", f"workflow backup checksum mismatch: {record['id']}")
     return {"valid": True, "recordCount": len(records), "revision": snapshot.get("revision", 0)}
+
+
+def collect_production_backup_domains(state_dir: Path, output_dir: Path) -> dict:
+    """Collect both Python-owned required domains through one public bridge.
+
+    The JavaScript production composition invokes this entry point for an
+    isolated profile. Keeping the bridge here means the workflow and
+    marks/activity repositories are discovered from their real durable roots,
+    while JavaScript remains the independent artifact/verifier owner.
+    """
+    workflow = WorkflowBackupAdapter(state_dir, output_dir).collect()
+    marks_activity = ReaderMarksActivityBackupAdapter(output_dir).collect()
+    verify_workflow_records(workflow)
+    verify_marks_activity_records(marks_activity)
+    return {
+        "marks-activity": marks_activity,
+        "workflow": workflow,
+    }
+
+
+def _main() -> int:
+    parser = argparse.ArgumentParser(description="Emit Read-Web application backup Python domain snapshots")
+    parser.add_argument("--state-dir", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        print(json.dumps(
+            collect_production_backup_domains(args.state_dir, args.output_dir),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ))
+        return 0
+    except WorkflowBackupError as exc:
+        print(json.dumps({"error": exc.code, "message": str(exc)}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

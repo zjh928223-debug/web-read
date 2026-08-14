@@ -23,7 +23,33 @@ class MapStorage {
   get length() { return this.values.size }
 }
 
+const outboxMarks = {
+  jobId: 'job-1',
+  kind: 'marks',
+  operationId: 'operation-marks-1',
+  expectedRevision: 2,
+  intent: { marks: [{ globalIndex: 1, word: 'hello', start: null, sourceType: 'manual-mark' }] },
+}
+const outboxActivity = {
+  jobId: 'job-1',
+  kind: 'activity',
+  operationId: 'operation-activity-1',
+  expectedRevision: 3,
+  intent: {
+    event: 'pause',
+    sessionId: 'session-1',
+    sessionStartedAt: '2026-08-14T00:00:00Z',
+    positionSeconds: 1,
+    durationSeconds: 2,
+    intervals: [[0, 1]],
+    coverageRatio: 0.5,
+    markCount: 1,
+  },
+}
+
 const storage = new MapStorage({
+  'read-web.reader-save-outbox.v1': JSON.stringify({ schemaVersion: 1, entries: [outboxMarks] }),
+  'read-web.reader-save-outbox.v2.6a_6f_62_2d_31.activity.6f_70_65_72_61_74_69_6f_6e_2d_61_63_74_69_76_69_74_79_2d_31': JSON.stringify({ schemaVersion: 2, ...outboxActivity }),
   'vocabulary.passage-preview.durable-state.v1': JSON.stringify({
     schemaVersion: 'passage-preview.durable-state.v1',
     revision: 4,
@@ -60,8 +86,12 @@ assert.equal(preview.records.find((record) => record.id.endsWith('translation-di
 const service = createReadWebApplicationBackupService(options)
 const artifact = await service.createBackup()
 assert.equal(artifact.manifest.domainRegistry.length, 6)
-assert.equal(artifact.manifest.recordCounts['reader-session'], 5)
+assert.equal(artifact.manifest.recordCounts['reader-session'], 7)
 assert.equal(artifact.manifest.recordCounts['vocabulary-srs'], 1)
+const outboxRecords = artifact.domains['reader-session'].records.filter((record) => record.id.startsWith('reader-save-outbox:'))
+assert.equal(outboxRecords.length, 2)
+assert.deepEqual(outboxRecords.map((record) => record.contentId), ['job-1', 'job-1'])
+assert.deepEqual(new Set(outboxRecords.map((record) => record.revision)), new Set([2, 3]))
 
 storage.setItem('vocabulary.passage-preview.future.v9', JSON.stringify({ schemaVersion: 'future.v9', revision: 1 }))
 await assert.rejects(
@@ -70,6 +100,28 @@ await assert.rejects(
   'new durable localStorage keys must fail closed until they are registered',
 )
 storage.removeItem('vocabulary.passage-preview.future.v9')
+
+const outboxV2Key = 'read-web.reader-save-outbox.v2.6a_6f_62_2d_31.activity.6f_70_65_72_61_74_69_6f_6e_2d_61_63_74_69_76_69_74_79_2d_31'
+storage.setItem(outboxV2Key, '{truncated')
+await assert.rejects(
+  adapters['reader-session'].collect(),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_CORRUPT',
+  'malformed durable outbox entries must fail closed',
+)
+storage.setItem(outboxV2Key, JSON.stringify({ schemaVersion: 99, ...outboxActivity }))
+await assert.rejects(
+  adapters['reader-session'].collect(),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_UNKNOWN_SCHEMA',
+  'future durable outbox schemas must fail closed',
+)
+storage.setItem(outboxV2Key, JSON.stringify({ schemaVersion: 2, ...outboxActivity }))
+storage.setItem('read-web.reader-save-outbox.v3', JSON.stringify({ schemaVersion: 3 }))
+await assert.rejects(
+  adapters['reader-session'].collect(),
+  (error) => error?.code === 'BACKUP_READER_OUTBOX_UNKNOWN_SCHEMA',
+  'unknown durable outbox namespaces must fail closed',
+)
+storage.removeItem('read-web.reader-save-outbox.v3')
 
 assert.throws(
   () => createReadWebApplicationBackupService({
