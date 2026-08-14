@@ -2,6 +2,8 @@ export const WORKFLOW_OPERATION_RECEIPT_SCHEMA_VERSION = 1
 export const WORKFLOW_OPERATION_RECEIPT_TTL_MS = 24 * 60 * 60 * 1000
 export const WORKFLOW_OPERATION_RECEIPT_STORAGE_PREFIX = 'read-web.workflow-operation-receipt.v1.'
 export const WORKFLOW_OPERATION_RECEIPT_LIMIT = 32
+export const WORKFLOW_OPERATION_RECEIPT_QUARANTINE_SCHEMA_VERSION = 1
+export const WORKFLOW_OPERATION_RECEIPT_QUARANTINE_PREFIX = 'read-web.workflow-operation-receipt-quarantine.v1.'
 
 const SENSITIVE_KEY = /(?:api.?key|access.?token|authorization|cookie|password|secret|credential)/i
 const PATH_KEY = /(?:path|dir|file|folder)/i
@@ -89,6 +91,31 @@ function removeItem(storage, key) {
   }
 }
 
+function quarantineStorageKey(sourceKey, now) {
+  return `${WORKFLOW_OPERATION_RECEIPT_QUARANTINE_PREFIX}${now}.${digest(sourceKey)}`
+}
+
+function quarantineStoredReceipt(storage, sourceKey, raw, reason, now) {
+  const quarantineKey = quarantineStorageKey(sourceKey, now)
+  const quarantine = {
+    schemaVersion: WORKFLOW_OPERATION_RECEIPT_QUARANTINE_SCHEMA_VERSION,
+    sourceKey,
+    detectedAt: new Date(now).toISOString(),
+    reason,
+    raw,
+  }
+  try {
+    storage.setItem(quarantineKey, JSON.stringify(quarantine))
+  } catch (_error) {
+    throw new WorkflowOperationReceiptError('Workflow operation receipt quarantine is unavailable')
+  }
+  try {
+    storage.removeItem(sourceKey)
+  } catch (_error) {
+    throw new WorkflowOperationReceiptError('Workflow operation receipt quarantine cleanup is unavailable')
+  }
+}
+
 function normalizeReceipt(value, fingerprint, now) {
   if (!value || typeof value !== 'object') return null
   if (value.schemaVersion !== WORKFLOW_OPERATION_RECEIPT_SCHEMA_VERSION) return null
@@ -112,15 +139,39 @@ function parseStoredReceipt(storage, key, fingerprint, now) {
   let raw = ''
   try {
     raw = storage.getItem(key) || ''
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    const normalized = normalizeReceipt(parsed, fingerprint, now)
-    if (!normalized) removeItem(storage, key)
-    return normalized
   } catch (_error) {
+    throw new WorkflowOperationReceiptError()
+  }
+  if (!raw) return null
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch (_error) {
+    quarantineStoredReceipt(storage, key, raw, 'malformed-json', now)
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    quarantineStoredReceipt(storage, key, raw, 'invalid-receipt', now)
+    return null
+  }
+  if (parsed.schemaVersion !== WORKFLOW_OPERATION_RECEIPT_SCHEMA_VERSION) {
+    quarantineStoredReceipt(storage, key, raw, 'unsupported-schema', now)
+    return null
+  }
+  if (parsed.fingerprint !== fingerprint) {
+    quarantineStoredReceipt(storage, key, raw, 'invalid-reference', now)
+    return null
+  }
+  if (Number.isFinite(parsed.expiresAt) && parsed.expiresAt <= now) {
     removeItem(storage, key)
     return null
   }
+  const normalized = normalizeReceipt(parsed, fingerprint, now)
+  if (!normalized) {
+    quarantineStoredReceipt(storage, key, raw, 'invalid-receipt', now)
+    return null
+  }
+  return normalized
 }
 
 export function cleanupWorkflowOperationReceipts({ storage, now = Date.now() } = {}) {
@@ -134,7 +185,7 @@ export function cleanupWorkflowOperationReceipts({ storage, now = Date.now() } =
       if (key && key.startsWith(WORKFLOW_OPERATION_RECEIPT_STORAGE_PREFIX)) keys.push(key)
     }
   } catch (_error) {
-    return 0
+    throw new WorkflowOperationReceiptError()
   }
   for (const key of keys) {
     const fingerprint = key.slice(WORKFLOW_OPERATION_RECEIPT_STORAGE_PREFIX.length)

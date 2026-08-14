@@ -64,6 +64,7 @@ DEFAULT_TERMINAL_SUMMARY_LIMIT = 5
 DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
 MAX_IDEMPOTENCY_KEY_LENGTH = 256
 MUTATION_RECEIPT_SCHEMA_VERSION = 1
+MUTATION_REPLAY_RESULT_SCHEMA_VERSION = 1
 MAX_MUTATION_RECEIPTS = 32
 MUTATION_RECEIPT_TTL_SECONDS = 24 * 60 * 60
 AUDIO_EXTENSIONS = {
@@ -114,6 +115,30 @@ def _mutation_fingerprint(operation: str, target_job_id: str, payload: dict | No
     }
     canonical = json.dumps(descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _mutation_replay_result(snapshot: dict) -> dict:
+    return {
+        "schemaVersion": MUTATION_REPLAY_RESULT_SCHEMA_VERSION,
+        "jobId": str(snapshot.get("jobId") or "").strip(),
+        "status": str(snapshot.get("status") or "").strip(),
+        "stage": str(snapshot.get("stage") or "").strip(),
+    }
+
+
+def _is_valid_mutation_replay_result(value: object) -> bool:
+    if not isinstance(value, dict) or set(value) != {"schemaVersion", "jobId", "status", "stage"}:
+        return False
+    job_id = str(value.get("jobId") or "").strip()
+    return (
+        value.get("schemaVersion") == MUTATION_REPLAY_RESULT_SCHEMA_VERSION
+        and bool(job_id)
+        and len(job_id) <= 128
+        and value.get("status") in ALLOWED_STATUSES
+        and value.get("stage") in ALLOWED_STATUSES
+    )
+
+
 IGNORED_IMPORT_JSON_NAMES = {
     "checkpoint.json",
     "input.json",
@@ -703,7 +728,7 @@ class JobRecord:
                 continue
             if not str(receipt.get("fingerprint") or "").strip():
                 continue
-            if not isinstance(receipt.get("result"), dict):
+            if not _is_valid_mutation_replay_result(receipt.get("result")):
                 continue
             try:
                 created_at = float(receipt.get("createdAt"))
@@ -759,7 +784,7 @@ class JobRecord:
                 "fingerprint": str(fingerprint or "").strip(),
                 "createdAt": created_at,
                 "expiresAt": created_at + MUTATION_RECEIPT_TTL_SECONDS,
-                "result": deepcopy(result),
+                "result": _mutation_replay_result(result),
             })
             self._prune_mutation_receipts_locked(created_at)
 
@@ -1096,7 +1121,14 @@ class JobManager:
         return None
 
     def _replay_mutation_receipt_locked(self, receipt: dict) -> dict:
-        snapshot = deepcopy(receipt.get("result") or {})
+        result = receipt.get("result") or {}
+        record = self.jobs.get(str(receipt.get("targetJobId") or ""))
+        snapshot = record.public_snapshot() if record is not None else {}
+        snapshot.update({
+            "jobId": result["jobId"],
+            "status": result["status"],
+            "stage": result["stage"],
+        })
         snapshot["revision"] = self._jobs_revision_locked()
         snapshot["idempotent"] = True
         return snapshot

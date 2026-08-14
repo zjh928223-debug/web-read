@@ -52,11 +52,44 @@ async function main() {
     'different safe fingerprint must not reuse the operation key',
   );
 
-  values.set('read-web.workflow-operation-receipt.v1.corrupt', '{not-json');
-  values.set('read-web.workflow-operation-receipt.v1.unknown', JSON.stringify({ schemaVersion: 99, operationKey: 'leak' }));
+  const corruptKey = 'read-web.workflow-operation-receipt.v1.corrupt';
+  const corruptRaw = '{not-json-SECRET-QUARANTINE';
+  const unknownKey = 'read-web.workflow-operation-receipt.v1.unknown';
+  const unknownRaw = JSON.stringify({ schemaVersion: 99, operationKey: 'leak' });
+  values.set(corruptKey, corruptRaw);
+  values.set(unknownKey, unknownRaw);
   api.cleanupWorkflowOperationReceipts({ storage, now: 1001 });
-  assert.equal(values.has('read-web.workflow-operation-receipt.v1.corrupt'), false);
-  assert.equal(values.has('read-web.workflow-operation-receipt.v1.unknown'), false);
+  assert.equal(values.has(corruptKey), false);
+  assert.equal(values.has(unknownKey), false);
+  const quarantines = [...values.entries()]
+    .filter(([key]) => key.startsWith(api.WORKFLOW_OPERATION_RECEIPT_QUARANTINE_PREFIX))
+    .map(([, value]) => JSON.parse(value));
+  assert.equal(quarantines.length, 2, 'malformed and unknown receipts must be isolated independently');
+  assert.deepEqual(
+    new Set(quarantines.map((entry) => entry.sourceKey)),
+    new Set([corruptKey, unknownKey]),
+  );
+  assert.ok(quarantines.some((entry) => entry.raw === corruptRaw && entry.reason === 'malformed-json'));
+  assert.ok(quarantines.some((entry) => entry.raw === unknownRaw && entry.reason === 'unsupported-schema'));
+  assert.ok(quarantines.every((entry) => entry.detectedAt === new Date(1001).toISOString()));
+
+  const quotaValues = new Map([['read-web.workflow-operation-receipt.v1.quota', '{broken']]);
+  const quotaStorage = {
+    get length() { return quotaValues.size; },
+    key(index) { return [...quotaValues.keys()][index] || null; },
+    getItem(key) { return quotaValues.has(key) ? quotaValues.get(key) : null; },
+    setItem(key, value) {
+      if (key.startsWith(api.WORKFLOW_OPERATION_RECEIPT_QUARANTINE_PREFIX)) throw new Error('quota');
+      quotaValues.set(key, String(value));
+    },
+    removeItem(key) { quotaValues.delete(key); },
+  };
+  assert.throws(
+    () => api.cleanupWorkflowOperationReceipts({ storage: quotaStorage, now: 1001 }),
+    (error) => error instanceof api.WorkflowOperationReceiptError,
+    'quarantine quota failure must fail closed',
+  );
+  assert.equal(quotaValues.get('read-web.workflow-operation-receipt.v1.quota'), '{broken', 'failed quarantine must retain the source receipt');
 
   api.writeWorkflowOperationReceipt({
     actionType: 'retry',

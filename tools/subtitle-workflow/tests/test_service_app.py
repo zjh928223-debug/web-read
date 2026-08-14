@@ -2349,8 +2349,21 @@ class ServiceAppTests(unittest.TestCase):
             second_job_id = None
             with TestClient(create_app(manager)) as client:
                 first = client.post("/api/jobs", json={"url": "https://example.com/receipt-first", "geminiMode": "mock"}).json()
-                second = client.post("/api/jobs", json={"url": "https://example.com/receipt-second", "geminiMode": "mock"}).json()
+                private_url = "https://private.example/receipt-second?account=reader"
+                private_base_url = "https://private-gemini.example/api"
+                private_api_key = "SECRET-RECEIPT-API-KEY"
+                private_output_dir = str(Path(tmp) / "private-output-path")
+                second = client.post("/api/jobs", json={
+                    "url": private_url,
+                    "geminiMode": "real",
+                    "apiKey": private_api_key,
+                    "baseUrl": private_base_url,
+                }).json()
                 second_job_id = second["jobId"]
+                with manager.lock:
+                    second_record = manager.get_job(second_job_id)
+                    with second_record.lock:
+                        second_record.manifest = {"outputDir": private_output_dir}
                 self._wait_stage(client, first["jobId"], "downloading")
                 current = client.post("/api/jobs/snapshot", json={"jobIds": []}).json()
                 old_revision = current["revision"]
@@ -2365,6 +2378,13 @@ class ServiceAppTests(unittest.TestCase):
                 self.assertEqual(replay.status_code, 200)
                 self.assertTrue(replay.json()["idempotent"])
                 self.assertEqual(replay.json()["jobId"], second_job_id)
+
+                reused_for_other_action = client.post(
+                    f"/api/jobs/{second_job_id}/cancel",
+                    headers=priority_headers,
+                )
+                self.assertEqual(reused_for_other_action.status_code, 409)
+                self.assertEqual(reused_for_other_action.json()["detail"]["code"], "WORKFLOW_IDEMPOTENCY_KEY_REUSED")
 
                 third = client.post("/api/jobs", json={"url": "https://example.com/receipt-third", "geminiMode": "mock"}).json()
                 reused_for_other_target = client.post(
@@ -2386,6 +2406,26 @@ class ServiceAppTests(unittest.TestCase):
                 self.assertEqual(cancel_replay.status_code, 200)
                 self.assertTrue(cancel_replay.json()["idempotent"])
                 self.assertEqual(cancel_replay.json()["jobId"], second_job_id)
+                persisted_document = json.loads((config.state_dir / "jobs.json").read_text(encoding="utf-8"))
+                persisted_receipts = [
+                    receipt
+                    for item in persisted_document["payload"]["jobs"]
+                    for receipt in item.get("mutationReceipts", [])
+                ]
+                self.assertEqual(len(persisted_receipts), 2)
+                receipt_serialization = json.dumps(persisted_receipts, ensure_ascii=False)
+                for private_value in (
+                    private_url,
+                    private_base_url,
+                    private_output_dir,
+                    private_api_key,
+                    TEST_ACCESS_TOKEN,
+                ):
+                    self.assertNotIn(private_value, receipt_serialization)
+                self.assertTrue(all(
+                    set(receipt["result"]) == {"schemaVersion", "jobId", "status", "stage"}
+                    for receipt in persisted_receipts
+                ))
                 release_event.set()
 
             restored_manager = JobManager(
@@ -2404,6 +2444,18 @@ class ServiceAppTests(unittest.TestCase):
                     )
                     self.assertEqual(replay_after_restart.status_code, 200)
                     self.assertTrue(replay_after_restart.json()["idempotent"])
+                    self.assertEqual(replay_after_restart.json()["request"]["url"], private_url)
+                    cancel_replay_after_restart = restored_client.post(
+                        f"/api/jobs/{second_job_id}/cancel",
+                        headers={
+                            "Idempotency-Key": "receipt-cancel-key",
+                            "X-Expected-Revision": "0",
+                            "If-Match": '"0"',
+                        },
+                    )
+                    self.assertEqual(cancel_replay_after_restart.status_code, 200)
+                    self.assertTrue(cancel_replay_after_restart.json()["idempotent"])
+                    self.assertEqual(cancel_replay_after_restart.json()["status"], "canceled")
             finally:
                 if not restored_manager._persistence_closed:
                     restored_manager.close()
