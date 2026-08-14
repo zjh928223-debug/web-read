@@ -56,7 +56,13 @@ separate rollback store.
 
 `restore` requires an explicitly isolated target with an atomic transaction,
 durable journal, migration-before rollback backup and corrupt quarantine. The
-rollback entry stores the target's raw state revision; `beginTransaction` must
+target must publish `restoreCapabilities` with
+`atomicRevisionCommit`, `commitRevisionEvidence` and `verifyAppliedRevision`
+set to `true`. Its transaction commit must return or expose a non-negative
+committed revision, and `verifyApplied` must return `{ ok, revision }`; targets
+without this contract are rejected before any write, while missing post-commit
+evidence produces a typed manual-recovery failure. The rollback entry stores
+the target's raw state revision; `beginTransaction` must
 compare that expected base revision while holding the target lock. A failed
 transaction before a durable commit is never allowed to restore an old
 snapshot. Snapshot rollback is attempted only when the transaction exposes a
@@ -80,3 +86,9 @@ engine's checks, CAS and rollback semantics only; real domain target adapters
 remain tasks 12.2 and 12.3. It is not a full application restore release pass,
 and it uses generated temporary fixture directories only; it never restores
 real daily data.
+
+All file-backed target mutations share a cross-process lock. A complete owner
+record is written and synced in a unique claim directory before an atomic
+claim-to-canonical rename; only the canonical lease can block writers. Heartbeat
+and PID checks protect active owners, while bounded stale recovery handles
+dead canonical leases and abandoned claims without deleting an active lock.

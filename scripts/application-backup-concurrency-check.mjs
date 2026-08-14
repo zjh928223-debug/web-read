@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -49,6 +49,41 @@ if (process.argv[2] === '--child-worker') {
   process.exit(0)
 }
 
+if (process.argv[2] === '--crash-after-state-write') {
+  await runCrashAfterStateWriteWorker({
+    profileDir: process.argv[3],
+    barrierDir: process.argv[4],
+    artifactPath: process.argv[5],
+  })
+  process.exit(0)
+}
+
+if (process.argv[2] === '--retry-crashed-restore') {
+  await runRetryCrashedRestoreWorker({
+    profileDir: process.argv[3],
+    artifactPath: process.argv[4],
+    resultPath: process.argv[5],
+  })
+  process.exit(0)
+}
+
+if (process.argv[2] === '--journal-crash-only') {
+  const crashRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-journal-crash-red-'))
+  try {
+    const crashService = createApplicationBackupService({ adapters: createSourceAdapters() })
+    await runJournalCrashRecovery({ root: crashRoot, artifact: await crashService.createBackup() })
+  } finally {
+    await rm(crashRoot, { recursive: true, force: true })
+  }
+  process.exit(0)
+}
+
+if (process.argv[2] === '--claim-crash-worker') {
+  const target = await createIsolatedProfileRestoreTarget({ profileDir: process.argv[3] })
+  await target.writeJournal({ restoreId: 'claim-crash-worker', status: 'started', appliedDomains: [] })
+  process.exit(0)
+}
+
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-backup-concurrency-'))
 
 try {
@@ -65,6 +100,11 @@ try {
       appliedDomains: [],
     })
   )))
+  if (journalResults.some((result) => result.status === 'rejected')) {
+    console.error(journalResults.map((result, index) => result.status === 'rejected'
+      ? { index, code: result.reason?.code, message: result.reason?.message }
+      : null).filter(Boolean))
+  }
   assert.equal(journalResults.filter((result) => result.status === 'fulfilled').length, 50)
   assert.equal(journalResults.filter((result) => result.status === 'rejected').length, 0)
 
@@ -84,6 +124,11 @@ try {
       createdAt: new Date().toISOString(),
     })
   )))
+  if (rollbackResults.some((result) => result.status === 'rejected')) {
+    console.error(rollbackResults.map((result, index) => result.status === 'rejected'
+      ? { index, code: result.reason?.code, message: result.reason?.message }
+      : null).filter(Boolean))
+  }
   assert.equal(rollbackResults.filter((result) => result.status === 'fulfilled').length, 50)
   assert.equal((await readdir(first.rollbackDir)).length, 50)
 
@@ -94,6 +139,11 @@ try {
       reason: 'synthetic-rename-contention',
     })
   )))
+  if (quarantineResults.some((result) => result.status === 'rejected')) {
+    console.error(quarantineResults.map((result, index) => result.status === 'rejected'
+      ? { index, code: result.reason?.code, message: result.reason?.message }
+      : null).filter(Boolean))
+  }
   assert.equal(quarantineResults.filter((result) => result.status === 'fulfilled').length, 50)
   assert.equal((await readdir(first.quarantineDir)).length, 50)
 
@@ -165,6 +215,7 @@ try {
   assert.equal(publicJournal.checksum, checksum(publicJournal, ['schemaVersion', 'revision', 'entries']))
 
   await runRollbackTimingChecks({ root, sourceService: publicService, artifact: publicArtifact })
+  await runJournalCrashRecovery({ root, artifact: publicArtifact })
 
   const interruptedController = new AbortController()
   interruptedController.abort()
@@ -241,6 +292,47 @@ async function runRollbackTimingChecks({ root, sourceService, artifact }) {
   assert.equal(postCommitJournal.checksum, checksum(postCommitJournal, ['schemaVersion', 'revision', 'entries']))
 }
 
+async function runJournalCrashRecovery({ root, artifact }) {
+  // TDD RED evidence: before committing-state recovery, the killed writer
+  // left journal status=committing and a retry returned
+  // RESTORE_REVISION_CONFLICT at base revision 0/current revision 1.
+  const profileDir = path.join(root, 'journal-crash-profile')
+  const barrierDir = path.join(root, 'journal-crash-barrier')
+  const artifactPath = path.join(root, 'journal-crash-artifact.json')
+  const resultPath = path.join(root, 'journal-crash-retry-result.json')
+  await mkdir(barrierDir, { recursive: true })
+  await writeFile(artifactPath, `${JSON.stringify(artifact)}\n`, 'utf8')
+  await createIsolatedProfileRestoreTarget({ profileDir, initialDomains })
+  const crash = spawnCrashWorker({
+    mode: '--crash-after-state-write',
+    args: [profileDir, barrierDir, artifactPath],
+    env: { READ_WEB_BACKUP_LOCK_STALE_AFTER_MS: '1000', READ_WEB_BACKUP_LOCK_TIMEOUT_MS: '5000' },
+  })
+  await waitForPath(path.join(barrierDir, 'state-written.json'))
+  crash.kill()
+  const crashResult = await crash.done
+  assert.notEqual(crashResult.code, 0, 'the crash worker must be terminated after state replacement')
+  await new Promise((resolve) => setTimeout(resolve, 1_200))
+
+  const retry = spawnCrashWorker({
+    mode: '--retry-crashed-restore',
+    args: [profileDir, artifactPath, resultPath],
+    env: { READ_WEB_BACKUP_LOCK_STALE_AFTER_MS: '1000', READ_WEB_BACKUP_LOCK_TIMEOUT_MS: '5000' },
+  })
+  const retryResult = await retry.done
+  assert.equal(retryResult.code, 0, retryResult.stderr || retryResult.stdout)
+  const retryReport = JSON.parse(await readFile(resultPath, 'utf8'))
+  assert.equal(retryReport.status, 'completed', `crash-gap retry failed: ${JSON.stringify(retryReport)}`)
+  const target = await createIsolatedProfileRestoreTarget({ profileDir })
+  const state = await target.readState()
+  assert.equal(state.revision, 1, 'crash-gap recovery must not rewrite the already committed state')
+  assert.equal(state.checksum, checksum(state, ['schemaVersion', 'revision', 'domains']))
+  const journal = JSON.parse(await readFile(target.journalPath, 'utf8'))
+  assert.equal(journal.entries['journal-crash-restore'].status, 'completed')
+  assert.equal(journal.entries['journal-crash-restore'].committedRevision, 1)
+  assert.equal(journal.checksum, checksum(journal, ['schemaVersion', 'revision', 'entries']))
+}
+
 async function runCrossProcessConcurrency(root) {
   const profileDir = path.join(root, 'cross-process-profile')
   const barrierDir = path.join(root, 'cross-process-barriers')
@@ -270,6 +362,7 @@ async function runCrossProcessConcurrency(root) {
   }
   assert.equal(journal.checksum, checksum(journal, ['schemaVersion', 'revision', 'entries']))
   await runPathLockSafetyChecks({ profileDir, target: initialTarget })
+  await runPathLockClaimCrashCheck(root)
 
   const commitResults = results.map((result) => JSON.parse(result.result))
   assert.equal(commitResults.filter((result) => result.commitCode === 'fulfilled').length, 1)
@@ -285,11 +378,25 @@ async function runPathLockSafetyChecks({ profileDir, target }) {
   const lockPath = `${process.platform === 'win32' ? lockBase.toLowerCase() : lockBase}.read-web-path.lock`
   const ownerPath = path.join(lockPath, 'owner.json')
   const oldHeartbeat = new Date(Date.now() - 10_000).toISOString()
+  const oldDate = new Date(Date.now() - 10_000)
   const previousTimeout = process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
   const previousStaleAfter = process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS
   try {
     process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = '100'
     process.env.READ_WEB_BACKUP_LOCK_STALE_AFTER_MS = '1000'
+    await mkdir(lockPath, { recursive: true })
+    await utimes(lockPath, oldDate, oldDate)
+    await target.writeJournal({ restoreId: 'empty-lockdir-must-recover', status: 'started', appliedDomains: [] })
+
+    await rm(lockPath, { recursive: true, force: true })
+    await mkdir(lockPath, { recursive: true })
+    const partialOwnerPath = path.join(lockPath, 'owner.json.tmp-crashed')
+    await writeFile(partialOwnerPath, '{"schemaVersion":1,"ownerToken":"partial', 'utf8')
+    await utimes(lockPath, oldDate, oldDate)
+    await utimes(partialOwnerPath, oldDate, oldDate)
+    await target.writeJournal({ restoreId: 'partial-owner-must-recover', status: 'started', appliedDomains: [] })
+
+    await rm(lockPath, { recursive: true, force: true })
     await mkdir(lockPath, { recursive: true })
     await writeFile(ownerPath, `${JSON.stringify({
       schemaVersion: 1,
@@ -323,6 +430,29 @@ async function runPathLockSafetyChecks({ profileDir, target }) {
   }
 }
 
+async function runPathLockClaimCrashCheck(root) {
+  const profileDir = path.join(root, 'claim-crash-profile')
+  const barrierDir = path.join(root, 'claim-crash-barrier')
+  await mkdir(barrierDir, { recursive: true })
+  await createIsolatedProfileRestoreTarget({ profileDir, initialDomains })
+  const crash = spawnCrashWorker({
+    mode: '--claim-crash-worker',
+    args: [profileDir],
+    env: {
+      READ_WEB_BACKUP_LOCK_STALE_AFTER_MS: '1000',
+      READ_WEB_BACKUP_LOCK_TIMEOUT_MS: '5000',
+      READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_DIR: barrierDir,
+    },
+  })
+  await waitForPath(path.join(barrierDir, 'claim-ready.json'))
+  crash.kill()
+  const result = await crash.done
+  assert.notEqual(result.code, 0, 'claim crash worker must be terminated before canonical lock rename')
+  await new Promise((resolve) => setTimeout(resolve, 1_200))
+  const target = await createIsolatedProfileRestoreTarget({ profileDir })
+  await target.writeJournal({ restoreId: 'claim-crash-recovered', status: 'started', appliedDomains: [] })
+}
+
 function spawnWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound, resultPath }) {
   const scriptPath = fileURLToPath(import.meta.url)
   return new Promise((resolve, reject) => {
@@ -353,6 +483,93 @@ function spawnWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound,
       resolve({ workerId, code: code ?? 1, signal, stdout, stderr, result })
     })
   })
+}
+
+function spawnCrashWorker({ mode, args, env = {} }) {
+  const scriptPath = fileURLToPath(import.meta.url)
+  const child = spawn(process.execPath, [scriptPath, mode, ...args], {
+    cwd: process.cwd(),
+    env: { ...process.env, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', (chunk) => { stdout += chunk })
+  child.stderr.on('data', (chunk) => { stderr += chunk })
+  const done = new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code, signal) => resolve({ code: code ?? 1, signal, stdout, stderr }))
+  })
+  return { child, done, kill: () => child.kill() }
+}
+
+async function runCrashAfterStateWriteWorker({ profileDir, barrierDir, artifactPath }) {
+  const artifact = JSON.parse(await readFile(artifactPath, 'utf8'))
+  const service = createApplicationBackupService({ adapters: createSourceAdapters() })
+  const target = await createIsolatedProfileRestoreTarget({
+    profileDir,
+    faults: { commit: 'write-then-block', commitBarrierDir: barrierDir },
+  })
+  await service.restore(artifact, {
+    target,
+    restoreId: 'journal-crash-restore',
+    resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'restore'])),
+  })
+}
+
+async function runRetryCrashedRestoreWorker({ profileDir, artifactPath, resultPath }) {
+  const artifact = JSON.parse(await readFile(artifactPath, 'utf8'))
+  const service = createApplicationBackupService({ adapters: createSourceAdapters() })
+  const target = await createIsolatedProfileRestoreTarget({ profileDir })
+  try {
+    const report = await service.restore(artifact, {
+      target,
+      restoreId: 'journal-crash-restore',
+      resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'restore'])),
+    })
+    await writeFile(resultPath, `${JSON.stringify(report)}\n`, 'utf8')
+  } catch (error) {
+    await writeFile(resultPath, `${JSON.stringify({ errorCode: error?.code, message: error?.message })}\n`, 'utf8')
+  }
+}
+
+function createSourceAdapters() {
+  return Object.fromEntries(requiredDomains.map((key) => [key, {
+    key,
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision: 1,
+    async collect() {
+      return {
+        schemaVersion: 1,
+        revision: 1,
+        records: [{
+          id: `${key}-source-record`,
+          schemaVersion: 1,
+          revision: 1,
+          contentId: `${key}-source-content`,
+          payload: { value: `${key}-source` },
+          references: [],
+          mediaReferences: [],
+        }],
+      }
+    },
+  }]))
+}
+
+async function waitForPath(filePath) {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    try {
+      await readFile(filePath, 'utf8')
+      return
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`timed out waiting for ${filePath}`)
 }
 
 async function runChildWorker({ workerId, profileDir, barrierDir, rounds, writesPerRound, resultPath }) {

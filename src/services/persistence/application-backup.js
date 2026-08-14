@@ -1087,8 +1087,15 @@ async function resolveCapacity(target, backupBytes) {
 
 async function assertTargetSafety(target) {
   if (!target || target.isolated !== true) throw backupError('RESTORE_TARGET_UNSAFE', 'Restore requires an explicitly isolated target profile')
+  const capabilities = target.restoreCapabilities
+  if (capabilities?.atomicRevisionCommit !== true
+    || capabilities?.commitRevisionEvidence !== true
+    || capabilities?.verifyAppliedRevision !== true) {
+    throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target must explicitly provide atomic revision and commit-evidence capabilities')
+  }
   if (typeof target.beginTransaction !== 'function') throw backupError('RESTORE_ATOMIC_UNAVAILABLE', 'Restore target must provide an atomic transaction')
   if (typeof target.restoreSnapshot !== 'function') throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'Restore target must provide atomic snapshot rollback')
+  if (typeof target.verifyApplied !== 'function') throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target must provide revision-bearing applied-state verification')
   if (!targetJournalReader(target)) throw backupError('RESTORE_JOURNAL_UNAVAILABLE', 'Restore target must provide a durable journal reader')
   if (!targetJournalWriter(target)) throw backupError('RESTORE_JOURNAL_UNAVAILABLE', 'Restore target must provide a durable journal writer')
   if (typeof target.rollbackStore?.write !== 'function') throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'Restore target must provide a rollback backup store')
@@ -1239,6 +1246,55 @@ export function createApplicationBackupService(options = {}) {
       })
       throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'The rollback backup has no bound base revision', { restoreId })
     }
+    if (priorJournal?.status === 'committing') {
+      const expectedBaseRevision = Number.isInteger(priorJournal.expectedBaseRevision)
+        ? priorJournal.expectedBaseRevision
+        : rollbackBaseRevision(rollbackEntry)
+      let appliedEvidence
+      try {
+        appliedEvidence = await target.verifyApplied({ restoreId, artifact: sourceArtifact, report: null })
+      } catch (error) {
+        appliedEvidence = { ok: false, reason: error?.code || 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE' }
+      }
+      const currentRevision = Number.isInteger(appliedEvidence?.revision) ? appliedEvidence.revision : null
+      if (!Number.isInteger(currentRevision)) {
+        try {
+          await writeJournal({
+            ...priorJournal,
+            status: 'rollback-failed',
+            failureCode: 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE',
+            manualRecoveryRequired: true,
+            failedAt: new Date().toISOString(),
+          })
+        } catch { /* Preserve the typed evidence failure if journaling is unavailable. */ }
+        throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'A committing restore has no durable revision evidence; manual recovery is required', { restoreId })
+      }
+      if (appliedEvidence?.ok === true) {
+        const committed = {
+          ...priorJournal,
+          status: 'committed',
+          committedRevision: currentRevision,
+          committedAt: new Date().toISOString(),
+        }
+        await writeJournal(committed)
+        const completed = { ...committed, status: 'completed', completedAt: new Date().toISOString() }
+        await writeJournal(completed)
+        return { status: 'completed', restoreId, recovered: true, journal: completed }
+      }
+      if (!Number.isInteger(expectedBaseRevision) || currentRevision !== expectedBaseRevision) {
+        try {
+          await writeJournal({
+            ...priorJournal,
+            status: 'rollback-failed',
+            failureCode: 'RESTORE_REVISION_CONFLICT',
+            currentRevision,
+            manualRecoveryRequired: true,
+            failedAt: new Date().toISOString(),
+          })
+        } catch { /* Preserve the typed conflict if journaling is unavailable. */ }
+        throw backupError('RESTORE_REVISION_CONFLICT', 'A committing restore does not match its source and concurrent data advanced the target; manual recovery is required', { restoreId })
+      }
+    }
     if (priorJournal?.status === 'committed') {
       if (!Number.isInteger(priorJournal.committedRevision)) {
         throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'A committed restore has no durable committed revision evidence', { restoreId })
@@ -1280,7 +1336,9 @@ export function createApplicationBackupService(options = {}) {
     }
     const expectedBaseRevision = Number.isInteger(priorJournal?.rollbackRevision)
       ? priorJournal.rollbackRevision
-      : rollbackBaseRevision(rollbackEntry)
+      : (Number.isInteger(priorJournal?.expectedBaseRevision)
+        ? priorJournal.expectedBaseRevision
+        : rollbackBaseRevision(rollbackEntry))
     if (!Number.isInteger(expectedBaseRevision)) {
       throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'Restore cannot start without a durable rollback base revision', { restoreId })
     }
@@ -1327,6 +1385,12 @@ export function createApplicationBackupService(options = {}) {
       const committedRevision = Number.isInteger(transaction.committedRevision)
         ? transaction.committedRevision
         : (Number.isInteger(commitResult?.revision) ? commitResult.revision : null)
+      if (!Number.isInteger(committedRevision)) {
+        throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Restore commit did not expose a durable committed revision', {
+          restoreId,
+          commitMayHaveApplied: true,
+        })
+      }
       await writeJournal({
         ...started,
         status: 'committed',
@@ -1336,8 +1400,22 @@ export function createApplicationBackupService(options = {}) {
       if (typeof target.verifyApplied === 'function') {
         const applied = await target.verifyApplied({ restoreId, artifact: sourceArtifact, report: dryRun })
         if (applied === false || applied?.ok === false) throw backupError('RESTORE_POST_VERIFY_FAILED', 'Restored target did not match the backup artifact')
+        if (!Number.isInteger(applied?.revision) || applied.revision !== committedRevision) {
+          throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Applied-state verification did not return the committed revision', {
+            restoreId,
+            committedRevision,
+            verifiedRevision: applied?.revision,
+            commitMayHaveApplied: true,
+          })
+        }
       }
-      const completed = { ...started, status: 'completed', appliedDomains, completedAt: new Date().toISOString() }
+      const completed = {
+        ...started,
+        status: 'completed',
+        appliedDomains,
+        committedRevision,
+        completedAt: new Date().toISOString(),
+      }
       await writeJournal(completed)
       return { status: 'completed', restoreId, report: dryRun, journal: completed }
     } catch (error) {
@@ -1367,15 +1445,20 @@ export function createApplicationBackupService(options = {}) {
           journal: { restoreId, artifactChecksum: sourceArtifact.artifactChecksum },
         })
       } catch (failure) { quarantineError = failure }
-      const failedStatus = rollbackError ? 'rollback-failed' : 'rolled-back'
+      const failedStatus = rollbackError || error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
+        ? 'rollback-failed'
+        : 'rolled-back'
+      const manualRecoveryRequired = error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
+        && !Number.isInteger(committedRevision)
       const failedJournal = {
         ...started,
         status: failedStatus,
         failureCode: error?.code || 'RESTORE_FAILED',
         ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
         ...(Number.isInteger(rollbackRevision) ? { rollbackRevision } : {}),
-        rollbackComplete: !rollbackError,
+        rollbackComplete: !rollbackError && !manualRecoveryRequired,
         quarantineComplete: !quarantineError,
+        ...(manualRecoveryRequired ? { manualRecoveryRequired: true } : {}),
         failedAt: new Date().toISOString(),
       }
       await writeJournal(failedJournal)

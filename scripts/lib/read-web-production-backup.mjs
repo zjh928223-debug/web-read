@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -13,8 +13,10 @@ const BROWSER_PROFILE_FILE = 'browser-profile.json'
 const JOURNAL_SCHEMA_VERSION = 1
 const PATH_LOCK_SCHEMA_VERSION = 1
 const PATH_LOCK_SUFFIX = '.read-web-path.lock'
+const PATH_LOCK_CLAIM_SUFFIX = '.claim-'
+const PATH_LOCK_HEARTBEAT_FILE = 'heartbeat.json'
 const PATH_LOCK_TIMEOUT_MS = 30_000
-const PATH_LOCK_STALE_AFTER_MS = 60_000
+const PATH_LOCK_STALE_AFTER_MS = 15_000
 const PATH_LOCK_RETRY_MS = 15
 const PATH_LOCK_HEARTBEAT_MS = 1_000
 
@@ -70,6 +72,10 @@ function pathLockPath(filePath) {
   return `${pathMutexKey(filePath)}${PATH_LOCK_SUFFIX}`
 }
 
+function pathLockClaimPath(lockPath, ownerToken) {
+  return `${lockPath}${PATH_LOCK_CLAIM_SUFFIX}${ownerToken}`
+}
+
 function pathLockNumber(name, fallback, minimum) {
   const value = Number(process.env[name])
   return Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
@@ -95,6 +101,14 @@ async function readPathLockMetadata(lockPath) {
       || typeof value.ownerToken !== 'string' || !value.ownerToken
       || !Number.isInteger(value.pid) || value.pid <= 0
       || typeof value.acquiredAt !== 'string' || typeof value.heartbeatAt !== 'string') return null
+    try {
+      const heartbeat = JSON.parse(await readFile(path.join(lockPath, PATH_LOCK_HEARTBEAT_FILE), 'utf8'))
+      if (heartbeat?.schemaVersion === PATH_LOCK_SCHEMA_VERSION
+        && heartbeat.ownerToken === value.ownerToken
+        && typeof heartbeat.heartbeatAt === 'string') {
+        return { ...value, heartbeatAt: heartbeat.heartbeatAt }
+      }
+    } catch { /* The immutable owner record remains authoritative during heartbeat publication. */ }
     return value
   } catch (error) {
     if (error?.code === 'ENOENT') return null
@@ -117,6 +131,14 @@ async function writePathLockMetadata(lockPath, metadata) {
     await handle?.close().catch(() => {})
     await rm(temporary, { force: true }).catch(() => {})
   }
+}
+
+async function writePathLockHeartbeat(lockPath, ownerToken) {
+  await writeJsonAtomic(path.join(lockPath, PATH_LOCK_HEARTBEAT_FILE), {
+    schemaVersion: PATH_LOCK_SCHEMA_VERSION,
+    ownerToken,
+    heartbeatAt: new Date().toISOString(),
+  })
 }
 
 function processIsAlive(pid) {
@@ -145,25 +167,66 @@ async function pathLockAge(lockPath, metadata) {
 
 async function recoverStalePathLock(lockPath, staleAfterMs) {
   const first = await readPathLockMetadata(lockPath)
-  // A missing/corrupt lease record is not enough evidence that an active
-  // owner is gone. Leave it alone and let the bounded acquisition timeout
-  // fail closed; only a complete, stable owner record can be recovered.
-  if (!first) return false
   const age = await pathLockAge(lockPath, first)
   if (age < staleAfterMs) return false
   if (first?.pid && processIsAlive(first.pid)) return false
   const second = await readPathLockMetadata(lockPath)
-  if (!second || second.ownerToken !== first.ownerToken) return false
-  if (second.pid && processIsAlive(second.pid)) return false
+  if (second?.pid && processIsAlive(second.pid)) return false
+  if (first?.ownerToken && (!second || second.ownerToken !== first.ownerToken)) return false
+  return moveAndRemoveStalePathLock(lockPath, first?.ownerToken || null)
+}
+
+async function moveAndRemoveStalePathLock(lockPath, ownerToken) {
+  const stalePath = `${lockPath}.stale-${randomUUID()}`
   try {
-    await rm(lockPath, { recursive: true, force: true })
+    await rename(lockPath, stalePath)
+  } catch (error) {
+    if (['ENOENT', 'EEXIST', 'ENOTEMPTY', 'EISDIR', 'EPERM', 'EACCES'].includes(error?.code)) return false
+    throw error
+  }
+  try {
+    const moved = await readPathLockMetadata(stalePath)
+    if (ownerToken && moved?.ownerToken && moved.ownerToken !== ownerToken) return false
+    if (moved?.pid && processIsAlive(moved.pid)) return false
+    await rm(stalePath, { recursive: true, force: true })
     return true
-  } catch { return false }
+  } finally {
+    await rm(stalePath, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+async function cleanupStalePathClaims(lockPath, staleAfterMs) {
+  const parent = path.dirname(lockPath)
+  const prefix = `${path.basename(lockPath)}${PATH_LOCK_CLAIM_SUFFIX}`
+  let entries
+  try {
+    entries = await readdir(parent)
+  } catch (error) {
+    if (error?.code === 'ENOENT') return
+    throw error
+  }
+  await Promise.all(entries.filter((entry) => entry.startsWith(prefix)).map(async (entry) => {
+    const claimPath = path.join(parent, entry)
+    const metadata = await readPathLockMetadata(claimPath)
+    const age = await pathLockAge(claimPath, metadata)
+    if (age < staleAfterMs || metadata?.pid && processIsAlive(metadata.pid)) return
+    await rm(claimPath, { recursive: true, force: true }).catch(() => {})
+  }))
+}
+
+async function waitForPathLockClaimTestBarrier(ownerToken) {
+  const barrierDir = process.env.READ_WEB_BACKUP_LOCK_CLAIM_BARRIER_DIR
+  if (!barrierDir) return
+  const resolvedBarrierDir = path.resolve(barrierDir)
+  await mkdir(resolvedBarrierDir, { recursive: true })
+  await writeJsonAtomic(path.join(resolvedBarrierDir, 'claim-ready.json'), { ownerToken })
+  const releasePath = path.join(resolvedBarrierDir, 'release.json')
+  while (!await pathExists(releasePath)) await delay(10)
 }
 
 async function releasePathLock(lockPath, ownerToken) {
   const metadata = await readPathLockMetadata(lockPath)
-  if (metadata && metadata.ownerToken !== ownerToken) return
+  if (!metadata || metadata.ownerToken !== ownerToken) return
   await rm(lockPath, { recursive: true, force: true })
 }
 
@@ -175,10 +238,7 @@ function startPathLockHeartbeat(lockPath, ownerToken) {
       if (stopped) return
       const metadata = await readPathLockMetadata(lockPath)
       if (metadata?.ownerToken !== ownerToken) return
-      await writePathLockMetadata(lockPath, {
-        ...metadata,
-        heartbeatAt: new Date().toISOString(),
-      })
+      await writePathLockHeartbeat(lockPath, ownerToken)
     }).catch(() => {})
   }
   const timer = setInterval(beat, PATH_LOCK_HEARTBEAT_MS)
@@ -199,10 +259,28 @@ async function withPathMutex(filePath, operation, options = {}) {
   const deadline = Date.now() + timeoutMs
   const ownerToken = randomUUID()
   while (true) {
+    await cleanupStalePathClaims(lockPath, staleAfterMs)
+    const claimPath = pathLockClaimPath(lockPath, ownerToken)
     try {
-      await mkdir(lockPath)
+      await mkdir(claimPath)
+      const acquiredAt = new Date().toISOString()
+      await writePathLockMetadata(claimPath, {
+        schemaVersion: PATH_LOCK_SCHEMA_VERSION,
+        ownerToken,
+        pid: process.pid,
+        acquiredAt,
+        heartbeatAt: acquiredAt,
+      })
+      await waitForPathLockClaimTestBarrier(ownerToken)
+      await rename(claimPath, lockPath)
+      const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
+      try {
+        return await operation()
+      } finally {
+        await stopHeartbeat()
+      }
     } catch (error) {
-      if (error?.code !== 'EEXIST') throw error
+      if (!['EEXIST', 'ENOTEMPTY', 'EISDIR', 'EPERM', 'EACCES'].includes(error?.code)) throw error
       await recoverStalePathLock(lockPath, staleAfterMs)
       if (Date.now() >= deadline) {
         const lockError = new Error('Timed out waiting for an isolated backup path lock')
@@ -211,23 +289,8 @@ async function withPathMutex(filePath, operation, options = {}) {
       }
       await delay(Math.min(retryMs, Math.max(1, deadline - Date.now())))
       continue
-    }
-    const acquiredAt = new Date().toISOString()
-    try {
-      await writePathLockMetadata(lockPath, {
-        schemaVersion: PATH_LOCK_SCHEMA_VERSION,
-        ownerToken,
-        pid: process.pid,
-        acquiredAt,
-        heartbeatAt: acquiredAt,
-      })
-      const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
-      try {
-        return await operation()
-      } finally {
-        await stopHeartbeat()
-      }
     } finally {
+      await rm(claimPath, { recursive: true, force: true }).catch(() => {})
       await releasePathLock(lockPath, ownerToken)
     }
   }
@@ -235,6 +298,16 @@ async function withPathMutex(filePath, operation, options = {}) {
 
 async function delay(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+async function pathExists(filePath) {
+  try {
+    await stat(filePath)
+    return true
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false
+    throw error
+  }
 }
 
 /*
@@ -623,6 +696,11 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     rollbackDir,
     quarantineDir,
     rollbackStoreSeparate: true,
+    restoreCapabilities: Object.freeze({
+      atomicRevisionCommit: true,
+      commitRevisionEvidence: true,
+      verifyAppliedRevision: true,
+    }),
     capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024,
     adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir),
     faults: faultState,
@@ -752,6 +830,16 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             await writeJsonAtomic(statePath, next)
             stateRef.value = next
             committedRevision = next.revision
+            if (faultState.commit === 'write-then-block' && faultState.commitBarrierDir) {
+              const barrierDir = path.resolve(faultState.commitBarrierDir)
+              await mkdir(barrierDir, { recursive: true })
+              await writeJsonAtomic(path.join(barrierDir, 'state-written.json'), {
+                restoreId,
+                revision: committedRevision,
+              })
+              const releasePath = path.join(barrierDir, 'release.json')
+              while (!await pathExists(releasePath)) await delay(10)
+            }
             if (faultState.commit === 'write-then-fail'
               || (faultState.commit === 'fail-once' && !faultState.failed)) {
               faultState.failed = true
@@ -760,6 +848,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
               error.committedRevision = committedRevision
               throw error
             }
+            return { revision: committedRevision, checksum: next.checksum }
           })
         },
         async rollback() {

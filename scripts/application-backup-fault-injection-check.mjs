@@ -195,6 +195,11 @@ function snapshotState(state) {
 function createTarget(state, { commitMode = 'success', missingJournalReader = false } = {}) {
   const target = {
     isolated: true,
+    restoreCapabilities: {
+      atomicRevisionCommit: true,
+      commitRevisionEvidence: true,
+      verifyAppliedRevision: true,
+    },
     adapters: state.adapters,
     capacityBytes: 10_000_000,
     revision: 0,
@@ -233,6 +238,7 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
           applyStaged(staged)
           target.revision += 1
           transaction.committedRevision = target.revision
+          return { revision: transaction.committedRevision }
         },
         async rollback() { staged.clear() },
       }
@@ -259,6 +265,12 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
       }
       target.revision += 1
       return { revision: target.revision }
+    },
+    async verifyApplied({ artifact }) {
+      const ok = APPLICATION_BACKUP_REQUIRED_DOMAINS.every((key) => (
+        JSON.stringify(state.adapters[key].records) === JSON.stringify(artifact.domains[key].records)
+      ))
+      return { ok, revision: target.revision }
     },
   }
   if (missingJournalReader) delete target.readJournal

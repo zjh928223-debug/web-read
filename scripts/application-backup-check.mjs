@@ -96,6 +96,46 @@ const restoreService = createApplicationBackupService({
   target,
   release: { applicationVersion: '1.0.0', gitSha: 'test-sha', releaseId: 'test-release' },
 })
+const unsafeAdapters = createDomainAdapters()
+const unsafeService = createApplicationBackupService({ adapters: unsafeAdapters })
+const unsafeArtifact = await unsafeService.createBackup()
+const unsafeTarget = createRestoreTarget(unsafeAdapters)
+delete unsafeTarget.restoreCapabilities
+// TDD RED evidence: the pre-capability service accepted this target and
+// committed it; the contract now requires an explicit revision/evidence claim.
+await assert.rejects(
+  unsafeService.restore(unsafeArtifact, {
+    target: unsafeTarget,
+    restoreId: 'unsafe-target-capability',
+    resolutions: Object.fromEntries(APPLICATION_BACKUP_REQUIRED_DOMAINS.map((key) => [key, 'restore'])),
+  }),
+  (error) => error?.code === 'RESTORE_TARGET_UNSAFE',
+  'a target without explicit revision/evidence capabilities must fail before any restore write',
+)
+assert.equal(unsafeTarget.transactionCommits, 0)
+const noEvidenceTarget = createRestoreTarget(unsafeAdapters)
+const originalNoEvidenceBegin = noEvidenceTarget.beginTransaction.bind(noEvidenceTarget)
+noEvidenceTarget.beginTransaction = async (options) => {
+  const transaction = await originalNoEvidenceBegin(options)
+  const originalCommit = transaction.commit.bind(transaction)
+  transaction.commit = async () => {
+    await originalCommit()
+    delete transaction.committedRevision
+    return undefined
+  }
+  return transaction
+}
+await assert.rejects(
+  unsafeService.restore(unsafeArtifact, {
+    target: noEvidenceTarget,
+    restoreId: 'missing-commit-evidence',
+    resolutions: Object.fromEntries(APPLICATION_BACKUP_REQUIRED_DOMAINS.map((key) => [key, 'restore'])),
+  }),
+  (error) => error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE',
+  'a commit without revision evidence must fail explicitly after possible write, never silently skip rollback',
+)
+assert.equal(noEvidenceTarget.journal.last.status, 'rollback-failed')
+assert.equal(noEvidenceTarget.journal.last.manualRecoveryRequired, true)
 const newerArtifact = await restoreService.createBackup({ now: () => 1700000000001 })
 adapters['vocabulary-srs'].records[0].payload.words[0].word = 'changed-locally'
 adapters['vocabulary-srs'].revision = 2
@@ -197,6 +237,11 @@ function createDomainAdapters({ binary = false, inlineMedia = false } = {}) {
 function createRestoreTarget(adapters) {
   const target = {
     isolated: true,
+    restoreCapabilities: {
+      atomicRevisionCommit: true,
+      commitRevisionEvidence: true,
+      verifyAppliedRevision: true,
+    },
     capacityBytes: 10_000_000,
     revision: 0,
     rollbackWrites: 0,
@@ -232,6 +277,7 @@ function createRestoreTarget(adapters) {
           target.transactionCommits += 1
           target.revision += 1
           transaction.committedRevision = target.revision
+          return { revision: transaction.committedRevision }
         },
         async rollback() { staged.clear() },
       }
@@ -248,6 +294,9 @@ function createRestoreTarget(adapters) {
       }
       target.revision += 1
       return { revision: target.revision }
+    },
+    async verifyApplied({ artifact }) {
+      return { ok: true, revision: target.revision }
     },
   }
   return target
