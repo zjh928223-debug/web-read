@@ -1,3 +1,4 @@
+import errno
 import json
 import os
 import shutil
@@ -36,12 +37,49 @@ class JsonRepositoryReadError(RuntimeError):
         self.outcome = outcome
 
 
+class JsonRepositoryPermissionError(PermissionError):
+    """A durable JSON access failed because the path is not currently usable."""
+
+    def __init__(self, path: Path, operation: str, cause: BaseException | None = None):
+        detail = str(cause).strip() if cause is not None else "permission denied"
+        message = f"JSON {operation} permission denied for {Path(path)}"
+        if detail:
+            message = f"{message}: {detail}"
+        super().__init__(errno.EACCES, message)
+        self.path = Path(path)
+        self.operation = operation
+        self.error_code = "JSON_PERMISSION_DENIED"
+        self.cause = cause
+
+
+# Keep a short alias available to callers that use the error category rather
+# than the repository-specific name.
+JsonPermissionError = JsonRepositoryPermissionError
+
+
+class JsonRepositoryIOError(OSError):
+    """A non-corruption filesystem failure while reading durable JSON."""
+
+    def __init__(self, path: Path, operation: str, cause: BaseException):
+        super().__init__(getattr(cause, "errno", None), f"JSON {operation} failed for {Path(path)}: {cause}")
+        self.path = Path(path)
+        self.operation = operation
+        self.error_code = "JSON_IO_ERROR"
+        self.cause = cause
+
+
 class DurableJsonRepository:
     _path_locks: dict[str, threading.RLock] = {}
     _path_locks_guard = threading.Lock()
+    _max_recovery_artifacts = 32
 
-    def __init__(self, before_replace: Callable[[Path, Path], None] | None = None):
+    def __init__(
+        self,
+        before_replace: Callable[[Path, Path], None] | None = None,
+        after_replace: Callable[[Path, Path], None] | None = None,
+    ):
         self.before_replace = before_replace
+        self.after_replace = after_replace
 
     @classmethod
     def _path_lock(cls, path: Path) -> threading.RLock:
@@ -60,9 +98,15 @@ class DurableJsonRepository:
         *,
         validator: Callable[[Any], Any] | None = None,
     ) -> JsonReadOutcome:
-        with self._path_lock(path):
-            with self._file_lock(path):
-                return self._read_unlocked(path, fallback, validator=validator)
+        path = Path(path)
+        try:
+            with self._path_lock(path):
+                with self._file_lock(path):
+                    return self._read_unlocked(path, fallback, validator=validator)
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(fallback, "permission", "primary", "JSON_PERMISSION_DENIED")
+            return JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR")
 
     def update(
         self,
@@ -77,14 +121,34 @@ class DurableJsonRepository:
         The caller's updater runs while both the in-process and file lock are
         held, so a read-modify-write cannot be based on a stale process view.
         """
-        with self._path_lock(path):
-            with self._file_lock(path):
-                outcome = self._read_unlocked(path, fallback, validator=validator)
-                if outcome.status in {"corrupt", "interrupted", "unsupported"}:
-                    raise JsonRepositoryReadError(outcome)
-                value = updater(outcome.value, outcome)
-                self._write_unlocked(path, value, preserve_backup=True)
-                return value, outcome
+        path = Path(path)
+        try:
+            with self._path_lock(path):
+                with self._file_lock(path):
+                    outcome = self._read_unlocked(path, fallback, validator=validator)
+                    if outcome.status == "missing" and any(path.parent.glob(f"{path.name}.corrupt-*")):
+                        outcome = JsonReadOutcome(
+                            outcome.value,
+                            "corrupt",
+                            "fallback",
+                            "JSON_RECOVERY_REQUIRED",
+                            recovery_paths=outcome.recovery_paths,
+                        )
+                    if outcome.status in {"corrupt", "interrupted", "unsupported", "permission", "io-error"}:
+                        if outcome.status == "permission":
+                            raise JsonRepositoryPermissionError(path, "read")
+                        if outcome.status == "io-error":
+                            raise JsonRepositoryIOError(path, "read", OSError(outcome.error_code or "JSON_IO_ERROR"))
+                        raise JsonRepositoryReadError(outcome)
+                    value = updater(outcome.value, outcome)
+                    self._write_unlocked(path, value, preserve_backup=True)
+                    return value, outcome
+        except JsonRepositoryPermissionError:
+            raise
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                raise JsonRepositoryPermissionError(path, "update", exc) from exc
+            raise
 
     def _read_unlocked(
         self,
@@ -94,14 +158,25 @@ class DurableJsonRepository:
         validator: Callable[[Any], Any] | None = None,
     ) -> JsonReadOutcome:
         path = Path(path)
-        interrupted_paths = self._quarantine_temps(path)
-        if not path.exists():
+        try:
+            interrupted_paths = self._quarantine_temps(path)
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(fallback, "permission", "primary", "JSON_PERMISSION_DENIED")
+            return JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR")
+        try:
+            path.stat()
+        except FileNotFoundError:
             if interrupted_paths:
                 return JsonReadOutcome(
                     fallback, "interrupted", "fallback", "JSON_WRITE_INTERRUPTED",
                     recovery_paths=interrupted_paths,
                 )
             return JsonReadOutcome(fallback, "missing", "fallback")
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(fallback, "permission", "primary", "JSON_PERMISSION_DENIED")
+            return JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR")
         try:
             value = self._decode(path)
             if validator is not None:
@@ -123,7 +198,7 @@ class DurableJsonRepository:
                 primary_error_code=exc.error_code,
                 recovery_paths=interrupted_paths,
             )
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (UnicodeError, json.JSONDecodeError):
             return self._recover_from_backup(
                 path,
                 fallback,
@@ -131,6 +206,12 @@ class DurableJsonRepository:
                 primary_error_code="JSON_PRIMARY_CORRUPT",
                 recovery_paths=interrupted_paths,
             )
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(fallback, "permission", "primary", "JSON_PERMISSION_DENIED", recovery_paths=interrupted_paths)
+            if isinstance(exc, FileNotFoundError):
+                return JsonReadOutcome(fallback, "missing", "fallback", recovery_paths=interrupted_paths)
+            return JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR", recovery_paths=interrupted_paths)
 
     def _recover_from_backup(
         self,
@@ -141,7 +222,15 @@ class DurableJsonRepository:
         primary_error_code: str,
         recovery_paths: tuple[Path, ...],
     ) -> JsonReadOutcome:
-        quarantine_path = self._quarantine(path)
+        try:
+            quarantine_path = self._quarantine(path)
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(fallback, "permission", "primary", "JSON_PERMISSION_DENIED", recovery_paths=recovery_paths)
+            if isinstance(exc, FileNotFoundError):
+                quarantine_path = None
+            else:
+                return JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR", recovery_paths=recovery_paths)
         backup_path = self.backup_path(path)
         try:
             recovered = self._decode(backup_path)
@@ -165,7 +254,7 @@ class DurableJsonRepository:
                 quarantine_path,
                 recovery_paths,
             )
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except (UnicodeError, json.JSONDecodeError):
             return JsonReadOutcome(
                 fallback,
                 "corrupt",
@@ -174,7 +263,53 @@ class DurableJsonRepository:
                 quarantine_path,
                 recovery_paths,
             )
-        self._write_unlocked(path, recovered, preserve_backup=False)
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                return JsonReadOutcome(
+                    fallback,
+                    "permission",
+                    "backup",
+                    "JSON_PERMISSION_DENIED",
+                    quarantine_path,
+                    recovery_paths,
+                )
+            if isinstance(exc, FileNotFoundError):
+                return JsonReadOutcome(
+                    fallback,
+                    "corrupt",
+                    "fallback",
+                    "JSON_CORRUPT",
+                    quarantine_path,
+                    recovery_paths,
+                )
+            return JsonReadOutcome(
+                fallback,
+                "io-error",
+                "backup",
+                "JSON_IO_ERROR",
+                quarantine_path,
+                recovery_paths,
+            )
+        try:
+            self._write_unlocked(path, recovered, preserve_backup=False)
+        except JsonRepositoryPermissionError:
+            return JsonReadOutcome(
+                fallback,
+                "permission",
+                "backup",
+                "JSON_PERMISSION_DENIED",
+                quarantine_path,
+                recovery_paths,
+            )
+        except OSError:
+            return JsonReadOutcome(
+                fallback,
+                "io-error",
+                "backup",
+                "JSON_IO_ERROR",
+                quarantine_path,
+                recovery_paths,
+            )
         return JsonReadOutcome(
             recovered,
             "recovered",
@@ -185,9 +320,17 @@ class DurableJsonRepository:
         )
 
     def write(self, path: Path, value: Any, *, preserve_backup: bool = True) -> None:
-        with self._path_lock(path):
-            with self._file_lock(path):
-                self._write_unlocked(path, value, preserve_backup=preserve_backup)
+        path = Path(path)
+        try:
+            with self._path_lock(path):
+                with self._file_lock(path):
+                    self._write_unlocked(path, value, preserve_backup=preserve_backup)
+        except JsonRepositoryPermissionError:
+            raise
+        except OSError as exc:
+            if self._is_permission_error(exc):
+                raise JsonRepositoryPermissionError(path, "write", exc) from exc
+            raise
 
     def _write_unlocked(self, path: Path, value: Any, *, preserve_backup: bool = True) -> None:
         path = Path(path)
@@ -208,10 +351,17 @@ class DurableJsonRepository:
                 self.before_replace(temp_path, path)
             self._replace_with_permission_retry(temp_path, path)
             replaced = True
+            if self.after_replace is not None:
+                self.after_replace(temp_path, path)
             self._fsync_directory(path.parent)
         except BaseException:
             if replaced and had_primary:
-                self._restore_backup(path)
+                try:
+                    self._restore_backup(path)
+                except BaseException:
+                    # Preserve the original failure. The backup remains as
+                    # recovery evidence when the rollback itself is blocked.
+                    pass
             raise
         finally:
             if temp_path.exists():
@@ -242,49 +392,86 @@ class DurableJsonRepository:
             return
         rollback = path.with_name(f"{path.name}.rollback-{uuid.uuid4().hex}")
         try:
-            shutil.copyfile(backup, rollback)
-            os.replace(rollback, path)
+            with backup.open("rb") as source_handle, rollback.open("wb") as target_handle:
+                shutil.copyfileobj(source_handle, target_handle)
+                target_handle.flush()
+                os.fsync(target_handle.fileno())
+            cls._replace_with_permission_retry(rollback, path)
         finally:
             if rollback.exists():
                 rollback.unlink()
 
-    @staticmethod
-    def _replace_with_permission_retry(source: Path, target: Path) -> None:
+    @classmethod
+    def _replace_with_permission_retry(cls, source: Path, target: Path) -> None:
         last_error = None
         for attempt in range(8):
             try:
                 os.replace(source, target)
                 return
-            except PermissionError as exc:
+            except OSError as exc:
+                if not cls._is_permission_error(exc):
+                    raise
                 last_error = exc
                 if attempt == 7:
-                    raise
+                    raise JsonRepositoryPermissionError(target, "replace", exc) from exc
                 time.sleep(0.01 * (attempt + 1))
         if last_error is not None:
             raise last_error
 
-    @staticmethod
-    def _quarantine(path: Path) -> Path:
+    @classmethod
+    def _quarantine(cls, path: Path) -> Path:
         quarantine_path = path.with_name(f"{path.name}.corrupt-{uuid.uuid4().hex}")
         os.replace(path, quarantine_path)
+        cls._prune_artifacts(path, "corrupt")
         return quarantine_path
 
-    @staticmethod
-    def _quarantine_temps(path: Path) -> tuple[Path, ...]:
+    @classmethod
+    def _quarantine_temps(cls, path: Path) -> tuple[Path, ...]:
         quarantined = []
         for temporary in path.parent.glob(f"{path.name}.tmp-*"):
             quarantine_path = temporary.with_name(f"{temporary.name}.interrupted-{uuid.uuid4().hex}")
             os.replace(temporary, quarantine_path)
             quarantined.append(quarantine_path)
+        cls._prune_artifacts(path, "interrupted")
         return tuple(quarantined)
+
+    @classmethod
+    def _prune_artifacts(cls, path: Path, kind: str) -> None:
+        pattern = f"{path.name}.{kind}-*" if kind == "corrupt" else f"{path.name}.tmp-*.interrupted-*"
+        candidates = []
+        for candidate in path.parent.glob(pattern):
+            try:
+                candidates.append((candidate.stat().st_mtime_ns, candidate))
+            except OSError:
+                continue
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        for _, candidate in candidates[cls._max_recovery_artifacts:]:
+            try:
+                candidate.unlink()
+            except OSError:
+                pass
+
+    @staticmethod
+    def _is_permission_error(exc: BaseException) -> bool:
+        if isinstance(exc, PermissionError):
+            return True
+        return (
+            getattr(exc, "errno", None) in {errno.EACCES, errno.EPERM}
+            or getattr(exc, "winerror", None) in {5, 32, 33}
+        )
 
     @staticmethod
     def _fsync_directory(directory: Path) -> None:
         flags = getattr(os, "O_DIRECTORY", 0) | os.O_RDONLY
         try:
             descriptor = os.open(str(directory), flags)
-        except OSError:
-            return
+        except OSError as exc:
+            # Windows does not expose a directory fsync handle. Other
+            # filesystem failures (including ENOSPC) must remain visible so
+            # the caller can roll the canonical file back to its backup.
+            if os.name == "nt" and DurableJsonRepository._is_permission_error(exc):
+                return
+            raise
         try:
             os.fsync(descriptor)
         finally:

@@ -2,12 +2,15 @@ import hashlib
 import json
 import shutil
 import threading
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .core import build_history_item
 from .durable_json import (
     DurableJsonRepository,
+    JsonReadOutcome,
+    JsonRepositoryPermissionError,
     JsonRepositoryReadError,
     JsonValidationError,
 )
@@ -33,9 +36,26 @@ class WorkflowStateConflictError(RuntimeError):
         self.actual_revision = actual_revision
 
 
+class WorkflowStatePermissionError(PermissionError):
+    def __init__(self, domain: str, outcome: JsonReadOutcome | None = None, cause: BaseException | None = None):
+        super().__init__(f"{domain} state permission denied")
+        self.domain = domain
+        self.outcome = outcome
+        self.cause = cause
+
+
+class WorkflowStatePersistenceError(OSError):
+    def __init__(self, domain: str, outcome: JsonReadOutcome | None = None, cause: BaseException | None = None):
+        super().__init__(f"{domain} state persistence failed")
+        self.domain = domain
+        self.outcome = outcome
+        self.cause = cause
+
+
 WORKFLOW_STATE_SCHEMA_VERSION = 1
 JOBS_DOMAIN = "workflow.jobs"
 HISTORY_DOMAIN = "workflow.history"
+_MISSING = object()
 
 
 def _canonical_json(value) -> str:
@@ -100,6 +120,141 @@ def _document_revision(document: dict) -> int:
     if "schemaVersion" not in document:
         return 0
     return int(document.get("revision") or 0)
+
+
+def _item_key(item: dict) -> str | None:
+    if not isinstance(item, dict) or not item.get("jobId"):
+        return None
+    return str(item.get("jobId"))
+
+
+def _keyed_items(items) -> tuple[dict[str, dict], list[str], list[dict]]:
+    keyed: dict[str, dict] = {}
+    order: list[str] = []
+    unkeyed: list[dict] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        key = _item_key(item)
+        if key is None:
+            unkeyed.append(item)
+            continue
+        keyed[key] = item
+        if key not in order:
+            order.append(key)
+    return keyed, order, unkeyed
+
+
+def _ordered_items(values: dict[str, dict], current_order: list[str], incoming_order: list[str], unkeyed: list[dict]) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = set()
+    for key in [*current_order, *incoming_order]:
+        if key in seen or key not in values:
+            continue
+        seen.add(key)
+        result.append(values[key])
+    result.extend(unkeyed)
+    return result
+
+
+def _merge_snapshot_three_way(
+    base_items,
+    current_items,
+    incoming_items,
+    *,
+    domain: str,
+    expected_revision: int,
+    actual_revision: int,
+) -> list[dict]:
+    """Merge a full collection update without turning it into last-write-wins."""
+    base, _base_order, _base_unkeyed = _keyed_items(base_items)
+    current, current_order, current_unkeyed = _keyed_items(current_items)
+    incoming, incoming_order, incoming_unkeyed = _keyed_items(incoming_items)
+    merged = dict(current)
+    conflicts: list[str] = []
+
+    for key in sorted(set(base) | set(current) | set(incoming)):
+        base_item = base.get(key, _MISSING)
+        current_item = current.get(key, _MISSING)
+        incoming_item = incoming.get(key, _MISSING)
+
+        if base_item is _MISSING:
+            # A stale full snapshot did not know this key. Preserve a current
+            # insert unless it also tries to write a different value.
+            if current_item is _MISSING:
+                if incoming_item is not _MISSING:
+                    merged[key] = incoming_item
+            elif incoming_item is not _MISSING and current_item != incoming_item:
+                conflicts.append(key)
+            continue
+
+        current_changed = current_item != base_item
+        incoming_changed = incoming_item != base_item
+        if current_changed and incoming_changed and current_item != incoming_item:
+            conflicts.append(key)
+        elif incoming_changed:
+            if incoming_item is _MISSING:
+                merged.pop(key, None)
+            else:
+                merged[key] = incoming_item
+        elif current_item is _MISSING:
+            merged.pop(key, None)
+
+    if conflicts:
+        raise WorkflowStateConflictError(
+            domain,
+            conflicts,
+            expected_revision=expected_revision,
+            actual_revision=actual_revision,
+        )
+    return _ordered_items(merged, current_order, incoming_order, [*current_unkeyed, *incoming_unkeyed])
+
+
+def _merge_single_item_three_way(
+    base_items,
+    current_items,
+    incoming_item: dict | None,
+    *,
+    job_id: str,
+    operation: str,
+    domain: str,
+    expected_revision: int,
+    actual_revision: int,
+) -> tuple[list[dict], dict | None]:
+    """Apply one upsert/delete against a three-way collection view."""
+    base, _base_order, _base_unkeyed = _keyed_items(base_items)
+    current, current_order, current_unkeyed = _keyed_items(current_items)
+    base_item = base.get(job_id, _MISSING)
+    current_item = current.get(job_id, _MISSING)
+
+    if operation == "delete":
+        # A delete is an explicit mutation even when the base snapshot did not
+        # contain the key. This prevents a stale tab from deleting a job that
+        # another writer inserted after its empty load.
+        changed_since_base = current_item != base_item
+        if changed_since_base and current_item is not _MISSING:
+            raise WorkflowStateConflictError(
+                domain,
+                [job_id],
+                expected_revision=expected_revision,
+                actual_revision=actual_revision,
+            )
+        removed = None if current_item is _MISSING else current_item
+        current.pop(job_id, None)
+        return _ordered_items(current, current_order, [], current_unkeyed), removed
+
+    if incoming_item is None:
+        raise ValueError("upsert requires an item")
+    if current_item != base_item and current_item != incoming_item:
+        raise WorkflowStateConflictError(
+            domain,
+            [job_id],
+            expected_revision=expected_revision,
+            actual_revision=actual_revision,
+        )
+    current[job_id] = incoming_item
+    order = [job_id, *[key for key in current_order if key != job_id]]
+    return _ordered_items(current, order, [], current_unkeyed), incoming_item
 
 
 def _read_json(path: Path, fallback):
@@ -192,10 +347,10 @@ class WorkflowHistoryStore:
 
     def _record_outcome(self, domain: str, outcome) -> None:
         self.last_read_outcomes[domain] = outcome
-        if outcome.status not in {"corrupt", "interrupted", "unsupported"} and isinstance(outcome.value, dict):
+        if outcome.status not in {"corrupt", "interrupted", "unsupported", "permission", "io-error"} and isinstance(outcome.value, dict):
             self._known_revisions[domain] = _document_revision(outcome.value)
             key = "jobs" if domain == "jobs" else "items"
-            self._known_payloads[domain] = _document_payload(outcome.value, key)
+            self._known_payloads[domain] = deepcopy(_document_payload(outcome.value, key))
 
     def _save_domain(self, domain: str, path: Path, key: str, fallback: dict, transform) -> dict:
         validator = self._validator(
@@ -228,9 +383,24 @@ class WorkflowHistoryStore:
             self._record_outcome(domain, exc.outcome)
             self._require_recoverable(domain, path, exc.outcome)
             raise
+        except JsonRepositoryPermissionError as exc:
+            outcome = JsonReadOutcome(
+                fallback,
+                "permission",
+                "primary",
+                "JSON_PERMISSION_DENIED",
+            )
+            self._record_outcome(domain, outcome)
+            raise WorkflowStatePermissionError(domain, outcome, exc) from exc
+        except OSError as exc:
+            if getattr(exc, "error_code", None) == "JSON_IO_ERROR":
+                outcome = JsonReadOutcome(fallback, "io-error", "primary", "JSON_IO_ERROR")
+                self._record_outcome(domain, outcome)
+                raise WorkflowStatePersistenceError(domain, outcome, exc) from exc
+            raise
         self._record_outcome(domain, outcome)
         self._known_revisions[domain] = _document_revision(value)
-        self._known_payloads[domain] = _document_payload(value, key)
+        self._known_payloads[domain] = deepcopy(_document_payload(value, key))
         return value
 
     def load_jobs(self) -> list[dict]:
@@ -251,28 +421,11 @@ class WorkflowHistoryStore:
         with self.lock:
             incoming = [item for item in jobs if isinstance(item, dict)]
             base_jobs = self._known_payloads.get("jobs", {}).get("jobs") or []
-            base_by_id = {
-                str(item.get("jobId")): item
-                for item in base_jobs
-                if isinstance(item, dict) and item.get("jobId")
-            }
-            incoming_by_id = {
-                str(item.get("jobId")): item
-                for item in incoming
-                if isinstance(item, dict) and item.get("jobId")
-            }
             expected_revision = self._known_revisions.get("jobs", 0)
-            protected_ids = set(self._protected_job_ids)
-            next_protected_ids = set()
 
             def transform(current, outcome):
                 current_revision = _document_revision(outcome.value) if isinstance(outcome.value, dict) else 0
                 current_jobs = list(current.get("jobs") or []) if isinstance(current, dict) else []
-                current_by_id = {
-                    str(item.get("jobId")): item
-                    for item in current_jobs
-                    if isinstance(item, dict) and item.get("jobId")
-                }
                 if current_revision < expected_revision:
                     raise WorkflowStateConflictError(
                         "jobs",
@@ -280,66 +433,18 @@ class WorkflowHistoryStore:
                         expected_revision=expected_revision,
                         actual_revision=current_revision,
                     )
-                if current_revision == expected_revision and not protected_ids:
-                    return _make_envelope(
-                        JOBS_DOMAIN,
-                        "jobs",
-                        {"jobs": list(incoming)},
-                        current_revision + 1,
-                    )
-
-                missing = object()
-                conflicts = []
-                merged = dict(current_by_id)
-                all_ids = sorted(set(base_by_id) | set(current_by_id) | set(incoming_by_id))
-                for job_id in all_ids:
-                    base_item = base_by_id.get(job_id, missing)
-                    current_item = current_by_id.get(job_id, missing)
-                    incoming_item = incoming_by_id.get(job_id, missing)
-                    protected = job_id in protected_ids
-
-                    if base_item is missing:
-                        if current_item is missing:
-                            if incoming_item is not missing:
-                                merged[job_id] = incoming_item
-                        elif incoming_item is missing:
-                            merged[job_id] = current_item
-                            next_protected_ids.add(job_id)
-                        elif current_item != incoming_item and not protected:
-                            conflicts.append(job_id)
-                        else:
-                            merged[job_id] = incoming_item
-                        continue
-
-                    current_changed = current_item != base_item
-                    incoming_changed = incoming_item != base_item
-                    if current_changed and incoming_changed and current_item != incoming_item:
-                        conflicts.append(job_id)
-                    elif incoming_changed:
-                        if incoming_item is missing:
-                            if protected:
-                                merged[job_id] = current_item
-                                next_protected_ids.add(job_id)
-                            else:
-                                merged.pop(job_id, None)
-                        else:
-                            merged[job_id] = incoming_item
-                    elif current_item is missing:
-                        merged.pop(job_id, None)
-                    else:
-                        merged[job_id] = current_item
-
-                if conflicts:
-                    raise WorkflowStateConflictError(
-                        "jobs",
-                        conflicts,
-                        expected_revision=expected_revision,
-                        actual_revision=current_revision,
-                    )
+                merged_jobs = _merge_snapshot_three_way(
+                    base_jobs,
+                    current_jobs,
+                    incoming,
+                    domain="jobs",
+                    expected_revision=expected_revision,
+                    actual_revision=current_revision,
+                )
                 return _make_envelope(
                     JOBS_DOMAIN,
                     "jobs",
-                    {"jobs": list(merged.values())},
+                    {"jobs": merged_jobs},
                     current_revision + 1,
                 )
 
@@ -355,10 +460,20 @@ class WorkflowHistoryStore:
                 self._record_outcome("jobs", exc.outcome)
                 self._require_recoverable("jobs", self.jobs_path, exc.outcome)
                 raise
+            except JsonRepositoryPermissionError as exc:
+                outcome = JsonReadOutcome({"jobs": []}, "permission", "primary", "JSON_PERMISSION_DENIED")
+                self._record_outcome("jobs", outcome)
+                raise WorkflowStatePermissionError("jobs", outcome, exc) from exc
+            except OSError as exc:
+                if getattr(exc, "error_code", None) == "JSON_IO_ERROR":
+                    outcome = JsonReadOutcome({"jobs": []}, "io-error", "primary", "JSON_IO_ERROR")
+                    self._record_outcome("jobs", outcome)
+                    raise WorkflowStatePersistenceError("jobs", outcome, exc) from exc
+                raise
             self._record_outcome("jobs", outcome)
             self._known_revisions["jobs"] = _document_revision(value)
-            self._known_payloads["jobs"] = _document_payload(value, "jobs")
-            self._protected_job_ids = next_protected_ids
+            self._known_payloads["jobs"] = deepcopy(_document_payload(value, "jobs"))
+            self._protected_job_ids.clear()
 
     def load_history(self) -> list[dict]:
         with self.lock:
@@ -375,6 +490,10 @@ class WorkflowHistoryStore:
 
     @staticmethod
     def _require_recoverable(domain: str, path: Path, outcome) -> None:
+        if outcome.status == "permission":
+            raise WorkflowStatePermissionError(domain, outcome)
+        if outcome.status == "io-error":
+            raise WorkflowStatePersistenceError(domain, outcome)
         if outcome.status in {"corrupt", "interrupted", "unsupported"}:
             raise WorkflowStateRecoveryError(domain, outcome)
         if outcome.status == "missing" and any(path.parent.glob(f"{path.name}.corrupt-*")):
@@ -382,23 +501,21 @@ class WorkflowHistoryStore:
 
     def upsert_history(self, manifest: dict) -> dict:
         item = build_history_item(manifest)
-        job_id = item.get("jobId")
+        job_id = str(item.get("jobId") or "")
         with self.lock:
             def transform(current, current_revision, expected_revision):
                 existing = list(current.get("items") or []) if isinstance(current, dict) else []
-                if expected_revision < current_revision:
-                    base_items = self._known_payloads.get("history", {}).get("items") or []
-                    base_item = next((entry for entry in base_items if entry.get("jobId") == job_id), None)
-                    current_item = next((entry for entry in existing if entry.get("jobId") == job_id), None)
-                    if base_item != current_item and current_item != item:
-                        raise WorkflowStateConflictError(
-                            "history",
-                            [str(job_id)],
-                            expected_revision=expected_revision,
-                            actual_revision=current_revision,
-                        )
-                items = [entry for entry in existing if entry.get("jobId") != job_id]
-                items.insert(0, item)
+                base_items = self._known_payloads.get("history", {}).get("items") or []
+                items, _ = _merge_single_item_three_way(
+                    base_items,
+                    existing,
+                    item,
+                    job_id=job_id,
+                    operation="upsert",
+                    domain="history",
+                    expected_revision=expected_revision,
+                    actual_revision=current_revision,
+                )
                 return {"items": items}
 
             self._save_domain("history", self.history_path, "items", {"items": []}, transform)
@@ -429,27 +546,23 @@ class WorkflowHistoryStore:
 
     def delete_history_item(self, job_id: str, delete_files: bool = False) -> dict:
         removed = None
+        job_id = str(job_id or "")
         with self.lock:
             def transform(current, current_revision, expected_revision):
                 nonlocal removed
-                items = []
                 existing = list(current.get("items") or []) if isinstance(current, dict) else []
-                if expected_revision < current_revision:
-                    base_items = self._known_payloads.get("history", {}).get("items") or []
-                    base_item = next((entry for entry in base_items if entry.get("jobId") == job_id), None)
-                    current_item = next((entry for entry in existing if entry.get("jobId") == job_id), None)
-                    if base_item is not None and current_item != base_item:
-                        raise WorkflowStateConflictError(
-                            "history",
-                            [str(job_id)],
-                            expected_revision=expected_revision,
-                            actual_revision=current_revision,
-                        )
-                for item in existing:
-                    if item.get("jobId") == job_id:
-                        removed = item
-                    else:
-                        items.append(item)
+                base_items = self._known_payloads.get("history", {}).get("items") or []
+                items, removed_item = _merge_single_item_three_way(
+                    base_items,
+                    existing,
+                    None,
+                    job_id=job_id,
+                    operation="delete",
+                    domain="history",
+                    expected_revision=expected_revision,
+                    actual_revision=current_revision,
+                )
+                removed = removed_item
                 return {"items": items}
 
             self._save_domain("history", self.history_path, "items", {"items": []}, transform)

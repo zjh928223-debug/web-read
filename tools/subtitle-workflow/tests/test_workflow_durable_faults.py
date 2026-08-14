@@ -1,6 +1,8 @@
 import errno
+import http.client
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -57,7 +59,325 @@ def _run_process_writer(package_root: Path, root: Path, index: int) -> subproces
     )
 
 
+def _run_same_job_process_writer(package_root: Path, root: Path, index: int) -> subprocess.Popen:
+    script = (
+        "from pathlib import Path\n"
+        "import sys\n"
+        "import time\n"
+        "from youtube_workflow.history import WorkflowHistoryStore, WorkflowStateConflictError\n"
+        "root = Path(sys.argv[1])\n"
+        "index = sys.argv[2]\n"
+        "ready = root / 'ready'\n"
+        "ready.mkdir(parents=True, exist_ok=True)\n"
+        "store = WorkflowHistoryStore(root / 'state', root / 'output')\n"
+        "store.load_jobs()\n"
+        "(ready / (index + '.ready')).write_text('ready', encoding='utf-8')\n"
+        "while len(list(ready.glob('*.ready'))) < 2:\n"
+        "    time.sleep(0.005)\n"
+        "try:\n"
+        "    store.save_jobs([{'jobId': 'same-process-job', 'status': 'writer-' + index}])\n"
+        "    (root / ('result-' + index)).write_text('ok', encoding='utf-8')\n"
+        "except WorkflowStateConflictError:\n"
+        "    (root / ('result-' + index)).write_text('conflict', encoding='utf-8')\n"
+    )
+    environment = dict(os.environ)
+    package_path = str(package_root)
+    environment["PYTHONPATH"] = package_path + os.pathsep + environment.get("PYTHONPATH", "")
+    return subprocess.Popen(
+        [sys.executable, "-c", script, str(root), str(index)],
+        cwd=package_root,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
 class WorkflowDurableFaultTests(unittest.TestCase):
+    def test_permission_read_is_typed_without_quarantine_or_backup_restore(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jobs.json"
+            repository = DurableJsonRepository()
+            repository.write(path, {"revision": 1})
+            repository.write(path, {"revision": 2})
+            repository.write(path, {"revision": 2})
+            primary_bytes = path.read_bytes()
+            backup_bytes = repository.backup_path(path).read_bytes()
+
+            with patch.object(
+                DurableJsonRepository,
+                "_decode",
+                side_effect=PermissionError(errno.EACCES, "sharing violation"),
+            ):
+                outcome = repository.read(path, fallback={"revision": 0})
+
+            self.assertEqual(outcome.status, "permission")
+            self.assertEqual(outcome.error_code, "JSON_PERMISSION_DENIED")
+            self.assertEqual(path.read_bytes(), primary_bytes)
+            self.assertEqual(repository.backup_path(path).read_bytes(), backup_bytes)
+            self.assertFalse(list(path.parent.glob("jobs.json.corrupt-*")))
+
+    def test_permission_write_exhaustion_is_typed_and_keeps_last_primary(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jobs.json"
+            repository = DurableJsonRepository()
+            repository.write(path, {"revision": 1})
+            primary_bytes = path.read_bytes()
+            original_replace = os.replace
+
+            def deny_primary(source, target):
+                if Path(target) == path:
+                    raise PermissionError(errno.EACCES, "sharing violation")
+                return original_replace(source, target)
+
+            with patch("youtube_workflow.durable_json.os.replace", side_effect=deny_primary):
+                with self.assertRaises(PermissionError) as raised:
+                    repository.write(path, {"revision": 2})
+
+            self.assertEqual(getattr(raised.exception, "error_code", None), "JSON_PERMISSION_DENIED")
+            self.assertEqual(path.read_bytes(), primary_bytes)
+            self.assertFalse(list(path.parent.glob("jobs.json.tmp-*")))
+            self.assertFalse(list(path.parent.glob("jobs.json.corrupt-*")))
+
+    def test_recovery_artifacts_are_bounded_while_lock_owner_stays_stable(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "jobs.json"
+            repository = DurableJsonRepository()
+            repository.write(path, {"revision": 1})
+            repository.write(path, {"revision": 2})
+            for _ in range(40):
+                path.write_text("broken", encoding="utf-8")
+                self.assertEqual(repository.read(path, fallback={"revision": 0}).status, "recovered")
+
+            self.assertLessEqual(len(list(path.parent.glob("jobs.json.corrupt-*"))), 32)
+            self.assertEqual(len(list(path.parent.glob(".jobs.json.lock"))), 1)
+            self.assertFalse(list(path.parent.glob("jobs.json.tmp-*")))
+
+    def test_stale_history_delete_conflicts_with_a_newly_inserted_same_job(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            writer_a = WorkflowHistoryStore(root / "state", root / "output")
+            writer_b = WorkflowHistoryStore(root / "state", root / "output")
+            writer_b.load_history()
+            writer_a.upsert_history({
+                "jobId": "job-x",
+                "status": "ready",
+                "outputDir": str(root / "output"),
+            })
+
+            with self.assertRaises(WorkflowStateConflictError) as raised:
+                writer_b.delete_history_item("job-x")
+
+            self.assertEqual(raised.exception.conflicts, ("job-x",))
+            self.assertEqual(writer_a.get_history_item("job-x")["jobId"], "job-x")
+
+    def test_unrecoverable_corrupt_state_cannot_be_replaced_by_a_later_save(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = WorkflowHistoryStore(root / "state", root / "output")
+            store.state_dir.mkdir(parents=True)
+            store.jobs_path.write_text("broken", encoding="utf-8")
+
+            with self.assertRaises(WorkflowStateRecoveryError):
+                store.load_jobs()
+            with self.assertRaises(WorkflowStateRecoveryError):
+                store.save_jobs([{"jobId": "must-not-overwrite"}])
+
+            self.assertFalse(store.jobs_path.exists())
+            self.assertTrue(list(store.state_dir.glob("jobs.json.corrupt-*")))
+
+    def test_idempotency_key_survives_restart_and_rejects_different_payload(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = WorkflowConfig(output_dir=root / "output", state_dir=root / "state")
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                persistence_delay_seconds=10,
+            )
+            try:
+                first = manager.create_job(
+                    {"url": "https://example.com/idempotent", "geminiMode": "mock"},
+                    idempotency_key="restart-key",
+                )
+            finally:
+                manager.close()
+
+            restarted = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                persistence_delay_seconds=10,
+            )
+            try:
+                retried = restarted.create_job(
+                    {"url": "https://example.com/idempotent", "geminiMode": "mock"},
+                    idempotency_key="restart-key",
+                )
+                self.assertEqual(retried["jobId"], first["jobId"])
+                with self.assertRaises(Exception) as raised:
+                    restarted.create_job(
+                        {"url": "https://example.com/different", "geminiMode": "mock"},
+                        idempotency_key="restart-key",
+                    )
+                self.assertEqual(getattr(raised.exception, "status_code", None), 409)
+            finally:
+                restarted.close()
+
+    def test_real_subprocess_termination_leaves_only_complete_old_or_new_envelope(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_root = Path(__file__).resolve().parents[1]
+            initial = WorkflowHistoryStore(root / "state", root / "output")
+            initial.save_jobs([{"jobId": "stable", "status": "queued"}])
+            script = (
+                "from pathlib import Path\n"
+                "import os\n"
+                "import sys\n"
+                "from youtube_workflow.durable_json import DurableJsonRepository\n"
+                "from youtube_workflow.history import WorkflowHistoryStore\n"
+                "root = Path(sys.argv[1])\n"
+                "phase = sys.argv[2]\n"
+                "def stop_before(_temporary, _target):\n"
+                "    os._exit(17)\n"
+                "def stop_after(_temporary, _target):\n"
+                "    os._exit(18)\n"
+                "repository = DurableJsonRepository(\n"
+                "    before_replace=stop_before if phase == 'before' else None,\n"
+                "    after_replace=stop_after if phase == 'after' else None,\n"
+                ")\n"
+                "store = WorkflowHistoryStore(root / 'state', root / 'output', json_repository=repository)\n"
+                "store.save_jobs([{'jobId': 'stable', 'status': 'queued'}, {'jobId': 'new', 'status': 'running'}])\n"
+            )
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = str(package_root) + os.pathsep + environment.get("PYTHONPATH", "")
+
+            for phase in ("before", "after"):
+                process = subprocess.Popen(
+                    [sys.executable, "-c", script, str(root), phase],
+                    cwd=package_root,
+                    env=environment,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                stdout, stderr = process.communicate(timeout=30)
+                self.assertNotEqual(process.returncode, 0, (phase, stdout, stderr))
+
+                recovered = WorkflowHistoryStore(root / "state", root / "output")
+                jobs = recovered.load_jobs()
+                document = json.loads(recovered.jobs_path.read_text(encoding="utf-8"))
+                self.assertGreaterEqual(document["revision"], 1)
+                self.assertEqual(
+                    {item["jobId"] for item in jobs},
+                    {"stable"} if phase == "before" else {"stable", "new"},
+                )
+                self.assertEqual(recovered.last_read_outcomes["jobs"].status, "ok")
+                self.assertFalse(
+                    [
+                        path
+                        for path in recovered.jobs_path.parent.glob("jobs.json.tmp-*")
+                        if ".interrupted-" not in path.name
+                    ]
+                )
+
+                if phase == "before":
+                    recovered.save_jobs([{"jobId": "stable", "status": "queued"}])
+
+    def test_real_loopback_disconnect_can_retry_create_with_same_idempotency_key(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_root = Path(__file__).resolve().parents[1]
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind(("127.0.0.1", 0))
+                port = probe.getsockname()[1]
+            script = (
+                "from pathlib import Path\n"
+                "import sys\n"
+                "import uvicorn\n"
+                "from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig\n"
+                "from youtube_workflow.service import JobManager, create_app\n"
+                "root = Path(sys.argv[1])\n"
+                "config = WorkflowConfig(output_dir=root / 'output', state_dir=root / 'state')\n"
+                "manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))\n"
+                "uvicorn.run(create_app(manager), host='127.0.0.1', port=int(sys.argv[2]), log_level='warning')\n"
+            )
+            environment = dict(os.environ)
+            environment["PYTHONPATH"] = str(package_root) + os.pathsep + environment.get("PYTHONPATH", "")
+            server = subprocess.Popen(
+                [sys.executable, "-c", script, str(root), str(port)],
+                cwd=package_root,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            body = json.dumps({"url": "https://example.com/disconnect", "geminiMode": "mock"}).encode("utf-8")
+            headers = {
+                "Host": f"127.0.0.1:{port}",
+                "Content-Type": "application/json",
+                "Content-Length": str(len(body)),
+                "Idempotency-Key": "disconnect-create-1",
+                "Connection": "close",
+            }
+            try:
+                health_deadline = time.time() + 15
+                while time.time() < health_deadline:
+                    try:
+                        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=1)
+                        connection.request("GET", "/api/health")
+                        response = connection.getresponse()
+                        response.read()
+                        connection.close()
+                        if response.status == 200:
+                            break
+                    except OSError:
+                        time.sleep(0.05)
+                else:
+                    self.fail("loopback workflow server did not become ready")
+
+                raw_request = (
+                    f"POST /api/jobs HTTP/1.1\r\n"
+                    f"Host: 127.0.0.1:{port}\r\n"
+                    "Content-Type: application/json\r\n"
+                    f"Content-Length: {len(body)}\r\n"
+                    "Idempotency-Key: disconnect-create-1\r\n"
+                    "Connection: close\r\n\r\n"
+                ).encode("ascii") + body
+                disconnected = socket.create_connection(("127.0.0.1", port), timeout=3)
+                disconnected.sendall(raw_request)
+                time.sleep(0.1)
+                disconnected.close()
+
+                jobs_path = root / "state" / "jobs.json"
+                deadline = time.time() + 15
+                job_id = None
+                while time.time() < deadline:
+                    try:
+                        document = json.loads(jobs_path.read_text(encoding="utf-8"))
+                        persisted_jobs = document.get("payload", {}).get("jobs", [])
+                        if persisted_jobs:
+                            job_id = persisted_jobs[0]["jobId"]
+                            break
+                    except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError):
+                        pass
+                    time.sleep(0.05)
+                self.assertIsNotNone(job_id, "disconnected request did not durably create a job")
+
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                connection.request("POST", "/api/jobs", body=body, headers=headers)
+                response = connection.getresponse()
+                retry_payload = json.loads(response.read().decode("utf-8"))
+                connection.close()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(retry_payload["jobId"], job_id)
+            finally:
+                server.terminate()
+                try:
+                    server.communicate(timeout=15)
+                except subprocess.TimeoutExpired:
+                    server.kill()
+                    server.communicate(timeout=15)
+
     def test_independent_process_writers_keep_jobs_and_history(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -78,6 +398,26 @@ class WorkflowDurableFaultTests(unittest.TestCase):
             self.assertEqual(
                 {item["jobId"] for item in store.load_history()},
                 {f"process-{index}" for index in range(4)},
+            )
+
+    def test_independent_process_writers_conflict_for_the_same_job(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package_root = Path(__file__).resolve().parents[1]
+            initial = WorkflowHistoryStore(root / "state", root / "output")
+            initial.save_jobs([{"jobId": "same-process-job", "status": "queued"}])
+            processes = [_run_same_job_process_writer(package_root, root, index) for index in range(2)]
+            failures = []
+            for process in processes:
+                stdout, stderr = process.communicate(timeout=30)
+                if process.returncode != 0:
+                    failures.append({"returncode": process.returncode, "stdout": stdout, "stderr": stderr})
+            self.assertEqual(failures, [])
+            results = [(root / f"result-{index}").read_text(encoding="utf-8") for index in range(2)]
+            self.assertEqual(sorted(results), ["conflict", "ok"])
+            self.assertIn(
+                WorkflowHistoryStore(root / "state", root / "output").load_jobs()[0]["status"],
+                {"writer-0", "writer-1"},
             )
 
     def test_concurrent_history_writers_keep_all_distinct_jobs(self):

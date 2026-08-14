@@ -23,7 +23,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import urlopen
 from ipaddress import ip_address
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
@@ -60,6 +60,7 @@ ALLOWED_STATUSES = {"queued", "downloading", "transcribing", "segmenting", "tran
 DEFAULT_JOB_EVENT_LIMIT = 500
 DEFAULT_TERMINAL_SUMMARY_LIMIT = 5
 DEFAULT_REQUEST_METRIC_SAMPLE_LIMIT = 512
+MAX_IDEMPOTENCY_KEY_LENGTH = 256
 AUDIO_EXTENSIONS = {
     ".aac",
     ".flac",
@@ -78,6 +79,26 @@ VIDEO_EXTENSIONS = {
     ".webm",
     ".wmv",
 }
+
+
+def _normalize_idempotency_key(value: object) -> str:
+    key = str(value or "").strip()
+    if len(key) > MAX_IDEMPOTENCY_KEY_LENGTH:
+        raise HTTPException(status_code=400, detail="Idempotency-Key is too long")
+    return key
+
+
+def _request_fingerprint(request: WorkflowRequest, *, operation: str, subject: str = "", payload: dict | None = None) -> str:
+    descriptor = {
+        "operation": operation,
+        "subject": subject,
+        "request": request.safe_manifest_request(),
+        "payload": payload or {},
+    }
+    if request.api_key:
+        descriptor["apiKeyDigest"] = hashlib.sha256(request.api_key.encode("utf-8")).hexdigest()
+    canonical = json.dumps(descriptor, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 IGNORED_IMPORT_JSON_NAMES = {
     "checkpoint.json",
     "input.json",
@@ -617,9 +638,19 @@ def open_system_video_picker(initial_dir: str = "") -> str:
 
 
 class JobRecord:
-    def __init__(self, job_id: str, request: WorkflowRequest, event_limit: int = DEFAULT_JOB_EVENT_LIMIT):
+    def __init__(
+        self,
+        job_id: str,
+        request: WorkflowRequest,
+        event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
+        *,
+        idempotency_key: str = "",
+        idempotency_fingerprint: str = "",
+    ):
         self.job_id = job_id
         self.request = request
+        self.idempotency_key = str(idempotency_key or "").strip()
+        self.idempotency_fingerprint = str(idempotency_fingerprint or "").strip()
         self.status = "queued"
         self.stage = "queued"
         self.created_at = utc_now_iso()
@@ -691,6 +722,9 @@ class JobRecord:
                 snapshot["retryStage"] = self.retry_stage
             if self.import_plan:
                 snapshot["importPlan"] = self.import_plan
+            if self.idempotency_key:
+                snapshot["idempotencyKey"] = self.idempotency_key
+                snapshot["idempotencyFingerprint"] = self.idempotency_fingerprint
             return snapshot
 
     def add_event(self, event: dict) -> None:
@@ -734,7 +768,13 @@ class JobRecord:
     @classmethod
     def from_snapshot(cls, snapshot: dict, event_limit: int = DEFAULT_JOB_EVENT_LIMIT) -> "JobRecord":
         request = WorkflowRequest.from_payload((snapshot or {}).get("request") or {})
-        record = cls(str(snapshot.get("jobId") or uuid.uuid4().hex[:12]), request, event_limit=event_limit)
+        record = cls(
+            str(snapshot.get("jobId") or uuid.uuid4().hex[:12]),
+            request,
+            event_limit=event_limit,
+            idempotency_key=str(snapshot.get("idempotencyKey") or ""),
+            idempotency_fingerprint=str(snapshot.get("idempotencyFingerprint") or ""),
+        )
         with record.lock:
             record.status = str(snapshot.get("status") or "failed")
             record.stage = str(snapshot.get("stage") or record.status)
@@ -904,24 +944,89 @@ class JobManager:
         if payload.get("whisperxPath"):
             self.config.whisperx_path = Path(str(payload.get("whisperxPath")))
 
-    def create_job(self, payload: dict) -> dict:
+    def _jobs_revision_locked(self) -> int:
+        return int(self.store._known_revisions.get("jobs", 0))
+
+    def _check_expected_revision_locked(self, expected_revision: int | None) -> None:
+        if expected_revision is None:
+            return
+        actual_revision = self._jobs_revision_locked()
+        if int(expected_revision) != actual_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "WORKFLOW_STATE_CONFLICT",
+                    "domain": "jobs",
+                    "expectedRevision": int(expected_revision),
+                    "currentRevision": actual_revision,
+                },
+            )
+
+    def _find_idempotent_job_locked(self, key: str, fingerprint: str) -> JobRecord | None:
+        if not key:
+            return None
+        for record in self.jobs.values():
+            if record.idempotency_key != key:
+                continue
+            if record.idempotency_fingerprint != fingerprint:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
+                        "message": "Idempotency-Key was already used for a different mutation",
+                    },
+                )
+            return record
+        return None
+
+    def create_job(
+        self,
+        payload: dict,
+        *,
+        idempotency_key: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict:
         self._require_domain_writable("jobs")
         self._require_domain_writable("history")
+        idempotency_key = _normalize_idempotency_key(
+            idempotency_key if idempotency_key is not None else (payload or {}).get("idempotencyKey")
+        )
         try:
             request = WorkflowRequest.from_payload(payload)
             request = self._with_saved_credential(request)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        fingerprint = _request_fingerprint(request, operation="create")
         job_id = uuid.uuid4().hex[:12]
-        record = JobRecord(job_id, request, event_limit=self.event_limit)
+        record = JobRecord(
+            job_id,
+            request,
+            event_limit=self.event_limit,
+            idempotency_key=idempotency_key,
+            idempotency_fingerprint=fingerprint,
+        )
         record.on_change = self._record_changed
         with self.lock:
+            existing = self._find_idempotent_job_locked(idempotency_key, fingerprint)
+            if existing is not None:
+                snapshot = existing.public_snapshot()
+                snapshot["revision"] = self._jobs_revision_locked()
+                snapshot["idempotent"] = True
+                return snapshot
+            self._check_expected_revision_locked(expected_revision)
             self.jobs[job_id] = record
             self.pending.append(record)
-            self._persist_jobs_locked()
+            try:
+                self._persist_jobs_locked()
+            except BaseException:
+                self.pending = [item for item in self.pending if item.job_id != job_id]
+                self.jobs.pop(job_id, None)
+                raise
             self._ensure_worker_locked()
         self.append_service_log(f"job queued {job_id} mode={request.gemini_mode} url={request.url}")
-        return record.public_snapshot()
+        snapshot = record.public_snapshot()
+        snapshot["revision"] = self._jobs_revision_locked()
+        return snapshot
 
     def pick_import_folder(self, payload: dict | None = None) -> dict:
         initial_dir = str((payload or {}).get("initialDir") or (payload or {}).get("initialPath") or "").strip()
@@ -1577,10 +1682,11 @@ class JobManager:
             "missingJobIds": missing_ids,
         }
 
-    def cancel_job(self, job_id: str) -> dict:
+    def cancel_job(self, job_id: str, *, expected_revision: int | None = None) -> dict:
         record = self.get_job(job_id)
-        record.cancel_event.set()
         with self.lock:
+            self._check_expected_revision_locked(expected_revision)
+            record.cancel_event.set()
             if record in self.pending:
                 self.pending = [item for item in self.pending if item.job_id != job_id]
                 self._mark_canceled(record, "任务已取消。")
@@ -1590,9 +1696,10 @@ class JobManager:
             runner.cancel()
         return record.public_snapshot()
 
-    def prioritize_job(self, job_id: str) -> dict:
+    def prioritize_job(self, job_id: str, *, expected_revision: int | None = None) -> dict:
         record = self.get_job(job_id)
         with self.lock:
+            self._check_expected_revision_locked(expected_revision)
             if record not in self.pending:
                 raise HTTPException(status_code=409, detail="only queued jobs can be prioritized")
             self.pending = [item for item in self.pending if item.job_id != job_id]
@@ -1626,8 +1733,18 @@ class JobManager:
             self._ensure_worker_locked()
         return record.public_snapshot()
 
-    def retry_job(self, job_id: str, payload: dict | None = None) -> dict:
+    def retry_job(
+        self,
+        job_id: str,
+        payload: dict | None = None,
+        *,
+        idempotency_key: str | None = None,
+        expected_revision: int | None = None,
+    ) -> dict:
         payload = payload or {}
+        idempotency_key = _normalize_idempotency_key(
+            idempotency_key if idempotency_key is not None else payload.get("idempotencyKey")
+        )
         original = self.get_job(job_id)
         if original.status not in {"failed", "ready"}:
             raise HTTPException(status_code=409, detail="only failed or ready jobs can be retried")
@@ -1650,19 +1767,46 @@ class JobManager:
             raise HTTPException(status_code=409, detail=str(exc))
         if request.gemini_mode == "real" and not request.api_key:
             raise HTTPException(status_code=409, detail="apiKey is required to retry a real Gemini job after it is no longer in memory")
+        fingerprint = _request_fingerprint(
+            request,
+            operation="retry",
+            subject=job_id,
+            payload={"stage": retry_stage, "videoPriority": request.video_priority},
+        )
         new_id = uuid.uuid4().hex[:12]
-        record = JobRecord(new_id, request, event_limit=self.event_limit)
-        record.on_change = self._record_changed
+        record = JobRecord(
+            new_id,
+            request,
+            event_limit=self.event_limit,
+            idempotency_key=idempotency_key,
+            idempotency_fingerprint=fingerprint,
+        )
+        record.on_change = None
         record.retry_of = job_id
         record.retry_stage = retry_stage
         record.retry_source_manifest = previous_manifest
         record.add_event({"jobId": new_id, "status": "queued", "stage": "queued", "message": f"已设为下一项阶段重试：{retry_stage}"})
         with self.lock:
+            existing = self._find_idempotent_job_locked(idempotency_key, fingerprint)
+            if existing is not None:
+                snapshot = existing.public_snapshot()
+                snapshot["revision"] = self._jobs_revision_locked()
+                snapshot["idempotent"] = True
+                return snapshot
+            self._check_expected_revision_locked(expected_revision)
             self.jobs[new_id] = record
             self.pending.insert(0, record)
-            self._persist_jobs_locked()
+            record.on_change = self._record_changed
+            try:
+                self._persist_jobs_locked()
+            except BaseException:
+                self.pending = [item for item in self.pending if item.job_id != new_id]
+                self.jobs.pop(new_id, None)
+                raise
             self._ensure_worker_locked()
-        return record.public_snapshot()
+        snapshot = record.public_snapshot()
+        snapshot["revision"] = self._jobs_revision_locked()
+        return snapshot
 
     def _mark_canceled(self, record: JobRecord, message: str) -> None:
         with record.lock:
@@ -2905,6 +3049,19 @@ def _is_allowed_loopback_origin(value: str) -> bool:
     }
 
 
+def _expected_revision_from_request(request: Request) -> int | None:
+    raw = request.headers.get("x-expected-revision") or request.headers.get("if-match")
+    if raw is None or not str(raw).strip():
+        return None
+    normalized = str(raw).strip().strip('"')
+    if normalized.startswith("W/"):
+        normalized = normalized[2:].strip().strip('"')
+    try:
+        return int(normalized)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="expected revision must be an integer") from exc
+
+
 def create_app(
     manager: JobManager | None = None,
     access_token: str | None = None,
@@ -2975,7 +3132,7 @@ def create_app(
         ],
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
-        allow_headers=["content-type", "x-read-web-token"],
+        allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision"],
     )
 
     @app.get("/api/health")
@@ -3089,8 +3246,12 @@ def create_app(
         return manager.cleanup_outputs(payload)
 
     @app.post("/api/jobs")
-    def create_job(payload: dict):
-        return manager.create_job(payload)
+    def create_job(payload: dict, request: Request):
+        return manager.create_job(
+            payload,
+            idempotency_key=request.headers.get("idempotency-key"),
+            expected_revision=_expected_revision_from_request(request),
+        )
 
     @app.post("/api/jobs/clear-canceled")
     def clear_canceled_jobs():
@@ -3168,20 +3329,25 @@ def create_app(
         return StreamingResponse(stream(), media_type="text/event-stream")
 
     @app.post("/api/jobs/{job_id}/cancel")
-    def cancel_job(job_id: str):
-        return manager.cancel_job(job_id)
+    def cancel_job(job_id: str, request: Request):
+        return manager.cancel_job(job_id, expected_revision=_expected_revision_from_request(request))
 
     @app.post("/api/jobs/{job_id}/prioritize")
-    def prioritize_job(job_id: str):
-        return manager.prioritize_job(job_id)
+    def prioritize_job(job_id: str, request: Request):
+        return manager.prioritize_job(job_id, expected_revision=_expected_revision_from_request(request))
 
     @app.post("/api/jobs/{job_id}/redo")
     def redo_job(job_id: str):
         return manager.redo_job(job_id)
 
     @app.post("/api/jobs/{job_id}/retry")
-    def retry_job(job_id: str, payload: dict | None = None):
-        return manager.retry_job(job_id, payload)
+    def retry_job(job_id: str, payload: dict | None = None, request: Request = None):
+        return manager.retry_job(
+            job_id,
+            payload,
+            idempotency_key=request.headers.get("idempotency-key") if request else None,
+            expected_revision=_expected_revision_from_request(request) if request else None,
+        )
 
     @app.post("/api/jobs/{job_id}/video-source")
     def bind_video_source(job_id: str, payload: dict | None = None):
