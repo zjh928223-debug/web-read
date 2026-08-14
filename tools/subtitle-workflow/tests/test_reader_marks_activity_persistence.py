@@ -37,6 +37,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     {
                         "marks": [{"globalIndex": index, "word": f"mark-{index}"}],
                         "expectedRevision": marks_revision,
+                        "operationId": f"same-revision-mark-operation-{index}",
                     }
                     for index in (1, 2)
                 ]
@@ -49,13 +50,20 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                 mark_conflict = next(response for response in mark_responses if response.status_code == 409)
                 self.assertEqual(mark_conflict.json()["detail"]["code"], "READER_MARKS_REVISION_CONFLICT")
                 self.assertEqual(mark_conflict.json()["detail"]["category"], "conflict")
-                self.assertEqual(client.get(f"/api/jobs/{job_id}/reader-marks").json()["revision"], marks_revision + 1)
+                marks_authoritative = client.get(f"/api/jobs/{job_id}/reader-marks").json()
+                self.assertEqual(marks_authoritative["revision"], marks_revision + 1)
+                conflict_mark_index = next(index for index, response in enumerate(mark_responses) if response.status_code == 409)
+                mark_retry_payload = dict(mark_payloads[conflict_mark_index])
+                mark_retry_payload["expectedRevision"] = marks_authoritative["revision"]
+                mark_retry = client.post(f"/api/jobs/{job_id}/reader-marks", json=mark_retry_payload)
+                self.assertEqual(mark_retry.status_code, 200)
+                self.assertEqual(mark_retry.json()["revision"], marks_authoritative["revision"] + 1)
 
                 activity_revision = client.get(f"/api/jobs/{job_id}/reader-activity").json()["revision"]
                 activity_payloads = [
                     {
                         "jobId": job_id,
-                        "event": "progress",
+                        "event": "open",
                         "sessionId": f"same-revision-{index}",
                         "positionSeconds": index,
                         "expectedRevision": activity_revision,
@@ -72,9 +80,21 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                 activity_conflict = next(response for response in activity_responses if response.status_code == 409)
                 self.assertEqual(activity_conflict.json()["detail"]["code"], "READER_ACTIVITY_REVISION_CONFLICT")
                 self.assertEqual(activity_conflict.json()["detail"]["category"], "conflict")
+                activity_authoritative = client.get(f"/api/jobs/{job_id}/reader-activity").json()
+                self.assertEqual(activity_authoritative["revision"], activity_revision + 1)
+                conflict_activity_index = next(index for index, response in enumerate(activity_responses) if response.status_code == 409)
+                activity_retry_payload = dict(activity_payloads[conflict_activity_index])
+                activity_retry_payload["expectedRevision"] = activity_authoritative["revision"]
+                activity_retry = client.post("/api/reader/activity", json=activity_retry_payload)
+                self.assertEqual(activity_retry.status_code, 200)
+                self.assertEqual(activity_retry.json()["revision"], activity_authoritative["revision"] + 1)
+                final_activity = client.get(f"/api/jobs/{job_id}/reader-activity").json()
+                self.assertEqual(len(final_activity["sessions"]), len(activity_authoritative["sessions"]) + 1)
                 self.assertEqual(
-                    client.get(f"/api/jobs/{job_id}/reader-activity").json()["revision"],
-                    activity_revision + 1,
+                    [item["sessionId"] for item in final_activity["sessions"]].count(
+                        activity_payloads[conflict_activity_index]["sessionId"]
+                    ),
+                    1,
                 )
             finally:
                 client_a.close()
@@ -91,6 +111,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     json={
                         "marks": [{"globalIndex": 7, "word": "stable"}],
                         "expectedRevision": 0,
+                        "operationId": "marks-stable-operation",
                     },
                 )
                 self.assertEqual(saved.status_code, 200)
@@ -105,6 +126,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     json={
                         "marks": [{"globalIndex": 8, "word": "quota-lost"}],
                         "expectedRevision": stable_revision,
+                        "operationId": "marks-quota-lost-operation",
                     },
                 )
                 self.assertEqual(quota.status_code, 507)
@@ -120,6 +142,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     json={
                         "marks": [{"globalIndex": 9, "word": "close-lost"}],
                         "expectedRevision": stable_revision,
+                        "operationId": "marks-close-lost-operation",
                     },
                 )
                 self.assertEqual(closed.status_code, 503)
@@ -140,7 +163,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     json={"marks": [{"globalIndex": 3, "word": "last-valid"}], "expectedRevision": 0},
                 )
                 self.assertEqual(saved.status_code, 200)
-                path = Path(saved.json()["path"])
+                path = self._reader_path(manager, job_id, "reader-marks.json")
                 envelope = json.loads(path.read_text(encoding="utf-8"))
                 envelope["marks"] = [{"globalIndex": 4, "word": "tampered"}]
                 path.write_text(json.dumps(envelope), encoding="utf-8")
@@ -226,7 +249,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                     f"/api/jobs/{job_id}/reader-marks",
                     json={"marks": [{"globalIndex": 1, "word": "mark"}], "expectedRevision": 0},
                 )
-                mark_path = Path(mark.json()["path"])
+                mark_path = self._reader_path(manager, job_id, "reader-marks.json")
                 mark_path.write_text(
                     json.dumps({"schemaVersion": "reader-marks.v99", "jobId": job_id, "revision": 99}),
                     encoding="utf-8",
@@ -256,7 +279,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                         "activityOperationId": "unknown-version-operation",
                     },
                 )
-                activity_path = Path(activity.json()["path"])
+                activity_path = self._reader_path(manager, job_id, "reader-activity.json")
                 activity_path.write_text(
                     json.dumps({"schemaVersion": "reader-activity.v99", "jobId": job_id, "revision": 99}),
                     encoding="utf-8",
@@ -304,7 +327,7 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                 }
                 saved = client.post("/api/reader/activity", json=payload)
                 self.assertEqual(saved.status_code, 200)
-                path = Path(saved.json()["path"])
+                path = self._reader_path(manager, job_id, "reader-activity.json")
                 stable_revision = saved.json()["revision"]
                 duplicate = client.post("/api/reader/activity", json=payload)
                 self.assertEqual(duplicate.status_code, 200)
@@ -323,6 +346,203 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
                 self.assertEqual(recovered.json()["lastEvent"], "close")
                 self.assertEqual(recovered.json()["revision"], stable_revision)
             finally:
+                client.close()
+                manager.close()
+
+    def test_public_marks_commit_receipt_repairs_manifest_and_history_after_post_commit_faults(self):
+        for fault in ("manifest", "history"):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as tmp:
+                manager, client, job_id = self._ready_service(Path(tmp))
+                fault_client = TestClient(
+                    client.app,
+                    base_url=isolated_base_url(),
+                    headers={"X-Read-Web-Token": ACCESS_TOKEN},
+                    raise_server_exceptions=False,
+                )
+                operation_id = f"marks-uow-{fault}"
+                payload = {
+                    "marks": [{"globalIndex": 12, "word": f"after-{fault}"}],
+                    "expectedRevision": 0,
+                    "operationId": operation_id,
+                }
+                original_json_write = manager.store.json_repository.write
+                original_history_write = manager.store.upsert_history
+                try:
+                    if fault == "manifest":
+                        def fail_manifest(path, value, **kwargs):
+                            if Path(path).name == "manifest.json":
+                                raise OSError("manifest replace fault after marks commit")
+                            return original_json_write(path, value, **kwargs)
+
+                        manager.store.json_repository.write = fail_manifest
+                    else:
+                        def fail_history(_manifest):
+                            raise OSError("history update fault after marks commit")
+
+                        manager.store.upsert_history = fail_history
+
+                    first = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                    self.assertEqual(first.status_code, 503)
+                    self.assertEqual(first.json()["detail"]["code"], "READER_MARKS_COMMIT_INCOMPLETE")
+                    self.assertEqual(first.json()["detail"]["category"], "storage")
+                    self.assertNotIn("path", first.json()["detail"])
+                    authoritative = client.get(f"/api/jobs/{job_id}/reader-marks")
+                    self.assertEqual(authoritative.status_code, 200)
+                    self.assertEqual(authoritative.json()["marks"][0]["word"], f"after-{fault}")
+
+                    if fault == "manifest":
+                        manager.store.json_repository.write = original_json_write
+                    else:
+                        manager.store.upsert_history = original_history_write
+                    retried = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                    self.assertEqual(retried.status_code, 200)
+                    self.assertEqual(retried.json()["revision"], authoritative.json()["revision"])
+                    self.assertEqual(retried.json()["marks"], authoritative.json()["marks"])
+
+                    session = client.get(f"/api/jobs/{job_id}/session").json()
+                    self.assertEqual(
+                        session["integrity"]["marks"]["sha256"],
+                        retried.json()["integrity"]["sha256"],
+                    )
+                finally:
+                    manager.store.json_repository.write = original_json_write
+                    manager.store.upsert_history = original_history_write
+                    fault_client.close()
+                    client.close()
+                    manager.close()
+
+    def test_public_marks_empty_integrity_and_reader_payloads_redact_private_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager, client, job_id = self._ready_service(Path(tmp))
+            try:
+                saved = client.post(
+                    f"/api/jobs/{job_id}/reader-marks",
+                    json={"marks": [], "expectedRevision": 0, "operationId": "empty-marks-operation"},
+                )
+                self.assertEqual(saved.status_code, 200)
+                self.assertIsNotNone(saved.json()["integrity"])
+                self.assertNotIn("path", saved.json())
+                self.assertNotIn("operationId", saved.json())
+                loaded = client.get(f"/api/jobs/{job_id}/reader-marks").json()
+                self.assertIsNotNone(loaded["integrity"])
+                self.assertNotIn("path", loaded)
+                activity = client.post(
+                    "/api/reader/activity",
+                    json={
+                        "jobId": job_id,
+                        "event": "close",
+                        "sessionId": "redaction-session",
+                        "expectedRevision": 0,
+                        "activityOperationId": "redaction-operation",
+                    },
+                )
+                self.assertEqual(activity.status_code, 200)
+                self.assertNotIn("path", activity.json())
+                self.assertNotIn("activityOperationId", activity.json())
+                recent = client.get("/api/reader/recent").json()
+                self.assertTrue(recent)
+                self.assertNotIn("outputDir", recent[0])
+                self.assertNotIn("manifestPath", recent[0])
+            finally:
+                client.close()
+                manager.close()
+
+    def test_public_marks_response_boundary_and_restart_replay_same_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manager, client, job_id = self._ready_service(root)
+            fault_client = TestClient(
+                client.app,
+                base_url=isolated_base_url(),
+                headers={"X-Read-Web-Token": ACCESS_TOKEN},
+                raise_server_exceptions=False,
+            )
+            payload = {
+                "marks": [{"globalIndex": 20, "word": "connection-closed"}],
+                "expectedRevision": 0,
+                "operationId": "marks-response-boundary-operation",
+            }
+            original_boundary = getattr(manager, "_reader_marks_response_boundary", None)
+            try:
+                def fail_response_boundary(_result):
+                    raise ConnectionResetError("response connection closed after durable commit")
+
+                manager._reader_marks_response_boundary = fail_response_boundary
+                first = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                self.assertEqual(first.status_code, 503)
+                self.assertEqual(first.json()["detail"]["code"], "READER_MARKS_COMMIT_UNKNOWN")
+                self.assertEqual(first.json()["detail"]["category"], "storage")
+                self.assertNotIn("path", first.json()["detail"])
+                authoritative = client.get(f"/api/jobs/{job_id}/reader-marks")
+                self.assertEqual(authoritative.status_code, 200)
+                self.assertEqual(authoritative.json()["marks"][0]["word"], "connection-closed")
+
+                manager._reader_marks_response_boundary = original_boundary
+                replay = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                self.assertEqual(replay.status_code, 200)
+                self.assertEqual(replay.json()["revision"], authoritative.json()["revision"])
+                self.assertEqual(replay.json()["marks"], authoritative.json()["marks"])
+
+                manager.close()
+                client.close()
+                manager = JobManager(
+                    config=WorkflowConfig(output_dir=root / "output"),
+                    runner_factory=lambda: FakeWorkflowRunner(WorkflowConfig(output_dir=root / "output")),
+                )
+                restarted = TestClient(
+                    create_app(manager, access_token=ACCESS_TOKEN),
+                    base_url=isolated_base_url(),
+                    headers={"X-Read-Web-Token": ACCESS_TOKEN},
+                )
+                try:
+                    replay_after_restart = restarted.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                    self.assertEqual(replay_after_restart.status_code, 200)
+                    self.assertEqual(replay_after_restart.json()["revision"], replay.json()["revision"])
+                finally:
+                    restarted.close()
+            finally:
+                fault_client.close()
+                if manager is not None:
+                    manager.close()
+
+    def test_public_marks_journal_fault_after_durable_marks_commit_is_replayable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager, client, job_id = self._ready_service(Path(tmp))
+            fault_client = TestClient(
+                client.app,
+                base_url=isolated_base_url(),
+                headers={"X-Read-Web-Token": ACCESS_TOKEN},
+                raise_server_exceptions=False,
+            )
+            payload = {
+                "marks": [{"globalIndex": 21, "word": "journal-replay"}],
+                "expectedRevision": 0,
+                "operationId": "marks-journal-fault-operation",
+            }
+            journal = manager.store.reader_marks_journal
+            original_upsert = journal.upsert
+            calls = 0
+            try:
+                def fail_after_marks(path, record_job_id, operation_id, record):
+                    nonlocal calls
+                    calls += 1
+                    if calls == 2:
+                        raise OSError("receipt write fault after marks commit")
+                    return original_upsert(path, record_job_id, operation_id, record)
+
+                journal.upsert = fail_after_marks
+                first = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                self.assertEqual(first.status_code, 503)
+                self.assertEqual(first.json()["detail"]["code"], "READER_MARKS_COMMIT_UNKNOWN")
+                authoritative = client.get(f"/api/jobs/{job_id}/reader-marks").json()
+                self.assertEqual(authoritative["marks"][0]["word"], "journal-replay")
+                journal.upsert = original_upsert
+                replay = fault_client.post(f"/api/jobs/{job_id}/reader-marks", json=payload)
+                self.assertEqual(replay.status_code, 200)
+                self.assertEqual(replay.json()["revision"], authoritative["revision"])
+            finally:
+                journal.upsert = original_upsert
+                fault_client.close()
                 client.close()
                 manager.close()
 
@@ -352,6 +572,11 @@ class ReaderMarksActivityPersistenceTests(unittest.TestCase):
         repository = DurableJsonRepository()
         manager.store.reader_repository.json_repository = repository
         return repository
+
+    @staticmethod
+    def _reader_path(manager, job_id: str, filename: str) -> Path:
+        output_dir = manager.jobs[job_id].manifest["outputDir"]
+        return Path(str(output_dir)) / "_workflow" / filename
 
 
 def time_monotonic():

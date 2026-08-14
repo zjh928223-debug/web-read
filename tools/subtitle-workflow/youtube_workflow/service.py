@@ -2676,8 +2676,7 @@ class JobManager:
             "checksum": result["checksum"],
             "marks": marks,
             "markCount": len(marks),
-            "integrity": marks_integrity(marks) if marks else None,
-            "path": result["path"],
+            "integrity": marks_integrity(marks),
             "recovered": result["recovered"],
         }
 
@@ -2692,33 +2691,223 @@ class JobManager:
                 expected_revision = int(expected_revision)
             except (TypeError, ValueError):
                 expected_revision = -1
-        try:
-            result = self.store.reader_repository.write_marks(
-                path,
-                job_id,
-                marks,
-                expected_revision=expected_revision,
+        operation_id = str(payload.get("operationId") or payload.get("marksOperationId") or "").strip() or None
+        if operation_id and (
+            len(operation_id) > 200
+            or any(ord(character) < 0x20 for character in operation_id)
+            or "/" in operation_id
+            or "\\" in operation_id
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "READER_MARKS_OPERATION_INVALID",
+                    "category": "validation",
+                    "message": "Reader marks operation id is invalid",
+                    "retryable": False,
+                    "details": {},
+                },
             )
+        try:
+            with self.store.lock:
+                result, logical_marks, logical_revision, logical_checksum, logical_updated_at, idempotent = (
+                    self._commit_reader_marks(
+                        job_id,
+                        manifest,
+                        path,
+                        marks,
+                        expected_revision,
+                        operation_id,
+                    )
+                )
         except ReaderPersistenceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
-        document = result["envelope"]
-        validate_session_files(manifest, refresh_identity=True)
-        output_dir = Path(str(manifest.get("outputDir") or ""))
-        if output_dir:
-            write_json_file(output_dir / "manifest.json", manifest)
-        record = self.jobs.get(job_id)
-        if record is not None:
-            record.manifest = manifest
-        if self._should_store_history(manifest):
-            self.store.upsert_history(manifest)
-        self.append_service_log(f"reader marks saved {job_id} count={len(marks)}")
-        return {
-            **document,
-            "markCount": len(marks),
-            "integrity": marks_integrity(marks) if marks else None,
-            "path": result["path"],
-            "recovered": result["recovered"],
+        response = {
+            "schemaVersion": "reader-marks.v1",
+            "jobId": job_id,
+            "updatedAt": logical_updated_at,
+            "revision": logical_revision,
+            "checksum": logical_checksum,
+            "marks": logical_marks,
+            "markCount": len(logical_marks),
+            "integrity": marks_integrity(logical_marks),
+            "recovered": bool(result.get("recovered")),
+            "idempotent": bool(idempotent),
         }
+        try:
+            self._reader_marks_response_boundary(response)
+        except ReaderPersistenceError as error:
+            raise HTTPException(status_code=error.status_code, detail=error.to_detail()) from error
+        except Exception as error:
+            commit_error = self._marks_commit_unknown(response, error)
+            raise HTTPException(status_code=commit_error.status_code, detail=commit_error.to_detail()) from error
+        self._append_reader_marks_log_best_effort(f"reader marks saved {job_id} count={len(logical_marks)}")
+        return response
+
+    def _commit_reader_marks(
+        self,
+        job_id: str,
+        manifest: dict,
+        path: Path,
+        marks: list[dict],
+        expected_revision: int | None,
+        operation_id: str | None,
+    ) -> tuple[dict, list[dict], int, str, str, bool]:
+        journal_path = self.store.reader_marks_journal.path(path.parent.parent)
+        journal = self.store.reader_marks_journal
+        record = journal.get(journal_path, job_id, operation_id) if operation_id else None
+        idempotent = record is not None
+        if record:
+            marks = normalize_reader_marks(record.get("marks"))
+
+        if operation_id and not record:
+            record = {
+                "status": "prepared",
+                "marks": marks,
+                "expectedRevision": expected_revision,
+                "revision": None,
+                "checksum": None,
+                "updatedAt": "",
+                "recovered": False,
+            }
+            journal.upsert(journal_path, job_id, operation_id, record)
+
+        if record and record.get("status") == "complete":
+            current = self.store.reader_repository.read_marks(path, job_id, recover=False)
+            self._refresh_reader_marks_side_effects(job_id, manifest)
+            return (
+                current,
+                marks,
+                int(record.get("revision") or 0),
+                str(record.get("checksum") or ""),
+                str(record.get("updatedAt") or ""),
+                True,
+            )
+
+        result = None
+        if record and record.get("status") == "marks-committed":
+            result = {
+                "revision": int(record.get("revision") or 0),
+                "checksum": str(record.get("checksum") or ""),
+                "updatedAt": str(record.get("updatedAt") or ""),
+                "recovered": bool(record.get("recovered")),
+            }
+        else:
+            current = self.store.reader_repository.read_marks(path, job_id, recover=False)
+            recorded_expected = record.get("expectedRevision") if record else expected_revision
+            if record and current["revision"] != int(recorded_expected or 0) and current["payload"].get("marks") == marks:
+                result = {
+                    "revision": current["revision"],
+                    "checksum": current["checksum"],
+                    "updatedAt": current["envelope"].get("updatedAt") or "",
+                    "recovered": bool(current.get("recovered")),
+                }
+            else:
+                if record and current["revision"] != int(recorded_expected or 0):
+                    if expected_revision is not None and expected_revision == current["revision"]:
+                        recorded_expected = expected_revision
+                        record["expectedRevision"] = expected_revision
+                    else:
+                        self.store.reader_repository._check_revision(current, recorded_expected, "marks")
+                result = self.store.reader_repository.write_marks(
+                    path,
+                    job_id,
+                    marks,
+                    expected_revision=recorded_expected,
+                )
+            if operation_id:
+                record.update({
+                    "status": "marks-committed",
+                    "marks": marks,
+                    "revision": int(result["revision"]),
+                    "checksum": result["checksum"],
+                    "updatedAt": result.get("envelope", {}).get("updatedAt") or result.get("updatedAt") or "",
+                    "recovered": bool(result.get("recovered")),
+                })
+                try:
+                    journal.upsert(journal_path, job_id, operation_id, record)
+                except Exception as error:
+                    raise self._marks_commit_unknown(result, error) from error
+
+        self._refresh_reader_marks_side_effects(job_id, manifest)
+        if operation_id:
+            record.update({
+                "status": "complete",
+                "marks": marks,
+                "revision": int(result["revision"]),
+                "checksum": result["checksum"],
+                "updatedAt": result.get("updatedAt") or "",
+                "recovered": bool(result.get("recovered")),
+            })
+            try:
+                journal.upsert(journal_path, job_id, operation_id, record)
+            except Exception as error:
+                raise self._marks_commit_unknown(result, error) from error
+        return (
+            result,
+            marks,
+            int(result["revision"]),
+            str(result["checksum"] or ""),
+            str(result.get("updatedAt") or result.get("envelope", {}).get("updatedAt") or ""),
+            idempotent,
+        )
+
+    def _refresh_reader_marks_side_effects(self, job_id: str, manifest: dict) -> None:
+        try:
+            validate_session_files(manifest, refresh_identity=True)
+            output_dir = Path(str(manifest.get("outputDir") or ""))
+            if output_dir:
+                self.store.json_repository.write(output_dir / "manifest.json", manifest)
+            record = self.jobs.get(job_id)
+            if record is not None:
+                record.manifest = manifest
+            if self._should_store_history(manifest):
+                self.store.upsert_history(manifest)
+        except Exception as error:
+            raise ReaderPersistenceError(
+                "READER_MARKS_COMMIT_INCOMPLETE",
+                "storage",
+                "Reader marks committed but session manifest/history repair is incomplete",
+                retryable=True,
+                details={
+                    "authoritative": "reader-marks",
+                    "commitState": "marks-committed",
+                    "recovery": "retry-same-operation",
+                },
+                status_code=503,
+            ) from error
+
+    @staticmethod
+    def _marks_commit_unknown(result: dict, cause: Exception) -> ReaderPersistenceError:
+        return ReaderPersistenceError(
+            "READER_MARKS_COMMIT_UNKNOWN",
+            "storage",
+            "Reader marks commit outcome is unknown; authoritative state remains queryable",
+            retryable=True,
+            details={
+                "authoritative": "reader-marks",
+                "commitState": "marks-committed",
+                "recovery": "retry-same-operation",
+                "revision": int(result.get("revision") or 0),
+                "checksum": result.get("checksum") or "",
+            },
+            status_code=503,
+        )
+
+    @staticmethod
+    def _reader_marks_response_boundary(_result: dict) -> None:
+        """Explicit fault-injection seam for the last durable commit boundary."""
+        return None
+
+    def _append_reader_marks_log_best_effort(self, message: str) -> None:
+        try:
+            self.append_service_log(message)
+        except Exception as error:
+            self.recovery_status["readerMarksLog"] = {
+                "status": "degraded",
+                "writable": False,
+                "errorType": type(error).__name__,
+            }
 
     def get_config(self) -> dict:
         saved = self.store.load_config()

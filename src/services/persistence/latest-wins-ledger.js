@@ -2,6 +2,11 @@ function cloneState(state) {
   return Object.freeze({ ...state })
 }
 
+function isConflictError(error) {
+  return error?.category === 'conflict'
+    || String(error?.code || '').endsWith('_REVISION_CONFLICT')
+}
+
 export function createLatestWinsLedger(options = {}) {
   if (typeof options.write !== 'function') {
     throw new TypeError('LatestWinsLedger requires a write function')
@@ -9,6 +14,7 @@ export function createLatestWinsLedger(options = {}) {
 
   const write = options.write
   const onStateChange = typeof options.onStateChange === 'function' ? options.onStateChange : null
+  const onConflict = typeof options.onConflict === 'function' ? options.onConflict : null
   const createOperationId = typeof options.createOperationId === 'function'
     ? options.createOperationId
     : (sequence) => `ledger-${sequence}`
@@ -25,6 +31,7 @@ export function createLatestWinsLedger(options = {}) {
     savedSequence: 0,
     activeSequence: 0,
     error: null,
+    conflict: null,
   })
 
   function emit(patch) {
@@ -45,15 +52,46 @@ export function createLatestWinsLedger(options = {}) {
     return Object.freeze({ sequence: entry.sequence, operationId: entry.operationId })
   }
 
+  function conflictFor(entry, error) {
+    return Object.freeze({
+      error,
+      localIntent: entry.snapshot,
+      context: contextFor(entry),
+    })
+  }
+
+  function notifyConflict(error, entry) {
+    if (!onConflict) return
+    const result = onConflict(error, entry.snapshot, contextFor(entry))
+    if (result && typeof result.catch === 'function') result.catch(() => undefined)
+  }
+
   function submit(snapshot) {
     if (disposed) return sequence
     const entry = makeEntry(snapshot)
+    if (!active && failed && state.status === 'conflict') {
+      failed = entry
+      pending = null
+      const conflict = conflictFor(entry, state.error)
+      emit({
+        status: 'conflict',
+        dirty: true,
+        sequence: entry.sequence,
+        activeSequence: 0,
+        savedSequence,
+        error: state.error,
+        conflict,
+      })
+      notifyConflict(state.error, entry)
+      return entry.sequence
+    }
     failed = null
     emit({
       status: active ? 'saving' : 'dirty',
       dirty: true,
       sequence: entry.sequence,
       error: null,
+      conflict: null,
     })
     if (active) pending = entry
     else start(entry)
@@ -62,7 +100,7 @@ export function createLatestWinsLedger(options = {}) {
 
   function start(entry) {
     active = entry
-    emit({ status: 'saving', dirty: true, activeSequence: entry.sequence, error: null })
+    emit({ status: 'saving', dirty: true, activeSequence: entry.sequence, error: null, conflict: null })
     Promise.resolve()
       .then(() => write(entry.snapshot, contextFor(entry)))
       .then(() => settleSuccess(entry), (error) => settleFailure(entry, error))
@@ -86,21 +124,38 @@ export function createLatestWinsLedger(options = {}) {
       savedSequence,
       activeSequence: 0,
       error: null,
+      conflict: null,
     })
   }
 
   function settleFailure(entry, error) {
     if (disposed || active !== entry) return
     active = null
+    if (isConflictError(error)) {
+      const latest = pending || entry
+      pending = null
+      failed = latest
+      const conflict = conflictFor(latest, error)
+      emit({
+        status: 'conflict',
+        dirty: true,
+        savedSequence,
+        activeSequence: 0,
+        error,
+        conflict,
+      })
+      notifyConflict(error, latest)
+      return
+    }
     if (pending) {
       const next = pending
       pending = null
       start(next)
-      emit({ savedSequence, dirty: true, error })
+      emit({ savedSequence, dirty: true, error, conflict: null })
       return
     }
     failed = entry
-    emit({ status: 'error', dirty: true, savedSequence, activeSequence: 0, error })
+    emit({ status: 'error', dirty: true, savedSequence, activeSequence: 0, error, conflict: null })
   }
 
   function retry() {
@@ -133,6 +188,7 @@ export function createLatestWinsLedger(options = {}) {
   return Object.freeze({
     dispose,
     getState: () => state,
+    resolveConflict: retry,
     retry,
     submit,
     waitForIdle,

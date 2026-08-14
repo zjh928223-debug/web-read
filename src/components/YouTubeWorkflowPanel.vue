@@ -279,6 +279,13 @@
               </div>
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
               <p class="youtube-workflow-hint" :data-tone="readerSaveStateTone" data-reader-save-state>{{ readerSaveStateText }}</p>
+              <button
+                v-if="readerConflictVisible"
+                type="button"
+                class="small-btn"
+                data-reader-conflict-action
+                @click="resolveReaderConflict"
+              >确认并保存本地最新意图</button>
 
               <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
               <article
@@ -686,15 +693,73 @@ const readerMarksLedgers = new Map()
 const readerActivityLedgers = new Map()
 const readerMarksRevisions = new Map()
 const readerActivityRevisions = new Map()
+const readerConflicts = new Map()
+const readerConflictVisible = ref(false)
 
 const readerSaveStateText = computed(() => {
   const states = [readerMarksSaveState.value, readerActivitySaveState.value]
+  if (states.includes('conflict')) return '学习记录存在并发冲突，需确认后重试'
   if (states.includes('error')) return '学习记录保存失败，保留待重试'
   if (states.includes('saving')) return '学习记录保存中'
   if (states.includes('dirty')) return '学习记录有待保存更新'
   return '学习记录已保存'
 })
-const readerSaveStateTone = computed(() => readerSaveStateText.value.includes('失败') ? 'warning' : 'muted')
+const readerSaveStateTone = computed(() => (
+  readerSaveStateText.value.includes('失败') || readerSaveStateText.value.includes('冲突')
+    ? 'warning'
+    : 'muted'
+))
+
+function updateReaderConflictVisibility() {
+  readerConflictVisible.value = [...readerConflicts.values()].some(
+    (conflict) => conflict.jobId === currentJobId.value,
+  )
+}
+
+async function loadReaderConflict(kind, jobId, error, localIntent, context) {
+  const key = `${kind}:${jobId}`
+  const conflict = { kind, jobId, error, localIntent, context, authoritative: null }
+  readerConflicts.set(key, conflict)
+  updateReaderConflictVisibility()
+  try {
+    conflict.authoritative = kind === 'marks'
+      ? await youtubeWorkflowClient.getReaderMarks(jobId)
+      : await youtubeWorkflowClient.getReaderActivity(jobId)
+  } catch (reloadError) {
+    conflict.reloadError = reloadError
+  }
+  if (currentJobId.value === jobId) {
+    readerActivityNotice.value = conflict.authoritative
+      ? '检测到其他标签页更新；本地最新意图仍未丢失，请确认后重试'
+      : '检测到并发冲突，权威版本暂时无法读取，请稍后重试'
+  }
+}
+
+function clearReaderConflict(kind, jobId) {
+  readerConflicts.delete(`${kind}:${jobId}`)
+  updateReaderConflictVisibility()
+}
+
+async function resolveReaderConflict() {
+  const currentConflicts = [...readerConflicts.values()].filter(
+    (conflict) => conflict.jobId === currentJobId.value,
+  )
+  const retries = []
+  for (const conflict of currentConflicts) {
+    if (!conflict.authoritative || !Number.isInteger(conflict.authoritative.revision)) continue
+    if (conflict.kind === 'marks') readerMarksRevisions.set(conflict.jobId, conflict.authoritative.revision)
+    else readerActivityRevisions.set(conflict.jobId, conflict.authoritative.revision)
+    const ledger = conflict.kind === 'marks'
+      ? getReaderMarksLedger(conflict.jobId)
+      : getReaderActivityLedger(conflict.jobId)
+    retries.push(ledger.resolveConflict())
+  }
+  if (!retries.length) {
+    readerActivityNotice.value = '正在读取权威版本，请稍后再次确认'
+    return
+  }
+  await Promise.all(retries)
+}
 
 function rememberWorkflowRevision(payload) {
   const revision = Number(payload && payload.revision)
@@ -810,11 +875,12 @@ async function handleWorkflowMutationConflict(error) {
 function getReaderMarksLedger(jobId) {
   if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
   const ledger = createLatestWinsLedger({
-    async write(entry) {
+    async write(entry, context) {
       const expectedRevision = readerMarksRevisions.get(jobId) ?? 0
       const saved = await youtubeWorkflowClient.saveReaderMarks(entry.jobId, {
         marks: entry.marks,
         expectedRevision,
+        operationId: context.operationId,
       })
       if (Number.isInteger(saved?.revision)) readerMarksRevisions.set(jobId, saved.revision)
       return saved
@@ -825,8 +891,15 @@ function getReaderMarksLedger(jobId) {
     onStateChange(state) {
       if (currentJobId.value !== jobId) return
       readerMarksSaveState.value = state.status
-      if (state.status === 'error') readerActivityNotice.value = '标记保存失败，将在下次修改时重试'
-      else if (state.status === 'saved' && readerActivityNotice.value.startsWith('标记保存失败')) readerActivityNotice.value = ''
+      if (state.status === 'conflict') readerActivityNotice.value = '标记存在并发冲突，本地最新意图仍保留，请确认后重试'
+      else if (state.status === 'error') readerActivityNotice.value = '标记保存失败，将在下次修改时重试'
+      else if (state.status === 'saved') {
+        clearReaderConflict('marks', jobId)
+        if (readerActivityNotice.value.startsWith('标记保存失败') || readerActivityNotice.value.startsWith('标记存在并发冲突')) readerActivityNotice.value = ''
+      }
+    },
+    onConflict(error, localIntent, context) {
+      return loadReaderConflict('marks', jobId, error, localIntent, context)
     }
   })
   readerMarksLedgers.set(jobId, ledger)
@@ -854,8 +927,15 @@ function getReaderActivityLedger(jobId) {
     onStateChange(state) {
       if (currentJobId.value !== jobId) return
       readerActivitySaveState.value = state.status
-      if (state.status === 'error') readerActivityNotice.value = '进度保存失败，将保留最新进度重试'
-      else if (state.status === 'saved' && readerActivityNotice.value.startsWith('进度保存失败')) readerActivityNotice.value = ''
+      if (state.status === 'conflict') readerActivityNotice.value = '进度存在并发冲突，最新进度仍保留，请确认后重试'
+      else if (state.status === 'error') readerActivityNotice.value = '进度保存失败，将保留最新进度重试'
+      else if (state.status === 'saved') {
+        clearReaderConflict('activity', jobId)
+        if (readerActivityNotice.value.startsWith('进度保存失败') || readerActivityNotice.value.startsWith('进度存在并发冲突')) readerActivityNotice.value = ''
+      }
+    },
+    onConflict(error, localIntent, context) {
+      return loadReaderConflict('activity', jobId, error, localIntent, context)
     }
   })
   readerActivityLedgers.set(jobId, ledger)
@@ -1081,6 +1161,8 @@ onBeforeUnmount(() => {
   readerActivityLedgers.clear()
   readerMarksRevisions.clear()
   readerActivityRevisions.clear()
+  readerConflicts.clear()
+  readerConflictVisible.value = false
   diagnosticsDownloader.dispose()
 })
 
@@ -1854,6 +1936,7 @@ async function loadJob(job) {
     const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
     if (!result || result.status !== 'loaded') return
     currentJobId.value = job.jobId
+    updateReaderConflictVisibility()
     loadedReadyJobs.add(job.jobId)
     startReaderSession(job)
     const activity = await youtubeWorkflowClient.getReaderActivity(job.jobId)
@@ -2609,6 +2692,7 @@ function handleBeforeUnload() {
       {
         marks: getCurrentReaderMarks(),
         expectedRevision: readerMarksRevisions.get(payload.jobId) ?? 0,
+        operationId: `reader-marks-${payload.jobId}-${payload.sessionId}-close`,
       }
     )
   } catch (error) {

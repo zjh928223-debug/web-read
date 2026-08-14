@@ -14,6 +14,7 @@ from .durable_json import DurableJsonRepository
 
 MARKS_SCHEMA_VERSION = "reader-marks.v1"
 ACTIVITY_SCHEMA_VERSION = "reader-activity.v1"
+MARKS_JOURNAL_SCHEMA_VERSION = "reader-marks-commit-journal.v1"
 
 
 class ReaderPersistenceError(RuntimeError):
@@ -40,8 +41,23 @@ class ReaderPersistenceError(RuntimeError):
             "category": self.category,
             "message": str(self),
             "retryable": self.retryable,
-            "details": dict(self.details),
+            "details": self._public_details(self.details),
         }
+
+    @classmethod
+    def _public_details(cls, value, key: str = ""):
+        lowered = str(key or "").lower()
+        if any(token in lowered for token in ("path", "token", "operationid", "operation_id")):
+            return None
+        if isinstance(value, dict):
+            return {
+                str(item_key): public_value
+                for item_key, item in value.items()
+                if (public_value := cls._public_details(item, str(item_key))) is not None
+            }
+        if isinstance(value, list):
+            return [item for item in (cls._public_details(item, key) for item in value) if item is not None]
+        return value
 
 
 class ReaderMarksActivityRepository:
@@ -185,7 +201,7 @@ class ReaderMarksActivityRepository:
                 "validation",
                 f"Reader {kind} schema is unsupported",
                 retryable=False,
-                details={"schemaVersion": schema, "expectedSchemaVersion": expected_schema, "path": str(path)},
+                details={"schemaVersion": schema, "expectedSchemaVersion": expected_schema},
                 status_code=409,
             )
         if not isinstance(value, dict):
@@ -269,7 +285,7 @@ class ReaderMarksActivityRepository:
                 "storage",
                 message,
                 retryable=True,
-                details={"path": str(path), "revision": envelope.get("revision")},
+                details={"revision": envelope.get("revision")},
                 status_code=status_code,
             ) from error
 
@@ -351,10 +367,9 @@ class ReaderMarksActivityRepository:
             f"Reader {kind} record is corrupt",
             retryable=False,
             details={
-                "path": str(path),
                 "reason": reason,
                 "recoveryAvailable": bool(recovery_available),
-                "quarantinePath": str(quarantine_path) if quarantine_path else "",
+                "quarantined": bool(quarantine_path),
             },
             status_code=500,
         )
@@ -372,3 +387,169 @@ class ReaderMarksActivityRepository:
     def _checksum(value: dict) -> str:
         encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+
+
+class ReaderMarksCommitJournal:
+    """Durable, private operation receipts for the marks side-effect unit of work."""
+
+    MAX_OPERATIONS = 128
+
+    def __init__(self, json_repository: DurableJsonRepository | None = None):
+        self.json_repository = json_repository or DurableJsonRepository()
+
+    @staticmethod
+    def path(output_dir: Path) -> Path:
+        return Path(output_dir) / "_workflow" / "reader-marks-commit-journal.json"
+
+    def get(self, path: Path, job_id: str, operation_id: str) -> dict | None:
+        if not operation_id:
+            return None
+        envelope = self._read(path, job_id)
+        record = (envelope.get("payload") or {}).get("operations", {}).get(operation_id)
+        return copy.deepcopy(record) if isinstance(record, dict) else None
+
+    def upsert(self, path: Path, job_id: str, operation_id: str, record: dict) -> dict:
+        if not operation_id:
+            raise ReaderPersistenceError(
+                "READER_MARKS_OPERATION_INVALID",
+                "validation",
+                "Reader marks operation id is required",
+                retryable=False,
+                status_code=400,
+            )
+        path = Path(path)
+        with ReaderMarksActivityRepository._path_lock(path):
+            current = self._read(path, job_id)
+            operations = copy.deepcopy((current.get("payload") or {}).get("operations") or {})
+            operations[operation_id] = copy.deepcopy(record)
+            while len(operations) > self.MAX_OPERATIONS:
+                oldest = next(iter(operations))
+                if oldest == operation_id and len(operations) > 1:
+                    oldest = next(iter(list(operations)[1:]))
+                operations.pop(oldest, None)
+            revision = int(current.get("revision") or 0) + 1
+            envelope = self._make_envelope(
+                job_id,
+                revision,
+                {"jobId": job_id, "operations": operations},
+            )
+            self._write(path, envelope)
+            return copy.deepcopy(operations[operation_id])
+
+    def _read(self, path: Path, job_id: str) -> dict:
+        path = Path(path)
+        with ReaderMarksActivityRepository._path_lock(path):
+            if not path.exists():
+                return self._empty(job_id)
+            try:
+                return self._decode(path, job_id)
+            except ReaderPersistenceError as error:
+                if error.code.endswith("SCHEMA_UNSUPPORTED"):
+                    raise
+                quarantine = ReaderMarksActivityRepository._quarantine(path)
+                backup = DurableJsonRepository.backup_path(path)
+                if backup.exists():
+                    try:
+                        recovered = self._decode(backup, job_id)
+                    except ReaderPersistenceError:
+                        recovered = None
+                    if recovered is not None:
+                        self._write(path, recovered, preserve_backup=False)
+                        return recovered
+                raise ReaderPersistenceError(
+                    "READER_MARKS_JOURNAL_CORRUPT",
+                    "corrupt",
+                    "Reader marks commit journal is corrupt",
+                    retryable=False,
+                    details={"recoveryAvailable": bool(backup.exists()), "quarantined": bool(quarantine)},
+                    status_code=500,
+                ) from error
+
+    def _decode(self, path: Path, job_id: str) -> dict:
+        try:
+            value = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_CORRUPT",
+                "corrupt",
+                "Reader marks commit journal is corrupt",
+                retryable=False,
+                status_code=500,
+            ) from error
+        if not isinstance(value, dict) or value.get("schemaVersion") != MARKS_JOURNAL_SCHEMA_VERSION:
+            schema = value.get("schemaVersion") if isinstance(value, dict) else None
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_SCHEMA_UNSUPPORTED",
+                "validation",
+                "Reader marks commit journal schema is unsupported",
+                retryable=False,
+                details={"schemaVersion": schema, "expectedSchemaVersion": MARKS_JOURNAL_SCHEMA_VERSION},
+                status_code=409,
+            )
+        if value.get("domain") != "reader-marks-commit-journal" or value.get("jobId") != job_id:
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_CORRUPT",
+                "corrupt",
+                "Reader marks commit journal identity is invalid",
+                retryable=False,
+                status_code=500,
+            )
+        payload = value.get("payload")
+        if not isinstance(payload, dict) or payload.get("jobId") != job_id or not isinstance(payload.get("operations"), dict):
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_CORRUPT",
+                "corrupt",
+                "Reader marks commit journal payload is invalid",
+                retryable=False,
+                status_code=500,
+            )
+        expected_checksum = ReaderMarksActivityRepository._checksum({
+            key: value[key]
+            for key in ("schemaVersion", "domain", "jobId", "revision", "updatedAt", "payload")
+        })
+        if value.get("checksum") != expected_checksum:
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_CORRUPT",
+                "corrupt",
+                "Reader marks commit journal checksum does not match",
+                retryable=False,
+                status_code=500,
+            )
+        return value
+
+    def _write(self, path: Path, envelope: dict, *, preserve_backup: bool = True) -> None:
+        try:
+            self.json_repository.write(path, envelope, preserve_backup=preserve_backup)
+        except Exception as error:
+            raise ReaderPersistenceError(
+                "READER_MARKS_JOURNAL_WRITE_FAILED",
+                "storage",
+                "Reader marks commit journal could not be persisted",
+                retryable=True,
+                details={"revision": envelope.get("revision")},
+                status_code=503,
+            ) from error
+
+    @staticmethod
+    def _empty(job_id: str) -> dict:
+        return ReaderMarksCommitJournal._make_envelope(
+            job_id,
+            0,
+            {"jobId": job_id, "operations": {}},
+        )
+
+    @staticmethod
+    def _make_envelope(job_id: str, revision: int, payload: dict) -> dict:
+        envelope = {
+            "schemaVersion": MARKS_JOURNAL_SCHEMA_VERSION,
+            "domain": "reader-marks-commit-journal",
+            "jobId": job_id,
+            "revision": int(revision),
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+            "payload": copy.deepcopy(payload),
+        }
+        envelope["checksum"] = ReaderMarksActivityRepository._checksum({
+            key: envelope[key]
+            for key in ("schemaVersion", "domain", "jobId", "revision", "updatedAt", "payload")
+        })
+        return envelope

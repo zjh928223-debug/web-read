@@ -14,7 +14,7 @@ from .durable_json import (
     JsonRepositoryReadError,
     JsonValidationError,
 )
-from .reader_marks_activity import ReaderMarksActivityRepository
+from .reader_marks_activity import ReaderMarksActivityRepository, ReaderMarksCommitJournal
 
 
 _JSON_REPOSITORY = DurableJsonRepository()
@@ -339,6 +339,7 @@ class WorkflowHistoryStore:
         self.lock = threading.RLock()
         self.json_repository = json_repository or DurableJsonRepository()
         self.reader_repository = ReaderMarksActivityRepository(json_repository=self.json_repository)
+        self.reader_marks_journal = ReaderMarksCommitJournal(json_repository=self.json_repository)
         self.last_read_outcomes = {}
         self._known_revisions = {"jobs": 0, "history": 0}
         self._known_payloads = {"jobs": {}, "history": {}}
@@ -618,7 +619,6 @@ class WorkflowHistoryStore:
                 "schemaVersion": result["schemaVersion"],
                 "revision": result["revision"],
                 "checksum": result["checksum"],
-                "path": result["path"],
                 "recovered": result["recovered"],
                 "idempotent": result["idempotent"],
             })
@@ -642,13 +642,12 @@ class WorkflowHistoryStore:
         summary.update({
             key: value
             for key, value in result["payload"].items()
-            if not key.startswith("_")
+            if self._is_public_reader_activity_key(key)
         })
         summary.update({
             "schemaVersion": result["schemaVersion"],
             "revision": result["revision"],
             "checksum": result["checksum"],
-            "path": result["path"],
             "recovered": result["recovered"],
             "idempotent": result["idempotent"],
         })
@@ -751,14 +750,11 @@ class WorkflowHistoryStore:
         return activity
 
     def _reader_summary_from_activity(self, activity: dict) -> dict:
-        output_dir = str(activity.get("outputDir") or "")
         return {
             "jobId": activity.get("jobId"),
             "title": activity.get("title", ""),
             "url": activity.get("url", ""),
-            "outputDir": output_dir,
-            "folderName": activity.get("folderName") or (Path(output_dir).name if output_dir else ""),
-            "manifestPath": activity.get("manifestPath", ""),
+            "folderName": activity.get("folderName", ""),
             "sourceType": activity.get("sourceType", ""),
             "lastActivityAt": activity.get("lastActivityAt"),
             "firstOpenedAt": activity.get("firstOpenedAt"),
@@ -774,14 +770,11 @@ class WorkflowHistoryStore:
         }
 
     def _reader_summary_from_history_item(self, item: dict) -> dict:
-        output_dir = str(item.get("outputDir") or "")
         return {
             "jobId": item.get("jobId"),
             "title": item.get("title", ""),
             "url": item.get("url", ""),
-            "outputDir": output_dir,
-            "folderName": Path(output_dir).name if output_dir else "",
-            "manifestPath": item.get("manifestPath", ""),
+            "folderName": Path(str(item.get("outputDir") or "")).name if item.get("outputDir") else "",
             "sourceType": item.get("sourceType", ""),
             "createdAt": item.get("createdAt"),
             "finishedAt": item.get("finishedAt"),
@@ -796,6 +789,16 @@ class WorkflowHistoryStore:
             "openCount": 0,
             "readStatus": "not-started",
         }
+
+    @staticmethod
+    def _is_public_reader_activity_key(key: str) -> bool:
+        normalized = str(key or "")
+        lowered = normalized.lower()
+        return (
+            not normalized.startswith("_")
+            and normalized not in {"outputDir", "manifestPath"}
+            and "path" not in lowered
+        )
 
     def _reader_sort_key(self, item: dict) -> tuple:
         has_activity = bool(item.get("lastActivityAt"))

@@ -47,12 +47,20 @@ async function readJsonResponse(response) {
     let detail = ''
     let code = ''
     let detailPayload = null
+    let category = ''
+    let retryable
+    let details = null
     try {
       const body = await response.json()
       if (body?.detail && typeof body.detail === 'object') {
         detailPayload = body.detail
         detail = String(body.detail.message || '')
         code = String(body.detail.code || '')
+        category = String(body.detail.category || '')
+        retryable = body.detail.retryable
+        details = body.detail.details && typeof body.detail.details === 'object'
+          ? body.detail.details
+          : null
       } else {
         detail = body?.detail ? String(body.detail) : ''
       }
@@ -65,6 +73,9 @@ async function readJsonResponse(response) {
     }
     const error = new Error(detail || `YouTube workflow service returned ${response.status}`)
     if (code) error.code = code
+    if (category) error.category = category
+    if (retryable !== undefined) error.retryable = Boolean(retryable)
+    if (details) error.details = details
     error.status = response.status
     if (detailPayload) {
       error.detail = detailPayload
