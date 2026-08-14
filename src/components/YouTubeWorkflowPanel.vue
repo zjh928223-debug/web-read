@@ -579,6 +579,9 @@ const PANEL_DEFAULT_MARGIN = 24
 const READER_SYNC_INTERVAL_MS = 15000
 const READER_OUTBOX_KEY = 'read-web.reader-save-outbox.v1'
 const READER_OUTBOX_SCHEMA_VERSION = 1
+const READER_OUTBOX_ENTRY_PREFIX = 'read-web.reader-save-outbox.v2.'
+const READER_OUTBOX_ENTRY_SCHEMA_VERSION = 2
+const READER_OUTBOX_QUARANTINE_PREFIX = 'read-web.reader-save-outbox-quarantine.v1.'
 
 const panelOpen = ref(false)
 const panelShrunk = ref(false)
@@ -679,6 +682,7 @@ let playbackTrackedMedia = null
 let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
 let readerUnloadFlushed = false
+let readerCloseGeneration = 0
 let readerOutboxReplayPromise = null
 const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
@@ -714,9 +718,15 @@ const readerSaveStateTone = computed(() => (
 ))
 
 function updateReaderConflictVisibility() {
-  readerConflictVisible.value = [...readerConflicts.values()].some(
+  const matching = [...readerConflicts.values()].filter(
     (conflict) => conflict.jobId === currentJobId.value,
   )
+  readerConflictVisible.value = matching.length > 0
+  matching.forEach((conflict) => {
+    if (conflict.kind === 'marks') readerMarksSaveState.value = 'conflict'
+    else readerActivitySaveState.value = 'conflict'
+    setReaderConflictNotice(conflict)
+  })
 }
 
 function setReaderConflictNotice(conflict) {
@@ -764,8 +774,11 @@ async function loadReaderConflict(kind, jobId, error, localIntent, context, opti
   await fetchReaderConflictAuthority(conflict)
 }
 
-function clearReaderConflict(kind, jobId) {
-  readerConflicts.delete(`${kind}:${jobId}`)
+function clearReaderConflict(kind, jobId, operationId = '') {
+  const key = `${kind}:${jobId}`
+  const conflict = readerConflicts.get(key)
+  if (operationId && conflict?.context?.operationId && conflict.context.operationId !== operationId) return
+  readerConflicts.delete(key)
   updateReaderConflictVisibility()
 }
 
@@ -1176,7 +1189,8 @@ onMounted(() => {
   void replayReaderOutbox()
   window.addEventListener('reader-marks-changed', handleReaderMarksChanged)
   window.addEventListener('beforeunload', handleBeforeUnload)
-  window.addEventListener('pagehide', handleBeforeUnload)
+  window.addEventListener('pagehide', handleReaderPageHide)
+  window.addEventListener('pageshow', handleReaderPageShow)
 })
 
 onBeforeUnmount(() => {
@@ -1197,7 +1211,8 @@ onBeforeUnmount(() => {
   readerSessionLoader = null
   handleBeforeUnload()
   window.removeEventListener('beforeunload', handleBeforeUnload)
-  window.removeEventListener('pagehide', handleBeforeUnload)
+  window.removeEventListener('pagehide', handleReaderPageHide)
+  window.removeEventListener('pageshow', handleReaderPageShow)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
   unbindPlaybackTracking()
   readerMarksLedgers.forEach((ledger) => ledger.dispose())
@@ -2754,27 +2769,122 @@ function isValidReaderOutboxEntry(entry) {
       && interval.every((value) => Number.isFinite(value)))
 }
 
-function quarantineReaderOutbox(reason, byteLength = 0) {
+function readerOutboxKeyPart(value) {
+  return Array.from(String(value || ''))
+    .map((character) => character.codePointAt(0).toString(16))
+    .join('_')
+}
+
+function readerOutboxEntryKey(entry) {
+  return `${READER_OUTBOX_ENTRY_PREFIX}${readerOutboxKeyPart(entry.jobId)}.${entry.kind}.${readerOutboxKeyPart(entry.operationId)}`
+}
+
+function readerOutboxRecord(entry) {
+  return {
+    schemaVersion: READER_OUTBOX_ENTRY_SCHEMA_VERSION,
+    ...entry,
+  }
+}
+
+function isValidReaderOutboxRecord(record) {
+  if (!isPlainReaderOutboxObject(record)
+    || !hasOnlyReaderOutboxKeys(record, [
+      'schemaVersion',
+      'jobId',
+      'kind',
+      'operationId',
+      'expectedRevision',
+      'intent',
+    ])
+    || record.schemaVersion !== READER_OUTBOX_ENTRY_SCHEMA_VERSION) return false
+  const { schemaVersion, ...entry } = record
+  return schemaVersion === READER_OUTBOX_ENTRY_SCHEMA_VERSION && isValidReaderOutboxEntry(entry)
+}
+
+function quarantineReaderOutbox(reason, byteLength = 0, sourceKey = READER_OUTBOX_KEY) {
+  const quarantineKey = sourceKey === READER_OUTBOX_KEY
+    ? `${READER_OUTBOX_KEY}.quarantine`
+    : `${READER_OUTBOX_QUARANTINE_PREFIX}${readerOutboxKeyPart(sourceKey)}`
   try {
-    window.localStorage.setItem(`${READER_OUTBOX_KEY}.quarantine`, JSON.stringify({
+    window.localStorage.setItem(quarantineKey, JSON.stringify({
       schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
       detectedAt: new Date().toISOString(),
       reason: String(reason || 'invalid-envelope'),
       byteLength: Number.isInteger(byteLength) ? byteLength : 0,
     }))
-    window.localStorage.removeItem(READER_OUTBOX_KEY)
   } catch (error) {
     recordBestEffortFailure(error, {
       operationId: 'reader-outbox-quarantine',
       reason: 'invalid reader outbox is isolated without retaining untrusted payload bytes',
     })
   }
+  try {
+    window.localStorage.removeItem(sourceKey)
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-quarantine-remove',
+      reason: 'invalid reader outbox could not be removed; it will remain blocked from replay',
+    })
+  }
 }
 
-function readReaderOutbox() {
+function migrateLegacyReaderOutbox() {
   let raw = ''
   try {
     raw = window.localStorage.getItem(READER_OUTBOX_KEY) || ''
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-legacy-read',
+      reason: 'legacy reader outbox migration is deferred; current in-memory intent remains dirty',
+    })
+    return false
+  }
+  if (!raw) return true
+  let envelope
+  try {
+    envelope = JSON.parse(raw)
+  } catch (error) {
+    quarantineReaderOutbox('malformed-json', raw.length)
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-legacy-parse',
+      reason: 'malformed legacy reader outbox is quarantined without being replayed',
+    })
+    return true
+  }
+  if (!isPlainReaderOutboxObject(envelope)
+    || !hasOnlyReaderOutboxKeys(envelope, ['schemaVersion', 'entries'])
+    || envelope.schemaVersion !== READER_OUTBOX_SCHEMA_VERSION
+    || !Array.isArray(envelope.entries)
+    || !envelope.entries.every(isValidReaderOutboxEntry)) {
+    quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length)
+    return true
+  }
+  try {
+    envelope.entries.forEach((entry) => {
+      window.localStorage.setItem(
+        readerOutboxEntryKey(entry),
+        JSON.stringify(readerOutboxRecord(entry)),
+      )
+    })
+    window.localStorage.removeItem(READER_OUTBOX_KEY)
+    return true
+  } catch (error) {
+    recordBestEffortFailure(error, {
+      operationId: 'reader-outbox-legacy-migrate',
+      reason: 'legacy reader outbox remains until every operation has an independent migrated receipt',
+    })
+    return false
+  }
+}
+
+function readReaderOutbox() {
+  migrateLegacyReaderOutbox()
+  let keys = []
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index)
+      if (key && key.startsWith(READER_OUTBOX_ENTRY_PREFIX)) keys.push(key)
+    }
   } catch (error) {
     recordBestEffortFailure(error, {
       operationId: 'reader-outbox-read',
@@ -2782,41 +2892,40 @@ function readReaderOutbox() {
     })
     return { valid: false, entries: [] }
   }
-  if (!raw) return { valid: true, entries: [] }
-  try {
-    const envelope = JSON.parse(raw)
-    if (!isPlainReaderOutboxObject(envelope)
-      || !hasOnlyReaderOutboxKeys(envelope, ['schemaVersion', 'entries'])
-      || envelope.schemaVersion !== READER_OUTBOX_SCHEMA_VERSION
-      || !Array.isArray(envelope.entries)
-      || !envelope.entries.every(isValidReaderOutboxEntry)) {
-      quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length)
-      return { valid: false, entries: [] }
+  const entries = []
+  for (const key of keys) {
+    let raw = ''
+    try {
+      raw = window.localStorage.getItem(key) || ''
+      const record = JSON.parse(raw)
+      if (!isValidReaderOutboxRecord(record)) {
+        quarantineReaderOutbox('unknown-or-invalid-envelope', raw.length, key)
+        continue
+      }
+      const { schemaVersion, ...entry } = record
+      if (key !== readerOutboxEntryKey(entry)) {
+        quarantineReaderOutbox('outbox-key-mismatch', raw.length, key)
+        continue
+      }
+      entries.push(entry)
+    } catch (error) {
+      quarantineReaderOutbox('malformed-json', raw.length, key)
+      recordBestEffortFailure(error, {
+        operationId: 'reader-outbox-parse',
+        reason: 'malformed reader outbox entry is quarantined without being replayed',
+      })
     }
-    return { valid: true, entries: envelope.entries }
-  } catch (error) {
-    quarantineReaderOutbox('malformed-json', raw.length)
-    recordBestEffortFailure(error, {
-      operationId: 'reader-outbox-parse',
-      reason: 'malformed reader outbox is quarantined without being replayed',
-    })
-    return { valid: false, entries: [] }
   }
+  return { valid: true, entries }
 }
 
 function writeReaderOutboxEntry(entry) {
   if (!isValidReaderOutboxEntry(entry)) return false
-  const current = readReaderOutbox()
-  if (!current.valid) return false
-  const entries = [
-    ...current.entries.filter((item) => item.jobId !== entry.jobId || item.kind !== entry.kind),
-    entry,
-  ]
   try {
-    window.localStorage.setItem(READER_OUTBOX_KEY, JSON.stringify({
-      schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
-      entries,
-    }))
+    window.localStorage.setItem(
+      readerOutboxEntryKey(entry),
+      JSON.stringify(readerOutboxRecord(entry)),
+    )
     return true
   } catch (error) {
     recordBestEffortFailure(error, {
@@ -2828,22 +2937,8 @@ function writeReaderOutboxEntry(entry) {
 }
 
 function removeReaderOutboxEntry(entry) {
-  const current = readReaderOutbox()
-  if (!current.valid) return false
-  const entries = current.entries.filter((item) => !(
-    item.jobId === entry.jobId
-      && item.kind === entry.kind
-      && item.operationId === entry.operationId
-  ))
   try {
-    if (entries.length) {
-      window.localStorage.setItem(READER_OUTBOX_KEY, JSON.stringify({
-        schemaVersion: READER_OUTBOX_SCHEMA_VERSION,
-        entries,
-      }))
-    } else {
-      window.localStorage.removeItem(READER_OUTBOX_KEY)
-    }
+    window.localStorage.removeItem(readerOutboxEntryKey(entry))
     return true
   } catch (error) {
     recordBestEffortFailure(error, {
@@ -2945,7 +3040,7 @@ function settleReaderOutboxSuccess(entry, saved) {
     setReaderOutboxState(entry, 'error', '学习记录已提交，但本地恢复凭据未能清除，请稍后重试')
     return false
   }
-  clearReaderConflict(entry.kind, entry.jobId)
+  clearReaderConflict(entry.kind, entry.jobId, entry.operationId)
   setReaderOutboxState(entry, 'saved')
   clearReaderOutboxSuccessNotice()
   return true
@@ -3006,16 +3101,29 @@ function queueReaderKeepalive(entry) {
   })
 }
 
+function handleReaderPageHide(event) {
+  handleBeforeUnload(event)
+}
+
+function handleReaderPageShow(event) {
+  if (!event?.persisted) return
+  readerUnloadFlushed = false
+  readerCloseGeneration += 1
+  ensureCurrentJobFromAudioMeta()
+  updateReaderConflictVisibility()
+}
+
 function handleBeforeUnload() {
   if (readerUnloadFlushed) return
   ensureCurrentJobFromAudioMeta()
   const payload = buildReaderActivityPayload('close')
   if (!payload) return
-  const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close`
+  const closeGeneration = readerCloseGeneration
+  const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`
   const marksEntry = createReaderOutboxEntry(
     'marks',
     { jobId: payload.jobId, marks: getCurrentReaderMarks() },
-    `reader-marks-${payload.jobId}-${payload.sessionId}-close`,
+    `reader-marks-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`,
     readerMarksRevisions.get(payload.jobId) ?? 0,
   )
   const activityEntry = createReaderOutboxEntry(

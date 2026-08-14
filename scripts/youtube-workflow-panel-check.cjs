@@ -139,9 +139,10 @@ async function main() {
   assert.ok(panelSource.includes('readerSessionLoader?.cancelLoad()'), 'workflow panel should abort an active reader load on unmount');
   assert.equal(panelSource.includes("error: { category: 'output'"), false, 'reader import errors must not rewrite the workflow job as failed');
   assert.ok(panelSource.includes('reader-marks-changed'), 'workflow panel should sync reader marks when the reader mark state changes');
-  assert.ok(panelSource.includes("window.addEventListener('pagehide', handleBeforeUnload)"), 'workflow panel should save reader marks when the page is hidden or closed');
+  assert.ok(panelSource.includes("window.addEventListener('pagehide', handleReaderPageHide)"), 'workflow panel should save reader marks when the page is hidden or closed');
+  assert.ok(panelSource.includes("window.addEventListener('pageshow', handleReaderPageShow)"), 'workflow panel should reset close receipts when a BFCache page returns');
   assert.ok(panelSource.includes('keepaliveReaderMarks') && panelSource.includes('keepaliveReaderActivity'), 'workflow panel should use the authorized production client for unload-safe reader sync');
-  assert.ok(panelSource.includes('READER_OUTBOX_KEY') && panelSource.includes('writeReaderOutboxEntry'), 'workflow panel should persist a versioned reader outbox before unload delivery');
+  assert.ok(panelSource.includes('READER_OUTBOX_ENTRY_PREFIX') && panelSource.includes('writeReaderOutboxEntry'), 'workflow panel should persist one versioned reader receipt per operation before unload delivery');
   assert.equal(panelSource.includes('切换到阅读器'), false, 'open action should not use ambiguous switch-to-reader wording');
   assert.equal(panelSource.includes('YouTube URL'), false, 'URL label should not be YouTube-specific');
 
