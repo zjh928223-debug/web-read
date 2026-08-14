@@ -23,7 +23,7 @@ Read-Web 是本地英语学习应用，前端为 Vite + Vue 3 + Pinia，材料�
 
 ```text
 index.html
-├── 7 个 src/stores 兼容 store
+├── 4 个 src/stores 兼容 store
 ├── glass/app/style/import/keyboard/media/playback/controls/legacy bindings
 ├── src/composables/reader-runtime.js
 ├── src/composables/session-init.js

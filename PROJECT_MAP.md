@@ -8,7 +8,7 @@ Last verified: 2026-08-12
 
 ```text
 index.html
-├── src/stores/{theme,ui,audio,marks,transcript,chunk,annotation}.js
+├── src/stores/{theme,ui,audio,marks}.js
 ├── src/composables/glass-effects.js
 ├── src/composables/app-handlers.js
 ├── src/composables/style-editor.js

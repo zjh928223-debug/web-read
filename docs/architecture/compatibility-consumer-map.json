@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "capture": {
     "mode": "isolated-vite-runtime",
-    "port": 4663,
+    "port": 0,
     "sourceRoot": "src + index.html",
     "consoleErrors": [],
     "pageErrors": []
@@ -15,6 +15,18 @@
     "runtimeCalled": 3,
     "inlineHandlers": 0,
     "loadedScripts": 18
+  },
+  "negativeAssertions": {
+    "retiredCompatibilityGlobalsAbsent": [
+      "__transcriptStore",
+      "__chunkStore",
+      "__annotationStore"
+    ],
+    "retiredCompatibilityScriptsAbsent": [
+      "/src/stores/transcript.js",
+      "/src/stores/chunk.js",
+      "/src/stores/annotation.js"
+    ]
   },
   "surfaces": [
     {
@@ -39,7 +51,7 @@
         "name": "__annotationLightweightModule",
         "defined": true,
         "type": "object",
-        "reads": 2,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -88,7 +100,7 @@
         "name": "__audioStore",
         "defined": true,
         "type": "object",
-        "reads": 9,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -145,7 +157,7 @@
         "name": "__chunkState",
         "defined": true,
         "type": "object",
-        "reads": 4,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -176,7 +188,7 @@
         "name": "__clozeState",
         "defined": true,
         "type": "object",
-        "reads": 4,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -297,7 +309,7 @@
         "name": "__marksStore",
         "defined": true,
         "type": "object",
-        "reads": 3,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -428,7 +440,7 @@
         "name": "__mediaSource",
         "defined": true,
         "type": "object",
-        "reads": 37,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -503,7 +515,7 @@
         "name": "__piniaStores",
         "defined": true,
         "type": "object",
-        "reads": 24,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -640,7 +652,7 @@
         "name": "__state",
         "defined": true,
         "type": "object",
-        "reads": 2,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -685,7 +697,7 @@
         "name": "__themeStore",
         "defined": true,
         "type": "object",
-        "reads": 4,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -716,7 +728,7 @@
         "name": "__transcriptState",
         "defined": true,
         "type": "object",
-        "reads": 4,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -743,7 +755,7 @@
         "name": "__uiStore",
         "defined": true,
         "type": "object",
-        "reads": 2,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -786,7 +798,7 @@
         "name": "__USE_VUE_RENDERING",
         "defined": true,
         "type": "boolean",
-        "reads": 4,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -880,7 +892,7 @@
         "name": "AnnotationGenerationDiagnostics",
         "defined": true,
         "type": "object",
-        "reads": 3,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -898,7 +910,7 @@
         "name": "AnnotationGenerationStorage",
         "defined": true,
         "type": "object",
-        "reads": 3,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -1055,7 +1067,7 @@
         "name": "ChunkMatchingHelpers",
         "defined": true,
         "type": "object",
-        "reads": 2,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }
@@ -1214,7 +1226,7 @@
         "name": "forceUpdateUI",
         "defined": true,
         "type": "function",
-        "reads": 2,
+        "reads": 1,
         "calls": 0,
         "assigned": true
       }

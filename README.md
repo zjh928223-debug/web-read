@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-next-preview.
 
 ```text
 index.html
-├── 7 个 src/stores/*.js 兼容 store
+├── 4 个 src/stores/*.js 兼容 store
 ├── 9 个 src/composables/*.js 兼容/运行模块
 ├── src/composables/reader-runtime.js
 ├── src/composables/session-init.js

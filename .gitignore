@@ -29,6 +29,7 @@ output/performance/
 output/production-host/
 output/playback-scale/
 output/verification/
+output/architecture/
 output/*.patch
 output/test-data-*/
 dist/

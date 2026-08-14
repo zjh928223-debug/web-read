@@ -24,7 +24,7 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 7 src/stores/*.js module compatibility stores
+├── 4 src/stores/*.js module compatibility stores
 ├── 9 src/composables/*.js module compatibility/runtime modules
 ├── src/composables/reader-runtime.js as type="module"
 ├── src/composables/session-init.js as type="module"
@@ -144,8 +144,8 @@ The Vue components are active but thin. A lot of interaction still relies on `sr
 - `src/composables/playback-runtime-helpers.js` - playback helper behavior and sentence jump owner.
 - `src/composables/session-init.js` - thin session entry only. Do not add feature logic here.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
-- `src/pinia-stores/` - 9 real Pinia stores.
-- `src/stores/` - 9 window compatibility stores.
+- `src/pinia-stores/` - 8 real Pinia stores.
+- `src/stores/` - 4 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
 - Root `annotation-*.js` and `chunk-note-layout-*.js` - legacy root files no longer loaded by `index.html` or copied by Vite.
 - `styles.css` - global CSS loaded directly by `index.html`.

@@ -18,9 +18,9 @@ for (const [name, source] of Object.entries({ current, map, operations, readme }
 
 const storeScripts = [...index.matchAll(/<script type="module" src="src\/stores\/[^"?]+\.js"><\/script>/g)]
 const compatibilityScripts = [...index.matchAll(/<script type="module" src="src\/composables\/[^"?]+\.js"><\/script>/g)]
-assert.equal(storeScripts.length, 7)
+assert.equal(storeScripts.length, 4)
 assert.equal(compatibilityScripts.length, 11, 'nine compatibility modules plus reader/session entries are loaded')
-assert.match(readme, /7 个 src\/stores/)
+assert.match(readme, /4 个 src\/stores/)
 assert.match(readme, /9 个 src\/composables/)
 assert.match(operations, /4193\/4194\/4195/)
 assert.match(operations, /不修改桌面快捷方式/)

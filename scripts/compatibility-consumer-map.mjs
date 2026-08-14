@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
+import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
@@ -8,12 +9,34 @@ import { chromium } from 'playwright'
 
 const require = createRequire(import.meta.url)
 const root = path.resolve(import.meta.dirname, '..')
-const port = Number(process.env.READ_WEB_COMPAT_MAP_PORT || 4195)
+const forbiddenPorts = new Set([5173, 8765])
+const configuredPort = process.env.READ_WEB_COMPAT_MAP_PORT
+const port = configuredPort ? Number(configuredPort) : await findFreePort()
+if (!Number.isInteger(port) || port < 1 || port > 65535 || forbiddenPorts.has(port)) {
+  throw new Error(`invalid compatibility map port: ${configuredPort || port}`)
+}
 const targetUrl = `http://127.0.0.1:${port}/`
-const outputArgIndex = process.argv.indexOf('--output')
-const outputPath = path.resolve(root, outputArgIndex >= 0 && process.argv[outputArgIndex + 1]
-  ? process.argv[outputArgIndex + 1]
-  : 'output/architecture/compatibility-consumer-map.json')
+const updateMode = process.argv.includes('--update')
+const runtimeOutputPath = path.resolve(root, optionValue('--output') || 'output/architecture/compatibility-consumer-map.runtime.json')
+const canonicalPath = path.resolve(root, 'docs/architecture/compatibility-consumer-map.json')
+const canonicalOutputPath = path.resolve(root, optionValue('--canonical-output') || canonicalPath)
+if (runtimeOutputPath === canonicalPath) {
+  throw new Error('runtime output must be ignored; use --update to write the canonical map')
+}
+if (!isWithin(path.resolve(root, 'output', 'architecture'), runtimeOutputPath)) {
+  throw new Error('runtime output must be under ignored output/architecture; use --canonical-output for a canonical update')
+}
+
+const retiredCompatibilityGlobals = [
+  '__transcriptStore',
+  '__chunkStore',
+  '__annotationStore'
+]
+const retiredCompatibilityScripts = [
+  '/src/stores/transcript.js',
+  '/src/stores/chunk.js',
+  '/src/stores/annotation.js'
+]
 
 const sourceFiles = walk(path.join(root, 'src'))
   .filter((file) => /\.(?:js|vue)$/.test(file))
@@ -145,6 +168,10 @@ try {
       inlineHandlers: runtime.inlineHandlers.length,
       loadedScripts: runtime.scripts.filter((script) => !script.inline).length
     },
+    negativeAssertions: {
+      retiredCompatibilityGlobalsAbsent: retiredCompatibilityGlobals,
+      retiredCompatibilityScriptsAbsent: retiredCompatibilityScripts
+    },
     surfaces: [...staticMap.values()].sort((a, b) => a.name.localeCompare(b.name)).map((entry) => ({
       ...entry,
       runtime: {
@@ -160,13 +187,85 @@ try {
   if (consoleErrors.length || pageErrors.length) {
     throw new Error(`runtime capture reported errors: ${[...consoleErrors, ...pageErrors].join(' | ')}`)
   }
-  fs.mkdirSync(path.dirname(outputPath), { recursive: true })
-  fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
-  console.log(`compatibility consumer map written: ${path.relative(root, outputPath)}`)
+  assertRetiredCompatibilityAbsent(report)
+  const runtimeJson = `${JSON.stringify(report, null, 2)}\n`
+  const canonicalJson = `${JSON.stringify(canonicalizeReport(report), null, 2)}\n`
+  fs.mkdirSync(path.dirname(runtimeOutputPath), { recursive: true })
+  fs.writeFileSync(runtimeOutputPath, runtimeJson, 'utf8')
+
+  if (updateMode) {
+    fs.mkdirSync(path.dirname(canonicalOutputPath), { recursive: true })
+    fs.writeFileSync(canonicalOutputPath, canonicalJson, 'utf8')
+    console.log(`compatibility consumer map updated: ${path.relative(root, canonicalOutputPath)}`)
+  } else {
+    if (!fs.existsSync(canonicalPath)) {
+      throw new Error(`canonical compatibility map is missing: ${path.relative(root, canonicalPath)}`)
+    }
+    const expected = fs.readFileSync(canonicalPath, 'utf8')
+    if (expected !== canonicalJson) {
+      throw new Error('canonical compatibility map is stale; run `node scripts/compatibility-consumer-map.mjs --update`')
+    }
+    console.log(`compatibility consumer map verified: ${path.relative(root, canonicalPath)}`)
+  }
   console.log(JSON.stringify(report.summary))
 } finally {
   if (browser) await browser.close()
   if (serverProcess) killProcessTree(serverProcess)
+}
+
+function optionValue(name) {
+  const index = process.argv.indexOf(name)
+  return index >= 0 ? process.argv[index + 1] : undefined
+}
+
+async function findFreePort() {
+  const server = net.createServer()
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  const freePort = typeof address === 'object' && address ? address.port : 0
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  if (forbiddenPorts.has(freePort) || freePort < 1) return findFreePort()
+  return freePort
+}
+
+function isWithin(directory, target) {
+  const relative = path.relative(directory, target)
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative)
+}
+
+function canonicalizeReport(report) {
+  return {
+    ...report,
+    capture: {
+      ...report.capture,
+      port: 0
+    },
+    surfaces: report.surfaces.map((surface) => ({
+      ...surface,
+      runtime: canonicalizeRuntime(surface.runtime)
+    }))
+  }
+}
+
+function canonicalizeRuntime(runtime) {
+  if (!runtime) return runtime
+  return {
+    ...runtime,
+    reads: runtime.reads > 0 ? 1 : 0
+  }
+}
+
+function assertRetiredCompatibilityAbsent(report) {
+  const presentGlobals = new Set(report.surfaces.map((surface) => surface.name))
+  const presentScripts = new Set(report.scripts.map((script) => script.src))
+  const presentGlobalsList = retiredCompatibilityGlobals.filter((name) => presentGlobals.has(name))
+  const presentScriptsList = retiredCompatibilityScripts.filter((src) => presentScripts.has(src))
+  if (presentGlobalsList.length || presentScriptsList.length) {
+    throw new Error(`retired compatibility surfaces reappeared: globals=${presentGlobalsList.join(',')} scripts=${presentScriptsList.join(',')}`)
+  }
 }
 
 function isBrowserPrimitive(name) {
