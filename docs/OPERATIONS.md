@@ -6,7 +6,7 @@
 
 - 不停止、复用或改写日常版 `E:\read-web` 的 `5173/8765`。
 - Next 手工预览使用 `5174/8766`。
-- 自动浏览器测试只使用 `4193/4194/4195`。
+- `verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口，全部排除 `5173/8765`。
 - 不把凭据、浏览器 profile、媒体、工作流 data root 或词典数据库写入仓库。
 - 未完成发布门禁并获得用户确认前，不修改桌面快捷方式。
 
@@ -51,10 +51,10 @@ openspec validate stabilize-and-simplify-read-web --strict
 git diff --check
 ```
 
-`verify:full` 应在完成后释放 `4193/4194`。可复查：
+`verify:full` 应在完成后释放固定的 `4193/4194`；随机 browser-safe journey 端口由各自 owner 在结束时释放。可复查：
 
 ```powershell
-Get-NetTCPConnection -State Listen -LocalPort 4193,4194,4195,5174,8766 -ErrorAction SilentlyContinue
+Get-NetTCPConnection -State Listen -LocalPort 4193,4194,5174,8766 -ErrorAction SilentlyContinue
 ```
 
 性能和后端基准见：

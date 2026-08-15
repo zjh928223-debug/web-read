@@ -33,8 +33,9 @@ for (const [name, contents] of Object.entries({ README: readme, OPERATIONS: oper
   assert.doesNotMatch(contents, /只(?:使用|用)[^\n。]*4193\/4194(?:\/4195)?/, `${name} must not claim all browser checks use only fixed ports`)
 }
 
-assert.match(readme, /4193.*4194.*随机/, 'README must distinguish fixed Vite ports from random journeys')
-assert.match(operations, /4193.*4194.*随机/, 'OPERATIONS must distinguish fixed Vite ports from random journeys')
-assert.match(testingGates, /4193.*4194.*随机/, 'testing-gates must distinguish fixed Vite ports from random journeys')
+const fixedToRandomPortPattern = /4193[\s\S]{0,600}4194[\s\S]{0,600}随机/
+assert.match(readme, fixedToRandomPortPattern, 'README must distinguish fixed Vite ports from random journeys')
+assert.match(operations, fixedToRandomPortPattern, 'OPERATIONS must distinguish fixed Vite ports from random journeys')
+assert.match(testingGates, fixedToRandomPortPattern, 'testing-gates must distinguish fixed Vite ports from random journeys')
 
 console.log('port ownership documentation checks passed')

@@ -25,7 +25,7 @@ npm run build
 node scripts/verify-full.mjs
 ```
 
-`verify:full` 只使用隔离端口 `4193/4194`，包含 fast gate、生产构建、3 条浏览器旅程、production preview 和后端测试。它不会启动、停止或复用日常版 `5173/8765`。
+`verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口。它不会启动、停止或复用日常版 `5173/8765`。
 
 启动 Next 预览：
 

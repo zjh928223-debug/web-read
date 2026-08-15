@@ -53,7 +53,8 @@ Fast 明确执行：
 3. `verify:architecture:source-shape` canonical source-shape aggregate；
 4. `verify:behavior:migrated-interfaces` canonical behavior aggregate；
 5. 工具链、事务/backup contract、playback/annotation/vocabulary/workflow
-   behavior 和 Python service dependency inventory。
+   behavior、Python service dependency inventory，以及固定端口/随机 browser-safe
+   端口的 ownership documentation guard。
 
 Fast 明确排除：browser journeys、build、Python integration suite、实时网络/
 AI/TTS/词典/YouTube、performance、clean-room、发布秘密扫描和恢复/回滚。
@@ -109,12 +110,13 @@ node scripts/verify-full.mjs --list
 ```
 
 Full 首先执行 `verify:fast`，因此会重复并明确执行 canonical architecture 和
-behavior 两层；随后增加 persistence fault matrix、production build、隔离的
+behavior 两层；随后增加 persistence fault matrix、production build、固定隔离的
 `4193` development browser journeys、`4194` production preview load、独立
 production host/browser journeys、reader-session/compatibility browser fault
 journeys、compatibility consumer-map deterministic capture 和 Python backend
-unittest suite。不得把 architecture source-shape 通过写成 browser/full
-行为通过。
+unittest suite。除固定 Vite owner 外，自拥有 browser journeys 使用随机
+browser-safe 端口；所有 browser 端口都排除 `5173/8765`。不得把 architecture
+source-shape 通过写成 browser/full 行为通过。
 
 Full 不启动真实 Material Workflow service，也不包含实时外部 API。长时间性能
 和发布恢复属于 release gate。
