@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
+import os from 'node:os'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
@@ -6,11 +7,18 @@ import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
+import {
+  createIsolatedRuntimeConfig,
+  createIsolatedServiceToken,
+  createIsolatedViteEnvironment,
+  rejectExplicitReadWebUrl,
+} from './lib/compatibility-isolation.mjs'
 import { shouldContinueStaticRequest } from './lib/compatibility-network-policy.mjs'
 
 const require = createRequire(import.meta.url)
 const root = path.resolve(import.meta.dirname, '..')
 const forbiddenPorts = new Set([5173, 8765])
+rejectExplicitReadWebUrl(process.env)
 const configuredPort = process.env.READ_WEB_COMPAT_MAP_PORT
 const port = configuredPort ? Number(configuredPort) : await findFreePort()
 if (!Number.isInteger(port) || port < 1 || port > 65535 || forbiddenPorts.has(port)) {
@@ -73,6 +81,24 @@ for (const file of sourceFiles) {
 
 const candidates = [...staticMap.keys()].sort()
 const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js')
+const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'read-web-compatibility-map-'))
+const dataRoot = path.join(isolationRoot, 'data')
+const runtimeConfigPath = path.join(isolationRoot, 'runtime.json')
+const backendPort = await findFreePort()
+const serviceToken = createIsolatedServiceToken('compatibility-map')
+fs.mkdirSync(dataRoot, { recursive: true })
+fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(createIsolatedRuntimeConfig({
+  frontendPort: port,
+  backendPort,
+  dataRoot,
+}), null, 2)}\n`, 'utf8')
+const isolatedViteEnv = createIsolatedViteEnvironment({
+  frontendPort: port,
+  backendPort,
+  dataRoot,
+  runtimeConfigPath,
+  serviceToken,
+})
 let serverProcess = null
 let browser = null
 
@@ -80,6 +106,7 @@ try {
   if (await canReach(targetUrl)) throw new Error(`compatibility map port ${port} is already occupied`)
   serverProcess = spawn(process.execPath, [viteBin, '--host', '127.0.0.1', '--port', String(port), '--strictPort', '--clearScreen', 'false'], {
     cwd: root,
+    env: isolatedViteEnv,
     stdio: 'ignore',
     windowsHide: true
   })
@@ -226,6 +253,7 @@ try {
 } finally {
   if (browser) await browser.close()
   if (serverProcess) killProcessTree(serverProcess)
+  fs.rmSync(isolationRoot, { recursive: true, force: true })
 }
 
 function optionValue(name) {

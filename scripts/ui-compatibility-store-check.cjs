@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
@@ -23,52 +24,64 @@ function normalizeTargetUrl(value) {
 }
 
 async function main() {
+  const {
+    createIsolatedRuntimeConfig,
+    createIsolatedServiceToken,
+    createIsolatedViteEnvironment,
+    rejectExplicitReadWebUrl,
+  } = await import('./lib/compatibility-isolation.mjs');
+  const { shouldContinueStaticRequest } = await import('./lib/compatibility-network-policy.mjs');
+  rejectExplicitReadWebUrl(process.env);
   assert.throws(() => normalizeTargetUrl('http://127.0.0.1:5173/'), /reserved daily port/);
   assert.throws(() => normalizeTargetUrl('http://127.0.0.1:8765/'), /reserved daily port/);
   assert.throws(() => normalizeTargetUrl('http://localhost:4193/'), /requires 127\.0\.0\.1/);
   let serverProcess = null;
-  const explicitUrl = process.env.READ_WEB_URL;
-  const port = explicitUrl ? null : await findFreePort();
-  const targetUrl = normalizeTargetUrl(explicitUrl || `http://${host}:${port}/`);
+  const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), `read-web-ui-compat-${process.pid}-`));
+  const dataRoot = path.join(isolationRoot, 'data');
+  const runtimeConfigPath = path.join(isolationRoot, 'runtime.json');
+  const port = await findFreePort();
+  const targetUrl = normalizeTargetUrl(`http://${host}:${port}/`);
   const targetOrigin = new URL(targetUrl).origin;
   const targetPort = Number(new URL(targetUrl).port);
   const backendPort = await findFreePort(new Set([targetPort]));
+  const serviceToken = createIsolatedServiceToken('ui-compatibility');
+  fs.mkdirSync(dataRoot, { recursive: true });
+  fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(createIsolatedRuntimeConfig({
+    frontendPort: port,
+    backendPort,
+    dataRoot,
+  }), null, 2)}\n`, 'utf8');
+  const isolatedViteEnv = createIsolatedViteEnvironment({
+    frontendPort: port,
+    backendPort,
+    dataRoot,
+    runtimeConfigPath,
+    serviceToken,
+  });
   const consoleErrors = [];
   const pageErrors = [];
 
   try {
-    if (!explicitUrl) {
-      const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
-      serverProcess = spawn(process.execPath, [
-        viteBin,
-        '--host', host,
-        '--port', String(port),
-        '--strictPort',
-        '--clearScreen', 'false'
-      ], {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          READ_WEB_FRONTEND_HOST: host,
-          READ_WEB_FRONTEND_PORT: String(port),
-          READ_WEB_BACKEND_HOST: host,
-          READ_WEB_BACKEND_PORT: String(backendPort),
-          READ_WEB_SUBTITLE_DATA_ROOT: path.join(os.tmpdir(), `read-web-ui-compat-${process.pid}`),
-          VITE_LOCAL_SERVICE_BASE_URL: `http://${host}:${backendPort}`,
-          VITE_READ_WEB_SERVICE_TOKEN: 'ui-compatibility-isolated-token',
-          ECDICT_ENABLED: 'false'
-        },
-        stdio: 'ignore',
-        windowsHide: true
-      });
-      assert.equal(await waitForServer(targetUrl), true, `Vite did not become ready at ${targetUrl}`);
-    }
+    const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
+    serverProcess = spawn(process.execPath, [
+      viteBin,
+      '--host', host,
+      '--port', String(port),
+      '--strictPort',
+      '--clearScreen', 'false'
+    ], {
+      cwd: process.cwd(),
+      env: isolatedViteEnv,
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    assert.equal(await waitForServer(targetUrl), true, `Vite did not become ready at ${targetUrl}`);
 
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     await page.route('**/*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.origin === targetOrigin && !url.pathname.startsWith('/api/')) return route.continue();
+      const url = route.request().url();
+      if (shouldContinueStaticRequest(url, targetOrigin)) return route.continue();
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     });
     page.on('console', (message) => {
@@ -109,6 +122,7 @@ async function main() {
     console.log(`UI compatibility store behavior passed at ${targetUrl}`);
   } finally {
     if (serverProcess) killProcessTree(serverProcess);
+    fs.rmSync(isolationRoot, { recursive: true, force: true });
   }
 }
 
