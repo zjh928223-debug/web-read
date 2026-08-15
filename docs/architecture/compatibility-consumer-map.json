@@ -48,11 +48,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 67
+          "line": 68
         },
         {
           "file": "src/main.js",
-          "line": 68
+          "line": 69
         }
       ],
       "writers": []
@@ -74,11 +74,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 78
+          "line": 79
         },
         {
           "file": "src/main.js",
-          "line": 79
+          "line": 80
         }
       ],
       "writers": []
@@ -100,11 +100,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 54
+          "line": 55
         },
         {
           "file": "src/main.js",
-          "line": 55
+          "line": 56
         }
       ],
       "writers": []
@@ -307,11 +307,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 67
+          "line": 68
         },
         {
           "file": "src/main.js",
-          "line": 68
+          "line": 69
         },
         {
           "file": "src/stores/audio.js",
@@ -342,15 +342,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 96
+          "line": 98
         },
         {
           "file": "src/main.js",
-          "line": 96
+          "line": 98
         },
         {
           "file": "src/main.js",
-          "line": 97
+          "line": 99
         }
       ],
       "writes": [
@@ -377,15 +377,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 99
+          "line": 101
         },
         {
           "file": "src/main.js",
-          "line": 99
+          "line": 101
         },
         {
           "file": "src/main.js",
-          "line": 100
+          "line": 102
         }
       ],
       "writes": [
@@ -521,11 +521,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 78
+          "line": 79
         },
         {
           "file": "src/main.js",
-          "line": 79
+          "line": 80
         }
       ],
       "writes": [
@@ -743,7 +743,7 @@
         },
         {
           "file": "src/composables/ui-facades.js",
-          "line": 2
+          "line": 5
         },
         {
           "file": "src/composables/vocabulary-preview-module.js",
@@ -753,7 +753,7 @@
       "writes": [
         {
           "file": "src/main.js",
-          "line": 86
+          "line": 87
         }
       ],
       "runtime": {
@@ -970,11 +970,11 @@
         },
         {
           "file": "src/main.js",
-          "line": 54
+          "line": 55
         },
         {
           "file": "src/main.js",
-          "line": 55
+          "line": 56
         }
       ],
       "writes": [
@@ -1001,15 +1001,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 93
+          "line": 95
         },
         {
           "file": "src/main.js",
-          "line": 93
+          "line": 95
         },
         {
           "file": "src/main.js",
-          "line": 94
+          "line": 96
         }
       ],
       "writes": [
@@ -1055,7 +1055,7 @@
       "reads": [
         {
           "file": "src/main.js",
-          "line": 40
+          "line": 41
         }
       ],
       "writes": [],
@@ -2382,7 +2382,7 @@
         },
         {
           "file": "src/composables/ui-facades.js",
-          "line": 23
+          "line": 42
         }
       ],
       "runtime": {
@@ -2429,7 +2429,7 @@
         },
         {
           "file": "src/composables/ui-facades.js",
-          "line": 22
+          "line": 41
         }
       ],
       "runtime": {

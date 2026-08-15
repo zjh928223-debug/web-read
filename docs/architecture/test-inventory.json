@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 104,
     "behavior": 71,
-    "browser": 21,
+    "browser": 22,
     "performance": 13,
     "release": 8
   },
-  "packageScriptCount": 211,
-  "executableScriptCount": 217,
+  "packageScriptCount": 212,
+  "executableScriptCount": 218,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2230,6 +2230,19 @@
       "owner": "package.json#scripts.verify:transcript-state"
     },
     {
+      "name": "verify:ui-compatibility-store",
+      "command": "node scripts/ui-compatibility-store-check.cjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/ui-compatibility-store-check.cjs"
+      ],
+      "owner": "package.json#scripts.verify:ui-compatibility-store"
+    },
+    {
       "name": "verify:ui-facades",
       "command": "node scripts/ui-facades-check.cjs",
       "category": "architecture",
@@ -3387,7 +3400,8 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
-          "asserts-file-shape"
+          "asserts-file-shape",
+          "matches-source-text"
         ],
         "sourceRead": false,
         "browser": true,
@@ -7044,6 +7058,30 @@
       }
     },
     {
+      "path": "scripts/ui-compatibility-store-check.cjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "owner": "package.json#scripts.verify:ui-compatibility-store",
+      "owners": [
+        "package.json#scripts.verify:ui-compatibility-store"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
+      }
+    },
+    {
       "path": "scripts/ui-facades-check.cjs",
       "category": "architecture",
       "layers": [
@@ -7060,6 +7098,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
+          "asserts-file-shape",
           "asserts-source-text",
           "includes-source-text"
         ],
