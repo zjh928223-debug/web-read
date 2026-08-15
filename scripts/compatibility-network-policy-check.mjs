@@ -18,6 +18,20 @@ assert.equal(
   false,
   'the API root must remain stubbed',
 )
+for (const apiVariant of [
+  '/api%2Fhealth',
+  '/%61pi/health',
+  '//api/health',
+  '/api\\health',
+  '/api%252Fhealth',
+  '/api/%2e/health',
+]) {
+  assert.equal(
+    shouldContinueStaticRequest(`${targetOrigin}${apiVariant}`, targetOrigin),
+    false,
+    `API path variant must remain stubbed: ${apiVariant}`,
+  )
+}
 assert.equal(
   shouldContinueStaticRequest('http://127.0.0.1:43128/src/main.js', targetOrigin),
   false,
