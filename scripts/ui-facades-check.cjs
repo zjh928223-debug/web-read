@@ -8,6 +8,30 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'ui-facades.js'), 'utf8');
 
+async function verifyEarlyNotificationQueue() {
+  const priorWindow = global.window;
+  global.window = {};
+  try {
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(facadeSource).toString('base64')}`;
+    const facade = await import(moduleUrl);
+    facade.showToast('early toast', 'info', 10);
+    facade.showError('EARLY_ERROR', 'startup');
+    const calls = [];
+    global.window.__piniaStores = { ui: {
+      showToast(...args) { calls.push(['showToast', ...args]); },
+      showError(...args) { calls.push(['showError', ...args]); }
+    } };
+    assert.equal(facade.flushPendingUiNotifications(), 2);
+    assert.deepEqual(calls, [
+      ['showToast', 'early toast', 'info', 10],
+      ['showError', 'EARLY_ERROR', 'startup']
+    ]);
+    assert.equal(facade.flushPendingUiNotifications(), 0);
+  } finally {
+    global.window = priorWindow;
+  }
+}
+
 [
   'showToast',
   'showError'
@@ -38,4 +62,9 @@ assert.ok(
   'reader runtime assembly should import UI facades'
 );
 
-console.log('ui facades check passed');
+verifyEarlyNotificationQueue().then(() => {
+  console.log('ui facades check passed');
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

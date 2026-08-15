@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
+import { flushPendingUiNotifications } from './composables/ui-facades.js'
 
 // === Phase 10: Import all utility + annotation ES modules (replaces IIFE <script> tags) ===
 // Side-effect imports — they also set window globals for app.js compatibility
@@ -88,6 +89,7 @@ window.__piniaStores = {
   cloze: clozeStore, transcript: transcriptStore, chunk: chunkStore,
   annotation: annotationStore
 }
+flushPendingUiNotifications()
 
 // Phase 8: adapters loaded before Pinia keep startup data until stores exist.
 if (window.__transcriptState && typeof window.__transcriptState.bindPiniaStore === 'function') {
