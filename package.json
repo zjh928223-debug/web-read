@@ -30,6 +30,7 @@
     "verify:behavior:reader-session": "node scripts/reader-session-publisher-check.mjs",
     "verify:behavior:workflow": "node scripts/youtube-workflow-client-check.cjs && node scripts/youtube-workflow-loader-check.cjs",
     "verify:compatibility-isolation": "node scripts/compatibility-isolation-boundary-check.mjs",
+    "verify:test-entry": "node scripts/npm-test-entry-check.mjs",
     "verify:performance-budgets": "node scripts/perf/validate-performance-budgets.mjs",
     "release:manifest": "node scripts/generate-release-manifest.mjs",
     "verify:fast": "node scripts/verify-fast.mjs",

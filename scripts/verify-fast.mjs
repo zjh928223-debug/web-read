@@ -16,6 +16,7 @@ const included = [
   command('migrated interface behavior (canonical)', npmCommand, ['run', 'verify:behavior:migrated-interfaces']),
   command('compatibility network policy behavior', process.execPath, ['scripts/compatibility-network-policy-check.mjs']),
   command('compatibility process isolation boundary', npmCommand, ['run', 'verify:compatibility-isolation']),
+  command('npm test entry execution graph', npmCommand, ['run', 'verify:test-entry']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('legacy deletion gate', process.execPath, ['scripts/legacy-deletion-gate.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),
