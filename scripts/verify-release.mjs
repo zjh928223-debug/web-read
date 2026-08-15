@@ -22,6 +22,7 @@ const pending = [
 
 console.log('verify-release included:')
 stages.forEach(([label], index) => console.log(`  ${index + 1}. ${label}`))
+console.log('verify-release evidence rule: canonical architecture is prerequisite evidence only; behavior, browser, performance, and recovery stages remain independently required.')
 console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 

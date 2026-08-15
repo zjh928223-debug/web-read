@@ -10,6 +10,9 @@ const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'pyth
 const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
   command('Python dependency lock', pythonCommand, ['tools/subtitle-workflow/scripts/verify_python_lock.py']),
+  command('test inventory classifier self-test (canonical)', npmCommand, ['run', 'verify:architecture:test-inventory']),
+  command('architecture source-shape guards (canonical)', npmCommand, ['run', 'verify:architecture:source-shape']),
+  command('migrated interface behavior (canonical)', npmCommand, ['run', 'verify:behavior:migrated-interfaces']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('legacy deletion gate', process.execPath, ['scripts/legacy-deletion-gate.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),
@@ -44,7 +47,8 @@ const excluded = [
   ['Python backend suite', 'contains threaded integration tests and belongs to verify-full'],
   ['live TTS, dictionary, AI, and YouTube checks', 'may use network, credentials, paid APIs, or external media'],
   ['performance, clean-room, secret/license/SBOM, restore, and rollback gates', 'planned for verify-release'],
-  ['source-shape compatibility checks', 'retained as focused checks but not used as the primary fast behavior gate'],
+  ['legacy source-shape aliases', 'legacy verify:* names remain callable for compatibility; canonical architecture checks execute above'],
+  ['browser source-shape checks', 'browser-oriented checks remain in verify-full browser journeys; their source evidence is classified separately'],
 ]
 
 function command(label, executable, args, options = {}) {
@@ -60,6 +64,7 @@ function printPlan() {
   included.forEach((item, index) => console.log(`  ${index + 1}. ${item.label}: ${printable(item)}`))
   console.log('verify-fast excluded:')
   excluded.forEach(([area, reason]) => console.log(`  - ${area}: ${reason}`))
+  console.log('verify-fast layer summary: architecture=EXECUTED (canonical), behavior=EXECUTED (canonical), browser=EXCLUDED, performance=EXCLUDED, release=EXCLUDED')
 }
 
 function run(item) {

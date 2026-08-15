@@ -14,7 +14,7 @@ const isolatedPorts = Object.freeze({
 })
 
 const included = [
-  command('fast gate', process.execPath, ['scripts/verify-fast.mjs']),
+  command('fast gate (canonical architecture + behavior)', npmCommand, ['run', 'verify:fast']),
   command('persistence fault matrix evidence', process.execPath, ['scripts/persistence-fault-matrix.mjs']),
   command('frontend production build', npmCommand, ['run', 'build']),
   command('isolated development browser journeys', process.execPath, ['scripts/vite-verify.js'], {
@@ -54,6 +54,7 @@ function printable(item) {
 
 function printPlan() {
   console.log(`verify-full isolated ports: dev=${isolatedPorts.dev}, preview=${isolatedPorts.preview}`)
+  console.log('verify-full layers: architecture=INCLUDED via canonical verify:architecture:source-shape, behavior=INCLUDED via canonical verify:behavior:migrated-interfaces, browser=INCLUDED, performance=EXCLUDED, release=EXCLUDED')
   console.log('verify-full included:')
   included.forEach((item, index) => console.log(`  ${index + 1}. ${item.label}: ${printable(item)}`))
   console.log('verify-full excluded:')
