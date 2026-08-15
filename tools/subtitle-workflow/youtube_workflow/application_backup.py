@@ -15,8 +15,11 @@ import os
 import re
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from .durable_json import DurableJsonRepository
 
 APPLICATION_BACKUP_FORMAT = "read-web.application-backup"
 APPLICATION_BACKUP_FORMAT_VERSION = 1
@@ -171,27 +174,38 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
 
 
 def _read_json(path: Path):
+    def evidence(raw_value=None, reason="WORKFLOW_BACKUP_CORRUPT", checksum=None):
+        return {
+            "sourceKey": str(path),
+            "rawValue": raw_value,
+            "detectedAt": datetime.now(timezone.utc).isoformat(),
+            "reason": reason,
+            "checksumEvidence": checksum,
+        }
+
     if not path.exists():
-        recovery_artifacts = [
+        recovery_artifacts = [candidate for candidate in [
             path.with_suffix(path.suffix + ".bak"),
             *path.parent.glob(f"{path.name}.corrupt-*"),
             *path.parent.glob(f"{path.name}.tmp-*"),
-        ]
+        ] if candidate.exists()]
         if recovery_artifacts:
             raise WorkflowBackupError(
                 "WORKFLOW_BACKUP_CORRUPT",
                 f"workflow durable state is missing while recovery artifacts remain: {path.name}",
+                details=evidence(None, "WORKFLOW_BACKUP_RECOVERY_ARTIFACT_REMAINS"),
             )
         return None
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        raw_value = path.read_text(encoding="utf-8")
+        return json.loads(raw_value)
     except FileNotFoundError:
         return None
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise WorkflowBackupError(
             "WORKFLOW_BACKUP_CORRUPT",
             f"workflow durable state is corrupt: {path.name}",
+            details=evidence(locals().get("raw_value")),
         ) from exc
 
 
@@ -270,7 +284,15 @@ class WorkflowBackupAdapter:
         value = _read_json(path)
         if value is None:
             return None
-        return _validate_envelope(value, domain=domain, collection=collection)
+        try:
+            return _validate_envelope(value, domain=domain, collection=collection)
+        except WorkflowBackupError as exc:
+            exc.details.setdefault("sourceKey", str(path))
+            exc.details.setdefault("rawValue", json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+            exc.details.setdefault("detectedAt", datetime.now(timezone.utc).isoformat())
+            exc.details.setdefault("reason", exc.code)
+            exc.details.setdefault("checksumEvidence", value.get("checksum") if isinstance(value, dict) else None)
+            raise
 
     def _media_references(self, job_root: Path):
         references = []
@@ -447,26 +469,59 @@ class ReaderMarksActivityBackupAdapter:
 
     def _read_envelope(self, path: Path) -> tuple[dict, str]:
         try:
-            value = json.loads(path.read_text(encoding="utf-8"))
+            raw_value = path.read_text(encoding="utf-8")
+            value = json.loads(raw_value)
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity state is corrupt: {path.name}") from exc
+            raise WorkflowBackupError(
+                "MARKS_ACTIVITY_BACKUP_CORRUPT",
+                f"marks/activity state is corrupt: {path.name}",
+                details={
+                    "sourceKey": str(path),
+                    "rawValue": locals().get("raw_value"),
+                    "detectedAt": datetime.now(timezone.utc).isoformat(),
+                    "reason": "MARKS_ACTIVITY_BACKUP_CORRUPT",
+                    "checksumEvidence": None,
+                },
+            ) from exc
+        def evidence_error(code: str, message: str) -> WorkflowBackupError:
+            return WorkflowBackupError(
+                code,
+                message,
+                details={
+                    "sourceKey": str(path),
+                    "rawValue": raw_value,
+                    "detectedAt": datetime.now(timezone.utc).isoformat(),
+                    "reason": code,
+                    "checksumEvidence": value.get("checksum") if isinstance(value, dict) else None,
+                },
+            )
         expected_schema, expected_domain = self._expected_schema(path.name)
         if not isinstance(value, dict) or value.get("schemaVersion") != expected_schema:
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_UNKNOWN_SCHEMA", f"marks/activity schema is unsupported: {path.name}")
+            raise WorkflowBackupError(
+                "MARKS_ACTIVITY_BACKUP_UNKNOWN_SCHEMA",
+                f"marks/activity schema is unsupported: {path.name}",
+                details={
+                    "sourceKey": str(path),
+                    "rawValue": raw_value,
+                    "detectedAt": datetime.now(timezone.utc).isoformat(),
+                    "reason": "MARKS_ACTIVITY_BACKUP_UNKNOWN_SCHEMA",
+                    "checksumEvidence": value.get("checksum") if isinstance(value, dict) else None,
+                },
+            )
         if value.get("domain") != expected_domain or not isinstance(value.get("jobId"), str) or not value["jobId"]:
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity identity is invalid: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity identity is invalid: {path.name}")
         if not isinstance(value.get("revision"), int) or value["revision"] < 0:
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity revision is invalid: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity revision is invalid: {path.name}")
         payload = value.get("payload")
         if not isinstance(payload, dict) or payload.get("jobId") != value["jobId"]:
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity payload is invalid: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity payload is invalid: {path.name}")
         if path.name == "reader-marks.json" and not isinstance(payload.get("marks"), list):
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"reader marks payload is invalid: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"reader marks payload is invalid: {path.name}")
         if path.name == "reader-marks-commit-journal.json" and not isinstance(payload.get("operations"), dict):
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"reader marks journal payload is invalid: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"reader marks journal payload is invalid: {path.name}")
         unsigned = {key: value[key] for key in ("schemaVersion", "domain", "jobId", "revision", "updatedAt", "payload")}
         if value.get("checksum") != _checksum(unsigned):
-            raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity checksum mismatch: {path.name}")
+            raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity checksum mismatch: {path.name}")
         return value, value["jobId"]
 
     def collect(self):
@@ -505,6 +560,302 @@ class ReaderMarksActivityBackupAdapter:
             ],
             "mediaReferences": [],
         }
+
+
+def _safe_restore_path(root: Path, relative: str) -> Path:
+    """Resolve an artifact-relative path without allowing directory escape."""
+    candidate = (Path(root) / str(relative)).resolve()
+    resolved_root = Path(root).resolve()
+    if candidate != resolved_root and resolved_root not in candidate.parents:
+        raise WorkflowBackupError(
+            "WORKFLOW_RESTORE_PATH_INVALID",
+            "restore path escapes its configured durable root",
+        )
+    return candidate
+
+
+def _restore_envelope(domain: str, key: str, values: list[dict], revision: int) -> dict:
+    payload = {key: list(values)}
+    return {
+        "schemaVersion": WORKFLOW_DOMAIN_SCHEMA_VERSION,
+        "domain": domain,
+        "revision": max(1, int(revision or 0)),
+        "payload": payload,
+        "checksum": _checksum(payload),
+        key: list(values),
+    }
+
+
+class WorkflowRestoreAdapter:
+    """Restore the Python-owned workflow files through DurableJsonRepository.
+
+    The JS restore coordinator uses this public adapter as one domain target.
+    It never accepts arbitrary absolute paths from a backup artifact and does
+    not copy media bytes; only the JSON records represented by the manifest
+    are written.  Every canonical file goes through the existing durable
+    writer, so its temp/fsync/replace/backup/recovery contract remains the
+    single file writer.
+    """
+
+    key = "workflow"
+    schema_version = WORKFLOW_DOMAIN_SCHEMA_VERSION
+    adapter_version = 1
+    supported_schema_versions = (WORKFLOW_DOMAIN_SCHEMA_VERSION,)
+
+    def __init__(self, state_dir: Path, output_dir: Path, *, repository: DurableJsonRepository | None = None):
+        self.state_dir = Path(state_dir)
+        self.output_dir = Path(output_dir)
+        self.repository = repository or DurableJsonRepository()
+
+    def collect(self):
+        return WorkflowBackupAdapter(self.state_dir, self.output_dir).collect()
+
+    @staticmethod
+    def _record_map(snapshot: dict) -> dict[str, dict]:
+        if not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != WORKFLOW_DOMAIN_SCHEMA_VERSION:
+            raise WorkflowBackupError("WORKFLOW_RESTORE_UNKNOWN_SCHEMA", "workflow restore snapshot schema is unsupported")
+        records = snapshot.get("records")
+        if not isinstance(records, list):
+            raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", "workflow restore records are missing")
+        result = {}
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+                raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", "workflow restore record identity is invalid")
+            if record["id"] in result:
+                raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", "workflow restore record identity is duplicated")
+            result[record["id"]] = record
+        return result
+
+    @staticmethod
+    def _payload(record: dict, record_id: str):
+        if "payload" not in record:
+            raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", f"workflow restore payload is missing: {record_id}")
+        return record["payload"]
+
+    def _rebind_output_root(self, payload, record_id: str):
+        """Bind sanitized backup output references to this target's root.
+
+        Backup records deliberately redact machine-specific absolute paths to
+        ``.``.  Restoring that literal value would resolve against the Python
+        process cwd and make a subsequent collect fail closed as an escape
+        from the configured output root.  Rebinding is limited to the known
+        outputDir field and leaves all other payload content untouched.
+        """
+        if not isinstance(payload, dict):
+            raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", f"workflow payload is invalid: {record_id}")
+        rebound = json.loads(json.dumps(payload))
+        if "outputDir" in rebound:
+            if not isinstance(rebound["outputDir"], str) or not rebound["outputDir"].strip():
+                raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", f"workflow outputDir is invalid: {record_id}")
+            output_reference = rebound["outputDir"].strip()
+            if output_reference in {".", "[REDACTED_PATH]"}:
+                rebound["outputDir"] = str(self.output_dir.resolve())
+            else:
+                rebound["outputDir"] = str(_safe_restore_path(self.output_dir, output_reference))
+        return rebound
+
+    def _write_output_records(self, records: dict[str, dict]) -> None:
+        for record_id, record in records.items():
+            if not record_id.startswith("output:"):
+                continue
+            relative = record_id[len("output:"):]
+            target = _safe_restore_path(self.output_dir, relative)
+            payload = self._payload(record, record_id)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.repository.write(target, payload)
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        """Remove one validated restore-owned file and sync its directory.
+
+        The restore coordinator has already persisted its checkpoint and
+        holds the rollback artifact before this method runs.  Deletions are
+        therefore part of the same recoverable domain operation as the
+        DurableJsonRepository replacements below; they are never used to
+        clear an unvalidated arbitrary path.
+        """
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    def _remove_stale_files(self, records: dict[str, dict], current: dict) -> None:
+        source_output_ids = {
+            record_id for record_id in records
+            if record_id.startswith("output:")
+        }
+        for record_id, record in self._record_map(current).items():
+            if not record_id.startswith("output:") or record_id in source_output_ids:
+                continue
+            target = _safe_restore_path(self.output_dir, record_id[len("output:"):])
+            self._remove_path(target)
+
+        # A missing source state file is meaningful: leave no stale durable
+        # file that the next collect would reinterpret as a new record.
+        source_has_config = "config" in records
+        source_has_reader_index = any(record_id.startswith("reader-index:") for record_id in records)
+        source_has_jobs = any(record_id.startswith("jobs:") for record_id in records)
+        source_has_history = any(record_id.startswith("items:") for record_id in records)
+        for path, present in (
+            (self.state_dir / "jobs.json", source_has_jobs),
+            (self.state_dir / "history.json", source_has_history),
+            (self.state_dir / "reader-index.json", source_has_reader_index),
+            (self.state_dir / "config.json", source_has_config),
+        ):
+            if not present:
+                self._remove_path(path)
+
+    def restore_snapshot(self, snapshot: dict, *, expected_revision: int | None = None) -> dict:
+        current = self.collect()
+        actual_revision = int(current.get("revision") or 0)
+        if expected_revision is not None and actual_revision != int(expected_revision):
+            raise WorkflowBackupError(
+                "WORKFLOW_RESTORE_REVISION_CONFLICT",
+                "workflow durable state changed before restore",
+                details={"expectedRevision": expected_revision, "actualRevision": actual_revision},
+            )
+        verify_workflow_records(snapshot)
+        records = self._record_map(snapshot)
+        domain_revision = int(snapshot.get("revision") or 0)
+
+        jobs = [
+            self._rebind_output_root(self._payload(record, record_id), record_id)
+            for record_id, record in records.items()
+            if record_id.startswith("jobs:")
+        ]
+        history = [
+            self._rebind_output_root(self._payload(record, record_id), record_id)
+            for record_id, record in records.items()
+            if record_id.startswith("items:")
+        ]
+        reader_index = [
+            self._rebind_output_root(self._payload(record, record_id), record_id)
+            for record_id, record in records.items()
+            if record_id.startswith("reader-index:")
+        ]
+        config_record = records.get("config")
+        config = self._payload(config_record, "config") if config_record else {}
+        if not isinstance(config, dict):
+            raise WorkflowBackupError("WORKFLOW_RESTORE_CORRUPT", "workflow config payload is invalid")
+
+        # Validate every record before the first write.  In particular, a
+        # malformed output path must not leave jobs/history partially replaced.
+        output_records = {record_id: record for record_id, record in records.items() if record_id.startswith("output:")}
+        for record_id in output_records:
+            _safe_restore_path(self.output_dir, record_id[len("output:"):])
+
+        self._remove_stale_files(records, current)
+
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        if any(record_id.startswith("jobs:") for record_id in records):
+            self.repository.write(
+                self.state_dir / "jobs.json",
+                _restore_envelope("workflow.jobs", "jobs", jobs, domain_revision),
+            )
+        if any(record_id.startswith("items:") for record_id in records):
+            self.repository.write(
+                self.state_dir / "history.json",
+                _restore_envelope("workflow.history", "items", history, domain_revision),
+            )
+        if any(record_id.startswith("reader-index:") for record_id in records):
+            self.repository.write(self.state_dir / "reader-index.json", {"items": reader_index})
+        if config_record is not None:
+            self.repository.write(self.state_dir / "config.json", config)
+        self._write_output_records(output_records)
+        return {"revision": max(actual_revision + 1, domain_revision, 1), "recordCount": len(records)}
+
+
+class ReaderMarksActivityRestoreAdapter:
+    """Restore marks/activity envelopes using the existing durable writer."""
+
+    key = "marks-activity"
+    schema_version = 1
+    adapter_version = 1
+    supported_schema_versions = (1,)
+
+    def __init__(self, output_dir: Path, *, repository: DurableJsonRepository | None = None):
+        self.output_dir = Path(output_dir)
+        self.repository = repository or DurableJsonRepository()
+
+    def collect(self):
+        return ReaderMarksActivityBackupAdapter(self.output_dir).collect()
+
+    @staticmethod
+    def _remove_path(path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY)
+        except OSError:
+            return
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+
+    def restore_snapshot(self, snapshot: dict, *, expected_revision: int | None = None) -> dict:
+        current = self.collect()
+        actual_revision = int(current.get("revision") or 0)
+        if expected_revision is not None and actual_revision != int(expected_revision):
+            raise WorkflowBackupError(
+                "MARKS_ACTIVITY_RESTORE_REVISION_CONFLICT",
+                "marks/activity state changed before restore",
+                details={"expectedRevision": expected_revision, "actualRevision": actual_revision},
+            )
+        verify_marks_activity_records(snapshot)
+        if not isinstance(snapshot, dict) or snapshot.get("schemaVersion") != 1 or not isinstance(snapshot.get("records"), list):
+            raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_CORRUPT", "marks/activity restore snapshot is invalid")
+        planned_records: list[tuple[Path, dict]] = []
+        for record in snapshot["records"]:
+            record_id = str(record.get("id") or "")
+            if ":" not in record_id:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_CORRUPT", "marks/activity record path is invalid")
+            filename, relative = record_id.split(":", 1)
+            if filename not in _MARKS_ACTIVITY_FILES:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_PATH_INVALID", "marks/activity filename is not registered")
+            target = _safe_restore_path(self.output_dir, relative)
+            if target.name != filename:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_PATH_INVALID", "marks/activity path identity is invalid")
+            payload = record.get("payload")
+            if not isinstance(payload, dict):
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_CORRUPT", "marks/activity payload is invalid")
+            planned_records.append((target, payload))
+        source_ids = {str(record.get("id") or "") for record in snapshot["records"]}
+        for current_record in current.get("records", []):
+            record_id = str(current_record.get("id") or "")
+            if record_id in source_ids:
+                continue
+            if ":" not in record_id:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_CORRUPT", "marks/activity current record path is invalid")
+            filename, relative = record_id.split(":", 1)
+            if filename not in _MARKS_ACTIVITY_FILES:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_PATH_INVALID", "marks/activity current filename is not registered")
+            target = _safe_restore_path(self.output_dir, relative)
+            if target.name != filename:
+                raise WorkflowBackupError("MARKS_ACTIVITY_RESTORE_PATH_INVALID", "marks/activity current path identity is invalid")
+            self._remove_path(target)
+        for target, payload in planned_records:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.repository.write(target, payload)
+        return {"revision": max(actual_revision + 1, int(snapshot.get("revision") or 0)), "recordCount": len(snapshot["records"])}
+
+
+def create_production_restore_adapters(state_dir: Path, output_dir: Path) -> dict:
+    """Return the real workflow and marks/activity restore target adapters."""
+    return {
+        "marks-activity": ReaderMarksActivityRestoreAdapter(output_dir),
+        "workflow": WorkflowRestoreAdapter(state_dir, output_dir),
+    }
 
 
 def verify_marks_activity_records(snapshot: dict, *, max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES) -> dict:
@@ -556,8 +907,19 @@ def _main() -> int:
     parser = argparse.ArgumentParser(description="Emit Read-Web application backup Python domain snapshots")
     parser.add_argument("--state-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--restore-domain", choices=("workflow", "marks-activity"))
+    parser.add_argument("--restore-input", type=Path)
+    parser.add_argument("--expected-revision", type=int)
     args = parser.parse_args()
     try:
+        if args.restore_domain:
+            if not args.restore_input:
+                parser.error("--restore-input is required with --restore-domain")
+            snapshot = json.loads(args.restore_input.read_text(encoding="utf-8"))
+            adapter = create_production_restore_adapters(args.state_dir, args.output_dir)[args.restore_domain]
+            result = adapter.restore_snapshot(snapshot, expected_revision=args.expected_revision)
+            print(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            return 0
         print(json.dumps(
             collect_production_backup_domains(args.state_dir, args.output_dir),
             ensure_ascii=False,
