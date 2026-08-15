@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "words": [
+    {
+      "id": "performance-word-anchor",
+      "word": "anchor",
+      "lemma": "anchor",
+      "lookup_key": "anchor",
+      "entry_type": "word",
+      "language": "en",
+      "meaning": "a fixed point that provides stability",
+      "status": "learning",
+      "tags": ["performance-fixture"],
+      "created_at": "2026-08-01T08:00:00.000Z",
+      "updated_at": "2026-08-01T08:00:00.000Z"
+    }
+  ],
+  "contexts": [
+    {
+      "id": "performance-context-anchor",
+      "word_id": "performance-word-anchor",
+      "sentence": "The synthetic anchor keeps this performance journey deterministic.",
+      "meaning": "这个合成锚点使性能流程保持确定性。",
+      "simple_meaning": "a stable reference point",
+      "source_id": "performance-fixture-document",
+      "source_title": "Repository-authored performance fixture",
+      "source_url": null,
+      "surrounding_text": "Synthetic verification content only.",
+      "created_at": "2026-08-01T08:05:00.000Z"
+    }
+  ],
+  "reviewStates": [
+    {
+      "word_id": "performance-word-anchor",
+      "due_at": "2026-08-01T08:00:00.000Z",
+      "stability": 1.25,
+      "difficulty": 5.5,
+      "elapsed_days": 1,
+      "scheduled_days": 2,
+      "reps": 1,
+      "lapses": 0,
+      "state": "learning",
+      "last_review_at": "2026-07-31T08:00:00.000Z",
+      "learning_steps": 1
+    }
+  ],
+  "reviewLogs": []
+}

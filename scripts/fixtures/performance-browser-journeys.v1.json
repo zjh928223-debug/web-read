@@ -17,5 +17,5 @@
     "revision": 1
   },
   "previewFixture": "passage-preview-result.fixture.json",
-  "srsFixture": "src/features/srs-review/srs-review.sample.local.json"
+  "srsFixture": "srs-review-performance.fixture.json"
 }

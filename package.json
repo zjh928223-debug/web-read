@@ -227,7 +227,7 @@
     "dictionary:benchmark": "node --disable-warning=ExperimentalWarning scripts/ecdict-benchmark.mjs",
     "dictionary:endpoint-smoke": "node --disable-warning=ExperimentalWarning scripts/ecdict-endpoint-smoke.mjs",
     "dictionary:clean": "node scripts/ecdict-clean.mjs",
-    "test": "npm run verify:fast"
+    "test": "npm run verify:vite"
   },
   "keywords": [],
   "author": "",

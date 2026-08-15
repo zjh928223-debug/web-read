@@ -1,13 +1,13 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
-    "architecture": 84,
-    "behavior": 48,
-    "browser": 20,
-    "performance": 16,
-    "release": 49
+    "architecture": 104,
+    "behavior": 71,
+    "browser": 21,
+    "performance": 13,
+    "release": 8
   },
   "packageScriptCount": 211,
   "executableScriptCount": 217,
@@ -94,9 +94,10 @@
     },
     {
       "name": "test",
-      "command": "npm run verify:fast",
-      "category": "behavior",
+      "command": "npm run verify:vite",
+      "category": "browser",
       "layers": [
+        "browser",
         "behavior"
       ],
       "invokes": [],
@@ -107,7 +108,8 @@
       "command": "npm run verify:vite",
       "category": "browser",
       "layers": [
-        "browser"
+        "browser",
+        "behavior"
       ],
       "invokes": [],
       "owner": "package.json#scripts.verify"
@@ -230,9 +232,8 @@
     {
       "name": "verify:application-backup",
       "command": "node scripts/application-backup-check.mjs && node scripts/application-backup-adapter-check.mjs && node scripts/application-backup-fault-injection-check.mjs && node scripts/application-backup-concurrency-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -246,9 +247,8 @@
     {
       "name": "verify:application-backup-concurrency",
       "command": "node scripts/application-backup-concurrency-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -608,9 +608,8 @@
     {
       "name": "verify:download-object-url",
       "command": "node scripts/download-object-url-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -633,10 +632,9 @@
     {
       "name": "verify:exam-vocabulary-import-closure",
       "command": "node scripts/exam-vocabulary-import-closure-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -647,11 +645,10 @@
     {
       "name": "verify:fast",
       "command": "node scripts/verify-fast.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
-        "browser",
-        "performance",
-        "release"
+        "architecture",
+        "behavior"
       ],
       "invokes": [
         "scripts/verify-fast.mjs"
@@ -674,11 +671,11 @@
     {
       "name": "verify:full",
       "command": "node scripts/verify-full.mjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
-        "browser",
-        "performance",
-        "release"
+        "architecture",
+        "behavior",
+        "browser"
       ],
       "invokes": [
         "scripts/verify-full.mjs"
@@ -853,10 +850,9 @@
     {
       "name": "verify:learning-page-launcher",
       "command": "node scripts/learning-page-launcher-check.mjs",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
       "invokes": [
@@ -906,10 +902,9 @@
     {
       "name": "verify:legacy-vocabulary-audit",
       "command": "node scripts/legacy-vocabulary-audit-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -920,10 +915,9 @@
     {
       "name": "verify:legacy-vocabulary-migration",
       "command": "node scripts/legacy-vocabulary-migration-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -934,10 +928,8 @@
     {
       "name": "verify:legacy-vocabulary-reassessment",
       "command": "node scripts/legacy-vocabulary-reassessment-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "performance",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -960,10 +952,9 @@
     {
       "name": "verify:local-sentences",
       "command": "node --disable-warning=ExperimentalWarning scripts/local-sentence-warehouse-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1012,9 +1003,8 @@
     {
       "name": "verify:media-resource-owner",
       "command": "node scripts/media-resource-owner-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1025,11 +1015,9 @@
     {
       "name": "verify:merriam-webster-sentences",
       "command": "node --disable-warning=ExperimentalWarning scripts/merriam-webster-sentence-check.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -1089,9 +1077,8 @@
     {
       "name": "verify:passage-preview:daily-continuation",
       "command": "node scripts/passage-preview-daily-continuation-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1114,9 +1101,8 @@
     {
       "name": "verify:passage-preview:preload",
       "command": "node scripts/passage-preview-preload-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1151,12 +1137,9 @@
     {
       "name": "verify:passage-preview:unit",
       "command": "node scripts/passage-preview-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1167,10 +1150,9 @@
     {
       "name": "verify:performance-budgets",
       "command": "node scripts/perf/validate-performance-budgets.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
-        "performance",
-        "release"
+        "performance"
       ],
       "invokes": [
         "scripts/perf/validate-performance-budgets.mjs"
@@ -1205,11 +1187,11 @@
     {
       "name": "verify:performance:browser-candidate",
       "command": "npm run build && node scripts/perf/run-browser-budget-candidate.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
+        "behavior",
         "browser",
-        "performance",
-        "release"
+        "performance"
       ],
       "invokes": [
         "scripts/perf/run-browser-budget-candidate.mjs"
@@ -1219,10 +1201,9 @@
     {
       "name": "verify:performance:budget-gate",
       "command": "node scripts/perf/performance-budget-gate.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
-        "performance",
-        "release"
+        "performance"
       ],
       "invokes": [
         "scripts/perf/performance-budget-gate.mjs"
@@ -1232,10 +1213,9 @@
     {
       "name": "verify:performance:budget-gate-unit",
       "command": "node scripts/perf/performance-budget-gate-check.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
         "performance",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1285,9 +1265,9 @@
     {
       "name": "verify:persistence-fault-matrix",
       "command": "node scripts/persistence-fault-matrix.mjs",
-      "category": "browser",
+      "category": "behavior",
       "layers": [
-        "browser"
+        "behavior"
       ],
       "invokes": [
         "scripts/persistence-fault-matrix.mjs"
@@ -1297,11 +1277,9 @@
     {
       "name": "verify:personalization-shadow-activation",
       "command": "node scripts/personalization-shadow-activation-check.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -1312,10 +1290,9 @@
     {
       "name": "verify:personalization-shadow-diagnostics",
       "command": "node scripts/personalization-shadow-diagnostics-check.mjs",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
       "invokes": [
@@ -1404,11 +1381,10 @@
     {
       "name": "verify:production-host-lifecycle",
       "command": "npm run build && node scripts/production-host-lifecycle-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
-        "architecture",
-        "release",
-        "behavior"
+        "behavior",
+        "architecture"
       ],
       "invokes": [
         "scripts/production-host-lifecycle-check.mjs"
@@ -1648,10 +1624,9 @@
     {
       "name": "verify:reader-session-load-browser",
       "command": "node scripts/reader-session-load-browser-journeys-check.mjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
         "browser",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1662,9 +1637,8 @@
     {
       "name": "verify:reader-session-persistence",
       "command": "node scripts/reader-session-persistence-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -1689,6 +1663,9 @@
       "command": "node scripts/verify-release.mjs",
       "category": "release",
       "layers": [
+        "architecture",
+        "behavior",
+        "browser",
         "performance",
         "release"
       ],
@@ -1751,10 +1728,9 @@
     {
       "name": "verify:runtime-config",
       "command": "node scripts/runtime-config-integration-check.mjs && cd tools/subtitle-workflow && python -m unittest tests/test_runtime_config.py",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
       "invokes": [
@@ -2078,9 +2054,8 @@
     {
       "name": "verify:srs-pending-candidates-transaction",
       "command": "node scripts/srs-pending-candidates-transaction-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2091,11 +2066,9 @@
     {
       "name": "verify:srs-review",
       "command": "node scripts/srs-review-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2106,9 +2079,8 @@
     {
       "name": "verify:srs-review-policy-planner",
       "command": "node scripts/srs-review-policy-planner-check.cjs",
-      "category": "performance",
+      "category": "behavior",
       "layers": [
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -2119,10 +2091,9 @@
     {
       "name": "verify:srs-review-session-ledger-browser",
       "command": "node scripts/srs-review-session-ledger-browser-check.cjs",
-      "category": "performance",
+      "category": "browser",
       "layers": [
         "browser",
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -2133,12 +2104,9 @@
     {
       "name": "verify:srs-review-ui-v2",
       "command": "node scripts/srs-review-ui-v2-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2354,9 +2322,8 @@
     {
       "name": "verify:vocabulary-acquisition-service",
       "command": "node scripts/vocabulary-acquisition-service-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2404,10 +2371,9 @@
     {
       "name": "verify:vocabulary-context-evidence",
       "command": "node scripts/vocabulary-context-evidence-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2418,10 +2384,9 @@
     {
       "name": "verify:vocabulary-learning-uow-browser",
       "command": "node scripts/vocabulary-learning-uow-browser-check.cjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
         "browser",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2432,8 +2397,9 @@
     {
       "name": "verify:vocabulary-personalization",
       "command": "npm run verify:vocabulary-personalization-content && npm run verify:vocabulary-personalization-skills && npm run verify:vocabulary-personalization-preference && npm run verify:vocabulary-personalization-curriculum && npm run verify:vocabulary-personalization-shadow",
-      "category": "behavior",
+      "category": "architecture",
       "layers": [
+        "architecture",
         "behavior"
       ],
       "invokes": [],
@@ -2442,10 +2408,9 @@
     {
       "name": "verify:vocabulary-personalization-content",
       "command": "node scripts/verify-vocabulary-personalization-content.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2456,9 +2421,8 @@
     {
       "name": "verify:vocabulary-personalization-curriculum",
       "command": "node scripts/verify-vocabulary-personalization-curriculum.mjs",
-      "category": "performance",
+      "category": "behavior",
       "layers": [
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -2481,10 +2445,9 @@
     {
       "name": "verify:vocabulary-personalization-shadow",
       "command": "node scripts/verify-vocabulary-personalization-shadow.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "performance",
         "behavior"
       ],
       "invokes": [
@@ -2508,10 +2471,9 @@
     {
       "name": "verify:vocabulary-preview",
       "command": "node scripts/vocabulary-preview-service-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2522,9 +2484,8 @@
     {
       "name": "verify:vocabulary-preview-acquisition",
       "command": "node scripts/vocabulary-preview-acquisition-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2573,10 +2534,8 @@
     {
       "name": "verify:vocabulary-wave1-integration",
       "command": "node scripts/vocabulary-wave1-integration-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "performance",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2647,10 +2606,9 @@
     {
       "name": "verify:youtube-workflow-loader",
       "command": "node scripts/youtube-workflow-loader-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2661,9 +2619,8 @@
     {
       "name": "verify:youtube-workflow-loader-race",
       "command": "node scripts/youtube-workflow-loader-race-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2674,10 +2631,9 @@
     {
       "name": "verify:youtube-workflow-panel",
       "command": "node scripts/youtube-workflow-panel-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
       "invokes": [
@@ -2732,6 +2688,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:accessible-request-state-browser",
       "owners": [
         "package.json#scripts.verify:accessible-request-state-browser"
@@ -2754,6 +2711,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:ai-preview-sentences",
       "owners": [
         "package.json#scripts.verify:ai-preview-sentences"
@@ -2776,6 +2734,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:annotation-backfill-ai",
       "owners": [
@@ -2804,6 +2765,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:annotation-bubble",
       "owners": [
         "package.json#scripts.verify:annotation-bubble"
@@ -2829,6 +2793,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:annotation-bubble-resolver",
       "owners": [
@@ -2856,6 +2823,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:annotation-lightweight-module",
       "owners": [
         "package.json#scripts.verify:annotation-lightweight-module"
@@ -2881,6 +2851,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:annotation-storage-envelope",
       "owners": [
         "package.json#scripts.verify:annotation-storage-envelope"
@@ -2903,6 +2874,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:app-handlers",
       "owners": [
@@ -2929,6 +2903,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:app-window-facades",
       "owners": [
         "package.json#scripts.verify:app-window-facades"
@@ -2950,11 +2927,11 @@
     },
     {
       "path": "scripts/application-backup-adapter-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
         "package.json#scripts.verify:application-backup"
@@ -2965,7 +2942,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -2973,11 +2950,11 @@
     },
     {
       "path": "scripts/application-backup-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
         "package.json#scripts.verify:application-backup"
@@ -2988,7 +2965,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -2996,11 +2973,11 @@
     },
     {
       "path": "scripts/application-backup-concurrency-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
         "package.json#scripts.verify:application-backup",
@@ -3012,7 +2989,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -3020,11 +2997,11 @@
     },
     {
       "path": "scripts/application-backup-fault-injection-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
         "package.json#scripts.verify:application-backup"
@@ -3035,7 +3012,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -3048,6 +3025,7 @@
         "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:backup-restore-rehearsal",
       "owners": [
         "package.json#scripts.verify:backup-restore-rehearsal"
@@ -3070,6 +3048,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:application-persistence",
       "owners": [
         "package.json#scripts.verify:application-persistence",
@@ -3093,6 +3072,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -3115,6 +3095,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:audio-identity-module",
       "owners": [
@@ -3141,6 +3124,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:audio-store-facades",
       "owners": [
         "package.json#scripts.verify:audio-store-facades"
@@ -3166,6 +3152,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:audio-store-transaction",
       "owners": [
         "package.json#scripts.verify:audio-store-transaction"
@@ -3188,6 +3175,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:best-effort",
       "owners": [
         "package.json#scripts.verify:best-effort"
@@ -3210,6 +3198,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:bridge-startup",
       "owners": [
@@ -3236,6 +3227,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.preview:build-package",
       "owners": [
         "package.json#scripts.preview:build-package"
@@ -3258,6 +3250,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:chunk-controls-module",
       "owners": [
@@ -3285,6 +3280,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:chunk-interactions",
       "owners": [
         "package.json#scripts.verify:chunk-interactions"
@@ -3310,6 +3308,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:chunk-state",
       "owners": [
         "package.json#scripts.verify:chunk-state"
@@ -3332,6 +3331,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:cloze-state",
       "owners": [
         "package.json#scripts.verify:cloze-state"
@@ -3354,6 +3354,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:compatibility-consumer-map-determinism",
       "owners": [
         "package.json#scripts.verify:compatibility-consumer-map-determinism"
@@ -3377,6 +3378,7 @@
         "architecture",
         "browser"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.update:compatibility-consumer-map",
       "owners": [
         "package.json#scripts.update:compatibility-consumer-map",
@@ -3402,6 +3404,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:control-playback-state-deps",
       "owners": [
@@ -3429,6 +3434,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:critical-async-boundary",
       "owners": [
         "package.json#scripts.verify:critical-async-boundary"
@@ -3455,6 +3463,7 @@
         "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:current-documentation",
       "owners": [
         "package.json#scripts.verify:current-documentation"
@@ -3480,6 +3489,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:dialog-controller",
       "owners": [
         "package.json#scripts.verify:dialog-controller"
@@ -3498,11 +3508,11 @@
     },
     {
       "path": "scripts/download-object-url-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:download-object-url",
       "owners": [
         "package.json#scripts.verify:download-object-url"
@@ -3513,7 +3523,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -3525,6 +3535,7 @@
       "layers": [
         "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.dictionary:benchmark",
       "owners": [
         "package.json#scripts.dictionary:benchmark"
@@ -3546,6 +3557,9 @@
       "category": "architecture",
       "layers": [
         "architecture"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.dictionary:clean",
       "owners": [
@@ -3571,6 +3585,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.dictionary:endpoint-smoke",
       "owners": [
         "package.json#scripts.dictionary:endpoint-smoke"
@@ -3593,6 +3608,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.dictionary:lookup",
       "owners": [
         "package.json#scripts.dictionary:lookup"
@@ -3615,6 +3631,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:error-presenter",
       "owners": [
         "package.json#scripts.verify:error-presenter"
@@ -3633,12 +3650,12 @@
     },
     {
       "path": "scripts/exam-vocabulary-import-closure-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:exam-vocabulary-import-closure",
       "owners": [
         "package.json#scripts.verify:exam-vocabulary-import-closure"
@@ -3651,7 +3668,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -3663,6 +3680,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:file-input-bindings",
       "owners": [
@@ -3689,6 +3709,7 @@
       "layers": [
         "release"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.release:manifest",
       "owners": [
         "package.json#scripts.release:manifest"
@@ -3711,6 +3732,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:glass-effects",
       "owners": [
@@ -3736,6 +3760,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:highlight-controls-module",
       "owners": [
@@ -3763,6 +3790,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:hotkey-state-module",
       "owners": [
         "package.json#scripts.verify:hotkey-state-module"
@@ -3787,6 +3817,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:identity-storage-keys",
       "owners": [
         "package.json#scripts.verify:identity-storage-keys"
@@ -3809,6 +3840,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:ielts-learning-pools",
       "owners": [
         "package.json#scripts.verify:ielts-learning-pools"
@@ -3831,6 +3863,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:import-facades",
       "owners": [
@@ -3858,6 +3893,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:inline-handler-bindings",
       "owners": [
         "package.json#scripts.verify:inline-handler-bindings"
@@ -3882,6 +3920,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:job-polling-scheduler",
       "owners": [
         "package.json#scripts.verify:job-polling-scheduler"
@@ -3904,6 +3943,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:keyboard-facades",
       "owners": [
@@ -3930,6 +3972,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:keyboard-boundary",
       "owners": [
         "package.json#scripts.verify:keyboard-boundary"
@@ -3954,6 +3999,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:latest-wins-ledger",
       "owners": [
         "package.json#scripts.verify:latest-wins-ledger"
@@ -3972,12 +4018,12 @@
     },
     {
       "path": "scripts/learning-page-launcher-check.mjs",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:learning-page-launcher",
       "owners": [
         "package.json#scripts.verify:learning-page-launcher"
@@ -3989,7 +4035,7 @@
           "matches-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
+        "browser": false,
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
@@ -4003,6 +4049,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:legacy-deletion",
       "owners": [
@@ -4031,6 +4080,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:legacy-dom-drain",
       "owners": [
         "package.json#scripts.verify:legacy-dom-drain"
@@ -4056,6 +4108,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:legacy-root-copy",
       "owners": [
         "package.json#scripts.verify:legacy-root-copy"
@@ -4077,12 +4132,12 @@
     },
     {
       "path": "scripts/legacy-vocabulary-audit-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:legacy-vocabulary-audit",
       "owners": [
         "package.json#scripts.verify:legacy-vocabulary-audit"
@@ -4095,7 +4150,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4103,12 +4158,12 @@
     },
     {
       "path": "scripts/legacy-vocabulary-migration-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:legacy-vocabulary-migration",
       "owners": [
         "package.json#scripts.verify:legacy-vocabulary-migration"
@@ -4121,7 +4176,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4129,12 +4184,11 @@
     },
     {
       "path": "scripts/legacy-vocabulary-reassessment-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "performance",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:legacy-vocabulary-reassessment",
       "owners": [
         "package.json#scripts.verify:legacy-vocabulary-reassessment"
@@ -4144,8 +4198,8 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": false,
-        "performance": true,
-        "release": true,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4153,12 +4207,11 @@
     },
     {
       "path": "scripts/lib/read-web-production-backup.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "browser",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -4167,9 +4220,9 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,
-        "browser": true,
+        "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": true,
         "startsBrowser": false
@@ -4181,6 +4234,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:lifecycle-scope",
       "owners": [
         "package.json#scripts.verify:lifecycle-scope"
@@ -4199,12 +4253,12 @@
     },
     {
       "path": "scripts/local-sentence-warehouse-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:local-sentences",
       "owners": [
         "package.json#scripts.verify:local-sentences"
@@ -4217,7 +4271,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": false
@@ -4229,6 +4283,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:marks-state-module",
       "owners": [
@@ -4255,6 +4312,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:marks-store",
       "owners": [
         "package.json#scripts.verify:marks-store"
@@ -4279,6 +4339,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:media-playback-result",
       "owners": [
         "package.json#scripts.verify:media-playback-result"
@@ -4297,11 +4358,11 @@
     },
     {
       "path": "scripts/media-resource-owner-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:media-resource-owner",
       "owners": [
         "package.json#scripts.verify:media-resource-owner"
@@ -4312,7 +4373,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4320,13 +4381,12 @@
     },
     {
       "path": "scripts/merriam-webster-sentence-check.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:merriam-webster-sentences",
       "owners": [
         "package.json#scripts.verify:merriam-webster-sentences"
@@ -4337,8 +4397,8 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
-        "performance": true,
+        "browser": false,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -4351,6 +4411,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:native-picker-controller",
       "owners": [
         "package.json#scripts.verify:native-picker-controller"
@@ -4369,12 +4430,12 @@
     },
     {
       "path": "scripts/passage-preview-browser-check.cjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
         "browser",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -4385,7 +4446,7 @@
         "sourceRead": false,
         "browser": true,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": true
@@ -4393,14 +4454,12 @@
     },
     {
       "path": "scripts/passage-preview-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:unit",
       "owners": [
         "package.json#scripts.verify:passage-preview:unit"
@@ -4412,9 +4471,9 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
-        "performance": true,
-        "release": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4422,11 +4481,11 @@
     },
     {
       "path": "scripts/passage-preview-daily-continuation-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:daily-continuation",
       "owners": [
         "package.json#scripts.verify:passage-preview:daily-continuation"
@@ -4437,7 +4496,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4449,6 +4508,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:durable-state",
       "owners": [
         "package.json#scripts.verify:passage-preview:durable-state"
@@ -4467,11 +4527,11 @@
     },
     {
       "path": "scripts/passage-preview-preload-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:preload",
       "owners": [
         "package.json#scripts.verify:passage-preview:preload"
@@ -4482,7 +4542,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -4494,6 +4554,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:session-cache",
       "owners": [
         "package.json#scripts.verify:passage-preview:session-cache"
@@ -4516,6 +4577,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview-shortcuts",
       "owners": [
         "package.json#scripts.verify:passage-preview-shortcuts"
@@ -4538,6 +4600,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview:translation-generation",
       "owners": [
         "package.json#scripts.verify:passage-preview:translation-generation"
@@ -4560,6 +4623,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:passage-preview",
       "owners": [
         "package.json#scripts.verify:passage-preview"
@@ -4578,12 +4642,12 @@
     },
     {
       "path": "scripts/perf/browser-journeys.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
         "browser",
-        "performance",
-        "release"
+        "performance"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -4591,10 +4655,10 @@
       "invocation": "inventory-only",
       "evidence": {
         "sourceShape": [],
-        "sourceRead": true,
+        "sourceRead": false,
         "browser": true,
         "performance": true,
-        "release": true,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": true
@@ -4602,12 +4666,12 @@
     },
     {
       "path": "scripts/perf/performance-budget-gate-check.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
         "performance",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:budget-gate-unit",
       "owners": [
         "package.json#scripts.verify:performance:budget-gate-unit"
@@ -4618,7 +4682,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": true,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": false
@@ -4626,11 +4690,11 @@
     },
     {
       "path": "scripts/perf/performance-budget-gate.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
-        "performance",
-        "release"
+        "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:budget-gate",
       "owners": [
         "package.json#scripts.verify:performance:budget-gate"
@@ -4641,7 +4705,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": true,
-        "release": true,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -4654,6 +4718,7 @@
         "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:playback-scale-unit",
       "owners": [
         "package.json#scripts.verify:performance:playback-scale-unit"
@@ -4676,6 +4741,7 @@
       "layers": [
         "performance"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -4699,6 +4765,7 @@
         "browser",
         "performance"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -4717,12 +4784,12 @@
     },
     {
       "path": "scripts/perf/run-browser-budget-candidate.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
         "browser",
-        "performance",
-        "release"
+        "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:browser-candidate",
       "owners": [
         "package.json#scripts.verify:performance:browser-candidate"
@@ -4733,7 +4800,7 @@
         "sourceRead": false,
         "browser": true,
         "performance": true,
-        "release": true,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -4746,6 +4813,7 @@
         "browser",
         "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:browser",
       "owners": [
         "package.json#scripts.verify:performance:browser"
@@ -4755,7 +4823,7 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": true,
-        "performance": false,
+        "performance": true,
         "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
@@ -4768,6 +4836,7 @@
       "layers": [
         "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:playback-scale",
       "owners": [
         "package.json#scripts.verify:performance:playback-scale"
@@ -4786,11 +4855,11 @@
     },
     {
       "path": "scripts/perf/validate-performance-budgets.mjs",
-      "category": "release",
+      "category": "performance",
       "layers": [
-        "performance",
-        "release"
+        "performance"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance-budgets",
       "owners": [
         "package.json#scripts.verify:performance-budgets"
@@ -4801,7 +4870,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": true,
-        "release": true,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -4809,10 +4878,11 @@
     },
     {
       "path": "scripts/persistence-fault-matrix.mjs",
-      "category": "browser",
+      "category": "behavior",
       "layers": [
-        "browser"
+        "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:persistence-fault-matrix",
       "owners": [
         "package.json#scripts.verify:persistence-fault-matrix"
@@ -4821,7 +4891,7 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
-        "browser": true,
+        "browser": false,
         "performance": false,
         "release": false,
         "behaviorAssertions": false,
@@ -4831,13 +4901,12 @@
     },
     {
       "path": "scripts/personalization-shadow-activation-check.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:personalization-shadow-activation",
       "owners": [
         "package.json#scripts.verify:personalization-shadow-activation"
@@ -4848,8 +4917,8 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
-        "performance": true,
+        "browser": false,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -4858,12 +4927,12 @@
     },
     {
       "path": "scripts/personalization-shadow-diagnostics-check.mjs",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:personalization-shadow-diagnostics",
       "owners": [
         "package.json#scripts.verify:personalization-shadow-diagnostics"
@@ -4874,7 +4943,7 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
+        "browser": false,
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
@@ -4888,6 +4957,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:pinia-bridge-module",
       "owners": [
@@ -4916,6 +4988,7 @@
         "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:performance:playback-active-word",
       "owners": [
         "package.json#scripts.verify:performance:playback-active-word"
@@ -4927,7 +5000,7 @@
         ],
         "sourceRead": false,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
@@ -4942,6 +5015,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:playback-runtime-helpers",
       "owners": [
         "package.json#scripts.verify:playback-runtime-helpers"
@@ -4968,6 +5042,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:playback-single-owner",
       "owners": [
         "package.json#scripts.verify:playback-single-owner"
@@ -4991,6 +5066,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:playback-state",
       "owners": [
         "package.json#scripts.verify:playback-state"
@@ -5013,6 +5089,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:preview-target-validation",
       "owners": [
         "package.json#scripts.verify:preview-target-validation"
@@ -5031,12 +5108,12 @@
     },
     {
       "path": "scripts/production-host-lifecycle-check.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:production-host-lifecycle",
       "owners": [
         "package.json#scripts.verify:production-host-lifecycle"
@@ -5049,7 +5126,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": false
@@ -5061,6 +5138,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:production-preview",
       "owners": [
         "package.json#scripts.verify:production-preview"
@@ -5085,6 +5163,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:interactions",
       "owners": [
         "package.json#scripts.verify:interactions"
@@ -5110,6 +5189,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -5133,6 +5213,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:playback",
       "owners": [
         "package.json#scripts.verify:playback"
@@ -5155,6 +5236,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-app-runtime",
       "owners": [
@@ -5182,6 +5266,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-bootstrap-runtime",
       "owners": [
         "package.json#scripts.verify:reader-bootstrap-runtime"
@@ -5207,6 +5294,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-controls-runtime",
       "owners": [
@@ -5234,6 +5324,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-dom-refs",
       "owners": [
         "package.json#scripts.verify:reader-dom-refs"
@@ -5259,6 +5352,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:reader-feature-runtime",
       "owners": [
         "package.json#scripts.verify:reader-feature-runtime"
@@ -5281,6 +5375,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-feature-runtime-deps",
       "owners": [
@@ -5308,6 +5405,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-import-runtime",
       "owners": [
         "package.json#scripts.verify:reader-import-runtime"
@@ -5333,6 +5433,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-interaction-runtime",
       "owners": [
@@ -5360,6 +5463,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-keyboard-runtime",
       "owners": [
         "package.json#scripts.verify:reader-keyboard-runtime"
@@ -5385,6 +5491,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -5407,6 +5514,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-playback-runtime",
       "owners": [
@@ -5433,6 +5543,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-public-facades",
       "owners": [
         "package.json#scripts.verify:reader-public-facades"
@@ -5458,6 +5571,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:reader-runtime-assembly",
       "owners": [
         "package.json#scripts.verify:behavior:reader-runtime-assembly"
@@ -5480,6 +5594,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-runtime-assembly",
       "owners": [
@@ -5507,6 +5624,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-runtime-context",
       "owners": [
         "package.json#scripts.verify:reader-runtime-context"
@@ -5532,6 +5652,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:reader-runtime-deps",
       "owners": [
@@ -5559,6 +5682,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-runtime-helpers",
       "owners": [
         "package.json#scripts.verify:reader-runtime-helpers"
@@ -5584,6 +5710,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:reader-runtime-shell",
       "owners": [
         "package.json#scripts.verify:reader-runtime-shell"
@@ -5606,12 +5735,12 @@
     },
     {
       "path": "scripts/reader-session-load-browser-journeys-check.mjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
         "browser",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:reader-session-load-browser",
       "owners": [
         "package.json#scripts.verify:reader-session-load-browser"
@@ -5622,7 +5751,7 @@
         "sourceRead": false,
         "browser": true,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": true
@@ -5630,11 +5759,11 @@
     },
     {
       "path": "scripts/reader-session-persistence-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:reader-session-persistence",
       "owners": [
         "package.json#scripts.verify:reader-session-persistence"
@@ -5645,7 +5774,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -5657,6 +5786,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:reader-session",
       "owners": [
         "package.json#scripts.verify:behavior:reader-session",
@@ -5680,6 +5810,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:render-facades",
       "owners": [
@@ -5708,6 +5841,7 @@
         "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:repository-hygiene",
       "owners": [
         "package.json#scripts.verify:repository-hygiene"
@@ -5733,6 +5867,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:request-supervisor",
       "owners": [
         "package.json#scripts.verify:request-supervisor"
@@ -5755,6 +5890,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:retired-compatibility",
       "owners": [
         "package.json#scripts.verify:behavior:retired-compatibility"
@@ -5777,6 +5913,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:notes-wrapper-drain",
       "owners": [
@@ -5804,6 +5943,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:runtime-assembly-lifecycle",
       "owners": [
         "package.json#scripts.verify:runtime-assembly-lifecycle"
@@ -5822,12 +5962,12 @@
     },
     {
       "path": "scripts/runtime-config-integration-check.mjs",
-      "category": "browser",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:runtime-config",
       "owners": [
         "package.json#scripts.verify:runtime-config"
@@ -5838,7 +5978,7 @@
           "asserts-source-text"
         ],
         "sourceRead": false,
-        "browser": true,
+        "browser": false,
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
@@ -5852,6 +5992,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:runtime-state-facade",
       "owners": [
@@ -5877,6 +6020,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:runtime-state-source",
       "owners": [
@@ -5905,6 +6051,7 @@
         "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:script-inventory",
       "owners": [
         "package.json#scripts.verify:script-inventory"
@@ -5930,6 +6077,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:script-order",
       "owners": [
@@ -5958,6 +6108,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:sentence-translations",
       "owners": [
         "package.json#scripts.verify:sentence-translations"
@@ -5982,6 +6135,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-annotation-bundle-merge",
       "owners": [
@@ -6009,6 +6165,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-annotation-context",
       "owners": [
         "package.json#scripts.verify:session-annotation-context"
@@ -6034,6 +6193,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-annotation-export-payload",
       "owners": [
@@ -6061,6 +6223,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-annotation-generated-index",
       "owners": [
         "package.json#scripts.verify:session-annotation-generated-index"
@@ -6086,6 +6251,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-annotation-import-normalization",
       "owners": [
@@ -6113,6 +6281,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-annotation-lightweight-io",
       "owners": [
         "package.json#scripts.verify:session-annotation-lightweight-io"
@@ -6138,6 +6309,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-annotation-marks",
       "owners": [
@@ -6165,6 +6339,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-annotation-runtime",
       "owners": [
         "package.json#scripts.verify:session-annotation-runtime"
@@ -6190,6 +6367,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-annotation-services",
       "owners": [
@@ -6217,6 +6397,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-annotation-text",
       "owners": [
         "package.json#scripts.verify:session-annotation-text"
@@ -6242,6 +6425,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-facades",
       "owners": [
@@ -6269,6 +6455,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-lifecycle-runtime",
       "owners": [
         "package.json#scripts.verify:session-lifecycle-runtime"
@@ -6295,6 +6484,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-restore-runtime",
       "owners": [
         "package.json#scripts.verify:session-restore-runtime"
@@ -6320,6 +6512,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:session-runtime-adapters",
       "owners": [
         "package.json#scripts.verify:behavior:session-runtime-adapters"
@@ -6342,6 +6535,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-runtime-adapters",
       "owners": [
@@ -6369,6 +6565,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-runtime-assembly",
       "owners": [
         "package.json#scripts.verify:session-runtime-assembly"
@@ -6394,6 +6593,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:session-startup-cleanup",
       "owners": [
@@ -6421,6 +6623,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-startup-runtime",
       "owners": [
         "package.json#scripts.verify:session-startup-runtime"
@@ -6447,6 +6652,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-state-provider",
       "owners": [
         "package.json#scripts.verify:session-state-provider"
@@ -6472,6 +6680,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:session-ui-settings-restore",
       "owners": [
         "package.json#scripts.verify:session-ui-settings-restore"
@@ -6493,11 +6704,11 @@
     },
     {
       "path": "scripts/srs-pending-candidates-transaction-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:srs-pending-candidates-transaction",
       "owners": [
         "package.json#scripts.verify:srs-pending-candidates-transaction"
@@ -6508,7 +6719,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -6516,13 +6727,12 @@
     },
     {
       "path": "scripts/srs-review-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:srs-review",
       "owners": [
         "package.json#scripts.verify:srs-review"
@@ -6534,9 +6744,9 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
+        "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -6544,11 +6754,11 @@
     },
     {
       "path": "scripts/srs-review-policy-planner-check.cjs",
-      "category": "performance",
+      "category": "behavior",
       "layers": [
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:srs-review-policy-planner",
       "owners": [
         "package.json#scripts.verify:srs-review-policy-planner"
@@ -6558,7 +6768,7 @@
         "sourceShape": [],
         "sourceRead": true,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -6567,11 +6777,11 @@
     },
     {
       "path": "scripts/srs-review-service-v2-check.cjs",
-      "category": "performance",
+      "category": "behavior",
       "layers": [
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -6581,7 +6791,7 @@
         "sourceShape": [],
         "sourceRead": true,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -6590,12 +6800,12 @@
     },
     {
       "path": "scripts/srs-review-session-ledger-browser-check.cjs",
-      "category": "performance",
+      "category": "browser",
       "layers": [
         "browser",
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:srs-review-session-ledger-browser",
       "owners": [
         "package.json#scripts.verify:srs-review-session-ledger-browser"
@@ -6605,7 +6815,7 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": true,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -6614,14 +6824,12 @@
     },
     {
       "path": "scripts/srs-review-ui-v2-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "browser",
-        "performance",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:srs-review-ui-v2",
       "owners": [
         "package.json#scripts.verify:srs-review-ui-v2"
@@ -6632,9 +6840,9 @@
           "asserts-source-text"
         ],
         "sourceRead": true,
-        "browser": true,
-        "performance": true,
-        "release": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -6646,6 +6854,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:state-facades",
       "owners": [
@@ -6672,6 +6883,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:style-editor-module",
       "owners": [
@@ -6700,6 +6914,7 @@
         "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:supply-chain",
       "owners": [
         "package.json#scripts.verify:supply-chain"
@@ -6724,6 +6939,9 @@
       "layers": [
         "architecture"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:architecture:test-inventory",
       "owners": [
         "package.json#scripts.verify:architecture:test-inventory",
@@ -6738,8 +6956,8 @@
         ],
         "sourceRead": true,
         "browser": true,
-        "performance": true,
-        "release": true,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": true
@@ -6751,6 +6969,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:theme-controls-module",
       "owners": [
@@ -6777,6 +6998,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:transcript-interactions",
       "owners": [
         "package.json#scripts.verify:transcript-interactions"
@@ -6802,6 +7026,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:transcript-state",
       "owners": [
         "package.json#scripts.verify:transcript-state"
@@ -6824,6 +7049,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:ui-facades",
       "owners": [
@@ -6850,6 +7078,9 @@
       "layers": [
         "architecture"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:architecture:source-shape",
       "owners": [
         "package.json#scripts.verify:architecture:source-shape"
@@ -6872,6 +7103,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:migrated-interfaces",
       "owners": [
         "package.json#scripts.verify:behavior:migrated-interfaces"
@@ -6881,8 +7113,8 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": false,
-        "performance": true,
-        "release": true,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -6894,6 +7126,7 @@
       "layers": [
         "release"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:clean-room",
       "owners": [
         "package.json#scripts.verify:clean-room"
@@ -6912,24 +7145,22 @@
     },
     {
       "path": "scripts/verify-fast.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "browser",
-        "performance",
-        "release"
+        "behavior"
       ],
-      "owner": "package.json#scripts.test",
+      "aggregates": [],
+      "owner": "package.json#scripts.verify:fast",
       "owners": [
-        "package.json#scripts.test",
         "package.json#scripts.verify:fast"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
-        "browser": true,
-        "performance": true,
-        "release": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -6937,12 +7168,11 @@
     },
     {
       "path": "scripts/verify-full.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "browser",
-        "performance",
-        "release"
+        "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:full",
       "owners": [
         "package.json#scripts.verify:full"
@@ -6951,9 +7181,9 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
-        "browser": true,
-        "performance": true,
-        "release": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
@@ -6963,9 +7193,9 @@
       "path": "scripts/verify-release.mjs",
       "category": "release",
       "layers": [
-        "performance",
         "release"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:release",
       "owners": [
         "package.json#scripts.verify:release"
@@ -6975,7 +7205,7 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": true,
         "behaviorAssertions": false,
         "executesModule": false,
@@ -6988,6 +7218,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:toolchain",
       "owners": [
         "package.json#scripts.verify:toolchain"
@@ -7006,12 +7237,12 @@
     },
     {
       "path": "scripts/verify-vocabulary-personalization-content.mjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-personalization",
       "owners": [
         "package.json#scripts.verify:vocabulary-personalization",
@@ -7025,7 +7256,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7033,11 +7264,11 @@
     },
     {
       "path": "scripts/verify-vocabulary-personalization-curriculum.mjs",
-      "category": "performance",
+      "category": "behavior",
       "layers": [
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-personalization",
       "owners": [
         "package.json#scripts.verify:vocabulary-personalization",
@@ -7048,7 +7279,7 @@
         "sourceShape": [],
         "sourceRead": true,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -7061,6 +7292,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-personalization",
       "owners": [
         "package.json#scripts.verify:vocabulary-personalization",
@@ -7080,12 +7312,12 @@
     },
     {
       "path": "scripts/verify-vocabulary-personalization-shadow.mjs",
-      "category": "performance",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-personalization",
       "owners": [
         "package.json#scripts.verify:vocabulary-personalization",
@@ -7098,7 +7330,7 @@
         ],
         "sourceRead": true,
         "browser": false,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -7111,6 +7343,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:vocabulary-personalization",
       "owners": [
@@ -7138,6 +7373,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:video-player-behavior",
       "owners": [
         "package.json#scripts.verify:video-player-behavior"
@@ -7160,6 +7396,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:video-player",
       "owners": [
@@ -7189,6 +7428,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:visual-vocab-module",
       "owners": [
         "package.json#scripts.verify:visual-vocab-module"
@@ -7215,8 +7457,10 @@
         "browser",
         "behavior"
       ],
-      "owner": "package.json#scripts.verify",
+      "aggregates": [],
+      "owner": "package.json#scripts.test",
       "owners": [
+        "package.json#scripts.test",
         "package.json#scripts.verify",
         "package.json#scripts.verify:vite"
       ],
@@ -7239,6 +7483,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocab-matching",
       "owners": [
         "package.json#scripts.verify:vocab-matching"
@@ -7261,6 +7506,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-acquisition-repository",
       "owners": [
         "package.json#scripts.verify:vocabulary-acquisition-repository"
@@ -7279,11 +7525,11 @@
     },
     {
       "path": "scripts/vocabulary-acquisition-service-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-acquisition-service",
       "owners": [
         "package.json#scripts.verify:vocabulary-acquisition-service"
@@ -7294,7 +7540,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7306,6 +7552,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:vocabulary-add-word-boundary",
       "owners": [
@@ -7331,6 +7580,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-article-acquisition",
       "owners": [
         "package.json#scripts.verify:vocabulary-article-acquisition"
@@ -7353,6 +7603,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-command-receipt-fingerprint",
       "owners": [
         "package.json#scripts.verify:vocabulary-command-receipt-fingerprint"
@@ -7371,12 +7622,12 @@
     },
     {
       "path": "scripts/vocabulary-context-evidence-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-context-evidence",
       "owners": [
         "package.json#scripts.verify:vocabulary-context-evidence"
@@ -7390,7 +7641,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7398,11 +7649,13 @@
     },
     {
       "path": "scripts/vocabulary-learning-events-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
@@ -7416,7 +7669,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7424,12 +7677,12 @@
     },
     {
       "path": "scripts/vocabulary-learning-uow-browser-check.cjs",
-      "category": "release",
+      "category": "browser",
       "layers": [
         "browser",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-learning-uow-browser",
       "owners": [
         "package.json#scripts.verify:vocabulary-learning-uow-browser"
@@ -7440,7 +7693,7 @@
         "sourceRead": false,
         "browser": true,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": true
@@ -7452,6 +7705,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7470,11 +7724,11 @@
     },
     {
       "path": "scripts/vocabulary-persistence-faults-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7485,7 +7739,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7493,11 +7747,11 @@
     },
     {
       "path": "scripts/vocabulary-preview-acquisition-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-preview-acquisition",
       "owners": [
         "package.json#scripts.verify:vocabulary-preview-acquisition"
@@ -7508,7 +7762,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7516,12 +7770,12 @@
     },
     {
       "path": "scripts/vocabulary-preview-service-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-preview",
       "owners": [
         "package.json#scripts.verify:vocabulary-preview"
@@ -7534,7 +7788,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7546,6 +7800,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-preview-ui",
       "owners": [
         "package.json#scripts.verify:vocabulary-preview-ui"
@@ -7569,6 +7824,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#devTool",
       "owners": [
         "docs/architecture/script-inventory.json#devTool"
@@ -7592,6 +7848,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7615,6 +7872,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7637,6 +7895,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:vocabulary-snapshot-repository",
       "owners": [
@@ -7663,6 +7924,9 @@
         "architecture",
         "behavior"
       ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
       "owner": "package.json#scripts.verify:vocabulary-srs",
       "owners": [
         "package.json#scripts.verify:vocabulary-srs"
@@ -7684,12 +7948,11 @@
     },
     {
       "path": "scripts/vocabulary-wave1-integration-check.cjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "performance",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:vocabulary-wave1-integration",
       "owners": [
         "package.json#scripts.verify:vocabulary-wave1-integration"
@@ -7699,8 +7962,8 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": false,
-        "performance": true,
-        "release": true,
+        "performance": false,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7712,6 +7975,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:workflow-reader-ledger",
       "owners": [
@@ -7737,6 +8003,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-batch-jobs",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-batch-jobs"
@@ -7759,6 +8026,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:workflow",
       "owners": [
         "package.json#scripts.verify:behavior:workflow",
@@ -7784,6 +8052,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7810,6 +8079,7 @@
         "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-large-media-budget",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-large-media-budget"
@@ -7828,12 +8098,12 @@
     },
     {
       "path": "scripts/youtube-workflow-loader-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:behavior:workflow",
       "owners": [
         "package.json#scripts.verify:behavior:workflow",
@@ -7847,7 +8117,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7855,11 +8125,11 @@
     },
     {
       "path": "scripts/youtube-workflow-loader-race-check.mjs",
-      "category": "release",
+      "category": "behavior",
       "layers": [
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-loader-race",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-loader-race"
@@ -7870,7 +8140,7 @@
         "sourceRead": false,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7882,6 +8152,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
@@ -7908,6 +8181,7 @@
         "browser",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-panel-behavior",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-panel-behavior"
@@ -7926,12 +8200,12 @@
     },
     {
       "path": "scripts/youtube-workflow-panel-check.cjs",
-      "category": "release",
+      "category": "architecture",
       "layers": [
         "architecture",
-        "release",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-panel",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-panel"
@@ -7946,7 +8220,7 @@
         "sourceRead": true,
         "browser": false,
         "performance": false,
-        "release": true,
+        "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
@@ -7954,13 +8228,13 @@
     },
     {
       "path": "scripts/youtube-workflow-panel-reader-recovery-browser-check.mjs",
-      "category": "performance",
+      "category": "browser",
       "layers": [
         "architecture",
         "browser",
-        "performance",
         "behavior"
       ],
+      "aggregates": [],
       "owner": "docs/architecture/script-inventory.json#releaseGate",
       "owners": [
         "docs/architecture/script-inventory.json#releaseGate"
@@ -7972,7 +8246,7 @@
         ],
         "sourceRead": false,
         "browser": true,
-        "performance": true,
+        "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": false,
@@ -7985,6 +8259,9 @@
       "layers": [
         "architecture",
         "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
       ],
       "owner": "package.json#scripts.verify:youtube-workflow-secret",
       "owners": [
@@ -8011,6 +8288,7 @@
       "layers": [
         "behavior"
       ],
+      "aggregates": [],
       "owner": "package.json#scripts.verify:youtube-workflow-streaming",
       "owners": [
         "package.json#scripts.verify:youtube-workflow-streaming"

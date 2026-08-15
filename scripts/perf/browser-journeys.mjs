@@ -8,10 +8,19 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const baseUrl = process.env.READ_WEB_PERF_BASE_URL || 'http://127.0.0.1:5174'
 const baseOrigin = new URL(baseUrl).origin
 const outputDirectory = path.resolve(process.env.READ_WEB_PERF_OUTPUT || path.join(repoRoot, 'output', 'performance'))
-const fixturePath = path.join(repoRoot, 'scripts', 'fixtures', 'performance-browser-journeys.v1.json')
-const previewFixturePath = path.join(repoRoot, 'scripts', 'fixtures', 'passage-preview-result.fixture.json')
-const srsFixtureText = await readFile(path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review.sample.local.json'), 'utf8')
+const fixtureRoot = path.join(repoRoot, 'scripts', 'fixtures')
+const fixturePath = path.join(fixtureRoot, 'performance-browser-journeys.v1.json')
 const fixture = JSON.parse(await readFile(fixturePath, 'utf8'))
+const resolveFixturePath = (name) => {
+  const resolved = path.resolve(fixtureRoot, String(name || ''))
+  const relative = path.relative(fixtureRoot, resolved)
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`Performance fixture path must stay under scripts/fixtures: ${name}`)
+  }
+  return resolved
+}
+const previewFixturePath = resolveFixturePath(fixture.previewFixture)
+const srsFixtureText = await readFile(resolveFixturePath(fixture.srsFixture), 'utf8')
 const fixedJourneyOrder = Object.freeze([
   'cold-start',
   'material-open',

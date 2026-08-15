@@ -10,6 +10,7 @@ const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'pyth
 const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
   command('Python dependency lock', pythonCommand, ['tools/subtitle-workflow/scripts/verify_python_lock.py']),
+  command('test inventory freshness and ownership', npmCommand, ['run', 'verify:test-inventory']),
   command('test inventory classifier self-test (canonical)', npmCommand, ['run', 'verify:architecture:test-inventory']),
   command('architecture source-shape guards (canonical)', npmCommand, ['run', 'verify:architecture:source-shape']),
   command('migrated interface behavior (canonical)', npmCommand, ['run', 'verify:behavior:migrated-interfaces']),

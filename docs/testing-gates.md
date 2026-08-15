@@ -8,7 +8,9 @@ included/excluded 清单；未执行的层不会被描述为已覆盖。
 `npm run verify:test-inventory` 会审计 `package.json` 的直接命令、`npm run` 的
 传递调用，以及 `scripts/` 下的可执行 Node 检查。结果写入
 `docs/architecture/test-inventory.json`，每条记录都有 `category`、`layers`、
-`owner`、`invocation` 和证据字段。分类器自测为：
+`owner`、`invocation`、canonical `aggregates` 和证据字段。混合检查若由 behavior、
+browser 或其他专用 gate 执行，其源码形状证据不会自动把整个脚本塞进 architecture
+aggregate。分类器自测为：
 
 ```powershell
 npm run verify:architecture:test-inventory
@@ -45,10 +47,11 @@ node scripts/verify-fast.mjs --list
 
 Fast 明确执行：
 
-1. `verify:architecture:test-inventory` 分类器自测；
-2. `verify:architecture:source-shape` canonical source-shape aggregate；
-3. `verify:behavior:migrated-interfaces` canonical behavior aggregate；
-4. 工具链、事务/backup contract、playback/annotation/vocabulary/workflow
+1. `verify:test-inventory` 已提交清单新鲜度、owner 和 orphan 门禁；
+2. `verify:architecture:test-inventory` 分类器自测；
+3. `verify:architecture:source-shape` canonical source-shape aggregate；
+4. `verify:behavior:migrated-interfaces` canonical behavior aggregate；
+5. 工具链、事务/backup contract、playback/annotation/vocabulary/workflow
    behavior 和 Python service dependency inventory。
 
 Fast 明确排除：browser journeys、build、Python integration suite、实时网络/
@@ -60,10 +63,11 @@ architecture=EXECUTED (canonical), behavior=EXECUTED (canonical),
 browser=EXCLUDED, performance=EXCLUDED, release=EXCLUDED
 ```
 
-`verify:architecture:source-shape` 当前执行 78 个有 owner 的 focused guards。
+`verify:architecture:source-shape` 执行清单中有 owner 的 focused guards。
 仍待 10.5 生产迁移的 `runtime-state-source-check.cjs` 和
 `video-player-module-check.cjs` 会列在 architecture 的 excluded 清单中，并在
-迁移完成后恢复；它们不能被当作行为或发布证据。其他历史
+迁移完成后恢复；聚合会探测这两个预期失败，若检查转绿或失败原因漂移则要求
+立即删除排除项。它们不能被当作行为或发布证据。其他历史
 `verify:<feature>` 名称继续作为兼容入口，canonical aggregate 是 fast/full 文档
 和门禁使用的唯一聚合入口。
 

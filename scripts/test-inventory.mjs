@@ -10,6 +10,32 @@ const inventoryPath = path.join(repositoryRoot, 'docs', 'architecture', 'test-in
 const executableExtensions = new Set(['.js', '.cjs', '.mjs'])
 const packageScriptPattern = /(?:npm|npm\.cmd)\s+run\s+([\w:.-]+)/g
 const pathPattern = /(?:^|["'\s(])((?:scripts|tools\/subtitle-workflow\/scripts)\/[A-Za-z0-9_./-]+\.(?:cjs|mjs|js|py|ps1|sh))/g
+const explicitCommandLayers = new Map([
+  ['verify:fast', ['architecture', 'behavior']],
+  ['verify:full', ['architecture', 'behavior', 'browser']],
+  ['verify:release', ['architecture', 'behavior', 'browser', 'performance', 'release']],
+])
+const architectureEvidenceOwnedByOtherGates = new Set([
+  'scripts/exam-vocabulary-import-closure-check.cjs',
+  'scripts/learning-page-launcher-check.mjs',
+  'scripts/legacy-vocabulary-audit-check.cjs',
+  'scripts/legacy-vocabulary-migration-check.mjs',
+  'scripts/local-sentence-warehouse-check.mjs',
+  'scripts/merriam-webster-sentence-check.mjs',
+  'scripts/passage-preview-check.cjs',
+  'scripts/personalization-shadow-activation-check.mjs',
+  'scripts/personalization-shadow-diagnostics-check.mjs',
+  'scripts/production-host-lifecycle-check.mjs',
+  'scripts/runtime-config-integration-check.mjs',
+  'scripts/srs-review-check.cjs',
+  'scripts/srs-review-ui-v2-check.cjs',
+  'scripts/verify-vocabulary-personalization-content.mjs',
+  'scripts/verify-vocabulary-personalization-shadow.mjs',
+  'scripts/vocabulary-context-evidence-check.cjs',
+  'scripts/vocabulary-preview-service-check.cjs',
+  'scripts/youtube-workflow-loader-check.cjs',
+  'scripts/youtube-workflow-panel-check.cjs',
+])
 
 const sourceShapeNames = [
   'source', 'moduleSource', 'appSource', 'assemblySource', 'featureSource', 'runtimeSource',
@@ -91,6 +117,11 @@ const tests = scriptPaths.map((relativePath) => {
     path: relativePath,
     category: primaryCategory(layers),
     layers,
+    aggregates: layers.includes('architecture')
+      && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
+      && !architectureEvidenceOwnedByOtherGates.has(relativePath)
+      ? ['architecture:source-shape']
+      : [],
     owner: allOwners[0] || null,
     owners: allOwners,
     invocation: Number.isFinite(packageDepthByPath.get(relativePath))
@@ -102,7 +133,7 @@ const tests = scriptPaths.map((relativePath) => {
 
 const packageCommands = packageScripts.map(([name, command]) => {
   const directPaths = packageInvocations.get(name) || []
-  const layers = classifyCommand(name, command, directPaths, tests)
+  const layers = resolveCommandLayers(name)
   return {
     name,
     command,
@@ -113,8 +144,18 @@ const packageCommands = packageScripts.map(([name, command]) => {
   }
 })
 
+function resolveCommandLayers(name, visiting = new Set()) {
+  if (explicitCommandLayers.has(name)) return [...explicitCommandLayers.get(name)].sort(categoryOrder)
+  if (visiting.has(name)) return []
+  const nextVisiting = new Set(visiting).add(name)
+  const command = packageJson.scripts?.[name] || ''
+  const nestedLayers = collectNestedPackageScripts(command)
+    .flatMap((nestedName) => resolveCommandLayers(nestedName, nextVisiting))
+  return classifyCommand(name, command, packageInvocations.get(name) || [], tests, nestedLayers)
+}
+
 const result = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   generatedBy: 'scripts/test-inventory.mjs',
   scope: 'Package verification/test/release commands and every transitive Node script under scripts/.',
   categories: Object.fromEntries(['architecture', 'behavior', 'browser', 'performance', 'release'].map((category) => [
@@ -180,9 +221,11 @@ function classifyEvidence(relativePath, source) {
   return {
     sourceShape: [...new Set(sourceShape)].sort(),
     sourceRead,
-    browser: /playwright|chromium|page\.|browser\s*=/i.test(source) || /(?:browser|journey|vite)-/.test(relativePath),
-    performance: /performance|benchmark|budget|long-task|scale|p95|latency/i.test(`${relativePath}\n${source}`),
-    release: /release|clean-room|supply-chain|manifest|hygiene|script-inventory|current-documentation|license|secret-scan/i.test(`${relativePath}\n${source}`),
+    browser: /(?:browser|journey|vite)-/.test(relativePath)
+      || /(?:from\s+['"]playwright['"]|require\(['"]playwright['"]\)|chromium\.launch\s*\()/i.test(source),
+    performance: /(?:^|\/)(?:perf|performance)(?:\/|-)|benchmark|budget/i.test(relativePath)
+      || /(?:performance\.now\s*\(|PerformanceObserver\s*\()/i.test(source),
+    release: /release|clean-room|supply-chain|repository-hygiene|script-inventory|current-documentation|license|secret-scan/i.test(relativePath),
     behaviorAssertions: /node:assert|assert\.(?:equal|deepEqual|deepStrictEqual|ok|rejects|throws|match)/.test(source),
     executesModule: /data:text\/javascript|import\s*\(|require\s*\(/.test(source),
     startsBrowser: /playwright|chromium|launch\s*\(/i.test(source),
@@ -206,16 +249,18 @@ function classifyLayers(relativePath, source, evidence, owners) {
   return [...layers].sort(categoryOrder)
 }
 
-function classifyCommand(name, command, directPaths, tests) {
+function classifyCommand(name, command, directPaths, tests, inheritedLayers = []) {
   if (/^verify:architecture:/.test(name)) return ['architecture']
   if (/^verify:behavior:/.test(name)) return ['behavior']
-  const direct = directPaths.flatMap((relativePath) => tests.find((test) => test.path === relativePath)?.layers || [])
-  const nameAndCommand = `${name} ${command}`
-  if (/verify:architecture:|source-shape/i.test(nameAndCommand)) direct.push('architecture')
-  if (/verify:behavior/i.test(nameAndCommand)) direct.push('behavior')
-  if (/verify:performance|benchmark|perf\//i.test(nameAndCommand)) direct.push('performance')
-  if (/verify:release|release:|clean-room|supply-chain|manifest|hygiene/i.test(nameAndCommand)) direct.push('release')
-  if (/browser|journey|vite|interaction/i.test(nameAndCommand)) direct.push('browser')
+  const direct = [
+    ...inheritedLayers,
+    ...directPaths.flatMap((relativePath) => tests.find((test) => test.path === relativePath)?.layers || []),
+  ]
+  if (/verify:architecture:|source-shape/i.test(name)) direct.push('architecture')
+  if (/verify:behavior/i.test(name)) direct.push('behavior')
+  if (/verify:performance|benchmark|perf(?::|$)/i.test(name)) direct.push('performance')
+  if (/verify:release|release:|clean-room|supply-chain|manifest|hygiene/i.test(name)) direct.push('release')
+  if (/browser|journey|vite|interaction/i.test(name)) direct.push('browser')
   if (!direct.length) direct.push('behavior')
   return [...new Set(direct)].sort(categoryOrder)
 }
@@ -267,4 +312,12 @@ function runSelfTest() {
   assert.equal(behavior.behaviorAssertions, true)
   assert.deepEqual(classifyLayers('scripts/test-inventory.mjs', '', release, []), ['architecture'])
   assert.deepEqual(classifyCommand('verify:behavior:migrated-interfaces', 'node scripts/verify-behavior.mjs', [], []), ['behavior'])
+  const excludedWords = classifyEvidence(
+    'scripts/example-check.mjs',
+    "assert.ok(!source.includes('release secret performance browser'))",
+  )
+  assert.equal(excludedWords.browser, false)
+  assert.equal(excludedWords.performance, false)
+  assert.equal(excludedWords.release, false)
+  assert.deepEqual(classifyCommand('verify:fast', 'node scripts/verify-fast.mjs', [], []), ['behavior'])
 }
