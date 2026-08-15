@@ -10,11 +10,12 @@ assert.equal(packageJson.scripts.test, 'npm run verify:full', 'npm test must del
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const result = spawnSync(npmCommand, ['test', '--', '--list'], {
   cwd: root,
-  env: { ...process.env },
+  env: { ...process.env, READ_WEB_TEST_PLAN_ONLY: '1' },
   encoding: 'utf8',
   maxBuffer: 4 * 1024 * 1024,
+  shell: process.platform === 'win32',
 })
-assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`)
 const plan = `${result.stdout}\n${result.stderr}`
 assert.match(plan, /verify-full layers: architecture=INCLUDED.*behavior=INCLUDED.*browser=INCLUDED.*performance=EXCLUDED.*release=EXCLUDED/)
 assert.match(plan, /fast gate \(canonical architecture \+ behavior\)/)

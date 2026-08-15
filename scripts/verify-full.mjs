@@ -85,7 +85,7 @@ function run(item) {
 
 async function main() {
   printPlan()
-  if (process.argv.includes('--list')) return
+  if (process.argv.includes('--list') || process.env.READ_WEB_TEST_PLAN_ONLY === '1') return
 
   const startedAt = Date.now()
   for (const [index, item] of included.entries()) {

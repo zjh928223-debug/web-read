@@ -258,7 +258,7 @@ npm run verify:ui-compatibility-store  # Focused UI Pinia owner and retired comp
 npm run verify:legacy-deletion  # Focused root artifact/legacy flag deletion gate
 npm run verify:legacy-root-copy  # Focused legacy root copy removal check
 npm run verify:production-preview  # Production preview load check against dist
-npm test             # Same as verify:vite
+npm test             # Full repository verification (same execution graph as verify:full)
 ```
 
 Use `verify:vite` for the current Vite load and interaction verification.

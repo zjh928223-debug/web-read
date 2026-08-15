@@ -72,6 +72,11 @@ browser=EXCLUDED, performance=EXCLUDED, release=EXCLUDED
 `verify:<feature>` 名称继续作为兼容入口，canonical aggregate 是 fast/full 文档
 和门禁使用的唯一聚合入口。
 
+默认 `npm test` 现在执行 `verify:full` 的完整入口图：它覆盖 canonical
+architecture、canonical behavior、隔离 browser journeys、build、persistence
+fault evidence 和 Python backend suite；不会递归调用 `npm test`。`npm run
+verify:vite` 仍是兼容的窄入口，不再代表默认测试覆盖面。
+
 ## 迁移 interface 的 behavior 覆盖
 
 `npm run verify:behavior:migrated-interfaces` 直接执行真实模块和注入的公开

@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
     "architecture": 107,
-    "behavior": 77,
+    "behavior": 78,
     "browser": 22,
     "performance": 13,
     "release": 8
   },
-  "packageScriptCount": 217,
-  "executableScriptCount": 227,
+  "packageScriptCount": 218,
+  "executableScriptCount": 228,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -94,11 +94,12 @@
     },
     {
       "name": "test",
-      "command": "npm run verify:vite",
+      "command": "npm run verify:full",
       "category": "browser",
       "layers": [
-        "browser",
-        "behavior"
+        "architecture",
+        "behavior",
+        "browser"
       ],
       "invokes": [],
       "owner": "package.json#scripts.test"
@@ -2207,6 +2208,18 @@
         "scripts/supply-chain-gate.mjs"
       ],
       "owner": "package.json#scripts.verify:supply-chain"
+    },
+    {
+      "name": "verify:test-entry",
+      "command": "node scripts/npm-test-entry-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/npm-test-entry-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:test-entry"
     },
     {
       "name": "verify:test-inventory",
@@ -4841,6 +4854,30 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/npm-test-entry-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:test-entry",
+      "owners": [
+        "package.json#scripts.verify:test-entry"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },
@@ -7804,11 +7841,12 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:full",
+      "owner": "package.json#scripts.test",
       "owners": [
+        "package.json#scripts.test",
         "package.json#scripts.verify:full"
       ],
-      "invocation": "direct",
+      "invocation": "transitive",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -8102,9 +8140,8 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": "package.json#scripts.test",
+      "owner": "package.json#scripts.verify",
       "owners": [
-        "package.json#scripts.test",
         "package.json#scripts.verify",
         "package.json#scripts.verify:vite"
       ],
