@@ -50,13 +50,12 @@ const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 });
 
 [
-  "deps.markFileLoaded(deps.lblNotes, 'Notes restored');",
   "deps.markFileLoaded(deps.lblVisual, 'Visual restored');",
   'deps.processVisual(visualData);'
 ].forEach((pattern) => {
   assert.ok(
     sessionInitSource.includes(pattern),
-    `session-init restore contract should remain intact: ${pattern}`
+    `session restore contract should remain intact: ${pattern}`
   );
 });
 

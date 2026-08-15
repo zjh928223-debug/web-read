@@ -40,7 +40,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-context should collect utility globals through reader bootstrap runtime'
   );
   assert.ok(
-    featureDepsSource.includes('var runtimeDeps = bootstrapRuntime.runtimeDeps;'),
+    featureDepsSource.includes('const helpers = bootstrap.runtimeDeps'),
     'reader-feature-runtime-deps should receive collected utility deps from the bootstrap module'
   );
   assert.ok(

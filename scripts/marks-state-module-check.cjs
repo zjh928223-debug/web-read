@@ -44,7 +44,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-context should initialize marks state through reader bootstrap runtime'
   );
   assert.ok(
-    featureDepsSource.includes('marksStateApi: bootstrapRuntime.marksStateApi'),
+    featureDepsSource.includes('marksStateApi: bootstrap.marksStateApi'),
     'reader-feature-runtime-deps should receive marks state through the bootstrap module'
   );
   assert.equal(
@@ -76,26 +76,26 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   );
 
   assert.ok(
-    featureDepsSource.includes('marksStateApi: bootstrapRuntime.marksStateApi'),
+    featureDepsSource.includes('marksStateApi: bootstrap.marksStateApi'),
     'reader-feature-runtime-deps should pass marks state into reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes('markedMap: deps.marksStateApi.markedMap'),
-    'reader-feature-runtime should pass marks state into interaction runtime'
+    featureDepsSource.includes('markedMap: shared.marksStateApi.markedMap'),
+    'reader-feature-runtime-deps should pass marks state into interaction runtime'
   );
   assert.ok(
-    featureSource.includes('var interactionRuntime = initReaderInteractionRuntime({'),
-    'reader-feature-runtime should initialize interaction runtime'
+    featureSource.includes('startInteraction({ visualVocabApi: importRuntime.visualVocabApi })'),
+    'reader-feature-runtime should initialize interaction runtime through its adapter'
   );
 
   [
-    'markedMap: deps.marksStateApi.markedMap',
-    'deps.appHandlers.initExports({',
-    'deps.appHandlers.initMarksImport({'
+    'marksStateApi: shared.marksStateApi',
+    'appHandlers: globalObject.__appHandlers',
+    'applyCurrentAudioMeta: bootstrap.audioIdentityApi.applyCurrentAudioMeta'
   ].forEach((pattern) => {
     assert.ok(
-      appRuntimeSource.includes(pattern),
-      `reader-app-runtime should pass marks state through explicit deps: ${pattern}`
+      featureDepsSource.includes(pattern),
+      `reader-feature-runtime-deps should pass explicit app deps: ${pattern}`
     );
   });
 

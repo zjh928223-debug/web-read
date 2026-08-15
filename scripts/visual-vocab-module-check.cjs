@@ -8,6 +8,7 @@ async function main() {
   const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
   const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+  const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
   const importRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-import-runtime.js'), 'utf8');
   const visualSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'visual-vocab-module.js'), 'utf8');
   const bindingsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-bindings.js'), 'utf8');
@@ -22,8 +23,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-assembly should delegate reader import runtime through reader-feature-runtime'
   );
   assert.ok(
-    featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"),
-    'reader-feature-runtime should import reader import runtime'
+    featureDepsSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js'"),
+    'reader-feature-runtime-deps should import reader import runtime'
   );
   assert.equal(
     runtimeSource.includes("import { initVisualVocab } from './visual-vocab-module.js';"),

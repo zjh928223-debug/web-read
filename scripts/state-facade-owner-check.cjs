@@ -124,13 +124,13 @@ assert.ok(appSource.includes("import { initReaderRuntimeAssembly } from './reade
 assert.ok(assemblySource.includes("import { initReaderRuntimeContext } from './reader-runtime-context.js';"));
 assert.ok(assemblySource.includes('var bootstrapRuntime = runtimeContext.bootstrapRuntime;'));
 assert.ok(contextSource.includes("import { initReaderBootstrapRuntime } from './reader-bootstrap-runtime.js';"));
-assert.ok(featureDepsSource.includes('transcriptState: bootstrapRuntime.transcriptState'));
-assert.ok(featureDepsSource.includes('chunkState: bootstrapRuntime.chunkState'));
-assert.ok(featureDepsSource.includes('clozeState: bootstrapRuntime.clozeState'));
-assert.ok(featureDepsSource.includes('playbackState: bootstrapRuntime.playbackState'));
+assert.ok(featureDepsSource.includes('transcriptState: bootstrap.transcriptState'));
+assert.ok(featureDepsSource.includes('chunkState: bootstrap.chunkState'));
+assert.ok(featureDepsSource.includes('clozeState: bootstrap.clozeState'));
+assert.ok(featureDepsSource.includes('playbackState: bootstrap.playbackState'));
 assert.ok(assemblySource.includes("import { runtimeState } from './runtime-state-facade.js';"));
 assert.ok(assemblySource.includes("import { initReaderFeatureRuntime } from './reader-feature-runtime.js';"));
-assert.ok(featureSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js';"));
+assert.ok(featureDepsSource.includes("import { initReaderImportRuntime } from './reader-import-runtime.js'"));
 assert.equal(appSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js';"), false);
 assert.ok(importRuntimeSource.includes("import { configureRuntimeStateBindings } from './runtime-state-bindings.js'"));
 assert.ok(importRuntimeSource.includes('configureRuntimeStateBindings({'));

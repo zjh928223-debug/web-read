@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const appHandlersSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'app-handlers.js'), 'utf8');
 const sessionInitSource = [
@@ -25,8 +26,8 @@ const sessionInitSource = [
 ].map((file) => fs.readFileSync(path.join(repoRoot, 'src', 'composables', file), 'utf8')).join('\n');
 
 assert.ok(
-  featureSource.includes('appHandlers: globalObject.__appHandlers'),
-  'reader-feature-runtime should inject app-handlers into reader-app-runtime'
+  featureDepsSource.includes('appHandlers: globalObject.__appHandlers'),
+  'reader-feature-runtime-deps should inject app-handlers into reader-app-runtime'
 );
 
 assert.equal(

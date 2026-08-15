@@ -46,7 +46,7 @@ const bootstrap = read('src/composables/reader-bootstrap-runtime.js')
 const featureDeps = read('src/composables/reader-feature-runtime-deps.js')
 const publicFacades = read('src/composables/reader-public-facades.js')
 assert.match(audioIdentity, /function applyCurrentAudioMeta\(meta\)/)
-assert.match(featureDeps, /applyCurrentAudioMeta: bootstrapRuntime\.audioIdentityApi\.applyCurrentAudioMeta/)
+assert.match(featureDeps, /applyCurrentAudioMeta: bootstrap\.audioIdentityApi\.applyCurrentAudioMeta/)
 assert.match(publicFacades, /window\.applyCurrentAudioMeta = applyCurrentAudioMeta/)
 assert.match(bootstrap, /bridgeToPinia: bridgeToPinia/)
 

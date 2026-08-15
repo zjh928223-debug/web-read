@@ -21,7 +21,7 @@ assert.equal(appSource.includes("import { initPiniaBridge } from './pinia-bridge
 assert.equal(appSource.includes('var bridgeToPinia = initPiniaBridge({'), false, 'reader-runtime should not initialize the bridge module directly');
 assert.ok(appSource.includes("import { initReaderRuntimeAssembly } from './reader-runtime-assembly.js';"), 'reader-runtime should delegate bridge startup through reader-runtime-assembly');
 assert.equal(assemblySource.includes('notesSessionRuntime'), false, 'retired notes/session runtime should stay absent');
-assert.ok(featureDepsSource.includes('bridgeToPinia: bootstrapRuntime.bridgeToPinia'), 'feature deps should receive bridge from bootstrap runtime');
+assert.ok(featureDepsSource.includes('bridgeToPinia: bootstrap.bridgeToPinia'), 'feature deps should receive bridge from bootstrap runtime');
 assert.ok(bootstrapSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"));
 assert.ok(bootstrapSource.includes('var bridgeToPinia = initPiniaBridge({'), 'bootstrap runtime should initialize the bridge module');
 assert.ok(bridgeSource.includes('function bridgeToPinia()'), 'bridge module should own bridgeToPinia implementation');

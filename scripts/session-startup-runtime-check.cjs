@@ -7,6 +7,7 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-startup-runtime.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const assemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const adaptersPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js');
   const lifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8').replace(
     /^import \{ recordBestEffortFailure \} from '\.\.\/services\/runtime\/best-effort\.js';?$/m,
@@ -14,11 +15,13 @@ async function main() {
   );
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const assemblySource = fs.readFileSync(assemblyPath, 'utf8');
+  const adaptersSource = fs.readFileSync(adaptersPath, 'utf8');
   const lifecycleSource = fs.readFileSync(lifecyclePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && assemblySource.includes("from './session-lifecycle-runtime.js';")
+      && assemblySource.includes("from './session-runtime-adapters.js';")
+      && adaptersSource.includes("from './session-lifecycle-runtime.js';")
       && lifecycleSource.includes("from './session-startup-runtime.js';"),
     'session-init should reach startup runtime through session-runtime-assembly'
   );

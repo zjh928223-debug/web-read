@@ -50,7 +50,7 @@ assert.equal(
   "import { renderTranscript, renderChunkMode } from './render-runtime.js';",
   "import { initReaderRuntimeContext } from './reader-runtime-context.js';",
   "import { initReaderFeatureRuntime } from './reader-feature-runtime.js';",
-  "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';",
+  "import { createReaderFeatureAdapters } from './reader-feature-runtime-deps.js';",
   'var runtimeContext = initReaderRuntimeContext({',
   'var featureRuntime = initReaderFeatureRuntime({',
 ].forEach((pattern) => {

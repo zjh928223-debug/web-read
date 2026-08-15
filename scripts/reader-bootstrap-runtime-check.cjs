@@ -84,12 +84,12 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     assert.equal(shellSource.includes(pattern), false, `reader-runtime-assembly should not bind bootstrap result directly: ${pattern}`);
   });
   [
-    'transcriptState: bootstrapRuntime.transcriptState',
-    'chunkState: bootstrapRuntime.chunkState',
-    'clozeState: bootstrapRuntime.clozeState',
-    'playbackState: bootstrapRuntime.playbackState',
-    'hotkeyStateApi: bootstrapRuntime.hotkeyStateApi',
-    'marksStateApi: bootstrapRuntime.marksStateApi'
+    'transcriptState: bootstrap.transcriptState',
+    'chunkState: bootstrap.chunkState',
+    'clozeState: bootstrap.clozeState',
+    'playbackState: bootstrap.playbackState',
+    'hotkeyStateApi: bootstrap.hotkeyStateApi',
+    'marksStateApi: bootstrap.marksStateApi'
   ].forEach((pattern) => {
     assert.ok(featureDepsSource.includes(pattern), `reader-feature-runtime-deps should consume bootstrap result: ${pattern}`);
   });

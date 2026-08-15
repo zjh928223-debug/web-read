@@ -7,15 +7,18 @@ async function main() {
   const modulePath = path.join(repoRoot, 'src', 'composables', 'session-restore-runtime.js');
   const sessionInitPath = path.join(repoRoot, 'src', 'composables', 'session-init.js');
   const sessionAssemblyPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js');
+  const sessionAdaptersPath = path.join(repoRoot, 'src', 'composables', 'session-runtime-adapters.js');
   const sessionLifecyclePath = path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js');
   const moduleSource = fs.readFileSync(modulePath, 'utf8');
   const sessionInitSource = fs.readFileSync(sessionInitPath, 'utf8');
   const sessionAssemblySource = fs.readFileSync(sessionAssemblyPath, 'utf8');
+  const sessionAdaptersSource = fs.readFileSync(sessionAdaptersPath, 'utf8');
   const sessionLifecycleSource = fs.readFileSync(sessionLifecyclePath, 'utf8');
 
   assert.ok(
     sessionInitSource.includes("from './session-runtime-assembly.js';")
-      && sessionAssemblySource.includes("from './session-lifecycle-runtime.js';")
+      && sessionAssemblySource.includes("from './session-runtime-adapters.js';")
+      && sessionAdaptersSource.includes("from './session-lifecycle-runtime.js';")
       && sessionLifecycleSource.includes("from './session-restore-runtime.js';"),
     'session-init should reach session restore runtime through session-runtime-assembly'
   );

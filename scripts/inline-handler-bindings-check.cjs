@@ -25,12 +25,9 @@ assert.ok(
   'toggleChunkMode',
   'openChunkStyleModal',
   'toggleChunkFocusMode',
-  'openChunkNoteStyleModal',
   'closeChunkStyleModal',
   'toggleChunkShadowManual',
-  'closeChunkNoteStyleModal',
-  'updateChunkStyle',
-  'updateChunkNoteStyle'
+  'updateChunkStyle'
 ].forEach((handlerName) => {
   assert.ok(bindingsSource.includes(handlerName), `legacy control bindings should bind ${handlerName}`);
 });

@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const sessionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-runtime-assembly.js'), 'utf8');
 const sessionLifecycleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-lifecycle-runtime.js'), 'utf8');
 const sessionAnnotationSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'session-annotation-runtime.js'), 'utf8');
@@ -28,8 +29,8 @@ assert.ok(
   'reader-runtime-assembly should configure render runtime through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-feature-runtime should configure render runtime through reader-interaction-runtime'
+  featureDepsSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js'"),
+  'reader-feature-runtime-deps should configure render runtime through reader-interaction-runtime'
 );
 assert.equal(appSource.includes('configureRenderRuntime({'), false);
 assert.equal(appSource.includes('function renderTranscript()'), false, 'reader-runtime.js should not own renderTranscript implementation');
@@ -54,7 +55,6 @@ assert.ok(runtimeSource.includes('runtime.bridgeToPinia'), 'render runtime shoul
 assert.equal(runtimeSource.includes('bindClozeQuiz'), false, 'render runtime should not keep retired cloze quiz binding');
 assert.equal(runtimeSource.includes('getClozeMarkup'), false, 'render runtime should not keep retired cloze markup hook');
 assert.equal(runtimeSource.includes('checkCloze'), false, 'render runtime should not keep retired cloze check hook');
-assert.ok(runtimeSource.includes('runtime.tryRestoreChunkNoteDraft'), 'render runtime should own chunk note draft restore hook');
 assert.equal(runtimeSource.includes('window.'), false, 'render runtime should not read or write window globals');
 assert.equal(runtimeSource.includes('document.'), false, 'render runtime should not read DOM globals');
 

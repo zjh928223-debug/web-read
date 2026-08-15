@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const interactionSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-interaction-runtime.js'), 'utf8');
 const playbackRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-playback-runtime.js'), 'utf8');
 const mainSource = fs.readFileSync(path.join(repoRoot, 'src', 'main.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'annotation-bubble.js'), 'utf8');
@@ -23,8 +24,12 @@ assert.ok(
   'reader-runtime-assembly should initialize the annotation bubble resolver through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderInteractionRuntime } from './reader-interaction-runtime.js';"),
-  'reader-feature-runtime should initialize the annotation bubble resolver through reader interaction runtime'
+  featureSource.includes('startInteraction({ visualVocabApi: importRuntime.visualVocabApi })'),
+  'reader-feature-runtime should delegate interaction behavior through its adapter'
+);
+assert.ok(
+  interactionSource.includes("import { initReaderPlaybackRuntime } from './reader-playback-runtime.js';"),
+  'reader-interaction-runtime should initialize playback and annotation behavior'
 );
 assert.equal(appSource.includes("import { initAnnotationBubbleResolver } from './annotation-bubble-resolver.js';"), false);
 assert.ok(

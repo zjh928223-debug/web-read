@@ -43,7 +43,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'reader-runtime-context should initialize hotkey state through reader bootstrap runtime'
   );
   assert.ok(
-    featureDepsSource.includes('hotkeyStateApi: bootstrapRuntime.hotkeyStateApi'),
+    featureDepsSource.includes('hotkeyStateApi: bootstrap.hotkeyStateApi'),
     'reader-feature-runtime-deps should receive hotkey state through the bootstrap module'
   );
   assert.equal(

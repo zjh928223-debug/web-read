@@ -5,6 +5,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..');
 const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const keyboardRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-keyboard-runtime.js'), 'utf8');
 const marksStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'marks.js'), 'utf8');
 const keyboardSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
@@ -42,8 +43,8 @@ assert.equal(
 );
 
 assert.ok(
-  featureSource.includes('marksStore: globalObject.__marksStore'),
-  'reader-feature-runtime should inject the marks store into keyboard runtime'
+  featureDepsSource.includes('marksStore: globalObject.__marksStore'),
+  'reader-feature-runtime-deps should inject the marks store into keyboard runtime'
 );
 
 assert.ok(

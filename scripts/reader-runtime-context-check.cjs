@@ -55,7 +55,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   });
   [
     'var bootstrapRuntime = runtimeContext.bootstrapRuntime;',
-    "import { createReaderFeatureRuntimeDeps } from './reader-feature-runtime-deps.js';"
+    "import { createReaderFeatureAdapters } from './reader-feature-runtime-deps.js';"
   ].forEach((pattern) => {
     assert.ok(assemblySource.includes(pattern), `reader-runtime-assembly should consume context output: ${pattern}`);
   });

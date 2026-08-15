@@ -7,6 +7,7 @@ const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'rea
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const controlsRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-controls-runtime.js'), 'utf8');
 const moduleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'highlight-controls-module.js'), 'utf8');
 const chunkControlsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'chunk-controls-module.js'), 'utf8');
@@ -20,8 +21,8 @@ assert.ok(
   'reader-runtime-assembly should delegate controls setup through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js';"),
-  'reader-feature-runtime should import the reader controls runtime module'
+  featureDepsSource.includes("import { initReaderControlsRuntime } from './reader-controls-runtime.js'"),
+  'reader-feature-runtime-deps should import the reader controls runtime module'
 );
 assert.equal(
   appSource.includes("import { initHighlightControls } from './highlight-controls-module.js';"),

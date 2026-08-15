@@ -17,7 +17,7 @@ async function main() {
   assert.match(source, /function applyCurrentAudioMeta\(meta\)/)
   assert.match(source, /function buildCurrentSentenceDocId\(transcriptSource = null\)/)
   assert.match(bootstrap, /var audioIdentityApi = initAudioIdentity\(\{/)
-  assert.match(featureDeps, /applyCurrentAudioMeta: bootstrapRuntime\.audioIdentityApi\.applyCurrentAudioMeta/)
+  assert.match(featureDeps, /applyCurrentAudioMeta: bootstrap\.audioIdentityApi\.applyCurrentAudioMeta/)
   assert.match(facades, /window\.applyCurrentAudioMeta = applyCurrentAudioMeta/)
   assert.equal(featureDeps.includes('notesSessionRuntime'), false)
 

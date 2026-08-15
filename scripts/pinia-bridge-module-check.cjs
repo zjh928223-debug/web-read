@@ -25,7 +25,7 @@ assert.equal(
   'retired notes/session runtime should stay absent'
 );
 assert.ok(
-  featureDepsSource.includes('bridgeToPinia: bootstrapRuntime.bridgeToPinia'),
+  featureDepsSource.includes('bridgeToPinia: bootstrap.bridgeToPinia'),
   'feature deps should receive the Pinia bridge from bootstrap runtime'
 );
 assert.ok(

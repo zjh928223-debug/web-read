@@ -8,6 +8,7 @@ const runtimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 
 const shellSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const featureSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime.js'), 'utf8');
+const featureDepsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-feature-runtime-deps.js'), 'utf8');
 const appRuntimeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-app-runtime.js'), 'utf8');
 const glassEffectsSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'glass-effects.js'), 'utf8');
 const sessionInitSource = [
@@ -35,8 +36,8 @@ assert.ok(
   'reader-runtime-assembly should delegate reader-app-runtime through reader-feature-runtime'
 );
 assert.ok(
-  featureSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js';"),
-  'reader-feature-runtime should import reader-app-runtime'
+  featureDepsSource.includes("import { initReaderAppRuntime } from './reader-app-runtime.js'"),
+  'reader-feature-runtime-deps should import reader-app-runtime'
 );
 
 assert.equal(
