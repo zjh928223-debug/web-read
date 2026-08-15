@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
-    "architecture": 107,
+    "architecture": 108,
     "behavior": 78,
     "browser": 24,
     "performance": 13,
     "release": 8
   },
   "packageScriptCount": 219,
-  "executableScriptCount": 230,
+  "executableScriptCount": 231,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -232,7 +232,7 @@
     },
     {
       "name": "verify:application-backup",
-      "command": "node scripts/application-backup-isolation-check.mjs && node scripts/application-backup-atomic-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/application-backup-adapter-check.mjs && node scripts/application-backup-fault-injection-check.mjs && node scripts/application-backup-concurrency-check.mjs && node scripts/application-backup-real-restore-check.mjs && node scripts/application-backup-restore-fault-matrix.mjs",
+      "command": "node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-isolation-check.mjs && node scripts/application-backup-atomic-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/application-backup-adapter-check.mjs && node scripts/application-backup-fault-injection-check.mjs && node scripts/application-backup-concurrency-check.mjs && node scripts/application-backup-real-restore-check.mjs && node scripts/application-backup-restore-fault-matrix.mjs",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -245,6 +245,7 @@
         "scripts/application-backup-concurrency-check.mjs",
         "scripts/application-backup-fault-injection-check.mjs",
         "scripts/application-backup-isolation-check.mjs",
+        "scripts/application-backup-public-loader-boundary-check.mjs",
         "scripts/application-backup-real-restore-check.mjs",
         "scripts/application-backup-restore-fault-matrix.mjs"
       ],
@@ -3192,6 +3193,31 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/application-backup-public-loader-boundary-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:application-backup",
+      "owners": [
+        "package.json#scripts.verify:application-backup"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },
