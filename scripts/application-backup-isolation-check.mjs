@@ -69,6 +69,15 @@ try {
   const isolatedOnlyCase = await createPublicApiSelfSignedCase(root, { certificate: null })
   assert.equal(isolatedOnlyCase.writes, 0, 'isolated:true without a certificate must fail before target writes')
 
+  await rejectsIsolatedProfileTargetBeforeWrite('isolated-target-root-self', {
+    isolationRoot: path.join(root, 'isolated-target-self'),
+    profileDir: path.join(root, 'isolated-target-self'),
+  })
+  await rejectsIsolatedProfileTargetBeforeWrite('isolated-target-outside-root', {
+    isolationRoot: path.join(root, 'isolated-target-root'),
+    profileDir: path.join(root, 'isolated-target-outside', 'profile'),
+  })
+
   const validRoot = path.join(root, 'valid')
   const validProfile = path.join(validRoot, 'profile')
   const validComposition = await createReadWebProductionBackupComposition({
@@ -98,6 +107,16 @@ async function rejectsBeforeWrite(name, options) {
     createReadWebProductionBackupComposition(options),
     (error) => error?.code === 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH',
     `${name} must fail closed before creating a profile`,
+  )
+  assert.equal(await exists(statePath), false, `${name} must not write ${statePath}`)
+}
+
+async function rejectsIsolatedProfileTargetBeforeWrite(name, options) {
+  const statePath = path.join(options.profileDir, 'application-state.json')
+  await assert.rejects(
+    createIsolatedProfileRestoreTarget(options),
+    (error) => error?.code === 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH',
+    `${name} must fail closed before creating an isolated target`,
   )
   assert.equal(await exists(statePath), false, `${name} must not write ${statePath}`)
 }
