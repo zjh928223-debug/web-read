@@ -129,12 +129,13 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 当前 release 会先列出并阻断未完成的 12.2、12.3、12.4、12.5、12.6、12.7、12.8；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
-IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域 restore
-证据由 `verify:application-backup-real-restore`、
-`verify:application-backup-restore-faults` 和
-`verify:workflow-application-backup-restore` 产生，并由 `verify:full` 接入；
-这些检查只使用隔离临时 profile，不证明尚未完成的 12.2/12.3/12.7，也不触碰
-真实学习数据。
+IndexedDB/localStorage/workflow profile 的全应用恢复。真实六域组合的
+`atomicRevisionCommit` 保持为 false，`verify:application-backup-real-restore`
+只证明它在写入前 fail closed；`verify:application-backup-restore-faults` 的
+顺序/故障证据使用隔离的 file-backed foundation target，不能冒充跨 owner
+原子可见性。`verify:workflow-application-backup-restore` 仍验证 Python owner
+契约；这些检查只使用隔离临时 profile，不证明尚未完成的 12.2/12.3/12.7，
+也不触碰真实学习数据。
 
 ## 入口和 owner 规则
 

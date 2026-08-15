@@ -84,7 +84,12 @@ Annotation envelopes, and the Python bridge owns marks/activity and workflow
 through `DurableJsonRepository`. The isolated Node gate intentionally uses a
 temporary file-backed profile plus a `MapStorage`/JSON persistence shim, so it
 never opens a user's IndexedDB or localStorage. That rehearsal does not prove
-a real browser startup recovery seam or completion of 12.2/12.3.
+a real browser startup recovery seam or completion of 12.2/12.3. The production
+six-domain composition explicitly publishes `atomicRevisionCommit: false`:
+its owners still commit sequentially, so the generic restore service rejects
+that target before writing any domain. The file-backed foundation target is the
+only atomic rehearsal target in this batch; its fault evidence must not be
+read as cross-owner production atomicity.
 
 `createReadWebApplicationRestoreTarget` keeps the browser-facing stores,
 journal, rollback backup, pending checkpoint, revision evidence and quarantine
@@ -99,9 +104,12 @@ artifact checksum. Quarantine entries preserve source key, raw value, time,
 reason and checksum evidence and are read back before a corrupt source is
 discarded.
 
-`npm run verify:application-backup-real-restore` runs a real six-domain
-temporary-profile round trip and idempotent retry. The failure matrix is
-`npm run verify:application-backup-restore-faults`; it covers rollback-backup
+`npm run verify:application-backup-real-restore` audits the real six-domain
+composition, proves its non-atomic target is rejected before any owner write,
+and retains dry-run/capacity evidence; it is intentionally not a successful
+production round trip. The failure matrix is
+`npm run verify:application-backup-restore-faults`; its transactional cases run
+against the isolated file-backed foundation target and cover rollback-backup
 failure before writes, per-domain abort, quota/disk-full, revision conflict,
 checksum/schema corruption, page-close retry, and rollback success/failure
 reports. The Python owner tests are
