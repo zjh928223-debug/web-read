@@ -1091,6 +1091,20 @@ function resolveStoreMethod(store, method, label) {
   return fn.bind(store)
 }
 
+function normalizeIsolationLayout(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || typeof value.isolationRoot !== 'string' || !value.isolationRoot.trim()
+    || !value.paths || typeof value.paths !== 'object' || Array.isArray(value.paths)) return null
+  const paths = Object.fromEntries(Object.entries(value.paths))
+  if (!Object.keys(paths).length || Object.values(paths).some((entry) => typeof entry !== 'string' || !entry.trim())) return null
+  return Object.freeze({
+    isolationRoot: value.isolationRoot.trim(),
+    paths: Object.freeze(Object.fromEntries(
+      Object.entries(paths).map(([name, entry]) => [name, entry.trim()]),
+    )),
+  })
+}
+
 export function createReadWebApplicationRestoreTarget(options = {}) {
   const storage = options.storage || globalThis.localStorage
   const backupAdapters = options.backupAdapters || createReadWebApplicationBackupAdapters(options)
@@ -1422,6 +1436,7 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
   const target = {
     isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
     isolationCertificate: options.isolationCertificate,
+    isolationLayout: normalizeIsolationLayout(options.isolationLayout),
     restoreCapabilities: Object.freeze({
       // The six application owners are still committed through sequential
       // owner adapters. Durable checkpoints and rollback evidence exist, but

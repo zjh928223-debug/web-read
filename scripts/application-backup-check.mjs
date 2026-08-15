@@ -14,6 +14,7 @@ const {
   createApplicationBackupIsolationCertificate,
   createApplicationBackupService,
   createLocalStorageDomainAdapter,
+  registerApplicationBackupIsolationTarget,
   verifyBackupArtifact,
 } = await import(`data:text/javascript;base64,${Buffer.from(moduleSource).toString('base64')}`)
 
@@ -129,18 +130,7 @@ await assert.rejects(
   'a target without explicit revision/evidence capabilities must fail before any restore write',
 )
 assert.equal(unsafeTarget.transactionCommits, 0)
-const noEvidenceTarget = createRestoreTarget(unsafeAdapters)
-const originalNoEvidenceBegin = noEvidenceTarget.beginTransaction.bind(noEvidenceTarget)
-noEvidenceTarget.beginTransaction = async (options) => {
-  const transaction = await originalNoEvidenceBegin(options)
-  const originalCommit = transaction.commit.bind(transaction)
-  transaction.commit = async () => {
-    await originalCommit()
-    delete transaction.committedRevision
-    return undefined
-  }
-  return transaction
-}
+const noEvidenceTarget = createRestoreTarget(unsafeAdapters, { commitWithoutEvidence: true })
 await assert.rejects(
   unsafeService.restore(unsafeArtifact, {
     target: noEvidenceTarget,
@@ -250,14 +240,18 @@ function createDomainAdapters({ binary = false, inlineMedia = false } = {}) {
   }))
 }
 
-function createRestoreTarget(adapters) {
+function createRestoreTarget(adapters, { commitWithoutEvidence = false } = {}) {
+  const isolationLayout = Object.freeze({
+    isolationRoot: '[application-backup-test-root]',
+    paths: Object.freeze({ target: '[application-backup-test-root]/target' }),
+  })
   const target = {
     isolated: true,
     isolationCertificate: createApplicationBackupIsolationCertificate({
-      isolationRoot: '[application-backup-test-root]',
-      paths: { target: '[application-backup-test-root]/target' },
+      ...isolationLayout,
       issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
     }),
+    isolationLayout,
     restoreCapabilities: {
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,
@@ -298,6 +292,10 @@ function createRestoreTarget(adapters) {
           target.transactionCommits += 1
           target.revision += 1
           transaction.committedRevision = target.revision
+          if (commitWithoutEvidence) {
+            delete transaction.committedRevision
+            return undefined
+          }
           return { revision: transaction.committedRevision }
         },
         async rollback() { staged.clear() },
@@ -320,5 +318,14 @@ function createRestoreTarget(adapters) {
       return { ok: true, revision: target.revision }
     },
   }
+  assert.equal(
+    registerApplicationBackupIsolationTarget({
+      target,
+      isolationCertificate: target.isolationCertificate,
+      isolationLayout,
+      issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
+    }),
+    true,
+  )
   return target
 }

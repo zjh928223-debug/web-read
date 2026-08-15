@@ -202,6 +202,19 @@ function createTrustedIsolationCertificate({ applicationBackup, isolationIssuerT
   return certificate
 }
 
+function registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target } = {}) {
+  const registered = applicationBackup?.registerApplicationBackupIsolationTarget?.({
+    target,
+    isolationCertificate: target?.isolationCertificate,
+    isolationLayout: target?.isolationLayout,
+    issuerToken: isolationIssuerToken,
+  })
+  if (registered !== true) {
+    throw unsafeIsolationPath('Trusted restore target registration failed')
+  }
+  return target
+}
+
 export async function createProductionOutboxQuarantineProtector(options = {}) {
   const { readWebBackup } = await loadBackupModules()
   return readWebBackup.createReaderSaveOutboxQuarantineProtector(options)
@@ -960,13 +973,14 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   const { applicationBackup, isolationIssuerToken } = await loadTrustedBackupModules()
   const requiredDomains = applicationBackup.APPLICATION_BACKUP_REQUIRED_DOMAINS
   const profileDir = validatedLayout.paths.profileDir
+  const isolationLayout = Object.freeze({
+    isolationRoot: validatedLayout.isolationRoot,
+    paths: Object.freeze({ profileDir }),
+  })
   const isolationCertificate = createTrustedIsolationCertificate({
     applicationBackup,
     isolationIssuerToken,
-    validatedLayout: {
-      ...validatedLayout,
-      paths: { profileDir },
-    },
+    validatedLayout: isolationLayout,
   })
   const statePath = path.join(profileDir, APPLICATION_STATE_FILE)
   const journalPath = path.join(profileDir, 'restore-journal.json')
@@ -981,7 +995,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       return initial
     }),
   }
-  let faultState = { ...(options.faults || {}) }
+  const faultState = { ...(options.faults || {}) }
 
   async function readStateUnlocked() {
     return assertStateEnvelope(
@@ -1006,6 +1020,8 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   const target = {
     isolated: true,
     isolationCertificate,
+    isolationRoot: isolationLayout.isolationRoot,
+    isolationLayout,
     profileDir,
     statePath,
     journalPath,
@@ -1048,6 +1064,11 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     },
     rollbackStore: {
       async write(entry) {
+        if (faultState.rollbackBackup === 'fail') {
+          const error = new Error('Fault injected while writing rollback backup')
+          error.code = 'RESTORE_ROLLBACK_UNAVAILABLE'
+          throw error
+        }
         return withPathMutex(profileDir, async () => {
           const filePath = path.join(rollbackDir, `${safeFilePart(entry.restoreId)}.json`)
           const existing = await readJsonIfPresent(filePath, 'RESTORE_ROLLBACK_CORRUPT')
@@ -1091,6 +1112,9 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       },
     },
     async beginTransaction({ restoreId, signal, expectedBaseRevision }) {
+      if (typeof faultState.beforeBeginTransaction === 'function') {
+        await faultState.beforeBeginTransaction({ restoreId, signal, expectedBaseRevision })
+      }
       const current = await withPathMutex(profileDir, readStateUnlocked)
       if (Number.isInteger(expectedBaseRevision) && current.revision !== expectedBaseRevision) {
         const error = new Error(`Restore base revision ${expectedBaseRevision} is stale; current is ${current.revision}`)
@@ -1132,7 +1156,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             error.code = 'RESTORE_INTERRUPTED'
             throw error
           }
-          return withPathMutex(profileDir, async () => {
+          const result = await withPathMutex(profileDir, async () => {
             const latest = await readStateUnlocked()
             if (latest.revision !== baseRevision) {
               const error = new Error(`Restore base revision ${baseRevision} is stale; current is ${latest.revision}`)
@@ -1166,6 +1190,10 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             }
             return { revision: committedRevision, checksum: next.checksum }
           })
+          if (typeof faultState.afterCommit === 'function') {
+            await faultState.afterCommit({ restoreId, ...result })
+          }
+          return result
         },
         async rollback() {
           rolledBack = true
@@ -1209,10 +1237,11 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       return withPathMutex(profileDir, async () => clone(await readStateUnlocked()))
     },
     setFaults(nextFaults = {}) {
-      faultState = { ...nextFaults }
-      target.faults = faultState
+      Object.keys(faultState).forEach((key) => { delete faultState[key] })
+      Object.assign(faultState, nextFaults)
     },
   }
+  registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target })
   return target
 }
 
@@ -1233,6 +1262,10 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   const isolationRoot = validatedLayout.isolationRoot
   const canonicalPaths = validatedLayout.paths
+  const isolationLayout = Object.freeze({
+    isolationRoot,
+    paths: canonicalPaths,
+  })
   const { applicationBackup, readWebBackup, isolationIssuerToken } = await loadTrustedBackupModules()
   const browser = await openBrowserProfile(canonicalPaths.profileDir)
   browser.storage.estimateCapacity = async ({ requiredBytes }) => {
@@ -1260,11 +1293,12 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   function createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions = {}) {
     return readWebBackup.createReadWebApplicationRestoreTarget({
-       isolationCertificate: createTrustedIsolationCertificate({
+      isolationCertificate: createTrustedIsolationCertificate({
          applicationBackup,
          isolationIssuerToken,
-         validatedLayout: { isolationRoot, paths: canonicalPaths },
+         validatedLayout: isolationLayout,
        }),
+      isolationLayout,
       applicationPersistence: targetBrowser.persistence,
       storage: targetBrowser.storage,
       backupAdapters: targetAdapters,
@@ -1293,6 +1327,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     pendingStore: options.pendingStore,
     revisionStore: options.revisionStore,
   })
+  registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target: restoreTarget })
   await restoreTarget.recoverPendingRestore()
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,

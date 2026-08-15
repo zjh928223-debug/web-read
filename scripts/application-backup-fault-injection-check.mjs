@@ -11,6 +11,7 @@ const {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
   createApplicationBackupIsolationCertificate,
   createApplicationBackupService,
+  registerApplicationBackupIsolationTarget,
   verifyBackupArtifact,
 } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
@@ -198,13 +199,17 @@ function snapshotState(state) {
 }
 
 function createTarget(state, { commitMode = 'success', missingJournalReader = false } = {}) {
+  const isolationLayout = Object.freeze({
+    isolationRoot: '[application-backup-fault-root]',
+    paths: Object.freeze({ target: '[application-backup-fault-root]/target' }),
+  })
   const target = {
     isolated: true,
     isolationCertificate: createApplicationBackupIsolationCertificate({
-      isolationRoot: '[application-backup-fault-root]',
-      paths: { target: '[application-backup-fault-root]/target' },
+      ...isolationLayout,
       issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
     }),
+    isolationLayout,
     restoreCapabilities: {
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,
@@ -284,5 +289,14 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
     },
   }
   if (missingJournalReader) delete target.readJournal
+  assert.equal(
+    registerApplicationBackupIsolationTarget({
+      target,
+      isolationCertificate: target.isolationCertificate,
+      isolationLayout,
+      issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
+    }),
+    true,
+  )
   return target
 }

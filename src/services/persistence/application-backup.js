@@ -22,6 +22,25 @@ const PRIVATE_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|private|var|
 const ISOLATION_CERTIFICATE_SCHEMA_VERSION = 1
 const ISOLATION_ISSUER_TOKEN = null
 const TRUSTED_ISOLATION_CERTIFICATES = new WeakSet()
+const TRUSTED_ISOLATION_TARGETS = new WeakMap()
+const TARGET_METHOD_NAMES = Object.freeze([
+  'estimateCapacity',
+  'readJournal',
+  'writeJournal',
+  'beginTransaction',
+  'restoreSnapshot',
+  'verifyApplied',
+])
+const TARGET_PATH_NAMES = Object.freeze([
+  'isolationRoot',
+  'profileDir',
+  'statePath',
+  'journalPath',
+  'rollbackDir',
+  'quarantineDir',
+  'pythonStateDir',
+  'pythonOutputDir',
+])
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
@@ -65,6 +84,100 @@ export function isApplicationBackupIsolationCertificate(value) {
     && !Array.isArray(value.paths)
     && Object.keys(value.paths).length > 0
     && Object.values(value.paths).every((entry) => typeof entry === 'string' && entry.length > 0)
+}
+
+function captureCallableSurface(value) {
+  if (!value || typeof value !== 'object') return null
+  const keys = Object.keys(value).sort()
+  return Object.freeze({
+    value,
+    keys: Object.freeze(keys),
+    methods: Object.freeze(Object.fromEntries(
+      keys
+        .filter((key) => typeof value[key] === 'function')
+        .map((key) => [key, value[key]]),
+    )),
+  })
+}
+
+function sameCallableSurface(value, snapshot) {
+  if (!snapshot || value !== snapshot.value || !value || typeof value !== 'object') return !snapshot && !value
+  const keys = Object.keys(value).sort()
+  if (keys.length !== snapshot.keys.length || keys.some((key, index) => key !== snapshot.keys[index])) return false
+  return Object.entries(snapshot.methods).every(([key, method]) => value[key] === method)
+}
+
+function captureIsolationTargetBinding(target, isolationCertificate, isolationLayout) {
+  const adapters = captureCallableSurface(target.adapters)
+  const adapterMethods = adapters
+    ? Object.freeze(Object.fromEntries(Object.entries(target.adapters).map(([key, adapter]) => [key, captureCallableSurface(adapter)])))
+    : null
+  const pathValues = Object.freeze(Object.fromEntries(
+    TARGET_PATH_NAMES
+      .filter((name) => Object.prototype.hasOwnProperty.call(target, name))
+      .map((name) => [name, target[name]]),
+  ))
+  return Object.freeze({
+    isolationCertificate,
+    isolationLayout,
+    isolated: target.isolated,
+    pathValues,
+    restoreCapabilities: target.restoreCapabilities,
+    faults: target.faults,
+    methods: Object.freeze(Object.fromEntries(TARGET_METHOD_NAMES.map((name) => [name, target[name]]))),
+    adapters,
+    adapterMethods,
+    rollbackStore: captureCallableSurface(target.rollbackStore),
+    quarantine: captureCallableSurface(target.quarantine),
+  })
+}
+
+function isSameIsolationTargetBinding(target, binding) {
+  if (!target || !binding
+    || target.isolated !== binding.isolated
+    || target.isolationCertificate !== binding.isolationCertificate
+    || target.isolationLayout !== binding.isolationLayout
+    || target.restoreCapabilities !== binding.restoreCapabilities
+    || target.faults !== binding.faults) return false
+  for (const [name, value] of Object.entries(binding.pathValues)) {
+    if (target[name] !== value) return false
+  }
+  for (const [name, method] of Object.entries(binding.methods)) {
+    if (target[name] !== method) return false
+  }
+  if (!sameCallableSurface(target.adapters, binding.adapters)) return false
+  if (binding.adapterMethods) {
+    for (const [key, snapshot] of Object.entries(binding.adapterMethods)) {
+      if (!sameCallableSurface(target.adapters?.[key], snapshot)) return false
+    }
+  }
+  return sameCallableSurface(target.rollbackStore, binding.rollbackStore)
+    && sameCallableSurface(target.quarantine, binding.quarantine)
+}
+
+export function registerApplicationBackupIsolationTarget({ target, isolationCertificate, isolationLayout, issuerToken } = {}) {
+  if (typeof ISOLATION_ISSUER_TOKEN !== 'string' || issuerToken !== ISOLATION_ISSUER_TOKEN
+    || !target || typeof target !== 'object'
+    || !isApplicationBackupIsolationCertificate(isolationCertificate)
+    || target.isolationCertificate !== isolationCertificate
+    || !isolationLayout || typeof isolationLayout !== 'object'
+    || typeof isolationLayout.isolationRoot !== 'string'
+    || !isolationLayout.paths || typeof isolationLayout.paths !== 'object'
+    || Array.isArray(isolationLayout.paths)
+    || !Object.isFrozen(isolationLayout)
+    || !Object.isFrozen(isolationLayout.paths)) return false
+  const certificatePaths = Object.entries(isolationCertificate.paths)
+  const layoutPaths = Object.entries(isolationLayout.paths)
+  if (isolationCertificate.isolationRoot !== isolationLayout.isolationRoot
+    || certificatePaths.length !== layoutPaths.length
+    || certificatePaths.some(([name, value]) => isolationLayout.paths[name] !== value)) return false
+  TRUSTED_ISOLATION_TARGETS.set(target, captureIsolationTargetBinding(target, isolationCertificate, isolationLayout))
+  return true
+}
+
+function isTrustedApplicationBackupIsolationTarget(target) {
+  const binding = TRUSTED_ISOLATION_TARGETS.get(target)
+  return isSameIsolationTargetBinding(target, binding)
 }
 
 function backupError(code, message, details = {}) {
@@ -1122,10 +1235,10 @@ async function resolveCapacity(target, backupBytes) {
 }
 
 async function assertTargetSafety(target) {
-  if (!target || target.isolated !== true || !isApplicationBackupIsolationCertificate(target.isolationCertificate)) {
+  if (!target || !isTrustedApplicationBackupIsolationTarget(target)) {
     throw backupError(
       'RESTORE_TARGET_UNSAFE',
-      'Restore requires an explicitly isolated target with a concrete isolation certificate',
+      'Restore requires an explicitly registered and unmodified isolated target',
     )
   }
   const capabilities = target.restoreCapabilities

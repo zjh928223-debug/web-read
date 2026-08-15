@@ -185,17 +185,14 @@ try {
   const publicFirst = await createIsolatedProfileRestoreTarget({ profileDir: publicRestoreProfile, initialDomains })
   const publicSecond = await createIsolatedProfileRestoreTarget({ profileDir: publicRestoreProfile })
   let begun = 0
-  let releaseTransactions
-  const transactionBarrier = new Promise((resolve) => { releaseTransactions = resolve })
+  const transactionBarrier = createReleaseAfterCountBarrier(2)
   for (const target of [publicFirst, publicSecond]) {
-    const originalBegin = target.beginTransaction.bind(target)
-    target.beginTransaction = async (options) => {
-      const transaction = await originalBegin(options)
-      begun += 1
-      if (begun === 2) releaseTransactions()
-      await transactionBarrier
-      return transaction
-    }
+    target.setFaults({
+      beforeBeginTransaction: async () => {
+        begun += 1
+        await transactionBarrier.wait()
+      },
+    })
   }
   const publicRestoreResults = await Promise.allSettled([
     publicService.restore(publicArtifact, { target: publicFirst, restoreId: 'public-restore-a' }),
@@ -234,13 +231,13 @@ async function runRollbackTimingChecks({ root, sourceService, artifact }) {
   const preBeginProfile = path.join(root, 'rollback-pre-begin-profile')
   const preBeginTarget = await createIsolatedProfileRestoreTarget({ profileDir: preBeginProfile, initialDomains })
   const preBeginWriter = await createIsolatedProfileRestoreTarget({ profileDir: preBeginProfile })
-  const originalBegin = preBeginTarget.beginTransaction.bind(preBeginTarget)
-  preBeginTarget.beginTransaction = async (options) => {
-    const writerTransaction = await preBeginWriter.beginTransaction({ restoreId: 'concurrent-pre-begin-writer' })
-    await writerTransaction.applyDomain('workflow', domainWithRecord('concurrent-pre-begin-writer'))
-    await writerTransaction.commit()
-    return originalBegin(options)
-  }
+  preBeginTarget.setFaults({
+    beforeBeginTransaction: async () => {
+      const writerTransaction = await preBeginWriter.beginTransaction({ restoreId: 'concurrent-pre-begin-writer' })
+      await writerTransaction.applyDomain('workflow', domainWithRecord('concurrent-pre-begin-writer'))
+      await writerTransaction.commit()
+    },
+  })
   await assert.rejects(
     sourceService.restore(artifact, { target: preBeginTarget, restoreId: 'rollback-pre-begin' }),
     { code: 'RESTORE_REVISION_CONFLICT' },
@@ -256,22 +253,17 @@ async function runRollbackTimingChecks({ root, sourceService, artifact }) {
   const postCommitProfile = path.join(root, 'rollback-post-commit-profile')
   const postCommitTarget = await createIsolatedProfileRestoreTarget({ profileDir: postCommitProfile, initialDomains })
   const postCommitWriter = await createIsolatedProfileRestoreTarget({ profileDir: postCommitProfile })
-  const postCommitBegin = postCommitTarget.beginTransaction.bind(postCommitTarget)
-  postCommitTarget.beginTransaction = async (options) => {
-    const transaction = await postCommitBegin(options)
-    const originalCommit = transaction.commit.bind(transaction)
-    transaction.commit = async () => {
-      const result = await originalCommit()
+  postCommitTarget.setFaults({
+    afterCommit: async ({ revision }) => {
       const writerTransaction = await postCommitWriter.beginTransaction({ restoreId: 'concurrent-post-commit-writer' })
       await writerTransaction.applyDomain('workflow', domainWithRecord('concurrent-post-commit-writer'))
       await writerTransaction.commit()
       const error = new Error('synthetic write-then-fail after concurrent commit')
       error.code = 'RESTORE_COMMIT_FAILED'
-      error.committedRevision = transaction.committedRevision
+      error.committedRevision = revision
       throw error
-    }
-    return transaction
-  }
+    },
+  })
   await assert.rejects(
     sourceService.restore(artifact, { target: postCommitTarget, restoreId: 'rollback-post-commit' }),
     { code: 'RESTORE_REVISION_CONFLICT' },
@@ -635,6 +627,19 @@ function domainWithRecord(id) {
     }],
     references: [],
     mediaReferences: [],
+  }
+}
+
+function createReleaseAfterCountBarrier(expectedCount) {
+  let count = 0
+  let release
+  const released = new Promise((resolve) => { release = resolve })
+  return {
+    async wait() {
+      count += 1
+      if (count >= expectedCount) release()
+      await released
+    },
   }
 }
 

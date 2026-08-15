@@ -47,14 +47,7 @@ try {
 
 async function rollbackBackupFailureIsZeroWrite(sourceComposition, artifact) {
   const target = await createTarget(root, 'rollback-backup-failure', {
-    rollbackStore: {
-      async read() { return null },
-      async write() {
-        const error = new Error('fault injected while writing rollback backup')
-        error.code = 'RESTORE_ROLLBACK_UNAVAILABLE'
-        throw error
-      },
-    },
+    faults: { rollbackBackup: 'fail' },
   })
   const before = await collectApplicationDomains(target.restoreTarget)
   await assert.rejects(
@@ -238,8 +231,6 @@ async function createTarget(parent, name, options = {}) {
     capacityBytes: options.capacityBytes,
     faults: options.faults,
   })
-  if (options.rollbackStore) restoreTarget.rollbackStore = options.rollbackStore
-  if (options.quarantine) restoreTarget.quarantine = options.quarantine
   return {
     ...fixture,
     restoreTarget,
