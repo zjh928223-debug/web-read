@@ -1144,6 +1144,7 @@ export function createApplicationBackupService(options = {}) {
         resolutions: dryRunOptions.resolutions || {},
       })
     } catch (error) {
+      const details = error?.details && typeof error.details === 'object' ? { ...error.details } : {}
       return {
         mode: 'dry-run',
         write: false,
@@ -1160,6 +1161,10 @@ export function createApplicationBackupService(options = {}) {
         conflictCount: 0,
         referenceCount: 0,
         mediaReferences: {},
+        error: {
+          code: error?.code || 'BACKUP_VERIFY_FAILED',
+          ...(Object.keys(details).length ? { details } : {}),
+        },
       }
     }
   }
@@ -1184,10 +1189,14 @@ export function createApplicationBackupService(options = {}) {
       priorJournal = await readJournal({ restoreId })
     } catch (error) {
       try {
+        const evidence = error?.details && typeof error.details === 'object' ? error.details : {}
         await quarantineArtifact(target, {
           restoreId,
           kind: 'invalid-journal',
           reason: error?.code || 'RESTORE_JOURNAL_CORRUPT',
+          sourceKey: evidence.sourceKey,
+          rawValue: evidence.rawValue,
+          checksumEvidence: evidence.checksumEvidence,
         })
       } catch { /* Preserve the durable-journal failure below. */ }
       throw backupError('RESTORE_JOURNAL_UNAVAILABLE', 'Restore journal could not be read safely', { restoreId })
@@ -1215,10 +1224,14 @@ export function createApplicationBackupService(options = {}) {
       rollbackEntry = await readRollbackBackup(target, restoreId)
     } catch (error) {
       try {
+        const evidence = error?.details && typeof error.details === 'object' ? error.details : {}
         await quarantineArtifact(target, {
           restoreId,
           kind: 'invalid-rollback-backup',
           reason: error?.code || 'RESTORE_ROLLBACK_CORRUPT',
+          sourceKey: evidence.sourceKey,
+          rawValue: evidence.rawValue,
+          checksumEvidence: evidence.checksumEvidence,
         })
       } catch { /* Preserve the durable rollback failure below. */ }
       throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'The rollback backup could not be read safely', { restoreId })
@@ -1312,14 +1325,32 @@ export function createApplicationBackupService(options = {}) {
         throw backupError('RESTORE_ROLLBACK_FAILED', 'A committed restore could not recover its baseline safely', { restoreId })
       }
     }
-    const dryRun = await dryRunRestoreForService({
-      artifact: sourceArtifact,
-      adapters: targetAdapters,
-      requiredDomains,
-      limits,
-      target,
-      resolutions: restoreOptions.resolutions || {},
-    })
+    let dryRun
+    try {
+      dryRun = await dryRunRestoreForService({
+        artifact: sourceArtifact,
+        adapters: targetAdapters,
+        requiredDomains,
+        limits,
+        target,
+        resolutions: restoreOptions.resolutions || {},
+      })
+    } catch (error) {
+      // A target collector can discover corrupt durable input before it can
+      // produce a normal report. Preserve its structured evidence in the
+      // target quarantine before surfacing the fail-closed error.
+      const evidence = error?.details && typeof error.details === 'object' ? error.details : {}
+      await quarantineArtifact(target, {
+        restoreId,
+        kind: 'dry-run-error',
+        reason: error?.code || 'RESTORE_DRY_RUN_FAILED',
+        sourceKey: evidence.sourceKey,
+        rawValue: evidence.rawValue,
+        checksumEvidence: evidence.checksumEvidence,
+        report: { mode: 'dry-run', write: false, error: { code: error?.code || 'RESTORE_DRY_RUN_FAILED', details: evidence } },
+      })
+      throw error
+    }
     if (!dryRun.ok) {
       await quarantineArtifact(target, { restoreId, kind: 'dry-run-blocked', reason: 'RESTORE_DRY_RUN_BLOCKED', report: dryRun })
       throw backupError('RESTORE_DRY_RUN_BLOCKED', 'Restore dry-run is blocked by schema, capacity, reference, or revision checks', {
@@ -1445,18 +1476,21 @@ export function createApplicationBackupService(options = {}) {
           journal: { restoreId, artifactChecksum: sourceArtifact.artifactChecksum },
         })
       } catch (failure) { quarantineError = failure }
-      const failedStatus = rollbackError || error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
+      const rollbackFailed = rollbackError || error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE' || error?.code === 'RESTORE_ROLLBACK_FAILED'
+      const failedStatus = rollbackFailed
         ? 'rollback-failed'
         : 'rolled-back'
-      const manualRecoveryRequired = error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
-        && !Number.isInteger(committedRevision)
+      const manualRecoveryRequired = (
+        error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
+        || error?.code === 'RESTORE_ROLLBACK_FAILED'
+      ) && !Number.isInteger(committedRevision)
       const failedJournal = {
         ...started,
         status: failedStatus,
         failureCode: error?.code || 'RESTORE_FAILED',
         ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
         ...(Number.isInteger(rollbackRevision) ? { rollbackRevision } : {}),
-        rollbackComplete: !rollbackError && !manualRecoveryRequired,
+        rollbackComplete: !rollbackError && error?.code !== 'RESTORE_ROLLBACK_FAILED' && !manualRecoveryRequired,
         quarantineComplete: !quarantineError,
         ...(manualRecoveryRequired ? { manualRecoveryRequired: true } : {}),
         failedAt: new Date().toISOString(),
@@ -1554,10 +1588,11 @@ export function createIndexedDbDomainAdapter(options = {}) {
       const rows = await options.readRows()
       if (!Array.isArray(rows)) throw backupError('BACKUP_ADAPTER_UNAVAILABLE', `IndexedDB adapter ${domainKey} did not return rows`)
       if (typeof options.assertRows === 'function') await options.assertRows(rows)
+      const selectedRows = rows.filter(rowFilter)
       return {
         schemaVersion,
-        revision: options.revision ? await options.revision(rows) : maxRecordRevision(rows),
-        records: rows.filter(rowFilter).map((row) => ({
+        revision: options.revision ? await options.revision(selectedRows) : maxRecordRevision(selectedRows),
+        records: selectedRows.map((row) => ({
           id: row.id,
           schemaVersion: row.schemaVersion ?? schemaVersion,
           revision: row.revision ?? 0,

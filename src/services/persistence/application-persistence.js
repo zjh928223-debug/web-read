@@ -220,6 +220,71 @@ export function createApplicationPersistence(options = {}) {
       return rows
     },
 
+    /**
+     * Replace a registered set of files rows in one v1 transaction.
+     *
+     * Restore uses this boundary for rows that belong to a domain but do not
+     * have a single repository-level type (for example the reader session's
+     * five fixed ids plus vocabulary's prefixed rows).  The caller supplies
+     * an explicit allowlist/validator; unknown rows are never implicitly
+     * touched and the transaction still resolves only after oncomplete.
+     */
+    async replaceRows(options = {}) {
+      const rows = Array.isArray(options.rows) ? options.rows : []
+      const deleteIds = Array.isArray(options.deleteIds) ? [...new Set(options.deleteIds)] : []
+      const allowId = typeof options.allowId === 'function' ? options.allowId : () => true
+      const validateRow = typeof options.validateRow === 'function' ? options.validateRow : null
+      const operation = String(options.operation || 'replace_rows')
+      if (rows.length === 0 && deleteIds.length === 0) {
+        throw persistenceError('INVALID_VALUE_LIST', operation)
+      }
+      const ids = new Set()
+      for (const row of rows) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)
+          || typeof row.id !== 'string' || !row.id || ids.has(row.id)
+          || !allowId(row.id, row) || (validateRow && !validateRow(row))) {
+          throw persistenceError('INVALID_VALUE', operation)
+        }
+        ids.add(row.id)
+      }
+      for (const id of deleteIds) {
+        if (typeof id !== 'string' || !id || !allowId(id) || ids.has(id)) {
+          throw persistenceError('INVALID_KEY', operation)
+        }
+        ids.add(id)
+      }
+      const guardId = options.guardId
+      const hasExpectedRevision = Object.prototype.hasOwnProperty.call(options, 'expectedRevision')
+      if (guardId !== undefined && guardId !== null
+        && (typeof guardId !== 'string' || !guardId || !allowId(guardId))) {
+        throw persistenceError('EXPECTED_REVISION_REQUIRED', operation)
+      }
+      await runTransaction('readwrite', operation, async (store) => {
+        if (hasExpectedRevision) {
+          let actualRevision
+          if (typeof guardId === 'string' && guardId) {
+            const current = await requestPromise(store.get(guardId), operation)
+            actualRevision = current?.revision ?? null
+          } else {
+            const currentRows = await requestPromise(store.getAll(), operation)
+            actualRevision = currentRows
+              .filter((row) => allowId(row?.id, row))
+              .reduce((maximum, row) => (
+                Number.isInteger(row?.revision) && row.revision >= 0
+                  ? Math.max(maximum, row.revision)
+                  : maximum
+              ), 0)
+          }
+          if (actualRevision !== options.expectedRevision) {
+            throw revisionConflict(operation, options.expectedRevision, actualRevision)
+          }
+        }
+        for (const id of deleteIds) await requestPromise(store.delete(id), operation)
+        for (const row of rows) await requestPromise(store.put(row), operation)
+      }, options)
+      return rows
+    },
+
     async deleteMany(typeName, ids) {
       typeFor(typeName)
       if (!Array.isArray(ids)) {

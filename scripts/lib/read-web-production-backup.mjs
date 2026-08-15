@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -530,8 +530,50 @@ async function openBrowserProfile(profileDir) {
     'browser profile',
   )
   const storage = new MapStorage(state.localStorage)
+  const persistProfile = async () => {
+    state.localStorage = storage.toJSON()
+    await writeIsolatedBrowserProfile(profileDir, state)
+  }
+  storage.flush = persistProfile
   const persistence = {
     async getAllRows() { return clone(state.indexedDbRows) },
+    async replaceRows({ rows = [], deleteIds = [], allowId = () => true, expectedRevision, guardId } = {}) {
+      if (Number.isInteger(expectedRevision)) {
+        const guarded = typeof guardId === 'string' && guardId
+          ? state.indexedDbRows.find((row) => row?.id === guardId)
+          : null
+        const actualRevision = guarded
+          ? (guarded.revision ?? null)
+          : state.indexedDbRows
+            .filter((row) => allowId(row?.id, row))
+            .reduce((maximum, row) => (
+              Number.isInteger(row?.revision) && row.revision >= 0
+                ? Math.max(maximum, row.revision)
+                : maximum
+            ), 0)
+        if (actualRevision !== expectedRevision) {
+          const error = new Error('isolated browser profile restore revision conflict')
+          error.code = 'RESTORE_REVISION_CONFLICT'
+          error.expectedRevision = expectedRevision
+          error.currentRevision = actualRevision
+          throw error
+        }
+      }
+      const nextRows = state.indexedDbRows.filter((row) => !deleteIds.includes(row?.id))
+      for (const row of rows) {
+        if (!allowId(row?.id, row)) {
+          const error = new Error(`isolated browser profile restore row is outside its domain: ${row?.id}`)
+          error.code = 'RESTORE_UNKNOWN_KEY'
+          throw error
+        }
+        const index = nextRows.findIndex((candidate) => candidate?.id === row.id)
+        if (index >= 0) nextRows[index] = clone(row)
+        else nextRows.push(clone(row))
+      }
+      state.indexedDbRows = nextRows
+      await persistProfile()
+      return clone(rows)
+    },
   }
   return { state, storage, persistence, filePath }
 }
@@ -558,8 +600,18 @@ function runPythonBackup({ pythonCommand, stateDir, outputDir }) {
     child.once('error', (error) => reject(error))
     child.once('exit', (code) => {
       if (code !== 0) {
+        let parsedError = null
+        let details = {}
+        try {
+          const parsed = JSON.parse(stderr.trim())
+          if (parsed && typeof parsed === 'object') {
+            parsedError = typeof parsed.error === 'string' ? parsed.error : null
+            details = parsed.details || {}
+          }
+        } catch { /* Preserve the bridge error when stderr is not structured JSON. */ }
         const error = new Error(`Python durable backup bridge failed: ${stderr.trim() || `exit ${code}`}`)
-        error.code = 'BACKUP_PYTHON_BRIDGE_FAILED'
+        error.code = parsedError || stderr.match(/([A-Z][A-Z0-9_]+):/)?.[1] || 'BACKUP_PYTHON_BRIDGE_FAILED'
+        error.details = details
         reject(error)
         return
       }
@@ -578,6 +630,54 @@ function runPythonBackup({ pythonCommand, stateDir, outputDir }) {
       }
     })
   })
+}
+
+async function runPythonRestore({ pythonCommand, stateDir, outputDir, domain, snapshot, expectedRevision }) {
+  const inputPath = path.join(path.resolve(outputDir), `.read-web-restore-${domain}-${randomUUID()}.json`)
+  await mkdir(path.dirname(inputPath), { recursive: true })
+  await writeFile(inputPath, `${JSON.stringify(snapshot)}\n`, 'utf8')
+  try {
+    return await new Promise((resolve, reject) => {
+      const args = [
+        '-m',
+        'youtube_workflow.application_backup',
+        '--state-dir',
+        path.resolve(stateDir),
+        '--output-dir',
+        path.resolve(outputDir),
+        '--restore-domain',
+        domain,
+        '--restore-input',
+        inputPath,
+      ]
+      if (Number.isInteger(expectedRevision)) args.push('--expected-revision', String(expectedRevision))
+      const child = spawn(pythonCommand, args, {
+        cwd: workflowRoot,
+        env: process.env,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      let stdout = ''
+      let stderr = ''
+      child.stdout.on('data', (chunk) => { stdout += chunk })
+      child.stderr.on('data', (chunk) => { stderr += chunk })
+      child.once('error', (error) => reject(error))
+      child.once('exit', (code) => {
+        if (code !== 0) {
+          const error = new Error(`Python durable restore bridge failed: ${stderr.trim() || `exit ${code}`}`)
+          error.code = stderr.match(/([A-Z][A-Z0-9_]+):/)?.[1] || 'RESTORE_PYTHON_BRIDGE_FAILED'
+          reject(error)
+          return
+        }
+        try { resolve(JSON.parse(stdout)) } catch (error) {
+          error.code = 'RESTORE_PYTHON_BRIDGE_INVALID_JSON'
+          reject(error)
+        }
+      })
+    })
+  } finally {
+    await rm(inputPath, { force: true }).catch(() => {})
+  }
 }
 
 function createPythonDomainAdapters(options) {
@@ -607,6 +707,16 @@ function createPythonDomainAdapters(options) {
       adapterVersion: 1,
       supportedSchemaVersions: [1],
       collect: () => collect('marks-activity'),
+      async restoreRecords(snapshot, context = {}) {
+        return runPythonRestore({
+          pythonCommand,
+          stateDir: options.stateDir,
+          outputDir: options.outputDir,
+          domain: 'marks-activity',
+          snapshot,
+          expectedRevision: context.expectedRevision,
+        })
+      },
     },
     workflow: {
       key: 'workflow',
@@ -614,6 +724,16 @@ function createPythonDomainAdapters(options) {
       adapterVersion: 1,
       supportedSchemaVersions: [1],
       collect: () => collect('workflow'),
+      async restoreRecords(snapshot, context = {}) {
+        return runPythonRestore({
+          pythonCommand,
+          stateDir: options.stateDir,
+          outputDir: options.outputDir,
+          domain: 'workflow',
+          snapshot,
+          expectedRevision: context.expectedRevision,
+        })
+      },
     },
   }
 }
@@ -939,6 +1059,35 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     marksActivityAdapter: pythonAdapters['marks-activity'],
     workflowAdapter: pythonAdapters.workflow,
   })
+  function createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions = {}) {
+    return readWebBackup.createReadWebApplicationRestoreTarget({
+      isolated: true,
+      applicationPersistence: targetBrowser.persistence,
+      storage: targetBrowser.storage,
+      backupAdapters: targetAdapters,
+      restoreAdapters: {
+        'marks-activity': targetPythonAdapters['marks-activity'],
+        workflow: targetPythonAdapters.workflow,
+      },
+      storageKeyPrefix: targetOptions.storageKeyPrefix || 'isolated.',
+      capacityBytes: targetOptions.capacityBytes,
+      faults: targetOptions.faults,
+      rollbackStore: targetOptions.rollbackStore,
+      quarantine: targetOptions.quarantine,
+      journalStore: targetOptions.journalStore,
+      pendingStore: targetOptions.pendingStore,
+      revisionStore: targetOptions.revisionStore,
+    })
+  }
+  const restoreTarget = createApplicationRestoreTarget(browser, pythonAdapters, adapters, {
+    capacityBytes: options.capacityBytes,
+    faults: options.faults,
+    rollbackStore: options.rollbackStore,
+    quarantine: options.quarantine,
+    journalStore: options.journalStore,
+    pendingStore: options.pendingStore,
+    revisionStore: options.revisionStore,
+  })
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,
     adapters,
@@ -951,16 +1100,36 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     },
   })
   return Object.freeze({
-    kind: 'read-web-isolated-restore-engine-foundation',
+    kind: 'read-web-isolated-application-restore-target',
     requiredDomains: [...service.requiredDomains],
     adapters,
     service,
+    restoreTarget,
     browserProfile: browser,
     pythonAdapters,
     async createBackup(backupOptions = {}) {
       return service.createBackup(backupOptions)
     },
     async createIsolatedTarget(targetOptions = {}) {
+      if (targetOptions.engine === 'application') {
+        const targetBrowser = targetOptions.profileDir
+          ? await openBrowserProfile(path.resolve(targetOptions.profileDir))
+          : browser
+        const targetPythonAdapters = targetOptions.pythonStateDir && targetOptions.pythonOutputDir
+          ? createPythonDomainAdapters({
+              stateDir: path.resolve(targetOptions.pythonStateDir),
+              outputDir: path.resolve(targetOptions.pythonOutputDir),
+              pythonCommand: targetOptions.pythonCommand || options.pythonCommand,
+            })
+          : pythonAdapters
+        const targetAdapters = readWebBackup.createReadWebApplicationBackupAdapters({
+          applicationPersistence: targetBrowser.persistence,
+          storage: targetBrowser.storage,
+          marksActivityAdapter: targetPythonAdapters['marks-activity'],
+          workflowAdapter: targetPythonAdapters.workflow,
+        })
+        return createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions)
+      }
       return createIsolatedProfileRestoreTarget(targetOptions)
     },
   })
