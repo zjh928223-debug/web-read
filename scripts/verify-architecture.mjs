@@ -2,34 +2,16 @@ import { spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT,
+  TEMPORARY_ARCHITECTURE_SOURCE_SHAPE_EXCLUSIONS,
+} from './lib/architecture-source-shape-policy.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const inventory = JSON.parse(await readFile(path.join(repositoryRoot, 'docs', 'architecture', 'test-inventory.json'), 'utf8'))
-const temporaryExclusions = new Map([
-  // 10.5 owns the remaining window.__state compatibility read; keep its
-  // legacy alias callable until that production migration lands.
-  ['scripts/runtime-state-source-check.cjs', {
-    task: '10.5',
-    expectedFailure: 'should not read window.__state',
-  }],
-  // 10.5 owns media-source registration in the workflow loader; keep this
-  // focused guard visible in inventory until that production seam lands.
-  ['scripts/video-player-module-check.cjs', {
-    task: '10.5',
-    expectedFailure: 'workflow loader should register video availability at load time',
-  }],
-])
-const excludedPaths = new Set([
-  'scripts/test-inventory.mjs',
-  'scripts/verify-architecture.mjs',
-  ...temporaryExclusions.keys(),
-])
+const temporaryExclusions = TEMPORARY_ARCHITECTURE_SOURCE_SHAPE_EXCLUSIONS
 const included = inventory.tests
-  .filter((test) => test.architectureEvidence?.includes('source-shape'))
-  .filter((test) => test.evidence.sourceShape.length > 0)
-  .filter((test) => isArchitectureGuard(test.path))
-  .filter((test) => !excludedPaths.has(test.path))
-  .filter((test) => test.invocation !== 'inventory-only')
+  .filter((test) => test.aggregates?.includes('architecture:source-shape'))
   .sort((left, right) => left.path.localeCompare(right.path))
 const excluded = inventory.tests
   .filter((test) => test.evidence.sourceShape.length > 0)
@@ -37,17 +19,27 @@ const excluded = inventory.tests
   .map((test) => `${test.path}: ${test.category}/${test.invocation}`)
   .sort()
 
+const aggregatePaths = inventory.tests
+  .filter((test) => test.aggregates?.includes('architecture:source-shape'))
+  .map((test) => test.path)
+  .sort()
+const evidencePaths = inventory.tests
+  .filter((test) => test.architectureEvidence?.includes('source-shape'))
+  .map((test) => test.path)
+  .sort()
+if (JSON.stringify(aggregatePaths) !== JSON.stringify(evidencePaths)) {
+  throw new Error('canonical architecture aggregate and source-shape evidence sets diverge')
+}
+if (aggregatePaths.length !== CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT) {
+  throw new Error(`canonical architecture source-shape count drifted: expected ${CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT}, got ${aggregatePaths.length}`)
+}
+
 function printPlan() {
   console.log('verify:architecture:source-shape included:')
   included.forEach((test, index) => console.log(`  ${index + 1}. ${test.path}`))
   console.log('verify:architecture:source-shape excluded:')
   excluded.forEach((entry) => console.log(`  - ${entry}`))
   console.log(`architecture source-shape total: ${included.length} executed, ${excluded.length} excluded`)
-}
-
-function isArchitectureGuard(relativePath) {
-  const basename = path.basename(relativePath)
-  return /(?:-check\.|-gate\.|-guard\.|-drain\.|-boundary\.|-facades\.|-module\.|-state\.|-owner\.|-deps\.|-refs\.|-order\.|-runtime\.|-audit\.|-migration\.|-ledger\.|^verify-)/.test(basename)
 }
 
 function run(test) {

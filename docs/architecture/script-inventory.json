@@ -26,7 +26,9 @@
     "scripts/download-mdict-supplements.ps1",
     "scripts/launch-learning-page.ps1",
     "scripts/launch-next-preview.ps1",
+    "scripts/lib/architecture-source-shape-policy.mjs",
     "scripts/lib/compatibility-network-policy.mjs",
+    "scripts/lib/compatibility-isolation.mjs",
     "scripts/start-latest-reader.ps1",
     "scripts/vocabulary-repository-browser-reopen-check.cjs"
   ],

@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  isCanonicalArchitectureSourceShapeOwner,
+} from './lib/architecture-source-shape-policy.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const scriptsRoot = path.join(repositoryRoot, 'scripts')
@@ -15,28 +18,6 @@ const explicitCommandLayers = new Map([
   ['verify:full', ['architecture', 'behavior', 'browser']],
   ['verify:release', ['architecture', 'behavior', 'browser', 'performance', 'release']],
 ])
-const architectureEvidenceOwnedByOtherGates = new Set([
-  'scripts/exam-vocabulary-import-closure-check.cjs',
-  'scripts/learning-page-launcher-check.mjs',
-  'scripts/legacy-vocabulary-audit-check.cjs',
-  'scripts/legacy-vocabulary-migration-check.mjs',
-  'scripts/local-sentence-warehouse-check.mjs',
-  'scripts/merriam-webster-sentence-check.mjs',
-  'scripts/passage-preview-check.cjs',
-  'scripts/personalization-shadow-activation-check.mjs',
-  'scripts/personalization-shadow-diagnostics-check.mjs',
-  'scripts/production-host-lifecycle-check.mjs',
-  'scripts/runtime-config-integration-check.mjs',
-  'scripts/srs-review-check.cjs',
-  'scripts/srs-review-ui-v2-check.cjs',
-  'scripts/verify-vocabulary-personalization-content.mjs',
-  'scripts/verify-vocabulary-personalization-shadow.mjs',
-  'scripts/vocabulary-context-evidence-check.cjs',
-  'scripts/vocabulary-preview-service-check.cjs',
-  'scripts/youtube-workflow-loader-check.cjs',
-  'scripts/youtube-workflow-panel-check.cjs',
-])
-
 const sourceShapeNames = [
   'source', 'moduleSource', 'appSource', 'assemblySource', 'featureSource', 'runtimeSource',
   'html', 'indexSource', 'stylesSource', 'templateSource', 'packageSource', 'configSource',
@@ -119,17 +100,18 @@ const tests = scriptPaths.map((relativePath) => {
   if (layers.includes('architecture') && !allOwners.length) {
     allOwners.push('package.json#scripts.verify:architecture:source-shape')
   }
+  const invocation = Number.isFinite(packageDepthByPath.get(relativePath))
+    ? packageDepthByPath.get(relativePath) === 0 ? 'direct' : 'transitive'
+    : inventoryOwners.length ? 'inventory-only' : 'orphan'
   return {
     path: relativePath,
     category: primaryCategory(layers),
     layers,
-    aggregates: architectureAggregateFor(relativePath, layers, evidence),
-    architectureEvidence: architectureEvidenceFor(relativePath, layers, evidence),
+    aggregates: architectureAggregateFor(relativePath, layers, evidence, invocation),
+    architectureEvidence: architectureEvidenceFor(relativePath, layers, evidence, invocation),
     owner: allOwners[0] || null,
     owners: allOwners,
-    invocation: Number.isFinite(packageDepthByPath.get(relativePath))
-      ? packageDepthByPath.get(relativePath) === 0 ? 'direct' : 'transitive'
-      : inventoryOwners.length ? 'inventory-only' : 'orphan',
+    invocation,
     evidence,
   }
 })
@@ -189,6 +171,7 @@ if (!expected) {
   console.error(`missing ${path.relative(repositoryRoot, inventoryPath)}; run npm run verify:test-inventory:update`)
   process.exit(1)
 }
+assertCanonicalInventorySnapshot(result)
 assert.deepEqual(result, expected, 'test inventory is stale; run npm run verify:test-inventory:update and review the diff')
 assert.equal(result.orphans.length, 0, `orphan test scripts: ${result.orphans.join(', ')}`)
 for (const category of ['architecture', 'behavior', 'browser', 'performance', 'release']) {
@@ -272,26 +255,14 @@ function primaryCategory(layers) {
   return [...layers].sort((left, right) => categoryOrder(left) - categoryOrder(right))[0] || 'behavior'
 }
 
-function architectureAggregateFor(relativePath, layers, evidence) {
-  return layers.includes('architecture')
-    && !evidence.behaviorAssertions
-    && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
-    && !architectureEvidenceOwnedByOtherGates.has(relativePath)
+function architectureAggregateFor(relativePath, layers, evidence, invocation = 'direct') {
+  return isCanonicalArchitectureSourceShapeOwner({ relativePath, layers, evidence, invocation })
     ? ['architecture:source-shape']
     : []
 }
 
-function isArchitectureGuard(relativePath) {
-  const basename = path.basename(relativePath)
-  return /(?:-check\.|-gate\.|-guard\.|-drain\.|-boundary\.|-facades\.|-module\.|-state\.|-owner\.|-deps\.|-refs\.|-order\.|-runtime\.|-audit\.|-migration\.|-ledger\.|^verify-)/.test(basename)
-}
-
-function architectureEvidenceFor(relativePath, layers, evidence) {
-  return evidence.sourceShape.length > 0
-    && layers.includes('architecture')
-    && isArchitectureGuard(relativePath)
-    && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
-    && !architectureEvidenceOwnedByOtherGates.has(relativePath)
+function architectureEvidenceFor(relativePath, layers, evidence, invocation = 'direct') {
+  return isCanonicalArchitectureSourceShapeOwner({ relativePath, layers, evidence, invocation })
     ? ['source-shape']
     : []
 }
