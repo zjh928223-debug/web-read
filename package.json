@@ -151,6 +151,7 @@
     "verify:compatibility-consumer-map": "node scripts/compatibility-consumer-map.mjs",
     "update:compatibility-consumer-map": "node scripts/compatibility-consumer-map.mjs --update",
     "verify:compatibility-consumer-map-determinism": "node scripts/compatibility-consumer-map-determinism-check.mjs",
+    "verify:compatibility-network-policy": "node scripts/compatibility-network-policy-check.mjs",
     "verify:ui-compatibility-store": "node scripts/ui-compatibility-store-check.cjs",
     "verify:repository-hygiene": "node scripts/repository-hygiene-check.mjs",
     "verify:script-inventory": "node scripts/script-inventory-check.mjs",

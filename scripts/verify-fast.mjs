@@ -14,6 +14,7 @@ const included = [
   command('test inventory classifier self-test (canonical)', npmCommand, ['run', 'verify:architecture:test-inventory']),
   command('architecture source-shape guards (canonical)', npmCommand, ['run', 'verify:architecture:source-shape']),
   command('migrated interface behavior (canonical)', npmCommand, ['run', 'verify:behavior:migrated-interfaces']),
+  command('compatibility network policy behavior', process.execPath, ['scripts/compatibility-network-policy-check.mjs']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
   command('legacy deletion gate', process.execPath, ['scripts/legacy-deletion-gate.mjs']),
   command('critical async boundary', process.execPath, ['scripts/critical-async-boundary-check.mjs']),

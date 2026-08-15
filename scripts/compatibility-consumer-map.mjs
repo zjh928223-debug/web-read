@@ -6,6 +6,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
+import { shouldContinueStaticRequest } from './lib/compatibility-network-policy.mjs'
 
 const require = createRequire(import.meta.url)
 const root = path.resolve(import.meta.dirname, '..')
@@ -88,7 +89,7 @@ try {
   const page = await browser.newPage()
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url())
-    if (url.hostname === '127.0.0.1') return route.continue()
+    if (shouldContinueStaticRequest(url.href, targetUrl)) return route.continue()
     return route.fulfill({ status: 204, body: '' })
   })
   await page.addInitScript((names) => {

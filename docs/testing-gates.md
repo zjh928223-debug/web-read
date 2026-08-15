@@ -8,9 +8,10 @@ included/excluded 清单；未执行的层不会被描述为已覆盖。
 `npm run verify:test-inventory` 会审计 `package.json` 的直接命令、`npm run` 的
 传递调用，以及 `scripts/` 下的可执行 Node 检查。结果写入
 `docs/architecture/test-inventory.json`，每条记录都有 `category`、`layers`、
-`owner`、`invocation`、canonical `aggregates` 和证据字段。混合检查若由 behavior、
-browser 或其他专用 gate 执行，其源码形状证据不会自动把整个脚本塞进 architecture
-aggregate。分类器自测为：
+`owner`、`invocation`、canonical `aggregates` 和证据字段。混合检查的静态源码形状
+只记录在 `architectureEvidence: ["source-shape"]` 这个证据面；它的 behavior、
+browser、performance 或 release 结果不会被整脚本冒充 architecture aggregate。
+分类器自测为：
 
 ```powershell
 npm run verify:architecture:test-inventory
@@ -105,9 +106,10 @@ node scripts/verify-full.mjs --list
 Full 首先执行 `verify:fast`，因此会重复并明确执行 canonical architecture 和
 behavior 两层；随后增加 persistence fault matrix、production build、隔离的
 `4193` development browser journeys、`4194` production preview load、独立
-production host/browser journeys、reader-session browser fault journeys 和
-Python backend unittest suite。不得把 architecture source-shape 通过写成
-browser/full 行为通过。
+production host/browser journeys、reader-session/compatibility browser fault
+journeys、compatibility consumer-map deterministic capture 和 Python backend
+unittest suite。不得把 architecture source-shape 通过写成 browser/full
+行为通过。
 
 Full 不启动真实 Material Workflow service，也不包含实时外部 API。长时间性能
 和发布恢复属于 release gate。
@@ -119,7 +121,7 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-当前 release 会先列出并阻断未完成的 12.2、12.3、12.7；`--list` 只查看清单并
+当前 release 会先列出并阻断未完成的 12.2、12.3、12.4、12.5、12.6、12.7、12.8；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域 restore

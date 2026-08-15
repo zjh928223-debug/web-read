@@ -25,7 +25,7 @@ const excludedPaths = new Set([
   ...temporaryExclusions.keys(),
 ])
 const included = inventory.tests
-  .filter((test) => test.aggregates?.includes('architecture:source-shape'))
+  .filter((test) => test.architectureEvidence?.includes('source-shape'))
   .filter((test) => test.evidence.sourceShape.length > 0)
   .filter((test) => isArchitectureGuard(test.path))
   .filter((test) => !excludedPaths.has(test.path))

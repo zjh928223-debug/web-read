@@ -30,7 +30,9 @@ npm run verify:test-inventory
 ```
 
 Source-shape checks (`includes`, `match`, `indexOf`, file-shape assertions) are architecture
-evidence only. The canonical aggregate is `verify:architecture:source-shape`; the canonical
+evidence only. For a mixed check, `architectureEvidence` records only that source-shape
+aspect; its behavior/browser/performance/release assertions are not credited as architecture.
+The canonical aggregate is `verify:architecture:source-shape`; the canonical
 migrated-interface behavior aggregate is `verify:behavior:migrated-interfaces`. Existing
 `verify:<feature>` commands remain callable compatibility aliases so external callers are not
 broken. Fast/full use the canonical aggregates, and their plans state which layers are excluded.

@@ -44,12 +44,18 @@ const sourceShapeNames = [
 ]
 const sourceShapeIdentifier = sourceShapeNames.join('|')
 
+function compareCodePoint(left, right) {
+  const leftValue = String(left)
+  const rightValue = String(right)
+  return leftValue < rightValue ? -1 : leftValue > rightValue ? 1 : 0
+}
+
 const packageJson = JSON.parse(await readFile(packagePath, 'utf8'))
 const allPackageScripts = Object.entries(packageJson.scripts || {})
-  .sort(([left], [right]) => left.localeCompare(right))
+  .sort(([left], [right]) => compareCodePoint(left, right))
 const packageScripts = allPackageScripts
   .filter(([name]) => /^(verify|test|release|dictionary:)/.test(name))
-  .sort(([left], [right]) => left.localeCompare(right))
+  .sort(([left], [right]) => compareCodePoint(left, right))
 
 const scriptPaths = (await walk(scriptsRoot))
   .filter((absolutePath) => executableExtensions.has(path.extname(absolutePath)))
@@ -117,11 +123,8 @@ const tests = scriptPaths.map((relativePath) => {
     path: relativePath,
     category: primaryCategory(layers),
     layers,
-    aggregates: layers.includes('architecture')
-      && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
-      && !architectureEvidenceOwnedByOtherGates.has(relativePath)
-      ? ['architecture:source-shape']
-      : [],
+    aggregates: architectureAggregateFor(relativePath, layers, evidence),
+    architectureEvidence: architectureEvidenceFor(relativePath, layers, evidence),
     owner: allOwners[0] || null,
     owners: allOwners,
     invocation: Number.isFinite(packageDepthByPath.get(relativePath))
@@ -269,6 +272,30 @@ function primaryCategory(layers) {
   return [...layers].sort((left, right) => categoryOrder(left) - categoryOrder(right))[0] || 'behavior'
 }
 
+function architectureAggregateFor(relativePath, layers, evidence) {
+  return layers.includes('architecture')
+    && !evidence.behaviorAssertions
+    && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
+    && !architectureEvidenceOwnedByOtherGates.has(relativePath)
+    ? ['architecture:source-shape']
+    : []
+}
+
+function isArchitectureGuard(relativePath) {
+  const basename = path.basename(relativePath)
+  return /(?:-check\.|-gate\.|-guard\.|-drain\.|-boundary\.|-facades\.|-module\.|-state\.|-owner\.|-deps\.|-refs\.|-order\.|-runtime\.|-audit\.|-migration\.|-ledger\.|^verify-)/.test(basename)
+}
+
+function architectureEvidenceFor(relativePath, layers, evidence) {
+  return evidence.sourceShape.length > 0
+    && layers.includes('architecture')
+    && isArchitectureGuard(relativePath)
+    && !layers.some((layer) => ['browser', 'performance', 'release'].includes(layer))
+    && !architectureEvidenceOwnedByOtherGates.has(relativePath)
+    ? ['source-shape']
+    : []
+}
+
 function categoryOrder(category) {
   return { release: 0, performance: 1, browser: 2, architecture: 3, behavior: 4 }[category] ?? 99
 }
@@ -285,7 +312,7 @@ async function readJsonIfPresent(filename) {
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
   const files = []
-  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+  for (const entry of entries.sort((left, right) => compareCodePoint(left.name, right.name))) {
     const absolutePath = path.join(directory, entry.name)
     if (entry.isDirectory()) files.push(...await walk(absolutePath))
     else files.push(absolutePath)
@@ -310,6 +337,8 @@ function runSelfTest() {
   assert.equal(release.release, true)
   const behavior = classifyEvidence('scripts/example-check.mjs', "import assert from 'node:assert/strict'; assert.deepEqual(actual, expected)")
   assert.equal(behavior.behaviorAssertions, true)
+  const mixedLayers = classifyLayers('scripts/example-module-check.cjs', "const source = fs.readFileSync('src/example.js', 'utf8'); assert.ok(source.includes('owner'))", classifyEvidence('scripts/example-module-check.cjs', "const source = fs.readFileSync('src/example.js', 'utf8'); assert.ok(source.includes('owner'))"), [])
+  assert.deepEqual(architectureAggregateFor('scripts/example-module-check.cjs', mixedLayers, { behaviorAssertions: true }), [])
   assert.deepEqual(classifyLayers('scripts/test-inventory.mjs', '', release, []), ['architecture'])
   assert.deepEqual(classifyCommand('verify:behavior:migrated-interfaces', 'node scripts/verify-behavior.mjs', [], []), ['behavior'])
   const excludedWords = classifyEvidence(
