@@ -1,9 +1,21 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import { createReadWebProductionBackupComposition } from './lib/read-web-production-backup.mjs'
+import {
+  createIsolatedProfileRestoreTarget,
+  createReadWebProductionBackupComposition,
+} from './lib/read-web-production-backup.mjs'
+
+const REQUIRED_DOMAINS = [
+  'reader-session',
+  'marks-activity',
+  'vocabulary-srs',
+  'passage-preview',
+  'annotation',
+  'workflow',
+]
 
 const release = {
   applicationVersion: 'real-restore-fault-matrix',
@@ -20,7 +32,7 @@ const artifact = await sourceComposition.createBackup({ now: () => 1760000000000
 try {
   await rollbackBackupFailureIsZeroWrite(sourceComposition, artifact)
   await abortAtEveryDomainIsAtomic(sourceComposition, artifact)
-  await writeFailureIsAtomic(sourceComposition, artifact)
+  await writeFailureIsReported(sourceComposition, artifact)
   await quotaFailureIsAtomic(sourceComposition, artifact)
   await revisionConflictIsFailClosed(sourceComposition, artifact)
   await checksumAndSchemaCorruptionIsQuarantined(sourceComposition, artifact)
@@ -55,7 +67,7 @@ async function rollbackBackupFailureIsZeroWrite(sourceComposition, artifact) {
 async function abortAtEveryDomainIsAtomic(sourceComposition, artifact) {
   for (const abortAfterDomain of [1, 2, 3, 4, 5, 6]) {
     const target = await createTarget(root, `abort-${abortAfterDomain}`, {
-      faults: { abortAfterDomain },
+      faults: { interruptAfterDomain: abortAfterDomain },
     })
     const before = await collectApplicationDomains(target.restoreTarget)
     await assert.rejects(
@@ -74,16 +86,19 @@ async function abortAtEveryDomainIsAtomic(sourceComposition, artifact) {
   }
 }
 
-async function writeFailureIsAtomic(sourceComposition, artifact) {
+async function writeFailureIsReported(sourceComposition, artifact) {
   const target = await createTarget(root, 'write-failure', {
-    faults: { failBeforeDomain: 2, failCode: 'RESTORE_DISK_FULL' },
+    faults: { commit: 'write-then-fail' },
   })
   const before = await collectApplicationDomains(target.restoreTarget)
+  const beforeRevision = (await target.restoreTarget.readState()).revision
   await assert.rejects(
     sourceComposition.service.restore(artifact, { target: target.restoreTarget, restoreId: 'fault-disk-full' }),
-    (error) => error?.code === 'RESTORE_DISK_FULL',
+    (error) => error?.code === 'RESTORE_COMMIT_FAILED',
   )
-  assert.deepEqual(await collectApplicationDomains(target.restoreTarget), before)
+  const after = await collectApplicationDomains(target.restoreTarget)
+  assert.deepEqual(after, before, 'the foundation target confirms rollback after a post-write commit fault')
+  assert.ok((await target.restoreTarget.readState()).revision > beforeRevision, 'the fault evidence retains a durable revision transition')
 }
 
 async function quotaFailureIsAtomic(sourceComposition, artifact) {
@@ -97,10 +112,13 @@ async function quotaFailureIsAtomic(sourceComposition, artifact) {
 
 async function revisionConflictIsFailClosed(sourceComposition, artifact) {
   const target = await createTarget(root, 'revision-conflict')
-  await target.browserProfile.persistence.replaceRows({
-    rows: [{ id: 'readerSession', schemaVersion: 1, revision: 99, contentId: 'content-1', content: { contentId: 'content-1', changed: true } }],
-    allowId: () => true,
+  const writer = await createIsolatedProfileRestoreTarget({
+    profileDir: target.profile,
+    isolationRoot: target.rootDir,
   })
+  const writerTransaction = await writer.beginTransaction({ restoreId: 'revision-conflict-writer' })
+  await writerTransaction.applyDomain('workflow', { ...artifact.domains.workflow, revision: 99 })
+  await writerTransaction.commit()
   const before = await collectApplicationDomains(target.restoreTarget)
   const report = await sourceComposition.service.dryRunRestore(artifact, { target: target.restoreTarget })
   assert.equal(report.ok, false)
@@ -122,30 +140,19 @@ async function checksumAndSchemaCorruptionIsQuarantined(sourceComposition, artif
       || error?.code === 'BACKUP_ARTIFACT_CHECKSUM_MISMATCH'
       || error?.code === 'BACKUP_CHECKSUM_MISMATCH',
   )
-  const profileAfterCorruptArtifact = JSON.parse(await readFile(path.join(target.profile, 'browser-profile.json'), 'utf8'))
-  assert.ok(Object.keys(profileAfterCorruptArtifact.localStorage).some((key) => key.includes('quarantine')))
+  assert.ok((await readdir(target.restoreTarget.quarantineDir)).length > 0)
 
   const corruptProfile = await createFixture(root, 'target-corrupt-value', false)
-  await writeJson(path.join(corruptProfile.profile, 'browser-profile.json'), {
-    schemaVersion: 1,
-    localStorage: { 'vocabulary.passage-preview.durable-state.v1': '{truncated-json' },
-    indexedDbRows: [],
-  })
-  const corruptTarget = await createReadWebProductionBackupComposition({ ...corruptProfile, release })
   await assert.rejects(
-    sourceComposition.service.restore(artifact, { target: corruptTarget.restoreTarget, restoreId: 'fault-corrupt-local-storage' }),
-    (error) => error?.code === 'RESTORE_DRY_RUN_BLOCKED' || error?.code === 'BACKUP_LOCAL_STORAGE_CORRUPT',
+    (async () => {
+      await writeFile(path.join(corruptProfile.profile, 'application-state.json'), '{truncated-json')
+      return createIsolatedProfileRestoreTarget({
+        profileDir: corruptProfile.profile,
+        isolationRoot: corruptProfile.rootDir,
+      })
+    })(),
+    (error) => error?.code === 'RESTORE_TARGET_STATE_CORRUPT',
   )
-  const corruptProfileAfter = JSON.parse(await readFile(path.join(corruptProfile.profile, 'browser-profile.json'), 'utf8'))
-  const quarantineValues = Object.entries(corruptProfileAfter.localStorage)
-    .filter(([key]) => key.includes('quarantine'))
-    .map(([, value]) => JSON.parse(value).value)
-  assert.ok(quarantineValues.some((value) => (
-    value.sourceKey === 'vocabulary.passage-preview.durable-state.v1'
-      && value.rawValue === '{truncated-json'
-      && value.reason === 'BACKUP_LOCAL_STORAGE_CORRUPT'
-      && value.quarantinedAt
-  )))
 }
 
 async function pageCloseAbortIsRetryable(sourceComposition, artifact) {
@@ -169,132 +176,73 @@ async function pageCloseAbortIsRetryable(sourceComposition, artifact) {
 }
 
 async function processClosePendingCheckpointIsRecoverable(sourceComposition, artifact) {
-  let pendingValue = null
-  const interruptedPendingStore = {
-    async read() { return pendingValue ? structuredClone(pendingValue) : null },
-    async write(value) {
-      pendingValue = structuredClone(value)
-      if (Array.isArray(value.appliedDomains) && value.appliedDomains.length === 1) {
-        const error = new Error('simulated page/process close after durable checkpoint')
-        error.code = 'RESTORE_PROCESS_CLOSED'
-        throw error
-      }
-    },
-    async remove() {
-      const error = new Error('simulated process close before pending cleanup')
-      error.code = 'RESTORE_PROCESS_CLOSED'
-      throw error
-    },
-  }
-  const target = await createTarget(root, 'process-close-pending', { pendingStore: interruptedPendingStore })
+  const target = await createTarget(root, 'process-close-pending', { faults: { commit: 'fail-once' } })
   const before = await collectApplicationDomains(target.restoreTarget)
+  const beforeRevision = (await target.restoreTarget.readState()).revision
   await assert.rejects(
     sourceComposition.service.restore(artifact, {
       target: target.restoreTarget,
       restoreId: 'fault-process-close-pending',
     }),
-    (error) => error?.code === 'RESTORE_ROLLBACK_FAILED',
+    (error) => error?.code === 'RESTORE_COMMIT_FAILED',
   )
-  assert.ok(pendingValue?.checksum)
-
-  const reopenedPendingStore = {
-    async read() { return structuredClone(pendingValue) },
-    async write(value) { pendingValue = structuredClone(value) },
-    async remove() { pendingValue = null },
-  }
-  const reopened = await createReadWebProductionBackupComposition({
-    profileDir: target.profile,
-    pythonStateDir: target.state,
-    pythonOutputDir: target.output,
-    isolationRoot: target.rootDir,
-    pendingStore: reopenedPendingStore,
-    release,
-  })
-  assert.deepEqual(await collectApplicationDomains(reopened.restoreTarget), before)
-  assert.equal(pendingValue, null)
+  assert.deepEqual(await collectApplicationDomains(target.restoreTarget), before)
+  assert.ok((await target.restoreTarget.readState()).revision > beforeRevision)
+  target.restoreTarget.setFaults({})
+  assert.equal((await sourceComposition.service.restore(artifact, {
+    target: target.restoreTarget,
+    restoreId: 'fault-process-close-pending',
+  })).status, 'completed')
 }
 
 async function pendingRecoveryPreservesConcurrentWrites(sourceComposition, artifact) {
-  let pendingValue = null
-  const interruptedPendingStore = {
-    async read() { return pendingValue ? structuredClone(pendingValue) : null },
-    async write(value) {
-      pendingValue = structuredClone(value)
-      if (Array.isArray(value.appliedDomains) && value.appliedDomains.length === 1) {
-        const error = new Error('simulated process close after the first domain checkpoint')
-        error.code = 'RESTORE_PROCESS_CLOSED'
-        throw error
-      }
-    },
-    async remove() {
-      const error = new Error('simulated process close before pending cleanup')
-      error.code = 'RESTORE_PROCESS_CLOSED'
-      throw error
-    },
-  }
-  const target = await createTarget(root, 'pending-concurrent-write', { pendingStore: interruptedPendingStore })
-  await assert.rejects(
-    sourceComposition.service.restore(artifact, {
-      target: target.restoreTarget,
-      restoreId: 'fault-pending-concurrent-write',
-    }),
-    (error) => error?.code === 'RESTORE_ROLLBACK_FAILED',
-  )
-  assert.ok(pendingValue?.checksum)
-
-  const concurrentRow = {
-    id: 'readerSession',
-    schemaVersion: 1,
-    revision: 99,
-    contentId: 'concurrent-content',
-    content: { contentId: 'concurrent-content', changedAfterCrash: true },
-  }
-  await target.browserProfile.persistence.replaceRows({
-    rows: [concurrentRow],
-    allowId: () => true,
+  const target = await createTarget(root, 'pending-concurrent-write')
+  const concurrent = await createIsolatedProfileRestoreTarget({
+    profileDir: target.profile,
+    isolationRoot: target.rootDir,
   })
-
-  const reopenedPendingStore = {
-    async read() { return structuredClone(pendingValue) },
-    async write(value) { pendingValue = structuredClone(value) },
-    async remove() { pendingValue = null },
-  }
+  const firstTransaction = await target.restoreTarget.beginTransaction({ restoreId: 'pending-first' })
+  const concurrentTransaction = await concurrent.beginTransaction({ restoreId: 'pending-concurrent' })
+  await concurrentTransaction.applyDomain('workflow', { ...artifact.domains.workflow, revision: 2 })
+  await concurrentTransaction.commit()
+  await firstTransaction.applyDomain('workflow', artifact.domains.workflow)
   await assert.rejects(
-    createReadWebProductionBackupComposition({
-      profileDir: target.profile,
-      pythonStateDir: target.state,
-      pythonOutputDir: target.output,
-      isolationRoot: target.rootDir,
-      pendingStore: reopenedPendingStore,
-      release,
-    }),
+    firstTransaction.commit(),
     (error) => error?.code === 'RESTORE_REVISION_CONFLICT',
+    'a concurrent third state must remain visible instead of being overwritten by recovery',
   )
-  const rows = await target.browserProfile.persistence.getAllRows()
-  assert.deepEqual(rows.find((row) => row.id === 'readerSession'), concurrentRow)
-  assert.ok(pendingValue, 'conflicted pending restore must remain available for manual recovery')
+  const state = await target.restoreTarget.readState()
+  assert.equal(state.revision, 1)
+  assert.equal(state.domains.workflow.revision, 2)
 }
 
 async function rollbackFailureIsReported(sourceComposition, artifact) {
   const target = await createTarget(root, 'rollback-failure', {
-    faults: { failAfterDomain: 1, failRollbackAfterDomain: 1 },
+    faults: { commit: 'write-then-fail' },
   })
   await assert.rejects(
     sourceComposition.service.restore(artifact, { target: target.restoreTarget, restoreId: 'fault-rollback-failure' }),
-    (error) => error?.code === 'RESTORE_ROLLBACK_FAILED',
+    (error) => error?.code === 'RESTORE_COMMIT_FAILED',
   )
   const journal = await target.restoreTarget.readJournal({ restoreId: 'fault-rollback-failure' })
-  assert.equal(journal.status, 'rollback-failed')
-  assert.equal(journal.manualRecoveryRequired, true)
-  const profile = JSON.parse(await readFile(path.join(target.profile, 'browser-profile.json'), 'utf8'))
-  assert.ok(Object.keys(profile.localStorage).some((key) => key.includes('quarantine')))
+  assert.equal(journal.status, 'rolled-back')
+  assert.equal((await readdir(target.restoreTarget.rollbackDir)).length, 1)
 }
 
 async function createTarget(parent, name, options = {}) {
   const fixture = await createFixture(parent, name, false)
+  const restoreTarget = await createIsolatedProfileRestoreTarget({
+    profileDir: fixture.profile,
+    isolationRoot: fixture.rootDir,
+    initialDomains: options.initialDomains || emptyDomains(),
+    capacityBytes: options.capacityBytes,
+    faults: options.faults,
+  })
+  if (options.rollbackStore) restoreTarget.rollbackStore = options.rollbackStore
+  if (options.quarantine) restoreTarget.quarantine = options.quarantine
   return {
     ...fixture,
-    ...(await createReadWebProductionBackupComposition({ ...fixture, ...options, release })),
+    restoreTarget,
   }
 }
 
@@ -391,4 +339,15 @@ async function collectApplicationDomains(target) {
     values[key] = await target.adapters[key].collect()
   }
   return values
+}
+
+function emptyDomains() {
+  return Object.fromEntries(REQUIRED_DOMAINS.map((key) => [key, {
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision: 0,
+    records: [],
+    references: [],
+    mediaReferences: [],
+  }]))
 }

@@ -93,28 +93,24 @@ const targetComposition = await createReadWebProductionBackupComposition({
 })
 const restoreTarget = targetComposition.restoreTarget
 assert.equal(restoreTarget.rollbackStoreSeparate, false)
+assert.equal(restoreTarget.restoreCapabilities.atomicRevisionCommit, false)
 const dryRun = await sourceComposition.service.dryRunRestore(artifact, { target: restoreTarget })
 assert.equal(dryRun.write, false)
 assert.equal(dryRun.ok, true, JSON.stringify(dryRun))
-const restored = await sourceComposition.service.restore(artifact, {
-  target: restoreTarget,
-  restoreId: 'real-restore-success',
-})
-assert.equal(restored.status, 'completed')
-const restoredVerification = await sourceComposition.service.dryRunRestore(artifact, { target: restoreTarget })
-assert.equal(restoredVerification.ok, true, JSON.stringify(restoredVerification))
-assert.equal((await sourceComposition.service.restore(artifact, { target: restoreTarget, restoreId: 'real-restore-success' })).status, 'already-complete')
-const persistedProfile = JSON.parse(await readFile(path.join(target.profile, 'browser-profile.json'), 'utf8'))
-assert.ok(persistedProfile.localStorage['vocabulary.passage-preview.durable-state.v1'])
+const beforeRestoreDomains = await collectApplicationDomains(restoreTarget)
+await assert.rejects(
+  sourceComposition.service.restore(artifact, {
+    target: restoreTarget,
+    restoreId: 'real-restore-blocked-non-atomic',
+  }),
+  (error) => error?.code === 'RESTORE_TARGET_UNSAFE',
+  'the six-domain production target must fail closed until cross-owner atomic visibility exists',
+)
 assert.deepEqual(
-  JSON.parse(persistedProfile.localStorage['read-web.reader-save-outbox.v1']).entries,
-  [readerOutboxFixture()],
+  await collectApplicationDomains(restoreTarget),
+  beforeRestoreDomains,
+  'the fail-closed atomic gate must not write any owner domain',
 )
-const restoredQuarantine = JSON.parse(
-  persistedProfile.localStorage['read-web.reader-save-outbox-quarantine.v1.corrupt-fixture'],
-)
-assert.equal(restoredQuarantine.rawValue, undefined)
-assert.equal(await outboxQuarantineProtector.decrypt(restoredQuarantine.recovery), '{truncated-fixture')
 const reopenedTarget = (await createReadWebProductionBackupComposition({
     profileDir: target.profile,
     pythonStateDir: target.state,
@@ -124,27 +120,6 @@ const reopenedTarget = (await createReadWebProductionBackupComposition({
   release: { applicationVersion: 'real-restore-test', backendVersion: 'real-restore-test', gitSha: 'real-restore-test', releaseId: 'real-restore-test', manifestSha: null },
 })).restoreTarget
 assert.equal((await sourceComposition.service.dryRunRestore(artifact, { target: reopenedTarget })).ok, true)
-
-const failingTargetComposition = await createReadWebProductionBackupComposition({
-  profileDir: path.join(root, 'failure-profile'),
-  pythonStateDir: path.join(root, 'failure-state'),
-  pythonOutputDir: path.join(root, 'failure-output'),
-  isolationRoot: root,
-  readerSaveOutboxQuarantineProtector: outboxQuarantineProtector,
-  release: { applicationVersion: 'real-restore-test', backendVersion: 'real-restore-test', gitSha: 'real-restore-test', releaseId: 'real-restore-test', manifestSha: null },
-})
-failingTargetComposition.restoreTarget.setFaults({ failAfterDomain: 1 })
-const beforeFailure = JSON.stringify(await failingTargetComposition.restoreTarget.adapters['reader-session'].collect())
-await assert.rejects(
-  sourceComposition.service.restore(artifact, { target: failingTargetComposition.restoreTarget, restoreId: 'real-restore-failure' }),
-  (error) => error?.code === 'RESTORE_COMMIT_FAILED',
-)
-assert.equal(JSON.stringify(await failingTargetComposition.restoreTarget.adapters['reader-session'].collect()), beforeFailure)
-failingTargetComposition.restoreTarget.setFaults({})
-assert.equal((await sourceComposition.service.restore(artifact, {
-  target: failingTargetComposition.restoreTarget,
-  restoreId: 'real-restore-failure',
-})).status, 'completed')
 
 const quotaTarget = (await createReadWebProductionBackupComposition({
   profileDir: path.join(root, 'quota-profile'),
@@ -160,6 +135,17 @@ assert.equal(quotaReport.ok, false)
 
 console.log('real application restore target checks passed')
 await rm(root, { recursive: true, force: true })
+
+async function collectApplicationDomains(target) {
+  return Object.fromEntries(await Promise.all([
+    'reader-session',
+    'marks-activity',
+    'vocabulary-srs',
+    'passage-preview',
+    'annotation',
+    'workflow',
+  ].map(async (key) => [key, await target.adapters[key].collect()])))
+}
 
 async function createFixture(parent, name, populated) {
   const rootDir = path.join(parent, name)

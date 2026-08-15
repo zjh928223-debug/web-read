@@ -88,9 +88,14 @@ try {
     pythonOutputDir: path.join(validRoot, 'output'),
   })
   const validArtifact = await validComposition.createBackup({ now: () => 1760000000000 })
+  assert.equal(validComposition.restoreTarget.restoreCapabilities.atomicRevisionCommit, false)
+  const validFoundationTarget = await createIsolatedProfileRestoreTarget({
+    isolationRoot: validRoot,
+    profileDir: path.join(validRoot, 'foundation'),
+  })
   assert.equal(
     (await validComposition.service.restore(validArtifact, {
-      target: validComposition.restoreTarget,
+      target: validFoundationTarget,
       restoreId: 'valid-isolation-check',
     })).status,
     'completed',

@@ -884,7 +884,6 @@ function emptyDomain(key) {
     records: [],
     references: [],
     mediaReferences: [],
-    key,
   }
 }
 
