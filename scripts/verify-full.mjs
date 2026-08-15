@@ -16,6 +16,11 @@ const isolatedPorts = Object.freeze({
 const included = [
   command('fast gate (canonical architecture + behavior)', npmCommand, ['run', 'verify:fast']),
   command('persistence fault matrix evidence', process.execPath, ['scripts/persistence-fault-matrix.mjs']),
+  command('real application backup/restore round trip', process.execPath, ['scripts/application-backup-real-restore-check.mjs']),
+  command('real application backup/restore fault matrix', process.execPath, ['scripts/application-backup-restore-fault-matrix.mjs']),
+  command('workflow application restore tests', pythonCommand, ['-m', 'unittest', 'tests.test_application_backup_restore'], {
+    cwd: workflowRoot,
+  }),
   command('frontend production build', npmCommand, ['run', 'build']),
   command('isolated development browser journeys', process.execPath, ['scripts/vite-verify.js'], {
     env: {
@@ -41,7 +46,7 @@ const excluded = [
   ['ports 5173/8765', 'reserved for the current daily installation and never started or stopped by this gate'],
   ['live TTS, dictionary, AI, and YouTube checks', 'may use network, credentials, paid APIs, or external media'],
   ['performance and long-duration journeys', 'planned for verify-release after budgets and fixtures exist'],
-  ['clean-room install, secret/license/SBOM, backup/restore, and rollback drill', 'planned for verify-release'],
+  ['clean-room install, secret/license/SBOM, and release-only rollback drill', 'planned for verify-release'],
 ]
 
 function command(label, executable, args, options = {}) {

@@ -10,12 +10,11 @@ const stages = [
   ['browser baseline diff and budget gate', process.execPath, ['scripts/perf/performance-budget-gate.mjs']],
   ['offline 1k/10k playback scale gate', process.execPath, ['scripts/perf/run-playback-scale-gate.mjs']],
   ['isolated backend HTTP benchmark', 'python', ['scripts/perf/backend-http-benchmark.py']],
-  ['isolated application-state foundation rehearsal (12.1 only; not full application restore)', process.execPath, ['scripts/application-backup-release-rehearsal.mjs']],
+  ['isolated application-state foundation rehearsal (12.1)', process.execPath, ['scripts/application-backup-release-rehearsal.mjs']],
   ['release manifest', process.execPath, ['scripts/generate-release-manifest.mjs']],
 ]
 
 const pending = [
-  'application restore target adapters and atomic restore contract (12.2) — pending; the current rehearsal only exercises isolated application-state files',
   'real isolated profile domain recovery and end-to-end Reader/Vocabulary/SRS/Preview/Annotation/workflow verification (12.3) — pending',
   'shortcut rollback rehearsal (12.7)',
 ]
@@ -27,13 +26,13 @@ console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gates (12.2, 12.3, 12.7)')
+  console.log('verify-release status: BLOCKED by pending release gates (12.3, 12.7)')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: the isolated application-state foundation is not a full application restore release pass.')
-  console.error('Run npm run verify:backup-restore-rehearsal for the foundation rehearsal; complete every pending gate before release.')
+  console.error('\nverify-release BLOCKED: 12.3/12.7 release gates are still pending.')
+  console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }
 
