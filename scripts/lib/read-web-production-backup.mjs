@@ -146,7 +146,7 @@ async function validateIsolationLayout({ isolationRoot, paths, forbiddenRoots = 
   })
 }
 
-export async function loadBackupModules() {
+async function loadTrustedBackupModules() {
   if (backupModulesPromise) return backupModulesPromise
   backupModulesPromise = (async () => {
     const applicationBackupSource = await readFile(
@@ -178,6 +178,28 @@ export async function loadBackupModules() {
     return { applicationBackup, readWebBackup, isolationIssuerToken }
   })()
   return backupModulesPromise
+}
+
+export async function loadBackupModules() {
+  const { applicationBackup, readWebBackup } = await loadTrustedBackupModules()
+  return Object.freeze({ applicationBackup, readWebBackup })
+}
+
+function createTrustedIsolationCertificate({ applicationBackup, isolationIssuerToken, validatedLayout } = {}) {
+  if (!applicationBackup || typeof isolationIssuerToken !== 'string' || !validatedLayout
+    || typeof validatedLayout.isolationRoot !== 'string'
+    || !validatedLayout.paths || typeof validatedLayout.paths !== 'object') {
+    throw unsafeIsolationPath('Trusted isolation certificates require a validated canonical layout')
+  }
+  const certificate = applicationBackup.createApplicationBackupIsolationCertificate({
+    isolationRoot: validatedLayout.isolationRoot,
+    paths: validatedLayout.paths,
+    issuerToken: isolationIssuerToken,
+  })
+  if (!applicationBackup.isApplicationBackupIsolationCertificate(certificate)) {
+    throw unsafeIsolationPath('Trusted isolation certificate was not issued by the validated backup module')
+  }
+  return certificate
 }
 
 export async function createProductionOutboxQuarantineProtector(options = {}) {
@@ -935,13 +957,16 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     paths: { profileDir: lexicalProfileDir },
     forbiddenRoots: options.forbiddenRoots,
   })
-  const { applicationBackup, isolationIssuerToken } = await loadBackupModules()
+  const { applicationBackup, isolationIssuerToken } = await loadTrustedBackupModules()
   const requiredDomains = applicationBackup.APPLICATION_BACKUP_REQUIRED_DOMAINS
   const profileDir = validatedLayout.paths.profileDir
-  const isolationCertificate = applicationBackup.createApplicationBackupIsolationCertificate({
-    isolationRoot: validatedLayout.isolationRoot,
-    paths: { profileDir },
-    issuerToken: isolationIssuerToken,
+  const isolationCertificate = createTrustedIsolationCertificate({
+    applicationBackup,
+    isolationIssuerToken,
+    validatedLayout: {
+      ...validatedLayout,
+      paths: { profileDir },
+    },
   })
   const statePath = path.join(profileDir, APPLICATION_STATE_FILE)
   const journalPath = path.join(profileDir, 'restore-journal.json')
@@ -1208,7 +1233,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   const isolationRoot = validatedLayout.isolationRoot
   const canonicalPaths = validatedLayout.paths
-  const { applicationBackup, readWebBackup, isolationIssuerToken } = await loadBackupModules()
+  const { applicationBackup, readWebBackup, isolationIssuerToken } = await loadTrustedBackupModules()
   const browser = await openBrowserProfile(canonicalPaths.profileDir)
   browser.storage.estimateCapacity = async ({ requiredBytes }) => {
     try {
@@ -1235,11 +1260,11 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   function createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions = {}) {
     return readWebBackup.createReadWebApplicationRestoreTarget({
-      isolationCertificate: applicationBackup.createApplicationBackupIsolationCertificate({
-        isolationRoot,
-        paths: canonicalPaths,
-        issuerToken: isolationIssuerToken,
-      }),
+       isolationCertificate: createTrustedIsolationCertificate({
+         applicationBackup,
+         isolationIssuerToken,
+         validatedLayout: { isolationRoot, paths: canonicalPaths },
+       }),
       applicationPersistence: targetBrowser.persistence,
       storage: targetBrowser.storage,
       backupAdapters: targetAdapters,

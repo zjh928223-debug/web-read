@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, stat, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, symlink } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -91,7 +91,7 @@ try {
     profileDir: path.join(root, 'overlap', 'profile'),
     pythonStateDir: path.join(root, 'overlap', 'profile', 'state'),
     pythonOutputDir: path.join(root, 'overlap', 'output'),
-  })
+  }, { includeIsolatedTarget: false })
 
   const symlinkRoot = path.join(root, 'junction-root')
   const symlinkTarget = path.join(root, 'junction-target')
@@ -123,14 +123,16 @@ try {
   await rm(root, { recursive: true, force: true })
 }
 
-async function assertRejectsBeforeWrite(name, options, { inspectWrites = true } = {}) {
+async function assertRejectsBeforeWrite(name, options, { inspectWrites = true, includeIsolatedTarget = true } = {}) {
   const calls = [
     ['createReadWebProductionBackupComposition', () => productionBackup.createReadWebProductionBackupComposition(options)],
-    ['createIsolatedProfileRestoreTarget', () => productionBackup.createIsolatedProfileRestoreTarget({
+  ]
+  if (includeIsolatedTarget) {
+    calls.push(['createIsolatedProfileRestoreTarget', () => productionBackup.createIsolatedProfileRestoreTarget({
       isolationRoot: options.isolationRoot,
       profileDir: options.profileDir,
-    })],
-  ]
+    })])
+  }
   for (const [factoryName, call] of calls) {
     await assert.rejects(
       call(),
