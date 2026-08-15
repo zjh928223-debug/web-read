@@ -15,6 +15,7 @@ const included = [
   command('architecture source-shape guards (canonical)', npmCommand, ['run', 'verify:architecture:source-shape']),
   command('migrated interface behavior (canonical)', npmCommand, ['run', 'verify:behavior:migrated-interfaces']),
   command('compatibility network policy behavior', process.execPath, ['scripts/compatibility-network-policy-check.mjs']),
+  command('browser port policy', npmCommand, ['run', 'verify:browser-port-policy']),
   command('compatibility process isolation boundary', npmCommand, ['run', 'verify:compatibility-isolation']),
   command('npm test entry execution graph', npmCommand, ['run', 'verify:test-entry']),
   command('script inventory', process.execPath, ['scripts/script-inventory-check.mjs']),
