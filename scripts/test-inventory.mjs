@@ -338,7 +338,11 @@ function runSelfTest() {
   const behavior = classifyEvidence('scripts/example-check.mjs', "import assert from 'node:assert/strict'; assert.deepEqual(actual, expected)")
   assert.equal(behavior.behaviorAssertions, true)
   const mixedLayers = classifyLayers('scripts/example-module-check.cjs', "const source = fs.readFileSync('src/example.js', 'utf8'); assert.ok(source.includes('owner'))", classifyEvidence('scripts/example-module-check.cjs', "const source = fs.readFileSync('src/example.js', 'utf8'); assert.ok(source.includes('owner'))"), [])
-  assert.deepEqual(architectureAggregateFor('scripts/example-module-check.cjs', mixedLayers, { behaviorAssertions: true }), [])
+  assert.deepEqual(
+    architectureAggregateFor('scripts/example-module-check.cjs', mixedLayers, { behaviorAssertions: true, sourceShape: ['includes-source-text'] }),
+    ['architecture:source-shape'],
+    'architecture source-shape ownership must not disappear merely because a guard uses assertions',
+  )
   assert.deepEqual(classifyLayers('scripts/test-inventory.mjs', '', release, []), ['architecture'])
   assert.deepEqual(classifyCommand('verify:behavior:migrated-interfaces', 'node scripts/verify-behavior.mjs', [], []), ['behavior'])
   const excludedWords = classifyEvidence(
@@ -349,4 +353,19 @@ function runSelfTest() {
   assert.equal(excludedWords.performance, false)
   assert.equal(excludedWords.release, false)
   assert.deepEqual(classifyCommand('verify:fast', 'node scripts/verify-fast.mjs', [], []), ['behavior'])
+  assertCanonicalInventorySnapshot(result)
+}
+
+function assertCanonicalInventorySnapshot(snapshot) {
+  const aggregatePaths = snapshot.tests
+    .filter((test) => test.aggregates.includes('architecture:source-shape'))
+    .map((test) => test.path)
+    .sort()
+  const evidencePaths = snapshot.tests
+    .filter((test) => test.architectureEvidence.includes('source-shape'))
+    .map((test) => test.path)
+    .sort()
+  assert.deepEqual(aggregatePaths, evidencePaths, 'canonical architecture aggregate and source-shape evidence must be the same execution set')
+  assert.equal(aggregatePaths.length, 78, 'canonical architecture aggregate must remain 78')
+  assert.deepEqual(snapshot.orphans, [], 'committed inventory must not contain orphan scripts')
 }
