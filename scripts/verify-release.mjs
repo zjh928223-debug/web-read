@@ -15,6 +15,7 @@ const stages = [
 ]
 
 const pending = [
+  'atomic restore cross-owner visibility and mandatory application-startup recovery seam (12.2) — pending',
   'real isolated profile domain recovery and end-to-end Reader/Vocabulary/SRS/Preview/Annotation/workflow verification (12.3) — pending',
   'shortcut rollback rehearsal (12.7)',
 ]
@@ -26,12 +27,12 @@ console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gates (12.3, 12.7)')
+  console.log('verify-release status: BLOCKED by pending release gates (12.2, 12.3, 12.7)')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: 12.3/12.7 release gates are still pending.')
+  console.error('\nverify-release BLOCKED: 12.2/12.3/12.7 release gates are still pending.')
   console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }
