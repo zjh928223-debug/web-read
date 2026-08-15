@@ -19,8 +19,9 @@ const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|authorization|cookie|pass
 const SENSITIVE_URL_PARAMETER = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$|signature|^sig$)/i
 const EMBEDDED_MEDIA_KEY = /(?:blob|arraybuffer|typedarray|binary|base64|datauri|inline(?:data|media)?|media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))/i
 const PRIVATE_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|private|var|tmp)\/)/i
-const ISOLATION_CERTIFICATE = Symbol('read-web.application-backup.isolation-certificate')
 const ISOLATION_CERTIFICATE_SCHEMA_VERSION = 1
+const ISOLATION_ISSUER_TOKEN = null
+const TRUSTED_ISOLATION_CERTIFICATES = new WeakSet()
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
@@ -33,26 +34,29 @@ export const APPLICATION_BACKUP_MEDIA_POLICY = Object.freeze({
   maxMediaReferenceBytes: DEFAULT_MAX_MEDIA_REFERENCE_BYTES,
 })
 
-export function createApplicationBackupIsolationCertificate({ isolationRoot, paths } = {}) {
+export function createApplicationBackupIsolationCertificate({ isolationRoot, paths, issuerToken } = {}) {
   if (typeof isolationRoot !== 'string' || !isolationRoot.trim()
     || !paths || typeof paths !== 'object' || Array.isArray(paths)
     || !Object.keys(paths).length
     || Object.values(paths).some((value) => typeof value !== 'string' || !value.trim())) {
     throw new Error('Application backup isolation certificate requires a root and concrete target paths')
   }
-  return Object.freeze({
-    [ISOLATION_CERTIFICATE]: true,
+  const certificate = Object.freeze({
     schemaVersion: ISOLATION_CERTIFICATE_SCHEMA_VERSION,
     isolationRoot: isolationRoot.trim(),
     paths: Object.freeze(Object.fromEntries(
       Object.entries(paths).map(([name, value]) => [name, value.trim()]),
     )),
   })
+  if (typeof ISOLATION_ISSUER_TOKEN === 'string' && issuerToken === ISOLATION_ISSUER_TOKEN) {
+    TRUSTED_ISOLATION_CERTIFICATES.add(certificate)
+  }
+  return certificate
 }
 
 export function isApplicationBackupIsolationCertificate(value) {
   return !!value
-    && value[ISOLATION_CERTIFICATE] === true
+    && TRUSTED_ISOLATION_CERTIFICATES.has(value)
     && value.schemaVersion === ISOLATION_CERTIFICATE_SCHEMA_VERSION
     && typeof value.isolationRoot === 'string'
     && value.isolationRoot.length > 0

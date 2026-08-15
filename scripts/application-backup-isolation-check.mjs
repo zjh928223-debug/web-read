@@ -80,6 +80,7 @@ try {
 
   const validRoot = path.join(root, 'valid')
   const validProfile = path.join(validRoot, 'profile')
+  await mkdir(validRoot, { recursive: true })
   const validComposition = await createReadWebProductionBackupComposition({
     isolationRoot: validRoot,
     profileDir: validProfile,

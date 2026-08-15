@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 
-const moduleSource = await (await import('node:fs/promises')).readFile(
+const TEST_ISOLATION_ISSUER_TOKEN = 'application-backup-check-isolation-issuer'
+const moduleSource = (await (await import('node:fs/promises')).readFile(
   new URL('../src/services/persistence/application-backup.js', import.meta.url),
   'utf8',
+)).replace(
+  'const ISOLATION_ISSUER_TOKEN = null',
+  `const ISOLATION_ISSUER_TOKEN = ${JSON.stringify(TEST_ISOLATION_ISSUER_TOKEN)}`,
 )
 const {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
@@ -252,6 +256,7 @@ function createRestoreTarget(adapters) {
     isolationCertificate: createApplicationBackupIsolationCertificate({
       isolationRoot: '[application-backup-test-root]',
       paths: { target: '[application-backup-test-root]/target' },
+      issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
     }),
     restoreCapabilities: {
       atomicRevisionCommit: true,

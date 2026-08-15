@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 
-const source = await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')
+const TEST_ISOLATION_ISSUER_TOKEN = 'application-backup-fault-injection-isolation-issuer'
+const source = (await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')).replace(
+  'const ISOLATION_ISSUER_TOKEN = null',
+  `const ISOLATION_ISSUER_TOKEN = ${JSON.stringify(TEST_ISOLATION_ISSUER_TOKEN)}`,
+)
 const {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
   createApplicationBackupIsolationCertificate,
@@ -199,6 +203,7 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
     isolationCertificate: createApplicationBackupIsolationCertificate({
       isolationRoot: '[application-backup-fault-root]',
       paths: { target: '[application-backup-fault-root]/target' },
+      issuerToken: TEST_ISOLATION_ISSUER_TOKEN,
     }),
     restoreCapabilities: {
       atomicRevisionCommit: true,

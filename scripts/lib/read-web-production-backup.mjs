@@ -22,14 +22,146 @@ const PATH_LOCK_HEARTBEAT_MS = 1_000
 
 let backupModulesPromise
 
-async function loadBackupModules() {
+function unsafeIsolationPath(message, details = {}) {
+  const error = new Error(message)
+  error.code = 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH'
+  error.details = details
+  return error
+}
+
+async function resolveCanonicalPath(value) {
+  const missing = []
+  let current = path.resolve(value)
+  while (true) {
+    try {
+      const canonical = await realpath(current)
+      return path.resolve(canonical, ...missing.reverse())
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes(error?.code)) throw error
+      const parent = path.dirname(current)
+      if (parent === current) return path.resolve(value)
+      missing.push(path.basename(current))
+      current = parent
+    }
+  }
+}
+
+function comparablePath(value) {
+  return process.platform === 'win32' ? value.toLowerCase() : value
+}
+
+function isStrictDescendant(parent, child) {
+  const relative = path.relative(comparablePath(parent), comparablePath(child))
+  return Boolean(relative)
+    && relative !== '..'
+    && !relative.startsWith(`..${path.sep}`)
+    && !path.isAbsolute(relative)
+}
+
+async function validateIsolationLayout({ isolationRoot, paths, forbiddenRoots = [] } = {}) {
+  if (typeof isolationRoot !== 'string' || !isolationRoot.trim()
+    || !paths || typeof paths !== 'object' || Array.isArray(paths)
+    || !Object.keys(paths).length
+    || Object.values(paths).some((value) => typeof value !== 'string' || !value.trim())) {
+    throw unsafeIsolationPath('Isolation layout requires a root and concrete target paths')
+  }
+
+  const lexicalIsolationRoot = path.resolve(isolationRoot.trim())
+  const lexicalPaths = Object.fromEntries(
+    Object.entries(paths).map(([name, value]) => [name, path.resolve(value.trim())]),
+  )
+  let canonicalIsolationRoot
+  let canonicalPaths
+  try {
+    canonicalIsolationRoot = await resolveCanonicalPath(lexicalIsolationRoot)
+    canonicalPaths = Object.fromEntries(
+      await Promise.all(Object.entries(lexicalPaths).map(async ([name, value]) => [name, await resolveCanonicalPath(value)])),
+    )
+  } catch (error) {
+    throw unsafeIsolationPath('Isolation layout paths could not be canonicalized safely', {
+      isolationRoot: lexicalIsolationRoot,
+      paths: lexicalPaths,
+      cause: error,
+    })
+  }
+
+  for (const [name, value] of Object.entries(canonicalPaths)) {
+    if (!isStrictDescendant(canonicalIsolationRoot, value)) {
+      throw unsafeIsolationPath(`${name} must be a strict descendant of isolationRoot`, {
+        name,
+        isolationRoot: canonicalIsolationRoot,
+        lexicalIsolationRoot,
+        value,
+        lexicalValue: lexicalPaths[name],
+      })
+    }
+  }
+
+  const entries = Object.entries(canonicalPaths)
+  for (let index = 0; index < entries.length; index += 1) {
+    for (let candidate = index + 1; candidate < entries.length; candidate += 1) {
+      const [leftName, left] = entries[index]
+      const [rightName, right] = entries[candidate]
+      if (comparablePath(left) === comparablePath(right)
+        || isStrictDescendant(left, right)
+        || isStrictDescendant(right, left)) {
+        throw unsafeIsolationPath(`${leftName} and ${rightName} must not overlap`, { left, right })
+      }
+    }
+  }
+
+  const configuredForbiddenRoots = [
+    ...(process.platform === 'win32' ? ['E:\\read-web', 'E:\\read-web-next'] : []),
+    ...(Array.isArray(forbiddenRoots) ? forbiddenRoots : []),
+  ]
+  for (const forbiddenRootValue of configuredForbiddenRoots) {
+    if (typeof forbiddenRootValue !== 'string' || !forbiddenRootValue.trim()) {
+      throw unsafeIsolationPath('Forbidden root must be a non-empty path', { forbiddenRoot: forbiddenRootValue })
+    }
+    let canonicalForbiddenRoot
+    try {
+      canonicalForbiddenRoot = await resolveCanonicalPath(path.resolve(forbiddenRootValue.trim()))
+    } catch (error) {
+      throw unsafeIsolationPath('Forbidden root could not be canonicalized safely', {
+        forbiddenRoot: forbiddenRootValue,
+        cause: error,
+      })
+    }
+    for (const [name, value] of Object.entries({ isolationRoot: canonicalIsolationRoot, ...canonicalPaths })) {
+      if (comparablePath(value) === comparablePath(canonicalForbiddenRoot)
+        || isStrictDescendant(canonicalForbiddenRoot, value)
+        || isStrictDescendant(value, canonicalForbiddenRoot)) {
+        throw unsafeIsolationPath(`${name} overlaps a forbidden root`, {
+          name,
+          value,
+          forbiddenRoot: canonicalForbiddenRoot,
+        })
+      }
+    }
+  }
+
+  return Object.freeze({
+    isolationRoot: canonicalIsolationRoot,
+    paths: Object.freeze(canonicalPaths),
+  })
+}
+
+export async function loadBackupModules() {
   if (backupModulesPromise) return backupModulesPromise
   backupModulesPromise = (async () => {
     const applicationBackupSource = await readFile(
       path.join(repoRoot, 'src', 'services', 'persistence', 'application-backup.js'),
       'utf8',
     )
-    const applicationBackupUrl = `data:text/javascript;base64,${Buffer.from(applicationBackupSource).toString('base64')}`
+    const isolationIssuerToken = randomUUID()
+    const isolatedApplicationBackupSource = applicationBackupSource.replace(
+      'const ISOLATION_ISSUER_TOKEN = null',
+      `const ISOLATION_ISSUER_TOKEN = ${JSON.stringify(isolationIssuerToken)}`,
+    )
+    if (isolatedApplicationBackupSource === applicationBackupSource) {
+      throw new Error('Application backup isolation issuer placeholder is missing')
+    }
+    const applicationBackupUrl = `data:text/javascript;base64,${Buffer.from(isolatedApplicationBackupSource).toString('base64')}`
     const readWebSource = await readFile(
       path.join(repoRoot, 'src', 'services', 'persistence', 'read-web-application-backup.js'),
       'utf8',
@@ -43,7 +175,7 @@ async function loadBackupModules() {
       import(applicationBackupUrl),
       import(readWebUrl),
     ])
-    return { applicationBackup, readWebBackup }
+    return { applicationBackup, readWebBackup, isolationIssuerToken }
   })()
   return backupModulesPromise
 }
@@ -795,12 +927,22 @@ function safeFilePart(value) {
 }
 
 export async function createIsolatedProfileRestoreTarget(options = {}) {
-  const { applicationBackup } = await loadBackupModules()
+  if (typeof options.profileDir !== 'string' || !options.profileDir.trim()) {
+    throw unsafeIsolationPath('Isolated restore target requires a profile directory')
+  }
+  const lexicalProfileDir = path.resolve(options.profileDir.trim())
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot: options.isolationRoot || path.dirname(lexicalProfileDir),
+    paths: { profileDir: lexicalProfileDir },
+    forbiddenRoots: options.forbiddenRoots,
+  })
+  const { applicationBackup, isolationIssuerToken } = await loadBackupModules()
   const requiredDomains = applicationBackup.APPLICATION_BACKUP_REQUIRED_DOMAINS
-  const profileDir = path.resolve(options.profileDir)
+  const profileDir = validatedLayout.paths.profileDir
   const isolationCertificate = applicationBackup.createApplicationBackupIsolationCertificate({
-    isolationRoot: path.resolve(options.isolationRoot || path.dirname(profileDir)),
+    isolationRoot: validatedLayout.isolationRoot,
     paths: { profileDir },
+    issuerToken: isolationIssuerToken,
   })
   const statePath = path.join(profileDir, APPLICATION_STATE_FILE)
   const journalPath = path.join(profileDir, 'restore-journal.json')
@@ -1056,94 +1198,19 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     error.code = 'BACKUP_PRODUCTION_COMPOSITION_CONFIGURATION'
     throw error
   }
-  const resolvedPaths = {
-    profileDir: path.resolve(options.profileDir),
-    pythonStateDir: path.resolve(options.pythonStateDir),
-    pythonOutputDir: path.resolve(options.pythonOutputDir),
-  }
-  const lexicalIsolationRoot = path.resolve(options.isolationRoot)
-  async function resolveCanonicalPath(value) {
-    const missing = []
-    let current = path.resolve(value)
-    while (true) {
-      try {
-        const canonical = await realpath(current)
-        return path.resolve(canonical, ...missing.reverse())
-      } catch (error) {
-        if (!['ENOENT', 'ENOTDIR'].includes(error?.code)) throw error
-        const parent = path.dirname(current)
-        if (parent === current) return path.resolve(value)
-        missing.push(path.basename(current))
-        current = parent
-      }
-    }
-  }
-  let isolationRoot
-  let canonicalPaths
-  try {
-    isolationRoot = await resolveCanonicalPath(lexicalIsolationRoot)
-    canonicalPaths = Object.fromEntries(
-      await Promise.all(Object.entries(resolvedPaths).map(async ([name, value]) => [name, await resolveCanonicalPath(value)])),
-    )
-  } catch (error) {
-    const validationError = new Error('Production backup composition paths could not be canonicalized safely')
-    validationError.code = 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH'
-    validationError.cause = error
-    throw validationError
-  }
-  const comparablePath = (value) => process.platform === 'win32' ? value.toLowerCase() : value
-  const isWithin = (parent, child) => {
-    const relative = path.relative(comparablePath(parent), comparablePath(child))
-    return Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
-  }
-  const unsafe = (message, details = {}) => {
-    const error = new Error(message)
-    error.code = 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH'
-    error.details = details
-    return error
-  }
-  for (const [name, value] of Object.entries(canonicalPaths)) {
-    if (!isWithin(isolationRoot, value)) {
-      throw unsafe(`${name} must be a strict descendant of isolationRoot`, {
-        name,
-        isolationRoot,
-        lexicalIsolationRoot,
-        value,
-        lexicalValue: resolvedPaths[name],
-      })
-    }
-  }
-  const entries = Object.entries(canonicalPaths)
-  for (let index = 0; index < entries.length; index += 1) {
-    for (let candidate = index + 1; candidate < entries.length; candidate += 1) {
-      const [leftName, left] = entries[index]
-      const [rightName, right] = entries[candidate]
-      if (comparablePath(left) === comparablePath(right) || isWithin(left, right) || isWithin(right, left)) {
-        throw unsafe(`${leftName} and ${rightName} must not overlap`, { left, right })
-      }
-    }
-  }
-  const forbiddenRoots = [
-    ...(process.platform === 'win32' ? ['E:\\read-web', 'E:\\read-web-next'] : []),
-    ...(Array.isArray(options.forbiddenRoots) ? options.forbiddenRoots : []),
-  ].map((value) => path.resolve(value))
-  for (const forbiddenRoot of forbiddenRoots) {
-    let canonicalForbiddenRoot
-    try {
-      canonicalForbiddenRoot = await resolveCanonicalPath(forbiddenRoot)
-    } catch (error) {
-      throw unsafe('Forbidden root could not be canonicalized safely', { forbiddenRoot, cause: error?.code || error?.message })
-    }
-    for (const [name, value] of Object.entries({ isolationRoot, ...canonicalPaths })) {
-      if (comparablePath(value) === comparablePath(canonicalForbiddenRoot)
-        || isWithin(canonicalForbiddenRoot, value)
-        || isWithin(value, canonicalForbiddenRoot)) {
-        throw unsafe(`${name} overlaps a forbidden root`, { name, value, forbiddenRoot: canonicalForbiddenRoot })
-      }
-    }
-  }
-  const { applicationBackup, readWebBackup } = await loadBackupModules()
-  const browser = await openBrowserProfile(resolvedPaths.profileDir)
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot: options.isolationRoot,
+    paths: {
+      profileDir: options.profileDir,
+      pythonStateDir: options.pythonStateDir,
+      pythonOutputDir: options.pythonOutputDir,
+    },
+    forbiddenRoots: options.forbiddenRoots,
+  })
+  const isolationRoot = validatedLayout.isolationRoot
+  const canonicalPaths = validatedLayout.paths
+  const { applicationBackup, readWebBackup, isolationIssuerToken } = await loadBackupModules()
+  const browser = await openBrowserProfile(canonicalPaths.profileDir)
   browser.storage.estimateCapacity = async ({ requiredBytes }) => {
     try {
       const fileSystem = await statfs(isolationRoot)
@@ -1156,8 +1223,8 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     }
   }
   const pythonAdapters = createPythonDomainAdapters({
-    stateDir: resolvedPaths.pythonStateDir,
-    outputDir: resolvedPaths.pythonOutputDir,
+    stateDir: canonicalPaths.pythonStateDir,
+    outputDir: canonicalPaths.pythonOutputDir,
     pythonCommand: options.pythonCommand,
   })
   const adapters = readWebBackup.createReadWebApplicationBackupAdapters({
@@ -1172,6 +1239,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       isolationCertificate: applicationBackup.createApplicationBackupIsolationCertificate({
         isolationRoot,
         paths: canonicalPaths,
+        issuerToken: isolationIssuerToken,
       }),
       applicationPersistence: targetBrowser.persistence,
       storage: targetBrowser.storage,

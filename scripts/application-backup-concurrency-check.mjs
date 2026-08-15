@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { Buffer } from 'node:buffer'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -7,12 +6,10 @@ import { mkdtemp, mkdir, readdir, readFile, rm, utimes, writeFile } from 'node:f
 import os from 'node:os'
 import path from 'node:path'
 
-import { createIsolatedProfileRestoreTarget } from './lib/read-web-production-backup.mjs'
+import { createIsolatedProfileRestoreTarget, loadBackupModules } from './lib/read-web-production-backup.mjs'
 
-const backupSource = await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')
-const { createApplicationBackupService } = await import(
-  `data:text/javascript;base64,${Buffer.from(backupSource).toString('base64')}`,
-)
+const { applicationBackup } = await loadBackupModules()
+const { createApplicationBackupService } = applicationBackup
 
 const requiredDomains = [
   'reader-session',
