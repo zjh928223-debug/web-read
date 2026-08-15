@@ -1423,7 +1423,10 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
     isolationCertificate: options.isolationCertificate,
     restoreCapabilities: Object.freeze({
-      atomicRevisionCommit: true,
+      // The six application owners are still committed through sequential
+      // owner adapters. Durable checkpoints and rollback evidence exist, but
+      // they do not make cross-owner visibility atomic.
+      atomicRevisionCommit: false,
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     }),
