@@ -26,6 +26,7 @@ try {
   await checksumAndSchemaCorruptionIsQuarantined(sourceComposition, artifact)
   await pageCloseAbortIsRetryable(sourceComposition, artifact)
   await processClosePendingCheckpointIsRecoverable(sourceComposition, artifact)
+  await pendingRecoveryPreservesConcurrentWrites(sourceComposition, artifact)
   await rollbackFailureIsReported(sourceComposition, artifact)
   console.log('real application restore fault matrix passed')
 } finally {
@@ -205,13 +206,73 @@ async function processClosePendingCheckpointIsRecoverable(sourceComposition, art
     profileDir: target.profile,
     pythonStateDir: target.state,
     pythonOutputDir: target.output,
+    isolationRoot: target.rootDir,
     pendingStore: reopenedPendingStore,
     release,
   })
-  const recovery = await reopened.restoreTarget.recoverPendingRestore()
-  assert.equal(recovery.status, 'rolled-back')
   assert.deepEqual(await collectApplicationDomains(reopened.restoreTarget), before)
   assert.equal(pendingValue, null)
+}
+
+async function pendingRecoveryPreservesConcurrentWrites(sourceComposition, artifact) {
+  let pendingValue = null
+  const interruptedPendingStore = {
+    async read() { return pendingValue ? structuredClone(pendingValue) : null },
+    async write(value) {
+      pendingValue = structuredClone(value)
+      if (Array.isArray(value.appliedDomains) && value.appliedDomains.length === 1) {
+        const error = new Error('simulated process close after the first domain checkpoint')
+        error.code = 'RESTORE_PROCESS_CLOSED'
+        throw error
+      }
+    },
+    async remove() {
+      const error = new Error('simulated process close before pending cleanup')
+      error.code = 'RESTORE_PROCESS_CLOSED'
+      throw error
+    },
+  }
+  const target = await createTarget(root, 'pending-concurrent-write', { pendingStore: interruptedPendingStore })
+  await assert.rejects(
+    sourceComposition.service.restore(artifact, {
+      target: target.restoreTarget,
+      restoreId: 'fault-pending-concurrent-write',
+    }),
+    (error) => error?.code === 'RESTORE_ROLLBACK_FAILED',
+  )
+  assert.ok(pendingValue?.checksum)
+
+  const concurrentRow = {
+    id: 'readerSession',
+    schemaVersion: 1,
+    revision: 99,
+    contentId: 'concurrent-content',
+    content: { contentId: 'concurrent-content', changedAfterCrash: true },
+  }
+  await target.browserProfile.persistence.replaceRows({
+    rows: [concurrentRow],
+    allowId: () => true,
+  })
+
+  const reopenedPendingStore = {
+    async read() { return structuredClone(pendingValue) },
+    async write(value) { pendingValue = structuredClone(value) },
+    async remove() { pendingValue = null },
+  }
+  await assert.rejects(
+    createReadWebProductionBackupComposition({
+      profileDir: target.profile,
+      pythonStateDir: target.state,
+      pythonOutputDir: target.output,
+      isolationRoot: target.rootDir,
+      pendingStore: reopenedPendingStore,
+      release,
+    }),
+    (error) => error?.code === 'RESTORE_REVISION_CONFLICT',
+  )
+  const rows = await target.browserProfile.persistence.getAllRows()
+  assert.deepEqual(rows.find((row) => row.id === 'readerSession'), concurrentRow)
+  assert.ok(pendingValue, 'conflicted pending restore must remain available for manual recovery')
 }
 
 async function rollbackFailureIsReported(sourceComposition, artifact) {
@@ -281,7 +342,16 @@ async function createFixture(parent, name, populated) {
       checksum: `sha256:${await sha256(marksCore)}`,
     })
   }
-  return { profileDir: profile, pythonStateDir: state, pythonOutputDir: output, profile, state, output }
+  return {
+    profileDir: profile,
+    pythonStateDir: state,
+    pythonOutputDir: output,
+    isolationRoot: rootDir,
+    profile,
+    state,
+    output,
+    rootDir,
+  }
 }
 
 async function writeEnvelope(filePath, domain, key, values) {

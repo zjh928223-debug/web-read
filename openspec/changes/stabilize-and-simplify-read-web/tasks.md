@@ -123,10 +123,10 @@
 - [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
 - [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
-> 12.2 and 12.3 remain unchecked: the current evidence has real public restore
-> adapters for the browser IndexedDB/localStorage domains and the Python
-> workflow/marks owners, with isolated six-domain round-trip/fault evidence.
-> Cross-owner atomic visibility and a mandatory recovery seam in the real
-> application startup path are still missing. The 12.1 `application-state.json`
-> rehearsal remains a foundation check and is not substituted for the separate
-> 12.3 end-to-end recovery milestone.
+> 12.2 and 12.3 remain unchecked: real public restore adapters, durable
+> checkpoints, rollback/quarantine, conflict-safe crash recovery, and isolated
+> six-domain round-trip/fault evidence now exist. Cross-owner atomic visibility
+> and a mandatory recovery seam in the real application startup path are not
+> yet proven. The 12.1 `application-state.json` rehearsal remains a foundation
+> check and is not substituted for the separate 12.3 end-to-end recovery
+> milestone.

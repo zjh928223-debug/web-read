@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -46,6 +46,11 @@ async function loadBackupModules() {
     return { applicationBackup, readWebBackup }
   })()
   return backupModulesPromise
+}
+
+export async function createProductionOutboxQuarantineProtector(options = {}) {
+  const { readWebBackup } = await loadBackupModules()
+  return readWebBackup.createReaderSaveOutboxQuarantineProtector(options)
 }
 
 function clone(value) {
@@ -492,6 +497,7 @@ function assertProfileState(value, label) {
 class MapStorage {
   constructor(values = {}) {
     this.values = new Map(Object.entries(values).map(([key, value]) => [String(key), String(value)]))
+    this.durableRestoreStore = true
   }
 
   get length() { return this.values.size }
@@ -1040,16 +1046,72 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
 }
 
 export async function createReadWebProductionBackupComposition(options = {}) {
-  if (!options.profileDir || !options.pythonStateDir || !options.pythonOutputDir) {
+  if (!options.profileDir || !options.pythonStateDir || !options.pythonOutputDir || !options.isolationRoot) {
     const error = new Error('Production backup composition requires isolated browser profile, Python state, and Python output directories')
     error.code = 'BACKUP_PRODUCTION_COMPOSITION_CONFIGURATION'
     throw error
   }
+  const isolationRoot = path.resolve(options.isolationRoot)
+  const resolvedPaths = {
+    profileDir: path.resolve(options.profileDir),
+    pythonStateDir: path.resolve(options.pythonStateDir),
+    pythonOutputDir: path.resolve(options.pythonOutputDir),
+  }
+  const comparablePath = (value) => process.platform === 'win32' ? value.toLowerCase() : value
+  const isWithin = (parent, child) => {
+    const relative = path.relative(comparablePath(parent), comparablePath(child))
+    return Boolean(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+  }
+  const unsafe = (message, details = {}) => {
+    const error = new Error(message)
+    error.code = 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH'
+    error.details = details
+    return error
+  }
+  for (const [name, value] of Object.entries(resolvedPaths)) {
+    if (!isWithin(isolationRoot, value)) {
+      throw unsafe(`${name} must be a strict descendant of isolationRoot`, { name, isolationRoot, value })
+    }
+  }
+  const entries = Object.entries(resolvedPaths)
+  for (let index = 0; index < entries.length; index += 1) {
+    for (let candidate = index + 1; candidate < entries.length; candidate += 1) {
+      const [leftName, left] = entries[index]
+      const [rightName, right] = entries[candidate]
+      if (comparablePath(left) === comparablePath(right) || isWithin(left, right) || isWithin(right, left)) {
+        throw unsafe(`${leftName} and ${rightName} must not overlap`, { left, right })
+      }
+    }
+  }
+  const forbiddenRoots = [
+    ...(process.platform === 'win32' ? ['E:\\read-web'] : []),
+    ...(Array.isArray(options.forbiddenRoots) ? options.forbiddenRoots : []),
+  ].map((value) => path.resolve(value))
+  for (const forbiddenRoot of forbiddenRoots) {
+    for (const [name, value] of Object.entries({ isolationRoot, ...resolvedPaths })) {
+      if (comparablePath(value) === comparablePath(forbiddenRoot)
+        || isWithin(forbiddenRoot, value)
+        || isWithin(value, forbiddenRoot)) {
+        throw unsafe(`${name} overlaps a forbidden root`, { name, value, forbiddenRoot })
+      }
+    }
+  }
   const { readWebBackup } = await loadBackupModules()
-  const browser = await openBrowserProfile(path.resolve(options.profileDir))
+  const browser = await openBrowserProfile(resolvedPaths.profileDir)
+  browser.storage.estimateCapacity = async ({ requiredBytes }) => {
+    try {
+      const fileSystem = await statfs(isolationRoot)
+      const availableBytes = Number(fileSystem.bavail) * Number(fileSystem.bsize)
+      return Number.isFinite(availableBytes)
+        ? { ok: availableBytes >= requiredBytes, availableBytes }
+        : { ok: false, availableBytes: null }
+    } catch {
+      return { ok: false, availableBytes: null }
+    }
+  }
   const pythonAdapters = createPythonDomainAdapters({
-    stateDir: path.resolve(options.pythonStateDir),
-    outputDir: path.resolve(options.pythonOutputDir),
+    stateDir: resolvedPaths.pythonStateDir,
+    outputDir: resolvedPaths.pythonOutputDir,
     pythonCommand: options.pythonCommand,
   })
   const adapters = readWebBackup.createReadWebApplicationBackupAdapters({
@@ -1065,6 +1127,8 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       applicationPersistence: targetBrowser.persistence,
       storage: targetBrowser.storage,
       backupAdapters: targetAdapters,
+      readerSaveOutboxQuarantineProtector: targetOptions.readerSaveOutboxQuarantineProtector
+        || options.readerSaveOutboxQuarantineProtector,
       restoreAdapters: {
         'marks-activity': targetPythonAdapters['marks-activity'],
         workflow: targetPythonAdapters.workflow,
@@ -1088,6 +1152,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     pendingStore: options.pendingStore,
     revisionStore: options.revisionStore,
   })
+  await restoreTarget.recoverPendingRestore()
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,
     adapters,
@@ -1112,23 +1177,19 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     },
     async createIsolatedTarget(targetOptions = {}) {
       if (targetOptions.engine === 'application') {
-        const targetBrowser = targetOptions.profileDir
-          ? await openBrowserProfile(path.resolve(targetOptions.profileDir))
-          : browser
-        const targetPythonAdapters = targetOptions.pythonStateDir && targetOptions.pythonOutputDir
-          ? createPythonDomainAdapters({
-              stateDir: path.resolve(targetOptions.pythonStateDir),
-              outputDir: path.resolve(targetOptions.pythonOutputDir),
-              pythonCommand: targetOptions.pythonCommand || options.pythonCommand,
-            })
-          : pythonAdapters
-        const targetAdapters = readWebBackup.createReadWebApplicationBackupAdapters({
-          applicationPersistence: targetBrowser.persistence,
-          storage: targetBrowser.storage,
-          marksActivityAdapter: targetPythonAdapters['marks-activity'],
-          workflowAdapter: targetPythonAdapters.workflow,
+        const declaresSeparatePaths = targetOptions.profileDir
+          || targetOptions.pythonStateDir
+          || targetOptions.pythonOutputDir
+          || targetOptions.isolationRoot
+        if (!declaresSeparatePaths) return restoreTarget
+        const targetComposition = await createReadWebProductionBackupComposition({
+          ...targetOptions,
+          pythonCommand: targetOptions.pythonCommand || options.pythonCommand,
+          readerSaveOutboxQuarantineProtector: targetOptions.readerSaveOutboxQuarantineProtector
+            || options.readerSaveOutboxQuarantineProtector,
+          release: targetOptions.release || options.release,
         })
-        return createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions)
+        return targetComposition.restoreTarget
       }
       return createIsolatedProfileRestoreTarget(targetOptions)
     },

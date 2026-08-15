@@ -374,7 +374,7 @@ async function parseOutboxQuarantine(raw, key, quarantineProtector) {
     || !safeOutboxText(value.sourceKey, 512)
     || typeof value.detectedAt !== 'string'
     || typeof value.reason !== 'string'
-    || typeof value.rawValue !== 'string') {
+    || (typeof value.rawValue !== 'string' && !isPlainObject(value.recovery))) {
     throw outboxError('BACKUP_READER_OUTBOX_CORRUPT', `Reader save outbox quarantine ${key} is invalid`, { key })
   }
   const metadata = normalizeQuarantineMetadata({
@@ -382,14 +382,18 @@ async function parseOutboxQuarantine(raw, key, quarantineProtector) {
     detectedAt: value.detectedAt,
     reason: value.reason,
   })
-  if (typeof quarantineProtector?.encrypt !== 'function') {
+  let recovery = value.recovery
+  if (recovery) {
+    validateQuarantineRecoveryEnvelope(recovery)
+  } else if (typeof quarantineProtector?.encrypt !== 'function') {
     throw outboxError(
       'BACKUP_READER_OUTBOX_QUARANTINE_UNRECOVERABLE',
       `Reader save outbox quarantine ${key} requires an encryption protector; raw evidence remains in the source profile`,
       { key },
     )
+  } else {
+    recovery = await quarantineProtector.encrypt(value.rawValue, metadata)
   }
-  const recovery = await quarantineProtector.encrypt(value.rawValue, metadata)
   validateQuarantineRecoveryEnvelope(recovery)
   return {
     id: `reader-save-outbox:quarantine:${key}`,
@@ -981,16 +985,38 @@ function createIndexedDbRestoreAdapter({ key, backupAdapter, persistence, rowPre
       }
       const v1Entries = outboxRecords
         .filter((record) => String(record.id).startsWith('reader-save-outbox:v1:'))
-        .map((record) => restoreClone(record.payload))
+        .map((record) => {
+          const { schemaVersion, ...entry } = restoreClone(record.payload)
+          if (schemaVersion !== 1 || !validOutboxEntry(entry)) {
+            throw restoreError('RESTORE_RECORD_INVALID', 'Reader save outbox v1 restore record is invalid')
+          }
+          return entry
+        })
       const v2Entries = outboxRecords
         .filter((record) => String(record.id).startsWith('reader-save-outbox:v2:'))
         .map((record) => restoreClone(record.payload))
         .filter((entry) => entry && typeof entry === 'object' && entry.jobId && entry.kind && entry.operationId)
+      const quarantineRecords = outboxRecords
+        .filter((record) => String(record.id).startsWith('reader-save-outbox:quarantine:'))
       for (const storageKey of allKeys) storage.removeItem?.(storageKey)
       if (v1Entries.length) storage.setItem(READER_SAVE_OUTBOX_V1_KEY, JSON.stringify({ schemaVersion: 1, entries: v1Entries }))
       for (const entry of v2Entries) storage.setItem(outboxRestoreKey(entry), JSON.stringify({ schemaVersion: 2, ...entry }))
+      for (const record of quarantineRecords) {
+        const storageKey = String(record.id).slice('reader-save-outbox:quarantine:'.length)
+        if (storageKey !== READER_SAVE_OUTBOX_LEGACY_QUARANTINE_KEY
+          && !storageKey.startsWith(READER_SAVE_OUTBOX_QUARANTINE_PREFIX)) {
+          throw restoreError('RESTORE_RECORD_INVALID', 'Reader save outbox quarantine restore key is invalid')
+        }
+        const payload = restoreClone(record.payload)
+        if (payload?.schemaVersion !== 1) {
+          throw restoreError('RESTORE_RECORD_INVALID', 'Reader save outbox quarantine restore payload is invalid')
+        }
+        validateQuarantineRecoveryEnvelope(payload.recovery)
+        const metadata = normalizeQuarantineMetadata(payload)
+        storage.setItem(storageKey, JSON.stringify({ schemaVersion: 1, ...metadata, recovery: payload.recovery }))
+      }
       await storage.flush?.()
-      return { recordCount: rows.length + v1Entries.length + v2Entries.length, deletedCount: deleteIds.length }
+      return { recordCount: rows.length + v1Entries.length + v2Entries.length + quarantineRecords.length, deletedCount: deleteIds.length }
     },
   }
 }
@@ -1042,18 +1068,19 @@ export function createReadWebApplicationRestoreAdapters(options = {}) {
 
 function createRestoreJournalStores(options, storage) {
   const prefix = String(options.storageKeyPrefix || '')
-  const journal = options.journalStore || options.journal || createStorageJsonStore(
-    storage,
+  const durableStorage = storage?.durableRestoreStore === true ? storage : null
+  const journal = options.journalStore || options.journal || (durableStorage && createStorageJsonStore(
+    durableStorage,
     `${prefix}${RESTORE_JOURNAL_STORAGE_KEY}`,
-  )
-  const pending = options.pendingStore || createStorageJsonStore(
-    storage,
+  ))
+  const pending = options.pendingStore || (durableStorage && createStorageJsonStore(
+    durableStorage,
     `${prefix}${RESTORE_PENDING_STORAGE_KEY}`,
-  )
-  const revision = options.revisionStore || createStorageJsonStore(
-    storage,
+  ))
+  const revision = options.revisionStore || (durableStorage && createStorageJsonStore(
+    durableStorage,
     `${prefix}${RESTORE_REVISION_STORAGE_KEY}`,
-  )
+  ))
   return { journal, pending, revision }
 }
 
@@ -1078,7 +1105,7 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
   const writeJournalStore = resolveStoreMethod(stores.journal, 'write', 'restore journal')
   const rollbackPrefix = String(options.storageKeyPrefix || '') + RESTORE_ROLLBACK_STORAGE_PREFIX
   const quarantinePrefix = String(options.storageKeyPrefix || '') + RESTORE_QUARANTINE_STORAGE_PREFIX
-  const rollbackStore = options.rollbackStore || (storage ? {
+  const rollbackStore = options.rollbackStore || (storage?.durableRestoreStore === true ? {
     async write(entry) {
       const key = `${rollbackPrefix}${encodeURIComponent(String(entry.restoreId || 'restore'))}`
       const store = createStorageJsonStore(storage, key)
@@ -1237,6 +1264,17 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       await removePending()
       return { status: 'completed', restoreId: pending.restoreId, revision: pending.nextRevision }
     }
+    const conflictedDomain = requiredDomains.find((key) => (
+      !domainsEqual(current[key], pending.baseDomains[key])
+      && !domainsEqual(current[key], pending.stagedDomains[key])
+    ))
+    if (conflictedDomain) {
+      throw restoreError(
+        'RESTORE_REVISION_CONFLICT',
+        `Pending restore domain ${conflictedDomain} changed after interruption`,
+        { restoreId: pending.restoreId, domain: conflictedDomain },
+      )
+    }
     try {
       for (const key of RESTORE_DOMAIN_ORDER) {
         const adapter = adapters[key]
@@ -1337,6 +1375,17 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
         if (!committed) {
           try {
             const current = await collectAllDomains()
+            const conflictedDomain = requiredDomains.find((key) => (
+              !domainsEqual(current[key], baseDomains[key])
+              && !domainsEqual(current[key], stagedDomains[key])
+            ))
+            if (conflictedDomain) {
+              throw restoreError(
+                'RESTORE_REVISION_CONFLICT',
+                `Restore domain ${conflictedDomain} changed before rollback`,
+                { restoreId, domain: conflictedDomain },
+              )
+            }
             let rollbackApplied = 0
             for (const key of RESTORE_DOMAIN_ORDER) {
               if (!domainsEqual(current[key], baseDomains[key])) {
@@ -1380,16 +1429,17 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     rollbackStore,
     quarantine,
     faults,
-    rollbackStoreSeparate: true,
-    capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024,
+    rollbackStoreSeparate: Boolean(options.rollbackStore),
+    capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : null,
     async estimateCapacity({ requiredBytes }) {
       if (Number.isFinite(target.capacityBytes)) return { ok: target.capacityBytes >= requiredBytes, availableBytes: target.capacityBytes }
       if (typeof options.estimateCapacity === 'function') return options.estimateCapacity({ requiredBytes })
+      if (typeof storage?.estimateCapacity === 'function') return storage.estimateCapacity({ requiredBytes })
       const estimate = await globalThis.navigator?.storage?.estimate?.()
       const availableBytes = Number(estimate?.quota) - Number(estimate?.usage)
       return Number.isFinite(availableBytes)
         ? { ok: availableBytes >= requiredBytes, availableBytes }
-        : { ok: true, availableBytes: null }
+        : { ok: false, availableBytes: null }
     },
     async readJournal({ restoreId }) {
       return withTargetLock(async () => {
