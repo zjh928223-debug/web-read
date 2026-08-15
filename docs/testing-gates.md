@@ -122,7 +122,12 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 当前 release 会先列出并阻断未完成的 12.2、12.3、12.7；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
-IndexedDB/localStorage/workflow profile 的全应用恢复。
+IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域 restore
+证据由 `verify:application-backup-real-restore`、
+`verify:application-backup-restore-faults` 和
+`verify:workflow-application-backup-restore` 产生，并由 `verify:full` 接入；
+这些检查只使用隔离临时 profile，不证明尚未完成的 12.2/12.3/12.7，也不触碰
+真实学习数据。
 
 ## 入口和 owner 规则
 
@@ -136,6 +141,12 @@ IndexedDB/localStorage/workflow profile 的全应用恢复。
 - 入口/脚本改动后必须运行 `npm run verify:test-inventory` 和
   `npm run verify:script-inventory`，确认分类是 deterministic、owner 存在且无
   orphan。
+
+12.2 仍保持未勾选：当前证据覆盖真实六域 adapters、durable checkpoints、
+rollback/quarantine、冲突安全恢复和 fault evidence，但跨 owner 原子可见性及
+真实应用启动路径的强制 recovery seam 仍未完成。12.3 和其余 pending gates
+完成前，任何 Full/基础 rehearsal 通过都不代表可以切换桌面快捷方式或接触真实
+学习数据。
 
 ## 已知基线问题
 

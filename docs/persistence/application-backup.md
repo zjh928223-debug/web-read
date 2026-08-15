@@ -75,17 +75,37 @@ only when its journal evidence is safe.
 
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
-`npm run verify:application-backup-concurrency`. The composition in
-`scripts/lib/read-web-production-backup.mjs` joins the browser profile adapters
-with the Python marks/activity and workflow bridge. Its current target is an
-**isolated restore-engine foundation**: it is a real temporary directory with
-atomic state, journal, rollback and quarantine files, but
-`application-state.json` is not yet the browser's application-readable
-IndexedDB/localStorage/workflow target. The rehearsal therefore proves the
-engine's checks, CAS and rollback semantics only; real domain target adapters
-remain tasks 12.2 and 12.3. It is not a full application restore release pass,
-and it uses generated temporary fixture directories only; it never restores
-real daily data.
+`npm run verify:application-backup-concurrency`. The production composition in
+`scripts/lib/read-web-production-backup.mjs` now joins public restore adapters
+for all six domains: `ApplicationPersistence` owns the real
+`SeekPlayerDB/files` reader and Vocabulary/SRS rows, the localStorage adapter
+owns Passage Preview and Annotation envelopes, and the Python bridge owns the
+marks/activity and workflow repositories through `DurableJsonRepository`.
+There is no `simpleAdapter` or in-memory substitute in this composition.
+
+`createReadWebApplicationRestoreTarget` keeps the browser-facing stores,
+journal, rollback backup, pending checkpoint, revision evidence and quarantine
+in the explicitly isolated profile supplied by the caller. A restore starts
+with a read-only dry-run; conflicts are reported per domain and per record and
+default to fail-closed. `keep`, `restore` and `merge` are explicit decisions.
+The target writes a durable pending checkpoint before applying domains, uses
+domain CAS guards, confirms the new revision, and recovers a pending operation
+to either its complete baseline or its complete staged state. Every rollback
+backup is independently checksummed and associated with the `restoreId` and
+artifact checksum. Quarantine entries preserve source key, raw value, time,
+reason and checksum evidence and are read back before a corrupt source is
+discarded.
+
+`npm run verify:application-backup-real-restore` runs a real six-domain
+temporary-profile round trip and idempotent retry. The failure matrix is
+`npm run verify:application-backup-restore-faults`; it covers rollback-backup
+failure before writes, per-domain abort, quota/disk-full, revision conflict,
+checksum/schema corruption, page-close retry, and rollback success/failure
+reports. The Python owner tests are
+`npm run verify:workflow-application-backup-restore`, while `npm run
+verify:full` includes these machine checks. All fixtures are generated in
+temporary directories; no daily profile, IndexedDB schema or real user data is
+opened by these gates.
 
 All file-backed target mutations share a cross-process lock. A complete owner
 record is written and synced in a unique claim directory before an atomic
