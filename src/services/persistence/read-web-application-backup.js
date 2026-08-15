@@ -1199,8 +1199,24 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
   async function recoverPendingUnlocked() {
     const pending = await readPending()
     if (!pending) return null
-    if (pending.schemaVersion !== 1 || !pending.restoreId || !pending.baseDomains || !pending.stagedDomains) {
-      throw restoreError('RESTORE_PENDING_CORRUPT', 'Pending restore checkpoint is invalid')
+    const validDomainMap = (value) => value && typeof value === 'object' && !Array.isArray(value)
+      && requiredDomains.every((key) => Object.prototype.hasOwnProperty.call(value, key))
+    if (pending.schemaVersion !== 1
+      || !pending.restoreId
+      || !Number.isInteger(pending.baseRevision) || pending.baseRevision < 0
+      || !Number.isInteger(pending.nextRevision) || pending.nextRevision <= pending.baseRevision
+      || !validDomainMap(pending.baseDomains)
+      || !validDomainMap(pending.stagedDomains)
+      || !Array.isArray(pending.appliedDomains)) {
+      throw restoreError('RESTORE_PENDING_CORRUPT', 'Pending restore checkpoint is invalid', {
+        details: {
+          sourceKey: RESTORE_PENDING_STORAGE_KEY,
+          rawValue: pending,
+          detectedAt: new Date().toISOString(),
+          reason: 'RESTORE_PENDING_CORRUPT',
+          checksumEvidence: pending.checksum || null,
+        },
+      })
     }
     if (typeof pending.checksum !== 'string' || await restoreChecksum(restoreWithoutChecksum(pending)) !== pending.checksum) {
       throw restoreError('RESTORE_PENDING_CORRUPT', 'Pending restore checkpoint checksum does not match', {
