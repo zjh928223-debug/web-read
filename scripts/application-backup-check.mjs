@@ -7,6 +7,7 @@ const moduleSource = await (await import('node:fs/promises')).readFile(
 )
 const {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
+  createApplicationBackupIsolationCertificate,
   createApplicationBackupService,
   createLocalStorageDomainAdapter,
   verifyBackupArtifact,
@@ -99,6 +100,17 @@ const restoreService = createApplicationBackupService({
 const unsafeAdapters = createDomainAdapters()
 const unsafeService = createApplicationBackupService({ adapters: unsafeAdapters })
 const unsafeArtifact = await unsafeService.createBackup()
+const selfAssertedTarget = createRestoreTarget(unsafeAdapters)
+delete selfAssertedTarget.isolationCertificate
+await assert.rejects(
+  unsafeService.restore(unsafeArtifact, {
+    target: selfAssertedTarget,
+    restoreId: 'self-asserted-isolation',
+    resolutions: Object.fromEntries(APPLICATION_BACKUP_REQUIRED_DOMAINS.map((key) => [key, 'restore'])),
+  }),
+  (error) => error?.code === 'RESTORE_TARGET_UNSAFE',
+  'isolated:true without a concrete isolation certificate must fail before any restore write',
+)
 const unsafeTarget = createRestoreTarget(unsafeAdapters)
 delete unsafeTarget.restoreCapabilities
 // TDD RED evidence: the pre-capability service accepted this target and
@@ -237,6 +249,10 @@ function createDomainAdapters({ binary = false, inlineMedia = false } = {}) {
 function createRestoreTarget(adapters) {
   const target = {
     isolated: true,
+    isolationCertificate: createApplicationBackupIsolationCertificate({
+      isolationRoot: '[application-backup-test-root]',
+      paths: { target: '[application-backup-test-root]/target' },
+    }),
     restoreCapabilities: {
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,

@@ -76,12 +76,15 @@ only when its journal evidence is safe.
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
 `npm run verify:application-backup-concurrency`. The production composition in
-`scripts/lib/read-web-production-backup.mjs` now joins public restore adapters
-for all six domains: `ApplicationPersistence` owns the real
-`SeekPlayerDB/files` reader and Vocabulary/SRS rows, the localStorage adapter
-owns Passage Preview and Annotation envelopes, and the Python bridge owns the
-marks/activity and workflow repositories through `DurableJsonRepository`.
-There is no `simpleAdapter` or in-memory substitute in this composition.
+`scripts/lib/read-web-production-backup.mjs` joins public restore adapters for
+all six domains. The browser-facing adapter contract is the same one used by
+`ApplicationPersistence` for `SeekPlayerDB` version 1, object store `files`,
+and key path `id`; the localStorage adapter owns Passage Preview and
+Annotation envelopes, and the Python bridge owns marks/activity and workflow
+through `DurableJsonRepository`. The isolated Node gate intentionally uses a
+temporary file-backed profile plus a `MapStorage`/JSON persistence shim, so it
+never opens a user's IndexedDB or localStorage. That rehearsal does not prove
+a real browser startup recovery seam or completion of 12.2/12.3.
 
 `createReadWebApplicationRestoreTarget` keeps the browser-facing stores,
 journal, rollback backup, pending checkpoint, revision evidence and quarantine

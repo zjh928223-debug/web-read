@@ -2,6 +2,7 @@ import {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
   createApplicationBackupService,
   createIndexedDbDomainAdapter,
+  isApplicationBackupIsolationCertificate,
 } from './application-backup.js'
 
 const READER_SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
@@ -1419,7 +1420,8 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
   }
 
   const target = {
-    isolated: options.isolated === true,
+    isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
+    isolationCertificate: options.isolationCertificate,
     restoreCapabilities: Object.freeze({
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,

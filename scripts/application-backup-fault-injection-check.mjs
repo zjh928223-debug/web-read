@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')
 const {
   APPLICATION_BACKUP_REQUIRED_DOMAINS,
+  createApplicationBackupIsolationCertificate,
   createApplicationBackupService,
   verifyBackupArtifact,
 } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
@@ -195,6 +196,10 @@ function snapshotState(state) {
 function createTarget(state, { commitMode = 'success', missingJournalReader = false } = {}) {
   const target = {
     isolated: true,
+    isolationCertificate: createApplicationBackupIsolationCertificate({
+      isolationRoot: '[application-backup-fault-root]',
+      paths: { target: '[application-backup-fault-root]/target' },
+    }),
     restoreCapabilities: {
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,

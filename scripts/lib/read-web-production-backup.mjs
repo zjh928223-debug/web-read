@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -798,6 +798,10 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   const { applicationBackup } = await loadBackupModules()
   const requiredDomains = applicationBackup.APPLICATION_BACKUP_REQUIRED_DOMAINS
   const profileDir = path.resolve(options.profileDir)
+  const isolationCertificate = applicationBackup.createApplicationBackupIsolationCertificate({
+    isolationRoot: path.resolve(options.isolationRoot || path.dirname(profileDir)),
+    paths: { profileDir },
+  })
   const statePath = path.join(profileDir, APPLICATION_STATE_FILE)
   const journalPath = path.join(profileDir, 'restore-journal.json')
   const rollbackDir = path.join(profileDir, 'rollback')
@@ -835,6 +839,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
 
   const target = {
     isolated: true,
+    isolationCertificate,
     profileDir,
     statePath,
     journalPath,
@@ -1051,11 +1056,40 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     error.code = 'BACKUP_PRODUCTION_COMPOSITION_CONFIGURATION'
     throw error
   }
-  const isolationRoot = path.resolve(options.isolationRoot)
   const resolvedPaths = {
     profileDir: path.resolve(options.profileDir),
     pythonStateDir: path.resolve(options.pythonStateDir),
     pythonOutputDir: path.resolve(options.pythonOutputDir),
+  }
+  const lexicalIsolationRoot = path.resolve(options.isolationRoot)
+  async function resolveCanonicalPath(value) {
+    const missing = []
+    let current = path.resolve(value)
+    while (true) {
+      try {
+        const canonical = await realpath(current)
+        return path.resolve(canonical, ...missing.reverse())
+      } catch (error) {
+        if (!['ENOENT', 'ENOTDIR'].includes(error?.code)) throw error
+        const parent = path.dirname(current)
+        if (parent === current) return path.resolve(value)
+        missing.push(path.basename(current))
+        current = parent
+      }
+    }
+  }
+  let isolationRoot
+  let canonicalPaths
+  try {
+    isolationRoot = await resolveCanonicalPath(lexicalIsolationRoot)
+    canonicalPaths = Object.fromEntries(
+      await Promise.all(Object.entries(resolvedPaths).map(async ([name, value]) => [name, await resolveCanonicalPath(value)])),
+    )
+  } catch (error) {
+    const validationError = new Error('Production backup composition paths could not be canonicalized safely')
+    validationError.code = 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH'
+    validationError.cause = error
+    throw validationError
   }
   const comparablePath = (value) => process.platform === 'win32' ? value.toLowerCase() : value
   const isWithin = (parent, child) => {
@@ -1068,12 +1102,18 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     error.details = details
     return error
   }
-  for (const [name, value] of Object.entries(resolvedPaths)) {
+  for (const [name, value] of Object.entries(canonicalPaths)) {
     if (!isWithin(isolationRoot, value)) {
-      throw unsafe(`${name} must be a strict descendant of isolationRoot`, { name, isolationRoot, value })
+      throw unsafe(`${name} must be a strict descendant of isolationRoot`, {
+        name,
+        isolationRoot,
+        lexicalIsolationRoot,
+        value,
+        lexicalValue: resolvedPaths[name],
+      })
     }
   }
-  const entries = Object.entries(resolvedPaths)
+  const entries = Object.entries(canonicalPaths)
   for (let index = 0; index < entries.length; index += 1) {
     for (let candidate = index + 1; candidate < entries.length; candidate += 1) {
       const [leftName, left] = entries[index]
@@ -1084,19 +1124,25 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     }
   }
   const forbiddenRoots = [
-    ...(process.platform === 'win32' ? ['E:\\read-web'] : []),
+    ...(process.platform === 'win32' ? ['E:\\read-web', 'E:\\read-web-next'] : []),
     ...(Array.isArray(options.forbiddenRoots) ? options.forbiddenRoots : []),
   ].map((value) => path.resolve(value))
   for (const forbiddenRoot of forbiddenRoots) {
-    for (const [name, value] of Object.entries({ isolationRoot, ...resolvedPaths })) {
-      if (comparablePath(value) === comparablePath(forbiddenRoot)
-        || isWithin(forbiddenRoot, value)
-        || isWithin(value, forbiddenRoot)) {
-        throw unsafe(`${name} overlaps a forbidden root`, { name, value, forbiddenRoot })
+    let canonicalForbiddenRoot
+    try {
+      canonicalForbiddenRoot = await resolveCanonicalPath(forbiddenRoot)
+    } catch (error) {
+      throw unsafe('Forbidden root could not be canonicalized safely', { forbiddenRoot, cause: error?.code || error?.message })
+    }
+    for (const [name, value] of Object.entries({ isolationRoot, ...canonicalPaths })) {
+      if (comparablePath(value) === comparablePath(canonicalForbiddenRoot)
+        || isWithin(canonicalForbiddenRoot, value)
+        || isWithin(value, canonicalForbiddenRoot)) {
+        throw unsafe(`${name} overlaps a forbidden root`, { name, value, forbiddenRoot: canonicalForbiddenRoot })
       }
     }
   }
-  const { readWebBackup } = await loadBackupModules()
+  const { applicationBackup, readWebBackup } = await loadBackupModules()
   const browser = await openBrowserProfile(resolvedPaths.profileDir)
   browser.storage.estimateCapacity = async ({ requiredBytes }) => {
     try {
@@ -1123,7 +1169,10 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   function createApplicationRestoreTarget(targetBrowser, targetPythonAdapters, targetAdapters, targetOptions = {}) {
     return readWebBackup.createReadWebApplicationRestoreTarget({
-      isolated: true,
+      isolationCertificate: applicationBackup.createApplicationBackupIsolationCertificate({
+        isolationRoot,
+        paths: canonicalPaths,
+      }),
       applicationPersistence: targetBrowser.persistence,
       storage: targetBrowser.storage,
       backupAdapters: targetAdapters,

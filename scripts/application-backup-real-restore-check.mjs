@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -35,6 +35,30 @@ await assert.rejects(
     pythonStateDir: path.join(forbiddenRoot, 'state'),
     pythonOutputDir: path.join(forbiddenRoot, 'output'),
     forbiddenRoots: [forbiddenRoot],
+  }),
+  (error) => error?.code === 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH',
+)
+await assert.rejects(
+  createReadWebProductionBackupComposition({
+    isolationRoot: path.join('E:\\read-web-next', 'batch2-unsafe'),
+    profileDir: path.join('E:\\read-web-next', 'batch2-unsafe', 'profile'),
+    pythonStateDir: path.join('E:\\read-web-next', 'batch2-unsafe', 'state'),
+    pythonOutputDir: path.join('E:\\read-web-next', 'batch2-unsafe', 'output'),
+  }),
+  (error) => error?.code === 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH',
+)
+const symlinkRoot = path.join(root, 'symlink-root')
+const symlinkTarget = path.join(root, 'symlink-target')
+await mkdir(symlinkTarget, { recursive: true })
+const redirectedProfile = path.join(symlinkRoot, 'profile')
+await mkdir(symlinkRoot, { recursive: true })
+await symlink(symlinkTarget, redirectedProfile, 'junction')
+await assert.rejects(
+  createReadWebProductionBackupComposition({
+    isolationRoot: symlinkRoot,
+    profileDir: path.join(redirectedProfile, 'nested-profile'),
+    pythonStateDir: path.join(symlinkRoot, 'state'),
+    pythonOutputDir: path.join(symlinkRoot, 'output'),
   }),
   (error) => error?.code === 'BACKUP_PRODUCTION_COMPOSITION_UNSAFE_PATH',
 )

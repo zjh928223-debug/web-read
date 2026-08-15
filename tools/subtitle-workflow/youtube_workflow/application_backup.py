@@ -51,7 +51,7 @@ _ABSOLUTE_MACHINE_PATH = re.compile(
 _MEDIA_SUFFIXES = {
     ".mp3", ".m4a", ".wav", ".ogg", ".flac", ".mp4", ".webm", ".mkv", ".mov", ".avi",
 }
-_TEMP_MARKERS = (".tmp-", ".interrupted-", ".corrupt-", ".rollback-")
+_TEMP_MARKERS = (".tmp-", ".interrupted-", ".corrupt-", ".rollback-", ".read-web-restore-")
 _MARKS_ACTIVITY_FILES = {
     "reader-marks.json",
     "reader-activity.json",

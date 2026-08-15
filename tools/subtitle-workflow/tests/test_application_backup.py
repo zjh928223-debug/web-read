@@ -77,6 +77,38 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
             with self.assertRaisesRegex(WorkflowBackupError, "corrupt"):
                 adapter.collect()
 
+    def test_restore_bridge_input_left_after_crash_is_not_exported(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_dir = root / "state"
+            output_dir = root / "output"
+            job_dir = output_dir / "job-1"
+            job_dir.mkdir(parents=True)
+            state_dir.mkdir()
+            self._write_envelope(
+                state_dir / "jobs.json",
+                "workflow.jobs",
+                "jobs",
+                [{"jobId": "job-1", "outputDir": str(job_dir)}],
+            )
+            self._write_envelope(
+                state_dir / "history.json",
+                "workflow.history",
+                "items",
+                [{"jobId": "job-1", "outputDir": str(job_dir)}],
+            )
+            (job_dir / ".read-web-restore-workflow-crash.json").write_text(
+                json.dumps({"schemaVersion": 1, "revision": 1, "payload": "temporary"}),
+                encoding="utf-8",
+            )
+
+            snapshot = WorkflowBackupAdapter(state_dir, output_dir).collect()
+
+            self.assertFalse(any(
+                ".read-web-restore-" in record["id"]
+                for record in snapshot["records"]
+            ))
+
     def test_record_checksum_tamper_is_detected(self):
         snapshot = {
             "schemaVersion": 1,

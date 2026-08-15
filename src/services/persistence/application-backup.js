@@ -19,6 +19,8 @@ const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|authorization|cookie|pass
 const SENSITIVE_URL_PARAMETER = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$|signature|^sig$)/i
 const EMBEDDED_MEDIA_KEY = /(?:blob|arraybuffer|typedarray|binary|base64|datauri|inline(?:data|media)?|media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))/i
 const PRIVATE_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|private|var|tmp)\/)/i
+const ISOLATION_CERTIFICATE = Symbol('read-web.application-backup.isolation-certificate')
+const ISOLATION_CERTIFICATE_SCHEMA_VERSION = 1
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
@@ -30,6 +32,36 @@ export const APPLICATION_BACKUP_MEDIA_POLICY = Object.freeze({
   rebindRequired: true,
   maxMediaReferenceBytes: DEFAULT_MAX_MEDIA_REFERENCE_BYTES,
 })
+
+export function createApplicationBackupIsolationCertificate({ isolationRoot, paths } = {}) {
+  if (typeof isolationRoot !== 'string' || !isolationRoot.trim()
+    || !paths || typeof paths !== 'object' || Array.isArray(paths)
+    || !Object.keys(paths).length
+    || Object.values(paths).some((value) => typeof value !== 'string' || !value.trim())) {
+    throw new Error('Application backup isolation certificate requires a root and concrete target paths')
+  }
+  return Object.freeze({
+    [ISOLATION_CERTIFICATE]: true,
+    schemaVersion: ISOLATION_CERTIFICATE_SCHEMA_VERSION,
+    isolationRoot: isolationRoot.trim(),
+    paths: Object.freeze(Object.fromEntries(
+      Object.entries(paths).map(([name, value]) => [name, value.trim()]),
+    )),
+  })
+}
+
+export function isApplicationBackupIsolationCertificate(value) {
+  return !!value
+    && value[ISOLATION_CERTIFICATE] === true
+    && value.schemaVersion === ISOLATION_CERTIFICATE_SCHEMA_VERSION
+    && typeof value.isolationRoot === 'string'
+    && value.isolationRoot.length > 0
+    && value.paths
+    && typeof value.paths === 'object'
+    && !Array.isArray(value.paths)
+    && Object.keys(value.paths).length > 0
+    && Object.values(value.paths).every((entry) => typeof entry === 'string' && entry.length > 0)
+}
 
 function backupError(code, message, details = {}) {
   const error = new Error(message)
@@ -1086,7 +1118,12 @@ async function resolveCapacity(target, backupBytes) {
 }
 
 async function assertTargetSafety(target) {
-  if (!target || target.isolated !== true) throw backupError('RESTORE_TARGET_UNSAFE', 'Restore requires an explicitly isolated target profile')
+  if (!target || target.isolated !== true || !isApplicationBackupIsolationCertificate(target.isolationCertificate)) {
+    throw backupError(
+      'RESTORE_TARGET_UNSAFE',
+      'Restore requires an explicitly isolated target with a concrete isolation certificate',
+    )
+  }
   const capabilities = target.restoreCapabilities
   if (capabilities?.atomicRevisionCommit !== true
     || capabilities?.commitRevisionEvidence !== true
