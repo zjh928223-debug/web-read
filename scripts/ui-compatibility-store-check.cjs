@@ -28,6 +28,7 @@ async function main() {
     createIsolatedRuntimeConfig,
     createIsolatedServiceToken,
     createIsolatedViteEnvironment,
+    isBrowserSafePort,
     rejectExplicitReadWebUrl,
   } = await import('./lib/compatibility-isolation.mjs');
   const { shouldContinueStaticRequest } = await import('./lib/compatibility-network-policy.mjs');
@@ -39,11 +40,11 @@ async function main() {
   const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), `read-web-ui-compat-${process.pid}-`));
   const dataRoot = path.join(isolationRoot, 'data');
   const runtimeConfigPath = path.join(isolationRoot, 'runtime.json');
-  const port = await findFreePort();
+  const port = await findFreePort(isBrowserSafePort);
   const targetUrl = normalizeTargetUrl(`http://${host}:${port}/`);
   const targetOrigin = new URL(targetUrl).origin;
   const targetPort = Number(new URL(targetUrl).port);
-  const backendPort = await findFreePort(new Set([targetPort]));
+  const backendPort = await findFreePort(isBrowserSafePort, new Set([targetPort]));
   const serviceToken = createIsolatedServiceToken('ui-compatibility');
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(createIsolatedRuntimeConfig({
@@ -126,7 +127,7 @@ async function main() {
   }
 }
 
-function findFreePort(excluded = new Set()) {
+function findFreePort(isSafePort = () => true, excluded = new Set()) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once('error', reject);
@@ -135,7 +136,7 @@ function findFreePort(excluded = new Set()) {
       const port = typeof address === 'object' && address ? address.port : 0;
       server.close((error) => {
         if (error) reject(error);
-        else if (excluded.has(port) || reservedPorts.has(port)) resolve(findFreePort(excluded));
+        else if (excluded.has(port) || reservedPorts.has(port) || !isSafePort(port)) resolve(findFreePort(isSafePort, excluded));
         else resolve(port);
       });
     });

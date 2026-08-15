@@ -7,6 +7,7 @@ import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
+import { isBrowserSafePort } from './lib/browser-port-policy.mjs'
 import {
   createIsolatedRuntimeConfig,
   createIsolatedServiceToken,
@@ -270,7 +271,7 @@ async function findFreePort() {
   const address = server.address()
   const freePort = typeof address === 'object' && address ? address.port : 0
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-  if (forbiddenPorts.has(freePort) || freePort < 1) return findFreePort()
+  if (forbiddenPorts.has(freePort) || !isBrowserSafePort(freePort)) return findFreePort()
   return freePort
 }
 

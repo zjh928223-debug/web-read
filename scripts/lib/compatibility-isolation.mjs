@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { isBrowserSafePort } from './browser-port-policy.mjs'
+
+export { isBrowserSafePort } from './browser-port-policy.mjs'
 
 export const RESERVED_DAILY_PORTS = new Set([5173, 8765])
 
@@ -69,5 +72,6 @@ function assertPort(value, name, originalValue) {
   const port = Number(value)
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`isolated Vite ${name} port is invalid: ${originalValue}`)
   if (RESERVED_DAILY_PORTS.has(port)) throw new Error(`isolated Vite ${name} port cannot use reserved daily port ${port}`)
+  if (!isBrowserSafePort(port)) throw new Error(`isolated Vite ${name} port is unsafe for Chromium: ${port}`)
   return port
 }

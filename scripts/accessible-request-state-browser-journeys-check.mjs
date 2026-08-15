@@ -3,6 +3,7 @@ import http from 'node:http'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const server = http.createServer(async (request, response) => {
@@ -35,11 +36,8 @@ const server = http.createServer(async (request, response) => {
   }
 })
 
-await new Promise((resolve, reject) => {
-  server.once('error', reject)
-  server.listen(0, '127.0.0.1', resolve)
-})
-const origin = `http://127.0.0.1:${server.address().port}`
+const serverPort = await listenOnBrowserSafePort(server)
+const origin = `http://127.0.0.1:${serverPort}`
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext()
 const page = await context.newPage()
@@ -135,7 +133,10 @@ try {
         if (value === 'old') state.lateCommitAccepted = accepted
         return value
       }
-      const delay = mode === 'timeout' ? 250 : 5
+      // Keep the successful fixture pending across Playwright's two click
+      // events so the guard is tested as a single-flight boundary rather than
+      // racing the response to complete between the clicks.
+      const delay = mode === 'timeout' ? 250 : mode === 'success' ? 80 : 5
       const response = await fetch(`/api/action?delay=${delay}&value=${encodeURIComponent(value)}`, { signal })
       const payload = await response.json()
       commit(() => { state.value = payload.value; state.commits += 1 })

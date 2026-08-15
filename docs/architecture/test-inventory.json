@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 107,
     "behavior": 78,
-    "browser": 22,
+    "browser": 24,
     "performance": 13,
     "release": 8
   },
-  "packageScriptCount": 218,
-  "executableScriptCount": 228,
+  "packageScriptCount": 219,
+  "executableScriptCount": 230,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -494,6 +494,19 @@
         "scripts/bridge-startup-check.cjs"
       ],
       "owner": "package.json#scripts.verify:bridge-startup"
+    },
+    {
+      "name": "verify:browser-port-policy",
+      "command": "node scripts/browser-port-policy-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/browser-port-policy-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:browser-port-policy"
     },
     {
       "name": "verify:chunk-controls-module",
@@ -3450,6 +3463,31 @@
       }
     },
     {
+      "path": "scripts/browser-port-policy-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:browser-port-policy",
+      "owners": [
+        "package.json#scripts.verify:browser-port-policy"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": true
+      }
+    },
+    {
       "path": "scripts/build-passage-preview-package.cjs",
       "category": "behavior",
       "layers": [
@@ -4574,6 +4612,30 @@
       }
     },
     {
+      "path": "scripts/lib/browser-port-policy.mjs",
+      "category": "browser",
+      "layers": [
+        "browser"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": true
+      }
+    },
+    {
       "path": "scripts/lib/compatibility-isolation.mjs",
       "category": "behavior",
       "layers": [
@@ -4594,7 +4656,7 @@
         "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
-        "startsBrowser": false
+        "startsBrowser": true
       }
     },
     {

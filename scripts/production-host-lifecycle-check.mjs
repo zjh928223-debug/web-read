@@ -7,6 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
@@ -25,14 +26,10 @@ assert.notEqual(runtimeConfig.frontend.port, 5173)
 assert.notEqual(runtimeConfig.backend.port, 8765)
 
 async function randomPort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer()
-    server.on('error', reject)
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port
-      server.close((error) => error ? reject(error) : resolve(port))
-    })
-  })
+  const server = net.createServer()
+  const port = await listenOnBrowserSafePort(server)
+  await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  return port
 }
 
 async function waitForHealth(baseUrl, instanceId, timeoutMs = 15_000) {

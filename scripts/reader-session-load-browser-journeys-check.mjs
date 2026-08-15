@@ -3,6 +3,7 @@ import http from 'node:http'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium } from 'playwright'
+import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const sessionRequests = new Map()
@@ -56,11 +57,8 @@ const server = http.createServer(async (request, response) => {
   }
 })
 
-await new Promise((resolve, reject) => {
-  server.once('error', reject)
-  server.listen(0, '127.0.0.1', resolve)
-})
-const origin = `http://127.0.0.1:${server.address().port}`
+const serverPort = await listenOnBrowserSafePort(server)
+const origin = `http://127.0.0.1:${serverPort}`
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext()
 let page = await context.newPage()

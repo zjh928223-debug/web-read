@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
+import { isBrowserSafePort } from './lib/browser-port-policy.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const mapScript = path.join(root, 'scripts', 'compatibility-consumer-map.mjs')
@@ -44,7 +45,7 @@ async function findFreePort() {
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : 0
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-  if (port === 5173 || port === 8765 || port < 1) return findFreePort()
+  if (port === 5173 || port === 8765 || !isBrowserSafePort(port)) return findFreePort()
   return port
 }
 
