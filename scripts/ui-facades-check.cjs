@@ -3,7 +3,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
+const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
+const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime-assembly.js'), 'utf8');
 const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'ui-facades.js'), 'utf8');
 
 [
@@ -21,9 +23,19 @@ assert.equal(
   false,
   'ui-facades should not delegate to the legacy __uiStore facade because it delegates back to window.showToast/window.showError'
 );
+assert.equal(
+  fs.existsSync(path.join(repoRoot, 'src', 'stores', 'ui.js')),
+  false,
+  'the UI compatibility store should be retired after Pinia became the only UI state owner'
+);
+assert.equal(
+  indexSource.includes('src/stores/ui.js'),
+  false,
+  'index.html should not load the retired UI compatibility store'
+);
 assert.ok(
-  appSource.includes("import { showToast, showError } from './ui-facades.js';"),
-  'app.js should import UI facades'
+  assemblySource.includes("import { showToast, showError } from './ui-facades.js';"),
+  'reader runtime assembly should import UI facades'
 );
 
 console.log('ui facades check passed');

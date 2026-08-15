@@ -2,8 +2,8 @@
 
 This inventory separates compatibility surfaces from browser primitives and records four kinds of evidence:
 
-- static `window.*` readers;
-- static `window.*` writers;
+- static global compatibility readers (`window.*` plus injected `globalObject`/`windowObject`/`getWindow()` aliases);
+- static global compatibility writers;
 - globals actually defined during an isolated browser startup;
 - instrumented reads/calls during that startup, plus loaded scripts and inline DOM handlers.
 
@@ -24,4 +24,4 @@ The committed snapshot is deletion evidence, not permission to remove a surface 
 The runtime capture uses a fresh random loopback port unless `READ_WEB_COMPAT_MAP_PORT` is explicitly set, refuses to reuse an occupied port, and terminates only the Vite process it started. It does not connect to workflow data or the daily 5173/8765 instance.
 Non-loopback browser requests are fulfilled with an empty diagnostic response, so generating the map does not depend on external networks.
 
-The current snapshot records 72 compatibility surfaces: 31 have static readers, 63 have static writers, and 65 are defined after startup. It records 18 loaded scripts, including four compatibility store scripts. The negative assertions explicitly require `__transcriptStore`, `__chunkStore`, `__annotationStore`, `/src/stores/transcript.js`, `/src/stores/chunk.js`, and `/src/stores/annotation.js` to remain absent. Startup exercised three callable facades. A targeted probe observed `bridgeToPinia` once and `window.__state` zero times for the probed interaction; this is useful prioritization evidence, not proof that either surface is globally unused.
+The snapshot also contains deterministic `storeConsumers` entries for every loaded `src/stores/*.js` file and `criticalSurfaces` entries for `__state` and `bridgeToPinia`. Their reader/writer locations are sorted and exclude the defining store file, so a zero-consumer deletion decision is auditable. The current snapshot records 97 compatibility surfaces: 65 have static readers, 71 have static writers, and 72 are defined after startup. It records 17 loaded scripts, including three remaining compatibility store scripts. The negative assertions explicitly require `__uiStore`, `__transcriptStore`, `__chunkStore`, `__annotationStore`, `/src/stores/ui.js`, `/src/stores/transcript.js`, `/src/stores/chunk.js`, and `/src/stores/annotation.js` to remain absent. Startup exercised three callable facades. A targeted probe observed `bridgeToPinia` once and `window.__state` zero times for the probed interaction; this is useful prioritization evidence, not proof that either surface is globally unused.

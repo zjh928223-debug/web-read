@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-next-preview.
 
 ```text
 index.html
-├── 4 个 src/stores/*.js 兼容 store
+├── 3 个 src/stores/*.js 兼容 store
 ├── 9 个 src/composables/*.js 兼容/运行模块
 ├── src/composables/reader-runtime.js
 ├── src/composables/session-init.js
@@ -48,7 +48,7 @@ index.html
 
 - `src/components/`：Vue 用户界面。
 - `src/pinia-stores/`：真实 Pinia store。
-- `src/stores/`：启动期 `window.*` 兼容 store，不是 Pinia。
+- `src/stores/`：启动期 `window.*` 兼容 store，不是 Pinia；UI toast/error 已直接由 Pinia `ui` store 与 `ui-facades` 提供。
 - `src/composables/`：Reader/Session 运行时组装与旧 DOM 行为迁移层。
 - `src/services/persistence/`：IndexedDB、Reader Session 和 latest-wins 持久化边界。
 - `src/services/runtime/`：生命周期、请求监管、错误呈现和 Object URL 资源所有权。

@@ -24,7 +24,7 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 4 src/stores/*.js module compatibility stores
+├── 3 src/stores/*.js module compatibility stores
 ├── 9 src/composables/*.js module compatibility/runtime modules
 ├── src/composables/reader-runtime.js as type="module"
 ├── src/composables/session-init.js as type="module"
@@ -58,7 +58,7 @@ src/composables/session-init.js thin session entry
 There is also a compatibility layer:
 
 ```text
-src/stores/*.js -> window.__themeStore / __audioStore / __uiStore / ...
+src/stores/*.js -> remaining window.__themeStore / __audioStore / __marksStore surfaces
 src/main.js     -> replaces selected window store methods with Pinia delegation
 ```
 
@@ -143,7 +143,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/session-init.js` - thin session entry only. Do not add feature logic here.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 8 real Pinia stores.
-- `src/stores/` - 4 window compatibility stores.
+- `src/stores/` - 3 window compatibility stores.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
 - Former root annotation/chunk-note artifacts were deleted after the module migration; see `docs/architecture/legacy-deletion-inventory.json` and `npm run verify:legacy-deletion` for the evidence gate.
 - `styles.css` - global CSS loaded directly by `index.html`.
@@ -254,6 +254,7 @@ npm run verify:chunk-interactions  # Focused AI chunk interaction check
 npm run verify:render-facades  # Focused legacy render facade removal check
 npm run verify:script-order  # Focused index.html script order guard
 npm run verify:annotation-bubble  # Focused annotation bubble module check
+npm run verify:ui-compatibility-store  # Focused UI Pinia owner and retired compatibility store behavior check
 npm run verify:legacy-deletion  # Focused root artifact/legacy flag deletion gate
 npm run verify:legacy-root-copy  # Focused legacy root copy removal check
 npm run verify:production-preview  # Production preview load check against dist

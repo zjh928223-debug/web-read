@@ -8,33 +8,248 @@
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 72,
-    "staticReaders": 31,
-    "staticWriters": 63,
-    "runtimeDefined": 65,
+    "compatibilitySurfaces": 97,
+    "staticReaders": 65,
+    "staticWriters": 71,
+    "runtimeDefined": 72,
     "runtimeCalled": 3,
     "inlineHandlers": 0,
-    "loadedScripts": 18
+    "loadedScripts": 17
   },
   "negativeAssertions": {
     "retiredCompatibilityGlobalsAbsent": [
+      "__uiStore",
       "__transcriptStore",
       "__chunkStore",
       "__annotationStore"
     ],
     "retiredCompatibilityScriptsAbsent": [
+      "/src/stores/ui.js",
       "/src/stores/transcript.js",
       "/src/stores/chunk.js",
       "/src/stores/annotation.js"
     ]
   },
+  "storeConsumers": [
+    {
+      "file": "src/stores/audio.js",
+      "loaded": true,
+      "globalSurfaces": [
+        "__audioStore"
+      ],
+      "readers": [
+        {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 17
+        },
+        {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 20
+        },
+        {
+          "file": "src/main.js",
+          "line": 67
+        },
+        {
+          "file": "src/main.js",
+          "line": 68
+        }
+      ],
+      "writers": []
+    },
+    {
+      "file": "src/stores/marks.js",
+      "loaded": true,
+      "globalSurfaces": [
+        "__marksStore"
+      ],
+      "readers": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2674
+        },
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 108
+        },
+        {
+          "file": "src/main.js",
+          "line": 78
+        },
+        {
+          "file": "src/main.js",
+          "line": 79
+        }
+      ],
+      "writers": []
+    },
+    {
+      "file": "src/stores/theme.js",
+      "loaded": true,
+      "globalSurfaces": [
+        "__themeStore"
+      ],
+      "readers": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 72
+        },
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 109
+        },
+        {
+          "file": "src/main.js",
+          "line": 54
+        },
+        {
+          "file": "src/main.js",
+          "line": 55
+        }
+      ],
+      "writers": []
+    }
+  ],
+  "criticalSurfaces": {
+    "__state": {
+      "readers": [
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 88
+        },
+        {
+          "file": "src/components/TranscriptContainer.vue",
+          "line": 77
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1321
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1321
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1324
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1881
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2524
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2524
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2646
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2666
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2685
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 3169
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 35
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 35
+        },
+        {
+          "file": "src/composables/chunk-controls-module.js",
+          "line": 35
+        },
+        {
+          "file": "src/composables/youtube-workflow-loader.js",
+          "line": 242
+        }
+      ],
+      "writers": [
+        {
+          "file": "src/composables/runtime-state-facade.js",
+          "line": 7
+        }
+      ]
+    },
+    "bridgeToPinia": {
+      "readers": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 1332
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2691
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2691
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 48
+        }
+      ],
+      "writers": [
+        {
+          "file": "src/composables/pinia-bridge-module.js",
+          "line": 34
+        }
+      ]
+    }
+  },
   "surfaces": [
+    {
+      "name": "__annotationBackfillAiController",
+      "reads": [
+        {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 35
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/composables/annotation-backfill-ai-module.js",
+          "line": 1536
+        }
+      ],
+      "runtime": {
+        "name": "__annotationBackfillAiController",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
     {
       "name": "__annotationLightweightModule",
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1346
+        },
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 137
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 52
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
@@ -58,7 +273,12 @@
     },
     {
       "name": "__appHandlers",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 138
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/app-handlers.js",
@@ -78,16 +298,24 @@
       "name": "__audioStore",
       "reads": [
         {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 17
+        },
+        {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 20
+        },
+        {
+          "file": "src/main.js",
+          "line": 67
+        },
+        {
+          "file": "src/main.js",
+          "line": 68
+        },
+        {
           "file": "src/stores/audio.js",
           "line": 112
-        },
-        {
-          "file": "src/main.js",
-          "line": 77
-        },
-        {
-          "file": "src/main.js",
-          "line": 78
         }
       ],
       "writes": [
@@ -109,16 +337,20 @@
       "name": "__chunkState",
       "reads": [
         {
-          "file": "src/main.js",
-          "line": 106
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 12
         },
         {
           "file": "src/main.js",
-          "line": 106
+          "line": 96
         },
         {
           "file": "src/main.js",
-          "line": 107
+          "line": 96
+        },
+        {
+          "file": "src/main.js",
+          "line": 97
         }
       ],
       "writes": [
@@ -140,16 +372,20 @@
       "name": "__clozeState",
       "reads": [
         {
-          "file": "src/main.js",
-          "line": 109
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 13
         },
         {
           "file": "src/main.js",
-          "line": 109
+          "line": 99
         },
         {
           "file": "src/main.js",
-          "line": 110
+          "line": 99
+        },
+        {
+          "file": "src/main.js",
+          "line": 100
         }
       ],
       "writes": [
@@ -169,7 +405,12 @@
     },
     {
       "name": "__controlsModule",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 139
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/controls-module.js",
@@ -205,7 +446,12 @@
     },
     {
       "name": "__importModule",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 29
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/import-module.js",
@@ -223,7 +469,12 @@
     },
     {
       "name": "__keyboardModule",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 107
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/keyboard-module.js",
@@ -265,12 +516,16 @@
           "line": 2674
         },
         {
-          "file": "src/main.js",
-          "line": 88
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 108
         },
         {
           "file": "src/main.js",
-          "line": 89
+          "line": 78
+        },
+        {
+          "file": "src/main.js",
+          "line": 79
         }
       ],
       "writes": [
@@ -402,6 +657,18 @@
         {
           "file": "src/composables/playback-runtime-helpers.js",
           "line": 6
+        },
+        {
+          "file": "src/composables/reader-app-runtime.js",
+          "line": 23
+        },
+        {
+          "file": "src/composables/reader-app-runtime.js",
+          "line": 23
+        },
+        {
+          "file": "src/composables/reader-app-runtime.js",
+          "line": 24
         }
       ],
       "writes": [
@@ -463,10 +730,6 @@
           "line": 17
         },
         {
-          "file": "src/composables/ui-facades.js",
-          "line": 2
-        },
-        {
           "file": "src/composables/transcript-state.js",
           "line": 27
         },
@@ -477,12 +740,20 @@
         {
           "file": "src/composables/transcript-state.js",
           "line": 28
+        },
+        {
+          "file": "src/composables/ui-facades.js",
+          "line": 2
+        },
+        {
+          "file": "src/composables/vocabulary-preview-module.js",
+          "line": 179
         }
       ],
       "writes": [
         {
           "file": "src/main.js",
-          "line": 96
+          "line": 86
         }
       ],
       "runtime": {
@@ -496,7 +767,12 @@
     },
     {
       "name": "__playbackModule",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 99
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/playback-module.js",
@@ -514,7 +790,12 @@
     },
     {
       "name": "__playbackState",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 14
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/playback-state.js",
@@ -528,6 +809,28 @@
         "reads": 1,
         "calls": 0,
         "assigned": true
+      }
+    },
+    {
+      "name": "__READ_WEB_FEATURE_FLAGS__",
+      "reads": [
+        {
+          "file": "src/services/vocabulary/srs-review-service-v2.js",
+          "line": 131
+        },
+        {
+          "file": "src/services/vocabulary/vocabulary-service.js",
+          "line": 508
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "__READ_WEB_FEATURE_FLAGS__",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
       }
     },
     {
@@ -551,6 +854,14 @@
     {
       "name": "__state",
       "reads": [
+        {
+          "file": "src/components/ChunkModeView.vue",
+          "line": 88
+        },
+        {
+          "file": "src/components/TranscriptContainer.vue",
+          "line": 77
+        },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1321
@@ -592,14 +903,6 @@
           "line": 3169
         },
         {
-          "file": "src/components/ChunkModeView.vue",
-          "line": 88
-        },
-        {
-          "file": "src/components/TranscriptContainer.vue",
-          "line": 77
-        },
-        {
           "file": "src/composables/chunk-controls-module.js",
           "line": 35
         },
@@ -633,7 +936,12 @@
     },
     {
       "name": "__styleEditor",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 71
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/style-editor.js",
@@ -652,6 +960,14 @@
     {
       "name": "__themeStore",
       "reads": [
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 72
+        },
+        {
+          "file": "src/composables/reader-feature-runtime-deps.js",
+          "line": 109
+        },
         {
           "file": "src/main.js",
           "line": 54
@@ -680,16 +996,20 @@
       "name": "__transcriptState",
       "reads": [
         {
-          "file": "src/main.js",
-          "line": 103
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 11
         },
         {
           "file": "src/main.js",
-          "line": 103
+          "line": 93
         },
         {
           "file": "src/main.js",
-          "line": 104
+          "line": 93
+        },
+        {
+          "file": "src/main.js",
+          "line": 94
         }
       ],
       "writes": [
@@ -708,28 +1028,24 @@
       }
     },
     {
-      "name": "__uiStore",
+      "name": "__vocabularyPreviewController",
       "reads": [
         {
-          "file": "src/main.js",
-          "line": 67
-        },
-        {
-          "file": "src/main.js",
-          "line": 68
+          "file": "src/composables/reader-bootstrap-runtime.js",
+          "line": 39
         }
       ],
       "writes": [
         {
-          "file": "src/stores/ui.js",
-          "line": 14
+          "file": "src/composables/vocabulary-preview-module.js",
+          "line": 1463
         }
       ],
       "runtime": {
-        "name": "__uiStore",
+        "name": "__vocabularyPreviewController",
         "defined": true,
         "type": "object",
-        "reads": 1,
+        "reads": 0,
         "calls": 0,
         "assigned": true
       }
@@ -745,6 +1061,50 @@
       "writes": [],
       "runtime": {
         "name": "__xxxStore",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "_ns",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 17
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "_ns",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "ANNOTATION_DEBUG",
+      "reads": [
+        {
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 47
+        },
+        {
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 51
+        },
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 79
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "ANNOTATION_DEBUG",
         "defined": false,
         "type": "undefined",
         "reads": 0,
@@ -776,7 +1136,12 @@
     },
     {
       "name": "AnnotationClickResolver",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 103
+        }
+      ],
       "writes": [
         {
           "file": "src/services/annotation/click-resolver.js",
@@ -793,8 +1158,35 @@
       }
     },
     {
-      "name": "AnnotationGeneratedResultStore",
+      "name": "AnnotationContextExport",
       "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-annotation-lightweight-io.js",
+          "line": 76
+        }
+      ],
+      "runtime": {
+        "name": "AnnotationContextExport",
+        "defined": true,
+        "type": "object",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "AnnotationGeneratedResultStore",
+      "reads": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 99
+        },
+        {
+          "file": "src/composables/vocabulary-preview-module.js",
+          "line": 170
+        }
+      ],
       "writes": [
         {
           "file": "src/services/annotation/result-store.js",
@@ -874,6 +1266,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1320
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 43
         }
       ],
       "writes": [
@@ -892,23 +1288,59 @@
       }
     },
     {
-      "name": "aspectRatio",
+      "name": "Audio",
       "reads": [
         {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 138
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 152
+          "file": "src/services/pronunciation/aria-american-pronunciation.js",
+          "line": 142
         }
       ],
       "writes": [],
       "runtime": {
-        "name": "aspectRatio",
+        "name": "Audio",
         "defined": false,
         "type": "undefined",
         "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "audioPlayer",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 22
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "audioPlayer",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "Blob",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 20
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 20
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "Blob",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
         "calls": 0,
         "assigned": false
       }
@@ -927,6 +1359,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 2691
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 48
         }
       ],
       "writes": [
@@ -946,7 +1382,12 @@
     },
     {
       "name": "buildCurrentSentenceDocId",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 44
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/reader-public-facades.js",
@@ -960,6 +1401,24 @@
         "reads": 1,
         "calls": 0,
         "assigned": true
+      }
+    },
+    {
+      "name": "cancelAnimationFrame",
+      "reads": [
+        {
+          "file": "src/services/runtime/lifecycle-scope.js",
+          "line": 14
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "cancelAnimationFrame",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
       }
     },
     {
@@ -1022,6 +1481,42 @@
       }
     },
     {
+      "name": "clearGeneratedAnnotationIndex",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 108
+        }
+      ],
+      "runtime": {
+        "name": "clearGeneratedAnnotationIndex",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "clearPersistedChunkSession",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 109
+        }
+      ],
+      "runtime": {
+        "name": "clearPersistedChunkSession",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
       "name": "closeChunkStyleModal",
       "reads": [],
       "writes": [
@@ -1037,6 +1532,28 @@
         "reads": 0,
         "calls": 0,
         "assigned": true
+      }
+    },
+    {
+      "name": "CustomEvent",
+      "reads": [
+        {
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 77
+        },
+        {
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 78
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "CustomEvent",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
       }
     },
     {
@@ -1110,7 +1627,12 @@
     },
     {
       "name": "deleteFromDB",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 40
+        }
+      ],
       "writes": [
         {
           "file": "src/stores/audio.js",
@@ -1127,16 +1649,20 @@
       }
     },
     {
-      "name": "focus",
+      "name": "dispatchEvent",
       "reads": [
         {
-          "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 602
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 76
+        },
+        {
+          "file": "src/composables/session-annotation-generated-index.js",
+          "line": 82
         }
       ],
       "writes": [],
       "runtime": {
-        "name": "focus",
+        "name": "dispatchEvent",
         "defined": false,
         "type": "undefined",
         "reads": 0,
@@ -1145,8 +1671,31 @@
       }
     },
     {
-      "name": "forceUpdateUI",
+      "name": "emitAnnotationDiagnostics",
       "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 110
+        }
+      ],
+      "runtime": {
+        "name": "emitAnnotationDiagnostics",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "forceUpdateUI",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 49
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/playback-module.js",
@@ -1158,6 +1707,24 @@
         "defined": true,
         "type": "function",
         "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "getAnnotationGenerationScope",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 107
+        }
+      ],
+      "runtime": {
+        "name": "getAnnotationGenerationScope",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
         "calls": 0,
         "assigned": true
       }
@@ -1235,6 +1802,132 @@
       }
     },
     {
+      "name": "highlightColorInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 34
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "highlightColorInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyAnnotationBubbleInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 29
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyAnnotationBubbleInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyBackwardInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 32
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyBackwardInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyChunkCnInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 30
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyChunkCnInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyChunkShadowInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 31
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyChunkShadowInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyForwardInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 33
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyForwardInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "hotkeyInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 28
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "hotkeyInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
       "name": "IdentityStorageKeys",
       "reads": [],
       "writes": [
@@ -1272,7 +1965,12 @@
     },
     {
       "name": "initDB",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 41
+        }
+      ],
       "writes": [
         {
           "file": "src/stores/audio.js",
@@ -1307,8 +2005,67 @@
       }
     },
     {
+      "name": "lblAudio",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 24
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "lblAudio",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "lblTranscript",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 25
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "lblTranscript",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "lblVisual",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 26
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "lblVisual",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
       "name": "loadFromDB",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 39
+        }
+      ],
       "writes": [
         {
           "file": "src/stores/audio.js",
@@ -1352,47 +2109,19 @@
       }
     },
     {
-      "name": "minimized",
+      "name": "markFileLoaded",
       "reads": [
         {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 6
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 17
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 18
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 25
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 32
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 139
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 173
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 218
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 42
         }
       ],
       "writes": [],
       "runtime": {
-        "name": "minimized",
+        "name": "markFileLoaded",
         "defined": false,
         "type": "undefined",
-        "reads": 0,
+        "reads": 1,
         "calls": 0,
         "assigned": false
       }
@@ -1461,6 +2190,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1340
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 46
         }
       ],
       "writes": [
@@ -1488,6 +2221,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 1339
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 47
         }
       ],
       "writes": [
@@ -1507,7 +2244,12 @@
     },
     {
       "name": "processVisual",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 45
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/visual-vocab-module.js",
@@ -1524,6 +2266,28 @@
       }
     },
     {
+      "name": "prompt",
+      "reads": [
+        {
+          "file": "src/composables/vocabulary-preview-module.js",
+          "line": 1263
+        },
+        {
+          "file": "src/composables/vocabulary-preview-module.js",
+          "line": 1264
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "prompt",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
       "name": "saveToDB",
       "reads": [
         {
@@ -1533,6 +2297,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 2697
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 38
         }
       ],
       "writes": [
@@ -1551,17 +2319,62 @@
       }
     },
     {
-      "name": "showError",
-      "reads": [
+      "name": "scheduleGeneratedAnnotationIndexRefresh",
+      "reads": [],
+      "writes": [
         {
-          "file": "src/stores/ui.js",
-          "line": 9
-        },
-        {
-          "file": "src/stores/ui.js",
-          "line": 10
+          "file": "src/composables/session-facades.js",
+          "line": 111
         }
       ],
+      "runtime": {
+        "name": "scheduleGeneratedAnnotationIndexRefresh",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "sentenceColorInput",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 35
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "sentenceColorInput",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "sessionStorage",
+      "reads": [
+        {
+          "file": "src/features/passage-preview/passage-preview-session-cache.js",
+          "line": 67
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "sessionStorage",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "showError",
+      "reads": [],
       "writes": [
         {
           "file": "src/components/ToastMessage.vue",
@@ -1570,10 +2383,6 @@
         {
           "file": "src/composables/ui-facades.js",
           "line": 23
-        },
-        {
-          "file": "src/main.js",
-          "line": 73
         }
       ],
       "runtime": {
@@ -1609,20 +2418,8 @@
           "line": 139
         },
         {
-          "file": "src/stores/ui.js",
-          "line": 3
-        },
-        {
-          "file": "src/stores/ui.js",
-          "line": 4
-        },
-        {
-          "file": "src/main.js",
-          "line": 66
-        },
-        {
-          "file": "src/main.js",
-          "line": 71
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 50
         }
       ],
       "writes": [
@@ -1633,10 +2430,6 @@
         {
           "file": "src/composables/ui-facades.js",
           "line": 22
-        },
-        {
-          "file": "src/main.js",
-          "line": 72
         }
       ],
       "runtime": {
@@ -1660,7 +2453,12 @@
           "line": 2698
         }
       ],
-      "writes": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 112
+        }
+      ],
       "runtime": {
         "name": "syncAnnotationGenerationEntryStatus",
         "defined": true,
@@ -1708,7 +2506,12 @@
     },
     {
       "name": "toggleChunkMode",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-startup-runtime.js",
+          "line": 67
+        }
+      ],
       "writes": [
         {
           "file": "src/composables/chunk-controls-module.js",
@@ -1743,6 +2546,24 @@
       }
     },
     {
+      "name": "transcriptContainer",
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 23
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "transcriptContainer",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
       "name": "updateChunkCnHoldBtn",
       "reads": [
         {
@@ -1752,6 +2573,10 @@
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 3187
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 51
         }
       ],
       "writes": [
@@ -1804,80 +2629,6 @@
         "calls": 0,
         "assigned": true
       }
-    },
-    {
-      "name": "width",
-      "reads": [
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 137
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 151
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 255
-        }
-      ],
-      "writes": [],
-      "runtime": {
-        "name": "width",
-        "defined": false,
-        "type": "undefined",
-        "reads": 0,
-        "calls": 0,
-        "assigned": false
-      }
-    },
-    {
-      "name": "x",
-      "reads": [
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 159
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 228
-        }
-      ],
-      "writes": [],
-      "runtime": {
-        "name": "x",
-        "defined": false,
-        "type": "undefined",
-        "reads": 0,
-        "calls": 0,
-        "assigned": false
-      }
-    },
-    {
-      "name": "y",
-      "reads": [
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 142
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 160
-        },
-        {
-          "file": "src/components/VideoPlayerFloat.vue",
-          "line": 229
-        }
-      ],
-      "writes": [],
-      "runtime": {
-        "name": "y",
-        "defined": false,
-        "type": "undefined",
-        "reads": 0,
-        "calls": 0,
-        "assigned": false
-      }
     }
   ],
   "runtimeProbes": {
@@ -1901,11 +2652,6 @@
     },
     {
       "src": "/src/stores/theme.js",
-      "type": "module",
-      "inline": false
-    },
-    {
-      "src": "/src/stores/ui.js",
       "type": "module",
       "inline": false
     },

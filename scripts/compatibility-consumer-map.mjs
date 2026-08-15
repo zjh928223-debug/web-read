@@ -28,11 +28,13 @@ if (!isWithin(path.resolve(root, 'output', 'architecture'), runtimeOutputPath)) 
 }
 
 const retiredCompatibilityGlobals = [
+  '__uiStore',
   '__transcriptStore',
   '__chunkStore',
   '__annotationStore'
 ]
 const retiredCompatibilityScripts = [
+  '/src/stores/ui.js',
   '/src/stores/transcript.js',
   '/src/stores/chunk.js',
   '/src/stores/annotation.js'
@@ -40,22 +42,30 @@ const retiredCompatibilityScripts = [
 
 const sourceFiles = walk(path.join(root, 'src'))
   .filter((file) => /\.(?:js|vue)$/.test(file))
+  .sort((left, right) => left.localeCompare(right))
   .concat(path.join(root, 'index.html'))
 const staticMap = new Map()
+const globalAccessPatterns = [
+  /(?<![\w$.])window\.((?:__)?[A-Za-z_$][\w$]*)/g,
+  /(?<![\w$.])(?:globalThis|globalObject|windowObject)\.((?:__)?[A-Za-z_$][\w$]*)/g,
+  /(?<![\w$.])getWindow\(\)\.((?:__)?[A-Za-z_$][\w$]*)/g
+]
 
 for (const file of sourceFiles) {
   const source = fs.readFileSync(file, 'utf8')
   const relative = path.relative(root, file).replaceAll('\\', '/')
   const lines = source.split(/\r?\n/)
   lines.forEach((line, index) => {
-    for (const match of line.matchAll(/\bwindow\.((?:__)?[A-Za-z_$][\w$]*)/g)) {
-      const name = match[1]
-      if (isBrowserPrimitive(name)) continue
-      const after = line.slice(match.index + match[0].length)
-      const kind = /^\s*=/.test(after) && !/^\s*===?/.test(after) ? 'write' : 'read'
-      const entry = staticMap.get(name) || { name, reads: [], writes: [] }
-      entry[kind === 'write' ? 'writes' : 'reads'].push({ file: relative, line: index + 1 })
-      staticMap.set(name, entry)
+    for (const pattern of globalAccessPatterns) {
+      for (const match of line.matchAll(pattern)) {
+        const name = match[1]
+        if (isBrowserPrimitive(name)) continue
+        const after = line.slice(match.index + match[0].length)
+        const kind = /^\s*=/.test(after) && !/^\s*===?/.test(after) ? 'write' : 'read'
+        const entry = staticMap.get(name) || { name, reads: [], writes: [] }
+        entry[kind === 'write' ? 'writes' : 'reads'].push({ file: relative, line: index + 1 })
+        staticMap.set(name, entry)
+      }
     }
   })
 }
@@ -172,8 +182,12 @@ try {
       retiredCompatibilityGlobalsAbsent: retiredCompatibilityGlobals,
       retiredCompatibilityScriptsAbsent: retiredCompatibilityScripts
     },
+    storeConsumers: buildStoreConsumers(staticMap, runtime.scripts),
+    criticalSurfaces: buildCriticalSurfaces(staticMap),
     surfaces: [...staticMap.values()].sort((a, b) => a.name.localeCompare(b.name)).map((entry) => ({
       ...entry,
+      reads: sortLocations(entry.reads),
+      writes: sortLocations(entry.writes),
       runtime: {
         ...globalsByName.get(entry.name),
         ...runtime.counters[entry.name]
@@ -258,6 +272,56 @@ function canonicalizeRuntime(runtime) {
   }
 }
 
+function buildStoreConsumers(map, scripts) {
+  const storesDirectory = path.join(root, 'src', 'stores')
+  if (!fs.existsSync(storesDirectory)) return []
+  return walk(storesDirectory)
+    .filter((file) => /\.js$/.test(file))
+    .sort((left, right) => left.localeCompare(right))
+    .map((file) => {
+      const relative = path.relative(root, file).replaceAll('\\', '/')
+      const source = fs.readFileSync(file, 'utf8')
+      const surfaces = [...source.matchAll(/\bwindow\.((?:__)?[A-Za-z_$][\w$]*)\s*=/g)]
+        .map((match) => match[1])
+        .filter((name) => name.startsWith('__'))
+        .sort()
+      const globalSurfaces = [...new Set(surfaces)]
+      const consumers = globalSurfaces.reduce((result, name) => {
+        const entry = map.get(name)
+        if (!entry) return result
+        result.readers.push(...entry.reads.filter((location) => location.file !== relative))
+        result.writers.push(...entry.writes.filter((location) => location.file !== relative))
+        return result
+      }, { readers: [], writers: [] })
+      return {
+        file: relative,
+        loaded: scripts.some((script) => script.src === `/${relative}`),
+        globalSurfaces,
+        readers: uniqueSortedLocations(consumers.readers),
+        writers: uniqueSortedLocations(consumers.writers)
+      }
+    })
+}
+
+function buildCriticalSurfaces(map) {
+  return Object.fromEntries(['__state', 'bridgeToPinia'].map((name) => {
+    const entry = map.get(name) || { reads: [], writes: [] }
+    return [name, {
+      readers: sortLocations(entry.reads),
+      writers: sortLocations(entry.writes)
+    }]
+  }))
+}
+
+function uniqueSortedLocations(locations) {
+  const unique = new Map(locations.map((location) => [`${location.file}:${location.line}`, location]))
+  return sortLocations([...unique.values()])
+}
+
+function sortLocations(locations) {
+  return [...locations].sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line)
+}
+
 function assertRetiredCompatibilityAbsent(report) {
   const presentGlobals = new Set(report.surfaces.map((surface) => surface.name))
   const presentScripts = new Set(report.scripts.map((script) => script.src))
@@ -270,9 +334,11 @@ function assertRetiredCompatibilityAbsent(report) {
 
 function isBrowserPrimitive(name) {
   return new Set([
-    'addEventListener', 'alert', 'clearTimeout', 'confirm', 'history', 'innerHeight', 'innerWidth',
-    'localStorage', 'location', 'removeEventListener', 'requestAnimationFrame', 'setTimeout',
-    'speechSynthesis', 'SpeechSynthesisUtterance'
+    'addEventListener', 'alert', 'clearInterval', 'clearTimeout', 'confirm', 'crypto', 'document',
+    'fetch', 'focus', 'getSelection', 'history', 'indexedDB', 'innerHeight', 'innerWidth', 'localStorage',
+    'location', 'matchMedia', 'navigator', 'open', 'parent', 'performance', 'removeEventListener',
+    'requestAnimationFrame', 'setInterval', 'setTimeout', 'speechSynthesis',
+    'self', 'SpeechSynthesisUtterance', 'top', 'URL', 'window'
   ]).has(name)
 }
 

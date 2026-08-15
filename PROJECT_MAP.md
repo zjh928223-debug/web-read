@@ -8,7 +8,7 @@ Last verified: 2026-08-12
 
 ```text
 index.html
-├── src/stores/{theme,ui,audio,marks}.js
+├── src/stores/{theme,audio,marks}.js
 ├── src/composables/glass-effects.js
 ├── src/composables/app-handlers.js
 ├── src/composables/style-editor.js
@@ -94,6 +94,7 @@ docs/NEXT_WORKSPACE.md
 ## Verification ownership
 
 - `scripts/*-check.*`：focused behavior/architecture contracts。
+- `scripts/ui-compatibility-store-check.cjs`：UI Pinia owner 与 retired `__uiStore` 浏览器行为门禁。
 - `scripts/verify-fast.mjs`：快速行为门禁。
 - `scripts/verify-full.mjs`：隔离浏览器、build 和后端总门禁。
 - `scripts/perf/`：性能与本地 HTTP 基准。

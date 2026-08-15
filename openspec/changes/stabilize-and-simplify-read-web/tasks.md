@@ -97,6 +97,7 @@
 - [x] 10.3 按 import/controls/interaction/keyboard/app 行为域拆解超宽 reader feature 参数袋
 - [x] 10.4 将 session DOM/global 依赖收集器折叠或拆成小而有行为的 adapters
 - [ ] 10.5 逐状态域移除 compatibility store/bridge/global owner，每次执行行为和 production startup gate
+  - 本轮仅完成 UI compatibility store：`src/stores/ui.js`、`index.html` 加载项和 `main.js` 的 `__uiStore` bridge 已删除；`theme`、`audio`、`marks` stores 与 `__state`/`bridgeToPinia` 仍有生产调用者，任务保持未完成。
 - [x] 10.6 删除无调用者 root annotation/chunk-note artifacts、legacy flags 和重复实现
 - [ ] 10.7 将 source-shape guards 重命名为 architecture 层，并为已迁移 Interface 增加行为测试
 

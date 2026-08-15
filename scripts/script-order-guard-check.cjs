@@ -10,7 +10,6 @@ const scriptSrcs = Array.from(indexSource.matchAll(/<script\b[^>]*\bsrc="([^"]+)
 const expectedScriptSrcs = [
   'https://cse.google.com/cse.js?cx=048d09e2e2f764b7b',
   'src/stores/theme.js',
-  'src/stores/ui.js',
   'src/stores/audio.js',
   'src/stores/marks.js',
   'src/composables/glass-effects.js',

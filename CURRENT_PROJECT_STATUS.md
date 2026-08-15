@@ -23,7 +23,7 @@ Read-Web 是本地英语学习应用，前端为 Vite + Vue 3 + Pinia，材料�
 
 ```text
 index.html
-├── 4 个 src/stores 兼容 store
+├── 3 个 src/stores 兼容 store
 ├── glass/app/style/import/keyboard/media/playback/controls/legacy bindings
 ├── src/composables/reader-runtime.js
 ├── src/composables/session-init.js
@@ -38,7 +38,7 @@ index.html
 ## 3. 状态与数据所有权
 
 - `src/pinia-stores/` 是真实 Pinia 状态所有者。
-- `src/stores/` 是预 Pinia 启动兼容层，仅为仍未迁移的 `window.*` 调用者服务。
+- `src/stores/` 是预 Pinia 启动兼容层，仅为仍未迁移的 `window.*` 调用者服务；UI toast/error 已直接由 Pinia `ui` store 与 `ui-facades` 提供，不再加载 UI compatibility store。
 - `runtime-state-facade.js`、state adapter 和 `pinia-bridge-module.js` 是待收敛的兼容边界。
 - `ApplicationPersistence` 统一打开 `SeekPlayerDB` v1/files，并以 transaction complete 作为成功条件。
 - YouTube Reader Session 已具备 generation/abort/latest-wins 与 committed manifest/revision/contentId 校验；损坏的 committed session fail-closed。
@@ -85,6 +85,7 @@ Vite 仍承载 9 组本地能力插件。正式单一 Local App Host 已有原�
 - `npm run verify:fast`：固定工具链与关键纯行为检查。
 - `node scripts/verify-full.mjs`：fast、build、隔离 dev journeys、production preview、完整 Python suite。
 - focused `verify:*`：模块迁移与架构边界检查。
+- `verify:ui-compatibility-store`：UI Pinia 唯一 owner、retired `__uiStore` 缺失与可见 toast/error 行为检查。
 - `openspec validate stabilize-and-simplify-read-web --strict`：规格结构校验。
 
 `npm test` 目前仍等价于旧 `verify:vite` 入口，不能被理解为全部测试。发布必须使用 `verify:full`，最终迁移还需要尚未完成的 `verify:release`、备份/恢复和差分门禁。
