@@ -45,7 +45,7 @@ async function findFreePort() {
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : 0
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-  if (port === 5173 || port === 8765 || !isBrowserSafePort(port)) return findFreePort()
+  if (!isBrowserSafePort(port)) return findFreePort()
   return port
 }
 

@@ -18,11 +18,10 @@ import { shouldContinueStaticRequest } from './lib/compatibility-network-policy.
 
 const require = createRequire(import.meta.url)
 const root = path.resolve(import.meta.dirname, '..')
-const forbiddenPorts = new Set([5173, 8765])
 rejectExplicitReadWebUrl(process.env)
 const configuredPort = process.env.READ_WEB_COMPAT_MAP_PORT
 const port = configuredPort ? Number(configuredPort) : await findFreePort()
-if (!Number.isInteger(port) || port < 1 || port > 65535 || forbiddenPorts.has(port)) {
+if (!isBrowserSafePort(port)) {
   throw new Error(`invalid compatibility map port: ${configuredPort || port}`)
 }
 const targetUrl = `http://127.0.0.1:${port}/`
@@ -271,7 +270,7 @@ async function findFreePort() {
   const address = server.address()
   const freePort = typeof address === 'object' && address ? address.port : 0
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
-  if (forbiddenPorts.has(freePort) || !isBrowserSafePort(freePort)) return findFreePort()
+  if (!isBrowserSafePort(freePort)) return findFreePort()
   return freePort
 }
 

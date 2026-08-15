@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
     "architecture": 108,
-    "behavior": 78,
-    "browser": 24,
+    "behavior": 79,
+    "browser": 25,
     "performance": 13,
     "release": 8
   },
   "packageScriptCount": 219,
-  "executableScriptCount": 231,
+  "executableScriptCount": 233,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -599,13 +599,14 @@
     },
     {
       "name": "verify:compatibility-isolation",
-      "command": "node scripts/compatibility-isolation-boundary-check.mjs",
+      "command": "node scripts/compatibility-consumer-map-port-check.mjs && node scripts/compatibility-isolation-boundary-check.mjs",
       "category": "architecture",
       "layers": [
-        "architecture",
-        "behavior"
+        "behavior",
+        "architecture"
       ],
       "invokes": [
+        "scripts/compatibility-consumer-map-port-check.mjs",
         "scripts/compatibility-isolation-boundary-check.mjs"
       ],
       "owner": "package.json#scripts.verify:compatibility-isolation"
@@ -3674,6 +3675,30 @@
       }
     },
     {
+      "path": "scripts/compatibility-consumer-map-port-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:compatibility-isolation",
+      "owners": [
+        "package.json#scripts.verify:compatibility-isolation"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/compatibility-consumer-map.mjs",
       "category": "browser",
       "layers": [
@@ -4638,7 +4663,7 @@
       }
     },
     {
-      "path": "scripts/lib/browser-port-policy.mjs",
+      "path": "scripts/lib/browser-port-policy.cjs",
       "category": "browser",
       "layers": [
         "browser"
@@ -4659,6 +4684,30 @@
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/lib/browser-port-policy.mjs",
+      "category": "browser",
+      "layers": [
+        "browser"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
       }
     },
     {

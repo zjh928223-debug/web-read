@@ -6,9 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { chromium } = require('playwright');
+const { isBrowserSafePort, RESERVED_DAILY_PORTS } = require('./lib/browser-port-policy.cjs');
 
 const host = '127.0.0.1';
-const reservedPorts = new Set([5173, 8765]);
 
 function normalizeTargetUrl(value) {
   const url = new URL(value);
@@ -16,7 +16,8 @@ function normalizeTargetUrl(value) {
   assert.equal(url.hostname, host, `UI compatibility check requires ${host}`);
   const port = Number(url.port || 80);
   assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, 'UI compatibility check requires an explicit valid port');
-  assert.equal(reservedPorts.has(port), false, `UI compatibility check refuses reserved daily port ${port}`);
+  assert.equal(RESERVED_DAILY_PORTS.has(port), false, `UI compatibility check refuses reserved daily port ${port}`);
+  assert.equal(isBrowserSafePort(port), true, `UI compatibility check refuses Chromium-unsafe port ${port}`);
   url.pathname = '/';
   url.search = '';
   url.hash = '';
@@ -28,7 +29,6 @@ async function main() {
     createIsolatedRuntimeConfig,
     createIsolatedServiceToken,
     createIsolatedViteEnvironment,
-    isBrowserSafePort,
     rejectExplicitReadWebUrl,
   } = await import('./lib/compatibility-isolation.mjs');
   const { shouldContinueStaticRequest } = await import('./lib/compatibility-network-policy.mjs');
@@ -40,11 +40,11 @@ async function main() {
   const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), `read-web-ui-compat-${process.pid}-`));
   const dataRoot = path.join(isolationRoot, 'data');
   const runtimeConfigPath = path.join(isolationRoot, 'runtime.json');
-  const port = await findFreePort(isBrowserSafePort);
+  const port = await findFreePort();
   const targetUrl = normalizeTargetUrl(`http://${host}:${port}/`);
   const targetOrigin = new URL(targetUrl).origin;
   const targetPort = Number(new URL(targetUrl).port);
-  const backendPort = await findFreePort(isBrowserSafePort, new Set([targetPort]));
+  const backendPort = await findFreePort(new Set([targetPort]));
   const serviceToken = createIsolatedServiceToken('ui-compatibility');
   fs.mkdirSync(dataRoot, { recursive: true });
   fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(createIsolatedRuntimeConfig({
@@ -127,7 +127,7 @@ async function main() {
   }
 }
 
-function findFreePort(isSafePort = () => true, excluded = new Set()) {
+function findFreePort(excluded = new Set()) {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.once('error', reject);
@@ -136,7 +136,7 @@ function findFreePort(isSafePort = () => true, excluded = new Set()) {
       const port = typeof address === 'object' && address ? address.port : 0;
       server.close((error) => {
         if (error) reject(error);
-        else if (excluded.has(port) || reservedPorts.has(port) || !isSafePort(port)) resolve(findFreePort(isSafePort, excluded));
+        else if (excluded.has(port) || !isBrowserSafePort(port)) resolve(findFreePort(excluded));
         else resolve(port);
       });
     });

@@ -1,9 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { isBrowserSafePort } from './browser-port-policy.mjs'
+import { isBrowserSafePort, RESERVED_DAILY_PORTS } from './browser-port-policy.mjs'
 
-export { isBrowserSafePort } from './browser-port-policy.mjs'
-
-export const RESERVED_DAILY_PORTS = new Set([5173, 8765])
+export { isBrowserSafePort, RESERVED_DAILY_PORTS } from './browser-port-policy.mjs'
 
 const BLOCKED_ENV_NAMES = [
   /^READ_WEB_/,
