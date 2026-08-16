@@ -39,7 +39,7 @@ try {
     mutateTarget(target, calls)
     barrier.release()
     const result = await restorePromise
-    assert.equal(result.status, 'completed', `${phase} barrier must retain the bound operation`) 
+    assert.equal(result.status, 'completed', `${phase} barrier must retain the bound operation`)
     assert.equal(calls.value, 0, `${phase} target mutations must not reach an evil surface`)
     assert.equal(target.state.revision, 1, `${phase} barrier must commit exactly once`)
   }
