@@ -1443,7 +1443,15 @@ function readCommittedRevisionEvidence(transactionCapability, commitResult, rest
     return resultRevision
   }
   if (typeof transactionCapability?.readCommittedRevision === 'function') {
-    const exposedRevision = transactionCapability.readCommittedRevision()
+    let exposedRevision
+    try {
+      exposedRevision = transactionCapability.readCommittedRevision()
+    } catch {
+      throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Restore commit evidence reader failed', {
+        restoreId,
+        commitMayHaveApplied: true,
+      })
+    }
     if (exposedRevision !== undefined && exposedRevision !== null) {
       if (!isValidRevision(exposedRevision)) throw invalidCommitEvidence(restoreId, exposedRevision)
       return exposedRevision
@@ -2098,7 +2106,6 @@ export function createApplicationBackupService(options = {}) {
       return { status: 'completed', restoreId, report: dryRun, journal: completed }
     } catch (error) {
       let rollbackError = null
-      try { await transactionCapability?.rollback?.() } catch (rollbackFailure) { rollbackError = rollbackFailure }
       if (!isValidRevision(committedRevision) && !commitReturned) {
         try {
           committedRevision = readFailedCommitEvidence(transactionCapability, error, restoreId)
@@ -2106,6 +2113,7 @@ export function createApplicationBackupService(options = {}) {
           error = evidenceError
         }
       }
+      try { await transactionCapability?.rollback?.() } catch (rollbackFailure) { rollbackError = rollbackFailure }
       const shouldRestoreSnapshot = isValidRevision(committedRevision)
       let rollbackRevision = null
       if (shouldRestoreSnapshot) {

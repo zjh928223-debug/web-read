@@ -166,6 +166,26 @@ try {
   }
 
   {
+    const target = createTarget(path.join(root, 'transaction-evidence-reader-failure'), {
+      commitReturnsUndefined: true,
+      evidenceReaderThrows: true,
+    })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    await assert.rejects(
+      service.restore(artifact, {
+        target,
+        restoreId: 'transaction-evidence-reader-failure',
+        resolutions,
+      }),
+      (error) => error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE',
+    )
+    const journal = target.state.journal.get('transaction-evidence-reader-failure')
+    assert.equal(journal?.status, 'rollback-failed', 'missing post-commit evidence must not claim a completed rollback')
+    assert.equal(journal?.manualRecoveryRequired, true, 'missing post-commit evidence must require manual recovery')
+    assert.equal(journal?.rollbackComplete, false, 'missing post-commit evidence must not claim snapshot rollback evidence')
+  }
+
+  {
     const calls = { value: 0 }
     const target = createTarget(path.join(root, 'transaction-evidence-mutation'), {
       commitReturnsUndefined: true,
@@ -183,7 +203,10 @@ try {
   }
 
   {
-    const target = createTarget(path.join(root, 'transaction-partial-commit'), { partialCommit: true })
+    const target = createTarget(path.join(root, 'transaction-partial-commit'), {
+      partialCommit: true,
+      clearEvidenceOnRollback: true,
+    })
     const baseline = structuredClone(target.state.domains)
     const service = createApplicationBackupService({ adapters: sourceAdapters })
     await assert.rejects(
@@ -275,6 +298,8 @@ function createTarget(targetPath, {
   initialFaults = {},
   commitReturnsUndefined = false,
   partialCommit = false,
+  clearEvidenceOnRollback = false,
+  evidenceReaderThrows = false,
   invalidCommitRevision,
   mutateEvidenceOnApply = false,
 } = {}) {
@@ -393,8 +418,14 @@ function createTarget(targetPath, {
           if (invalidCommitRevision !== undefined) return { revision: invalidCommitRevision }
           return commitReturnsUndefined ? undefined : { revision: state.revision }
         },
-        async rollback() { staged.clear() },
-        get committedRevision() { return committedRevision },
+        async rollback() {
+          staged.clear()
+          if (clearEvidenceOnRollback) committedRevision = null
+        },
+        get committedRevision() {
+          if (evidenceReaderThrows) throw new Error('committed revision evidence reader failed')
+          return committedRevision
+        },
       }
       return transaction
     },

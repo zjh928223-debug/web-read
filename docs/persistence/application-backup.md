@@ -86,11 +86,14 @@ has priority. If commit returns `undefined`, the transaction may instead
 provide a bound `getCommittedRevision()` method or a getter descriptor for
 `committedRevision` captured at transaction bind time. A writable data property
 is not an accepted evidence reader. The captured reader is used for both a
-normal empty-return commit and a commit that writes and then throws; valid
-evidence must be a non-negative integer. Confirmed partial commit always
-attempts snapshot rollback with the committed revision as expected-revision
-CAS. Missing or invalid evidence remains a typed manual-recovery failure and
-is never silently treated as an uncommitted transaction.
+normal empty-return commit and a commit that writes and then throws. On a
+failed commit, the restore service reads and fixes that evidence before it
+invokes transaction rollback, so transaction cleanup cannot erase proof of an
+already durable write. Valid evidence must be a non-negative integer. Confirmed
+partial commit always attempts snapshot rollback with the committed revision as
+expected-revision CAS. Missing, invalid or unreadable evidence remains a typed
+manual-recovery failure and is never silently treated as an uncommitted
+transaction or a completed rollback.
 
 The generic restore gate also requires a private-issuer registration for the
 target object itself. Registration binds the canonical isolation certificate,
