@@ -223,7 +223,10 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
     failed: false,
     onApply: null,
     journal: { last: null },
-    quarantine: { entries: [], async write(entry) { this.entries.push(entry) } },
+    quarantine: {
+      entries: [],
+      async write(entry) { target.quarantine.entries.push(entry) },
+    },
     rollbackStore: {
       async write(entry) {
         target.rollbackWrites += 1

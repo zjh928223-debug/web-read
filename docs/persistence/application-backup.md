@@ -85,6 +85,21 @@ target methods or writes are reached. Production fault injection is held in a
 private closure and changed only through the controlled `setFaults` hook; a
 mutable public `faults` safety object is not part of the production target.
 
+Registration is not a promise that the public target object is frozen. At the
+start of each restore, `resolveTrustedTarget` creates a private immutable
+capability bundle from the registered canonical layout, exact bound target
+methods, normalized adapter methods, capacity policy, journal/rollback/
+quarantine stores, resolutions and revision evidence. Adapter/store runtime
+values are copied into private operation cells; the restore core receives only
+that bundle and does not re-read `target` across an `await`. A returned
+transaction is immediately reduced to bound `applyDomain`, `commit` and
+`rollback` capabilities. Therefore a later public property, descriptor,
+prototype, adapter/store method or capacity mutation cannot redirect the
+current operation. Fault callbacks remain adversarial test hooks: they may
+mutate the public facade, but the operation continues through its captured
+bundle. This is bundle snapshot semantics, not a claim that arbitrary
+application closures outside the trusted target factory are frozen.
+
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
 `npm run verify:application-backup-concurrency`. The production composition in

@@ -374,6 +374,56 @@ function freezeCapabilityData(value, seen = new WeakMap()) {
   return clone
 }
 
+function cloneMutableCapabilityData(value, seen = new WeakMap()) {
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'function' || typeof value === 'symbol') {
+      throw backupError('RESTORE_TARGET_UNSAFE', 'Restore capability state cannot contain functions or symbols')
+    }
+    return value
+  }
+  if (seen.has(value)) return seen.get(value)
+  if (value instanceof Date) {
+    const clone = new Date(value.getTime())
+    seen.set(value, clone)
+    return clone
+  }
+  if (value instanceof Map) {
+    const clone = new Map()
+    seen.set(value, clone)
+    for (const [key, entry] of value.entries()) {
+      clone.set(cloneMutableCapabilityData(key, seen), cloneMutableCapabilityData(entry, seen))
+    }
+    return clone
+  }
+  if (value instanceof Set) {
+    const clone = new Set()
+    seen.set(value, clone)
+    for (const entry of value.values()) clone.add(cloneMutableCapabilityData(entry, seen))
+    return clone
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) {
+    throw backupError('RESTORE_TARGET_UNSAFE', 'Restore capability state must be a plain mutable value')
+  }
+  const clone = Array.isArray(value) ? [] : Object.create(prototype)
+  seen.set(value, clone)
+  if (Array.isArray(value)) clone.length = value.length
+  for (const key of Reflect.ownKeys(value).filter((entry) => !(Array.isArray(value) && entry === 'length'))) {
+    if (typeof key !== 'string') throw backupError('RESTORE_TARGET_UNSAFE', 'Restore capability state cannot contain symbol keys')
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor || !hasDataDescriptor(descriptor) || !descriptor.enumerable) {
+      throw backupError('RESTORE_TARGET_UNSAFE', 'Restore capability state must have enumerable data properties')
+    }
+    Object.defineProperty(clone, key, {
+      configurable: true,
+      enumerable: descriptor.enumerable,
+      writable: true,
+      value: cloneMutableCapabilityData(descriptor.value, seen),
+    })
+  }
+  return clone
+}
+
 function stableDataValue(value, name) {
   const descriptor = lookupPropertyDescriptor(value, name)
   if (!descriptor) return undefined
@@ -404,11 +454,12 @@ function createBoundObjectCapability(source, { methodNames = [], dynamicNames = 
     if (!descriptor) continue
     if (!hasDataDescriptor(descriptor)) throw backupError('RESTORE_TARGET_UNSAFE', `Restore capability member ${String(key)} cannot be an accessor`)
     if (dynamicNames.has(key)) {
+      let dynamicValue = cloneMutableCapabilityData(descriptor.value)
       Object.defineProperty(receiver, key, {
         configurable: false,
         enumerable: descriptor.enumerable !== false,
-        get: () => source[key],
-        set: (value) => { source[key] = value },
+        get: () => dynamicValue,
+        set: (value) => { dynamicValue = cloneMutableCapabilityData(value) },
       })
       continue
     }

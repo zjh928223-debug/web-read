@@ -5,6 +5,14 @@ const { parse } = require('@babel/parser')
 
 const sourcePath = path.resolve(__dirname, '../src/services/persistence/application-backup.js')
 const source = fs.readFileSync(sourcePath, 'utf8')
+const readWebTargetSource = fs.readFileSync(
+  path.resolve(__dirname, '../src/services/persistence/read-web-application-backup.js'),
+  'utf8',
+)
+const productionTargetSource = fs.readFileSync(
+  path.resolve(__dirname, './lib/read-web-production-backup.mjs'),
+  'utf8',
+)
 const ast = parse(source, {
   sourceType: 'module',
   plugins: ['optionalChaining', 'objectRestSpread', 'topLevelAwait'],
@@ -37,6 +45,19 @@ assert.ok(bundleFactory, 'createTargetCapabilityBundle must remain explicit')
 assertHasCall(bundleFactory, 'Object.freeze')
 assertHasCall(bundleFactory, 'createBoundAdapterCapability')
 assertHasCall(bundleFactory, 'createBoundObjectCapability')
+
+assert.match(
+  readWebTargetSource,
+  /const configuredCapacityBytes = Number\.isFinite\(options\.capacityBytes\) \? options\.capacityBytes : null/,
+  'browser restore target must capture capacity policy in a private closure',
+)
+assert.doesNotMatch(readWebTargetSource, /target\.capacityBytes/, 'browser estimate capability must not read the public target')
+assert.match(
+  productionTargetSource,
+  /const configuredCapacityBytes = Number\.isFinite\(options\.capacityBytes\) \? options\.capacityBytes : 256 \* 1024 \* 1024/,
+  'file-backed restore target must capture capacity policy in a private closure',
+)
+assert.doesNotMatch(productionTargetSource, /target\.capacityBytes/, 'file-backed estimate capability must not read the public target')
 
 // Self-test: a future alias, destructure, or bracket read of the public target
 // must fail this guard even if the spelling is not target.foo.

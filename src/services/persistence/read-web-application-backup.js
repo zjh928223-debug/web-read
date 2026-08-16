@@ -1433,6 +1433,7 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     })
   }
 
+  const configuredCapacityBytes = Number.isFinite(options.capacityBytes) ? options.capacityBytes : null
   const target = {
     isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
     isolationCertificate: options.isolationCertificate,
@@ -1449,9 +1450,11 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     rollbackStore,
     quarantine,
     rollbackStoreSeparate: Boolean(options.rollbackStore),
-    capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : null,
+    capacityBytes: configuredCapacityBytes,
     async estimateCapacity({ requiredBytes }) {
-      if (Number.isFinite(target.capacityBytes)) return { ok: target.capacityBytes >= requiredBytes, availableBytes: target.capacityBytes }
+      if (Number.isFinite(configuredCapacityBytes)) {
+        return { ok: configuredCapacityBytes >= requiredBytes, availableBytes: configuredCapacityBytes }
+      }
       if (typeof options.estimateCapacity === 'function') return options.estimateCapacity({ requiredBytes })
       if (typeof storage?.estimateCapacity === 'function') return storage.estimateCapacity({ requiredBytes })
       const estimate = await globalThis.navigator?.storage?.estimate?.()

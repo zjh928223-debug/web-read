@@ -17,6 +17,7 @@ const {
 } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-capability-toctou-'))
+const observedCollectorReceivers = []
 
 try {
   const sourceAdapters = createAdapters('source')
@@ -87,6 +88,33 @@ try {
   }
 
   {
+    const barrier = createBarrier()
+    const target = createTarget(path.join(root, 'nested-dynamic-mutation'), { barrierPhase: 'dry-run', barrier })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    const calls = { value: 0 }
+    const restorePromise = service.restore(artifact, {
+      target,
+      restoreId: 'nested-dynamic-surface-mutation',
+      resolutions,
+    })
+    await barrier.hit
+    Object.defineProperty(target.adapters[APPLICATION_BACKUP_REQUIRED_DOMAINS[0]], 'failed', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        calls.value += 1
+        return false
+      },
+    })
+    barrier.release()
+    const result = await restorePromise
+    assert.equal(result.status, 'completed', 'dynamic adapter state mutation must not redirect the operation')
+    assert.equal(calls.value, 0, 'dynamic adapter state mutation must not reach an evil accessor')
+    assert.ok(observedCollectorReceivers.length > 0)
+    assert.notEqual(observedCollectorReceivers.at(-1), target.adapters[APPLICATION_BACKUP_REQUIRED_DOMAINS[0]])
+  }
+
+  {
     const calls = { value: 0 }
     const target = createTarget(path.join(root, 'transaction-mutation'), { mutateTransactionOnApply: true, evilCalls: calls })
     const service = createApplicationBackupService({ adapters: sourceAdapters })
@@ -131,6 +159,7 @@ function createAdapters(kind) {
     adapterVersion: 1,
     supportedSchemaVersions: [1],
     revision: kind === 'source' ? 1 : 0,
+    failed: false,
     records: kind === 'source'
       ? [{
           id: `${key}:source-record`,
@@ -143,6 +172,7 @@ function createAdapters(kind) {
         }]
       : [],
     async collect() {
+      if (this.failed === 'mutated') throw new Error('mutated adapter state must not be read')
       return {
         schemaVersion: this.schemaVersion,
         revision: this.revision,
@@ -275,6 +305,7 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
     const originalCollect = adapter.collect
     adapter.collect = async function collectWithBarrier(...args) {
       if (barrierPhase === 'dry-run') await barrier.pause()
+      observedCollectorReceivers.push(this)
       return originalCollect.apply(this, args)
     }
   }

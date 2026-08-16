@@ -997,6 +997,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   }
   const faultState = { ...(options.faults || {}) }
   const rollbackStoreSeparate = options.rollbackStoreSeparate === false ? false : true
+  const configuredCapacityBytes = Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024
 
   async function readStateUnlocked() {
     return assertStateEnvelope(
@@ -1034,10 +1035,10 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     }),
-    capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024,
+    capacityBytes: configuredCapacityBytes,
     adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir),
     async estimateCapacity({ requiredBytes }) {
-      return { ok: target.capacityBytes >= requiredBytes, availableBytes: target.capacityBytes }
+      return { ok: configuredCapacityBytes >= requiredBytes, availableBytes: configuredCapacityBytes }
     },
     async readJournal({ restoreId }) {
       return withPathMutex(profileDir, async () => clone((await readJournalUnlocked()).entries[restoreId] || null))
