@@ -61,7 +61,7 @@ const TARGET_VALUE_NAMES = Object.freeze([
   ...TARGET_PATH_NAMES,
 ])
 const MUTABLE_ADAPTER_DATA_NAMES = new Set(['records', 'revision', 'writes', 'failed'])
-const MUTABLE_STORE_DATA_NAMES = new Set(['entries', 'last', 'value'])
+const MUTABLE_STORE_DATA_NAMES = new Set(['entries', 'last', 'value', 'attempts', 'revision'])
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
@@ -274,6 +274,8 @@ function captureIsolationTargetBinding(target, isolationCertificate, isolationLa
     adapterMethods,
     journal: readPropertyWithoutInvokingGetter(target, 'journal'),
     journalSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'journal'), {
+      compareDataValues: true,
+      deepDataValues: true,
       ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
     }),
     resolutions: readPropertyWithoutInvokingGetter(target, 'resolutions'),
@@ -283,10 +285,14 @@ function captureIsolationTargetBinding(target, isolationCertificate, isolationLa
     }),
     rollbackStore: readPropertyWithoutInvokingGetter(target, 'rollbackStore'),
     rollbackStoreSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'rollbackStore'), {
+      compareDataValues: true,
+      deepDataValues: true,
       ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
     }),
     quarantine: readPropertyWithoutInvokingGetter(target, 'quarantine'),
     quarantineSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'quarantine'), {
+      compareDataValues: true,
+      deepDataValues: true,
       ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
     }),
   })
