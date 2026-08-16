@@ -211,7 +211,7 @@ try {
     )
   }
 
-  console.log('application backup capability TOCTOU matrix passed (journal/dry-run/capacity/rollback/fault/nested/transaction)')
+  console.log('application backup capability TOCTOU matrix passed (journal/dry-run/capacity/rollback/fault-plan/nested/resolutions/transaction-evidence)')
 } finally {
   await rm(root, { recursive: true, force: true })
 }

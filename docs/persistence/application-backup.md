@@ -68,10 +68,29 @@ transaction before a durable commit is never allowed to restore an old
 snapshot. Snapshot rollback is attempted only when the transaction exposes a
 committed revision (or equivalent partial-commit evidence), and the rollback
 itself uses an expected-revision CAS. If another writer advances the target,
-restore returns a revision conflict/manual-recovery outcome and leaves the
-newer state intact. A `restoreId` makes retries idempotent; a completed retry
-is a no-op and an interrupted/failed retry reuses the original rollback backup
-only when its journal evidence is safe.
+  restore returns a revision conflict/manual-recovery outcome and leaves the
+  newer state intact. A `restoreId` makes retries idempotent; a completed retry
+  is a no-op and an interrupted/failed retry reuses the original rollback backup
+  only when its journal evidence is safe.
+
+The invocation snapshot is created synchronously by `restore()` before the
+first promise suspension. It fixes the generated `restoreId`, deep-copies and
+freezes `resolutions`, fixes the target capability identity and stores the
+caller's `AbortSignal` reference. The signal is the only restore input whose
+state remains intentionally dynamic; the original options object and its
+resolutions object are never read again. The restore core receives only this
+frozen invocation plus the target capability bundle.
+
+Commit evidence has a fixed capture contract. A valid `commitResult.revision`
+has priority. If commit returns `undefined`, the transaction may instead
+provide a bound `getCommittedRevision()` method or a getter descriptor for
+`committedRevision` captured at transaction bind time. A writable data property
+is not an accepted evidence reader. The captured reader is used for both a
+normal empty-return commit and a commit that writes and then throws; valid
+evidence must be a non-negative integer. Confirmed partial commit always
+attempts snapshot rollback with the committed revision as expected-revision
+CAS. Missing or invalid evidence remains a typed manual-recovery failure and
+is never silently treated as an uncommitted transaction.
 
 The generic restore gate also requires a private-issuer registration for the
 target object itself. Registration binds the canonical isolation certificate,
@@ -79,26 +98,32 @@ all safety/capacity/rollback scalars, the complete own-key and property
 descriptor surface, the target prototype, every restore method (including
 `mergeDomain`), and the journal, adapter, rollback-store, quarantine and
 capability surfaces. A borrowed certificate, spread/clone, proxy, added or
-deleted member, accessor replacement, prototype change, method replacement, or
-nested safety-surface mutation is rejected as `RESTORE_TARGET_UNSAFE` before
-target methods or writes are reached. Production fault injection is held in a
-private closure and changed only through the controlled `setFaults` hook; a
-mutable public `faults` safety object is not part of the production target.
+  deleted member, accessor replacement, prototype change, method replacement, or
+  nested safety-surface mutation is rejected as `RESTORE_TARGET_UNSAFE` before
+  target methods or writes are reached. Production fault injection is held in a
+  private closure and changed only through the controlled `setFaults` hook; a
+  mutable public `faults` safety object is not part of the production target.
 
 Registration is not a promise that the public target object is frozen. At the
 start of each restore, `resolveTrustedTarget` creates a private immutable
 capability bundle from the registered canonical layout, exact bound target
 methods, normalized adapter methods, capacity policy, journal/rollback/
-quarantine stores, resolutions and revision evidence. Adapter/store runtime
-values are copied into private operation cells; the restore core receives only
-that bundle and does not re-read `target` across an `await`. A returned
-transaction is immediately reduced to bound `applyDomain`, `commit` and
-`rollback` capabilities. Therefore a later public property, descriptor,
-prototype, adapter/store method or capacity mutation cannot redirect the
-current operation. Fault callbacks remain adversarial test hooks: they may
-mutate the public facade, but the operation continues through its captured
-bundle. This is bundle snapshot semantics, not a claim that arbitrary
-application closures outside the trusted target factory are frozen.
+  quarantine stores, resolutions and revision evidence. The bundle also invokes
+  the registered synchronous `captureRestoreOperation` seam. Production targets
+  return an opaque WeakMap token whose fault-plan data is deep-copied and frozen;
+  `setFaults` changes only the next token's plan. Begin, rollback-backup,
+  apply/commit and after-commit fault behavior reads the token's private plan,
+  including a private fail-once cell, rather than shared public fault state.
+  Adapter/store runtime values are copied into private operation cells; the
+  restore core receives only that bundle and does not re-read `target` across an
+  `await`. A returned transaction is immediately reduced to bound
+  `applyDomain`, `commit`, `rollback` and captured evidence-reader capabilities.
+  Therefore a later public property, descriptor, prototype, adapter/store method,
+  capacity, fault plan or resolutions mutation cannot redirect the current
+  operation. Fault callbacks remain adversarial test hooks: they may mutate the
+  public facade, but the operation continues through its captured bundle. This
+  is bundle snapshot semantics, not a claim that arbitrary application closures
+  outside the trusted target factory are frozen.
 
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
