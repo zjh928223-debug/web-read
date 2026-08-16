@@ -1446,6 +1446,9 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     }),
+    captureRestoreOperation() {
+      return Object.freeze({})
+    },
     adapters,
     rollbackStore,
     quarantine,

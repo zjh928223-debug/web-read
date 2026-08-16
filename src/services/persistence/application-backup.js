@@ -33,6 +33,7 @@ const TARGET_METHOD_NAMES = Object.freeze([
   'mergeDomain',
   'recoverPendingRestore',
   'readState',
+  'captureRestoreOperation',
   'setFaults',
 ])
 const TARGET_PATH_NAMES = Object.freeze([
@@ -491,6 +492,19 @@ function bindTargetMethod(target, name) {
 function createTargetCapabilityBundle(target, binding, { requiredDomains, fallbackAdapters } = {}) {
   const registeredTarget = binding.targetSurface.value
   const methodCapabilities = Object.fromEntries(TARGET_METHOD_NAMES.map((name) => [name, bindTargetMethod(registeredTarget, name)]))
+  if (typeof methodCapabilities.captureRestoreOperation !== 'function') {
+    throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target must provide a synchronous operation snapshot capability')
+  }
+  let operation
+  try {
+    operation = methodCapabilities.captureRestoreOperation()
+  } catch (error) {
+    throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target operation snapshot could not be captured', { cause: error?.code || 'operation-capture-failed' })
+  }
+  if (!operation || typeof operation !== 'object' || typeof operation.then === 'function') {
+    throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target operation snapshot must be a synchronous object capability')
+  }
+  Object.freeze(operation)
   const targetAdapterSource = binding.adapters?.value || fallbackAdapters
   let normalizedAdapters
   try {
@@ -551,6 +565,7 @@ function createTargetCapabilityBundle(target, binding, { requiredDomains, fallba
   if (resolutions === null || resolutions === undefined) resolutions = {}
   resolutions = freezeCapabilityData(resolutions)
   return Object.freeze({
+    operation,
     isolation: Object.freeze({
       isolationRoot: binding.isolationLayout.isolationRoot,
       layout: binding.isolationLayout,
@@ -596,6 +611,16 @@ function bindTransactionCapability(transactionResult) {
   if (typeof applyDomain !== 'function' || typeof commit !== 'function' || typeof rollback !== 'function') {
     throw backupError('RESTORE_ATOMIC_UNAVAILABLE', 'Restore transaction must expose immutable apply, commit, and rollback capabilities')
   }
+  const committedRevisionDescriptor = lookupPropertyDescriptor(transactionResult, 'committedRevision')
+  const committedRevisionGetter = committedRevisionDescriptor
+    && !hasDataDescriptor(committedRevisionDescriptor)
+    && typeof committedRevisionDescriptor.get === 'function'
+    ? committedRevisionDescriptor.get.bind(transactionResult)
+    : null
+  const committedRevisionMethod = stableMethod(transactionResult, 'getCommittedRevision')
+  const readCommittedRevision = committedRevisionMethod
+    ? committedRevisionMethod.bind(transactionResult)
+    : committedRevisionGetter
   const facade = Object.freeze({
     applyDomain: applyDomain.bind(transactionResult),
     commit: commit.bind(transactionResult),
@@ -605,6 +630,7 @@ function bindTransactionCapability(transactionResult) {
     applyDomain: facade.applyDomain,
     commit: facade.commit,
     rollback: facade.rollback,
+    readCommittedRevision,
     facade,
   })
 }
@@ -1387,12 +1413,51 @@ async function readRollbackBackup(capability, restoreId) {
 
 async function writeRollbackBackup(capability, restoreId, artifact) {
   if (typeof capability?.rollback?.write !== 'function') throw backupError('RESTORE_TARGET_UNSAFE', 'Restore target must provide a durable rollback backup store')
-  return capability.rollback.write({ restoreId, artifact, createdAt: new Date().toISOString() })
+  return capability.rollback.write(
+    { restoreId, artifact, createdAt: new Date().toISOString() },
+    { operation: capability.operation },
+  )
 }
 
 function rollbackBaseRevision(entry) {
   const revision = entry?.rawState?.revision ?? entry?.expectedBaseRevision
-  return Number.isInteger(revision) && revision >= 0 ? revision : null
+  return isValidRevision(revision) ? revision : null
+}
+
+function isValidRevision(value) {
+  return Number.isInteger(value) && value >= 0
+}
+
+function invalidCommitEvidence(restoreId, value) {
+  return backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Restore commit exposed an invalid durable committed revision', {
+    restoreId,
+    committedRevision: value,
+    commitMayHaveApplied: true,
+  })
+}
+
+function readCommittedRevisionEvidence(transactionCapability, commitResult, restoreId) {
+  const resultRevision = commitResult?.revision
+  if (resultRevision !== undefined && resultRevision !== null) {
+    if (!isValidRevision(resultRevision)) throw invalidCommitEvidence(restoreId, resultRevision)
+    return resultRevision
+  }
+  if (typeof transactionCapability?.readCommittedRevision === 'function') {
+    const exposedRevision = transactionCapability.readCommittedRevision()
+    if (exposedRevision !== undefined && exposedRevision !== null) {
+      if (!isValidRevision(exposedRevision)) throw invalidCommitEvidence(restoreId, exposedRevision)
+      return exposedRevision
+    }
+  }
+  return null
+}
+
+function readFailedCommitEvidence(transactionCapability, error, restoreId) {
+  if (error && Object.prototype.hasOwnProperty.call(error, 'committedRevision')) {
+    if (!isValidRevision(error.committedRevision)) throw invalidCommitEvidence(restoreId, error.committedRevision)
+    return error.committedRevision
+  }
+  return readCommittedRevisionEvidence(transactionCapability, undefined, restoreId)
 }
 
 async function quarantineArtifact(capability, entry) {
@@ -1729,17 +1794,32 @@ export function createApplicationBackupService(options = {}) {
     }
   }
 
+  function createRestoreInvocationSnapshot(restoreOptions, capability) {
+    const options = restoreOptions && typeof restoreOptions === 'object' ? restoreOptions : {}
+    const restoreId = String(options.restoreId || `restore-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+    const resolutionsInput = options.resolutions === undefined || options.resolutions === null
+      ? (capability.resolutions || {})
+      : options.resolutions
+    return Object.freeze({
+      restoreId,
+      resolutions: freezeCapabilityData(resolutionsInput),
+      signal: options.signal,
+    })
+  }
+
   async function restore(artifact, restoreOptions = {}) {
-    const restoreTarget = restoreOptions.target || configuredTarget
+    const options = restoreOptions && typeof restoreOptions === 'object' ? restoreOptions : {}
+    const restoreTarget = options.target || configuredTarget
     const capability = resolveTrustedTarget(restoreTarget, {
       requiredDomains,
       fallbackAdapters: configuredAdapters,
     })
-    return restoreWithCapability(artifact, restoreOptions, capability)
+    const invocation = createRestoreInvocationSnapshot(options, capability)
+    return restoreWithCapability(artifact, invocation, capability)
   }
 
-  async function restoreWithCapability(artifact, restoreOptions = {}, capability) {
-    const restoreId = String(restoreOptions.restoreId || `restore-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)
+  async function restoreWithCapability(artifact, invocation, capability) {
+    const { restoreId, resolutions, signal } = invocation
     let verification
     try {
       verification = await assertValidBackupArtifact(artifact, { requiredDomains })
@@ -1750,7 +1830,7 @@ export function createApplicationBackupService(options = {}) {
     const sourceArtifact = verification.artifact
     capability = Object.freeze({
       ...capability,
-      resolutions: freezeCapabilityData(restoreOptions.resolutions || capability.resolutions || {}),
+      resolutions,
     })
     const readJournal = capability.journal.read
     const writeJournal = capability.journal.write
@@ -1841,7 +1921,7 @@ export function createApplicationBackupService(options = {}) {
         appliedEvidence = { ok: false, reason: error?.code || 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE' }
       }
       const currentRevision = Number.isInteger(appliedEvidence?.revision) ? appliedEvidence.revision : null
-      if (!Number.isInteger(currentRevision)) {
+      if (!isValidRevision(currentRevision)) {
         try {
           await writeJournal({
             ...priorJournal,
@@ -1865,7 +1945,7 @@ export function createApplicationBackupService(options = {}) {
         await writeJournal(completed)
         return { status: 'completed', restoreId, recovered: true, journal: completed }
       }
-      if (!Number.isInteger(expectedBaseRevision) || currentRevision !== expectedBaseRevision) {
+      if (!isValidRevision(expectedBaseRevision) || currentRevision !== expectedBaseRevision) {
         try {
           await writeJournal({
             ...priorJournal,
@@ -1880,7 +1960,7 @@ export function createApplicationBackupService(options = {}) {
       }
     }
     if (priorJournal?.status === 'committed') {
-      if (!Number.isInteger(priorJournal.committedRevision)) {
+      if (!isValidRevision(priorJournal.committedRevision)) {
         throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'A committed restore has no durable committed revision evidence', { restoreId })
       }
       try {
@@ -1939,7 +2019,7 @@ export function createApplicationBackupService(options = {}) {
       : (Number.isInteger(priorJournal?.expectedBaseRevision)
         ? priorJournal.expectedBaseRevision
         : rollbackBaseRevision(rollbackEntry))
-    if (!Number.isInteger(expectedBaseRevision)) {
+    if (!isValidRevision(expectedBaseRevision)) {
       throw backupError('RESTORE_ROLLBACK_UNAVAILABLE', 'Restore cannot start without a durable rollback base revision', { restoreId })
     }
     const started = {
@@ -1956,18 +2036,20 @@ export function createApplicationBackupService(options = {}) {
 
     let transactionCapability = null
     let committedRevision = null
+    let commitReturned = false
     try {
       const beginResult = await capability.beginTransaction({
         restoreId,
         artifact: sourceArtifact,
         dryRun,
-        signal: restoreOptions.signal,
+        signal,
+        operation: capability.operation,
         expectedBaseRevision,
       })
       transactionCapability = bindTransactionCapability(beginResult)
       const appliedDomains = []
       for (const domainReport of dryRun.domains) {
-        if (restoreOptions.signal?.aborted) throw backupError('RESTORE_INTERRUPTED', 'Restore was interrupted before commit')
+        if (signal?.aborted) throw backupError('RESTORE_INTERRUPTED', 'Restore was interrupted before commit')
         if (domainReport.decision !== 'restore' && domainReport.decision !== 'merge') continue
         const domain = sourceArtifact.domains[domainReport.key]
         if (domainReport.decision === 'merge' && typeof capability.mergeDomain === 'function') {
@@ -1978,11 +2060,12 @@ export function createApplicationBackupService(options = {}) {
         appliedDomains.push(domainReport.key)
         await writeJournal({ ...started, status: 'applying', appliedDomains: [...appliedDomains] })
       }
-      if (restoreOptions.signal?.aborted) throw backupError('RESTORE_INTERRUPTED', 'Restore was interrupted before commit')
+      if (signal?.aborted) throw backupError('RESTORE_INTERRUPTED', 'Restore was interrupted before commit')
       await writeJournal({ ...started, status: 'committing', appliedDomains })
       const commitResult = await transactionCapability.commit()
-      committedRevision = Number.isInteger(commitResult?.revision) ? commitResult.revision : null
-      if (!Number.isInteger(committedRevision)) {
+      commitReturned = true
+      committedRevision = readCommittedRevisionEvidence(transactionCapability, commitResult, restoreId)
+      if (!isValidRevision(committedRevision)) {
         throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Restore commit did not expose a durable committed revision', {
           restoreId,
           commitMayHaveApplied: true,
@@ -1992,11 +2075,11 @@ export function createApplicationBackupService(options = {}) {
         ...started,
         status: 'committed',
         appliedDomains,
-        ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
+        ...(isValidRevision(committedRevision) ? { committedRevision } : {}),
       })
       const applied = await capability.verifyApplied({ restoreId, artifact: sourceArtifact, report: dryRun })
       if (applied === false || applied?.ok === false) throw backupError('RESTORE_POST_VERIFY_FAILED', 'Restored target did not match the backup artifact')
-      if (!Number.isInteger(applied?.revision) || applied.revision !== committedRevision) {
+      if (!isValidRevision(applied?.revision) || applied.revision !== committedRevision) {
         throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Applied-state verification did not return the committed revision', {
           restoreId,
           committedRevision,
@@ -2016,10 +2099,14 @@ export function createApplicationBackupService(options = {}) {
     } catch (error) {
       let rollbackError = null
       try { await transactionCapability?.rollback?.() } catch (rollbackFailure) { rollbackError = rollbackFailure }
-      if (!Number.isInteger(committedRevision) && Number.isInteger(error?.committedRevision)) {
-        committedRevision = error.committedRevision
+      if (!isValidRevision(committedRevision) && !commitReturned) {
+        try {
+          committedRevision = readFailedCommitEvidence(transactionCapability, error, restoreId)
+        } catch (evidenceError) {
+          error = evidenceError
+        }
       }
-      const shouldRestoreSnapshot = Number.isInteger(committedRevision)
+      const shouldRestoreSnapshot = isValidRevision(committedRevision)
       let rollbackRevision = null
       if (shouldRestoreSnapshot) {
         try {
@@ -2028,7 +2115,7 @@ export function createApplicationBackupService(options = {}) {
             reason: 'restore-failed',
             expectedRevision: committedRevision,
           })
-          rollbackRevision = Number.isInteger(rollbackResult?.revision) ? rollbackResult.revision : null
+          rollbackRevision = isValidRevision(rollbackResult?.revision) ? rollbackResult.revision : null
         } catch (rollbackFailure) { rollbackError = rollbackError || rollbackFailure }
       }
       let quarantineError = null
@@ -2047,13 +2134,13 @@ export function createApplicationBackupService(options = {}) {
       const manualRecoveryRequired = (
         error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE'
         || error?.code === 'RESTORE_ROLLBACK_FAILED'
-      ) && !Number.isInteger(committedRevision)
+      ) && !isValidRevision(committedRevision)
       const failedJournal = {
         ...started,
         status: failedStatus,
         failureCode: error?.code || 'RESTORE_FAILED',
-        ...(Number.isInteger(committedRevision) ? { committedRevision } : {}),
-        ...(Number.isInteger(rollbackRevision) ? { rollbackRevision } : {}),
+        ...(isValidRevision(committedRevision) ? { committedRevision } : {}),
+        ...(isValidRevision(rollbackRevision) ? { rollbackRevision } : {}),
         rollbackComplete: !rollbackError && error?.code !== 'RESTORE_ROLLBACK_FAILED' && !manualRecoveryRequired,
         quarantineComplete: !quarantineError,
         ...(manualRecoveryRequired ? { manualRecoveryRequired: true } : {}),

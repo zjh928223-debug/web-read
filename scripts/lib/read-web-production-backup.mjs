@@ -224,6 +224,27 @@ function clone(value) {
   return structuredClone(value)
 }
 
+function freezeFaultPlan(value, seen = new WeakMap()) {
+  if (value === null || typeof value !== 'object') return value
+  if (seen.has(value)) return seen.get(value)
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null && !Array.isArray(value)) {
+    throw unsafeIsolationPath('Restore fault plan must contain only plain data')
+  }
+  const snapshot = Array.isArray(value) ? [] : Object.create(null)
+  seen.set(value, snapshot)
+  if (Array.isArray(value)) snapshot.length = value.length
+  for (const key of Reflect.ownKeys(value).filter((entry) => !(Array.isArray(value) && entry === 'length'))) {
+    if (typeof key !== 'string') throw unsafeIsolationPath('Restore fault plan cannot contain symbol keys')
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (!descriptor || (!Object.prototype.hasOwnProperty.call(descriptor, 'value') && typeof descriptor.value !== 'function') || !descriptor.enumerable) {
+      throw unsafeIsolationPath('Restore fault plan must contain enumerable data properties')
+    }
+    snapshot[key] = freezeFaultPlan(descriptor.value, seen)
+  }
+  return Object.freeze(snapshot)
+}
+
 function canonicalJson(value) {
   if (value === null || value === undefined) return 'null'
   if (typeof value === 'string') return JSON.stringify(value)
@@ -996,8 +1017,14 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     }),
   }
   const faultState = { ...(options.faults || {}) }
+  const operationStates = new WeakMap()
+  const directOperationState = { faults: faultState, failed: false }
   const rollbackStoreSeparate = options.rollbackStoreSeparate === false ? false : true
   const configuredCapacityBytes = Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024
+
+  function operationStateFor(operation) {
+    return operationStates.get(operation) || directOperationState
+  }
 
   async function readStateUnlocked() {
     return assertStateEnvelope(
@@ -1036,6 +1063,14 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       verifyAppliedRevision: true,
     }),
     capacityBytes: configuredCapacityBytes,
+    captureRestoreOperation() {
+      const operation = {}
+      operationStates.set(operation, {
+        faults: freezeFaultPlan(faultState),
+        failed: false,
+      })
+      return Object.freeze(operation)
+    },
     adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir),
     async estimateCapacity({ requiredBytes }) {
       return { ok: configuredCapacityBytes >= requiredBytes, availableBytes: configuredCapacityBytes }
@@ -1064,8 +1099,9 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       })
     },
     rollbackStore: {
-      async write(entry) {
-        if (faultState.rollbackBackup === 'fail') {
+      async write(entry, context = {}) {
+        const operationState = operationStateFor(context.operation)
+        if (operationState.faults.rollbackBackup === 'fail') {
           const error = new Error('Fault injected while writing rollback backup')
           error.code = 'RESTORE_ROLLBACK_UNAVAILABLE'
           throw error
@@ -1112,9 +1148,11 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
         })
       },
     },
-    async beginTransaction({ restoreId, signal, expectedBaseRevision }) {
-      if (typeof faultState.beforeBeginTransaction === 'function') {
-        await faultState.beforeBeginTransaction({ restoreId, signal, expectedBaseRevision })
+    async beginTransaction({ restoreId, signal, expectedBaseRevision, operation }) {
+      const operationState = operationStateFor(operation)
+      const activeFaults = operationState.faults
+      if (typeof activeFaults.beforeBeginTransaction === 'function') {
+        await activeFaults.beforeBeginTransaction({ restoreId, signal, expectedBaseRevision })
       }
       const current = await withPathMutex(profileDir, readStateUnlocked)
       if (Number.isInteger(expectedBaseRevision) && current.revision !== expectedBaseRevision) {
@@ -1144,8 +1182,8 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
           }
           staged.domains[key] = clone(domain)
           appliedCount += 1
-          if (Number.isInteger(faultState.interruptAfterDomain)
-            && appliedCount >= faultState.interruptAfterDomain) {
+          if (Number.isInteger(activeFaults.interruptAfterDomain)
+            && appliedCount >= activeFaults.interruptAfterDomain) {
             const error = new Error(`Restore fault injected after ${appliedCount} domains`)
             error.code = 'RESTORE_INTERRUPTED'
             throw error
@@ -1171,8 +1209,8 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             await writeJsonAtomic(statePath, next)
             stateRef.value = next
             committedRevision = next.revision
-            if (faultState.commit === 'write-then-block' && faultState.commitBarrierDir) {
-              const barrierDir = path.resolve(faultState.commitBarrierDir)
+            if (activeFaults.commit === 'write-then-block' && activeFaults.commitBarrierDir) {
+              const barrierDir = path.resolve(activeFaults.commitBarrierDir)
               await mkdir(barrierDir, { recursive: true })
               await writeJsonAtomic(path.join(barrierDir, 'state-written.json'), {
                 restoreId,
@@ -1181,9 +1219,9 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
               const releasePath = path.join(barrierDir, 'release.json')
               while (!await pathExists(releasePath)) await delay(10)
             }
-            if (faultState.commit === 'write-then-fail'
-              || (faultState.commit === 'fail-once' && !faultState.failed)) {
-              faultState.failed = true
+            if (activeFaults.commit === 'write-then-fail'
+              || (activeFaults.commit === 'fail-once' && !operationState.failed)) {
+              operationState.failed = true
               const error = new Error(`Restore commit fault injected for ${restoreId}`)
               error.code = 'RESTORE_COMMIT_FAILED'
               error.committedRevision = committedRevision
@@ -1191,8 +1229,8 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
             }
             return { revision: committedRevision, checksum: next.checksum }
           })
-          if (typeof faultState.afterCommit === 'function') {
-            await faultState.afterCommit({ restoreId, ...result })
+          if (typeof activeFaults.afterCommit === 'function') {
+            await activeFaults.afterCommit({ restoreId, ...result })
           }
           return result
         },
@@ -1240,6 +1278,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     setFaults(nextFaults = {}) {
       Object.keys(faultState).forEach((key) => { delete faultState[key] })
       Object.assign(faultState, nextFaults)
+      directOperationState.failed = false
     },
   }
   if (options.enableMergeDomain === true) {
