@@ -45,6 +45,8 @@
     "verify:workflow-application-backup": "cd tools/subtitle-workflow && python -m unittest tests.test_application_backup",
     "verify:workflow-application-backup-restore": "cd tools/subtitle-workflow && python -m unittest tests.test_application_backup_restore",
     "verify:backup-restore-rehearsal": "node scripts/application-backup-release-rehearsal.mjs",
+    "verify:real-profile-rehearsal:contract": "node scripts/application-backup-real-profile-rehearsal-check.mjs",
+    "verify:real-profile-rehearsal": "node scripts/application-backup-real-profile-rehearsal.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "python scripts/perf/backend-http-benchmark.py",
     "verify:performance:browser": "node scripts/perf/run-browser-journeys.mjs",

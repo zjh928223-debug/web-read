@@ -116,7 +116,7 @@
 
 - [x] 12.1 实现版本化全应用 backup manifest、逐域 checksum、媒体引用策略和导入 dry-run
 - [x] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
-- [ ] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
+- [x] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
 - [ ] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [ ] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
 - [ ] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
@@ -128,6 +128,9 @@
 > lifetime, blocks owner reads/startup during partial commit, and performs
 > mandatory pending recovery before the host binds its port. Hard-process-exit,
 > journal closure, CAS, rollback/quarantine and reopenable round-trip evidence
-> are automated. 12.3 remains separate and unchecked: temporary file-backed
-> profile evidence does not substitute for restoring and exercising a real
-> copied browser/workflow profile.
+> are automated. 12.3 restored a read-only copy of the real browser/workflow
+> profile into a temporary isolated root: all six domain counts/checksums and
+> Reader/Vocabulary/SRS/Preview/Annotation/workflow journeys passed with zero
+> network requests. Media bytes and retired rows remained explicitly excluded;
+> media identity metadata remains rebindable. The daily source stayed logically
+> unchanged and no source or daily service path was written.

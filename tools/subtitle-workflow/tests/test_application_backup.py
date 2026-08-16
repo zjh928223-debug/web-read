@@ -8,8 +8,10 @@ from pathlib import Path
 
 from youtube_workflow.application_backup import (
     ReaderMarksActivityBackupAdapter,
+    ReaderMarksActivityRestoreAdapter,
     WorkflowBackupAdapter,
     WorkflowBackupError,
+    WorkflowRestoreAdapter,
     verify_marks_activity_records,
     verify_workflow_records,
 )
@@ -109,6 +111,61 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
                 for record in snapshot["records"]
             ))
 
+    def test_explicit_legacy_output_root_round_trips_into_isolated_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_state = root / "source-state"
+            source_output = root / "source-output"
+            legacy_output = root / "authorized-legacy-output"
+            target_state = root / "target-state"
+            target_output = root / "target-output"
+            source_state.mkdir()
+            source_output.mkdir()
+            legacy_output.mkdir()
+            self._write_envelope(
+                source_state / "jobs.json",
+                "workflow.jobs",
+                "jobs",
+                [
+                    {"jobId": "main-output-job", "outputDir": str(source_output)},
+                    {"jobId": "z-legacy-owner", "outputDir": str(legacy_output)},
+                    {"jobId": "a-legacy-owner", "outputDir": str(legacy_output)},
+                ],
+            )
+            (source_state / "history.json").write_text(
+                json.dumps({"items": [{"jobId": "legacy-job", "outputDir": str(legacy_output), "title": "legacy 🔴"}]}),
+                encoding="utf-8",
+            )
+            (legacy_output / "manifest.json").write_text(
+                json.dumps({"schemaVersion": 1, "revision": 1}),
+                encoding="utf-8",
+            )
+            (legacy_output / "transcript.json").write_text(
+                json.dumps({"schemaVersion": 1, "revision": 1, "segments": [{"text": "portable"}]}),
+                encoding="utf-8",
+            )
+            (legacy_output / "audio.mp3").write_bytes(b"media-bytes-are-not-backed-up")
+
+            source = WorkflowBackupAdapter(
+                source_state,
+                source_output,
+                additional_output_roots=[legacy_output],
+            ).collect()
+            history = next(record for record in source["records"] if record["id"] == "items:legacy-job")
+            self.assertEqual(history["payload"]["outputDir"], "legacy/external-1")
+            self.assertEqual(history["revision"], 1)
+
+            WorkflowRestoreAdapter(target_state, target_output).restore_snapshot(source)
+            reopened = WorkflowBackupAdapter(target_state, target_output).collect()
+
+            self.assertFalse((target_output / "legacy" / "external-1" / "audio.mp3").exists())
+            self.assertEqual(reopened["revision"], source["revision"])
+            self.assertEqual(reopened, source)
+            self.assertEqual(
+                [(record["id"], record["checksum"]) for record in reopened["records"]],
+                [(record["id"], record["checksum"]) for record in source["records"]],
+            )
+
     def test_record_checksum_tamper_is_detected(self):
         snapshot = {
             "schemaVersion": 1,
@@ -156,6 +213,57 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
             marks_path.write_text("{truncated", encoding="utf-8")
             with self.assertRaises(WorkflowBackupError):
                 adapter.collect()
+
+    def test_legacy_reader_activity_is_normalized_and_round_trips_read_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_output = root / "source-output"
+            source_job = source_output / "legacy-job"
+            source_workflow = source_job / "_workflow"
+            target_output = root / "target-output"
+            source_workflow.mkdir(parents=True)
+            legacy = {
+                "schemaVersion": 1,
+                "jobId": "legacy-job",
+                "lastActivityAt": "2026-01-01T00:00:00Z",
+                "lastEvent": "close",
+                "lastPositionSeconds": 1.0,
+                "intervals": [[0.0, 1.0]],
+                "outputDir": str(source_job),
+                "manifestPath": str(source_job / "manifest.json"),
+            }
+            activity_path = source_workflow / "reader-activity.json"
+            activity_path.write_text(json.dumps(legacy), encoding="utf-8")
+            source_bytes = activity_path.read_bytes()
+
+            snapshot = ReaderMarksActivityBackupAdapter(source_output).collect()
+
+            self.assertEqual(activity_path.read_bytes(), source_bytes)
+            self.assertEqual(snapshot["recordCount"] if "recordCount" in snapshot else len(snapshot["records"]), 1)
+            envelope = snapshot["records"][0]["payload"]
+            self.assertEqual(envelope["schemaVersion"], "reader-activity.v1")
+            self.assertEqual(envelope["revision"], 0)
+            self.assertEqual(envelope["payload"]["outputDir"], "legacy-job")
+            self.assertEqual(envelope["payload"]["manifestPath"], "legacy-job/manifest.json")
+
+            def javascript_json_transport(value):
+                if isinstance(value, float) and value.is_integer():
+                    return int(value)
+                if isinstance(value, list):
+                    return [javascript_json_transport(item) for item in value]
+                if isinstance(value, dict):
+                    return {key: javascript_json_transport(item) for key, item in value.items()}
+                return value
+
+            transported = javascript_json_transport(json.loads(json.dumps(snapshot)))
+            for record in transported["records"]:
+                unsigned = {key: value for key, value in record.items() if key != "checksum"}
+                record["checksum"] = "sha256:" + hashlib.sha256(
+                    json.dumps(unsigned, sort_keys=True, separators=(",", ":")).encode()
+                ).hexdigest()
+            ReaderMarksActivityRestoreAdapter(target_output).restore_snapshot(transported)
+            reopened = ReaderMarksActivityBackupAdapter(target_output).collect()
+            self.assertEqual(reopened, transported)
 
     @staticmethod
     def _write_envelope(path: Path, domain: str, collection: str, items: list[dict]):

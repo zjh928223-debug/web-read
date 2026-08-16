@@ -1620,7 +1620,7 @@ function domainReasonForRecordConflict(recordReports) {
 }
 
 async function dryRunRestoreForService({ artifact, capability, requiredDomains, limits }) {
-  const verification = await assertValidBackupArtifact(artifact, { requiredDomains })
+  const verification = await assertValidBackupArtifact(artifact, { requiredDomains, ...limits })
   const source = verification.artifact
   const capacityResult = await resolveCapacity(capability, verification.summary.sizeBytes)
   const domains = []
@@ -1830,7 +1830,7 @@ export function createApplicationBackupService(options = {}) {
     const { restoreId, resolutions, signal } = invocation
     let verification
     try {
-      verification = await assertValidBackupArtifact(artifact, { requiredDomains })
+      verification = await assertValidBackupArtifact(artifact, { requiredDomains, ...limits })
     } catch (error) {
       await quarantineArtifact(capability, { restoreId, kind: 'invalid-backup', reason: error.code || 'BACKUP_VERIFY_FAILED', source: serializeForQuarantine(artifact) })
       throw error
@@ -2086,7 +2086,12 @@ export function createApplicationBackupService(options = {}) {
         ...(isValidRevision(committedRevision) ? { committedRevision } : {}),
       })
       const applied = await capability.verifyApplied({ restoreId, artifact: sourceArtifact, report: dryRun })
-      if (applied === false || applied?.ok === false) throw backupError('RESTORE_POST_VERIFY_FAILED', 'Restored target did not match the backup artifact')
+      if (applied === false || applied?.ok === false) {
+        throw backupError('RESTORE_POST_VERIFY_FAILED', 'Restored target did not match the backup artifact', {
+          restoreId,
+          verification: applied,
+        })
+      }
       if (!isValidRevision(applied?.revision) || applied.revision !== committedRevision) {
         throw backupError('RESTORE_COMMIT_EVIDENCE_UNAVAILABLE', 'Applied-state verification did not return the committed revision', {
           restoreId,
@@ -2161,9 +2166,17 @@ export function createApplicationBackupService(options = {}) {
           : 'RESTORE_ROLLBACK_FAILED'
         throw backupError(code, code === 'RESTORE_REVISION_CONFLICT'
           ? 'Concurrent data changed before rollback could be applied; manual recovery is required'
-          : 'Restore failed and rollback could not be confirmed', { restoreId })
+          : 'Restore failed and rollback could not be confirmed', {
+          restoreId,
+          failureCode: error?.code || 'RESTORE_FAILED',
+          rollbackCode: rollbackError?.code || 'RESTORE_ROLLBACK_FAILED',
+          ...(error?.verification ? { verification: error.verification } : {}),
+        })
       }
-      throw backupError(error?.code || 'RESTORE_FAILED', error?.message || 'Restore failed; target was rolled back', { restoreId })
+      throw backupError(error?.code || 'RESTORE_FAILED', error?.message || 'Restore failed; target was rolled back', {
+        restoreId,
+        ...(error?.verification ? { verification: error.verification } : {}),
+      })
     }
   }
 
@@ -2173,7 +2186,7 @@ export function createApplicationBackupService(options = {}) {
     dryRunRestore,
     restore,
     verifyBackup(input, verifyOptions = {}) {
-      return verifyBackupArtifact(input, { requiredDomains, ...verifyOptions })
+      return verifyBackupArtifact(input, { requiredDomains, ...limits, ...verifyOptions })
     },
     requiredDomains: [...requiredDomains],
     limits: { ...limits },

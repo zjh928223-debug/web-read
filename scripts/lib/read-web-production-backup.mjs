@@ -798,12 +798,14 @@ function runPythonBackup({ pythonCommand, stateDir, outputDir }) {
       path.resolve(outputDir),
     ], {
       cwd: workflowRoot,
-      env: process.env,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let stdout = ''
     let stderr = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk) => { stdout += chunk })
     child.stderr.on('data', (chunk) => { stderr += chunk })
     child.once('error', (error) => reject(error))
@@ -862,12 +864,14 @@ async function runPythonRestore({ pythonCommand, stateDir, outputDir, domain, sn
       if (Number.isInteger(expectedRevision)) args.push('--expected-revision', String(expectedRevision))
       const child = spawn(pythonCommand, args, {
         cwd: workflowRoot,
-        env: process.env,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       let stdout = ''
       let stderr = ''
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
       child.stdout.on('data', (chunk) => { stdout += chunk })
       child.stderr.on('data', (chunk) => { stderr += chunk })
       child.once('error', (error) => reject(error))
@@ -891,23 +895,21 @@ async function runPythonRestore({ pythonCommand, stateDir, outputDir, domain, sn
 
 function createPythonDomainAdapters(options) {
   const pythonCommand = options.pythonCommand || process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
-  const snapshots = { promise: null, remaining: 0 }
+  let batchPromise = null
   async function collect(key) {
-    if (!snapshots.promise) {
-      snapshots.promise = runPythonBackup({
+    if (!batchPromise) {
+      const currentBatch = runPythonBackup({
         pythonCommand,
         stateDir: options.stateDir,
         outputDir: options.outputDir,
       })
-      snapshots.remaining = 2
+      batchPromise = currentBatch
+      queueMicrotask(() => {
+        if (batchPromise === currentBatch) batchPromise = null
+      })
     }
-    try {
-      const value = await snapshots.promise
-      return clone(value[key])
-    } finally {
-      snapshots.remaining -= 1
-      if (snapshots.remaining <= 0) snapshots.promise = null
-    }
+    const value = await batchPromise
+    return clone(value[key])
   }
   return {
     'marks-activity': {

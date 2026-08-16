@@ -4,6 +4,17 @@ import { readFile } from 'node:fs/promises'
 
 const backupSource = await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')
 const runtimeSource = await readFile(new URL('../src/services/persistence/read-web-application-backup.js', import.meta.url), 'utf8')
+const productionSource = await readFile(new URL('./lib/read-web-production-backup.mjs', import.meta.url), 'utf8')
+assert.equal(
+  productionSource.match(/child\.stdout\.setEncoding\('utf8'\)/g)?.length,
+  2,
+  'both Python JSON bridges must stream-decode UTF-8 across Buffer chunk boundaries',
+)
+assert.equal(
+  productionSource.match(/child\.stderr\.setEncoding\('utf8'\)/g)?.length,
+  2,
+  'both Python JSON bridges must stream-decode UTF-8 diagnostics across Buffer chunk boundaries',
+)
 const backupUrl = `data:text/javascript;base64,${Buffer.from(backupSource).toString('base64')}`
 const runtimeUrl = `data:text/javascript;base64,${Buffer.from(
   runtimeSource.replace("from './application-backup.js'", `from '${backupUrl}'`),
@@ -97,10 +108,26 @@ assert.deepEqual(new Set(outboxRecords.map((record) => record.revision)), new Se
 storage.setItem('vocabulary.passage-preview.future.v9', JSON.stringify({ schemaVersion: 'future.v9', revision: 1 }))
 await assert.rejects(
   adapters['passage-preview'].collect(),
-  (error) => error?.code === 'BACKUP_UNCLAIMED_LOCAL_STORAGE_KEY',
+  (error) => error?.code === 'BACKUP_UNCLAIMED_LOCAL_STORAGE_KEY'
+    && !Object.prototype.hasOwnProperty.call(error?.details || {}, 'rawValue'),
   'new durable localStorage keys must fail closed until they are registered',
 )
 storage.removeItem('vocabulary.passage-preview.future.v9')
+
+storage.setItem('vocabulary.passage-preview.durable-state.v1', JSON.stringify({
+  schemaVersion: 'passage-preview.durable-state.v99',
+  revision: 2,
+}))
+await assert.rejects(
+  adapters['passage-preview'].collect(),
+  (error) => error?.code === 'BACKUP_LOCAL_STORAGE_UNKNOWN_SCHEMA'
+    && !Object.prototype.hasOwnProperty.call(error?.details || {}, 'rawValue'),
+  'ordinary backup diagnostics must not expose durable localStorage values',
+)
+storage.setItem('vocabulary.passage-preview.durable-state.v1', JSON.stringify({
+  schemaVersion: 'passage-preview.durable-state.v1',
+  revision: 2,
+}))
 
 const outboxV2Key = 'read-web.reader-save-outbox.v2.6a_6f_62_2d_31.activity.6f_70_65_72_61_74_69_6f_6e_2d_61_63_74_69_76_69_74_79_2d_31'
 storage.setItem(outboxV2Key, '{truncated')

@@ -128,7 +128,7 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-当前 release 会先列出并阻断未完成的 12.3、12.4、12.5、12.6、12.7、12.8；`--list` 只查看清单并
+当前 release 会先列出并阻断未完成的 12.4、12.5、12.6、12.7、12.8；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域组合通过
@@ -136,8 +136,12 @@ IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六�
 内隔离读写，`atomicRevisionCommit` 为 true；atomic boundary gate 覆盖第一域后
 并发 startup 阻断、硬退出、pending recovery 和 journal 终态。
 `verify:workflow-application-backup-restore` 仍验证 Python owner 契约；这些检查只
-使用隔离临时 profile，不证明尚未完成的 12.3/12.7，
-也不触碰真实学习数据。
+使用隔离临时 profile，也不触碰真实学习数据。12.3 已通过显式人工授权的
+`verify:real-profile-rehearsal` 完成：该入口只读真实 browser/workflow 源，将复制、
+恢复、重开和报告全部写入显式隔离临时根，阻断所有网络请求，并要求六域
+counts/checksums 及 Reader/Vocabulary/SRS/Preview/Annotation/workflow journeys 一致。
+它必须显式提供 browser profile、origin、workflow data root、isolated root 和每个
+额外 output root；不会被普通 `verify:full` 或无参数 release 自动调用。12.7 仍未完成。
 
 ## 入口和 owner 规则
 
@@ -154,7 +158,7 @@ IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六�
 
 12.2 已覆盖真实六域 adapters、durable checkpoints、rollback/quarantine、
 冲突安全恢复、跨 owner 原子可见性、Local App Host 启动前强制 recovery seam
-和运行期 profile lease。12.3 和其余 pending gates
+和运行期 profile lease。12.3 的真实只读源/隔离恢复证据已完成；其余 pending gates
 完成前，任何 Full/基础 rehearsal 通过都不代表可以切换桌面快捷方式或接触真实
 学习数据。
 

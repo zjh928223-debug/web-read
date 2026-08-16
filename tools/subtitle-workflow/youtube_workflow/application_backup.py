@@ -57,6 +57,7 @@ _MARKS_ACTIVITY_FILES = {
     "reader-activity.json",
     "reader-marks-commit-journal.json",
 }
+_RESTORED_MEDIA_REFERENCES_FILE = "application-backup-media-references.json"
 _EMBEDDED_MEDIA_KEY = re.compile(
     r"(?:blob|arraybuffer|typedarray|binary|base64|datauri|inline(?:data|media)?|"
     r"media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))",
@@ -104,6 +105,19 @@ def _safe_relative(value, root: Path | None):
         return candidate.relative_to(root.resolve()).as_posix()
     except (OSError, ValueError):
         return None
+
+
+def _safe_portable_relative(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        candidate = Path(value.strip())
+    except (OSError, ValueError):
+        return None
+    if candidate.is_absolute() or candidate.drive or any(part == ".." for part in candidate.parts):
+        return None
+    normalized = candidate.as_posix()
+    return normalized if normalized else None
 
 
 def _looks_like_absolute_machine_path(value: str) -> bool:
@@ -161,7 +175,7 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
                     result[normalized_key] = _redact_url(child)
                 continue
             if lowered in {"outputdir", "manifestpath", "path", "file", "folder", "directory"}:
-                relative = _safe_relative(child, output_root)
+                relative = _safe_relative(child, output_root) or _safe_portable_relative(child)
                 if relative is not None:
                     result[normalized_key] = relative
                 continue
@@ -171,6 +185,17 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
             result[normalized_key] = _sanitize(child, output_root=output_root, key=normalized_key)
         return result
     raise WorkflowBackupError("WORKFLOW_BACKUP_UNSUPPORTED_VALUE", f"unsupported workflow value at {key}")
+
+
+def _normalize_javascript_json_numbers(value):
+    """Keep nested signed envelopes stable across a JavaScript JSON round-trip."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, list):
+        return [_normalize_javascript_json_numbers(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_javascript_json_numbers(item) for key, item in value.items()}
+    return value
 
 
 def _read_json(path: Path):
@@ -242,8 +267,10 @@ def _validate_envelope(value, *, domain: str, collection: str):
 
 def _record(record_id: str, payload, *, revision: int = 0, content_id: str | None = None,
             references: list | None = None, media_references: list | None = None,
-            output_root: Path | None = None, max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES) -> dict:
-    normalized_payload = _sanitize(payload, output_root=output_root)
+            output_root: Path | None = None, max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES,
+            pre_sanitized: bool = False) -> dict:
+    normalized_payload = payload if pre_sanitized else _sanitize(payload, output_root=output_root)
+    _reject_binary(normalized_payload)
     record = {
         "id": record_id,
         "schemaVersion": WORKFLOW_DOMAIN_SCHEMA_VERSION,
@@ -272,10 +299,14 @@ class WorkflowBackupAdapter:
     adapter_version = 1
     supported_schema_versions = (WORKFLOW_DOMAIN_SCHEMA_VERSION,)
 
-    def __init__(self, state_dir: Path, output_dir: Path, *, max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES,
+    def __init__(self, state_dir: Path, output_dir: Path, *, additional_output_roots=(),
+                 max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES,
                  max_media_reference_bytes: int = DEFAULT_MAX_MEDIA_REFERENCE_BYTES):
         self.state_dir = Path(state_dir)
         self.output_dir = Path(output_dir)
+        self.additional_output_roots = tuple(dict.fromkeys(
+            Path(value).expanduser().resolve() for value in additional_output_roots
+        ))
         self.max_record_bytes = max(1, int(max_record_bytes))
         self.max_media_reference_bytes = max(1, int(max_media_reference_bytes))
 
@@ -294,6 +325,46 @@ class WorkflowBackupAdapter:
             exc.details.setdefault("checksumEvidence", value.get("checksum") if isinstance(value, dict) else None)
             raise
 
+    def _preserved_media_references(self):
+        path = self.state_dir / _RESTORED_MEDIA_REFERENCES_FILE
+        value = _read_json(path)
+        if value is None:
+            return []
+        envelope = _validate_envelope(
+            value,
+            domain="workflow.media-references",
+            collection="mediaReferences",
+        )
+        references = envelope["payload"]["mediaReferences"]
+        for reference in references:
+            if not isinstance(reference, dict) or reference.get("strategy") != "identity-metadata-rebind":
+                raise WorkflowBackupError(
+                    "WORKFLOW_BACKUP_MEDIA_REFERENCE_INVALID",
+                    "preserved workflow media reference is invalid",
+                )
+            if len(_canonical_json(reference).encode("utf-8")) > self.max_media_reference_bytes:
+                raise WorkflowBackupError(
+                    "WORKFLOW_BACKUP_MEDIA_REFERENCE_TOO_LARGE",
+                    "preserved workflow media reference exceeds its size ceiling",
+                )
+            _reject_binary(reference)
+        return references
+
+    def _output_identity(self, value: Path):
+        resolved = value.expanduser().resolve()
+        output_root = self.output_dir.resolve()
+        if resolved == output_root or output_root in resolved.parents:
+            return resolved.relative_to(output_root).as_posix()
+        for index, allowed_root in enumerate(self.additional_output_roots, start=1):
+            if resolved == allowed_root or allowed_root in resolved.parents:
+                relative = resolved.relative_to(allowed_root).as_posix()
+                prefix = f"legacy/external-{index}"
+                return f"{prefix}/{relative}" if relative != "." else prefix
+        raise WorkflowBackupError(
+            "WORKFLOW_BACKUP_PATH_OUTSIDE_ROOT",
+            "workflow output path escapes every explicitly authorized output root",
+        )
+
     def _media_references(self, job_root: Path):
         references = []
         if not job_root.exists() or not job_root.is_dir():
@@ -303,9 +374,7 @@ class WorkflowBackupAdapter:
                 continue
             if any(marker in path.name for marker in _TEMP_MARKERS):
                 continue
-            relative = _safe_relative(path, self.output_dir)
-            if relative is None:
-                raise WorkflowBackupError("WORKFLOW_BACKUP_MEDIA_REFERENCE_INVALID", "media path escapes output root")
+            relative = self._output_identity(path)
             try:
                 stat = path.stat()
             except OSError as exc:
@@ -322,15 +391,29 @@ class WorkflowBackupAdapter:
             references.append(reference)
         return references
 
+    def _portable_item(self, item: dict, output_dir):
+        if not output_dir:
+            return item
+        identity = self._output_identity(Path(str(output_dir)))
+        portable = dict(item)
+        portable["outputDir"] = str((self.output_dir.resolve() / identity).resolve())
+        return portable
+
     def _output_records(self, job_ids: set[str], roots: dict[str, Path]):
         records = []
         media_references = []
         seen_paths: set[Path] = set()
-        for job_id, job_root in roots.items():
+        # Restored external roots live below ``output/legacy/external-N`` and
+        # therefore overlap a job whose root is the whole output directory.
+        # Visit the most specific owner first so a file keeps the same job
+        # reference before and after that portable rebinding.
+        ordered_roots = sorted(
+            roots.items(),
+            key=lambda entry: (-len(entry[1].expanduser().resolve().parts), entry[0]),
+        )
+        for job_id, job_root in ordered_roots:
             resolved = job_root.resolve()
-            output_root = self.output_dir.resolve()
-            if resolved != output_root and output_root not in resolved.parents:
-                raise WorkflowBackupError("WORKFLOW_BACKUP_PATH_OUTSIDE_ROOT", "workflow output path escapes the configured root")
+            self._output_identity(resolved)
             media_references.extend(self._media_references(resolved))
             for path in sorted(resolved.rglob("*.json")):
                 if path in seen_paths or any(marker in path.name for marker in _TEMP_MARKERS):
@@ -343,9 +426,7 @@ class WorkflowBackupAdapter:
                 value = _read_json(path)
                 if value is None:
                     continue
-                relative = _safe_relative(path, self.output_dir)
-                if relative is None:
-                    raise WorkflowBackupError("WORKFLOW_BACKUP_PATH_OUTSIDE_ROOT", "workflow JSON path escapes output root")
+                relative = self._output_identity(path)
                 revision = value.get("revision", 0) if isinstance(value, dict) else 0
                 if not isinstance(revision, int) or revision < 0:
                     raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", f"workflow file revision is invalid: {relative}")
@@ -376,18 +457,20 @@ class WorkflowBackupAdapter:
         ):
             if value is None:
                 continue
-            revision = int(value.get("revision") or 0)
+            items = value["payload"][collection]
+            revision = max(int(value.get("revision") or 0), 1 if items else 0)
             revisions.append(revision)
-            for index, item in enumerate(value["payload"][collection]):
+            for index, item in enumerate(items):
                 if not isinstance(item, dict):
                     raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", f"{domain} contains an invalid item")
                 job_id = str(item.get("jobId") or f"{collection}-{index}")
                 output_dir = item.get("outputDir")
                 if output_dir:
                     roots[job_id] = Path(str(output_dir))
+                portable_item = self._portable_item(item, output_dir)
                 records.append(_record(
                     f"{collection}:{job_id}",
-                    item,
+                    portable_item,
                     revision=revision,
                     content_id=job_id,
                     references=[{"type": "workflow-job", "id": job_id}],
@@ -403,11 +486,13 @@ class WorkflowBackupAdapter:
                 if not isinstance(item, dict):
                     raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", "reader-index.json contains an invalid item")
                 job_id = str(item.get("jobId") or f"reader-index-{index}")
-                if item.get("outputDir"):
-                    roots[job_id] = Path(str(item["outputDir"]))
+                output_dir = item.get("outputDir")
+                if output_dir:
+                    roots[job_id] = Path(str(output_dir))
+                portable_item = self._portable_item(item, output_dir)
                 records.append(_record(
                     f"reader-index:{job_id}",
-                    item,
+                    portable_item,
                     revision=0,
                     content_id=job_id,
                     references=[{"type": "workflow-job", "id": job_id}],
@@ -427,12 +512,21 @@ class WorkflowBackupAdapter:
                 max_record_bytes=self.max_record_bytes,
             ))
 
-        output_records, media_references = self._output_records(set(roots), roots)
+        output_records, discovered_media_references = self._output_records(set(roots), roots)
         records.extend(output_records)
+        records.sort(key=lambda record: record["id"])
+        media_references = list(self._preserved_media_references())
+        seen_media_references = {_canonical_json(reference) for reference in media_references}
+        for reference in discovered_media_references:
+            identity = _canonical_json(reference)
+            if identity in seen_media_references:
+                continue
+            seen_media_references.add(identity)
+            media_references.append(reference)
         return {
             "schemaVersion": self.schema_version,
             "adapterVersion": self.adapter_version,
-            "revision": max(revisions or [0]),
+            "revision": max(max(revisions or [0]), 1 if records else 0),
             "records": records,
             "references": [
                 {"type": "workflow-job", "id": job_id}
@@ -496,6 +590,35 @@ class ReaderMarksActivityBackupAdapter:
                 },
             )
         expected_schema, expected_domain = self._expected_schema(path.name)
+        if isinstance(value, dict) and value.get("schemaVersion") == 1:
+            job_id = value.get("jobId")
+            is_legacy_marks = path.name == "reader-marks.json" and isinstance(value.get("marks"), list)
+            is_legacy_activity = path.name == "reader-activity.json" and bool(
+                value.get("lastActivityAt") or value.get("lastEvent") or value.get("event")
+            )
+            if isinstance(job_id, str) and job_id and (is_legacy_marks or is_legacy_activity):
+                if is_legacy_marks:
+                    payload = {"jobId": job_id, "marks": json.loads(json.dumps(value.get("marks") or []))}
+                else:
+                    payload = {
+                        key: json.loads(json.dumps(item))
+                        for key, item in value.items()
+                        if key not in {"checksum", "revision"}
+                    }
+                value = {
+                    "schemaVersion": expected_schema,
+                    "domain": expected_domain,
+                    "jobId": job_id,
+                    "revision": 0,
+                    "updatedAt": payload.get("updatedAt") or "",
+                    "payload": payload,
+                }
+                value["checksum"] = _checksum({
+                    key: value[key]
+                    for key in ("schemaVersion", "domain", "jobId", "revision", "updatedAt", "payload")
+                })
+                if is_legacy_marks:
+                    value["marks"] = json.loads(json.dumps(payload["marks"]))
         if not isinstance(value, dict) or value.get("schemaVersion") != expected_schema:
             raise WorkflowBackupError(
                 "MARKS_ACTIVITY_BACKUP_UNKNOWN_SCHEMA",
@@ -524,6 +647,14 @@ class ReaderMarksActivityBackupAdapter:
             raise evidence_error("MARKS_ACTIVITY_BACKUP_CORRUPT", f"marks/activity checksum mismatch: {path.name}")
         return value, value["jobId"]
 
+    def _portable_envelope(self, envelope: dict) -> dict:
+        portable = _normalize_javascript_json_numbers(_sanitize(envelope, output_root=self.output_dir))
+        portable["checksum"] = _checksum({
+            key: portable[key]
+            for key in ("schemaVersion", "domain", "jobId", "revision", "updatedAt", "payload")
+        })
+        return portable
+
     def collect(self):
         records = []
         revisions = []
@@ -538,6 +669,7 @@ class ReaderMarksActivityBackupAdapter:
             if relative is None:
                 raise WorkflowBackupError("MARKS_ACTIVITY_BACKUP_PATH_INVALID", "marks/activity path escapes output root")
             envelope, job_id = self._read_envelope(path)
+            envelope = self._portable_envelope(envelope)
             revisions.append(int(envelope["revision"]))
             record = _record(
                 f"{path.name}:{relative}",
@@ -547,6 +679,7 @@ class ReaderMarksActivityBackupAdapter:
                 references=[{"type": "workflow-job", "id": job_id}],
                 output_root=self.output_dir,
                 max_record_bytes=self.max_record_bytes,
+                pre_sanitized=True,
             )
             records.append(record)
         return {
@@ -751,6 +884,24 @@ class WorkflowRestoreAdapter:
         output_records = {record_id: record for record_id, record in records.items() if record_id.startswith("output:")}
         for record_id in output_records:
             _safe_restore_path(self.output_dir, record_id[len("output:"):])
+        media_references = snapshot.get("mediaReferences", [])
+        if not isinstance(media_references, list):
+            raise WorkflowBackupError(
+                "WORKFLOW_RESTORE_CORRUPT",
+                "workflow media references are invalid",
+            )
+        for reference in media_references:
+            if not isinstance(reference, dict) or reference.get("strategy") != "identity-metadata-rebind":
+                raise WorkflowBackupError(
+                    "WORKFLOW_RESTORE_CORRUPT",
+                    "workflow media reference is invalid",
+                )
+            if len(_canonical_json(reference).encode("utf-8")) > DEFAULT_MAX_MEDIA_REFERENCE_BYTES:
+                raise WorkflowBackupError(
+                    "WORKFLOW_RESTORE_CORRUPT",
+                    "workflow media reference exceeds its size ceiling",
+                )
+            _reject_binary(reference)
 
         self._remove_stale_files(records, current)
 
@@ -769,6 +920,15 @@ class WorkflowRestoreAdapter:
             self.repository.write(self.state_dir / "reader-index.json", {"items": reader_index})
         if config_record is not None:
             self.repository.write(self.state_dir / "config.json", config)
+        self.repository.write(
+            self.state_dir / _RESTORED_MEDIA_REFERENCES_FILE,
+            _restore_envelope(
+                "workflow.media-references",
+                "mediaReferences",
+                media_references,
+                domain_revision,
+            ),
+        )
         self._write_output_records(output_records)
         return {"revision": max(actual_revision + 1, domain_revision, 1), "recordCount": len(records)}
 
@@ -885,7 +1045,7 @@ def verify_workflow_records(snapshot: dict, *, max_record_bytes: int = DEFAULT_M
     return {"valid": True, "recordCount": len(records), "revision": snapshot.get("revision", 0)}
 
 
-def collect_production_backup_domains(state_dir: Path, output_dir: Path) -> dict:
+def collect_production_backup_domains(state_dir: Path, output_dir: Path, *, additional_output_roots=()) -> dict:
     """Collect both Python-owned required domains through one public bridge.
 
     The JavaScript production composition invokes this entry point for an
@@ -893,7 +1053,11 @@ def collect_production_backup_domains(state_dir: Path, output_dir: Path) -> dict
     marks/activity repositories are discovered from their real durable roots,
     while JavaScript remains the independent artifact/verifier owner.
     """
-    workflow = WorkflowBackupAdapter(state_dir, output_dir).collect()
+    workflow = WorkflowBackupAdapter(
+        state_dir,
+        output_dir,
+        additional_output_roots=additional_output_roots,
+    ).collect()
     marks_activity = ReaderMarksActivityBackupAdapter(output_dir).collect()
     verify_workflow_records(workflow)
     verify_marks_activity_records(marks_activity)
@@ -907,6 +1071,7 @@ def _main() -> int:
     parser = argparse.ArgumentParser(description="Emit Read-Web application backup Python domain snapshots")
     parser.add_argument("--state-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--additional-output-root", action="append", default=[], type=Path)
     parser.add_argument("--restore-domain", choices=("workflow", "marks-activity"))
     parser.add_argument("--restore-input", type=Path)
     parser.add_argument("--expected-revision", type=int)
@@ -921,7 +1086,11 @@ def _main() -> int:
             print(json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
             return 0
         print(json.dumps(
-            collect_production_backup_domains(args.state_dir, args.output_dir),
+            collect_production_backup_domains(
+                args.state_dir,
+                args.output_dir,
+                additional_output_roots=args.additional_output_root,
+            ),
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),

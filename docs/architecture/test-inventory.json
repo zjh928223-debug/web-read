@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
     "architecture": 109,
-    "behavior": 84,
-    "browser": 25,
+    "behavior": 85,
+    "browser": 27,
     "performance": 13,
     "release": 8
   },
-  "packageScriptCount": 220,
-  "executableScriptCount": 239,
+  "packageScriptCount": 222,
+  "executableScriptCount": 242,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1746,6 +1746,31 @@
       "owner": "package.json#scripts.verify:reader-session-publisher"
     },
     {
+      "name": "verify:real-profile-rehearsal",
+      "command": "node scripts/application-backup-real-profile-rehearsal.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/application-backup-real-profile-rehearsal.mjs"
+      ],
+      "owner": "package.json#scripts.verify:real-profile-rehearsal"
+    },
+    {
+      "name": "verify:real-profile-rehearsal:contract",
+      "command": "node scripts/application-backup-real-profile-rehearsal-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/application-backup-real-profile-rehearsal-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:real-profile-rehearsal:contract"
+    },
+    {
       "name": "verify:release",
       "command": "node scripts/verify-release.mjs",
       "category": "release",
@@ -3283,6 +3308,55 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/application-backup-real-profile-rehearsal-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:real-profile-rehearsal:contract",
+      "owners": [
+        "package.json#scripts.verify:real-profile-rehearsal:contract"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/application-backup-real-profile-rehearsal.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:real-profile-rehearsal",
+      "owners": [
+        "package.json#scripts.verify:real-profile-rehearsal"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
       }
@@ -4920,6 +4994,30 @@
         "behaviorAssertions": false,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/lib/read-web-real-profile-rehearsal.mjs",
+      "category": "browser",
+      "layers": [
+        "browser"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#releaseGate",
+      "owners": [
+        "docs/architecture/script-inventory.json#releaseGate"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": true
       }
     },
     {

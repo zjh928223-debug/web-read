@@ -7,6 +7,7 @@ import {
 
 const READER_SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
 const VOCABULARY_ROW_PREFIX = 'vocabulary.'
+const VOCABULARY_SETTLEMENT_PROGRESS_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const ANNOTATION_STORAGE_PREFIX = 'AnnotationGenerationStorage::'
 const READER_SAVE_OUTBOX_V1_KEY = 'read-web.reader-save-outbox.v1'
 const READER_SAVE_OUTBOX_V2_PREFIX = 'read-web.reader-save-outbox.v2.'
@@ -28,9 +29,11 @@ const PASSAGE_PREVIEW_STORAGE_KEYS = Object.freeze([
   { key: 'vocabulary.passage-preview.shortcut.context.v1', schemaVersion: 'passage-preview.shortcut.v1', rawText: true },
   { key: 'vocabulary.passage-preview.translation-display-mode.v1', schemaVersion: 'passage-preview.display-mode.v1', rawText: true },
   { key: 'vocabulary.passage-preview.acquisition.v1', schemaVersion: 'passage-preview.acquisition.v1' },
-  { key: 'vocabulary.ielts-daily-preview.allocations.v1', schemaVersion: 'ielts-preview.allocations.v1' },
-  { key: 'vocabulary.ielts-daily-preview.continuation.v1', schemaVersion: 'ielts-preview.continuation.v1' },
-  { key: 'vocabulary.ielts-daily-preview.archive.v1', schemaVersion: 'ielts-preview.archive.v1' },
+  { key: 'vocabulary.passage-preview.delayed-check.v1', schemaVersion: 'passage-preview.delayed-check.v1' },
+  { key: 'vocabulary.passage-preview.reacquisition-progress.v1', schemaVersion: 'passage-preview.reacquisition-progress.v1', allowLegacyValue: true },
+  { key: 'vocabulary.ielts-daily-preview.allocations.v1', schemaVersion: 'ielts-daily-preview.allocations.v1' },
+  { key: 'vocabulary.ielts-daily-preview.continuation.v1', schemaVersion: 'ielts-daily-preview.continuation.v1' },
+  { key: 'vocabulary.ielts-daily-preview.archive.v1', schemaVersion: 'ielts-daily-preview.archive.v1' },
 ])
 
 export { APPLICATION_BACKUP_REQUIRED_DOMAINS }
@@ -128,6 +131,7 @@ export function createReadWebApplicationBackupAdapters(options = {}) {
     : (row) => READER_SESSION_ROW_IDS.has(row?.id)
       || String(row?.id || '').startsWith('readerSessionQuarantine:')
       || String(row?.id || '').startsWith(VOCABULARY_ROW_PREFIX)
+      || String(row?.id || '').startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX)
   const assertRowsConsumed = async (rows) => {
     const unclaimed = rows.find((row) => !claimedRow(row))
     if (!unclaimed) return
@@ -170,7 +174,8 @@ export function createReadWebApplicationBackupAdapters(options = {}) {
             schemaVersion: 1,
             readRows,
             assertRows: assertRowsConsumed,
-            rowFilter: (row) => String(row?.id || '').startsWith(VOCABULARY_ROW_PREFIX),
+            rowFilter: (row) => String(row?.id || '').startsWith(VOCABULARY_ROW_PREFIX)
+              || String(row?.id || '').startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX),
           })
         : null
     ),
@@ -538,10 +543,9 @@ export function createLocalStorageCollectionDomainAdapter(options = {}) {
   if (!domainKey || (!prefixes.length && !hasExplicitKeys)) throw new Error('localStorage collection adapter requires domainKey and prefix or explicit keys')
   const schemaVersion = options.schemaVersion ?? 1
 
-  function withEvidence(error, sourceKey, rawValue, parsedValue) {
+  function withEvidence(error, sourceKey, parsedValue) {
     const details = error?.details && typeof error.details === 'object' ? { ...error.details } : {}
     details.sourceKey = sourceKey
-    details.rawValue = rawValue
     details.detectedAt = new Date().toISOString()
     details.reason = details.reason || error?.code || 'BACKUP_LOCAL_STORAGE_CORRUPT'
     details.checksumEvidence = details.checksumEvidence || parsedValue?.checksum || null
@@ -586,7 +590,7 @@ export function createLocalStorageCollectionDomainAdapter(options = {}) {
         if (unknownKey) {
           const error = new Error(`localStorage key ${unknownKey} is not registered with ${domainKey}`)
           error.code = 'BACKUP_UNCLAIMED_LOCAL_STORAGE_KEY'
-          throw withEvidence(error, unknownKey, storage.getItem(unknownKey), null)
+          throw withEvidence(error, unknownKey, null)
         }
       }
       const records = []
@@ -643,7 +647,7 @@ export function createLocalStorageCollectionDomainAdapter(options = {}) {
             payload,
           })
         } catch (error) {
-          throw withEvidence(error, key, raw, value)
+          throw withEvidence(error, key, value)
         }
       }
       return {
@@ -889,6 +893,7 @@ function isReaderIndexedDbId(id) {
 
 function isVocabularyIndexedDbId(id) {
   return String(id).startsWith(VOCABULARY_ROW_PREFIX)
+    || String(id).startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX)
 }
 
 function outboxRestoreKey(entry) {
@@ -1590,8 +1595,35 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     async verifyApplied({ artifact }) {
       await withTargetLock(recoverPendingAndRecordUnlocked)
       const domains = await collectAllDomains()
-      const ok = requiredDomains.every((key) => domainsEqual(domains[key], artifact?.domains?.[key]))
-      return { ok, revision: await currentRevision() }
+      const mismatchedDomains = requiredDomains.filter((key) => !domainsEqual(domains[key], artifact?.domains?.[key]))
+      const mismatchEvidence = Object.fromEntries(await Promise.all(mismatchedDomains.map(async (key) => {
+        const actual = comparableDomain(domains[key])
+        const expected = comparableDomain(artifact?.domains?.[key])
+        const actualRecords = Array.isArray(actual?.records) ? actual.records : []
+        const expectedRecords = Array.isArray(expected?.records) ? expected.records : []
+        const actualById = new Map(actualRecords.map((record) => [record.id, record]))
+        const expectedById = new Map(expectedRecords.map((record) => [record.id, record]))
+        const allDifferingRecordIds = [...new Set([...actualById.keys(), ...expectedById.keys()])]
+          .filter((id) => restoreCanonical(actualById.get(id)) !== restoreCanonical(expectedById.get(id)))
+          .sort()
+        const differingRecordIds = allDifferingRecordIds.slice(0, 10)
+        return [key, {
+          actualChecksum: await restoreChecksum(actual),
+          expectedChecksum: await restoreChecksum(expected),
+          actualRevision: actual?.revision ?? null,
+          expectedRevision: expected?.revision ?? null,
+          actualRecordCount: actualRecords.length,
+          expectedRecordCount: expectedRecords.length,
+          differingRecordIds,
+          differingRecordIdsTruncated: allDifferingRecordIds.length > differingRecordIds.length,
+        }]
+      })))
+      return {
+        ok: mismatchedDomains.length === 0,
+        mismatchedDomains,
+        ...(mismatchedDomains.length ? { mismatchEvidence } : {}),
+        revision: await currentRevision(),
+      }
     },
     async recoverPendingRestore() {
       return withTargetLock(recoverPendingAndRecordUnlocked)

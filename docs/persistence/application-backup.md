@@ -153,8 +153,14 @@ a parent-owned pipe; graceful exit or process death closes the pipe and releases
 the lease. Restore cannot start while the application is serving, and the host
 cannot become ready while restore or startup recovery is incomplete. Recovery
 status is exposed as startup evidence and closes the interrupted journal as
-`rolled-back` or `completed`. This completes 12.2 but remains distinct from
-12.3 recovery of a real copied browser/workflow profile.
+`rolled-back` or `completed`. This completes 12.2. Task 12.3 subsequently copied
+the real browser profile and read the real workflow roots without writing them,
+restored all six domains under a temporary isolated root, reopened them, and
+reproduced every record count and domain checksum. Reader, Vocabulary, SRS,
+Preview, Annotation and workflow journeys passed with zero network requests.
+Complete media bytes and retired browser rows remained excluded; workflow media
+identity metadata is persisted as rebind evidence so a restore/reopen round trip
+remains exact.
 
 `createReadWebApplicationRestoreTarget` keeps the browser-facing stores,
 journal, rollback backup, pending checkpoint, revision evidence and quarantine

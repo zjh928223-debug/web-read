@@ -1,6 +1,6 @@
 # Read-Web Current Project Status
 
-Last verified: 2026-08-12
+Last verified: 2026-08-16
 
 本文档只描述 `E:\read-web-next` 的当前事实。日常学习版仍在 `E:\read-web`；两者不得混用进程、端口或写数据目录。
 
@@ -88,7 +88,7 @@ Vite 仍承载 9 组本地能力插件。正式单一 Local App Host 已有原�
 - `verify:ui-compatibility-store`：UI Pinia 唯一 owner、retired `__uiStore` 缺失与可见 toast/error 行为检查。
 - `openspec validate stabilize-and-simplify-read-web --strict`：规格结构校验。
 
-`npm test` 目前仍等价于旧 `verify:vite` 入口，不能被理解为全部测试。发布必须使用 `verify:full`，最终迁移还需要尚未完成的 `verify:release`、备份/恢复和差分门禁。
+`npm test` 当前执行 canonical `verify:full`。12.3 已用真实 browser/workflow 数据的只读副本完成六域隔离恢复、重开、checksum 与六条旅程验证；发布仍被 12.4–12.8 的长时运行、差分、最终 manifest 和快捷方式回滚/确认门禁阻断。
 
 ## 7. 隔离与迁移状态
 

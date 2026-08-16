@@ -91,6 +91,19 @@ const targetComposition = await createReadWebProductionBackupComposition({
   readerSaveOutboxQuarantineProtector: outboxQuarantineProtector,
   release: { applicationVersion: 'real-restore-test', backendVersion: 'real-restore-test', gitSha: 'real-restore-test', releaseId: 'real-restore-test', manifestSha: null },
 })
+const workflowBeforeDirectRestore = await targetComposition.pythonAdapters.workflow.collect()
+await targetComposition.pythonAdapters.workflow.restoreRecords(artifact.domains.workflow, {
+  expectedRevision: workflowBeforeDirectRestore.revision,
+})
+const [, workflowAfterDirectRestore] = await Promise.all([
+  targetComposition.pythonAdapters['marks-activity'].collect(),
+  targetComposition.pythonAdapters.workflow.collect(),
+])
+assert.deepEqual(
+  normalizeDomains({ workflow: workflowAfterDirectRestore }),
+  normalizeDomains({ workflow: artifact.domains.workflow }),
+  'a single-domain collect must not leak a stale Python snapshot into the next collection batch',
+)
 const restoreTarget = targetComposition.restoreTarget
 assert.equal(restoreTarget.rollbackStoreSeparate, false)
 assert.equal(restoreTarget.restoreCapabilities.atomicRevisionCommit, true)
