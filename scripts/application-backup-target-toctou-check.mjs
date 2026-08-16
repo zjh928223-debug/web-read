@@ -16,6 +16,7 @@ try {
   const target = await productionBackup.createIsolatedProfileRestoreTarget({
     isolationRoot: root,
     profileDir: path.join(root, 'microtask-target'),
+    enableMergeDomain: true,
   })
   const stateBefore = await readFile(target.statePath, 'utf8')
   const calls = { value: 0 }
@@ -23,6 +24,7 @@ try {
   const restorePromise = service.restore(artifact, {
     target,
     restoreId: 'target-toctou-microtask',
+    resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'merge'])),
   })
 
   target.capacityBytes = Number.MAX_SAFE_INTEGER

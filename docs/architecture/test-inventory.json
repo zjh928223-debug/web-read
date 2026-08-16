@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
     "architecture": 109,
-    "behavior": 81,
+    "behavior": 84,
     "browser": 25,
     "performance": 13,
     "release": 8
   },
   "packageScriptCount": 220,
-  "executableScriptCount": 236,
+  "executableScriptCount": 239,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -232,7 +232,7 @@
     },
     {
       "name": "verify:application-backup",
-      "command": "node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-target-binding-check.mjs && node scripts/application-backup-target-integrity-matrix-check.mjs && node scripts/application-backup-isolation-check.mjs && node scripts/application-backup-atomic-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/application-backup-adapter-check.mjs && node scripts/application-backup-fault-injection-check.mjs && node scripts/application-backup-concurrency-check.mjs && node scripts/application-backup-real-restore-check.mjs && node scripts/application-backup-restore-fault-matrix.mjs",
+      "command": "node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-target-binding-check.mjs && node scripts/application-backup-target-integrity-matrix-check.mjs && node scripts/application-backup-target-toctou-check.mjs && node scripts/application-backup-capability-toctou-matrix-check.mjs && node scripts/application-backup-capability-structure-check.cjs && node scripts/application-backup-isolation-check.mjs && node scripts/application-backup-atomic-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/application-backup-adapter-check.mjs && node scripts/application-backup-fault-injection-check.mjs && node scripts/application-backup-concurrency-check.mjs && node scripts/application-backup-real-restore-check.mjs && node scripts/application-backup-restore-fault-matrix.mjs",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -241,6 +241,8 @@
       "invokes": [
         "scripts/application-backup-adapter-check.mjs",
         "scripts/application-backup-atomic-boundary-check.mjs",
+        "scripts/application-backup-capability-structure-check.cjs",
+        "scripts/application-backup-capability-toctou-matrix-check.mjs",
         "scripts/application-backup-check.mjs",
         "scripts/application-backup-concurrency-check.mjs",
         "scripts/application-backup-fault-injection-check.mjs",
@@ -249,7 +251,8 @@
         "scripts/application-backup-real-restore-check.mjs",
         "scripts/application-backup-restore-fault-matrix.mjs",
         "scripts/application-backup-target-binding-check.mjs",
-        "scripts/application-backup-target-integrity-matrix-check.mjs"
+        "scripts/application-backup-target-integrity-matrix-check.mjs",
+        "scripts/application-backup-target-toctou-check.mjs"
       ],
       "owner": "package.json#scripts.verify:application-backup"
     },
@@ -3115,6 +3118,54 @@
       }
     },
     {
+      "path": "scripts/application-backup-capability-structure-check.cjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:application-backup",
+      "owners": [
+        "package.json#scripts.verify:application-backup"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/application-backup-capability-toctou-matrix-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:application-backup",
+      "owners": [
+        "package.json#scripts.verify:application-backup"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/application-backup-check.mjs",
       "category": "behavior",
       "layers": [
@@ -3359,6 +3410,30 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/application-backup-target-toctou-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:application-backup",
+      "owners": [
+        "package.json#scripts.verify:application-backup"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

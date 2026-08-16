@@ -24,6 +24,7 @@ export const ARCHITECTURE_EVIDENCE_OWNED_BY_OTHER_GATES = new Set([
   'scripts/production-host-lifecycle-check.mjs',
   'scripts/runtime-config-integration-check.mjs',
   'scripts/application-backup-target-integrity-matrix-check.mjs',
+  'scripts/application-backup-capability-structure-check.cjs',
   'scripts/srs-review-check.cjs',
   'scripts/srs-review-ui-v2-check.cjs',
   'scripts/verify-vocabulary-personalization-content.mjs',
