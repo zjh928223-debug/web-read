@@ -30,6 +30,10 @@ const TARGET_METHOD_NAMES = Object.freeze([
   'beginTransaction',
   'restoreSnapshot',
   'verifyApplied',
+  'mergeDomain',
+  'recoverPendingRestore',
+  'readState',
+  'setFaults',
 ])
 const TARGET_PATH_NAMES = Object.freeze([
   'isolationRoot',
@@ -41,11 +45,31 @@ const TARGET_PATH_NAMES = Object.freeze([
   'pythonStateDir',
   'pythonOutputDir',
 ])
+const TARGET_VALUE_NAMES = Object.freeze([
+  'isolated',
+  'isolationCertificate',
+  'isolationLayout',
+  'restoreCapabilities',
+  'faults',
+  'adapters',
+  'journal',
+  'resolutions',
+  'rollbackStore',
+  'quarantine',
+  'rollbackStoreSeparate',
+  'capacityBytes',
+  ...TARGET_PATH_NAMES,
+])
+const MUTABLE_ADAPTER_DATA_NAMES = new Set(['records', 'revision', 'writes', 'failed'])
+const MUTABLE_STORE_DATA_NAMES = new Set(['entries', 'last', 'value'])
 
 export const APPLICATION_BACKUP_FORMAT = BACKUP_FORMAT
 export const APPLICATION_BACKUP_FORMAT_VERSION = FORMAT_VERSION
 export const APPLICATION_BACKUP_SCHEMA_VERSION = SCHEMA_VERSION
 export const APPLICATION_BACKUP_REQUIRED_DOMAINS = REQUIRED_DOMAINS
+export const APPLICATION_BACKUP_TARGET_INTEGRITY_MEMBERS = Object.freeze([
+  ...new Set([...TARGET_METHOD_NAMES, ...TARGET_VALUE_NAMES]),
+].sort())
 export const APPLICATION_BACKUP_MEDIA_POLICY = Object.freeze({
   mode: MEDIA_POLICY_MODE,
   fullMediaIncluded: false,
@@ -86,73 +110,217 @@ export function isApplicationBackupIsolationCertificate(value) {
     && Object.values(value.paths).every((entry) => typeof entry === 'string' && entry.length > 0)
 }
 
-function captureCallableSurface(value) {
-  if (!value || typeof value !== 'object') return null
-  const keys = Object.keys(value).sort()
+function isObjectLike(value) {
+  return !!value && (typeof value === 'object' || typeof value === 'function')
+}
+
+function hasDataDescriptor(descriptor) {
+  return Object.prototype.hasOwnProperty.call(descriptor, 'value')
+}
+
+function captureImmutableValue(value, context = { seen: new WeakMap(), next: 0 }) {
+  if (!isObjectLike(value)) return value
+  if (context.seen.has(value)) return Object.freeze({ cycle: context.seen.get(value) })
+  const marker = context.next
+  context.next += 1
+  context.seen.set(value, marker)
+  const entries = Reflect.ownKeys(value).map((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    if (hasDataDescriptor(descriptor)) {
+      return Object.freeze({
+        key,
+        kind: 'data',
+        configurable: descriptor.configurable,
+        enumerable: descriptor.enumerable,
+        writable: descriptor.writable,
+        value: captureImmutableValue(descriptor.value, context),
+      })
+    }
+    return Object.freeze({
+      key,
+      kind: 'accessor',
+      configurable: descriptor.configurable,
+      enumerable: descriptor.enumerable,
+      get: descriptor.get,
+      set: descriptor.set,
+    })
+  })
   return Object.freeze({
-    value,
-    keys: Object.freeze(keys),
-    methods: Object.freeze(Object.fromEntries(
-      keys
-        .filter((key) => typeof value[key] === 'function')
-        .map((key) => [key, value[key]]),
-    )),
+    prototype: Object.getPrototypeOf(value),
+    entries: Object.freeze(entries),
   })
 }
 
-function sameCallableSurface(value, snapshot) {
-  if (!snapshot || value !== snapshot.value || !value || typeof value !== 'object') return !snapshot && !value
-  const keys = Object.keys(value).sort()
-  if (keys.length !== snapshot.keys.length || keys.some((key, index) => key !== snapshot.keys[index])) return false
-  return Object.entries(snapshot.methods).every(([key, method]) => value[key] === method)
+function sameImmutableValue(value, snapshot, context = { seen: new WeakMap(), next: 0 }) {
+  if (!snapshot || !isObjectLike(value)) return Object.is(value, snapshot)
+  if (snapshot.cycle !== undefined) return context.seen.get(value)?.marker === snapshot.cycle
+  if (Object.getPrototypeOf(value) !== snapshot.prototype) return false
+  if (context.seen.has(value)) return context.seen.get(value).snapshot === snapshot
+  const marker = context.next
+  context.next += 1
+  context.seen.set(value, { marker, snapshot })
+  const keys = Reflect.ownKeys(value)
+  if (keys.length !== snapshot.entries.length) return false
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    const current = Object.getOwnPropertyDescriptor(value, key)
+    const expected = snapshot.entries[index]
+    if (key !== expected.key || !current
+      || (hasDataDescriptor(current) ? expected.kind !== 'data' : expected.kind !== 'accessor')
+      || current.configurable !== expected.configurable
+      || current.enumerable !== expected.enumerable) return false
+    if (expected.kind === 'data') {
+      if (current.writable !== expected.writable || !sameImmutableValue(current.value, expected.value, context)) return false
+    } else if (current.get !== expected.get || current.set !== expected.set) return false
+  }
+  return true
+}
+
+function captureDescriptorSurface(value, { valueNames = new Set(), compareDataValues = false, deepDataValues = false, ignoredDataNames = new Set() } = {}) {
+  if (!isObjectLike(value)) return null
+  const descriptors = Reflect.ownKeys(value).map((key) => {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    const data = hasDataDescriptor(descriptor)
+    const namedValue = typeof key === 'string' && valueNames.has(key)
+    const compareValue = data && !ignoredDataNames.has(key)
+      && (compareDataValues || namedValue || typeof descriptor.value === 'function')
+    return Object.freeze({
+      key,
+      kind: data ? 'data' : 'accessor',
+      configurable: descriptor.configurable,
+      enumerable: descriptor.enumerable,
+      writable: data ? descriptor.writable : undefined,
+      value: compareValue && !deepDataValues ? descriptor.value : undefined,
+      valueSnapshot: compareValue && deepDataValues ? captureImmutableValue(descriptor.value) : undefined,
+      compareValue,
+      deepValue: compareValue && deepDataValues,
+      get: data ? undefined : descriptor.get,
+      set: data ? undefined : descriptor.set,
+    })
+  })
+  return Object.freeze({
+    value,
+    prototype: Object.getPrototypeOf(value),
+    descriptors: Object.freeze(descriptors),
+  })
+}
+
+function sameDescriptorSurface(value, snapshot) {
+  if (!snapshot || value !== snapshot.value || !isObjectLike(value)) return !snapshot && !value
+  if (Object.getPrototypeOf(value) !== snapshot.prototype) return false
+  const keys = Reflect.ownKeys(value)
+  if (keys.length !== snapshot.descriptors.length) return false
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    const expected = snapshot.descriptors[index]
+    if (key !== expected.key || !descriptor
+      || (hasDataDescriptor(descriptor) ? expected.kind !== 'data' : expected.kind !== 'accessor')
+      || descriptor.configurable !== expected.configurable
+      || descriptor.enumerable !== expected.enumerable) return false
+    if (expected.kind === 'data') {
+      if (descriptor.writable !== expected.writable) return false
+      if (expected.compareValue && expected.deepValue
+        ? !sameImmutableValue(descriptor.value, expected.valueSnapshot)
+        : expected.compareValue && !Object.is(descriptor.value, expected.value)) return false
+    } else if (descriptor.get !== expected.get || descriptor.set !== expected.set) return false
+  }
+  return true
+}
+
+function lookupPropertyDescriptor(value, name) {
+  let current = value
+  while (isObjectLike(current)) {
+    const descriptor = Object.getOwnPropertyDescriptor(current, name)
+    if (descriptor) return descriptor
+    current = Object.getPrototypeOf(current)
+  }
+  return null
+}
+
+function readPropertyWithoutInvokingGetter(value, name) {
+  const descriptor = lookupPropertyDescriptor(value, name)
+  if (!descriptor) return undefined
+  return hasDataDescriptor(descriptor) ? descriptor.value : descriptor.get
 }
 
 function captureIsolationTargetBinding(target, isolationCertificate, isolationLayout) {
-  const adapters = captureCallableSurface(target.adapters)
+  const targetSurface = captureDescriptorSurface(target, { valueNames: new Set(TARGET_VALUE_NAMES) })
+  const adapters = captureDescriptorSurface(target.adapters, { compareDataValues: true })
   const adapterMethods = adapters
-    ? Object.freeze(Object.fromEntries(Object.entries(target.adapters).map(([key, adapter]) => [key, captureCallableSurface(adapter)])))
+    ? Object.freeze(Object.fromEntries(
+        Reflect.ownKeys(target.adapters).map((key) => [key, captureDescriptorSurface(target.adapters[key], {
+          compareDataValues: true,
+          deepDataValues: true,
+          ignoredDataNames: MUTABLE_ADAPTER_DATA_NAMES,
+        })]),
+      ))
     : null
-  const pathValues = Object.freeze(Object.fromEntries(
-    TARGET_PATH_NAMES
-      .filter((name) => Object.prototype.hasOwnProperty.call(target, name))
-      .map((name) => [name, target[name]]),
-  ))
   return Object.freeze({
     isolationCertificate,
+    certificateSurface: captureDescriptorSurface(isolationCertificate, { compareDataValues: true, deepDataValues: true }),
     isolationLayout,
-    isolated: target.isolated,
-    pathValues,
-    restoreCapabilities: target.restoreCapabilities,
-    faults: target.faults,
-    methods: Object.freeze(Object.fromEntries(TARGET_METHOD_NAMES.map((name) => [name, target[name]]))),
+    isolationLayoutSurface: captureDescriptorSurface(isolationLayout, { compareDataValues: true, deepDataValues: true }),
+    isolated: readPropertyWithoutInvokingGetter(target, 'isolated'),
+    restoreCapabilities: readPropertyWithoutInvokingGetter(target, 'restoreCapabilities'),
+    restoreCapabilitiesSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'restoreCapabilities'), {
+      compareDataValues: true,
+      deepDataValues: true,
+    }),
+    faults: readPropertyWithoutInvokingGetter(target, 'faults'),
+    methods: Object.freeze(Object.fromEntries(TARGET_METHOD_NAMES.map((name) => [name, readPropertyWithoutInvokingGetter(target, name)]))),
+    targetSurface,
     adapters,
     adapterMethods,
-    rollbackStore: captureCallableSurface(target.rollbackStore),
-    quarantine: captureCallableSurface(target.quarantine),
+    journal: readPropertyWithoutInvokingGetter(target, 'journal'),
+    journalSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'journal'), {
+      ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
+    }),
+    resolutions: readPropertyWithoutInvokingGetter(target, 'resolutions'),
+    resolutionsSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'resolutions'), {
+      compareDataValues: true,
+      deepDataValues: true,
+    }),
+    rollbackStore: readPropertyWithoutInvokingGetter(target, 'rollbackStore'),
+    rollbackStoreSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'rollbackStore'), {
+      ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
+    }),
+    quarantine: readPropertyWithoutInvokingGetter(target, 'quarantine'),
+    quarantineSurface: captureDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'quarantine'), {
+      ignoredDataNames: MUTABLE_STORE_DATA_NAMES,
+    }),
   })
 }
 
 function isSameIsolationTargetBinding(target, binding) {
   if (!target || !binding
-    || target.isolated !== binding.isolated
-    || target.isolationCertificate !== binding.isolationCertificate
-    || target.isolationLayout !== binding.isolationLayout
-    || target.restoreCapabilities !== binding.restoreCapabilities
-    || target.faults !== binding.faults) return false
-  for (const [name, value] of Object.entries(binding.pathValues)) {
-    if (target[name] !== value) return false
-  }
+    || !sameDescriptorSurface(target, binding.targetSurface)
+    || readPropertyWithoutInvokingGetter(target, 'isolated') !== binding.isolated
+    || readPropertyWithoutInvokingGetter(target, 'isolationCertificate') !== binding.isolationCertificate
+    || !sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'isolationCertificate'), binding.certificateSurface)
+    || readPropertyWithoutInvokingGetter(target, 'isolationLayout') !== binding.isolationLayout
+    || !sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'isolationLayout'), binding.isolationLayoutSurface)
+    || readPropertyWithoutInvokingGetter(target, 'restoreCapabilities') !== binding.restoreCapabilities
+    || !sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'restoreCapabilities'), binding.restoreCapabilitiesSurface)
+    || readPropertyWithoutInvokingGetter(target, 'faults') !== binding.faults
+    || readPropertyWithoutInvokingGetter(target, 'journal') !== binding.journal
+    || !sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'journal'), binding.journalSurface)
+    || readPropertyWithoutInvokingGetter(target, 'resolutions') !== binding.resolutions
+    || !sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'resolutions'), binding.resolutionsSurface)) return false
   for (const [name, method] of Object.entries(binding.methods)) {
-    if (target[name] !== method) return false
+    if (readPropertyWithoutInvokingGetter(target, name) !== method) return false
   }
-  if (!sameCallableSurface(target.adapters, binding.adapters)) return false
+  if (!sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'adapters'), binding.adapters)) return false
   if (binding.adapterMethods) {
-    for (const [key, snapshot] of Object.entries(binding.adapterMethods)) {
-      if (!sameCallableSurface(target.adapters?.[key], snapshot)) return false
+    for (const key of Reflect.ownKeys(binding.adapterMethods)) {
+      if (!sameDescriptorSurface(
+        readPropertyWithoutInvokingGetter(readPropertyWithoutInvokingGetter(target, 'adapters'), key),
+        binding.adapterMethods[key],
+      )) return false
     }
   }
-  return sameCallableSurface(target.rollbackStore, binding.rollbackStore)
-    && sameCallableSurface(target.quarantine, binding.quarantine)
+  return sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'rollbackStore'), binding.rollbackStoreSurface)
+    && sameDescriptorSurface(readPropertyWithoutInvokingGetter(target, 'quarantine'), binding.quarantineSurface)
 }
 
 export function registerApplicationBackupIsolationTarget({ target, isolationCertificate, isolationLayout, issuerToken } = {}) {

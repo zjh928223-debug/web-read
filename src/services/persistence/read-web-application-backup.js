@@ -1448,7 +1448,6 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     adapters,
     rollbackStore,
     quarantine,
-    faults,
     rollbackStoreSeparate: Boolean(options.rollbackStore),
     capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : null,
     async estimateCapacity({ requiredBytes }) {

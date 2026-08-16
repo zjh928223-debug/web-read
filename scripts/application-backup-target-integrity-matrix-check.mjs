@@ -10,6 +10,48 @@ const root = await (await import('node:fs/promises')).mkdtemp(path.join(os.tmpdi
 try {
   const { applicationBackup } = await productionBackup.loadBackupModules()
   const requiredDomains = applicationBackup.APPLICATION_BACKUP_REQUIRED_DOMAINS
+  const expectedTargetSurface = new Set([
+    'isolated',
+    'isolationCertificate',
+    'isolationLayout',
+    'restoreCapabilities',
+    'faults',
+    'adapters',
+    'journal',
+    'resolutions',
+    'rollbackStore',
+    'quarantine',
+    'rollbackStoreSeparate',
+    'capacityBytes',
+    'estimateCapacity',
+    'readJournal',
+    'writeJournal',
+    'beginTransaction',
+    'restoreSnapshot',
+    'verifyApplied',
+    'mergeDomain',
+    'recoverPendingRestore',
+    'readState',
+    'setFaults',
+    'isolationRoot',
+    'profileDir',
+    'statePath',
+    'journalPath',
+    'rollbackDir',
+    'quarantineDir',
+    'pythonStateDir',
+    'pythonOutputDir',
+  ])
+  assert.deepEqual(
+    applicationBackup.APPLICATION_BACKUP_TARGET_INTEGRITY_MEMBERS,
+    [...expectedTargetSurface].sort(),
+    'the exported target integrity contract must enumerate the complete target surface',
+  )
+  const source = await readFile(new URL('../src/services/persistence/application-backup.js', import.meta.url), 'utf8')
+  const directTargetReads = [...source.matchAll(/\btarget(?:\?\.|\.)([A-Za-z_$][\w$]*)/g)]
+    .map((match) => match[1])
+  const unregisteredReads = [...new Set(directTargetReads)].filter((member) => !expectedTargetSurface.has(member))
+  assert.deepEqual(unregisteredReads, [], 'every direct restore target read must belong to the integrity contract')
   const sourceAdapters = createSourceAdapters(requiredDomains)
   const service = applicationBackup.createApplicationBackupService({ adapters: sourceAdapters })
   const artifact = await service.createBackup()
@@ -22,6 +64,7 @@ try {
       profileDir: path.join(root, name),
       capacityBytes: mutation.capacityBytes ?? 1,
       rollbackStoreSeparate: mutation.rollbackStoreSeparate,
+      enableMergeDomain: mutation.enableMergeDomain,
     })
     const calls = { value: 0 }
     target.setFaults({
@@ -31,7 +74,19 @@ try {
     })
       const before = await snapshotTargetFiles(target)
       try {
-        mutation.apply(target, calls)
+        let mutationError = null
+        try {
+          mutation.apply(target, calls)
+        } catch (error) {
+          mutationError = error
+        }
+        if (mutationError) {
+          if (!(mutationError instanceof TypeError)) results.push(`${name}: mutation setup failed: ${mutationError.message}`)
+          const after = await snapshotTargetFiles(target)
+          if (calls.value !== 0) results.push(`${name}: target method reached ${calls.value} time(s)`)
+          if (JSON.stringify(after) !== JSON.stringify(before)) results.push(`${name}: target files changed during language-level mutation rejection`)
+          continue
+        }
         const restoreTarget = calls.proxy || target
         let error = null
         try {
@@ -115,6 +170,17 @@ function createMutations(requiredDomains) {
       },
     },
     {
+      name: 'capacity-accessor-setter',
+      apply(target) {
+        Object.defineProperty(target, 'capacityBytes', {
+          configurable: true,
+          enumerable: true,
+          get() { return Number.MAX_SAFE_INTEGER },
+          set() {},
+        })
+      },
+    },
+    {
       name: 'capacity-null',
       apply(target) { target.capacityBytes = null },
     },
@@ -145,6 +211,59 @@ function createMutations(requiredDomains) {
       },
     },
     {
+      name: 'top-level-addition',
+      apply(target) { target.unregisteredSafetyMember = 'unsafe' },
+    },
+    {
+      name: 'restore-capability-scalar',
+      apply(target) { target.restoreCapabilities.atomicRevisionCommit = false },
+    },
+    {
+      name: 'adapter-method',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target, calls) {
+        target.adapters['reader-session'].collect = async () => {
+          calls.value += 1
+          throw new Error('ADAPTER_TARGET_REACHED')
+        }
+      },
+    },
+    {
+      name: 'adapter-scalar',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target) { target.adapters['reader-session'].schemaVersion = 99 },
+    },
+    {
+      name: 'adapter-metadata-array',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target) { target.adapters['reader-session'].supportedSchemaVersions.push(99) },
+    },
+    {
+      name: 'rollback-store-method',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target, calls) {
+        target.rollbackStore.write = async () => {
+          calls.value += 1
+          throw new Error('ROLLBACK_STORE_TARGET_REACHED')
+        }
+      },
+    },
+    {
+      name: 'rollback-store-scalar',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target) { target.rollbackStore.unregisteredMetadata = 'unsafe' },
+    },
+    {
+      name: 'quarantine-store-method',
+      capacityBytes: Number.MAX_SAFE_INTEGER,
+      apply(target, calls) {
+        target.quarantine.write = async () => {
+          calls.value += 1
+          throw new Error('QUARANTINE_TARGET_REACHED')
+        }
+      },
+    },
+    {
       name: 'merge-added',
       capacityBytes: Number.MAX_SAFE_INTEGER,
       resolutions: merge,
@@ -153,24 +272,25 @@ function createMutations(requiredDomains) {
     {
       name: 'merge-replaced',
       capacityBytes: Number.MAX_SAFE_INTEGER,
+      enableMergeDomain: true,
       resolutions: merge,
       apply(target, calls) {
-        target.mergeDomain = async () => {}
         target.mergeDomain = maliciousMerge(calls)
       },
     },
     {
       name: 'merge-deleted',
       capacityBytes: Number.MAX_SAFE_INTEGER,
+      enableMergeDomain: true,
       resolutions: merge,
       apply(target) {
-        target.mergeDomain = async () => {}
         delete target.mergeDomain
       },
     },
     {
       name: 'merge-accessor',
       capacityBytes: Number.MAX_SAFE_INTEGER,
+      enableMergeDomain: true,
       resolutions: merge,
       apply(target, calls) {
         Object.defineProperty(target, 'mergeDomain', {

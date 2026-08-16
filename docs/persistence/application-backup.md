@@ -73,6 +73,18 @@ newer state intact. A `restoreId` makes retries idempotent; a completed retry
 is a no-op and an interrupted/failed retry reuses the original rollback backup
 only when its journal evidence is safe.
 
+The generic restore gate also requires a private-issuer registration for the
+target object itself. Registration binds the canonical isolation certificate,
+all safety/capacity/rollback scalars, the complete own-key and property
+descriptor surface, the target prototype, every restore method (including
+`mergeDomain`), and the journal, adapter, rollback-store, quarantine and
+capability surfaces. A borrowed certificate, spread/clone, proxy, added or
+deleted member, accessor replacement, prototype change, method replacement, or
+nested safety-surface mutation is rejected as `RESTORE_TARGET_UNSAFE` before
+target methods or writes are reached. Production fault injection is held in a
+private closure and changed only through the controlled `setFaults` hook; a
+mutable public `faults` safety object is not part of the production target.
+
 The public contract and fault matrix are exercised by
 `npm run verify:application-backup`; the path-scoped concurrency stress is
 `npm run verify:application-backup-concurrency`. The production composition in

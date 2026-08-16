@@ -3,8 +3,8 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
-    "architecture": 108,
-    "behavior": 82,
+    "architecture": 109,
+    "behavior": 81,
     "browser": 25,
     "performance": 13,
     "release": 8
@@ -3337,8 +3337,9 @@
     },
     {
       "path": "scripts/application-backup-target-integrity-matrix-check.mjs",
-      "category": "behavior",
+      "category": "architecture",
       "layers": [
+        "architecture",
         "behavior"
       ],
       "aggregates": [],
@@ -3349,8 +3350,10 @@
       ],
       "invocation": "direct",
       "evidence": {
-        "sourceShape": [],
-        "sourceRead": false,
+        "sourceShape": [
+          "matches-source-text"
+        ],
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,

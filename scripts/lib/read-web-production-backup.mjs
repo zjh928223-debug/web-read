@@ -996,6 +996,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     }),
   }
   const faultState = { ...(options.faults || {}) }
+  const rollbackStoreSeparate = options.rollbackStoreSeparate === false ? false : true
 
   async function readStateUnlocked() {
     return assertStateEnvelope(
@@ -1027,7 +1028,7 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     journalPath,
     rollbackDir,
     quarantineDir,
-    rollbackStoreSeparate: true,
+    rollbackStoreSeparate,
     restoreCapabilities: Object.freeze({
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,
@@ -1035,7 +1036,6 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
     }),
     capacityBytes: Number.isFinite(options.capacityBytes) ? options.capacityBytes : 256 * 1024 * 1024,
     adapters: createFileDomainAdapters(stateRef, requiredDomains, statePath, profileDir),
-    faults: faultState,
     async estimateCapacity({ requiredBytes }) {
       return { ok: target.capacityBytes >= requiredBytes, availableBytes: target.capacityBytes }
     },
@@ -1240,6 +1240,16 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
       Object.keys(faultState).forEach((key) => { delete faultState[key] })
       Object.assign(faultState, nextFaults)
     },
+  }
+  if (options.enableMergeDomain === true) {
+    target.mergeDomain = async (transaction, domainKey, domain, context = {}) => {
+      if (!transaction || typeof transaction.applyDomain !== 'function') {
+        const error = new Error('Merge restore transaction is unavailable')
+        error.code = 'RESTORE_ATOMIC_UNAVAILABLE'
+        throw error
+      }
+      return transaction.applyDomain(domainKey, domain, { decision: 'merge', restoreId: context.restoreId })
+    }
   }
   registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target })
   return target

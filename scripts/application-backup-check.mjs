@@ -261,6 +261,7 @@ function createRestoreTarget(adapters, { commitWithoutEvidence = false } = {}) {
     revision: 0,
     rollbackWrites: 0,
     transactionCommits: 0,
+    rollback: null,
     journal: { attempts: 0, last: null },
     rollbackStore: {
       async write(entry) {
