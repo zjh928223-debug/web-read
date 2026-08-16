@@ -115,7 +115,7 @@
 ## 12. 备份、迁移与发布验收
 
 - [x] 12.1 实现版本化全应用 backup manifest、逐域 checksum、媒体引用策略和导入 dry-run
-- [ ] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
+- [x] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
 - [ ] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
 - [ ] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [ ] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
@@ -123,10 +123,11 @@
 - [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
 - [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
-> 12.2 and 12.3 remain unchecked: real public restore adapters, durable
-> checkpoints, rollback/quarantine, conflict-safe crash recovery, and isolated
-> six-domain round-trip/fault evidence now exist. Cross-owner atomic visibility
-> and a mandatory recovery seam in the real application startup path are not
-> yet proven. The 12.1 `application-state.json` rehearsal remains a foundation
-> check and is not substituted for the separate 12.3 end-to-end recovery
-> milestone.
+> 12.2 is complete: the real six-domain composition holds a durable
+> cross-process application-profile lease across restore and the Local App Host
+> lifetime, blocks owner reads/startup during partial commit, and performs
+> mandatory pending recovery before the host binds its port. Hard-process-exit,
+> journal closure, CAS, rollback/quarantine and reopenable round-trip evidence
+> are automated. 12.3 remains separate and unchecked: temporary file-backed
+> profile evidence does not substitute for restoring and exercising a real
+> copied browser/workflow profile.

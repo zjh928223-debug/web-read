@@ -39,7 +39,7 @@ try {
   })
 
   if (process.platform === 'win32') {
-    for (const forbiddenRoot of ['E:\\read-web', 'E:\\read-web-next']) {
+    for (const forbiddenRoot of ['E:\\read-web', 'E:\\read-web-next', 'E:\\ReadWebData\\SubtitleWorkflow']) {
       await rejectsBeforeWrite(`forbidden-${forbiddenRoot}`, {
         isolationRoot: path.join(forbiddenRoot, 'batch2-isolation-check'),
         profileDir: path.join(forbiddenRoot, 'batch2-isolation-check', 'profile'),
@@ -88,7 +88,7 @@ try {
     pythonOutputDir: path.join(validRoot, 'output'),
   })
   const validArtifact = await validComposition.createBackup({ now: () => 1760000000000 })
-  assert.equal(validComposition.restoreTarget.restoreCapabilities.atomicRevisionCommit, false)
+  assert.equal(validComposition.restoreTarget.restoreCapabilities.atomicRevisionCommit, true)
   const validFoundationTarget = await createIsolatedProfileRestoreTarget({
     isolationRoot: validRoot,
     profileDir: path.join(validRoot, 'foundation'),

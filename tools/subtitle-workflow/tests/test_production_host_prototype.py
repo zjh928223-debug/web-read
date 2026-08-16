@@ -180,10 +180,15 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 "release": {"gitSha": "manifest-git-sha", "frontendVersion": "1.0.0"},
             }, sort_keys=True).encode("utf-8")
             manifest.write_bytes(manifest_bytes)
+            application_root = root / "application-profile"
             arguments = [
                 "--dist", str(dist), "--port", "49123", "--release-id", "release-fixture",
                 "--profile-id", "profile-fixture", "--instance-id", "instance-fixture",
                 "--release-manifest", str(manifest), "--config-schema-version", "1",
+                "--application-isolation-root", str(application_root),
+                "--application-profile-dir", str(application_root / "profile"),
+                "--application-python-state-dir", str(application_root / "python-state"),
+                "--application-python-output-dir", str(application_root / "python-output"),
             ]
             with self.assertRaises(SystemExit):
                 main([*arguments, "--access-token", "must-not-enter-argv"])

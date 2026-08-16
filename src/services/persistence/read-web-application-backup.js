@@ -1184,7 +1184,10 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     const previous = lockTail
     let release
     lockTail = new Promise((resolve) => { release = resolve })
-    return previous.then(operation).finally(() => release())
+    const run = () => typeof options.withApplicationLock === 'function'
+      ? options.withApplicationLock(operation)
+      : operation()
+    return previous.then(run).finally(() => release())
   }
 
   async function currentRevision() {
@@ -1316,9 +1319,36 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     }
   }
 
+  async function recoverPendingAndRecordUnlocked() {
+    const recovery = await recoverPendingUnlocked()
+    if (!recovery?.restoreId) return recovery
+    const value = (await readJournalStore()) || { schemaVersion: 1, entries: {} }
+    const entry = value.entries?.[recovery.restoreId]
+    if (!entry) return recovery
+    const terminal = recovery.status === 'completed'
+      ? {
+        ...entry,
+        status: 'completed',
+        committedRevision: recovery.revision,
+        completedAt: new Date().toISOString(),
+      }
+      : {
+        ...entry,
+        status: 'rolled-back',
+        rollbackRevision: recovery.revision,
+        rollbackComplete: true,
+        rolledBackAt: new Date().toISOString(),
+      }
+    await writeJournalStore({
+      schemaVersion: 1,
+      entries: { ...(value.entries || {}), [recovery.restoreId]: terminal },
+    })
+    return recovery
+  }
+
   async function commitDomains({ restoreId, baseRevision, baseDomains, stagedDomains, signal }) {
     return withTargetLock(async () => {
-      await recoverPendingUnlocked()
+      await recoverPendingAndRecordUnlocked()
       const latestRevision = await currentRevision()
       if (latestRevision !== baseRevision) {
         throw restoreError('RESTORE_REVISION_CONFLICT', 'Restore target changed before commit', {
@@ -1364,6 +1394,14 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
           const checkpoint = { ...restoreWithoutChecksum(pendingCore), appliedDomains: [...appliedDomains] }
           checkpoint.checksum = await restoreChecksum(checkpoint)
           await writePending(checkpoint)
+          if (typeof faults.afterDomain === 'function') {
+            await faults.afterDomain({
+              restoreId,
+              domain: key,
+              appliedCount: appliedDomains.length,
+              nextRevision,
+            })
+          }
           if (Number.isInteger(faults.abortAfterDomain) && appliedDomains.length >= faults.abortAfterDomain) {
             throw restoreError('RESTORE_INTERRUPTED', `Restore fault injected after ${appliedDomains.length} domains`)
           }
@@ -1434,22 +1472,31 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
   }
 
   const configuredCapacityBytes = Number.isFinite(options.capacityBytes) ? options.capacityBytes : null
+  const visibleAdapters = Object.fromEntries(Object.entries(adapters).map(([key, adapter]) => [key, {
+    key: adapter.key || key,
+    schemaVersion: adapter.schemaVersion ?? 1,
+    adapterVersion: adapter.adapterVersion ?? 1,
+    supportedSchemaVersions: adapter.supportedSchemaVersions || [adapter.schemaVersion ?? 1],
+    async collect(...args) {
+      return withTargetLock(async () => {
+        await recoverPendingAndRecordUnlocked()
+        return adapter.collect(...args)
+      })
+    },
+  }]))
   const target = {
     isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
     isolationCertificate: options.isolationCertificate,
     isolationLayout: normalizeIsolationLayout(options.isolationLayout),
     restoreCapabilities: Object.freeze({
-      // The six application owners are still committed through sequential
-      // owner adapters. Durable checkpoints and rollback evidence exist, but
-      // they do not make cross-owner visibility atomic.
-      atomicRevisionCommit: false,
+      atomicRevisionCommit: options.atomicRevisionCommit === true,
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     }),
     captureRestoreOperation() {
       return Object.freeze({})
     },
-    adapters,
+    adapters: visibleAdapters,
     rollbackStore,
     quarantine,
     rollbackStoreSeparate: Boolean(options.rollbackStore),
@@ -1468,7 +1515,7 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
     },
     async readJournal({ restoreId }) {
       return withTargetLock(async () => {
-        const recovery = await recoverPendingUnlocked()
+        const recovery = await recoverPendingAndRecordUnlocked()
         const value = await readJournalStore()
         const entry = value?.entries?.[restoreId] ? restoreClone(value.entries[restoreId]) : null
         if (recovery?.status === 'completed' && entry && entry.status !== 'completed') {
@@ -1495,7 +1542,7 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       })
     },
     async beginTransaction({ restoreId, signal, expectedBaseRevision } = {}) {
-      await withTargetLock(recoverPendingUnlocked)
+      await withTargetLock(recoverPendingAndRecordUnlocked)
       const baseRevision = await currentRevision()
       if (Number.isInteger(expectedBaseRevision) && baseRevision !== expectedBaseRevision) {
         throw restoreError('RESTORE_REVISION_CONFLICT', 'Restore target base revision is stale', {
@@ -1541,13 +1588,13 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       return result
     },
     async verifyApplied({ artifact }) {
-      await withTargetLock(recoverPendingUnlocked)
+      await withTargetLock(recoverPendingAndRecordUnlocked)
       const domains = await collectAllDomains()
       const ok = requiredDomains.every((key) => domainsEqual(domains[key], artifact?.domains?.[key]))
       return { ok, revision: await currentRevision() }
     },
     async recoverPendingRestore() {
-      return withTargetLock(recoverPendingUnlocked)
+      return withTargetLock(recoverPendingAndRecordUnlocked)
     },
     setFaults(nextFaults = {}) {
       Object.keys(faults).forEach((key) => { delete faults[key] })

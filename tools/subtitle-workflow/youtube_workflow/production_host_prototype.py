@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import subprocess
 import sys
 from time import perf_counter
 from urllib.parse import parse_qs, urlsplit
@@ -228,6 +229,7 @@ def create_local_app_host(
     instance_id: str = "",
     release_manifest_identity: dict | None = None,
     config_compatibility: dict | None = None,
+    application_startup_recovery: dict | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -243,6 +245,7 @@ def create_local_app_host(
     boot_started_at = perf_counter() if started_at is None else started_at
     manifest_identity = dict(release_manifest_identity or {})
     compatible_config = dict(config_compatibility or {})
+    startup_recovery = dict(application_startup_recovery or {}) if application_startup_recovery else None
     app = FastAPI(title="Read-Web Local App Host")
 
     @app.get("/api/app/health")
@@ -256,6 +259,7 @@ def create_local_app_host(
             "manifest": manifest_identity,
             "configCompatibility": compatible_config,
             "distReady": (root / "index.html").is_file(),
+            "applicationStartupRecovery": startup_recovery,
             "startupMs": round(max(0.0, (perf_counter() - boot_started_at) * 1000), 3),
         }
 
@@ -287,6 +291,68 @@ def create_local_app_host(
 create_production_host = create_local_app_host
 
 
+def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
+    repo_root = Path(__file__).resolve().parents[3]
+    lock_module = repo_root / "scripts" / "lib" / "read-web-production-backup.mjs"
+    options = {
+        "isolationRoot": str(args.application_isolation_root.resolve()),
+        "profileDir": str(args.application_profile_dir.resolve()),
+        "pythonStateDir": str(args.application_python_state_dir.resolve()),
+        "pythonOutputDir": str(args.application_python_output_dir.resolve()),
+    }
+    command = [
+        str(os.environ.get("READ_WEB_NODE", "node")),
+        str(lock_module),
+        "--hold-application-profile",
+        json.dumps(options, separators=(",", ":")),
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=str(repo_root),
+        env=os.environ.copy(),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    line = process.stdout.readline() if process.stdout else ""
+    if not line:
+        error = process.stderr.read().strip() if process.stderr else ""
+        process.kill()
+        process.wait(timeout=5)
+        parser.error(f"application restore startup recovery failed: {error or 'lock holder exited before ready'}")
+    try:
+        ready = json.loads(line)
+    except json.JSONDecodeError as error:
+        process.kill()
+        process.wait(timeout=5)
+        parser.error(f"application restore startup recovery returned invalid evidence: {error}")
+    if ready.get("status") != "ready":
+        process.kill()
+        process.wait(timeout=5)
+        parser.error("application restore startup recovery did not become ready")
+    return process, ready.get("startupRecovery")
+
+
+def _stop_application_profile_lock(process) -> None:
+    if process is None:
+        return
+    try:
+        if process.stdin:
+            process.stdin.close()
+        process.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        process.kill()
+        process.wait(timeout=5)
+    finally:
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the Read-Web production Local App Host")
     parser.add_argument("--dist", type=Path, required=True)
@@ -298,6 +364,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--release-manifest", type=Path, required=True)
     parser.add_argument("--config-schema-version", type=int, required=True)
     parser.add_argument("--capability-base-url", default="")
+    parser.add_argument("--application-isolation-root", type=Path, required=True)
+    parser.add_argument("--application-profile-dir", type=Path, required=True)
+    parser.add_argument("--application-python-state-dir", type=Path, required=True)
+    parser.add_argument("--application-python-output-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     if not _is_loopback_host(args.host):
         parser.error("production host only supports an explicit loopback bind")
@@ -324,23 +394,28 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"valid release manifest is required: {error}")
     if args.config_schema_version < 1:
         parser.error("config schema version must be positive")
-    app = create_local_app_host(
-        dist_dir=dist,
-        capability_base_url=args.capability_base_url,
-        bind_host=args.host,
-        access_token=token,
-        workflow_access_token=token,
-        release_id=args.release_id,
-        profile_id=args.profile_id,
-        instance_id=args.instance_id,
-        release_manifest_identity=manifest_identity,
-        config_compatibility={
-            "schemaVersion": args.config_schema_version,
-            "minimum": args.config_schema_version,
-            "maximum": args.config_schema_version,
-        },
-    )
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
+    profile_lock, startup_recovery = _start_application_profile_lock(args, parser)
+    try:
+        app = create_local_app_host(
+            dist_dir=dist,
+            capability_base_url=args.capability_base_url,
+            bind_host=args.host,
+            access_token=token,
+            workflow_access_token=token,
+            release_id=args.release_id,
+            profile_id=args.profile_id,
+            instance_id=args.instance_id,
+            release_manifest_identity=manifest_identity,
+            config_compatibility={
+                "schemaVersion": args.config_schema_version,
+                "minimum": args.config_schema_version,
+                "maximum": args.config_schema_version,
+            },
+            application_startup_recovery=startup_recovery,
+        )
+        uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
+    finally:
+        _stop_application_profile_lock(profile_lock)
     return 0
 
 

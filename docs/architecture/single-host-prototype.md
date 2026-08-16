@@ -24,6 +24,13 @@ These are Connect middleware and cannot accompany a copied `dist` directory with
 
 `production_host_prototype.create_production_host(...)` dispatches `/api/*` to the existing workflow ASGI application without stripping the `/api` prefix, provides `/api/app/health`, serves immutable `dist` assets, and applies an HTML-only SPA fallback. Existing workflow Range responses pass through unchanged. Its `startupMs` field provides a small startup-cost measurement seam. A normal Starlette `mount('/api', workflow)` is intentionally not used because the workflow routes already include `/api`; mounting there would incorrectly expose them as `/api/api/*`.
 
+The production CLI also requires an isolated application root plus browser,
+Python state and Python output paths. It starts the Node application-profile
+lock holder before binding the HTTP port. That holder runs pending restore
+recovery and retains the cross-process lease until the host exits, so restore
+cannot overlap a serving application and startup cannot expose partially
+restored owners.
+
 | Option | Startup/processes | Static/SPA | Range and workflow | Nine Vite plugins | Maintenance conclusion |
 | --- | --- | --- | --- | --- | --- |
 | FastAPI single host | one Python host after migration | native prototype proven | existing ASGI routes and Range preserved | require focused Python ports or temporary Node sidecar | preferred target; consolidates the already larger local API |

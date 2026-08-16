@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, statfs, writeFile } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
@@ -21,6 +22,7 @@ const PATH_LOCK_RETRY_MS = 15
 const PATH_LOCK_HEARTBEAT_MS = 1_000
 
 let backupModulesPromise
+const applicationPathLockContext = new AsyncLocalStorage()
 
 function unsafeIsolationPath(message, details = {}) {
   const error = new Error(message)
@@ -111,7 +113,11 @@ async function validateIsolationLayout({ isolationRoot, paths, forbiddenRoots = 
   }
 
   const configuredForbiddenRoots = [
-    ...(process.platform === 'win32' ? ['E:\\read-web', 'E:\\read-web-next'] : []),
+    ...(process.platform === 'win32' ? [
+      'E:\\read-web',
+      'E:\\read-web-next',
+      'E:\\ReadWebData\\SubtitleWorkflow',
+    ] : []),
     ...(Array.isArray(forbiddenRoots) ? forbiddenRoots : []),
   ]
   for (const forbiddenRootValue of configuredForbiddenRoots) {
@@ -506,6 +512,15 @@ async function withPathMutex(filePath, operation, options = {}) {
       await releasePathLock(lockPath, ownerToken)
     }
   }
+}
+
+async function withApplicationPathMutex(filePath, operation) {
+  const key = pathMutexKey(filePath)
+  const held = applicationPathLockContext.getStore()
+  if (held?.has(key)) return operation()
+  const next = new Set(held || [])
+  next.add(key)
+  return withPathMutex(filePath, () => applicationPathLockContext.run(next, operation))
 }
 
 async function delay(milliseconds) {
@@ -1312,6 +1327,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   const isolationRoot = validatedLayout.isolationRoot
   const canonicalPaths = validatedLayout.paths
+  return withApplicationPathMutex(isolationRoot, async () => {
   const isolationLayout = Object.freeze({
     isolationRoot,
     paths: canonicalPaths,
@@ -1359,6 +1375,8 @@ export async function createReadWebProductionBackupComposition(options = {}) {
         workflow: targetPythonAdapters.workflow,
       },
       storageKeyPrefix: targetOptions.storageKeyPrefix || 'isolated.',
+      atomicRevisionCommit: true,
+      withApplicationLock: (operation) => withApplicationPathMutex(isolationRoot, operation),
       capacityBytes: targetOptions.capacityBytes,
       faults: targetOptions.faults,
       rollbackStore: targetOptions.rollbackStore,
@@ -1378,7 +1396,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     revisionStore: options.revisionStore,
   })
   registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target: restoreTarget })
-  await restoreTarget.recoverPendingRestore()
+  const startupRecovery = await restoreTarget.recoverPendingRestore()
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,
     adapters,
@@ -1396,6 +1414,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     adapters,
     service,
     restoreTarget,
+    startupRecovery: startupRecovery ? Object.freeze(clone(startupRecovery)) : null,
     browserProfile: browser,
     pythonAdapters,
     async createBackup(backupOptions = {}) {
@@ -1420,6 +1439,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       return createIsolatedProfileRestoreTarget(targetOptions)
     },
   })
+  })
 }
 
 export async function readArtifactFromFile(filePath) {
@@ -1439,4 +1459,48 @@ export async function isolatedPathExists(filePath) {
     if (error?.code === 'ENOENT') return false
     throw error
   }
+}
+
+export async function withReadWebApplicationStartupLock(options = {}, operation) {
+  if (typeof operation !== 'function') {
+    const error = new Error('Application startup lock requires an operation')
+    error.code = 'BACKUP_PRODUCTION_COMPOSITION_CONFIGURATION'
+    throw error
+  }
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot: options.isolationRoot,
+    paths: {
+      profileDir: options.profileDir,
+      pythonStateDir: options.pythonStateDir,
+      pythonOutputDir: options.pythonOutputDir,
+    },
+    forbiddenRoots: options.forbiddenRoots,
+  })
+  return withApplicationPathMutex(validatedLayout.isolationRoot, async () => {
+    const composition = await createReadWebProductionBackupComposition(options)
+    return operation(Object.freeze({
+      composition,
+      startupRecovery: composition.startupRecovery,
+    }))
+  })
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)
+  && process.argv[2] === '--hold-application-profile') {
+  const options = JSON.parse(process.argv[3] || '{}')
+  await withReadWebApplicationStartupLock(options, async ({ startupRecovery }) => {
+    await new Promise((resolve, reject) => {
+      process.stdout.write(`${JSON.stringify({ status: 'ready', startupRecovery })}\n`, (error) => {
+        if (error) reject(error)
+        else resolve()
+      })
+    })
+    if (process.stdin.readableEnded || process.stdin.destroyed) return
+    process.stdin.resume()
+    await new Promise((resolve) => {
+      const done = () => resolve()
+      process.stdin.once('end', done)
+      process.stdin.once('close', done)
+    })
+  })
 }

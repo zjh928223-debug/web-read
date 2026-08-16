@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
+import { createReadWebProductionBackupComposition } from './lib/read-web-production-backup.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
@@ -63,7 +64,7 @@ async function waitForPortClosed(port, timeoutMs = 5_000) {
   throw new Error(`owned production host port ${port} remained open`)
 }
 
-function startHost({ port, instanceId, dataRoot }) {
+function startHost({ port, instanceId, dataRoot, applicationProfile }) {
   const child = spawn(python, [
     '-m', 'youtube_workflow.production_host_prototype',
     '--dist', distDir,
@@ -74,6 +75,10 @@ function startHost({ port, instanceId, dataRoot }) {
     '--instance-id', instanceId,
     '--release-manifest', manifestPath,
     '--config-schema-version', String(runtimeConfig.schemaVersion),
+    '--application-isolation-root', applicationProfile.isolationRoot,
+    '--application-profile-dir', applicationProfile.profileDir,
+    '--application-python-state-dir', applicationProfile.pythonStateDir,
+    '--application-python-output-dir', applicationProfile.pythonOutputDir,
     '--capability-base-url', capabilityBaseUrl,
   ], {
     cwd: workflowRoot,
@@ -187,7 +192,14 @@ try {
   assert.equal(capabilityHealth.endpoints.length, 9)
   for (let cycle = 1; cycle <= 3; cycle += 1) {
     const instanceId = `${executionId}:production-cycle-${cycle}`
-    host = startHost({ port, instanceId, dataRoot: path.join(tempRoot, `data-${cycle}`) })
+    const applicationProfile = {
+      isolationRoot: path.join(tempRoot, `application-${cycle}`),
+      profileDir: path.join(tempRoot, `application-${cycle}`, 'profile'),
+      pythonStateDir: path.join(tempRoot, `application-${cycle}`, 'python-state'),
+      pythonOutputDir: path.join(tempRoot, `application-${cycle}`, 'python-output'),
+    }
+    await Promise.all(Object.values(applicationProfile).map((directory) => mkdir(directory, { recursive: true })))
+    host = startHost({ port, instanceId, dataRoot: path.join(tempRoot, `data-${cycle}`), applicationProfile })
     const health = await waitForHealth(baseUrl, instanceId)
     assert.deepEqual(
       {
@@ -241,6 +253,19 @@ try {
     assert.equal(translation.status, 400)
     assert.equal((await translation.json()).errorCode, 'SENTENCE_TRANSLATION_BATCH_INVALID')
 
+    const previousLockTimeout = process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
+    process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = '500'
+    try {
+      await assert.rejects(
+        createReadWebProductionBackupComposition(applicationProfile),
+        (error) => error?.code === 'BACKUP_PATH_LOCK_TIMEOUT',
+        'a running production host must hold the application profile lock against restore',
+      )
+    } finally {
+      if (previousLockTimeout === undefined) delete process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS
+      else process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = previousLockTimeout
+    }
+
     if (cycle === 1) {
       await runNode('scripts/perf/browser-journeys.mjs', {
         READ_WEB_PERF_BASE_URL: baseUrl,
@@ -274,6 +299,11 @@ try {
     if (cycle === 2) await stopOwned(host, 'SIGKILL')
     else await stopOwned(host, 'SIGTERM')
     await waitForPortClosed(port)
+    assert.equal(
+      (await createReadWebProductionBackupComposition(applicationProfile)).startupRecovery,
+      null,
+      'the application profile lock must be released after the owned host exits',
+    )
     cycles.push({ cycle, pid, stop: cycle === 2 ? 'crash' : 'graceful', portReleased: true })
     host = null
   }

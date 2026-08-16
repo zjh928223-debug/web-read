@@ -138,13 +138,23 @@ and key path `id`; the localStorage adapter owns Passage Preview and
 Annotation envelopes, and the Python bridge owns marks/activity and workflow
 through `DurableJsonRepository`. The isolated Node gate intentionally uses a
 temporary file-backed profile plus a `MapStorage`/JSON persistence shim, so it
-never opens a user's IndexedDB or localStorage. That rehearsal does not prove
-a real browser startup recovery seam or completion of 12.2/12.3. The production
-six-domain composition explicitly publishes `atomicRevisionCommit: false`:
-its owners still commit sequentially, so the generic restore service rejects
-that target before writing any domain. The file-backed foundation target is the
-only atomic rehearsal target in this batch; its fault evidence must not be
-read as cross-owner production atomicity.
+never opens a user's IndexedDB or localStorage. The six-domain production
+composition now publishes `atomicRevisionCommit: true` together with a durable
+application-profile lease. That cross-process lease is held across the full
+sequential owner commit; public owner reads and a second composition startup
+wait behind it, so they observe the complete baseline or complete committed
+revision rather than an in-progress owner mix.
+
+The Local App Host CLI requires the isolated application root plus browser,
+Python state and Python output paths. Before it binds a port, a Node lock holder
+acquires the same lease, constructs the production composition and performs
+pending-restore recovery. The holder keeps the lease for the host lifetime via
+a parent-owned pipe; graceful exit or process death closes the pipe and releases
+the lease. Restore cannot start while the application is serving, and the host
+cannot become ready while restore or startup recovery is incomplete. Recovery
+status is exposed as startup evidence and closes the interrupted journal as
+`rolled-back` or `completed`. This completes 12.2 but remains distinct from
+12.3 recovery of a real copied browser/workflow profile.
 
 `createReadWebApplicationRestoreTarget` keeps the browser-facing stores,
 journal, rollback backup, pending checkpoint, revision evidence and quarantine
@@ -160,9 +170,11 @@ reason and checksum evidence and are read back before a corrupt source is
 discarded.
 
 `npm run verify:application-backup-real-restore` audits the real six-domain
-composition, proves its non-atomic target is rejected before any owner write,
-and retains dry-run/capacity evidence; it is intentionally not a successful
-production round trip. The failure matrix is
+composition and performs a successful reopenable round trip while retaining
+dry-run/capacity evidence. `application-backup-atomic-boundary-check.mjs`
+holds a commit after its first owner, proves in-process reads and a second
+startup remain blocked, then hard-kills a child restore and proves the next
+startup recovers before exposing owners. The failure matrix is
 `npm run verify:application-backup-restore-faults`; its transactional cases run
 against the isolated file-backed foundation target and cover rollback-backup
 failure before writes, per-domain abort, quota/disk-full, revision conflict,

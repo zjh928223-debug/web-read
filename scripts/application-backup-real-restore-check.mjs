@@ -93,23 +93,18 @@ const targetComposition = await createReadWebProductionBackupComposition({
 })
 const restoreTarget = targetComposition.restoreTarget
 assert.equal(restoreTarget.rollbackStoreSeparate, false)
-assert.equal(restoreTarget.restoreCapabilities.atomicRevisionCommit, false)
+assert.equal(restoreTarget.restoreCapabilities.atomicRevisionCommit, true)
 const dryRun = await sourceComposition.service.dryRunRestore(artifact, { target: restoreTarget })
 assert.equal(dryRun.write, false)
 assert.equal(dryRun.ok, true, JSON.stringify(dryRun))
-const beforeRestoreDomains = await collectApplicationDomains(restoreTarget)
-await assert.rejects(
-  sourceComposition.service.restore(artifact, {
-    target: restoreTarget,
-    restoreId: 'real-restore-blocked-non-atomic',
-  }),
-  (error) => error?.code === 'RESTORE_TARGET_UNSAFE',
-  'the six-domain production target must fail closed until cross-owner atomic visibility exists',
-)
+assert.equal((await sourceComposition.service.restore(artifact, {
+  target: restoreTarget,
+  restoreId: 'real-six-domain-restore',
+})).status, 'completed')
 assert.deepEqual(
-  await collectApplicationDomains(restoreTarget),
-  beforeRestoreDomains,
-  'the fail-closed atomic gate must not write any owner domain',
+  normalizeDomains(await collectApplicationDomains(restoreTarget)),
+  normalizeDomains(artifact.domains),
+  'the production target must publish the complete six-domain restore',
 )
 const reopenedTarget = (await createReadWebProductionBackupComposition({
     profileDir: target.profile,
@@ -119,7 +114,11 @@ const reopenedTarget = (await createReadWebProductionBackupComposition({
     readerSaveOutboxQuarantineProtector: outboxQuarantineProtector,
   release: { applicationVersion: 'real-restore-test', backendVersion: 'real-restore-test', gitSha: 'real-restore-test', releaseId: 'real-restore-test', manifestSha: null },
 })).restoreTarget
-assert.equal((await sourceComposition.service.dryRunRestore(artifact, { target: reopenedTarget })).ok, true)
+assert.deepEqual(
+  normalizeDomains(await collectApplicationDomains(reopenedTarget)),
+  normalizeDomains(artifact.domains),
+  'application startup must reopen the complete committed six-domain restore',
+)
 
 const quotaTarget = (await createReadWebProductionBackupComposition({
   profileDir: path.join(root, 'quota-profile'),
@@ -145,6 +144,21 @@ async function collectApplicationDomains(target) {
     'annotation',
     'workflow',
   ].map(async (key) => [key, await target.adapters[key].collect()])))
+}
+
+function normalizeDomains(domains) {
+  return Object.fromEntries(Object.entries(domains).map(([key, domain]) => [key, {
+    schemaVersion: domain.schemaVersion,
+    adapterVersion: domain.adapterVersion,
+    revision: domain.revision,
+    references: domain.references || [],
+    mediaReferences: domain.mediaReferences || [],
+    records: (domain.records || []).map(({ checksum: _checksum, ...record }) => ({
+      ...record,
+      references: record.references || [],
+      mediaReferences: record.mediaReferences || [],
+    })),
+  }]))
 }
 
 async function createFixture(parent, name, populated) {
