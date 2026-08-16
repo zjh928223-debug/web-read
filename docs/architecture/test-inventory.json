@@ -3132,7 +3132,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [],
-        "sourceRead": false,
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,
