@@ -20,10 +20,12 @@ const ast = parse(source, {
 
 const restoreCore = findFunction(ast, 'restoreWithCapability')
 assert.ok(restoreCore, 'restoreWithCapability must remain an explicit capability-only core')
-assert.deepEqual(parameterNames(restoreCore), ['artifact', 'restoreOptions', 'capability'])
+assert.deepEqual(parameterNames(restoreCore), ['artifact', 'invocation', 'capability'])
 assertNoPublicTargetSurface(restoreCore, 'restoreWithCapability')
+assertNoIdentifier(restoreCore, 'restoreOptions', 'restoreWithCapability must not re-read caller restoreOptions')
 assertNoIdentifier(restoreCore, 'transaction', 'restoreWithCapability must not re-read a mutable transaction surface')
 assertHasCall(restoreCore, 'bindTransactionCapability')
+assertHasCall(restoreCore, 'readCommittedRevisionEvidence')
 assertHasMemberCall(restoreCore, 'capability', 'beginTransaction')
 assertHasMemberCall(restoreCore, 'capability', 'verifyApplied')
 assertHasMemberCall(restoreCore, 'transactionCapability', 'commit')
@@ -38,13 +40,29 @@ assert.ok(transactionBinder, 'bindTransactionCapability must remain explicit')
 assertHasMemberCall(transactionBinder, 'applyDomain', 'bind')
 assertHasMemberCall(transactionBinder, 'commit', 'bind')
 assertHasMemberCall(transactionBinder, 'rollback', 'bind')
+assertHasCall(transactionBinder, 'lookupPropertyDescriptor')
+assertHasCall(transactionBinder, 'stableMethod')
 assertHasCall(transactionBinder, 'Object.freeze')
+
+const restoreEntry = findFunction(ast, 'restore')
+assert.ok(restoreEntry, 'restore entry must remain explicit')
+assertHasCall(restoreEntry, 'createRestoreInvocationSnapshot')
+assertHasCall(restoreEntry, 'resolveTrustedTarget')
+assertNoAwait(restoreEntry, 'restore must snapshot invocation inputs before its first await')
+
+const invocationSnapshot = findFunction(ast, 'createRestoreInvocationSnapshot')
+assert.ok(invocationSnapshot, 'restore invocation snapshot helper must remain explicit')
+assertHasCall(invocationSnapshot, 'freezeCapabilityData')
+assertHasCall(invocationSnapshot, 'Object.freeze')
+assertHasMemberRead(invocationSnapshot, 'options', 'signal')
 
 const bundleFactory = findFunction(ast, 'createTargetCapabilityBundle')
 assert.ok(bundleFactory, 'createTargetCapabilityBundle must remain explicit')
 assertHasCall(bundleFactory, 'Object.freeze')
 assertHasCall(bundleFactory, 'createBoundAdapterCapability')
 assertHasCall(bundleFactory, 'createBoundObjectCapability')
+assertHasMemberCall(bundleFactory, 'methodCapabilities', 'captureRestoreOperation')
+assertHasObjectProperty(bundleFactory, 'operation')
 
 assert.match(
   readWebTargetSource,
@@ -65,6 +83,12 @@ const badAlias = parse('function f(target) { const alias = target; return alias[
 assert.throws(
   () => assertNoPublicTargetSurface(findFunction(badAlias, 'f'), 'self-test'),
   /public target surface/,
+)
+
+const badRestoreOptions = parse('function f(restoreOptions) { const { resolutions } = restoreOptions; return resolutions["reader-session"]; }', { sourceType: 'script' })
+assert.throws(
+  () => assertNoIdentifier(findFunction(badRestoreOptions, 'f'), 'restoreOptions', 'self-test reads restoreOptions'),
+  /restoreOptions/,
 )
 
 console.log('application backup capability structure guard passed (AST target/transaction boundary)')
@@ -107,6 +131,12 @@ function assertNoIdentifier(fn, name, message) {
   })
 }
 
+function assertNoAwait(fn, message) {
+  walk(fn, (node) => {
+    if (node.type === 'AwaitExpression') throw new Error(message)
+  })
+}
+
 function assertHasCall(fn, calleeName) {
   let found = false
   walk(fn, (node) => {
@@ -133,6 +163,27 @@ function assertHasMemberCall(fn, objectName, propertyName) {
       && node.callee.property.name === propertyName) found = true
   })
   assert.ok(found, `${objectName}.${propertyName}() must remain in the capability boundary`)
+}
+
+function assertHasMemberRead(fn, objectName, propertyName) {
+  let found = false
+  walk(fn, (node) => {
+    if (!['MemberExpression', 'OptionalMemberExpression'].includes(node.type) || node.computed) return
+    if (node.object.type === 'Identifier'
+      && node.object.name === objectName
+      && node.property.type === 'Identifier'
+      && node.property.name === propertyName) found = true
+  })
+  assert.ok(found, `${objectName}.${propertyName} must be captured in the invocation snapshot`)
+}
+
+function assertHasObjectProperty(fn, propertyName) {
+  let found = false
+  walk(fn, (node) => {
+    if (!['ObjectProperty', 'ObjectMethod'].includes(node.type)) return
+    if (!node.computed && node.key.type === 'Identifier' && node.key.name === propertyName) found = true
+  })
+  assert.ok(found, `${propertyName} must be part of the capability object`)
 }
 
 function walk(node, visitor) {

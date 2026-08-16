@@ -62,6 +62,30 @@ try {
   }
 
   {
+    const barrier = createBarrier()
+    const events = []
+    const target = createTarget(path.join(root, 'fault-plan-barrier'), {
+      barrierPhase: 'dry-run',
+      barrier,
+      initialFaults: {
+        beforeBeginTransaction: async () => events.push('A'),
+      },
+    })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    const restorePromise = service.restore(artifact, {
+      target,
+      restoreId: 'fault-plan-barrier',
+      resolutions,
+    })
+    await barrier.hit
+    target.setFaults({ beforeBeginTransaction: async () => events.push('B') })
+    barrier.release()
+    const result = await restorePromise
+    assert.equal(result.status, 'completed', 'post-dry-run fault-plan replacement must not fail the in-flight restore')
+    assert.deepEqual(events, ['A'], 'a barrier-time fault-plan replacement must not affect the active operation')
+  }
+
+  {
     const target = createTarget(path.join(root, 'nested-mutation'))
     const service = createApplicationBackupService({ adapters: sourceAdapters })
     const calls = { value: 0 }
@@ -128,6 +152,65 @@ try {
     assert.equal(target.state.revision, 1, 'transaction mutation must commit exactly once')
   }
 
+  {
+    const target = createTarget(path.join(root, 'transaction-exposed-evidence'), { commitReturnsUndefined: true })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    const result = await service.restore(artifact, {
+      target,
+      restoreId: 'transaction-exposed-evidence',
+      resolutions,
+    })
+    assert.equal(result.status, 'completed', 'captured committedRevision getter must satisfy an empty commit return')
+    assert.equal(target.state.revision, 1, 'exposed transaction evidence must commit exactly once')
+    assert.equal(result.journal.committedRevision, 1, 'journal must record the captured transaction evidence')
+  }
+
+  {
+    const calls = { value: 0 }
+    const target = createTarget(path.join(root, 'transaction-evidence-mutation'), {
+      commitReturnsUndefined: true,
+      mutateEvidenceOnApply: true,
+      evilCalls: calls,
+    })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    const result = await service.restore(artifact, {
+      target,
+      restoreId: 'transaction-evidence-mutation',
+      resolutions,
+    })
+    assert.equal(result.status, 'completed', 'transaction evidence replacement after bind must not redirect the captured reader')
+    assert.equal(calls.value, 0, 'replacement transaction evidence accessor must not be reached')
+  }
+
+  {
+    const target = createTarget(path.join(root, 'transaction-partial-commit'), { partialCommit: true })
+    const baseline = structuredClone(target.state.domains)
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    await assert.rejects(
+      service.restore(artifact, {
+        target,
+        restoreId: 'transaction-partial-commit',
+        resolutions,
+      }),
+      (error) => error?.code === 'RESTORE_COMMIT_FAILED',
+    )
+    assert.deepEqual(target.state.domains, baseline, 'captured evidence must trigger snapshot rollback after a write-then-throw commit')
+    assert.equal(target.state.revision, 2, 'snapshot rollback must use the committed expected revision')
+  }
+
+  for (const [label, invalidRevision] of [['negative', -1], ['nan', Number.NaN], ['string', '1']]) {
+    const target = createTarget(path.join(root, `transaction-invalid-evidence-${label}`), { invalidCommitRevision: invalidRevision })
+    const service = createApplicationBackupService({ adapters: sourceAdapters })
+    await assert.rejects(
+      service.restore(artifact, {
+        target,
+        restoreId: `transaction-invalid-evidence-${label}`,
+        resolutions,
+      }),
+      (error) => error?.code === 'RESTORE_COMMIT_EVIDENCE_UNAVAILABLE',
+    )
+  }
+
   console.log('application backup capability TOCTOU matrix passed (journal/dry-run/capacity/rollback/fault/nested/transaction)')
 } finally {
   await rm(root, { recursive: true, force: true })
@@ -184,7 +267,17 @@ function createAdapters(kind) {
   }]))
 }
 
-function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateTransactionOnApply = false, evilCalls = null } = {}) {
+function createTarget(targetPath, {
+  barrierPhase = null,
+  barrier = null,
+  mutateTransactionOnApply = false,
+  evilCalls = null,
+  initialFaults = {},
+  commitReturnsUndefined = false,
+  partialCommit = false,
+  invalidCommitRevision,
+  mutateEvidenceOnApply = false,
+} = {}) {
   const isolationLayout = Object.freeze({
     isolationRoot: path.dirname(targetPath),
     paths: Object.freeze({ target: targetPath }),
@@ -193,6 +286,7 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
     revision: 0,
     domains: Object.fromEntries(APPLICATION_BACKUP_REQUIRED_DOMAINS.map((key) => [key, {
       schemaVersion: 1,
+      adapterVersion: 1,
       revision: 0,
       records: [],
       references: [],
@@ -203,7 +297,8 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
     writes: 0,
   }
   const adapters = createAdapters('target')
-  const faultState = {}
+  const faultState = { ...initialFaults }
+  const operationStates = new WeakMap()
   const target = {
     isolated: true,
     isolationCertificate: createApplicationBackupIsolationCertificate({
@@ -218,6 +313,14 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
       atomicRevisionCommit: true,
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
+    },
+    captureRestoreOperation() {
+      const operation = {}
+      operationStates.set(operation, {
+        faults: { ...faultState },
+        failed: false,
+      })
+      return operation
     },
     adapters,
     rollbackStoreSeparate: true,
@@ -248,14 +351,17 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
     async writeJournal(entry) {
       state.journal.set(entry.restoreId, structuredClone(entry))
     },
-    async beginTransaction({ restoreId, expectedBaseRevision }) {
-      if (typeof faultState.beforeBeginTransaction === 'function') {
-        await faultState.beforeBeginTransaction({ restoreId, expectedBaseRevision })
+    async beginTransaction({ restoreId, expectedBaseRevision, operation }) {
+      const operationState = operationStates.get(operation) || { faults: faultState, failed: false }
+      const activeFaults = operationState.faults
+      if (typeof activeFaults.beforeBeginTransaction === 'function') {
+        await activeFaults.beforeBeginTransaction({ restoreId, expectedBaseRevision })
       }
       if (expectedBaseRevision !== state.revision) {
         throw Object.assign(new Error('stale restore base revision'), { code: 'RESTORE_REVISION_CONFLICT' })
       }
       const staged = new Map()
+      let committedRevision = null
       const transaction = {
         async applyDomain(key, domain) {
           if (mutateTransactionOnApply) {
@@ -264,6 +370,16 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
             transaction.rollback = evil(evilCalls || { value: 0 })
           }
           staged.set(key, structuredClone(domain))
+          if (mutateEvidenceOnApply) {
+            Object.defineProperty(transaction, 'committedRevision', {
+              configurable: true,
+              enumerable: true,
+              get() {
+                if (evilCalls) evilCalls.value += 1
+                return -1
+              },
+            })
+          }
         },
         async commit() {
           for (const [key, domain] of staged) {
@@ -272,9 +388,13 @@ function createTarget(targetPath, { barrierPhase = null, barrier = null, mutateT
             adapters[key].revision = domain.revision
           }
           state.revision += 1
-          return { revision: state.revision }
+          committedRevision = state.revision
+          if (partialCommit) throw Object.assign(new Error('commit wrote state and then failed'), { code: 'RESTORE_COMMIT_FAILED' })
+          if (invalidCommitRevision !== undefined) return { revision: invalidCommitRevision }
+          return commitReturnsUndefined ? undefined : { revision: state.revision }
         },
         async rollback() { staged.clear() },
+        get committedRevision() { return committedRevision },
       }
       return transaction
     },

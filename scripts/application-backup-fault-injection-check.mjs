@@ -215,6 +215,7 @@ function createTarget(state, { commitMode = 'success', missingJournalReader = fa
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     },
+    captureRestoreOperation() { return Object.freeze({}) },
     adapters: state.adapters,
     capacityBytes: 10_000_000,
     revision: 0,

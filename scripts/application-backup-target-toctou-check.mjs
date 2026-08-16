@@ -55,6 +55,76 @@ try {
   assert.equal(calls.value, 0, 'mutated target methods must not be reached')
   assert.notEqual(await readFile(target.statePath, 'utf8'), stateBefore, 'the bound target capability must still commit')
 
+  {
+    const postStartTarget = await productionBackup.createIsolatedProfileRestoreTarget({
+      isolationRoot: root,
+      profileDir: path.join(root, 'fault-plan-post-start'),
+      enableMergeDomain: true,
+    })
+    const reached = { value: 0 }
+    const postStartPromise = service.restore(artifact, {
+      target: postStartTarget,
+      restoreId: 'fault-plan-post-start',
+      resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'merge'])),
+    })
+    postStartTarget.setFaults({
+      beforeBeginTransaction: async () => { reached.value += 1 },
+    })
+    const postStartResult = await postStartPromise
+    assert.equal(postStartResult.status, 'completed', 'post-start fault-plan replacement must not fail the in-flight restore')
+    assert.equal(reached.value, 0, 'post-start setFaults must only affect the next operation')
+  }
+
+  {
+    const events = []
+    const planTarget = await productionBackup.createIsolatedProfileRestoreTarget({
+      isolationRoot: root,
+      profileDir: path.join(root, 'fault-plan-entry-snapshot'),
+      enableMergeDomain: true,
+      faults: {
+        beforeBeginTransaction: async () => events.push('A'),
+      },
+    })
+    const planOptions = {
+      target: planTarget,
+      restoreId: 'fault-plan-entry-a',
+      resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'merge'])),
+    }
+    const planPromise = service.restore(artifact, planOptions)
+    planTarget.setFaults({ beforeBeginTransaction: async () => events.push('B') })
+    const planResult = await planPromise
+    assert.equal(planResult.status, 'completed', 'the entry fault plan must complete normally')
+    assert.deepEqual(events, ['A'], 'an in-flight operation must retain plan A after setFaults installs plan B')
+
+    const nextResult = await service.restore(artifact, {
+      target: planTarget,
+      restoreId: 'fault-plan-entry-b',
+      resolutions: Object.fromEntries(requiredDomains.map((key) => [key, 'merge'])),
+    })
+    assert.equal(nextResult.status, 'completed', 'the next operation must remain usable')
+    assert.deepEqual(events, ['A', 'B'], 'the next operation must observe the newly installed plan B')
+  }
+
+  {
+    const resolutionsTarget = await productionBackup.createIsolatedProfileRestoreTarget({
+      isolationRoot: root,
+      profileDir: path.join(root, 'resolutions-entry-snapshot'),
+      enableMergeDomain: true,
+    })
+    const originalResolutions = Object.fromEntries(requiredDomains.map((key) => [key, { decision: 'merge' }]))
+    const resolutionsOptions = {
+      target: resolutionsTarget,
+      restoreId: 'resolutions-entry-snapshot',
+      resolutions: originalResolutions,
+    }
+    const resolutionsPromise = service.restore(artifact, resolutionsOptions)
+    resolutionsOptions.resolutions = Object.fromEntries(requiredDomains.map((key) => [key, { decision: 'keep' }]))
+    for (const key of requiredDomains) originalResolutions[key].decision = 'keep'
+    const resolutionsResult = await resolutionsPromise
+    assert.equal(resolutionsResult.status, 'completed', 'restore must use invocation-time resolutions')
+    assert.equal(JSON.parse(await readFile(resolutionsTarget.statePath, 'utf8')).revision, 1, 'the invocation snapshot must commit the merge decision')
+  }
+
   console.log('application backup target TOCTOU microtask check passed')
 } finally {
   await rm(root, { recursive: true, force: true })

@@ -257,6 +257,7 @@ function createRestoreTarget(adapters, { commitWithoutEvidence = false } = {}) {
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
     },
+    captureRestoreOperation() { return Object.freeze({}) },
     capacityBytes: 10_000_000,
     revision: 0,
     rollbackWrites: 0,

@@ -32,6 +32,7 @@ try {
     'mergeDomain',
     'recoverPendingRestore',
     'readState',
+    'captureRestoreOperation',
     'setFaults',
     'isolationRoot',
     'profileDir',
