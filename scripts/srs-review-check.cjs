@@ -189,6 +189,11 @@ async function run() {
     'history rows should not be separated by dense horizontal lines',
   )
   assert.doesNotMatch(reviewPageSource, /\busageHint\b/, 'the separate usage hint panel should stay removed')
+  assert.match(
+    reviewPageSource,
+    /await sourceReadyPromise[\s\S]*audioState\.value\?\.translationZh/,
+    'answer reveal should wait for the local article source and prefer its translation before API fallback',
+  )
   assert.doesNotMatch(
     reviewPageSource,
     /viewContext\?\.sourceTitle/,
@@ -763,6 +768,19 @@ async function run() {
     '这是目标句。',
     'an existing context translation should be surfaced without another request',
   )
+  assert.equal(
+    contextModule.findReviewSentenceTranslation({
+      s: [{
+        chunks: [
+          { en: 'And all the action happens where plates meet,', zh: '所有的活动都发生在板块交汇处，' },
+          { en: 'at their edges,', zh: '在它们的边缘，' },
+          { en: 'called plate boundaries.', zh: '称为板块边界。' },
+        ],
+      }],
+    }, 'And all the action happens where plates meet, at their edges, called plate boundaries.'),
+    '所有的活动都发生在板块交汇处，在它们的边缘，称为板块边界。',
+    'review should reconstruct an existing sentence translation from consecutive article chunks',
+  )
   assert.equal(textContext.paragraphs.length, 3, 'context should be limited to three nearest passages')
   assert.equal(textContext.paragraphs.some((paragraph) => paragraph.target), true)
   assert.equal(
@@ -884,6 +902,14 @@ async function run() {
             ],
           })], { type: 'application/json' })
         }
+        if (kind === 'chunkData') {
+          return new Blob([JSON.stringify({
+            s: [{ chunks: [
+              { en: 'A woman appeared in court', zh: '一名女子出庭' },
+              { en: 'for the very first time today.', zh: '今天是第一次。' },
+            ] }],
+          })], { type: 'application/json' })
+        }
         return new Blob(['audio'], { type: 'audio/mpeg' })
       },
     },
@@ -898,12 +924,22 @@ async function run() {
   assert.equal(resolvedSource.url, 'blob:review-audio')
   assert.equal(resolvedSource.start, 0)
   assert.equal(resolvedSource.end, 7)
+  assert.equal(
+    resolvedSource.translationZh,
+    '一名女子出庭今天是第一次。',
+    'review source should carry the article translation so the page does not call Gemini again',
+  )
 
   let streamingTranscriptRequests = 0
+  let streamingChunkRequests = 0
   const streamingClient = {
     async getFile(_sourceId, kind) {
-      streamingTranscriptRequests += 1
+      if (kind === 'chunkData') {
+        streamingChunkRequests += 1
+        return new Blob([JSON.stringify({ s: [] })], { type: 'application/json' })
+      }
       assert.equal(kind, 'transcript')
+      streamingTranscriptRequests += 1
       return new Blob([JSON.stringify({
         segments: [{ text: 'She appeared in court today.', start: 3, end: 6 }],
       })], { type: 'application/json' })
@@ -935,6 +971,7 @@ async function run() {
     1,
     'words from the same article should reuse the parsed transcript',
   )
+  assert.equal(streamingChunkRequests, 1, 'words from the same article should reuse parsed translation chunks')
 
   const timeoutStartedAt = Date.now()
   const timedOutSource = await contextModule.resolveReviewSource({

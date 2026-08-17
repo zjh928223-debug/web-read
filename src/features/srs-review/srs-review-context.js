@@ -1,6 +1,7 @@
 import { youtubeWorkflowClient } from '../../composables/youtube-workflow-client.js'
 
 const transcriptCacheByClient = new WeakMap()
+const chunkDataCacheByClient = new WeakMap()
 
 export function selectReviewContext(contexts) {
   const valid = (Array.isArray(contexts) ? contexts : []).filter((context) => (
@@ -117,13 +118,20 @@ export async function resolveReviewSource(context, options = {}) {
   const createObjectURL = options.createObjectURL || (typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL.bind(URL) : null)
   if (!client || typeof client.getFile !== 'function') return null
 
-  const controller = typeof AbortController === 'function' ? new AbortController() : null
   const timeoutMs = Math.max(250, Number(options.timeoutMs) || 6000)
   try {
-    const transcript = await loadReviewTranscript(client, sourceId, {
-      controller,
-      timeoutMs,
-    })
+    const transcriptController = typeof AbortController === 'function' ? new AbortController() : null
+    const chunkController = typeof AbortController === 'function' ? new AbortController() : null
+    const [transcript, chunkData] = await Promise.all([
+      loadReviewTranscript(client, sourceId, {
+        controller: transcriptController,
+        timeoutMs,
+      }),
+      loadReviewChunkData(client, sourceId, {
+        controller: chunkController,
+        timeoutMs,
+      }).catch(() => null),
+    ])
     const contextWindow = buildTranscriptContextWindow(transcript, sentence)
     const target = contextWindow.find((item) => item.target)
     if (!target) {
@@ -147,6 +155,7 @@ export async function resolveReviewSource(context, options = {}) {
         }
       }),
       targetSentence: target.text,
+      translationZh: findReviewSentenceTranslation(chunkData, target.text),
       url: '',
       revokeUrl: false,
       start: getSegmentTime(target.segment, ['start', 'start_time', 'begin', 'b'], 0),
@@ -220,6 +229,61 @@ async function loadReviewTranscript(client, sourceId, options) {
     if (cache.get(sourceId) === request) cache.delete(sourceId)
     throw error
   }
+}
+
+async function loadReviewChunkData(client, sourceId, options) {
+  let cache = chunkDataCacheByClient.get(client)
+  if (!cache) {
+    cache = new Map()
+    chunkDataCacheByClient.set(client, cache)
+  }
+  let request = cache.get(sourceId)
+  if (!request) {
+    request = withTimeout(
+      client.getFile(sourceId, 'chunkData', { signal: options.controller?.signal }),
+      options.timeoutMs,
+      () => options.controller?.abort(),
+    ).then(async (chunkBlob) => JSON.parse(await chunkBlob.text()))
+    cache.set(sourceId, request)
+    if (cache.size > 8) cache.delete(cache.keys().next().value)
+  }
+  try {
+    return await request
+  } catch (error) {
+    if (cache.get(sourceId) === request) cache.delete(sourceId)
+    throw error
+  }
+}
+
+export function findReviewSentenceTranslation(chunkData, sentence, maximumChunks = 20) {
+  const target = normalizeMatchText(sentence)
+  if (!target) return ''
+  const chunks = collectReviewChunks(chunkData)
+  const limit = Math.max(1, Number(maximumChunks) || 20)
+  for (let start = 0; start < chunks.length; start += 1) {
+    let english = ''
+    const translations = []
+    for (let index = start; index < chunks.length && index < start + limit; index += 1) {
+      const chunk = chunks[index]
+      const chunkEnglish = normalizeText(chunk?.en || chunk?.text || chunk?.sentence)
+      if (!chunkEnglish) break
+      english = normalizeText(`${english} ${chunkEnglish}`)
+      const candidate = normalizeMatchText(english)
+      if (!candidate || !target.startsWith(candidate)) break
+      const translation = normalizeText(chunk?.zh || chunk?.translationZh || chunk?.translation_zh)
+      if (translation) translations.push(translation)
+      if (candidate === target) return translations.length ? translations.join('') : ''
+    }
+  }
+  return ''
+}
+
+function collectReviewChunks(chunkData) {
+  if (Array.isArray(chunkData)) return chunkData.flatMap((item) => Array.isArray(item?.chunks) ? item.chunks : [item])
+  if (Array.isArray(chunkData?.s)) return chunkData.s.flatMap((item) => Array.isArray(item?.chunks) ? item.chunks : [])
+  if (Array.isArray(chunkData?.items)) return chunkData.items.flatMap((item) => Array.isArray(item?.chunks) ? item.chunks : [item])
+  if (Array.isArray(chunkData?.chunks)) return chunkData.chunks
+  return []
 }
 
 export function releaseReviewAudio(audio, options = {}) {

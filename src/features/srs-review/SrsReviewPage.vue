@@ -667,9 +667,27 @@ watch(() => flowState.answerRevealed, (revealed) => {
 })
 
 async function hydrateCurrentSentenceTranslation() {
+  if (!flowState.answerRevealed) return
+  const request = ++translationRequest
+  const cardId = review.current.value?.word?.id
+  sentenceTranslationLoading.value = true
+  sentenceTranslationUnavailable.value = false
+  await sourceReadyPromise.catch(() => null)
+  if (
+    request !== translationRequest
+    || !flowState.answerRevealed
+    || review.current.value?.word?.id !== cardId
+  ) return
   const sentence = currentTranslationSentence()
-  if (!sentence || !flowState.answerRevealed) return
-  const embedded = String(viewContext.value?.translationZh || '').trim()
+  if (!sentence) {
+    sentenceTranslationLoading.value = false
+    return
+  }
+  const embedded = String(
+    audioState.value?.translationZh
+    || viewContext.value?.translationZh
+    || '',
+  ).trim()
   const key = sentenceTranslationKey(sentence)
   const cached = embedded || sentenceTranslationCache.get(key)
   if (cached) {
@@ -679,9 +697,6 @@ async function hydrateCurrentSentenceTranslation() {
     if (embedded) sentenceTranslationCache.set(key, embedded)
     return
   }
-  const request = ++translationRequest
-  sentenceTranslationLoading.value = true
-  sentenceTranslationUnavailable.value = false
   try {
     const translated = await translateSentenceBatches([{
       id: `srs-review-${review.current.value?.word?.id || 'sentence'}`,
