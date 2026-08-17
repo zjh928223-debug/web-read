@@ -5,6 +5,7 @@
     "scripts/aria-edge-tts-live-check.cjs",
     "scripts/lib/read-web-production-backup.mjs",
     "scripts/lib/read-web-real-profile-rehearsal.mjs",
+    "scripts/lib/release-manifest.mjs",
     "scripts/passage-preview-browser-check.cjs",
     "scripts/perf/browser-journeys.mjs",
     "scripts/perf/playback-scale-budget.mjs",

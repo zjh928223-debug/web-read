@@ -16,11 +16,12 @@ const stages = [
   ['six-domain atomic visibility and application-startup recovery (12.2)', process.execPath, ['scripts/application-backup-atomic-boundary-check.mjs']],
   ['real six-domain backup/restore round trip (12.2)', process.execPath, ['scripts/application-backup-real-restore-check.mjs']],
   ['real six-domain restore fault matrix (12.2)', process.execPath, ['scripts/application-backup-restore-fault-matrix.mjs']],
-  ['release manifest', process.execPath, ['scripts/generate-release-manifest.mjs']],
+  ['final and previous release manifests (12.6)', process.execPath, ['scripts/generate-release-manifest.mjs', '--require-clean']],
+  ['release artifact health check (12.6)', process.execPath, ['scripts/release-health-check.mjs']],
+  ['non-interactive rollback dry-run (12.6)', process.execPath, ['scripts/release-rollback.mjs']],
 ]
 
 const pending = [
-  'final release manifest, checksums, previous manifest, health-check, and rollback rehearsal (12.6) — pending',
   'shortcut rollback rehearsal (12.7) — pending',
   'user-approved desktop shortcut migration after every release gate (12.8) — pending',
 ]
@@ -32,12 +33,12 @@ console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gates (12.6, 12.7, 12.8)')
+  console.log('verify-release status: BLOCKED by pending release gates (12.7, 12.8)')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: 12.6/12.7/12.8 release gates are still pending.')
+  console.error('\nverify-release BLOCKED: 12.7/12.8 release gates are still pending.')
   console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }

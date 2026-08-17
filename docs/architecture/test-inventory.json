@@ -7,10 +7,10 @@
     "behavior": 85,
     "browser": 27,
     "performance": 13,
-    "release": 11
+    "release": 15
   },
-  "packageScriptCount": 224,
-  "executableScriptCount": 245,
+  "packageScriptCount": 227,
+  "executableScriptCount": 249,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -81,8 +81,20 @@
       "owner": "package.json#scripts.dictionary:test"
     },
     {
+      "name": "release:health",
+      "command": "node scripts/release-health-check.mjs",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "invokes": [
+        "scripts/release-health-check.mjs"
+      ],
+      "owner": "package.json#scripts.release:health"
+    },
+    {
       "name": "release:manifest",
-      "command": "node scripts/generate-release-manifest.mjs",
+      "command": "node scripts/generate-release-manifest.mjs --require-clean",
       "category": "release",
       "layers": [
         "release"
@@ -91,6 +103,18 @@
         "scripts/generate-release-manifest.mjs"
       ],
       "owner": "package.json#scripts.release:manifest"
+    },
+    {
+      "name": "release:rollback",
+      "command": "node scripts/release-rollback.mjs --apply",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "invokes": [
+        "scripts/release-rollback.mjs"
+      ],
+      "owner": "package.json#scripts.release:rollback"
     },
     {
       "name": "test",
@@ -1785,6 +1809,19 @@
         "scripts/verify-release.mjs"
       ],
       "owner": "package.json#scripts.verify:release"
+    },
+    {
+      "name": "verify:release-control",
+      "command": "node scripts/release-control-check.mjs",
+      "category": "release",
+      "layers": [
+        "release",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/release-control-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:release-control"
     },
     {
       "name": "verify:release-differential",
@@ -5048,6 +5085,30 @@
       }
     },
     {
+      "path": "scripts/lib/release-manifest.mjs",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#releaseGate",
+      "owners": [
+        "docs/architecture/script-inventory.json#releaseGate"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/lifecycle-scope-check.mjs",
       "category": "behavior",
       "layers": [
@@ -6770,6 +6831,55 @@
       }
     },
     {
+      "path": "scripts/release-control-check.mjs",
+      "category": "release",
+      "layers": [
+        "release",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:release-control",
+      "owners": [
+        "package.json#scripts.verify:release-control"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/release-health-check.mjs",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.release:health",
+      "owners": [
+        "package.json#scripts.release:health"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/release-playback-endurance.mjs",
       "category": "release",
       "layers": [
@@ -6794,6 +6904,30 @@
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/release-rollback.mjs",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.release:rollback",
+      "owners": [
+        "package.json#scripts.release:rollback"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
       }
     },
     {

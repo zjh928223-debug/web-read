@@ -119,7 +119,7 @@
 - [x] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
 - [x] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [x] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
-- [ ] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
+- [x] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
 - [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
 - [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
@@ -146,3 +146,9 @@
 > the aggregate ratio was 1.055, within the versioned 1.10 personal-project budget.
 > Both versions built and ran only from an isolated temporary root, and the legacy
 > source worktree status was byte-for-byte unchanged.
+> 12.6 is complete: the release command emits current and previous manifests,
+> hashes every declared runtime artifact, records tool/lock/config/data compatibility,
+> and stages an atomic release-state file. `release:health` verifies all hashes and
+> optional running-host identity; `release:rollback` first verifies previous artifacts
+> and atomically restores the previous release target. Shortcut/process activation is
+> intentionally deferred to the isolated 12.7 drill.
