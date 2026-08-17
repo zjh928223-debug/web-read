@@ -41,10 +41,10 @@
                   <path d="M15 9.5a4 4 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" />
                 </svg>
               </button>
-              <h2>{{ current.word || current.lemma }}</h2>
+              <h2 :class="wordLengthClass">{{ current.word || current.lemma }}</h2>
             </div>
             <p v-if="current.pos" class="passage-preview-pos">{{ current.pos }}</p>
-            <p class="passage-preview-check-hint">先回忆这个词在原句里的意思，再选择熟悉程度。</p>
+            <p v-if="currentIndex === 0" class="passage-preview-check-hint">先回忆这个词在原句里的意思，再选择熟悉程度。</p>
           </div>
         </article>
 
@@ -150,6 +150,14 @@ let writeQueue = Promise.resolve()
 
 const currentCheck = computed(() => props.items[currentIndex.value] || {})
 const current = computed(() => currentCheck.value.item || currentCheck.value)
+const wordLengthClass = computed(() => {
+  const length = Array.from(String(current.value.word || current.value.lemma || '')).length
+  if (length >= 24) return 'is-extreme-length'
+  if (length >= 18) return 'is-extra-long'
+  if (length >= 14) return 'is-very-long'
+  if (length >= 10) return 'is-long'
+  return ''
+})
 const sentence = computed(() => (
   current.value.previewContext?.sentence
   || current.value.realSentence?.sentence
@@ -171,21 +179,32 @@ function rate(rating) {
   queueMicrotask(() => { ratingTransition.value = false })
   pendingSaveCount.value += 1
   saving.value = true
-  writeQueue = writeQueue.then(async () => {
-    const result = await props.coordinator.recordDelayedCheck(pendingRating.check, {
-      rating,
-      answerRevealedBeforeRating: pendingRating.answerRevealedBeforeRating,
-      durationMs: pendingRating.durationMs,
-      activeDurationMs: pendingRating.durationMs,
+  const queueRatingPersistence = () => {
+    writeQueue = writeQueue.then(async () => {
+      const result = await props.coordinator.recordDelayedCheck(pendingRating.check, {
+        rating,
+        answerRevealedBeforeRating: pendingRating.answerRevealedBeforeRating,
+        durationMs: pendingRating.durationMs,
+        activeDurationMs: pendingRating.durationMs,
+      })
+      if (result.graduated) graduatedCount.value += 1
+      else notGraduatedCount.value += 1
+    }).catch((error) => {
+      errorMessage.value = error?.message || '考察记录失败，请重试。'
+    }).finally(() => {
+      pendingSaveCount.value = Math.max(0, pendingSaveCount.value - 1)
+      saving.value = pendingSaveCount.value > 0
     })
-    if (result.graduated) graduatedCount.value += 1
-    else notGraduatedCount.value += 1
-  }).catch((error) => {
-    errorMessage.value = error?.message || '考察记录失败，请重试。'
-  }).finally(() => {
-    pendingSaveCount.value = Math.max(0, pendingSaveCount.value - 1)
-    saving.value = pendingSaveCount.value > 0
-  })
+  }
+  scheduleAfterNextPaint(queueRatingPersistence)
+}
+
+function scheduleAfterNextPaint(callback) {
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => window.setTimeout(callback, 0))
+    return
+  }
+  window.setTimeout(callback, 0)
 }
 
 function advanceAfterRating(_pendingRating) {
