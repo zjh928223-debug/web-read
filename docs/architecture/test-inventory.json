@@ -7,10 +7,10 @@
     "behavior": 85,
     "browser": 27,
     "performance": 13,
-    "release": 10
+    "release": 11
   },
-  "packageScriptCount": 223,
-  "executableScriptCount": 244,
+  "packageScriptCount": 224,
+  "executableScriptCount": 245,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1785,6 +1785,20 @@
         "scripts/verify-release.mjs"
       ],
       "owner": "package.json#scripts.verify:release"
+    },
+    {
+      "name": "verify:release-differential",
+      "command": "node scripts/release-version-differential.mjs",
+      "category": "release",
+      "layers": [
+        "architecture",
+        "release",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/release-version-differential.mjs"
+      ],
+      "owner": "package.json#scripts.verify:release-differential"
     },
     {
       "name": "verify:release-stability",
@@ -6798,6 +6812,34 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/release-version-differential.mjs",
+      "category": "release",
+      "layers": [
+        "architecture",
+        "release",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:release-differential",
+      "owners": [
+        "package.json#scripts.verify:release-differential"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
         "sourceRead": false,
         "browser": false,
         "performance": false,

@@ -128,7 +128,7 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-当前 release 会先列出并阻断未完成的 12.5、12.6、12.7、12.8；`--list` 只查看清单并
+当前 release 会先列出并阻断未完成的 12.6、12.7、12.8；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域组合通过
@@ -148,6 +148,12 @@ built `dist` 的隔离 production host 上执行三次冷启/重启与真实 wal
 播放，持续 A/B 切换并采集 timeupdate、Long Task、JS heap、listener、Object URL
 和浏览器错误；随后重跑 36 格 Quota/损坏/恢复矩阵、真实受控子进程取消及 50-job
 取消后重启。默认报告根使用系统临时目录；该入口拒绝日用/next 保留端口并阻断外网。
+
+12.5 由 `npm run verify:release-differential` 执行，并已接入 release stage。它用同一
+fixture 分别构建旧版和 Next，在隔离临时目录与随机安全端口各跑三轮浏览器 journeys，
+校验学习流程行为无退化，并按 `config/release-differential-budgets.json` 比较十项时延。
+当前证据为两版各 21/21 journeys、零浏览器/网络错误、六项改善，总体比率 1.055；
+旧版源目录只读，运行前后 git 状态必须完全一致。
 
 ## 入口和 owner 规则
 

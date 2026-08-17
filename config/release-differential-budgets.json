@@ -1,0 +1,22 @@
+{
+  "schema": "read-web.release-differential-budgets",
+  "version": 1,
+  "status": "active",
+  "runCount": 3,
+  "maximumSingleMetricRegressionRatio": 1.5,
+  "maximumSingleMetricAbsoluteRegressionMs": 20,
+  "maximumAggregateRegressionRatio": 1.1,
+  "minimumImprovedMetrics": 1,
+  "metrics": [
+    { "id": "cold-start", "source": "measures", "name": "cold-start.navigate-to-reader-ready", "statistic": "p95" },
+    { "id": "material-open", "source": "measures", "name": "material.open-fixed-reader-fixture", "statistic": "p95" },
+    { "id": "playback-play", "source": "measures", "name": "playback.play", "statistic": "p95" },
+    { "id": "playback-pause", "source": "measures", "name": "playback.pause", "statistic": "p95" },
+    { "id": "playback-seek", "source": "measures", "name": "playback.seek", "statistic": "p95" },
+    { "id": "active-word-chunk", "source": "samples", "statistic": "p95" },
+    { "id": "workflow-open", "source": "measures", "name": "material-workflow.open", "statistic": "p95" },
+    { "id": "preview-open", "source": "measures", "name": "passage-preview.import-and-open", "statistic": "p95" },
+    { "id": "srs-open", "source": "measures", "name": "srs-review.open-fixed-sample", "statistic": "p95" },
+    { "id": "long-task-max", "source": "longTasks", "statistic": "max" }
+  ]
+}
