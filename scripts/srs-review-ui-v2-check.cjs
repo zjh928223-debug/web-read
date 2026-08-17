@@ -222,6 +222,29 @@ async function main() {
   assert.equal(await flow.rate({ rating: 'good', tone: 'good' }), true)
   assert.deepEqual(flowMetadata.at(-1), ['good', true])
 
+  const synchronousBlockReview = useSrsReview(createUiService(
+    createLedger({ mode: 'balanced', promptMode: 'word_only', count: 2 }),
+    {
+      waitForAttempt() {
+        const startedAt = Date.now()
+        while (Date.now() - startedAt < 120) {}
+      },
+    },
+  ), { now, timezone })
+  await synchronousBlockReview.load()
+  const synchronousBlockStartedAt = Date.now()
+  assert.equal(await synchronousBlockReview.submitAction(
+    synchronousBlockReview.actions[0],
+    { advance: false, background: true },
+  ), true)
+  const synchronousBlockAcceptanceMs = Date.now() - synchronousBlockStartedAt
+  assert.ok(
+    synchronousBlockAcceptanceMs < 50,
+    `rating acceptance must run before synchronous persistence setup (${synchronousBlockAcceptanceMs}ms)`,
+  )
+  assert.equal(synchronousBlockReview.advanceCurrent(), true)
+  await synchronousBlockReview.flushPendingSaves()
+
   const instantReleases = []
   let instantRecordCalls = 0
   const instantReview = useSrsReview(createUiService(
@@ -260,6 +283,7 @@ async function main() {
   }), true)
   assert.equal(instantReview.advanceCurrent(), true)
   assert.equal(instantReview.completed.value, true, 'rapid ratings should keep advancing optimistically')
+  await waitFor(() => instantRecordCalls === 1)
   assert.equal(instantRecordCalls, 1, 'background writes must remain sequential')
   instantReleases.shift()()
   await waitFor(() => instantRecordCalls === 2)

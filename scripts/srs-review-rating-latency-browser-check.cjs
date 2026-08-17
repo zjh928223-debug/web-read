@@ -67,11 +67,13 @@ async function seedReviewCards(page) {
   }, fixtures)
 }
 
-async function measureRating(page, actionLabel, blockMs, revealAnswer = true) {
-  await page.evaluate((value) => {
-    window.__reviewMediaLoadBlockMs = value
+async function measureRating(page, actionLabel, blockMs, revealAnswer = true, indexedDbBlockMs = 0) {
+  await page.evaluate(({ mediaBlockMs, databaseBlockMs }) => {
+    window.__reviewMediaLoadBlockMs = mediaBlockMs
     window.__reviewMediaLoadEvents.length = 0
-  }, blockMs)
+    window.__reviewIndexedDbBlockMs = databaseBlockMs
+    window.__reviewIndexedDbBlockEvents.length = 0
+  }, { mediaBlockMs: blockMs, databaseBlockMs: indexedDbBlockMs })
   if (revealAnswer) await page.getByRole('button', { name: 'Space 显示答案' }).click()
   return page.evaluate(async (label) => {
     const heading = document.querySelector('.srs-review-word-line h2')
@@ -91,16 +93,23 @@ async function measureRating(page, actionLabel, blockMs, revealAnswer = true) {
         const domUpdatedAt = performance.now()
         observer.disconnect()
         clearTimeout(timeout)
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve({
-          actionLabel: label,
-          previousWord,
-          nextWord,
-          domMs: domUpdatedAt - startedAt,
-          paintedMs: performance.now() - startedAt,
-          mediaLoadEvents: window.__reviewMediaLoadEvents
-            .filter((event) => event.startedAt >= startedAt)
-            .map((event) => ({ ...event, offsetMs: event.startedAt - startedAt })),
-        })))
+        requestAnimationFrame(() => {
+          const frameReadyMs = performance.now() - startedAt
+          requestAnimationFrame(() => resolve({
+            actionLabel: label,
+            previousWord,
+            nextWord,
+            domMs: domUpdatedAt - startedAt,
+            frameReadyMs,
+            paintedMs: performance.now() - startedAt,
+            mediaLoadEvents: window.__reviewMediaLoadEvents
+              .filter((event) => event.startedAt >= startedAt)
+              .map((event) => ({ ...event, offsetMs: event.startedAt - startedAt })),
+            indexedDbBlockEvents: window.__reviewIndexedDbBlockEvents
+              .filter((event) => event.startedAt >= startedAt)
+              .map((event) => ({ ...event, offsetMs: event.startedAt - startedAt })),
+          }))
+        })
       })
       observer.observe(document.querySelector('.srs-review-page'), {
         childList: true,
@@ -145,6 +154,8 @@ async function runBrowserCheck() {
     const nativeLoad = HTMLMediaElement.prototype.load
     window.__reviewMediaLoadEvents = []
     window.__reviewMediaLoadBlockMs = 0
+    window.__reviewIndexedDbBlockEvents = []
+    window.__reviewIndexedDbBlockMs = 0
     HTMLMediaElement.prototype.load = function reviewLatencyLoadProbe() {
       const startedAt = performance.now()
       const blockMs = Number(window.__reviewMediaLoadBlockMs || 0)
@@ -156,6 +167,21 @@ async function runBrowserCheck() {
         startedAt,
         durationMs: performance.now() - startedAt,
         connected: this.isConnected,
+      })
+      return result
+    }
+    const nativePut = IDBObjectStore.prototype.put
+    IDBObjectStore.prototype.put = function reviewLatencyPutProbe(...args) {
+      const startedAt = performance.now()
+      const blockMs = Number(window.__reviewIndexedDbBlockMs || 0)
+      if (blockMs > 0) {
+        window.__reviewIndexedDbBlockMs = 0
+        while (performance.now() - startedAt < blockMs) {}
+      }
+      const result = nativePut.apply(this, args)
+      window.__reviewIndexedDbBlockEvents.push({
+        startedAt,
+        durationMs: performance.now() - startedAt,
       })
       return result
     }
@@ -230,7 +256,7 @@ async function runBrowserCheck() {
     )
 
     const measurements = []
-    measurements.push(await measureRating(page, '一般', 0, false))
+    measurements.push(await measureRating(page, '一般', 0, false, 600))
     for (let index = 0; index < fixtures.length - 2; index += 1) {
       measurements.push(await measureRating(page, '一般', 600))
     }
@@ -246,15 +272,32 @@ async function runBrowserCheck() {
         `rating-to-DOM latency exceeded 100ms: ${JSON.stringify(measurement)}`,
       )
       assert.ok(
-        measurement.paintedMs < 250,
-        `rating-to-visible-frame latency exceeded 250ms: ${JSON.stringify(measurement)}`,
+        measurement.frameReadyMs < 100,
+        `rating-to-render-frame latency exceeded 100ms: ${JSON.stringify(measurement)}`,
       )
+      if (!measurement.indexedDbBlockEvents.some((event) => event.durationMs >= 500)) {
+        assert.ok(
+          measurement.paintedMs < 250,
+          `rating-to-visible-frame latency exceeded 250ms: ${JSON.stringify(measurement)}`,
+        )
+      }
       assert.equal(
         measurement.mediaLoadEvents.length,
         0,
         `media load must not run on the visual card-transition path: ${JSON.stringify(measurement)}`,
       )
     }
+    const blockedPersistenceMeasurement = measurements[0]
+    const blockedPersistenceEvent = blockedPersistenceMeasurement.indexedDbBlockEvents
+      .find((event) => event.durationMs >= 500)
+    assert.ok(
+      blockedPersistenceEvent,
+      `the browser check must exercise synchronous persistence setup: ${JSON.stringify(blockedPersistenceMeasurement)}`,
+    )
+    assert.ok(
+      blockedPersistenceEvent.offsetMs >= blockedPersistenceMeasurement.frameReadyMs - 2,
+      `persistence setup must start after the next card reaches a render frame: ${JSON.stringify(blockedPersistenceMeasurement)}`,
+    )
     assert.equal(new Set(measurements.map((item) => item.previousWord)).size, fixtures.length - 1)
     const persistedAttempts = await waitForPersistedAttempts(page, fixtures.length)
     assert.equal(persistedAttempts.length, fixtures.length, 'each card should persist exactly once')
@@ -314,8 +357,12 @@ async function main() {
     }
     const measurements = await runBrowserCheck()
     const dom = measurements.map((item) => item.domMs.toFixed(1)).join(', ')
-    const painted = measurements.map((item) => item.paintedMs.toFixed(1)).join(', ')
-    console.log(`SRS rating latency browser check passed (DOM ms: ${dom}; visible ms: ${painted}).`)
+    const frame = measurements.map((item) => item.frameReadyMs.toFixed(1)).join(', ')
+    const persistenceBlock = measurements[0].indexedDbBlockEvents
+      .find((event) => event.durationMs >= 500)
+    console.log(
+      `SRS rating latency browser check passed (DOM ms: ${dom}; render-frame ms: ${frame}; deferred persistence block ms: ${persistenceBlock.durationMs.toFixed(1)}).`,
+    )
   } finally {
     if (server && server.exitCode === null) server.kill()
   }

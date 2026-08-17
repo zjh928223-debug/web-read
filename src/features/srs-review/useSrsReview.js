@@ -315,10 +315,14 @@ export function useSrsReview(service, options = {}) {
 
   function enqueueReviewServiceV2Save(draft) {
     backgroundSaving.value += 1
-    const task = saveChain.then(() => retryBackgroundSave(
-      () => persistReviewServiceV2Attempt(draft),
-      3,
-    ))
+    const transitionPainted = waitForReviewTransitionPaint()
+    const task = saveChain.then(async () => {
+      await transitionPainted
+      return retryBackgroundSave(
+        () => persistReviewServiceV2Attempt(draft),
+        3,
+      )
+    })
     saveChain = task
     void task.catch((cause) => {
       error.value = getErrorMessage(cause, '后台保存失败，请重新进入复习检查进度')
@@ -490,6 +494,23 @@ async function retryBackgroundSave(save, attempts) {
 
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function waitForReviewTransitionPaint() {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(fallbackTimer)
+      resolve()
+    }
+    const fallbackTimer = window.setTimeout(finish, 100)
+    window.requestAnimationFrame(() => window.setTimeout(finish, 0))
+  })
 }
 
 function createEmptyRatingCounts() {
