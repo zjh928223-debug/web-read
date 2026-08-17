@@ -111,7 +111,8 @@
 - [x] 11.5 添加 LICENSE、THIRD_PARTY_NOTICES、外部资源/数据来源矩阵、secret scan 和 SBOM/license gate
 - [x] 11.6 将 README/PROJECT_MAP/CURRENT/operations 收敛为当前事实，给历史文档增加 archived banner
 - [x] 11.7 建立 Windows CI，运行固定工具链、frontend/backend tests、关键 journeys、security/license 和 build
-- [ ] 11.8 在每个阶段形成小提交并维护可审计 changelog；准备推送前单独确认远端 branch/upstream
+- [x] 11.8 在每个阶段形成小提交并维护可审计 changelog；准备推送前单独确认远端 branch/upstream
+  - `CHANGELOG.md` 记录各阶段结果、代表提交、发布证据和回滚边界；当前工作位于本地 `codex/read-web-next`，已核对 `origin` 且无 upstream，未执行 push，远端操作仍需单独确认。
 
 ## 12. 备份、迁移与发布验收
 

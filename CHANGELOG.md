@@ -1,47 +1,69 @@
 # Changelog
 
-## Next workspace — unreleased
+## Next workspace — migrated locally on 2026-08-17
 
-This release is still isolated in `E:\read-web-next`. It must not replace the daily-use shortcut until backup/restore, long-duration stability, old-vs-next differential checks, and rollback rehearsal pass.
+The stabilization and migration work is complete in `E:\read-web-next`. After the
+isolated release gates and explicit user approval, the desktop learning shortcut was
+switched to `E:\read-web-next\scripts\launch-next-preview.ps1`. The legacy workspace
+remains available, and the rollback state is retained under
+`output/release/desktop-shortcut-migration.json`.
 
 ### Reliability and data safety
 
-- Added atomic, recoverable JSON persistence with backup, quarantine, interrupted-write detection, bounded job logs, and restart state recovery.
-- Added transaction-complete IndexedDB writes, versioned reader-session envelopes, checksums, quarantine, abortable commits, and fail-closed restore validation.
-- Added latest-wins ledgers for marks and activity; removed duplicate observer-based saves.
-- Added atomic vocabulary CAS/migration, Preview state, Annotation bundle, sentence warehouse swaps, and Gemini cache/rate-limit persistence.
+- Added atomic, recoverable JSON and IndexedDB persistence with versioned envelopes,
+  checksums, quarantine, rollback backups, interrupted-write recovery, and conflict-safe
+  multi-domain restore.
+- Added latest-wins ledgers for marks/activity, atomic vocabulary and Preview/Annotation
+  updates, and durable workflow checkpoints with bounded logs.
+- Verified a read-only copy of the real six-domain profile by restoring only into an
+  isolated temporary root. Daily data and services were not written by the rehearsal.
 
-### Performance and responsiveness
+### Performance and workflow service
 
-- Stream large workflow media with HTTP Range instead of copying 300–540 MB blobs into IndexedDB.
-- Removed permanent paused playback animation loops and bounded UI observers/listeners with disposable lifecycle scopes.
-- Localized active-word DOM changes and added fixed production browser budgets with screenshot, trace, JSON, provenance, and baseline-diff evidence.
-- Added 1k/10k transcript gates. Current 10k hot-path P95 is about 18 ms for word/chunk/seek/mark; mode switching remains about 246 ms and is still an optimization target.
-
-### Workflow service
-
-- Added batch snapshots, bounded/coalesced persistence, request metrics, reliable process-tree supervision, NativePicker ownership/timeout behavior, and loopback/token boundaries.
-- Moved annotation backfill to cancellable `202` operations with deadlines, retry jitter, and per-resource limits.
-- Added stress coverage for 1/10/50 active jobs, mass cancellation/restart, half-written state, picker focus churn, timeout, and upstream 503 handling.
+- Streamed large workflow media with HTTP Range instead of copying 300–540 MB blobs into
+  IndexedDB, and added explicit media resource ownership and cleanup.
+- Replaced permanent playback work and unbounded observers with event-driven updates and
+  disposable lifecycle scopes; added 1k/10k transcript and fixed browser budgets.
+- Added workflow batch snapshots, coalesced persistence, reliable process supervision,
+  cancellable background operations, NativePicker ownership, and 1/10/50-job stress tests.
 
 ### Runtime and release architecture
 
-- Added shared RuntimeConfig, fixed Node/Python locks, clean-room installation checks, secret/license/SBOM gates, and a Windows CI workflow.
-- Added an independent Local App Host for built assets, workflow ASGI, Range media, and nine Node capability families. Vite remains a development fallback.
-- Added process/port ownership, release/profile/instance identity, manifest health checks, crash/restart tests, and isolation from daily-use ports `5173/8765`.
-- Removed retired notes compatibility runtime and classified or removed orphan verification scripts.
+- Added shared RuntimeConfig, fixed Node/Python locks, clean-room checks, supply-chain
+  gates, Windows CI, and an independent Local App Host for built assets and local APIs.
+- Retired notes/root artifacts and the theme/audio/marks/UI compatibility stores. Pinia is
+  configured before reader/session startup and non-component runtime consumers use an
+  explicit registry; legacy state/bridge globals now have zero consumers.
+- Split source-shape evidence into the canonical `verify:architecture:source-shape` layer
+  and public interface behavior into `verify:behavior:migrated-interfaces`.
 
-### Verification snapshot
+### Release evidence
 
-- `verify:full`: fast gate, production build, isolated development and preview journeys, independent production-host journeys, reader-session interruption journeys, and backend suite.
-- Production browser budget: 10/10 metrics passing across three independent Local App Host runs.
-- Reader-session fault matrix: 10/10 journeys passing.
-- Workflow stress suite: 5/5 scenarios passing; backend suite reached 107 tests at this checkpoint.
+- Three cold starts, crash/restart recovery, 30-minute playback, 120 A/B/A switches, the
+  36-cell Quota/corruption matrix, and mass cancellation/restart completed in isolation.
+- Legacy and Next each passed 21/21 matched journeys across three runs, with no browser or
+  network errors and an aggregate performance ratio within the personal-project budget.
+- Release manifests, artifact checksums, health checks, rollback, and shortcut rollback
+  rehearsal passed before the explicitly approved desktop shortcut migration.
+- The post-migration runtime cleanup passed `verify:fast`, the full Vite journeys,
+  production build/startup, and the production preview gate.
 
-### Remaining migration blockers
+### Auditable phase commits
 
-- Complete multi-domain backup/import dry-run and atomic restore with rollback backup.
-- Finish remaining compatibility/runtime decomposition and accessibility/offline failure journeys.
-- Run 30-minute playback, heap-growth, real-data-copy recovery, old-vs-next differential, release manifest, and shortcut rollback rehearsal.
-- Obtain explicit user approval before pushing or changing the desktop shortcut.
+Work was kept in reviewable commits instead of one migration dump. Representative phase
+boundaries are:
 
+| Phase | Representative commits |
+| --- | --- |
+| Production host, observability, clean-room | `7400fb8`, `c7957ec`, `0aa7df6`, `9905e78` |
+| Persistence, session and workflow reliability | `293c0a5`, `7b7d609`, `f8ff483`, `944b49a`, `68c286e` |
+| Runtime decomposition and legacy cleanup | `9666e6f`, `1d4b462`, `33483a5`, `e02062c`, `a582a0b` |
+| Backup and atomic restore | `83c6e61`, `49c0b39`, `3e3a0e0`, `22429fd`, `8c841f2` |
+| Stability, differential and release controls | `597e9fd`, `9bd1bc3`, `b3a3bf6`, `a1a7e04`, `88dfb10` |
+| Architecture/behavior test ownership | `55563e9` |
+
+### Remote handoff boundary
+
+The completed work is on local branch `codex/read-web-next`. Remote `origin` is configured,
+but this branch has no upstream and no push was performed. Selecting the remote branch,
+setting upstream, or pushing requires a separate explicit confirmation.
