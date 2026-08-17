@@ -1292,9 +1292,29 @@ export function createIndexedDbLearningEventRepository(options = {}) {
 
   async function loadRowsAndManifest() {
     const database = await getDatabase();
-    await ensureIndexedDbManifest(database);
-    const rows = await listRows(database);
-    const map = new Map(rows.map((row) => [row.id, row]));
+    const manifest = await ensureIndexedDbManifest(database);
+    const shardIds = [...new Set(
+      Object.values(manifest.partitions)
+        .flatMap((partition) => partition.shard_ids),
+    )];
+    const map = new Map([[
+      LEARNING_EVENT_MANIFEST_ROW_ID,
+      { id: LEARNING_EVENT_MANIFEST_ROW_ID, content: manifest },
+    ]]);
+    if (shardIds.length) {
+      const transaction = database.transaction(['files'], 'readonly');
+      const completion = transactionCompletion(
+        transaction,
+        'Failed to read learning event shards',
+      );
+      const store = transaction.objectStore('files');
+      const rows = await Promise.all(shardIds.map((rowId) => requestResult(
+        store.get(rowId),
+        'Failed to read learning event shard',
+      )));
+      await completion;
+      rows.filter(Boolean).forEach((row) => map.set(row.id, row));
+    }
     const events = allEventsFromRows(map);
     return { events, map };
   }

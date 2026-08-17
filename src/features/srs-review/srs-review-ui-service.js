@@ -33,8 +33,9 @@ export function createSrsReviewUiService(options = {}) {
     || createIndexedDbAcquisitionRepository({ indexedDBApi })
   const contextEvidenceRepository = options.contextEvidenceRepository
     || createIndexedDbContextEvidenceRepository({ indexedDBApi })
-  const learningEventRepository = options.learningEventRepository
-    || createIndexedDbLearningEventRepository({ indexedDBApi })
+  const learningEventRepository = createWarmableLearningEventRepository(
+    options.learningEventRepository || createIndexedDbLearningEventRepository({ indexedDBApi }),
+  )
   const sessionLedgerRepository = options.sessionLedgerRepository
     || createIndexedDbReviewSessionLedgerRepository({ indexedDBApi })
   const reviewStateRepository = options.reviewStateRepository
@@ -65,6 +66,9 @@ export function createSrsReviewUiService(options = {}) {
     onPersonalizationShadowError: options.onPersonalizationShadowError,
     now: options.now,
   })
+  function warmReviewData() {
+    return learningEventRepository.warmReviewEvents().then(() => true)
+  }
 
   async function loadReviewStatesById(learningUnitIds) {
     if (typeof reviewStateRepository.loadSnapshot === 'function') {
@@ -164,6 +168,7 @@ export function createSrsReviewUiService(options = {}) {
     recordReviewAttempt: reviewService.recordReviewAttempt,
     completeReviewSession: reviewService.completeReviewSession,
     hasReviewCards,
+    warmReviewData,
     getReviewCards,
     getReviewPolicy() {
       return normalizeReviewPolicy(policyProvider() || {})
@@ -188,6 +193,33 @@ function completedLedgerItemIds(ledger) {
     if (ledgerItemId) completed.add(String(ledgerItemId))
   }
   return completed
+}
+
+function createWarmableLearningEventRepository(repository) {
+  let reviewEventsRequest = null
+  const isReviewEventQuery = (input = {}) => (
+    Object.keys(input).length === 1 && input.event_type === 'review_attempt_recorded'
+  )
+  return {
+    ...repository,
+    async append(...args) {
+      reviewEventsRequest = null
+      return repository.append(...args)
+    },
+    query(input = {}) {
+      if (!isReviewEventQuery(input)) return repository.query(input)
+      if (!reviewEventsRequest) {
+        reviewEventsRequest = Promise.resolve(repository.query(input)).catch((error) => {
+          reviewEventsRequest = null
+          throw error
+        })
+      }
+      return reviewEventsRequest
+    },
+    warmReviewEvents() {
+      return this.query({ event_type: 'review_attempt_recorded' })
+    },
+  }
 }
 
 function normalizeReviewWord(existing, unit) {

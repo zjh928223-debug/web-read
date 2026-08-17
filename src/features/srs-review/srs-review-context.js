@@ -156,6 +156,12 @@ export async function resolveReviewSource(context, options = {}) {
       }),
       targetSentence: target.text,
       translationZh: findReviewSentenceTranslation(chunkData, target.text),
+      translationParts: findReviewSentenceTranslationParts(
+        chunkData,
+        target.text,
+        options.word,
+        options.meaning,
+      ),
       url: '',
       revokeUrl: false,
       start: getSegmentTime(target.segment, ['start', 'start_time', 'begin', 'b'], 0),
@@ -256,13 +262,25 @@ async function loadReviewChunkData(client, sourceId, options) {
 }
 
 export function findReviewSentenceTranslation(chunkData, sentence, maximumChunks = 20) {
+  return findReviewSentenceTranslationParts(chunkData, sentence, '', '', maximumChunks)
+    .map((part) => part.text)
+    .join('')
+}
+
+export function findReviewSentenceTranslationParts(
+  chunkData,
+  sentence,
+  word,
+  meaning = '',
+  maximumChunks = 20,
+) {
   const target = normalizeMatchText(sentence)
-  if (!target) return ''
+  if (!target) return []
   const chunks = collectReviewChunks(chunkData)
   const limit = Math.max(1, Number(maximumChunks) || 20)
   for (let start = 0; start < chunks.length; start += 1) {
     let english = ''
-    const translations = []
+    const matched = []
     for (let index = start; index < chunks.length && index < start + limit; index += 1) {
       const chunk = chunks[index]
       const chunkEnglish = normalizeText(chunk?.en || chunk?.text || chunk?.sentence)
@@ -271,11 +289,39 @@ export function findReviewSentenceTranslation(chunkData, sentence, maximumChunks
       const candidate = normalizeMatchText(english)
       if (!candidate || !target.startsWith(candidate)) break
       const translation = normalizeText(chunk?.zh || chunk?.translationZh || chunk?.translation_zh)
-      if (translation) translations.push(translation)
-      if (candidate === target) return translations.length ? translations.join('') : ''
+      matched.push({ english: normalizeMatchText(chunkEnglish), text: translation })
+      if (candidate === target) return markReviewTranslationParts(matched, word, meaning)
     }
   }
-  return ''
+  return []
+}
+
+function markReviewTranslationParts(chunks, word, meaning) {
+  const targetWord = normalizeMatchText(word)
+  let cursor = 0
+  const ranged = chunks.map((chunk) => {
+    const start = cursor
+    const end = start + chunk.english.length
+    cursor = end + 1
+    return { ...chunk, start, end }
+  })
+  const normalizedSentence = ranged.map((chunk) => chunk.english).join(' ')
+  const wordStart = targetWord ? normalizedSentence.indexOf(targetWord) : -1
+  const wordEnd = wordStart < 0 ? -1 : wordStart + targetWord.length
+  const meaningLabel = normalizeText(meaning).split(/[，,；;。]/u)[0].trim()
+  return ranged
+    .filter((chunk) => chunk.text)
+    .flatMap((chunk) => {
+      const highlighted = wordStart >= 0 && chunk.start < wordEnd && chunk.end > wordStart
+      if (!highlighted || !meaningLabel) return [{ text: chunk.text, highlighted }]
+      const meaningStart = chunk.text.indexOf(meaningLabel)
+      if (meaningStart < 0) return [{ text: chunk.text, highlighted }]
+      return [
+        { text: chunk.text.slice(0, meaningStart), highlighted: false },
+        { text: meaningLabel, highlighted: true },
+        { text: chunk.text.slice(meaningStart + meaningLabel.length), highlighted: false },
+      ].filter((part) => part.text)
+    })
 }
 
 function collectReviewChunks(chunkData) {

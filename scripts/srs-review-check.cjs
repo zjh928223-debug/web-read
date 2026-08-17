@@ -169,9 +169,19 @@ async function run() {
     'all review typography should inherit Arial',
   )
   assert.match(
+    reviewCssSource,
+    /\.srs-review-sentence-translation \.is-review-meaning\s*\{[^}]*text-decoration-color:\s*#a8afb9;[^}]*text-decoration-thickness:\s*1px;/s,
+    'the Chinese phrase aligned to the review word should use only a thin gray underline',
+  )
+  assert.match(
     reviewPageSource,
     /document\.addEventListener\('pointerdown', handleHistoryOutsidePointer, true\)/,
     'the review history should listen for clicks outside its container',
+  )
+  assert.match(
+    reviewPageSource,
+    /watch\(\(\) => props\.active,[\s\S]*activateReviewPage\(\)[\s\S]*deactivateReviewPage\(\)/,
+    'the retained review page should enable shortcuts only while it is visible',
   )
   assert.match(
     reviewPageSource,
@@ -839,6 +849,25 @@ async function run() {
     '所有的活动都发生在板块交汇处，在它们的边缘，称为板块边界。',
     'review should reconstruct an existing sentence translation from consecutive article chunks',
   )
+  assert.deepEqual(
+    contextModule.findReviewSentenceTranslationParts({
+      s: [{
+        chunks: [
+          { en: 'And all the action happens where plates meet,', zh: '所有的活动都发生在板块交汇处，' },
+          { en: 'at their edges,', zh: '在它们的边缘，' },
+          { en: 'called plate boundaries.', zh: '称为板块边界。' },
+        ],
+      }],
+    }, 'And all the action happens where plates meet, at their edges, called plate boundaries.', 'plate boundaries', '板块边界'),
+    [
+      { text: '所有的活动都发生在板块交汇处，', highlighted: false },
+      { text: '在它们的边缘，', highlighted: false },
+      { text: '称为', highlighted: false },
+      { text: '板块边界', highlighted: true },
+      { text: '。', highlighted: false },
+    ],
+    'the article chunk aligned to the review phrase should be underlined in Chinese',
+  )
   assert.equal(textContext.paragraphs.length, 3, 'context should be limited to three nearest passages')
   assert.equal(textContext.paragraphs.some((paragraph) => paragraph.target), true)
   assert.equal(
@@ -949,6 +978,7 @@ async function run() {
     sentence: 'appeared in court',
   }, {
     word: 'court',
+    meaning: '出庭，出席庭审',
     client: {
       async getFile(_sourceId, kind) {
         if (kind === 'transcript') {
@@ -986,6 +1016,15 @@ async function run() {
     resolvedSource.translationZh,
     '一名女子出庭今天是第一次。',
     'review source should carry the article translation so the page does not call Gemini again',
+  )
+  assert.deepEqual(
+    resolvedSource.translationParts,
+    [
+      { text: '一名女子', highlighted: false },
+      { text: '出庭', highlighted: true },
+      { text: '今天是第一次。', highlighted: false },
+    ],
+    'review source should preserve the bilingual chunk aligned to the review word',
   )
 
   let streamingTranscriptRequests = 0

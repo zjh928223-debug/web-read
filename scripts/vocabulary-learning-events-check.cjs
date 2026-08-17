@@ -733,6 +733,13 @@ async function main() {
   await indexedRepository.append(fixture.candidate_event);
   await indexedRepository.append(fixture.review_attempt);
   assert.deepEqual(indexedDBApi.opens, [{ name: 'SeekPlayerDB', version: 1 }]);
+  indexedDBApi.database.storeOperationCalls.length = 0;
+  assert.equal((await indexedRepository.query({})).length, 2);
+  assert.equal(
+    indexedDBApi.database.storeOperationCalls.some(({ operation }) => operation === 'openCursor'),
+    false,
+    'a valid event manifest should read only its event shard rows, not scan the full files store',
+  );
   indexedDBApi.rows.delete(api.LEARNING_EVENT_MANIFEST_ROW_ID);
   assert.equal(
     (await indexedRepository.query({})).length,

@@ -474,6 +474,13 @@ audio {
   line-height: 1.55;
 }
 
+.srs-review-sentence-translation .is-review-meaning {
+  text-decoration-line: underline;
+  text-decoration-color: #a8afb9;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .2em;
+}
+
 .srs-review-sentence-translation.is-loading,
 .srs-review-sentence-translation.is-unavailable {
   color: #77839a;

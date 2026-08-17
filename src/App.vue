@@ -7,7 +7,7 @@
     <ChunkModeView />
     <Teleport to="#srs-review-entry-root">
       <span class="learning-entry-group">
-        <button class="small-btn" type="button" title="复习当前已到期的单词" @click="isSrsReviewOpen = true">今日复习</button>
+        <button class="small-btn" type="button" title="复习当前已到期的单词" @click="openSrsReview">今日复习</button>
         <button class="small-btn" type="button" title="首次接触：一个主要义和一条可追溯真实短句" @click="openPassagePreview">待预习</button>
         <a
           class="small-btn learning-model-entry"
@@ -26,12 +26,14 @@
     <Teleport to="body">
       <KeepAlive>
         <SrsReviewPage
-          v-if="isSrsReviewOpen"
+          v-if="isSrsReviewMounted"
+          v-show="isSrsReviewOpen"
           :key="srsReviewCacheVersion"
           :service="srsReviewUiService"
           :legacy-migration="legacyVocabularyMigration"
           :dictionary-client="dictionaryClient"
-          @close="isSrsReviewOpen = false"
+          :active="isSrsReviewOpen"
+          @close="closeSrsReview"
         />
       </KeepAlive>
       <PassagePreviewPage
@@ -112,6 +114,7 @@ import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
 
 const isSrsReviewOpen = ref(false)
+const isSrsReviewMounted = ref(false)
 const srsReviewCacheVersion = ref(0)
 const isPassagePreviewOpen = ref(false)
 const passagePreviewFileInput = ref(null)
@@ -142,6 +145,16 @@ const srsReviewUiService = createSrsReviewSourceSelector({
 const dictionaryClient = createOptionalLocalDictionaryClient()
 let legacyMigrationTimer = null
 let legacyMigrationStopped = false
+let reviewWarmupTimer = null
+
+function openSrsReview() {
+  isSrsReviewMounted.value = true
+  isSrsReviewOpen.value = true
+}
+
+function closeSrsReview() {
+  isSrsReviewOpen.value = false
+}
 
 function scheduleLegacyVocabularyMigration(delay = 1000) {
   if (legacyMigrationStopped || !document.hidden) return
@@ -187,12 +200,17 @@ onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active')
   document.addEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (document.hidden) scheduleLegacyVocabularyMigration(1000)
+  reviewWarmupTimer = window.setTimeout(() => {
+    reviewWarmupTimer = null
+    void srsReviewV2Service.warmReviewData?.().catch(() => {})
+  }, 0)
 })
 
 onBeforeUnmount(() => {
   legacyMigrationStopped = true
   document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
+  if (reviewWarmupTimer !== null) window.clearTimeout(reviewWarmupTimer)
 })
 
 function openStoredPassagePreviewLegacy() {

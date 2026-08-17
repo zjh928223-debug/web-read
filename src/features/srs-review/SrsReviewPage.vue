@@ -174,7 +174,11 @@
               v-if="flowState.answerRevealed && sentenceTranslationZh"
               class="srs-review-sentence-translation"
               lang="zh-CN"
-            >{{ sentenceTranslationZh }}</p>
+            ><span
+              v-for="(part, partIndex) in sentenceTranslationParts"
+              :key="partIndex"
+              :class="{ 'is-review-meaning': part.highlighted }"
+            >{{ part.text }}</span></p>
             <p
               v-else-if="flowState.answerRevealed && sentenceTranslationLoading"
               class="srs-review-sentence-translation is-loading"
@@ -364,7 +368,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   buildReviewContext,
   describeReviewSourceError,
@@ -407,6 +411,7 @@ const props = defineProps({
   legacyMigration: { type: Object, default: null },
   standalone: { type: Boolean, default: false },
   dictionaryClient: { type: Object, default: null },
+  active: { type: Boolean, default: true },
 })
 const emit = defineEmits(['close'])
 
@@ -424,6 +429,7 @@ const historyOpen = ref(false)
 const historyContainer = ref(null)
 const flowNotice = ref('')
 const sentenceTranslationZh = ref('')
+const sentenceTranslationParts = ref([])
 const sentenceTranslationLoading = ref(false)
 const sentenceTranslationUnavailable = ref(false)
 const migrationStatus = ref(null)
@@ -552,11 +558,19 @@ onMounted(async () => {
   }
   fitWordHeading()
 })
-onActivated(() => {
+function activateReviewPage() {
   window.addEventListener('keydown', handleReviewShortcut, true)
   document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
-})
-onDeactivated(deactivateReviewPage)
+  if (!audioState.value && review.current.value) {
+    void loadReviewSourceForCurrentCard(++audioRequest)
+  }
+}
+
+watch(() => props.active, (active) => {
+  if (active) activateReviewPage()
+  else deactivateReviewPage()
+}, { immediate: true })
+
 onBeforeUnmount(() => {
   deactivateReviewPage()
   meaningAbortController?.abort()
@@ -636,6 +650,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   flowNotice.value = ''
   translationRequest += 1
   sentenceTranslationZh.value = ''
+  sentenceTranslationParts.value = []
   sentenceTranslationLoading.value = false
   sentenceTranslationUnavailable.value = false
   void dictionaryAssistance.setCard(nextId ? word.value.word : '')
@@ -693,6 +708,10 @@ async function hydrateCurrentSentenceTranslation() {
   const cached = embedded || sentenceTranslationCache.get(key)
   if (cached) {
     sentenceTranslationZh.value = cached
+    sentenceTranslationParts.value = embedded && Array.isArray(audioState.value?.translationParts)
+      && audioState.value.translationParts.length
+      ? audioState.value.translationParts
+      : [{ text: cached, highlighted: false }]
     sentenceTranslationLoading.value = false
     sentenceTranslationUnavailable.value = false
     if (embedded) sentenceTranslationCache.set(key, embedded)
@@ -712,6 +731,7 @@ async function hydrateCurrentSentenceTranslation() {
     if (translation) {
       sentenceTranslationCache.set(key, translation)
       sentenceTranslationZh.value = translation
+      sentenceTranslationParts.value = [{ text: translation, highlighted: false }]
       sentenceTranslationUnavailable.value = false
     } else {
       sentenceTranslationUnavailable.value = true
@@ -888,6 +908,7 @@ function loadReviewSourceForCurrentCard(request = audioRequest) {
   }
   const sourcePromise = Promise.resolve(resolveReviewSource(context, {
     word: word.value.word,
+    meaning: meaning.value,
     onError(error) {
       handleReviewSourceError(error, request)
     },

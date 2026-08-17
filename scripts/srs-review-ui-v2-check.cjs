@@ -360,11 +360,41 @@ async function main() {
   assert.match(appSource, /createLegacyVocabularyMigration/)
   assert.match(appSource, /createLegacyReviewServiceAdapter/)
   assert.match(appSource, /legacyService:\s*legacyReviewService/)
+  assert.match(
+    appSource,
+    /setTimeout\(\(\) => \{[\s\S]*srsReviewV2Service\.warmReviewData\?\.\(\)/,
+    'the reader should warm review snapshots in the background after startup',
+  )
+  assert.match(appSource, /v-if="isSrsReviewMounted"/)
+  assert.match(appSource, /v-show="isSrsReviewOpen"/)
+  assert.match(appSource, /:active="isSrsReviewOpen"/)
 
   console.log('SRS review UI V2 focused verification passed.')
 }
 
 async function verifyReadOnlySourceProbe({ sourceSelector, uiServiceModule }) {
+  const warmReads = { acquisition: 0, content: 0, review: 0, context: 0 }
+  let warmCommandCalls = 0
+  const warmUiService = uiServiceModule.createSrsReviewUiService({
+    acquisitionRepository: { async loadSnapshot() { warmReads.acquisition += 1; return { by_learning_unit_id: {} } } },
+    contentRepository: { async loadSnapshot() { warmReads.content += 1; return { words: [], contexts: [] } } },
+    reviewStateRepository: { async loadSnapshot() { warmReads.review += 1; return { by_learning_unit_id: {} } } },
+    contextEvidenceRepository: { async loadSnapshot() { warmReads.context += 1; return { by_context_evidence_id: {} } } },
+    learningEventRepository: { async query() { return [] } },
+    sessionLedgerRepository: { async getBySessionId() { return null } },
+    reviewService: {
+      async startReviewSession() { warmCommandCalls += 1 },
+      async resumeReviewSession() { warmCommandCalls += 1 },
+      async recordReviewAttempt() { warmCommandCalls += 1 },
+      async completeReviewSession() { warmCommandCalls += 1 },
+    },
+  })
+  await warmUiService.warmReviewData()
+  assert.equal(await warmUiService.hasReviewCards({ now: '2026-07-29T01:00:00.000Z' }), false)
+  assert.deepEqual(await warmUiService.getReviewCards({ entries: [] }), [])
+  assert.deepEqual(warmReads, { acquisition: 2, content: 1, review: 2, context: 1 })
+  assert.equal(warmCommandCalls, 0, 'review warmup must remain read-only')
+
   let storedLedger = createLedger({ mode: 'balanced', promptMode: 'word_only' })
   storedLedger.local_day = '2026-07-28'
   let ledgerPutCalls = 0
