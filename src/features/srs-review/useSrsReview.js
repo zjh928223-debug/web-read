@@ -32,6 +32,7 @@ export function useSrsReview(service, options = {}) {
   const viewIndex = ref(0)
   const loading = ref(true)
   const pending = ref(false)
+  const backgroundSaving = ref(0)
   const error = ref('')
   const loaded = ref(false)
   const now = options.now
@@ -45,6 +46,7 @@ export function useSrsReview(service, options = {}) {
   const contextCueLevel = ref('none')
   const committedItemIds = new Set()
   const attemptDrafts = new Map()
+  let saveChain = Promise.resolve()
   let cardStartedAt = resolveNowMilliseconds(now)
 
   const current = computed(() => queue.value[viewIndex.value] || null)
@@ -209,12 +211,22 @@ export function useSrsReview(service, options = {}) {
       throw new Error('Unsupported SRS review action')
     }
 
-    pending.value = true
+    const saveInBackground = usesReviewServiceV2 && submitOptions.background === true
+    if (!saveInBackground) pending.value = true
     error.value = ''
     try {
       if (usesReviewServiceV2) {
-        const saved = await submitReviewServiceV2(entry, action, submitOptions)
+        const draft = prepareReviewServiceV2Attempt(entry, action, submitOptions)
+        if (!draft) return false
+        if (saveInBackground) {
+          commitReviewAction(itemId, action)
+          enqueueReviewServiceV2Save(draft)
+          if (submitOptions.advance !== false) advanceCurrent()
+          return true
+        }
+        const saved = await persistReviewServiceV2Attempt(draft)
         if (!saved) return false
+        commitReviewAction(itemId, action)
         if (submitOptions.advance !== false) advanceCurrent()
         return true
       }
@@ -222,28 +234,24 @@ export function useSrsReview(service, options = {}) {
       if (result?.reviewLog) {
         reviewLogs.value = [result.reviewLog, ...reviewLogs.value]
       }
-      committedItemIds.add(itemId)
-      sessionRatingCounts.value = {
-        ...sessionRatingCounts.value,
-        [action.tone]: sessionRatingCounts.value[action.tone] + 1,
-      }
+      commitReviewAction(itemId, action)
       if (submitOptions.advance !== false) advanceCurrent()
       return true
     } catch (cause) {
       error.value = getErrorMessage(cause, '评价保存失败，请重试')
       return false
     } finally {
-      pending.value = false
+      if (!saveInBackground) pending.value = false
     }
   }
 
-  async function submitReviewServiceV2(entry, action, submitOptions) {
+  function prepareReviewServiceV2Attempt(entry, action, submitOptions) {
     const ledgerEntry = entry.ledgerEntry
     const draftKey = ledgerEntry.ledger_item_id
     let draft = attemptDrafts.get(draftKey)
     if (draft && draft.rating !== action.rating) {
       error.value = '上次提交状态未知，请先重试原评分'
-      return false
+      return null
     }
     if (!draft) {
       draft = createAttemptDraft({
@@ -257,30 +265,53 @@ export function useSrsReview(service, options = {}) {
       })
       attemptDrafts.set(draftKey, draft)
     }
+    return draft
+  }
+
+  async function persistReviewServiceV2Attempt(draft) {
     const previousLedger = sessionLedger.value
     const result = await activeService.recordReviewAttempt(draft)
     sessionLedger.value = result.ledger
     if (ledgerContainsNewEntries(result.ledger, previousLedger)) {
       queue.value = await activeService.getReviewCards(result.ledger)
     }
-    committedItemIds.add(draftKey)
     reviewLogs.value = [{
       ...result.attempt,
       reviewed_at: result.attempt.occurred_at,
     }, ...reviewLogs.value]
+    return true
+  }
+
+  function commitReviewAction(itemId, action) {
+    committedItemIds.add(itemId)
     sessionRatingCounts.value = {
       ...sessionRatingCounts.value,
       [action.tone]: sessionRatingCounts.value[action.tone] + 1,
     }
-    return true
+  }
+
+  function enqueueReviewServiceV2Save(draft) {
+    backgroundSaving.value += 1
+    const task = saveChain.then(() => retryBackgroundSave(
+      () => persistReviewServiceV2Attempt(draft),
+      3,
+    ))
+    saveChain = task
+    void task.catch((cause) => {
+      error.value = getErrorMessage(cause, '后台保存失败，请重新进入复习检查进度')
+    }).finally(() => {
+      backgroundSaving.value = Math.max(0, backgroundSaving.value - 1)
+    })
+  }
+
+  function flushPendingSaves() {
+    return saveChain.then(() => true, () => false)
   }
 
   function advanceCurrent() {
     const itemId = currentItemId(current.value, usesReviewServiceV2)
     if (!itemId || !committedItemIds.has(itemId) || reviewingPast.value) return false
-    index.value = usesReviewServiceV2
-      ? Math.min(Number(sessionLedger.value?.cursor || index.value + 1), queue.value.length)
-      : index.value + 1
+    index.value = Math.min(index.value + 1, queue.value.length)
     viewIndex.value = index.value
     cardStartedAt = resolveNowMilliseconds(now)
     resetContextCue()
@@ -357,6 +388,7 @@ export function useSrsReview(service, options = {}) {
     viewIndex,
     loading,
     pending,
+    backgroundSaving,
     error,
     current,
     total,
@@ -392,6 +424,7 @@ export function useSrsReview(service, options = {}) {
     submitAction,
     submitRating,
     advanceCurrent,
+    flushPendingSaves,
     removeCurrent,
     showTargetSentence,
     showSurroundingContext,
@@ -410,6 +443,23 @@ function ledgerContainsNewEntries(nextLedger, previousLedger) {
 
 function getErrorMessage(error, fallback) {
   return error && error.message ? String(error.message) : fallback
+}
+
+async function retryBackgroundSave(save, attempts) {
+  let lastError
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await save()
+    } catch (cause) {
+      lastError = cause
+      if (attempt + 1 < attempts) await delay(40 * (attempt + 1))
+    }
+  }
+  throw lastError
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 function createEmptyRatingCounts() {

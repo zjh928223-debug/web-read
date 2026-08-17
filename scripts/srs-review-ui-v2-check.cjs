@@ -222,6 +222,57 @@ async function main() {
   assert.equal(await flow.rate({ rating: 'good', tone: 'good' }), true)
   assert.deepEqual(flowMetadata.at(-1), ['good', true])
 
+  const instantReleases = []
+  let instantRecordCalls = 0
+  const instantReview = useSrsReview(createUiService(
+    createLedger({ mode: 'balanced', promptMode: 'word_only', count: 2 }),
+    {
+      async waitForAttempt() {
+        instantRecordCalls += 1
+        await new Promise((resolve) => { instantReleases.push(resolve) })
+      },
+    },
+  ), { now, timezone })
+  await instantReview.load()
+  const instantFirst = instantReview.submitAction(instantReview.actions[0], {
+    advance: false,
+    background: true,
+  })
+  const instantFirstAccepted = await Promise.race([
+    instantFirst,
+    new Promise((resolve) => setTimeout(() => resolve(false), 25)),
+  ])
+  if (!instantFirstAccepted) instantReleases.shift()?.()
+  assert.equal(
+    instantFirstAccepted,
+    true,
+    'rating acceptance must not wait for the persistence transaction',
+  )
+  assert.equal(instantReview.advanceCurrent(), true)
+  assert.equal(
+    instantReview.current.value.word.id,
+    'unit-2',
+    'the next review card must appear without waiting for IndexedDB persistence',
+  )
+  assert.equal(await instantReview.submitAction(instantReview.actions[0], {
+    advance: false,
+    background: true,
+  }), true)
+  assert.equal(instantReview.advanceCurrent(), true)
+  assert.equal(instantReview.completed.value, true, 'rapid ratings should keep advancing optimistically')
+  assert.equal(instantRecordCalls, 1, 'background writes must remain sequential')
+  instantReleases.shift()()
+  await waitFor(() => instantRecordCalls === 2)
+  instantReleases.shift()()
+  await instantReview.flushPendingSaves()
+  assert.equal(instantReview.backgroundSaving.value, 0)
+  assert.deepEqual(instantReview.sessionRatingCounts.value, {
+    again: 2,
+    hard: 0,
+    good: 0,
+    easy: 0,
+  })
+
   let releaseAttempt
   let recordCalls = 0
   const duplicateLedger = createLedger({ mode: 'balanced', promptMode: 'word_only' })
@@ -673,6 +724,14 @@ function reviewState({ state }) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
+}
+
+async function waitFor(predicate, timeoutMs = 1000) {
+  const startedAt = Date.now()
+  while (!predicate()) {
+    if (Date.now() - startedAt >= timeoutMs) throw new Error('Timed out waiting for review save')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
 }
 
 main()

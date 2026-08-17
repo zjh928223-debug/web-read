@@ -483,6 +483,7 @@ const flow = createSrsReviewFlow({
   state: flowState,
   submitAction: (action, metadata) => review.submitAction(action, {
     advance: false,
+    background: true,
     answerRevealedBeforeRating: metadata?.answerRevealedBeforeRating === true,
   }),
   playTargetSentence,

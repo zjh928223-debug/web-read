@@ -262,6 +262,11 @@ async function run() {
     /prefetchUpcomingPronunciations/,
     'review navigation should keep a rolling pronunciation prefetch window',
   )
+  assert.match(
+    reviewPageSource,
+    /submitAction:\s*\(action, metadata\)[\s\S]*?background:\s*true/,
+    'review ratings should advance immediately while persistence continues in the background',
+  )
   assert.match(reviewPageSource, /review\.goPrevious\(\)/, 'ArrowLeft should revisit the previous reviewed word')
   assert.match(reviewPageSource, /review\.goNext\(\)/, 'ArrowRight should move forward through reviewed words')
   assert.match(
