@@ -16,6 +16,7 @@ export function createSrsReviewSourceSelector(options = {}) {
     throw new Error('SRS review source selector requires a legacy review service')
   }
   const v2Enabled = resolveSrsReviewV2Enabled(options.v2Enabled)
+  const probeRetryDelayMs = Math.max(0, Number(options.probeRetryDelayMs ?? 40) || 0)
 
   const selector = {
     reviewSourceSelectorVersion: SRS_REVIEW_SOURCE_SELECTOR_VERSION,
@@ -28,11 +29,18 @@ export function createSrsReviewSourceSelector(options = {}) {
           return { source: 'v2', service: v2Service, reason: 'v2_cards_available' }
         }
       } catch (error) {
-        return {
-          source: 'legacy',
-          service: legacyService,
-          reason: 'v2_probe_failed',
-          probeError: error,
+        try {
+          if (probeRetryDelayMs) await delay(probeRetryDelayMs)
+          if (await v2Service.hasReviewCards(context)) {
+            return { source: 'v2', service: v2Service, reason: 'v2_cards_available_after_retry' }
+          }
+        } catch (retryError) {
+          return {
+            source: 'legacy',
+            service: legacyService,
+            reason: 'v2_probe_failed',
+            probeError: retryError,
+          }
         }
       }
       return { source: 'legacy', service: legacyService, reason: 'v2_cards_unavailable' }
@@ -43,6 +51,10 @@ export function createSrsReviewSourceSelector(options = {}) {
     selector.cacheGeneralMeanings = (...args) => legacyService.cacheGeneralMeanings(...args)
   }
   return selector
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 export function isReviewServiceV2(service) {

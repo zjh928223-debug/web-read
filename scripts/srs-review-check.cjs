@@ -1026,6 +1026,18 @@ async function run() {
     ],
     'review source should preserve the bilingual chunk aligned to the review word',
   )
+  assert.deepEqual(
+    contextModule.markReviewTranslationText(
+      '他的律师称，医生判定其病情与食用牡蛎有关。',
+      '判定',
+    ),
+    [
+      { text: '他的律师称，医生', highlighted: false },
+      { text: '判定', highlighted: true },
+      { text: '其病情与食用牡蛎有关。', highlighted: false },
+    ],
+    'cached article translations should restore the thin underline under the matching Chinese meaning',
+  )
 
   let streamingTranscriptRequests = 0
   let streamingChunkRequests = 0

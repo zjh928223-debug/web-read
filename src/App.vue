@@ -148,8 +148,13 @@ let legacyMigrationStopped = false
 let reviewWarmupTimer = null
 let articleReconciliationTimer = null
 let articleReconciliationStopped = false
+let articleReconciledSinceRefresh = false
 
 function openSrsReview() {
+  if (articleReconciledSinceRefresh) {
+    articleReconciledSinceRefresh = false
+    srsReviewCacheVersion.value += 1
+  }
   isSrsReviewMounted.value = true
   isSrsReviewOpen.value = true
 }
@@ -214,12 +219,17 @@ async function reconcileArticleLearningInBackground() {
     return
   }
   try {
-    const result = await vocabularyService.completePendingArticleLearning?.({ limit: 50 })
+    const result = await vocabularyService.completePendingArticleLearning?.({ limit: 1 })
     if (result?.completed) {
+      articleReconciledSinceRefresh = true
+    }
+    if (result?.remaining) {
+      scheduleArticleLearningReconciliation(250)
+    } else if (articleReconciledSinceRefresh && !isSrsReviewOpen.value) {
+      articleReconciledSinceRefresh = false
       srsReviewCacheVersion.value += 1
       await srsReviewV2Service.warmReviewData?.()
     }
-    if (result?.remaining) scheduleArticleLearningReconciliation(100)
   } catch (error) {
     console.warn('[article-learning] background reconciliation paused', error)
     scheduleArticleLearningReconciliation(30000)

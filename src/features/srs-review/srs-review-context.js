@@ -313,15 +313,23 @@ function markReviewTranslationParts(chunks, word, meaning) {
     .filter((chunk) => chunk.text)
     .flatMap((chunk) => {
       const highlighted = wordStart >= 0 && chunk.start < wordEnd && chunk.end > wordStart
-      if (!highlighted || !meaningLabel) return [{ text: chunk.text, highlighted }]
-      const meaningStart = chunk.text.indexOf(meaningLabel)
-      if (meaningStart < 0) return [{ text: chunk.text, highlighted }]
-      return [
-        { text: chunk.text.slice(0, meaningStart), highlighted: false },
-        { text: meaningLabel, highlighted: true },
-        { text: chunk.text.slice(meaningStart + meaningLabel.length), highlighted: false },
-      ].filter((part) => part.text)
+      if (!highlighted) return [{ text: chunk.text, highlighted: false }]
+      return markReviewTranslationText(chunk.text, meaningLabel)
     })
+}
+
+export function markReviewTranslationText(translation, meaning) {
+  const text = normalizeText(translation)
+  if (!text) return []
+  const meaningLabel = normalizeText(meaning).split(/[，,；;。]/u)[0].trim()
+  if (!meaningLabel) return [{ text, highlighted: false }]
+  const meaningStart = text.indexOf(meaningLabel)
+  if (meaningStart < 0) return [{ text, highlighted: false }]
+  return [
+    { text: text.slice(0, meaningStart), highlighted: false },
+    { text: meaningLabel, highlighted: true },
+    { text: text.slice(meaningStart + meaningLabel.length), highlighted: false },
+  ].filter((part) => part.text)
 }
 
 function collectReviewChunks(chunkData) {

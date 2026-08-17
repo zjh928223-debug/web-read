@@ -1,7 +1,6 @@
 const CUE_LEVELS = new Set(['none', 'target_sentence', 'surrounding_context'])
 
 export function initialReviewCueLevel({ source, promptMode } = {}) {
-  if (source === 'legacy') return 'surrounding_context'
   return promptMode === 'word_only' ? 'none' : 'target_sentence'
 }
 

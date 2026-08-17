@@ -557,7 +557,11 @@ async function verifySourceSelection({ useSrsReview, sourceSelector }) {
   assert.equal(legacyReview.reviewSource.value, 'legacy')
   assert.equal(legacyReview.current.value.word.id, 'legacy-only')
   assert.equal(legacyReview.canRemoveCurrent.value, true)
-  assert.equal(legacyReview.contextCueLevel.value, 'surrounding_context')
+  assert.equal(
+    legacyReview.contextCueLevel.value,
+    'target_sentence',
+    'legacy fallback must not bring the whole surrounding article back by default',
+  )
   assert.equal(await legacyReview.removeCurrent(), true)
   assert.equal(legacyDeletes, 1, 'legacy management behavior remains available')
 
@@ -585,6 +589,27 @@ async function verifySourceSelection({ useSrsReview, sourceSelector }) {
   assert.equal(await preferredReview.submitAction(preferredReview.actions[2], { advance: false }), true)
   assert.equal(v2Attempts, 1)
   assert.equal(legacyReviews, 0, 'a V2 card must never be written through the legacy scheduler')
+
+  let transientProbeCalls = 0
+  const transientSelector = sourceSelector.createSrsReviewSourceSelector({
+    v2Service: {
+      ...v2Service,
+      async hasReviewCards() {
+        transientProbeCalls += 1
+        if (transientProbeCalls === 1) throw new Error('temporary IndexedDB contention')
+        return true
+      },
+    },
+    legacyService,
+    probeRetryDelayMs: 0,
+  })
+  const transientSelection = await transientSelector.resolveReviewSource({})
+  assert.equal(transientProbeCalls, 2)
+  assert.equal(
+    transientSelection.source,
+    'v2',
+    'a transient V2 probe error must not downgrade the whole review session to legacy',
+  )
 
   const probeFailureSelector = sourceSelector.createSrsReviewSourceSelector({
     v2Service: {

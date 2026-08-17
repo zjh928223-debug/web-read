@@ -373,6 +373,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import {
   buildReviewContext,
   describeReviewSourceError,
+  markReviewTranslationText,
   releaseReviewAudio,
   resolveReviewGeneralMeaning,
   resolveReviewMeaning,
@@ -713,7 +714,7 @@ async function hydrateCurrentSentenceTranslation() {
     sentenceTranslationParts.value = embedded && Array.isArray(audioState.value?.translationParts)
       && audioState.value.translationParts.length
       ? audioState.value.translationParts
-      : [{ text: cached, highlighted: false }]
+      : markReviewTranslationText(cached, meaning.value)
     sentenceTranslationLoading.value = false
     sentenceTranslationUnavailable.value = false
     if (embedded) sentenceTranslationCache.set(key, embedded)
@@ -733,7 +734,7 @@ async function hydrateCurrentSentenceTranslation() {
     if (translation) {
       sentenceTranslationCache.set(key, translation)
       sentenceTranslationZh.value = translation
-      sentenceTranslationParts.value = [{ text: translation, highlighted: false }]
+      sentenceTranslationParts.value = markReviewTranslationText(translation, meaning.value)
       sentenceTranslationUnavailable.value = false
     } else {
       sentenceTranslationUnavailable.value = true
