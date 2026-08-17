@@ -272,6 +272,7 @@ async function main() {
     'context_validated',
     'acquisition_attempt_recorded',
     'acquisition_graduated',
+    'article_learning_completed',
     'review_attempt_recorded',
     'legacy_reassessed',
     'policy_changed',

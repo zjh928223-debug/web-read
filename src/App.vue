@@ -202,7 +202,15 @@ onMounted(() => {
   if (document.hidden) scheduleLegacyVocabularyMigration(1000)
   reviewWarmupTimer = window.setTimeout(() => {
     reviewWarmupTimer = null
-    void srsReviewV2Service.warmReviewData?.().catch(() => {})
+    void vocabularyService.completePendingArticleLearning?.({ limit: 100 })
+      .then((result) => {
+        if (result?.completed) srsReviewCacheVersion.value += 1
+        return srsReviewV2Service.warmReviewData?.()
+      })
+      .catch((error) => {
+        console.warn('[article-learning] background reconciliation paused', error)
+        return srsReviewV2Service.warmReviewData?.().catch(() => {})
+      })
   }, 0)
 })
 

@@ -50,6 +50,9 @@ function createAcquisitionReader(snapshotRows) {
     };
   };
   return {
+    async loadSnapshot() {
+      return readStore();
+    },
     async getLearningUnit(id) {
       return readStore().by_learning_unit_id[id]?.learning_unit || null;
     },
@@ -126,6 +129,15 @@ function assertNoReviewRows(legacySnapshot, learningRows, message) {
   );
 }
 
+function assertCanonicalReviewCount(learningRows, expected, message) {
+  const row = learningRows.find((item) => item.id === 'vocabulary.review.store.v2');
+  assert.equal(
+    Object.keys(row?.content?.by_learning_unit_id || {}).length,
+    expected,
+    message,
+  );
+}
+
 async function main() {
   const repoRoot = path.resolve(__dirname, '..');
   const api = await loadModules(repoRoot);
@@ -154,13 +166,14 @@ async function main() {
   const legacySnapshot = await vocabularyRepository.loadSnapshot();
   assert.equal(legacySnapshot.words.length, 1);
   assert.equal(legacySnapshot.contexts.length, 1, 'legacy context remains available for settlement restore');
-  assertNoReviewRows(legacySnapshot, runner.snapshot(), 'new article candidate before graduation');
+  const firstCanonicalRows = runner.snapshot();
+  assertCanonicalReviewCount(firstCanonicalRows, 1, 'confirmed article learning should create one canonical review state');
 
   const acquisitionRow = runner.snapshot()
     .find((row) => row.id === 'vocabulary.acquisition.store.v1');
   const pairs = Object.values(acquisitionRow.content.by_learning_unit_id);
   assert.equal(pairs.length, 1);
-  assert.equal(pairs[0].acquisition_state.status, 'acquiring');
+  assert.equal(pairs[0].acquisition_state.status, 'graduated');
   assert.equal(pairs[0].learning_unit.target_sense.normalized_gloss, '地震的');
   const existingContextResult = await applyArticle(api, service, [candidate()]);
   assert.deepEqual(existingContextResult.alreadyAppliedTargetIds, ['article-target-1']);
@@ -228,12 +241,83 @@ async function main() {
     Object.values(retryRunner.snapshot()
       .find((row) => row.id === 'vocabulary.acquisition.store.v1')
       .content.by_learning_unit_id)[0].acquisition_state.status,
-    'acquiring',
+    'graduated',
   );
-  assertNoReviewRows(
-    await retryVocabularyRepository.loadSnapshot(),
+  assertCanonicalReviewCount(
     retryRunner.snapshot(),
-    'recovered article candidate before graduation',
+    1,
+    'recovered article candidate should enter canonical review',
+  );
+
+  const reconciliationVocabularyRepository = api.createInMemoryVocabularyRepository();
+  const reconciliationRunner = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
+  const reconciliationReader = createAcquisitionReader(reconciliationRunner.snapshot);
+  const reconciliationAcquisitionService = api.createVocabularyAcquisitionService({
+    enabled: true,
+    runUnitOfWork: reconciliationRunner.run,
+    now: () => now,
+  });
+  const interruptedArticleService = api.createVocabularyService({
+    repository: reconciliationVocabularyRepository,
+    scheduler: schedulerStub(),
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+    acquisitionRepository: reconciliationReader,
+    acquisitionService: {
+      ...reconciliationAcquisitionService,
+      async completeArticleLearning() {
+        throw new Error('simulated pre-direct-review article state');
+      },
+    },
+  });
+  await assert.rejects(
+    () => applyArticle(api, interruptedArticleService, [candidate({ target_id: 'article-reconcile' })]),
+    /simulated pre-direct-review article state/u,
+  );
+  const pendingArticlePair = Object.values((await reconciliationReader.loadSnapshot()).by_learning_unit_id)[0];
+  assert.equal(pendingArticlePair.learning_unit.extensions.source, 'article-settlement');
+  assert.equal(pendingArticlePair.acquisition_state.status, 'acquiring');
+  const reconciliationService = api.createVocabularyService({
+    repository: reconciliationVocabularyRepository,
+    scheduler: schedulerStub(),
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+    acquisitionRepository: reconciliationReader,
+    acquisitionService: reconciliationAcquisitionService,
+  });
+  const reconciliationResult = await reconciliationService.completePendingArticleLearning();
+  assert.equal(reconciliationResult.completed, 1, 'settled historical article words should be reconciled');
+  assert.equal(reconciliationResult.remaining, 0);
+  assert.equal(
+    Object.values((await reconciliationReader.loadSnapshot()).by_learning_unit_id)[0].acquisition_state.status,
+    'graduated',
+  );
+  assertCanonicalReviewCount(
+    reconciliationRunner.snapshot(),
+    1,
+    'reconciled article word should enter canonical review',
+  );
+  const previewResult = await reconciliationService.queuePreviewVocabularyAcquisition({
+    ...candidate({
+      target_id: 'preview-must-remain-preview',
+      word: 'tectonic',
+      lemma: 'tectonic',
+      meaning: '构造的',
+    }),
+    preview_item_id: 'preview-must-remain-preview',
+  });
+  assert.equal(previewResult.acquisitionState.status, 'acquiring');
+  const previewIsolationResult = await reconciliationService.completePendingArticleLearning();
+  assert.equal(previewIsolationResult.completed, 0, 'IELTS preview must not use article completion');
+  assert.equal(
+    (await reconciliationReader.getState(previewResult.learningUnit.learning_unit_id)).status,
+    'acquiring',
+    'IELTS preview must remain in acquisition until its delayed check',
+  );
+  assertCanonicalReviewCount(
+    reconciliationRunner.snapshot(),
+    1,
+    'IELTS preview isolation must not create another review state',
   );
 
   for (const legacyStatus of ['known', 'ignored']) {
@@ -288,10 +372,10 @@ async function main() {
       1,
       `flag-on ${legacyStatus} should use acquisition state`,
     );
-    assert.equal(
-      existingRunner.snapshot().some((row) => row.id === 'vocabulary.review.store.v2'),
-      false,
-      `flag-on ${legacyStatus} must not create review v2`,
+    assertCanonicalReviewCount(
+      existingRunner.snapshot(),
+      1,
+      `flag-on ${legacyStatus} article completion should create review v2`,
     );
   }
 

@@ -119,10 +119,35 @@ export function createVocabularyService(options = {}) {
   }
 
   async function queueVocabularyAcquisition(input = {}) {
-    return queueAcquisitionInternal(input, {
+    const result = await queueAcquisitionInternal(input, {
       source: 'article-settlement',
       createContextEvidence: createArticleContextEvidence,
     });
+    if (result.alreadyGraduated) return result;
+    if (typeof acquisitionService.completeArticleLearning !== 'function') {
+      throw new Error('Article settlement requires the article completion acquisition command');
+    }
+    const completedAt = normalizeWordInput(input).createdAt;
+    const commandBase = `article-completion:${result.learningUnit.learning_unit_id}`;
+    const completion = await acquisitionService.completeArticleLearning({
+      command_id: `${commandBase}:command`,
+      correlation_id: commandBase,
+      event_partition: completedAt.slice(0, 7),
+      payload: {
+        learning_unit_id: result.learningUnit.learning_unit_id,
+        completed_at: completedAt,
+        review_state_id: `vocabulary-review:${result.learningUnit.learning_unit_id}`,
+        scheduler_version: 'fsrs.v1',
+        scheduler_parameters_version: 'fsrs-parameters.v1',
+        event_id: `${commandBase}:event`,
+      },
+    });
+    return {
+      ...result,
+      acquisitionState: await acquisitionRepository.getState(result.learningUnit.learning_unit_id),
+      alreadyGraduated: true,
+      articleCompletion: completion,
+    };
   }
 
   async function queuePreviewVocabularyAcquisition(input = {}) {
@@ -130,6 +155,54 @@ export function createVocabularyService(options = {}) {
       source: 'ielts-preview',
       createContextEvidence: createPreviewContextEvidence,
     });
+  }
+
+  async function completePendingArticleLearning(options = {}) {
+    if (!acquisitionEnabled || typeof acquisitionRepository.loadSnapshot !== 'function') {
+      return {
+        schema_version: 'article-learning-reconciliation-result.v1',
+        completed: 0,
+        remaining: 0,
+      };
+    }
+    if (typeof acquisitionService.completeArticleLearning !== 'function') {
+      throw new Error('Article learning reconciliation requires the article completion acquisition command');
+    }
+    const limit = Number.isInteger(options.limit) && options.limit > 0
+      ? options.limit
+      : 50;
+    const snapshot = await acquisitionRepository.loadSnapshot();
+    const pending = Object.values(snapshot.by_learning_unit_id || {})
+      .filter((pair) => (
+        pair?.learning_unit?.extensions?.source === 'article-settlement'
+        && ['acquiring', 'ready_for_check'].includes(pair?.acquisition_state?.status)
+      ));
+    const selected = pending.slice(0, limit);
+    const completedAt = toIsoString(options.completedAt || options.completed_at || nowProvider());
+    const results = [];
+    for (const pair of selected) {
+      const learningUnitId = pair.learning_unit.learning_unit_id;
+      const commandBase = `article-completion:${learningUnitId}`;
+      results.push(await acquisitionService.completeArticleLearning({
+        command_id: `${commandBase}:command`,
+        correlation_id: commandBase,
+        event_partition: completedAt.slice(0, 7),
+        payload: {
+          learning_unit_id: learningUnitId,
+          completed_at: completedAt,
+          review_state_id: `vocabulary-review:${learningUnitId}`,
+          scheduler_version: 'fsrs.v1',
+          scheduler_parameters_version: 'fsrs-parameters.v1',
+          event_id: `${commandBase}:event`,
+        },
+      }));
+    }
+    return {
+      schema_version: 'article-learning-reconciliation-result.v1',
+      completed: results.length,
+      remaining: Math.max(0, pending.length - results.length),
+      results,
+    };
   }
 
   async function queueAcquisitionInternal(input = {}, options = {}) {
@@ -451,6 +524,7 @@ export function createVocabularyService(options = {}) {
     upsertVocabularyEntry,
     queueVocabularyAcquisition,
     queuePreviewVocabularyAcquisition,
+    completePendingArticleLearning,
     getAcquisitionRepository: () => acquisitionRepository,
     getAcquisitionService: () => acquisitionService,
     isAcquisitionEnabled: () => acquisitionEnabled,

@@ -22,6 +22,7 @@ const COMMAND_TYPES = Object.freeze({
   RECORD_ATTEMPT: 'record_vocabulary_acquisition_attempt',
   MARK_READY: 'mark_vocabulary_ready_for_check',
   GRADUATE: 'graduate_learning_unit',
+  COMPLETE_ARTICLE: 'complete_article_learning_unit',
   SKIP: 'skip_vocabulary_learning_unit',
 });
 const EVENT_PARTITION = /^\d{4}-(?:0[1-9]|1[0-2])$/u;
@@ -142,6 +143,8 @@ function commandOccurredAt(payload, commandType) {
       return payload?.attempt?.occurred_at;
     case COMMAND_TYPES.GRADUATE:
       return payload?.graduated_at;
+    case COMMAND_TYPES.COMPLETE_ARTICLE:
+      return payload?.completed_at;
     default:
       fail('INVALID_ENUM_VALUE', 'Unknown acquisition command type', {
         field: 'command.command_type',
@@ -537,6 +540,81 @@ export function createVocabularyAcquisitionService(options = {}) {
         }));
         return {
           schema_version: 'graduation-result.v1',
+          learning_unit_id: learningUnitId,
+          review_state_id: reviewState.review_state_id,
+          event_id: eventId,
+        };
+      });
+    },
+
+    completeArticleLearning(rawCommand) {
+      return run(rawCommand, COMMAND_TYPES.COMPLETE_ARTICLE, async (uow, command) => {
+        const learningUnitId = requiredId(command.payload.learning_unit_id, 'payload.learning_unit_id');
+        const unit = await uow.acquisition.getLearningUnit(learningUnitId);
+        let state = await uow.acquisition.getState(learningUnitId);
+        if (!unit || !state) fail('INVALID_CONTEXT_REFERENCE', 'Learning unit does not exist', { learning_unit_id: learningUnitId });
+        assertStatus(state, [ACQUISITION_STATUSES.ACQUIRING, ACQUISITION_STATUSES.READY_FOR_CHECK]);
+        let anchor = state.validated_anchor_id === null
+          ? null
+          : await uow.contexts.getById(state.validated_anchor_id);
+        if (!anchor) {
+          for (const contextEvidenceId of state.context_evidence_ids) {
+            const candidate = await uow.contexts.getById(contextEvidenceId);
+            if (candidate?.source_kind === 'article') {
+              anchor = candidate;
+              break;
+            }
+          }
+        }
+        if (!anchor || anchor.learning_unit_id !== learningUnitId) {
+          fail('NO_VALIDATED_ANCHOR', 'Article completion requires an article context', {});
+        }
+        if (anchor.source_kind !== 'article') {
+          fail('INVALID_CONTEXT_REFERENCE', 'Only article context may use article completion', {
+            context_evidence_id: anchor.context_evidence_id,
+          });
+        }
+        const completedAt = command.payload.completed_at;
+        if (state.status === ACQUISITION_STATUSES.ACQUIRING) {
+          state = await uow.acquisition.putState(normalizeAcquisitionState({
+            ...state,
+            status: ACQUISITION_STATUSES.READY_FOR_CHECK,
+            ready_for_check_at: completedAt,
+          }), state.revision);
+        }
+        if (await uow.review.getByLearningUnitId(learningUnitId)) {
+          fail('REVIEW_STATE_ALREADY_EXISTS', 'ReviewState already exists', {
+            learning_unit_id: learningUnitId,
+          });
+        }
+        const reviewState = await uow.review.putInitial(initialReviewState(
+          unit,
+          command.payload,
+          completedAt,
+        ));
+        const graduatedState = await uow.acquisition.putState(normalizeAcquisitionState({
+          ...state,
+          status: ACQUISITION_STATUSES.GRADUATED,
+          graduated_at: completedAt,
+        }), state.revision);
+        const eventId = requiredId(command.payload.event_id, 'payload.event_id');
+        await uow.events.append(eventBase({
+          eventId,
+          command,
+          eventType: 'article_learning_completed',
+          unit,
+          occurredAt: completedAt,
+          recordedAt: completedAt,
+          anchor,
+          payload: {
+            review_state_id: reviewState.review_state_id,
+            acquisition_status: graduatedState.status,
+            completion_basis: 'confirmed_article_completion',
+            active_duration_reliable: false,
+          },
+        }));
+        return {
+          schema_version: 'article-learning-completion-result.v1',
           learning_unit_id: learningUnitId,
           review_state_id: reviewState.review_state_id,
           event_id: eventId,
