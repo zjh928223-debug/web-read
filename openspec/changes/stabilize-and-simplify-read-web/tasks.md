@@ -99,7 +99,8 @@
 - [x] 10.5 逐状态域移除 compatibility store/bridge/global owner，每次执行行为和 production startup gate
   - 已删除 theme/audio/marks/UI compatibility stores；Pinia 在 reader/session runtime 前初始化，非组件 runtime 经显式 registry 使用 store；`window.__state`、`window.__piniaStores`、`window.bridgeToPinia` 及对应消费者均已清零。验证覆盖 consumer map、80 项 architecture aggregate、完整 Vite 行为旅程、production build/startup。
 - [x] 10.6 删除无调用者 root annotation/chunk-note artifacts、legacy flags 和重复实现
-- [ ] 10.7 将 source-shape guards 重命名为 architecture 层，并为已迁移 Interface 增加行为测试
+- [x] 10.7 将 source-shape guards 重命名为 architecture 层，并为已迁移 Interface 增加行为测试
+  - source-shape checks 由 `verify:architecture:source-shape` 统一归属，旧短入口仅作兼容别名；`verify:behavior:migrated-interfaces` 直接执行 9 项公开接口行为测试，并新增 Pinia runtime registry 的 fail-fast、快照与冻结契约。
 
 ## 11. 仓库、供应链与文档清理
 

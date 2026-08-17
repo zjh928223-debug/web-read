@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
     "architecture": 109,
-    "behavior": 85,
+    "behavior": 86,
     "browser": 27,
     "performance": 13,
     "release": 15
   },
-  "packageScriptCount": 228,
-  "executableScriptCount": 249,
+  "packageScriptCount": 229,
+  "executableScriptCount": 250,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -438,6 +438,18 @@
         "scripts/verify-behavior.mjs"
       ],
       "owner": "package.json#scripts.verify:behavior:migrated-interfaces"
+    },
+    {
+      "name": "verify:behavior:pinia-runtime-registry",
+      "command": "node scripts/pinia-runtime-registry-behavior-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/pinia-runtime-registry-behavior-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:behavior:pinia-runtime-registry"
     },
     {
       "name": "verify:behavior:reader-runtime-assembly",
@@ -5923,6 +5935,30 @@
           "asserts-source-text",
           "includes-source-text"
         ],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/pinia-runtime-registry-behavior-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:behavior:pinia-runtime-registry",
+      "owners": [
+        "package.json#scripts.verify:behavior:pinia-runtime-registry"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
         "sourceRead": true,
         "browser": false,
         "performance": false,

@@ -86,6 +86,7 @@ verify:vite` 仍是兼容的窄入口，不再代表默认测试覆盖面。
 | --- | --- | --- |
 | reader runtime assembly | `reader-runtime-assembly-behavior-check.mjs` | adapter 启动顺序、二次初始化 disposal、反向释放和返回 seam |
 | session runtime adapters | `session-runtime-adapters-behavior-check.mjs` | annotation 在 lifecycle 之前启动，依赖/DOM/global owner 正确注入 |
+| Pinia runtime registry | `pinia-runtime-registry-behavior-check.mjs` | 配置前 fail-fast、注入 map 快照/冻结，以及无 compatibility global 的显式读取 |
 | retired compatibility | `retired-compatibility-behavior-check.mjs` | `session-facades` 的现存公开 delegation 可调用，退役 notes API 不再出现在新 window seam |
 | ApplicationPersistence | `application-persistence-check.mjs` | 公开 persistence contract 和校验/提交行为 |
 | ReaderSession / publisher | `reader-session-publisher-check.mjs` | capture/publish/restore 的 public session seam |

@@ -25,6 +25,7 @@
     "verify:behavior:migrated-interfaces": "node scripts/verify-behavior.mjs",
     "verify:behavior:reader-runtime-assembly": "node scripts/reader-runtime-assembly-behavior-check.mjs",
     "verify:behavior:session-runtime-adapters": "node scripts/session-runtime-adapters-behavior-check.mjs",
+    "verify:behavior:pinia-runtime-registry": "node scripts/pinia-runtime-registry-behavior-check.mjs",
     "verify:behavior:retired-compatibility": "node scripts/retired-compatibility-behavior-check.mjs",
     "verify:behavior:application-persistence": "node scripts/application-persistence-check.mjs",
     "verify:behavior:reader-session": "node scripts/reader-session-publisher-check.mjs",

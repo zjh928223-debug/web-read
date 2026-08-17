@@ -7,6 +7,7 @@ const included = [
   ['reader runtime assembly lifecycle', 'scripts/runtime-assembly-lifecycle-check.mjs'],
   ['reader runtime assembly public behavior', 'scripts/reader-runtime-assembly-behavior-check.mjs'],
   ['session runtime adapters public behavior', 'scripts/session-runtime-adapters-behavior-check.mjs'],
+  ['Pinia runtime registry public behavior', 'scripts/pinia-runtime-registry-behavior-check.mjs'],
   ['retired compatibility replacement behavior', 'scripts/retired-compatibility-behavior-check.mjs'],
   ['ApplicationPersistence behavior', 'scripts/application-persistence-check.mjs'],
   ['ReaderSession publisher fault behavior', 'scripts/reader-session-publisher-check.mjs'],
