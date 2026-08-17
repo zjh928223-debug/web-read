@@ -19,6 +19,7 @@ $fixture = Join-Path $PSScriptRoot 'fixtures\launcher-test-host.py'
 $ownedState = Join-Path $testRoot 'owned.json'
 $owned = $null
 $unknown = $null
+$orphan = $null
 try {
   foreach ($reserved in @(5173, 8765)) {
     $threw = $false
@@ -40,6 +41,23 @@ try {
   Assert-True $unknownRejected 'unknown port occupant must be rejected'
   $unknown.Refresh()
   Assert-True (-not $unknown.HasExited) 'unknown port occupant must not be stopped'
+
+  $orphanPort = Get-RandomLoopbackPort
+  $orphanInstanceId = [Guid]::NewGuid().ToString('N')
+  $orphan = Start-Process -FilePath $python -ArgumentList @(
+    $fixture, '--port', "$orphanPort", '--release-id', 'orphan-release',
+    '--profile-id', 'orphan-profile', '--instance-id', $orphanInstanceId
+  ) -WorkingDirectory $testRoot -WindowStyle Hidden -PassThru
+  Start-Sleep -Milliseconds 300
+  $orphanResult = Start-ManagedRuntimeInstance -ReleaseId 'orphan-release' -ProfileId 'orphan-profile' `
+    -Port $orphanPort -HealthUrl "http://127.0.0.1:$orphanPort/health" `
+    -StatePath (Join-Path $testRoot 'orphan.json') -FilePath $python `
+    -ArgumentList @($fixture) -ReadyTimeoutSeconds 1
+  Assert-True (
+    $orphanResult.status -eq 'reused' -and $orphanResult.instanceId -eq $orphanInstanceId
+  ) 'an identity-matching healthy runtime must be reused when its local state file is missing'
+  $orphan.Refresh()
+  Assert-True (-not $orphan.HasExited) 'an adopted healthy runtime must not be stopped'
 
   $ownedPort = Get-RandomLoopbackPort
   $arguments = @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}')
@@ -75,6 +93,7 @@ try {
   Write-Host 'launcher instance manager check passed'
 } finally {
   if ($null -ne $unknown) { $unknown.Refresh(); if (-not $unknown.HasExited) { Stop-Process -Id $unknown.Id -Force } }
+  if ($null -ne $orphan) { $orphan.Refresh(); if (-not $orphan.HasExited) { Stop-Process -Id $orphan.Id -Force } }
   if (Test-Path -LiteralPath $ownedState) {
     try { Stop-OwnedRuntimeInstance -StatePath $ownedState -ExpectedReleaseId 'test-release' -ExpectedProfileId 'isolated-test' | Out-Null } catch {}
   }

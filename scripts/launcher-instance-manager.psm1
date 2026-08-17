@@ -27,6 +27,21 @@ function Test-TcpPortOccupied {
   }
 }
 
+function Get-LoopbackPortOwnerProcess {
+  param([Parameter(Mandatory)][int]$Port)
+  $command = Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue
+  if ($null -eq $command) { return $null }
+  try {
+    $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+      Where-Object { $_.LocalAddress -in @('127.0.0.1', '::1', '0.0.0.0', '::') } |
+      Select-Object -First 1
+    if ($null -eq $connection -or -not $connection.OwningProcess) { return $null }
+    return Get-Process -Id ([int]$connection.OwningProcess) -ErrorAction SilentlyContinue
+  } catch {
+    return $null
+  }
+}
+
 function Get-LauncherHealth {
   param([Parameter(Mandatory)][string]$HealthUrl)
   try {
@@ -50,6 +65,19 @@ function Test-HealthIdentity {
     -and [string]$Health.status -in @('ok', 'ready')
 }
 
+function Test-HealthProfileIdentity {
+  param(
+    $Health,
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId
+  )
+  return $null -ne $Health `
+    -and [string]$Health.releaseId -eq $ReleaseId `
+    -and [string]$Health.profileId -eq $ProfileId `
+    -and -not [string]::IsNullOrWhiteSpace([string]$Health.instanceId) `
+    -and [string]$Health.status -in @('ok', 'ready')
+}
+
 function Read-InstanceState {
   param([Parameter(Mandatory)][string]$StatePath)
   if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf)) { return $null }
@@ -66,7 +94,12 @@ function Get-MatchingOwnedProcess {
   $process = Get-Process -Id ([int]$State.pid) -ErrorAction SilentlyContinue
   if ($null -eq $process) { return $null }
   try {
-    $expected = [DateTime]::Parse([string]$State.processStartUtc).ToUniversalTime()
+    $dateStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    $expected = ([DateTimeOffset]::Parse(
+      [string]$State.processStartUtc,
+      [Globalization.CultureInfo]::InvariantCulture,
+      $dateStyles
+    )).UtcDateTime
     $actual = $process.StartTime.ToUniversalTime()
     if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -gt 1000) { return $null }
   } catch {
@@ -158,6 +191,30 @@ function Start-ManagedRuntimeInstance {
     }
 
     if (Test-TcpPortOccupied -Port $Port) {
+      $health = Get-LauncherHealth -HealthUrl $HealthUrl
+      if (Test-HealthProfileIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId) {
+        $portOwner = Get-LoopbackPortOwnerProcess -Port $Port
+        $knownPid = if ($null -ne $portOwner) { $portOwner.Id } else { 0 }
+        if ($null -ne $portOwner) {
+          Write-InstanceStateAtomic -StatePath $StatePath -State ([ordered]@{
+            schemaVersion = 1
+            releaseId = $ReleaseId
+            profileId = $ProfileId
+            instanceId = [string]$health.instanceId
+            port = $Port
+            pid = $portOwner.Id
+            processStartUtc = ($portOwner.StartTime.ToUniversalTime()).ToString('O')
+            startedAtUtc = ([DateTime]::UtcNow).ToString('O')
+          })
+        }
+        return [pscustomobject]@{
+          status = 'reused'
+          pid = $knownPid
+          instanceId = [string]$health.instanceId
+          url = $HealthUrl
+          adopted = $true
+        }
+      }
       throw "Port $Port is occupied by an unknown process; it will not be stopped. Choose another port or handle it manually."
     }
 
@@ -179,8 +236,8 @@ function Start-ManagedRuntimeInstance {
       instanceId = $instanceId
       port = $Port
       pid = $process.Id
-      processStartUtc = $process.StartTime.ToUniversalTime().ToString('O')
-      startedAtUtc = [DateTime]::UtcNow.ToString('O')
+      processStartUtc = ($process.StartTime.ToUniversalTime()).ToString('O')
+      startedAtUtc = ([DateTime]::UtcNow).ToString('O')
     }
     Write-InstanceStateAtomic -StatePath $StatePath -State $state
 
@@ -190,7 +247,14 @@ function Start-ManagedRuntimeInstance {
       if ($process.HasExited) { throw "Managed process exited before ready with code $($process.ExitCode)." }
       $health = Get-LauncherHealth -HealthUrl $HealthUrl
       if (Test-HealthIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId $instanceId) {
-        return [pscustomobject]@{ status = 'started'; pid = $process.Id; instanceId = $instanceId; url = $HealthUrl }
+        $portOwner = Get-LoopbackPortOwnerProcess -Port $Port
+        if ($null -ne $portOwner -and $portOwner.Id -ne $process.Id) {
+          $state.pid = $portOwner.Id
+          $state.processStartUtc = ($portOwner.StartTime.ToUniversalTime()).ToString('O')
+          Write-InstanceStateAtomic -StatePath $StatePath -State $state
+        }
+        $readyPid = if ($null -ne $portOwner) { $portOwner.Id } else { $process.Id }
+        return [pscustomobject]@{ status = 'started'; pid = $readyPid; instanceId = $instanceId; url = $HealthUrl }
       }
       Start-Sleep -Milliseconds 100
     } while ([DateTime]::UtcNow -lt $deadline)
