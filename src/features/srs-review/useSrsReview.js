@@ -234,7 +234,7 @@ export function useSrsReview(service, options = {}) {
       throw new Error('Unsupported SRS review action')
     }
 
-    const saveInBackground = usesReviewServiceV2 && submitOptions.background === true
+    const saveInBackground = submitOptions.background === true
     if (!saveInBackground) pending.value = true
     error.value = ''
     try {
@@ -253,10 +253,13 @@ export function useSrsReview(service, options = {}) {
         if (submitOptions.advance !== false) advanceCurrent()
         return true
       }
-      const result = await activeService.reviewWord(entry.word.id, action.rating)
-      if (result?.reviewLog) {
-        reviewLogs.value = [result.reviewLog, ...reviewLogs.value]
+      if (saveInBackground) {
+        commitReviewAction(itemId, action)
+        enqueueLegacySave(entry.word.id, action)
+        if (submitOptions.advance !== false) advanceCurrent()
+        return true
       }
+      await persistLegacyReviewAction(entry.word.id, action)
       commitReviewAction(itemId, action)
       if (submitOptions.advance !== false) advanceCurrent()
       return true
@@ -314,18 +317,42 @@ export function useSrsReview(service, options = {}) {
   }
 
   function enqueueReviewServiceV2Save(draft) {
+    return enqueueBackgroundSave(
+      () => persistReviewServiceV2Attempt(draft),
+      3,
+      '后台保存失败，请重新进入复习检查进度',
+    )
+  }
+
+  function enqueueLegacySave(wordId, action) {
+    return enqueueBackgroundSave(
+      () => persistLegacyReviewAction(wordId, action),
+      1,
+      '评分后台保存失败；重新进入复习后可再次处理该词',
+    )
+  }
+
+  async function persistLegacyReviewAction(wordId, action) {
+    const result = await activeService.reviewWord(wordId, action.rating)
+    if (result?.reviewLog) {
+      reviewLogs.value = [result.reviewLog, ...reviewLogs.value]
+    }
+    return true
+  }
+
+  function enqueueBackgroundSave(save, attempts, failureMessage) {
     backgroundSaving.value += 1
     const transitionPainted = waitForReviewTransitionPaint()
-    const task = saveChain.then(async () => {
+    const task = saveChain.catch(() => undefined).then(async () => {
       await transitionPainted
       return retryBackgroundSave(
-        () => persistReviewServiceV2Attempt(draft),
-        3,
+        save,
+        attempts,
       )
     })
     saveChain = task
     void task.catch((cause) => {
-      error.value = getErrorMessage(cause, '后台保存失败，请重新进入复习检查进度')
+      error.value = getErrorMessage(cause, failureMessage)
     }).finally(() => {
       backgroundSaving.value = Math.max(0, backgroundSaving.value - 1)
     })

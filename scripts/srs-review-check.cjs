@@ -676,6 +676,64 @@ async function run() {
   releaseReview()
   await firstSubmission
 
+  const releaseBackgroundLegacyReviews = []
+  const persistedBackgroundLegacyRatings = []
+  let backgroundLegacyCalls = 0
+  const backgroundLegacyReview = reviewModule.useSrsReview({
+    async getDueWords() {
+      return [createDueEntry('legacy-background-1'), createDueEntry('legacy-background-2')]
+    },
+    async reviewWord(wordId, rating) {
+      backgroundLegacyCalls += 1
+      await new Promise((resolve) => { releaseBackgroundLegacyReviews.push(resolve) })
+      persistedBackgroundLegacyRatings.push([wordId, rating])
+      return {
+        reviewLog: {
+          word_id: wordId,
+          rating,
+          reviewed_at: '2026-07-23T02:00:00.000Z',
+        },
+      }
+    },
+  }, { now })
+  await backgroundLegacyReview.load()
+  const backgroundLegacySubmission = backgroundLegacyReview.submitAction(
+    backgroundLegacyReview.actions[0],
+    { advance: false, background: true },
+  )
+  const backgroundLegacyAccepted = await Promise.race([
+    backgroundLegacySubmission,
+    new Promise((resolve) => setTimeout(() => resolve(false), 25)),
+  ])
+  if (!backgroundLegacyAccepted) releaseBackgroundLegacyReviews.shift()?.()
+  assert.equal(
+    backgroundLegacyAccepted,
+    true,
+    'legacy ratings must not wait for persistence before the page can advance',
+  )
+  assert.equal(backgroundLegacyReview.advanceCurrent(), true)
+  assert.equal(backgroundLegacyReview.current.value.word.id, 'legacy-background-2')
+  assert.equal(await backgroundLegacyReview.submitAction(
+    backgroundLegacyReview.actions[2],
+    { advance: false, background: true },
+  ), true)
+  assert.equal(backgroundLegacyReview.advanceCurrent(), true)
+  assert.equal(backgroundLegacyReview.completed.value, true)
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(backgroundLegacyCalls, 1, 'legacy background persistence should start once')
+  releaseBackgroundLegacyReviews.shift()()
+  for (let attempt = 0; attempt < 20 && backgroundLegacyCalls < 2; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  assert.equal(backgroundLegacyCalls, 2, 'rapid legacy ratings must persist sequentially')
+  releaseBackgroundLegacyReviews.shift()()
+  await backgroundLegacyReview.flushPendingSaves()
+  assert.equal(backgroundLegacyReview.backgroundSaving.value, 0)
+  assert.deepEqual(persistedBackgroundLegacyRatings, [
+    ['legacy-background-1', vocabulary.REVIEW_RATINGS.AGAIN],
+    ['legacy-background-2', vocabulary.REVIEW_RATINGS.GOOD],
+  ])
+
   const deferredReview = reviewModule.useSrsReview({
     async getDueWords() {
       return [createDueEntry('deferred-word'), createDueEntry('next-word')]
