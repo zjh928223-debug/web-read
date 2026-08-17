@@ -34,15 +34,15 @@
           :aria-controls="historyId"
           @click="historyOpen = !historyOpen"
         >
-          复习记录
+          记录与快捷键
         </button>
         <section
           v-if="historyOpen"
           :id="historyId"
           class="srs-review-history"
-          aria-label="复习记录"
+          aria-label="复习记录与快捷键"
         >
-          <h2>复习记录</h2>
+          <h2>复习记录与快捷键</h2>
           <p class="srs-review-autoplay-note">进入新卡自动播放单词</p>
           <div class="srs-review-shortcut-settings">
             <div class="srs-review-playback-shortcut-setting">
@@ -70,6 +70,9 @@
               </button>
             </div>
           </div>
+          <p class="srs-review-fixed-shortcuts">
+            固定操作：Space 显示答案 · 1 忘记 · 2 困难 · 3 一般 · 4 容易
+          </p>
           <ul v-if="review.reviewHistory.value.length">
             <li v-for="item in review.reviewHistory.value" :key="item.date">
               <time :datetime="item.date">{{ item.label }}</time>
@@ -82,29 +85,22 @@
     </header>
 
     <section
-      v-if="props.legacyMigration && migrationStatus && migrationStatus.eligible"
+      v-if="props.legacyMigration && migrationStatus && migrationFailed"
       class="srs-review-migration-banner"
-      aria-label="历史词接入 V2"
+      aria-label="复习数据整理"
     >
       <div class="srs-review-migration-copy">
-        <strong>历史词接入 V2</strong>
-        <p>
-          已接入 {{ migrationStatus.migrated }} / {{ migrationStatus.eligible }} 个旧词；
-          <span v-if="migrationStatus.remaining">还有 {{ migrationStatus.remaining }} 个可以接入。</span>
-          <span v-else>可迁移的旧词已经处理完毕。</span>
-          <span v-if="migrationStatus.pending_confirmation">另有 {{ migrationStatus.pending_confirmation }} 个需要补充含义。</span>
-        </p>
+        <strong>复习数据后台整理暂停</strong>
+        <p>原记录未受影响，可以稍后重试。</p>
       </div>
       <button
-        v-if="migrationStatus.remaining"
         type="button"
         class="srs-review-migration-button"
         :disabled="migrationBusy"
         @click="startLegacyMigration"
       >
-        {{ migrationBusy ? '正在接入…' : '接入 V2' }}
+        重新整理
       </button>
-      <span v-else class="srs-review-migration-complete">已完成</span>
       <p v-if="migrationMessage" class="srs-review-migration-message" role="status">
         {{ migrationMessage }}
       </p>
@@ -301,7 +297,8 @@
               </div>
             </div>
           </div>
-          <div class="srs-review-play-sequence-group">
+          <div class="srs-review-word-toolbar">
+            <div class="srs-review-play-sequence-group">
             <button
               class="srs-review-play-sequence"
               type="button"
@@ -328,7 +325,7 @@
               <span>播放原句</span>
               <kbd>{{ sentenceShortcutDisplay }}</kbd>
             </button>
-          </div>
+            </div>
           <button
             class="srs-review-remove-word"
             type="button"
@@ -346,6 +343,7 @@
             v-if="review.removeUnavailableReason.value"
             class="srs-review-management-note"
           >{{ review.removeUnavailableReason.value }}</p>
+          </div>
         </article>
       </div>
 
@@ -451,20 +449,21 @@ const historyContainer = ref(null)
 const flowNotice = ref('')
 const migrationStatus = ref(null)
 const migrationBusy = ref(false)
+const migrationFailed = ref(false)
 const migrationMessage = ref('')
 const reviewSourceLabel = computed(() => {
-  if (review.reviewSource.value === 'v2') return '当前：V2 复习'
-  if (review.reviewSource.value === 'legacy') return '当前：旧版复习'
-  return '正在判断复习来源…'
+  if (review.reviewSource.value === 'v2') return '今日复习'
+  if (review.reviewSource.value === 'legacy') return '今日复习（整理中）'
+  return '正在准备复习'
 })
 const reviewSourceCaption = computed(() => {
   if (review.reviewSource.value === 'v2') {
-    return 'V2 会话已建立；开启模型观察后，不需要复习完全部卡片才会生成报告。'
+    return '复习记录与进度会自动保存；开启模型观察后，无需完成全部卡片也能生成报告。'
   }
   if (review.reviewSource.value === 'legacy') {
-    return '当前词条仍来自旧版复习队列；复习旧版队列不会自动创建 V2。要接入 V2，需要单独执行历史词迁移或重新确认。'
+    return '系统正在后台整理以前的复习记录，不影响你继续复习。'
   }
-  return '系统正在检查是否存在到期的 V2 复习卡。'
+  return '系统正在检查今天需要复习的内容。'
 })
 const wordShortcut = ref('r')
 const sentenceShortcut = ref('s')
@@ -623,25 +622,31 @@ async function startLegacyMigration() {
     || typeof props.legacyMigration.migrateAll !== 'function'
   ) return
   migrationBusy.value = true
-  migrationMessage.value = '正在保留旧记录并创建 V2 学习单元…'
+  migrationFailed.value = false
+  migrationMessage.value = '正在保留原记录并创建新版复习状态…'
   try {
     const result = await props.legacyMigration.migrateAll({
       batchSize: 25,
+      yieldBetweenCandidates: true,
+      yieldBetweenBatches: true,
       onProgress(status) {
         migrationStatus.value = status
-        migrationMessage.value = `正在接入历史词：已处理 ${status.migrated} / ${status.eligible}`
+        migrationMessage.value = `正在整理复习数据：已处理 ${status.migrated} / ${status.eligible}`
       },
     })
     migrationStatus.value = result
     migrationMessage.value = result.pending_confirmation
-      ? `已完成可自动接入的词；还有 ${result.pending_confirmation} 个词需要补充含义。`
-      : '历史词已接入 V2；原版记录仍保留。'
-    await review.load()
-    void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
-      signal: meaningAbortController?.signal,
-    })
+      ? `已完成可自动整理的词；还有 ${result.pending_confirmation} 个词需要补充含义。`
+      : '复习数据已整理完成；原记录仍保留。'
+    if (!review.current.value) {
+      await review.load()
+      void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
+        signal: meaningAbortController?.signal,
+      })
+    }
   } catch (error) {
-    migrationMessage.value = error?.message || '历史词接入失败，可稍后重试'
+    migrationFailed.value = true
+    migrationMessage.value = error?.message || '复习数据整理失败，可稍后重试'
   } finally {
     migrationBusy.value = false
   }

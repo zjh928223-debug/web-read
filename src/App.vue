@@ -55,7 +55,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import ToastMessage from './components/ToastMessage.vue'
 import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
 import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
@@ -136,9 +136,59 @@ const srsReviewUiService = createSrsReviewSourceSelector({
   v2Enabled: import.meta.env.VITE_SRS_REVIEW_V2_ENABLED,
 })
 const dictionaryClient = createOptionalLocalDictionaryClient()
+let legacyMigrationTimer = null
+let legacyMigrationStopped = false
+
+function scheduleLegacyVocabularyMigration(delay = 1000) {
+  if (legacyMigrationStopped || !document.hidden) return
+  if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
+  legacyMigrationTimer = window.setTimeout(() => {
+    legacyMigrationTimer = null
+    void migrateLegacyVocabularyInBackground()
+  }, delay)
+}
+
+async function migrateLegacyVocabularyInBackground() {
+  if (legacyMigrationStopped || !document.hidden) return
+  if (isSrsReviewOpen.value) {
+    scheduleLegacyVocabularyMigration(5000)
+    return
+  }
+  try {
+    const status = await legacyVocabularyMigration.getStatus()
+    if (!status.remaining) return
+    const batch = await legacyVocabularyMigration.migrateNextBatch({
+      batchSize: 1,
+      yieldBetweenCandidates: true,
+    })
+    if (batch.remaining) scheduleLegacyVocabularyMigration(250)
+  } catch (error) {
+    console.warn('[legacy-vocabulary-migration] background migration paused', error)
+    scheduleLegacyVocabularyMigration(30000)
+  }
+}
+
+function handleLegacyMigrationVisibilityChange() {
+  if (document.hidden) {
+    scheduleLegacyVocabularyMigration(1000)
+    return
+  }
+  if (legacyMigrationTimer !== null) {
+    window.clearTimeout(legacyMigrationTimer)
+    legacyMigrationTimer = null
+  }
+}
 
 onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active')
+  document.addEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
+  if (document.hidden) scheduleLegacyVocabularyMigration(1000)
+})
+
+onBeforeUnmount(() => {
+  legacyMigrationStopped = true
+  document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
+  if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
 })
 
 function openStoredPassagePreviewLegacy() {

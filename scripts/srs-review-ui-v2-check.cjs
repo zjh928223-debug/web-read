@@ -494,12 +494,12 @@ function verifySourceIndicator() {
   assert.match(pageSource, /srs-review-source-label/)
   assert.match(pageSource, /reviewSourceLabel/)
   assert.match(pageSource, /reviewSourceCaption/)
-  assert.match(pageSource, /复习旧版队列不会自动创建 V2/)
-  assert.match(pageSource, /历史词迁移或重新确认/)
-  assert.match(pageSource, /不需要复习完全部卡片/)
+  assert.match(pageSource, /系统正在后台整理以前的复习记录/)
+  assert.match(pageSource, /复习记录与进度会自动保存/)
+  assert.match(pageSource, /无需完成全部卡片/)
   assert.match(pageSource, /legacyMigration/)
   assert.match(pageSource, /startLegacyMigration/)
-  assert.match(pageSource, /接入 V2/)
+  assert.doesNotMatch(pageSource, /接入 V2/)
 }
 
 async function verifyPromptRendering(prompt) {

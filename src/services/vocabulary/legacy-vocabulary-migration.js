@@ -545,7 +545,8 @@ export function createLegacyVocabularyMigration(options = {}) {
     const legacySnapshot = await legacyRepository.loadSnapshot()
     const plan = buildLegacyVocabularyMigrationPlan(legacySnapshot, migratedWordIds)
     const results = []
-    for (const candidate of plan.ready.slice(0, batchSize)) {
+    const candidates = plan.ready.slice(0, batchSize)
+    for (const candidate of candidates) {
       try {
         results.push(await migrateCandidate(candidate))
       } catch (error) {
@@ -554,6 +555,9 @@ export function createLegacyVocabularyMigration(options = {}) {
           word_id: candidate.word.id,
           message: error?.message || String(error),
         })
+      }
+      if (options.yieldBetweenCandidates && results.length < candidates.length) {
+        await new Promise((resolve) => setTimeout(resolve, 75))
       }
     }
     const status = await getStatus()
@@ -564,7 +568,10 @@ export function createLegacyVocabularyMigration(options = {}) {
     const allResults = []
     const maxBatches = Math.max(1, Number(options.maxBatches || 1000))
     for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
-      const batch = await migrateNextBatch({ batchSize: options.batchSize })
+      const batch = await migrateNextBatch({
+        batchSize: options.batchSize,
+        yieldBetweenCandidates: options.yieldBetweenCandidates,
+      })
       allResults.push(...batch.results)
       options.onProgress?.(batch)
       const migratedThisBatch = batch.results.filter((item) => (
@@ -572,6 +579,9 @@ export function createLegacyVocabularyMigration(options = {}) {
       )).length
       if (batch.remaining === 0 || migratedThisBatch === 0) {
         return { ...batch, results: allResults }
+      }
+      if (options.yieldBetweenBatches) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
       }
     }
     const status = await getStatus()

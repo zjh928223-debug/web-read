@@ -30,8 +30,8 @@ audio {
   --srs-glass-shadow:
     0 8px 22px rgba(39, 67, 112, .11),
     inset 0 1px 0 rgba(255, 255, 255, .82);
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   height: 100dvh;
   min-height: 100vh;
   overflow: hidden;
@@ -410,6 +410,16 @@ audio {
   font-size: 10px;
 }
 
+.srs-review-history .srs-review-fixed-shortcuts {
+  margin: 0 0 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #667085;
+  background: #f6f8fc;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
 .srs-review-history ul {
   display: grid;
   gap: 2px;
@@ -441,13 +451,13 @@ audio {
 }
 
 .srs-review-content {
-  grid-row: 3;
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas: "word context";
   width: min(1440px, 100%);
   min-height: 0;
-  height: 100%;
+  height: auto;
   margin: 0 auto;
   padding: 28px clamp(36px, 6vw, 94px) 18px;
   overflow: hidden;
@@ -654,19 +664,21 @@ audio {
   flex-direction: column;
   align-self: stretch;
   max-height: 100%;
-  overflow-y: auto;
-  padding: clamp(44px, 6vh, 72px) clamp(28px, 4vw, 52px) 88px;
+  overflow: hidden;
+  padding: clamp(44px, 6vh, 72px) clamp(28px, 4vw, 52px) 8px;
 }
 
 .srs-review-word-content {
+  flex: 1 1 auto;
   display: grid;
-  grid-template-rows: clamp(170px, 25vh, 220px) minmax(0, 1fr);
+  grid-template-rows: clamp(170px, 25vh, 220px) auto;
   width: 100%;
-  height: 100%;
+  height: auto;
   min-height: 0;
   margin: 0;
-  padding: 0;
-  padding-left: clamp(32px, 4vw, 56px);
+  padding: 0 12px 24px clamp(32px, 4vw, 56px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .srs-review-word-line {
@@ -825,10 +837,21 @@ audio {
   font-size: 14px;
 }
 
+.srs-review-word-toolbar {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-areas:
+    "note note note"
+    "remove spacer play";
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  min-height: 42px;
+  padding: 6px 4px 0 10px;
+  border-top: 1px solid rgba(223, 228, 237, .58);
+}
+
 .srs-review-play-sequence-group {
-  position: absolute;
-  right: 4px;
-  bottom: 8px;
+  grid-area: play;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -921,9 +944,7 @@ audio {
 }
 
 .srs-review-remove-word {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
+  grid-area: remove;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -964,18 +985,16 @@ audio {
 }
 
 .srs-review-management-note {
-  position: absolute;
-  bottom: 42px;
-  left: 10px;
-  max-width: min(360px, 38vw);
-  margin: 0;
+  grid-area: note;
+  max-width: none;
+  margin: 0 0 2px;
   color: #798397;
   font-size: 11px;
   line-height: 1.4;
 }
 
 .srs-review-actions {
-  grid-row: 5;
+  flex: 0 0 auto;
   position: relative;
   z-index: 2;
   display: flex;
@@ -1063,7 +1082,7 @@ audio {
 
 .srs-review-inline-error,
 .srs-review-inline-notice {
-  grid-row: 4;
+  flex: 0 0 auto;
   margin: 0;
   padding: 0 32px 14px;
   text-align: center;
@@ -1089,11 +1108,11 @@ audio {
 }
 
 .srs-review-state {
-  grid-row: 2 / -1;
+  flex: 1 1 auto;
   display: grid;
   align-content: center;
   justify-items: center;
-  min-height: calc(100vh - 54px);
+  min-height: 0;
   padding: 40px;
   text-align: center;
 }
@@ -1245,6 +1264,7 @@ audio:focus-visible {
     height: auto;
     margin: 0;
     padding: 0;
+    overflow: visible;
   }
 
   .srs-review-word-line {
