@@ -278,10 +278,8 @@ async function main() {
     path.join(repoRoot, 'src/features/srs-review/SrsReviewPage.vue'),
     'utf8',
   )
-  assert.match(pageSource, /<strong>模式<\/strong>/)
-  assert.match(pageSource, /<strong>预计剩余<\/strong>/)
-  assert.match(pageSource, /<strong>Backlog<\/strong>/)
-  assert.match(pageSource, /<strong>重访原因<\/strong>/)
+  assert.doesNotMatch(pageSource, /srs-review-session-meta/)
+  assert.doesNotMatch(pageSource, /<strong>Backlog<\/strong>/)
   assert.match(pageSource, /visibleReviewParagraphs/)
   assert.match(pageSource, /显示目标句/)
   assert.match(pageSource, /显示周边语境/)
@@ -491,12 +489,10 @@ function verifySourceIndicator() {
     path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),
     'utf8',
   )
-  assert.match(pageSource, /srs-review-source-label/)
-  assert.match(pageSource, /reviewSourceLabel/)
-  assert.match(pageSource, /reviewSourceCaption/)
-  assert.match(pageSource, /系统正在后台整理以前的复习记录/)
-  assert.match(pageSource, /复习记录与进度会自动保存/)
-  assert.match(pageSource, /无需完成全部卡片/)
+  assert.match(pageSource, /review\.progress\.value \|\| '今日复习'/)
+  assert.match(pageSource, />\s*快捷键\s*</)
+  assert.doesNotMatch(pageSource, /personalization-shadow\.html/)
+  assert.doesNotMatch(pageSource, /reviewSourceCaption/)
   assert.match(pageSource, /legacyMigration/)
   assert.match(pageSource, /startLegacyMigration/)
   assert.doesNotMatch(pageSource, /接入 V2/)

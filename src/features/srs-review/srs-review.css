@@ -52,7 +52,7 @@ audio {
   z-index: 20;
   isolation: isolate;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(320px, 2fr) minmax(150px, 1fr);
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   min-height: 54px;
   padding: 4px clamp(28px, 4vw, 64px);
@@ -100,48 +100,6 @@ audio {
 .srs-review-heading {
   min-width: 0;
   text-align: center;
-}
-
-.srs-review-source-label {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  max-width: 100%;
-  padding: 3px 9px;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, .28);
-  border-radius: 999px;
-  color: #667085;
-  background: rgba(247, 248, 251, .92);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.srs-review-source-label.is-v2 {
-  border-color: rgba(49, 88, 200, .24);
-  color: #3158c8;
-  background: rgba(238, 243, 255, .92);
-}
-
-.srs-review-source-label.is-legacy {
-  border-color: rgba(180, 126, 38, .28);
-  color: #8a5a16;
-  background: rgba(255, 248, 229, .94);
-}
-
-.srs-review-source-label.is-loading {
-  color: #7a8495;
-  background: rgba(247, 248, 251, .72);
-}
-
-.srs-review-source-caption {
-  max-width: min(42vw, 520px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .srs-review-migration-banner {
@@ -259,35 +217,7 @@ audio {
   gap: 7px;
 }
 
-.srs-review-session-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 18px;
-  align-items: center;
-  padding: 9px clamp(18px, 4vw, 54px);
-  border-bottom: 1px solid rgba(148, 163, 184, .18);
-  color: var(--srs-muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.srs-review-session-meta span {
-  display: inline-flex;
-  gap: 5px;
-  align-items: baseline;
-}
-
-.srs-review-session-meta strong {
-  color: var(--srs-ink);
-  font-weight: 650;
-}
-
-.srs-review-session-meta .is-revisit {
-  color: #b45309;
-}
-
-.srs-review-history-toggle,
-.srs-review-shadow-link {
+.srs-review-history-toggle {
   min-height: 28px;
   padding: 6px 8px;
   border: 1px solid transparent;
@@ -840,9 +770,7 @@ audio {
 .srs-review-word-toolbar {
   flex: 0 0 auto;
   display: grid;
-  grid-template-areas:
-    "note note note"
-    "remove spacer play";
+  grid-template-areas: "remove spacer play";
   grid-template-columns: auto 1fr auto;
   align-items: center;
   min-height: 42px;
@@ -982,15 +910,6 @@ audio {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.6;
-}
-
-.srs-review-management-note {
-  grid-area: note;
-  max-width: none;
-  margin: 0 0 2px;
-  color: #798397;
-  font-size: 11px;
-  line-height: 1.4;
 }
 
 .srs-review-actions {
@@ -1187,19 +1106,6 @@ audio:focus-visible {
 
   .srs-review-back {
     font-size: 0;
-  }
-
-  .srs-review-heading h1 {
-    font-size: 12px;
-  }
-
-  .srs-review-heading p {
-    max-width: 42vw;
-    margin: 4px auto 0;
-    overflow: hidden;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .srs-review-progress {

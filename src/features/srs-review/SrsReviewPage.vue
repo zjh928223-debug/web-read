@@ -6,27 +6,9 @@
         返回
       </button>
       <div class="srs-review-heading">
-        <span
-          class="srs-review-source-label"
-          :class="{
-            'is-v2': review.reviewSource.value === 'v2',
-            'is-legacy': review.reviewSource.value === 'legacy',
-            'is-loading': !review.reviewSource.value,
-          }"
-          role="status"
-        >{{ reviewSourceLabel }}</span>
-        <p class="srs-review-source-caption">{{ reviewSourceCaption }}</p>
+        <p class="srs-review-progress" aria-live="polite">{{ review.progress.value || '今日复习' }}</p>
       </div>
       <div ref="historyContainer" class="srs-review-summary">
-        <p class="srs-review-progress" aria-live="polite">{{ review.progress.value }}</p>
-        <a
-          class="srs-review-shadow-link"
-          href="/personalization-shadow.html"
-          target="_blank"
-          rel="noopener"
-        >
-          模型观察
-        </a>
         <button
           class="srs-review-history-toggle"
           type="button"
@@ -34,7 +16,7 @@
           :aria-controls="historyId"
           @click="historyOpen = !historyOpen"
         >
-          记录与快捷键
+          快捷键
         </button>
         <section
           v-if="historyOpen"
@@ -104,21 +86,6 @@
       <p v-if="migrationMessage" class="srs-review-migration-message" role="status">
         {{ migrationMessage }}
       </p>
-    </section>
-
-    <section
-      v-if="review.sessionLedger.value && !review.loading.value && review.current.value"
-      class="srs-review-session-meta"
-      aria-label="本次复习计划"
-    >
-      <span><strong>模式</strong>{{ review.modeLabel.value }}</span>
-      <span><strong>预算</strong>{{ review.budgetMinutes.value }} 分钟</span>
-      <span><strong>预计剩余</strong>{{ review.estimatedRemainingLabel.value }}</span>
-      <span><strong>Backlog</strong>{{ review.backlogLabel.value }}</span>
-      <span v-if="review.current.value"><strong>答题条件</strong>{{ promptModeLabel }}</span>
-      <span v-if="review.revisitReason.value" class="is-revisit">
-        <strong>重访原因</strong>{{ review.revisitReason.value }}
-      </span>
     </section>
 
     <section v-if="review.loading.value" class="srs-review-state" aria-live="polite">
@@ -339,10 +306,6 @@
             </svg>
             <span>移除误收录</span>
           </button>
-          <p
-            v-if="review.removeUnavailableReason.value"
-            class="srs-review-management-note"
-          >{{ review.removeUnavailableReason.value }}</p>
           </div>
         </article>
       </div>
@@ -451,20 +414,6 @@ const migrationStatus = ref(null)
 const migrationBusy = ref(false)
 const migrationFailed = ref(false)
 const migrationMessage = ref('')
-const reviewSourceLabel = computed(() => {
-  if (review.reviewSource.value === 'v2') return '今日复习'
-  if (review.reviewSource.value === 'legacy') return '今日复习（整理中）'
-  return '正在准备复习'
-})
-const reviewSourceCaption = computed(() => {
-  if (review.reviewSource.value === 'v2') {
-    return '复习记录与进度会自动保存；开启模型观察后，无需完成全部卡片也能生成报告。'
-  }
-  if (review.reviewSource.value === 'legacy') {
-    return '系统正在后台整理以前的复习记录，不影响你继续复习。'
-  }
-  return '系统正在检查今天需要复习的内容。'
-})
 const wordShortcut = ref('r')
 const sentenceShortcut = ref('s')
 const shortcutEditingTarget = ref('')
@@ -567,11 +516,6 @@ const canPlaySentence = computed(() => Boolean(
   && review.current.value
   && (sourceLoading.value || audioState.value?.url),
 ))
-const promptModeLabel = computed(() => ({
-  word_only: '仅单词',
-  original_context: '原语境',
-  transfer_context: '迁移语境',
-}[review.current.value?.promptMode] || '仅单词'))
 
 onMounted(async () => {
   wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
