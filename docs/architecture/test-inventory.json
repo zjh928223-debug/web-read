@@ -6,11 +6,11 @@
     "architecture": 109,
     "behavior": 86,
     "browser": 27,
-    "performance": 13,
+    "performance": 14,
     "release": 15
   },
-  "packageScriptCount": 229,
-  "executableScriptCount": 250,
+  "packageScriptCount": 230,
+  "executableScriptCount": 251,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2287,6 +2287,20 @@
         "scripts/srs-review-policy-planner-check.cjs"
       ],
       "owner": "package.json#scripts.verify:srs-review-policy-planner"
+    },
+    {
+      "name": "verify:srs-review-rating-latency-browser",
+      "command": "node scripts/srs-review-rating-latency-browser-check.cjs",
+      "category": "performance",
+      "layers": [
+        "browser",
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/srs-review-rating-latency-browser-check.cjs"
+      ],
+      "owner": "package.json#scripts.verify:srs-review-rating-latency-browser"
     },
     {
       "name": "verify:srs-review-session-ledger-browser",
@@ -8084,6 +8098,32 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/srs-review-rating-latency-browser-check.cjs",
+      "category": "performance",
+      "layers": [
+        "browser",
+        "performance",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:srs-review-rating-latency-browser",
+      "owners": [
+        "package.json#scripts.verify:srs-review-rating-latency-browser"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": true,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {

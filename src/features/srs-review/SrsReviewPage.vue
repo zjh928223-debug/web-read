@@ -648,7 +648,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   sequencePlaybackRequest = -1
   playbackStatusRequest += 1
   playbackPhase.value = ''
-  stopAndReleaseAudio()
+  stopAndReleaseAudio({ resetMedia: false })
   flow.resetCard()
   flowNotice.value = ''
   translationRequest += 1
@@ -860,7 +860,7 @@ function revealSurroundingContext() {
 }
 
 function advanceReviewCard() {
-  stopAndReleaseAudio()
+  stopCurrentPlayback()
   return review.advanceCurrent()
 }
 
@@ -949,14 +949,14 @@ async function retrySourceAudio() {
   await loadReviewSourceForCurrentCard(audioRequest)
 }
 
-function stopAndReleaseAudio() {
+function stopAndReleaseAudio({ resetMedia = true } = {}) {
   sourceReadyPromise = Promise.resolve(null)
   if (cancelSentenceReady) cancelSentenceReady()
   if (cancelTargetSentenceWait) cancelTargetSentenceWait(false)
   if (audioElement.value) {
     audioElement.value.pause()
     audioElement.value.removeAttribute('src')
-    audioElement.value.load()
+    if (resetMedia) audioElement.value.load()
   }
   releaseReviewAudio(audioState.value)
   audioState.value = null
@@ -1127,7 +1127,6 @@ async function playWordPronunciation() {
     for (const url of urls) {
       pronunciationUrl.value = url
       await nextTick()
-      pronunciationAudio.value.load()
       pronunciationAudio.value.currentTime = 0
       const completion = waitForPronunciationEnd(pronunciationAudio.value)
       try {

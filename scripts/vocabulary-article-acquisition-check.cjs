@@ -275,7 +275,8 @@ async function main() {
     /simulated pre-direct-review article state/u,
   );
   const pendingArticlePair = Object.values((await reconciliationReader.loadSnapshot()).by_learning_unit_id)[0];
-  assert.equal(pendingArticlePair.learning_unit.extensions.source, 'article-settlement');
+  const pendingArticleKind = pendingArticlePair.learning_unit.extensions.source;
+  assert.equal(pendingArticleKind, 'article-settlement');
   assert.equal(pendingArticlePair.acquisition_state.status, 'acquiring');
   const reconciliationService = api.createVocabularyService({
     repository: reconciliationVocabularyRepository,

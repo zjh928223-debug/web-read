@@ -97,6 +97,7 @@
     "verify:vocabulary-preview-acquisition": "node scripts/vocabulary-preview-acquisition-check.mjs",
     "verify:vocabulary-add-word-boundary": "node scripts/vocabulary-add-word-boundary-check.cjs",
     "verify:srs-review": "node scripts/srs-review-check.cjs",
+    "verify:srs-review-rating-latency-browser": "node scripts/srs-review-rating-latency-browser-check.cjs",
     "verify:srs-review-ui-v2": "node scripts/srs-review-ui-v2-check.cjs",
     "verify:legacy-vocabulary-migration": "node scripts/legacy-vocabulary-migration-check.mjs",
     "verify:vocabulary-personalization-content": "node scripts/verify-vocabulary-personalization-content.mjs",
