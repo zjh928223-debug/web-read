@@ -19,10 +19,10 @@ const stages = [
   ['final and previous release manifests (12.6)', process.execPath, ['scripts/generate-release-manifest.mjs', '--require-clean']],
   ['release artifact health check (12.6)', process.execPath, ['scripts/release-health-check.mjs']],
   ['non-interactive rollback dry-run (12.6)', process.execPath, ['scripts/release-rollback.mjs']],
+  ['isolated shortcut switch and automatic rollback rehearsal (12.7)', 'powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/release-shortcut-rollback-rehearsal.ps1']],
 ]
 
 const pending = [
-  'shortcut rollback rehearsal (12.7) — pending',
   'user-approved desktop shortcut migration after every release gate (12.8) — pending',
 ]
 
@@ -33,12 +33,12 @@ console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gates (12.7, 12.8)')
+  console.log('verify-release status: BLOCKED by pending release gate (12.8)')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: 12.7/12.8 release gates are still pending.')
+  console.error('\nverify-release BLOCKED: 12.8 user-approved shortcut migration is still pending.')
   console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }

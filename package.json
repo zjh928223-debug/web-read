@@ -52,6 +52,7 @@
     "verify:release-stability": "npm run build && node scripts/release-stability-rehearsal.mjs",
     "verify:release-differential": "node scripts/release-version-differential.mjs",
     "verify:release-control": "node scripts/release-control-check.mjs",
+    "verify:release-shortcut-rollback": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-rollback-rehearsal.ps1",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "python scripts/perf/backend-http-benchmark.py",
     "verify:performance:browser": "node scripts/perf/run-browser-journeys.mjs",

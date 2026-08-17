@@ -9,7 +9,7 @@
     "performance": 13,
     "release": 15
   },
-  "packageScriptCount": 227,
+  "packageScriptCount": 228,
   "executableScriptCount": 249,
   "packageCommands": [
     {
@@ -1836,6 +1836,18 @@
         "scripts/release-version-differential.mjs"
       ],
       "owner": "package.json#scripts.verify:release-differential"
+    },
+    {
+      "name": "verify:release-shortcut-rollback",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-rollback-rehearsal.ps1",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "invokes": [
+        "scripts/release-shortcut-rollback-rehearsal.ps1"
+      ],
+      "owner": "package.json#scripts.verify:release-shortcut-rollback"
     },
     {
       "name": "verify:release-stability",

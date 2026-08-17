@@ -120,7 +120,7 @@
 - [x] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [x] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
 - [x] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
-- [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
+- [x] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
 - [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
 > 12.2 is complete: the real six-domain composition holds a durable
@@ -152,3 +152,8 @@
 > optional running-host identity; `release:rollback` first verifies previous artifacts
 > and atomically restores the previous release target. Shortcut/process activation is
 > intentionally deferred to the isolated 12.7 drill.
+> 12.7 is complete: the real daily shortcut was read and hashed, copied into an
+> isolated temporary directory, atomically switched to the Next launcher, restored
+> normally, switched again, and automatically restored after a simulated health
+> failure. The source shortcut hash was identical before and after. The migration
+> command refuses Desktop writes unless a separate explicit confirmation flag is used.

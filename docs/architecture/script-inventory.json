@@ -14,6 +14,7 @@
     "scripts/reader-marks-activity-conflict-check.mjs",
     "scripts/release-playback-endurance.mjs",
     "scripts/release-process-cancellation.py",
+    "scripts/release-shortcut-migration.ps1",
     "scripts/srs-review-service-v2-check.cjs",
     "scripts/vocabulary-learning-events-check.cjs",
     "scripts/vocabulary-learning-uow-faults-check.mjs",
