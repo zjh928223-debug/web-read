@@ -370,6 +370,21 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
+    /\.srs-review-word-content\s*\{[^}]*overflow-x:\s*hidden/s,
+    'word content padding must not create a horizontal scrollbar',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-line\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s,
+    'the word row must expose its real available width to long-heading fitting',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-word-line h2\s*\{[^}]*flex:\s*1 1 auto/s,
+    'long words and phrases should shrink within the remaining row width',
+  )
+  assert.match(
+    reviewCssSource,
     /\.srs-review-answer-area\s*\{[^}]*padding:\s*0\s+0\s+14px\s+62px/s,
     'answer meanings should align with the English word after its speaker control',
   )
