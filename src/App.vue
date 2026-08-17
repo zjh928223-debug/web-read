@@ -146,6 +146,8 @@ const dictionaryClient = createOptionalLocalDictionaryClient()
 let legacyMigrationTimer = null
 let legacyMigrationStopped = false
 let reviewWarmupTimer = null
+let articleReconciliationTimer = null
+let articleReconciliationStopped = false
 
 function openSrsReview() {
   isSrsReviewMounted.value = true
@@ -196,29 +198,52 @@ function handleLegacyMigrationVisibilityChange() {
   }
 }
 
+function scheduleArticleLearningReconciliation(delay = 0) {
+  if (articleReconciliationStopped) return
+  if (articleReconciliationTimer !== null) window.clearTimeout(articleReconciliationTimer)
+  articleReconciliationTimer = window.setTimeout(() => {
+    articleReconciliationTimer = null
+    void reconcileArticleLearningInBackground()
+  }, delay)
+}
+
+async function reconcileArticleLearningInBackground() {
+  if (articleReconciliationStopped) return
+  if (isSrsReviewOpen.value) {
+    scheduleArticleLearningReconciliation(5000)
+    return
+  }
+  try {
+    const result = await vocabularyService.completePendingArticleLearning?.({ limit: 50 })
+    if (result?.completed) {
+      srsReviewCacheVersion.value += 1
+      await srsReviewV2Service.warmReviewData?.()
+    }
+    if (result?.remaining) scheduleArticleLearningReconciliation(100)
+  } catch (error) {
+    console.warn('[article-learning] background reconciliation paused', error)
+    scheduleArticleLearningReconciliation(30000)
+  }
+}
+
 onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active')
   document.addEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (document.hidden) scheduleLegacyVocabularyMigration(1000)
   reviewWarmupTimer = window.setTimeout(() => {
     reviewWarmupTimer = null
-    void vocabularyService.completePendingArticleLearning?.({ limit: 100 })
-      .then((result) => {
-        if (result?.completed) srsReviewCacheVersion.value += 1
-        return srsReviewV2Service.warmReviewData?.()
-      })
-      .catch((error) => {
-        console.warn('[article-learning] background reconciliation paused', error)
-        return srsReviewV2Service.warmReviewData?.().catch(() => {})
-      })
+    void srsReviewV2Service.warmReviewData?.().catch(() => {})
   }, 0)
+  scheduleArticleLearningReconciliation(0)
 })
 
 onBeforeUnmount(() => {
   legacyMigrationStopped = true
+  articleReconciliationStopped = true
   document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
   if (reviewWarmupTimer !== null) window.clearTimeout(reviewWarmupTimer)
+  if (articleReconciliationTimer !== null) window.clearTimeout(articleReconciliationTimer)
 })
 
 function openStoredPassagePreviewLegacy() {
