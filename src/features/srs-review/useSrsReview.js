@@ -47,6 +47,7 @@ export function useSrsReview(service, options = {}) {
   const committedItemIds = new Set()
   const attemptDrafts = new Map()
   let saveChain = Promise.resolve()
+  let reviewEventsRequest = 0
   let cardStartedAt = resolveNowMilliseconds(now)
 
   const current = computed(() => queue.value[viewIndex.value] || null)
@@ -164,6 +165,7 @@ export function useSrsReview(service, options = {}) {
   }
 
   async function loadReviewServiceV2(sessionContext = resolveReviewSessionContext(options, now)) {
+    const eventsRequest = ++reviewEventsRequest
     reviewDate.value = resolveReviewDate(now)
     const policy = options.policy
       || (typeof activeService.getReviewPolicy === 'function' ? activeService.getReviewPolicy() : {})
@@ -189,12 +191,17 @@ export function useSrsReview(service, options = {}) {
     completedBeforeOpen.value = completedIds.size
     dailyTotal.value = queue.value.length
     sessionRatingCounts.value = ratingCountsFromLedger(ledger)
-    reviewLogs.value = typeof activeService.getReviewEvents === 'function'
-      ? await activeService.getReviewEvents()
-      : []
+    reviewLogs.value = []
     cardStartedAt = resolveNowMilliseconds(now)
     resetContextCue()
     loaded.value = true
+    if (typeof activeService.getReviewEvents === 'function') {
+      void Promise.resolve(activeService.getReviewEvents()).then((events) => {
+        if (eventsRequest === reviewEventsRequest) {
+          reviewLogs.value = Array.isArray(events) ? events : []
+        }
+      }).catch(() => {})
+    }
   }
 
   async function submitAction(action, submitOptions = {}) {

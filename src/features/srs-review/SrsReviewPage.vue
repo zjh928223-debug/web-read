@@ -539,7 +539,8 @@ const canPlaySentence = computed(() => Boolean(
 onMounted(async () => {
   wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
   sentenceShortcut.value = loadShortcut(sentenceShortcutStorageKey, 's', wordShortcut.value)
-  await Promise.all([loadLegacyMigrationStatus(), review.load()])
+  void loadLegacyMigrationStatus()
+  await review.load()
   meaningAbortController = new AbortController()
   void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
     signal: meaningAbortController.signal,

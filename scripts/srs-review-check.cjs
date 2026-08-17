@@ -188,6 +188,26 @@ async function run() {
     /\.srs-review-history li\s*\{[^}]*border-top:\s*0/s,
     'history rows should not be separated by dense horizontal lines',
   )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-answer-area\s*\{[^}]*padding:\s*0 0 14px/s,
+    'the revealed Chinese meanings should share the word heading center line without a left offset',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-passages \.srs-review-sentence-translation\s*\{[^}]*padding:\s*0;[^}]*border-left:\s*0;[^}]*background:\s*transparent;/s,
+    'the sentence translation should render as plain text without a blue label treatment',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-sentence\s*\{[^}]*padding:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/s,
+    'the original English sentence should render without a blue label or shadow',
+  )
+  assert.match(
+    reviewPageSource,
+    /onMounted\(async \(\) => \{[\s\S]*void loadLegacyMigrationStatus\(\)[\s\S]*await review\.load\(\)/,
+    'legacy migration status should not block the first review card',
+  )
   assert.doesNotMatch(reviewPageSource, /\busageHint\b/, 'the separate usage hint panel should stay removed')
   assert.match(
     reviewPageSource,
@@ -390,8 +410,8 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-answer-area\s*\{[^}]*padding:\s*0\s+0\s+14px\s+62px/s,
-    'answer meanings should align with the English word after its speaker control',
+    /\.srs-review-answer-area\s*\{[^}]*padding:\s*0\s+0\s+14px\s*;/s,
+    'answer meanings should be centered beneath the English word without the previous rightward offset',
   )
   assert.match(
     reviewPageSource,
@@ -747,6 +767,44 @@ async function run() {
   })
   await emptyReview.load()
   assert.equal(emptyReview.empty.value, true, 'empty queue should expose the empty state')
+
+  let releaseDeferredEvents
+  const deferredEvents = new Promise((resolve) => { releaseDeferredEvents = resolve })
+  const fastOpenLedger = {
+    session_id: 'fast-open-session',
+    mode: 'balanced',
+    budget_ms: 3600000,
+    cursor: 0,
+    entries: [{
+      ledger_item_id: 'fast-open-item',
+      learning_unit_id: 'fast-open-unit',
+      queue_kind: 'due_review',
+      enqueue_reason: 'SCHEDULER_DUE',
+      extensions: { prompt_mode: 'word_only' },
+    }],
+    extensions: { completed_item_ids: [], attempt_results_by_id: {} },
+  }
+  const fastOpenReview = reviewModule.useSrsReview({
+    async resumeReviewSession() { return fastOpenLedger },
+    async startReviewSession() { return fastOpenLedger },
+    async recordReviewAttempt() {},
+    async getReviewCards(ledger) {
+      return ledger.entries.map((ledgerEntry) => ({
+        word: { id: ledgerEntry.learning_unit_id, word: 'fast' },
+        contexts: [],
+        ledgerEntry,
+        promptMode: 'word_only',
+      }))
+    },
+    async getReviewEvents() { return deferredEvents },
+  }, { now })
+  const fastOpenSettled = await Promise.race([
+    fastOpenReview.load().then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 30)),
+  ])
+  assert.equal(fastOpenSettled, true, 'historical review events must not block the first card')
+  assert.equal(fastOpenReview.current.value.word.word, 'fast')
+  releaseDeferredEvents([])
 
   const textContext = contextModule.buildReviewContext({
     word: { word: 'resilient' },

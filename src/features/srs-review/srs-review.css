@@ -463,11 +463,12 @@ audio {
 
 .srs-review-passages .srs-review-sentence-translation {
   margin-top: 4px;
-  padding: 12px 14px;
-  border-left: 3px solid #9db0e8;
-  border-radius: 0 8px 8px 0;
+  padding: 0;
+  border-left: 0;
+  border-radius: 0;
   color: #52617d;
-  background: rgba(237, 241, 255, .64);
+  background: transparent;
+  box-shadow: none;
   font-family: Arial, sans-serif;
   font-size: clamp(16px, 1.2vw, 20px);
   line-height: 1.55;
@@ -516,10 +517,11 @@ audio {
 }
 
 .srs-review-sentence {
-  padding: 7px 5px;
+  padding: 0;
   color: inherit;
-  background: #edf1ff;
-  border-radius: 7px;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -664,7 +666,7 @@ audio {
 
 .srs-review-answer-area {
   min-height: 0;
-  padding: 0 0 14px 62px;
+  padding: 0 0 14px;
   overflow: visible;
 }
 
