@@ -1,9 +1,17 @@
 import { createSessionAnnotationRuntime } from './session-annotation-runtime.js';
 import { startSessionLifecycleRuntime } from './session-lifecycle-runtime.js';
+import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+import { initPiniaBridge } from './pinia-bridge-module.js';
 
 export function createSessionRuntimeAdapters(env = {}) {
   const windowObject = typeof env.getWindow === 'function' ? env.getWindow() : globalThis;
   const documentObject = typeof env.getDocument === 'function' ? env.getDocument() : windowObject.document;
+  const audioStore = requirePiniaRuntimeStores().audio;
+  const bridgeToPinia = initPiniaBridge({
+    transcriptState: windowObject.__transcriptState,
+    chunkState: windowObject.__chunkState,
+    clozeState: windowObject.__clozeState
+  });
 
   function getElement(id) {
     return documentObject && typeof documentObject.getElementById === 'function'
@@ -35,17 +43,17 @@ export function createSessionRuntimeAdapters(env = {}) {
       sentenceColorInput: windowObject.sentenceColorInput || getElement('sentence-color-input')
     },
     globals: {
-      saveToDB: windowObject.saveToDB,
-      loadFromDB: windowObject.loadFromDB,
-      deleteFromDB: windowObject.deleteFromDB,
-      initDB: windowObject.initDB,
+      saveToDB: audioStore.saveToDB.bind(audioStore),
+      loadFromDB: audioStore.loadFromDB.bind(audioStore),
+      deleteFromDB: audioStore.deleteFromDB.bind(audioStore),
+      initDB: audioStore.initDB.bind(audioStore),
       markFileLoaded: windowObject.markFileLoaded,
       applyCurrentAudioMeta: windowObject.applyCurrentAudioMeta,
       buildCurrentSentenceDocId: windowObject.buildCurrentSentenceDocId,
       processVisual: windowObject.processVisual,
       processChunkData: windowObject.processChunkData,
       processTranscript: windowObject.processTranscript,
-      bridgeToPinia: windowObject.bridgeToPinia,
+      bridgeToPinia,
       forceUpdateUI: windowObject.forceUpdateUI,
       showToast: windowObject.showToast,
       updateChunkCnHoldBtn: windowObject.updateChunkCnHoldBtn,

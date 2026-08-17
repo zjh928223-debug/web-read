@@ -1,15 +1,6 @@
-export const CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT = 78
+export const CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT = 80
 
-export const TEMPORARY_ARCHITECTURE_SOURCE_SHAPE_EXCLUSIONS = new Map([
-  ['scripts/runtime-state-source-check.cjs', {
-    task: '10.5',
-    expectedFailure: 'should not read window.__state',
-  }],
-  ['scripts/video-player-module-check.cjs', {
-    task: '10.5',
-    expectedFailure: 'workflow loader should register video availability at load time',
-  }],
-])
+export const TEMPORARY_ARCHITECTURE_SOURCE_SHAPE_EXCLUSIONS = new Map()
 
 export const ARCHITECTURE_EVIDENCE_OWNED_BY_OTHER_GATES = new Set([
   'scripts/exam-vocabulary-import-closure-check.cjs',

@@ -3,6 +3,27 @@ import { initReaderControlsRuntime } from './reader-controls-runtime.js'
 import { initReaderKeyboardRuntime } from './reader-keyboard-runtime.js'
 import { initReaderAppRuntime } from './reader-app-runtime.js'
 import { initReaderImportRuntime } from './reader-import-runtime.js'
+import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js'
+
+function createThemeStoreAdapter(themeStore) {
+  return {
+    init: themeStore.init.bind(themeStore),
+    applyThemeMode: themeStore.applyMode.bind(themeStore),
+    applyCustomTheme: themeStore.applyCustom.bind(themeStore),
+    closeCustomThemePanel: themeStore.closeCustomPanel.bind(themeStore),
+    openCustomThemePanel: themeStore.openCustomPanel.bind(themeStore),
+    getStoredCustomThemeColors: themeStore.getStoredCustomThemeColors.bind(themeStore),
+    CUSTOM_THEME_DEFAULTS: themeStore.CUSTOM_THEME_DEFAULTS,
+  }
+}
+
+function createMarksStoreAdapter(marksStore) {
+  return {
+    toggleMark: marksStore.toggle.bind(marksStore),
+    syncMarkedWordVisual: marksStore.syncVisual.bind(marksStore),
+    exportMarksToArray: marksStore.exportToArray.bind(marksStore),
+  }
+}
 
 export function createReaderFeatureAdapters(deps) {
   const globalObject = deps.globalObject || globalThis
@@ -10,6 +31,9 @@ export function createReaderFeatureAdapters(deps) {
   const bootstrap = deps.bootstrapRuntime
   const helpers = bootstrap.runtimeDeps
   const dom = runtimeContext.domRefs
+  const runtimeStores = requirePiniaRuntimeStores()
+  const themeStore = createThemeStoreAdapter(runtimeStores.theme)
+  const marksStore = createMarksStoreAdapter(runtimeStores.marks)
   const shared = {
     runtimeState: deps.runtimeState,
     transcriptState: bootstrap.transcriptState,
@@ -69,7 +93,7 @@ export function createReaderFeatureAdapters(deps) {
       getForceUpdateUI,
       bridgeToPinia: shared.bridgeToPinia,
       styleEditor: globalObject.__styleEditor,
-      themeStore: globalObject.__themeStore,
+      themeStore,
       themeToggleBtn: dom.themeToggleBtn,
       themeCustomBgInput: dom.themeCustomBgInput,
       themeCustomTextInput: dom.themeCustomTextInput,
@@ -105,8 +129,8 @@ export function createReaderFeatureAdapters(deps) {
   function startKeyboard({ chunkControlsApi, interactionRuntime }) {
     return initReaderKeyboardRuntime({
       keyboardModule: globalObject.__keyboardModule,
-      marksStore: globalObject.__marksStore,
-      themeStore: globalObject.__themeStore,
+      marksStore,
+      themeStore,
       audioPlayer: dom.audioPlayer,
       transcriptState: shared.transcriptState,
       chunkState: shared.chunkState,

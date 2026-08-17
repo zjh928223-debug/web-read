@@ -3,6 +3,7 @@ import { initAudioIdentity } from './audio-identity-module.js';
 import { initHotkeyState } from './hotkey-state-module.js';
 import { initMarksState } from './marks-state-module.js';
 import { initPiniaBridge } from './pinia-bridge-module.js';
+import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
 
 export function initReaderBootstrapRuntime(deps = {}) {
   var getWindow = typeof deps.getWindow === 'function' ? deps.getWindow : function () { return globalThis; };
@@ -12,12 +13,13 @@ export function initReaderBootstrapRuntime(deps = {}) {
   var chunkState = globalObject.__chunkState;
   var clozeState = globalObject.__clozeState;
   var playbackState = globalObject.__playbackState;
+  var audioStore = requirePiniaRuntimeStores().audio;
 
   var saveToDB = function (id, data) {
-    return getWindow().__audioStore.saveToDB(id, data);
+    return audioStore.saveToDB(id, data);
   };
   var loadFromDB = function (id) {
-    return getWindow().__audioStore.loadFromDB(id);
+    return audioStore.loadFromDB(id);
   };
 
   var runtimeDeps = collectReaderRuntimeDeps({

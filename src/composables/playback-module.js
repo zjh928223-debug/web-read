@@ -1,3 +1,5 @@
+import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+
   function init(deps) {
     var audioPlayer = (window.__mediaSource && typeof window.__mediaSource.createActiveMediaProxy === 'function')
       ? window.__mediaSource.createActiveMediaProxy(deps.audioPlayer)
@@ -14,12 +16,9 @@
     var state = deps.state;
 
     function publishPlaybackProjection(activeWordIdx, activeSegIdx) {
-      var ps = window.__piniaStores;
-      if (!ps) return;
-      if (ps.transcript) {
-        ps.transcript.activeWordIdx = activeWordIdx;
-        ps.transcript.activeSegIdx = activeSegIdx;
-      }
+      var transcriptStore = requirePiniaRuntimeStores().transcript;
+      transcriptStore.activeWordIdx = activeWordIdx;
+      transcriptStore.activeSegIdx = activeSegIdx;
     }
 
     function getChunkIndexAt(time) {

@@ -3,6 +3,7 @@ import { readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT,
   isCanonicalArchitectureSourceShapeOwner,
 } from './lib/architecture-source-shape-policy.mjs'
 
@@ -337,6 +338,6 @@ function assertCanonicalInventorySnapshot(snapshot) {
     .map((test) => test.path)
     .sort()
   assert.deepEqual(aggregatePaths, evidencePaths, 'canonical architecture aggregate and source-shape evidence must be the same execution set')
-  assert.equal(aggregatePaths.length, 78, 'canonical architecture aggregate must remain 78')
+  assert.equal(aggregatePaths.length, CANONICAL_ARCHITECTURE_SOURCE_SHAPE_COUNT, 'canonical architecture aggregate count must match policy')
   assert.deepEqual(snapshot.orphans, [], 'committed inventory must not contain orphan scripts')
 }

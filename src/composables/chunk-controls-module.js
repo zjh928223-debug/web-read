@@ -1,3 +1,5 @@
+import { runtimeState } from './runtime-state-facade.js';
+
 export function initChunkControls(deps = {}) {
   var state = deps.state;
   var toggleChunkBtn = deps.toggleChunkBtn;
@@ -32,7 +34,7 @@ export function initChunkControls(deps = {}) {
     var newState = forceState !== null ? forceState : !state.isChunkMode;
     if (newState === state.isChunkMode) return;
 
-    var runtimeWordCount = window.__state && Array.isArray(window.__state.words) ? window.__state.words.length : 0;
+    var runtimeWordCount = Array.isArray(runtimeState.words) ? runtimeState.words.length : 0;
     var preserveScrollAnchor = runtimeWordCount <= 2000;
     var anchorRatio = 0;
     var container = document.getElementById('main-app-area');

@@ -44,7 +44,7 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   );
   [
     'window.__keyboardModule.init({',
-    'window.__marksStore.toggleMark(marksStateApi.markedMap',
+    'deps.marksStore.toggleMark(',
     'getMarkKey: function () { return hotkeyStateApi.markKey; }',
     'setMarkKey: hotkeyStateApi.setMarkKey',
     'beginHoldChunkCn: chunkControlsApi.beginHoldChunkCn'

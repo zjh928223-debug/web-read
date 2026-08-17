@@ -551,6 +551,11 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAudioStore } from '../pinia-stores/audio.js'
+import { useChunkStore } from '../pinia-stores/chunk.js'
+import { useMarksStore } from '../pinia-stores/marks.js'
+import { runtimeState } from '../composables/runtime-state-facade.js'
+import { bridgeToPinia } from '../composables/pinia-bridge-module.js'
 import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
@@ -571,6 +576,9 @@ import {
 } from '../services/workflow/operation-receipt.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
+const audioStore = useAudioStore()
+const chunkStore = useChunkStore()
+const marksStore = useMarksStore()
 const FLOAT_SNAP_THRESHOLD = 96
 const FLOAT_PEEK_WIDTH = 42
 const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
@@ -1318,10 +1326,10 @@ function makeLoader() {
   const audioPlayer = document.getElementById('audio-player')
   const applyCurrentAudioMeta = (meta) => {
     if (typeof window.applyCurrentAudioMeta === 'function') window.applyCurrentAudioMeta(meta)
-    else if (window.__state) window.__state.currentAudioMeta = meta
+    else runtimeState.currentAudioMeta = meta
   }
   const publisher = createReaderSessionPublisher({
-    state: window.__state,
+    state: runtimeState,
     audioPlayer,
     mediaSource: window.__mediaSource,
     applyCurrentAudioMeta,
@@ -1329,7 +1337,7 @@ function makeLoader() {
     processChunkData: window.processChunkData,
     applyReaderMarks: replaceReaderMarksVisible,
     syncReaderMarksVisuals: syncMarkedWordVisuals,
-    bridgeToPinia: window.bridgeToPinia,
+    bridgeToPinia,
     resetChunkDisplay: resetChunkChineseDisplay,
   })
   readerSessionLoader = createYoutubeWorkflowLoader({
@@ -1878,7 +1886,7 @@ async function maybeAutoOpen(job) {
 function getReaderContentState() {
   const audio = getAudio()
   const hasAudio = !!(audio && audio.src)
-  const state = window.__state || {}
+  const state = runtimeState || {}
   const hasTranscript = Array.isArray(state.segments) && state.segments.length > 0
   if (hasAudio && hasTranscript) return { kind: 'complete' }
   if (hasAudio) return { kind: 'audio-only' }
@@ -2521,7 +2529,7 @@ function ensureCurrentJobFromAudioMeta() {
     updateReaderConflictVisibility()
     return
   }
-  const meta = window.__state && window.__state.currentAudioMeta
+  const meta = runtimeState && runtimeState.currentAudioMeta
   const jobId = meta && meta.source === 'youtube-workflow' ? String(meta.jobId || '') : ''
   if (!jobId) return
   currentJobId.value = jobId
@@ -2643,8 +2651,7 @@ function getCurrentMarkCount() {
 }
 
 function normalizeReaderMarks(marks) {
-  const state = window.__state
-  const words = state && Array.isArray(state.words) ? state.words : []
+  const words = runtimeState && Array.isArray(runtimeState.words) ? runtimeState.words : []
   const normalized = []
   for (const raw of Array.isArray(marks) ? marks : []) {
     if (!raw || typeof raw !== 'object') continue
@@ -2663,18 +2670,16 @@ function normalizeReaderMarks(marks) {
 }
 
 function getCurrentReaderMarks() {
-  const state = window.__state
-  const markedMap = state && state.markedMap instanceof Map ? state.markedMap : null
+  const markedMap = runtimeState && runtimeState.markedMap instanceof Map ? runtimeState.markedMap : null
   if (!markedMap) return []
   return normalizeReaderMarks(Array.from(markedMap.values()))
 }
 
 function syncMarkedWordVisuals(marks) {
   document.querySelectorAll('[data-word-index].marked').forEach((el) => el.classList.remove('marked'))
-  const markStore = window.__marksStore
   marks.forEach((mark) => {
-    if (markStore && typeof markStore.syncMarkedWordVisual === 'function') {
-      markStore.syncMarkedWordVisual(mark.globalIndex, true)
+    if (marksStore && typeof marksStore.syncVisual === 'function') {
+      marksStore.syncVisual(mark.globalIndex, true)
     } else {
       document.querySelectorAll(`[data-word-index="${mark.globalIndex}"]`).forEach((el) => el.classList.add('marked'))
     }
@@ -2682,19 +2687,18 @@ function syncMarkedWordVisuals(marks) {
 }
 
 function replaceReaderMarksVisible(marks) {
-  const state = window.__state
-  if (!state || !(state.markedMap instanceof Map)) return []
+  if (!runtimeState || !(runtimeState.markedMap instanceof Map)) return []
   const normalized = normalizeReaderMarks(marks)
-  state.markedMap.clear()
-  normalized.forEach((mark) => state.markedMap.set(mark.globalIndex, mark))
+  runtimeState.markedMap.clear()
+  normalized.forEach((mark) => runtimeState.markedMap.set(mark.globalIndex, mark))
   syncMarkedWordVisuals(normalized)
-  if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia()
+  bridgeToPinia()
   return normalized
 }
 
 async function applyReaderMarks(marks, options = {}) {
   const normalized = replaceReaderMarksVisible(marks)
-  if (options.persist !== false && typeof window.saveToDB === 'function') await window.saveToDB('marks', normalized)
+  if (options.persist !== false) await audioStore.saveToDB('marks', normalized)
   if (typeof window.syncAnnotationGenerationEntryStatus === 'function') await window.syncAnnotationGenerationEntryStatus()
 }
 
@@ -3166,13 +3170,11 @@ function handleBeforeUnload() {
 }
 
 function resetChunkChineseDisplay() {
-  const state = window.__state
-  if (state) {
-    state.chunkCnVisible = false
-    state.isHoldingChunkCn = false
-    state.holdPrevChunkCnVisible = null
+  if (runtimeState) {
+    runtimeState.chunkCnVisible = false
+    runtimeState.isHoldingChunkCn = false
+    runtimeState.holdPrevChunkCnVisible = null
   }
-  const chunkStore = window.__piniaStores && window.__piniaStores.chunk
   if (chunkStore) {
     chunkStore.chunkCNVisible = false
     chunkStore.isHoldingChunkCn = false

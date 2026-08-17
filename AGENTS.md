@@ -24,11 +24,8 @@ Keep this order unless you are deliberately changing the architecture and have v
 
 ```text
 index.html
-├── 3 src/stores/*.js module compatibility stores
 ├── 9 src/composables/*.js module compatibility/runtime modules
-├── src/composables/reader-runtime.js as type="module"
-├── src/composables/session-init.js as type="module"
-└── /src/main.js as type="module" for Vue + Pinia
+└── /src/main.js as type="module" for Pinia setup, runtime imports, and Vue mount
 ```
 
 `src/main.js` also imports the current utility modules, `src/composables/annotation-bubble.js`, and the annotation service modules for side effects and ES module exports.
@@ -40,8 +37,8 @@ The current state flow is:
 ```text
 src/composables/reader-runtime.js thin runtime entry
   -> src/composables/reader-runtime-assembly.js remaining runtime assembly
-  -> window.__state getter/setter proxy
-  -> pinia-bridge-module bridgeToPinia compatibility
+  -> module-owned runtimeState getter/setter proxy
+  -> module-owned pinia-bridge-module API
   -> src/pinia-stores/*.js real Pinia stores
   -> Vue components
 ```
@@ -55,14 +52,13 @@ src/composables/session-init.js thin session entry
   -> public session compatibility facades plus explicit annotation lightweight wiring
 ```
 
-There is also a compatibility layer:
+Non-component runtime store access is explicit:
 
 ```text
-src/stores/*.js -> remaining window.__themeStore / __audioStore / __marksStore surfaces
-src/main.js     -> replaces selected window store methods with Pinia delegation
+src/main.js -> configures src/pinia-stores/runtime-registry.js before importing reader/session runtime
 ```
 
-Do not confuse `src/stores/` with real Pinia stores. The real Pinia definitions are under `src/pinia-stores/`.
+The deleted `src/stores/` compatibility layer must not be reintroduced. Real Pinia definitions are under `src/pinia-stores/`.
 
 ## ECDICT Boundary
 
@@ -90,7 +86,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 
 - `src/composables/reader-runtime.js` - about 28 lines. Thin runtime entry and side-effect import chain.
 - `src/composables/reader-runtime-assembly.js` - about 51 lines. High risk. Remaining runtime assembly and compatibility wiring.
-- `src/composables/runtime-state-facade.js` - `runtimeState` and temporary `window.__state` compatibility owner.
+- `src/composables/runtime-state-facade.js` - module-owned `runtimeState` owner.
 - `src/composables/runtime-state-bindings.js` - `runtimeState` getter/setter binding layer for current `st.*` compatibility.
 - `src/composables/session-annotation-services.js` - annotation service/global lookup helpers and diagnostics emit used by session runtime modules.
 - `src/composables/session-init.js` - about 7 lines. Thin session entry only.
@@ -128,7 +124,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/reader-public-facades.js` - remaining reader public facade assignments.
 - `src/composables/annotation-bubble-resolver.js` - generated/vocab annotation bubble hit resolution.
 - `src/composables/ui-facades.js` - early toast/error facade owner.
-- `src/composables/pinia-bridge-module.js` - `bridgeToPinia` compatibility owner.
+- `src/composables/pinia-bridge-module.js` - explicit module bridge into configured Pinia stores.
 - `src/composables/chunk-controls-module.js` - AI chunk mode controls and temporary chunk control window facades.
 - `src/composables/highlight-controls-module.js` - highlight mode controls and temporary highlight window facade.
 - `src/composables/theme-controls-module.js` - theme control DOM bindings.
@@ -143,7 +139,7 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 - `src/composables/session-init.js` - thin session entry only. Do not add feature logic here.
 - `src/main.js` - Vue/Pinia mount plus adapter-to-Pinia binding.
 - `src/pinia-stores/` - 8 real Pinia stores.
-- `src/stores/` - 3 window compatibility stores.
+- `src/pinia-stores/runtime-registry.js` - explicit store access for non-component runtime modules.
 - `src/services/annotation/` - 14 ES modules for generated annotation flow.
 - Former root annotation/chunk-note artifacts were deleted after the module migration; see `docs/architecture/legacy-deletion-inventory.json` and `npm run verify:legacy-deletion` for the evidence gate.
 - `styles.css` - global CSS loaded directly by `index.html`.

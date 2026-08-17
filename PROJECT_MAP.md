@@ -1,6 +1,6 @@
 # Read-Web Current Project Map
 
-Last verified: 2026-08-12
+Last verified: 2026-08-17
 
 本地图描述隔离工作区 `E:\read-web-next`；日常版 `E:\read-web` 不属于本轮修改范围。
 
@@ -8,7 +8,6 @@ Last verified: 2026-08-12
 
 ```text
 index.html
-├── src/stores/{theme,audio,marks}.js
 ├── src/composables/glass-effects.js
 ├── src/composables/app-handlers.js
 ├── src/composables/style-editor.js
@@ -18,9 +17,10 @@ index.html
 ├── src/composables/playback-module.js
 ├── src/composables/controls-module.js
 ├── src/composables/legacy-control-bindings.js
-├── src/composables/reader-runtime.js
-├── src/composables/session-init.js
 └── src/main.js
+    ├── configure Pinia runtime registry
+    ├── import reader-runtime.js and session-init.js
+    └── mount Vue
 ```
 
 不要随意改变该顺序。兼容模块仍依赖 import side effect 和启动时 global。

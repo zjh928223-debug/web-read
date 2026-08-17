@@ -165,9 +165,6 @@
 
   <script async src="https://cse.google.com/cse.js?cx=048d09e2e2f764b7b"></script>
 
-  <script type="module" src="src/stores/theme.js"></script>
-  <script type="module" src="src/stores/audio.js"></script>
-  <script type="module" src="src/stores/marks.js"></script>
   <script type="module" src="src/composables/glass-effects.js"></script>
   <script type="module" src="src/composables/app-handlers.js"></script>
   <script type="module" src="src/composables/style-editor.js"></script>
@@ -177,10 +174,7 @@
   <script type="module" src="src/composables/playback-module.js"></script>
   <script type="module" src="src/composables/controls-module.js"></script>
   <script type="module" src="src/composables/legacy-control-bindings.js"></script>
-  <script type="module" src="src/composables/reader-runtime.js"></script>
-  <script type="module" src="src/composables/session-init.js"></script>
-
-  <!-- Vue entry (module script runs after all regular scripts) -->
+  <!-- Vue entry configures Pinia before importing reader/session runtime. -->
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

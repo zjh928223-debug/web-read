@@ -25,6 +25,7 @@ import {
 import { getAnnotationGenerationStorage } from './session-annotation-services.js';
 import { formatDictionarySuggestion } from '../dictionary/ecdict/browser/dictionary-suggestion-view.mjs';
 import { createAriaAmericanPronunciationService } from '../services/pronunciation/aria-american-pronunciation.js';
+import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
 
 const MODEL_STORAGE_KEY = 'annotationBackfillAi.model';
 const SESSION_API_KEY = '__annotationBackfillAiSessionApiKey';
@@ -176,7 +177,7 @@ async function savePreviewGeneratedItems(windowObject, items) {
 }
 
 function setPreviewWordIndexes(windowObject, indexes) {
-  const stores = windowObject && windowObject.__piniaStores;
+  const stores = getPiniaRuntimeStores();
   if (stores && stores.transcript) {
     stores.transcript.previewVocabularyWordIndexes = Array.isArray(indexes) ? indexes.slice() : [];
   }

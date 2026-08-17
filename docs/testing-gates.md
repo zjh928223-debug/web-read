@@ -66,10 +66,9 @@ browser=EXCLUDED, performance=EXCLUDED, release=EXCLUDED
 ```
 
 `verify:architecture:source-shape` 执行清单中有 owner 的 focused guards。
-仍待 10.5 生产迁移的 `runtime-state-source-check.cjs` 和
-`video-player-module-check.cjs` 会列在 architecture 的 excluded 清单中，并在
-迁移完成后恢复；聚合会探测这两个预期失败，若检查转绿或失败原因漂移则要求
-立即删除排除项。它们不能被当作行为或发布证据。其他历史
+10.5 完成后，`runtime-state-source-check.cjs` 和
+`video-player-module-check.cjs` 已恢复到 canonical architecture aggregate，不再有
+10.5 临时排除。其他历史
 `verify:<feature>` 名称继续作为兼容入口，canonical aggregate 是 fast/full 文档
 和门禁使用的唯一聚合入口。
 

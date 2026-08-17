@@ -2,7 +2,7 @@ const pendingNotifications = [];
 const MAX_PENDING_NOTIFICATIONS = 20;
 
 function getPiniaUiStore() {
-  const stores = window.__piniaStores;
+  const stores = getPiniaRuntimeStores();
   return stores && stores.ui ? stores.ui : null;
 }
 
@@ -40,3 +40,4 @@ export function flushPendingUiNotifications() {
 
 window.showToast = showToast;
 window.showError = showError;
+import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';

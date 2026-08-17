@@ -25,8 +25,9 @@ assert.ok(featureDepsSource.includes('bridgeToPinia: bootstrap.bridgeToPinia'), 
 assert.ok(bootstrapSource.includes("import { initPiniaBridge } from './pinia-bridge-module.js'"));
 assert.ok(bootstrapSource.includes('var bridgeToPinia = initPiniaBridge({'), 'bootstrap runtime should initialize the bridge module');
 assert.ok(bridgeSource.includes('function bridgeToPinia()'), 'bridge module should own bridgeToPinia implementation');
-assert.ok(bridgeSource.includes('var ps = window.__piniaStores;'), 'bridgeToPinia should write directly to Pinia stores');
-assert.ok(bridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'), 'bridge module should own window.bridgeToPinia');
+assert.ok(bridgeSource.includes('var ps = requirePiniaRuntimeStores();'), 'bridgeToPinia should resolve the configured Pinia stores');
+assert.equal(bridgeSource.includes('window.__piniaStores'), false, 'bridge must not read the retired global store bag');
+assert.equal(bridgeSource.includes('window.bridgeToPinia'), false, 'bridge must not publish a window facade');
 assert.ok(mainSource.includes('window.__transcriptState.bindPiniaStore(transcriptStore)'));
 assert.ok(mainSource.includes('window.__chunkState.bindPiniaStore(chunkStore)'));
 assert.ok(mainSource.includes('window.__clozeState.bindPiniaStore(clozeStore)'));

@@ -61,10 +61,7 @@ assert.ok(
   'reader-runtime-assembly should import runtimeState from the runtime-state facade'
 );
 
-assert.ok(
-  runtimeStateFacadeSource.includes('window.__state = runtimeState;'),
-  'runtime-state-facade should expose runtimeState through the temporary window.__state compatibility facade'
-);
+assert.equal(runtimeStateFacadeSource.includes('window.__state'), false, 'runtimeState should remain module-owned');
 
 assert.ok(
   importRuntimeSource.includes('configureSessionStateProvider(deps.runtimeState)'),

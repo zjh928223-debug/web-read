@@ -250,36 +250,6 @@ async function verifyCurrentPiniaStoreContract() {
   await verifyVersionChangeContract(loadCurrentAudioStore)
 }
 
-async function createLegacyFacade(database) {
-  const sourceUrl = new URL('../src/stores/audio.js', import.meta.url)
-  const context = {
-    Date,
-    Error,
-    Promise,
-    indexedDB: {
-      open() {
-        const request = new FakeRequest()
-        queueMicrotask(() => request.onsuccess?.({ target: { result: database } }))
-        return request
-      },
-    },
-    queueMicrotask,
-    window: {},
-  }
-  vm.runInNewContext(await readFile(sourceUrl, 'utf8'), context, { filename: 'src/stores/audio.js' })
-  await context.window.__audioStore.initDB()
-  return context.window.__audioStore
-}
-
-async function verifyLegacyFacadeContract() {
-  await verifyTransactionWriterContract(async (database) => (await createLegacyFacade(database)).saveToDB)
-  await verifyTransactionDeleteContract(async (database) => {
-    const facade = await createLegacyFacade(database)
-    return facade.deleteFromDB
-  })
-  await verifyVersionChangeContract(createLegacyFacade)
-}
-
 async function verifyReferenceWriterProvesHarness() {
   await verifyTransactionWriterContract((database) => (key, value) => new Promise((resolve, reject) => {
     const transaction = database.transaction(['files'], 'readwrite')
@@ -304,7 +274,6 @@ async function verifyReferenceWriterProvesHarness() {
 async function main() {
   await verifyReferenceWriterProvesHarness()
   await verifyCurrentPiniaStoreContract()
-  await verifyLegacyFacadeContract()
   console.log('audio store transaction contract check passed')
 }
 

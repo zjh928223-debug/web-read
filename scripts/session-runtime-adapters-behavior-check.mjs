@@ -17,6 +17,8 @@ globalThis.__sessionAdapterBehaviorBindings = {
     calls.push({ kind: 'lifecycle', deps })
     return { kind: 'lifecycle-runtime' }
   },
+  requirePiniaRuntimeStores() { return { audio: globalThis.__sessionBehaviorAudioStore } },
+  initPiniaBridge() { return function bridgeToPinia() {} },
 }
 const declarations = Object.keys(globalThis.__sessionAdapterBehaviorBindings)
   .map((name) => `const ${name} = globalThis.__sessionAdapterBehaviorBindings.${name};`)
@@ -39,6 +41,9 @@ const windowObject = {
   initDB() {},
   showToast() {},
   __annotationLightweightModule: { kind: 'annotation-module' },
+}
+globalThis.__sessionBehaviorAudioStore = {
+  saveToDB() {}, loadFromDB() {}, deleteFromDB() {}, initDB() {}
 }
 const documentObject = {
   getElementById(id) { return elements.get(id) || null },
@@ -63,7 +68,7 @@ assert.equal(annotationDeps.windowObject, windowObject)
 assert.equal(annotationDeps.documentObject, documentObject)
 assert.equal(annotationDeps.domRefs.audioPlayer, elements.get('audio-player'))
 assert.equal(annotationDeps.domRefs.annotationMarkCountEl, elements.get('annotation-mark-count'))
-assert.equal(annotationDeps.globals.saveToDB, windowObject.saveToDB)
+assert.equal(annotationDeps.globals.saveToDB.name, 'bound saveToDB')
 assert.equal(annotationDeps.globals.annotationLightweightModule, windowObject.__annotationLightweightModule)
 
 const lifecycleDeps = calls[1].deps
@@ -72,5 +77,5 @@ assert.equal(lifecycleDeps.namespace, windowObject._ns)
 assert.equal(lifecycleDeps.annotationRuntime, annotationRuntime)
 assert.equal(lifecycleDeps.domRefs.hotkeyInput, elements.get('hotkey-input'))
 assert.equal(lifecycleDeps.runtimeDeps.localStorageApi, windowObject.localStorage)
-assert.equal(lifecycleDeps.globals.loadFromDB, windowObject.loadFromDB)
+assert.equal(lifecycleDeps.globals.loadFromDB.name, 'bound loadFromDB')
 console.log('session runtime adapters behavior check passed')

@@ -22,7 +22,9 @@ async function main() {
     .concat('\nexport { createSessionRuntimeAdapters };');
   const declarations = [
     'const createSessionAnnotationRuntime = globalThis.__sessionAdapterBindings.createSessionAnnotationRuntime;',
-    'const startSessionLifecycleRuntime = globalThis.__sessionAdapterBindings.startSessionLifecycleRuntime;'
+    'const startSessionLifecycleRuntime = globalThis.__sessionAdapterBindings.startSessionLifecycleRuntime;',
+    'const requirePiniaRuntimeStores = globalThis.__sessionAdapterBindings.requirePiniaRuntimeStores;',
+    'const initPiniaBridge = globalThis.__sessionAdapterBindings.initPiniaBridge;'
   ].join('\n');
   globalThis.__sessionAdapterBindings = {
     createSessionAnnotationRuntime(deps) {
@@ -32,7 +34,9 @@ async function main() {
     startSessionLifecycleRuntime(deps) {
       calls.push(['lifecycle', deps]);
       return { kind: 'lifecycle' };
-    }
+    },
+    requirePiniaRuntimeStores() { return { audio: globalThis.__sessionAudioStore }; },
+    initPiniaBridge() { return function bridgeToPinia() {}; }
   };
   const encodedSource = Buffer.from(`${declarations}\n${executableSource}`, 'utf8').toString('base64');
   const { createSessionRuntimeAdapters } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
@@ -53,6 +57,9 @@ async function main() {
     initDB() {},
     showToast() {},
     __annotationLightweightModule: { id: 'annotation-lightweight' }
+  };
+  globalThis.__sessionAudioStore = {
+    saveToDB() {}, loadFromDB() {}, deleteFromDB() {}, initDB() {}
   };
   const documentObject = {
     getElementById(id) {
@@ -79,7 +86,7 @@ async function main() {
   assert.equal(annotationDeps.documentObject, documentObject);
   assert.equal(annotationDeps.domRefs.audioPlayer.id, 'audio-player');
   assert.equal(annotationDeps.domRefs.annotationMarkCountEl.id, 'annotation-mark-count');
-  assert.equal(annotationDeps.globals.saveToDB, windowObject.saveToDB);
+  assert.equal(annotationDeps.globals.saveToDB.name, 'bound saveToDB');
   assert.equal(annotationDeps.globals.showToast, windowObject.showToast);
   assert.equal(annotationDeps.globals.annotationLightweightModule, windowObject.__annotationLightweightModule);
 
@@ -89,7 +96,7 @@ async function main() {
   assert.equal(lifecycleDeps.annotationRuntime, annotationRuntime);
   assert.equal(lifecycleDeps.domRefs.hotkeyInput.id, 'hotkey-input');
   assert.equal(lifecycleDeps.runtimeDeps.localStorageApi, windowObject.localStorage);
-  assert.equal(lifecycleDeps.globals.loadFromDB, windowObject.loadFromDB);
+  assert.equal(lifecycleDeps.globals.loadFromDB.name, 'bound loadFromDB');
 
   console.log('session runtime adapters check passed');
 }

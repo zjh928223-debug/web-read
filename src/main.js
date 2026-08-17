@@ -32,64 +32,26 @@ import { useClozeStore } from './pinia-stores/cloze.js'
 import { useTranscriptStore } from './pinia-stores/transcript.js'
 import { useChunkStore } from './pinia-stores/chunk.js'
 import { useAnnotationStore } from './pinia-stores/annotation.js'
+import { configurePiniaRuntimeStores } from './pinia-stores/runtime-registry.js'
 
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
-app.mount('#vue-root')
 
-// === Bridge: Pinia stores → window.__xxxStore (for app.js compatibility) ===
-// After Pinia stores are created, they become the source of truth.
-// The IIFE stores (loaded before app.js) now delegate to Pinia.
+const themeStore = useThemeStore(pinia)
+const uiStore = useUiStore(pinia)
+const audioStore = useAudioStore(pinia)
+const marksStore = useMarksStore(pinia)
+const clozeStore = useClozeStore(pinia)
+const transcriptStore = useTranscriptStore(pinia)
+const chunkStore = useChunkStore(pinia)
+const annotationStore = useAnnotationStore(pinia)
 
-const themeStore = useThemeStore()
-const uiStore = useUiStore()
-const audioStore = useAudioStore()
-const marksStore = useMarksStore()
-const clozeStore = useClozeStore()
-const transcriptStore = useTranscriptStore()
-const chunkStore = useChunkStore()
-const annotationStore = useAnnotationStore()
-
-// Bridge theme — replace IIFE store methods with Pinia delegation
-if (window.__themeStore) {
-  var origTheme = window.__themeStore
-  origTheme.applyMode = function (theme, persist) { return themeStore.applyMode(theme, persist) }
-  origTheme.applyCustom = function (colors, persist) { return themeStore.applyCustom(colors, persist) }
-  origTheme.init = function () { return themeStore.init() }
-  origTheme.getStoredCustomThemeColors = function () { return themeStore.getStoredCustomThemeColors() }
-  origTheme.openCustomThemePanel = function () { return themeStore.openCustomPanel() }
-  origTheme.closeCustomThemePanel = function () { return themeStore.closeCustomPanel() }
-  // Keep CUSTOM_THEME_DEFAULTS accessible
-  origTheme.CUSTOM_THEME_DEFAULTS = themeStore.CUSTOM_THEME_DEFAULTS
-}
-
-// Bridge Audio — replace DB ops
-if (window.__audioStore) {
-  var origAudio = window.__audioStore
-  origAudio.initDB = function () { return audioStore.initDB() }
-  origAudio.saveToDB = function (id, data) { return audioStore.saveToDB(id, data) }
-  origAudio.loadFromDB = function (id) { return audioStore.loadFromDB(id) }
-  origAudio.deleteFromDB = function (id) { return audioStore.deleteFromDB(id) }
-  origAudio.clearDBStore = function () { return audioStore.clearDBStore() }
-  origAudio.getDb = function () { return audioStore.getDb() }
-}
-
-// Bridge Marks
-if (window.__marksStore) {
-  var origMarks = window.__marksStore
-  origMarks.toggleMark = function (mm, cwi, w, sdb, saf) { return marksStore.toggle(mm, cwi, w, sdb, saf) }
-  origMarks.syncMarkedWordVisual = function (gi, im) { return marksStore.syncVisual(gi, im) }
-  origMarks.exportMarksToArray = function (mm) { return marksStore.exportToArray(mm) }
-}
-
-// Expose Pinia stores for Vue component access
-window.__piniaStores = {
+configurePiniaRuntimeStores({
   theme: themeStore, ui: uiStore, audio: audioStore, marks: marksStore,
   cloze: clozeStore, transcript: transcriptStore, chunk: chunkStore,
   annotation: annotationStore
-}
-flushPendingUiNotifications()
+})
 
 // Phase 8: adapters loaded before Pinia keep startup data until stores exist.
 if (window.__transcriptState && typeof window.__transcriptState.bindPiniaStore === 'function') {
@@ -102,7 +64,17 @@ if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'functi
   window.__clozeState.bindPiniaStore(clozeStore)
 }
 
-console.log('[vue] Phase 8 adapter data synced to Pinia')
+console.log('[vue] runtime adapters bound to Pinia')
+
+themeStore.init()
+
+// Pinia is configured before the legacy reader/session assembly starts, so
+// compatibility stores and global Pinia bridges are no longer required.
+await import('./composables/reader-runtime.js')
+await import('./composables/session-init.js')
+
+app.mount('#vue-root')
+flushPendingUiNotifications()
 
 // Vue owns both reader views. Keep the legacy DOM shell only as a hidden
 // compatibility anchor for runtime adapters that still need its element.
@@ -110,7 +82,3 @@ const oldContainer = document.getElementById('transcript-container')
 if (oldContainer) {
   oldContainer.style.display = 'none'
 }
-
-// Sync Pinia store state from IIFE store (app.js has already called init())
-// Read current theme from localStorage to sync Pinia state
-themeStore.init()

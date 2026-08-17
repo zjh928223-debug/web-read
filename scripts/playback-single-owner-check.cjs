@@ -5,7 +5,10 @@ const vm = require('node:vm')
 
 const repoRoot = path.resolve(__dirname, '..')
 const sourcePath = path.join(repoRoot, 'src', 'composables', 'playback-module.js')
-const source = fs.readFileSync(sourcePath, 'utf8')
+const source = fs.readFileSync(sourcePath, 'utf8').replace(
+  "import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';",
+  'function requirePiniaRuntimeStores() { return globalThis.__playbackTestStores }'
+)
 
 const writes = { currentWordIndex: 0, highlightMode: 0, activeChunkIdx: 0, activeWordIdx: 0, activeSegIdx: 0 }
 const transcriptStore = countedStore(['currentWordIndex', 'highlightMode', 'activeWordIdx', 'activeSegIdx'], writes)
@@ -43,7 +46,8 @@ transcriptStore.highlightMode = 1
 resetWrites()
 
 const sandbox = {
-  window: { __piniaStores: { transcript: transcriptStore, chunk: chunkStore } },
+  window: {},
+  __playbackTestStores: { transcript: transcriptStore, chunk: chunkStore },
   document: {
     getElementById(id) {
       if (id === 'chunk-vue-container') return chunkRoot

@@ -25,9 +25,6 @@ assert.ok(
   facadeSource.includes('export const runtimeState = {};'),
   'runtime-state-facade should own runtimeState'
 );
-assert.ok(
-  facadeSource.includes('window.__state = runtimeState;'),
-  'runtime-state-facade should expose the temporary window.__state alias'
-);
+assert.equal(facadeSource.includes('window.__state'), false, 'runtime-state-facade should not expose a window alias');
 
 console.log('runtime state facade check passed');

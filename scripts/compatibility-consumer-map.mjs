@@ -40,13 +40,22 @@ const retiredCompatibilityGlobals = [
   '__uiStore',
   '__transcriptStore',
   '__chunkStore',
-  '__annotationStore'
+  '__annotationStore',
+  '__themeStore',
+  '__audioStore',
+  '__marksStore',
+  '__piniaStores',
+  '__state',
+  'bridgeToPinia'
 ]
 const retiredCompatibilityScripts = [
   '/src/stores/ui.js',
   '/src/stores/transcript.js',
   '/src/stores/chunk.js',
-  '/src/stores/annotation.js'
+  '/src/stores/annotation.js',
+  '/src/stores/theme.js',
+  '/src/stores/audio.js',
+  '/src/stores/marks.js'
 ]
 
 const sourceFiles = walk(path.join(root, 'src'))

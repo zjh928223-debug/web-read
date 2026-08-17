@@ -23,13 +23,11 @@ Read-Web 是本地英语学习应用，前端为 Vite + Vue 3 + Pinia，材料�
 
 ```text
 index.html
-├── 3 个 src/stores 兼容 store
 ├── glass/app/style/import/keyboard/media/playback/controls/legacy bindings
-├── src/composables/reader-runtime.js
-├── src/composables/session-init.js
 └── src/main.js
     ├── 创建 Vue 与 Pinia
-    ├── 绑定兼容 state adapter
+    ├── 配置显式 runtime store registry 并绑定 state adapter
+    ├── 导入 reader/session 薄入口
     └── 挂载 App.vue
 ```
 
@@ -38,8 +36,8 @@ index.html
 ## 3. 状态与数据所有权
 
 - `src/pinia-stores/` 是真实 Pinia 状态所有者。
-- `src/stores/` 是预 Pinia 启动兼容层，仅为仍未迁移的 `window.*` 调用者服务；UI toast/error 已直接由 Pinia `ui` store 与 `ui-facades` 提供，不再加载 UI compatibility store。
-- `runtime-state-facade.js`、state adapter 和 `pinia-bridge-module.js` 是待收敛的兼容边界。
+- theme/audio/marks/UI 状态由 `src/pinia-stores/` 单独拥有；旧 `src/stores/` 启动兼容层已删除。
+- `runtimeState` 和 `bridgeToPinia` 只通过模块导入使用；`window.__state`、`window.__piniaStores` 与 `window.bridgeToPinia` 已删除。
 - `ApplicationPersistence` 统一打开 `SeekPlayerDB` v1/files，并以 transaction complete 作为成功条件。
 - YouTube Reader Session 已具备 generation/abort/latest-wins 与 committed manifest/revision/contentId 校验；损坏的 committed session fail-closed。
 - marks/activity 通过 latest-wins ledger 合并写入。

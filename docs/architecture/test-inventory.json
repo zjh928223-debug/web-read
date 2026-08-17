@@ -3687,8 +3687,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
-          "asserts-source-text",
-          "includes-source-text"
+          "asserts-file-shape"
         ],
         "sourceRead": true,
         "browser": false,
@@ -3714,7 +3713,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [],
-        "sourceRead": true,
+        "sourceRead": false,
         "browser": false,
         "performance": false,
         "release": false,
@@ -5222,7 +5221,7 @@
       "invocation": "direct",
       "evidence": {
         "sourceShape": [
-          "includes-source-text"
+          "asserts-file-shape"
         ],
         "sourceRead": true,
         "browser": false,
@@ -7226,8 +7225,12 @@
         "architecture",
         "behavior"
       ],
-      "aggregates": [],
-      "architectureEvidence": [],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
+      "architectureEvidence": [
+        "source-shape"
+      ],
       "owner": "package.json#scripts.verify:runtime-state-source",
       "owners": [
         "package.json#scripts.verify:runtime-state-source"
@@ -8728,8 +8731,12 @@
         "architecture",
         "behavior"
       ],
-      "aggregates": [],
-      "architectureEvidence": [],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
+      "architectureEvidence": [
+        "source-shape"
+      ],
       "owner": "package.json#scripts.verify:video-player",
       "owners": [
         "package.json#scripts.verify:video-player"

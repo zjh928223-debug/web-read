@@ -1,3 +1,5 @@
+import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+
 (function () {
   var arrayFields = new Set(['clozeItems', 'clozeAnswerState']);
   var storeFieldMap = {
@@ -24,10 +26,8 @@
 
   function getStore() {
     if (boundStore) return boundStore;
-    if (typeof window !== 'undefined' && window.__piniaStores && window.__piniaStores.cloze) {
-      return window.__piniaStores.cloze;
-    }
-    return null;
+    var stores = getPiniaRuntimeStores();
+    return stores && stores.cloze ? stores.cloze : null;
   }
 
   function hasStoreField(store, key) {

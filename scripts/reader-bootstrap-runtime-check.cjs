@@ -104,8 +104,8 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     'var chunkState = globalObject.__chunkState;',
     'var clozeState = globalObject.__clozeState;',
     'var playbackState = globalObject.__playbackState;',
-    'return getWindow().__audioStore.saveToDB(id, data);',
-    'return getWindow().__audioStore.loadFromDB(id);',
+    'return audioStore.saveToDB(id, data);',
+    'return audioStore.loadFromDB(id);',
     'var runtimeDeps = collectReaderRuntimeDeps({',
     'var audioIdentityApi = initAudioIdentity({',
     'hotkeyStateApi: initHotkeyState()',
@@ -151,6 +151,10 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
     .replace(
       "import { initPiniaBridge } from './pinia-bridge-module.js';\n",
       'function initPiniaBridge(deps) { globalThis.__bridgeInput = deps; return function bridgeToPinia() {} }\n'
+    )
+    .replace(
+      "import { requirePiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';\n",
+      'function requirePiniaRuntimeStores() { return globalThis.__runtimeStores }\n'
     );
 
   globalThis.__runtimeDepsInput = null;
@@ -172,21 +176,15 @@ const assemblySource = fs.readFileSync(path.join(repoRoot, 'src', 'composables',
   const { initReaderBootstrapRuntime } = await import(`data:text/javascript;base64,${encodedSource}#${Date.now()}`);
 
   const calls = [];
+  globalThis.__runtimeStores = { audio: {
+    saveToDB(id, data) { calls.push(['save', id, data]); return 'saved'; },
+    loadFromDB(id) { calls.push(['load', id]); return 'loaded'; }
+  } };
   const fakeWindow = {
     __transcriptState: { segments: [{ id: 's1' }] },
     __chunkState: { chunkItems: [] },
     __clozeState: { clozeItems: [] },
-    __playbackState: { autoFollow: true },
-    __audioStore: {
-      saveToDB(id, data) {
-        calls.push(['save', id, data]);
-        return 'saved';
-      },
-      loadFromDB(id) {
-        calls.push(['load', id]);
-        return 'loaded';
-      }
-    }
+    __playbackState: { autoFollow: true }
   };
   const api = initReaderBootstrapRuntime({
     getWindow: () => fakeWindow

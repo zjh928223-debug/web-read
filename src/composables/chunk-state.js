@@ -1,3 +1,5 @@
+import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+
 (function () {
   var arrayFields = new Set(['chunkItems']);
   var booleanFields = new Set([
@@ -60,10 +62,8 @@
 
   function getStore() {
     if (boundStore) return boundStore;
-    if (typeof window !== 'undefined' && window.__piniaStores && window.__piniaStores.chunk) {
-      return window.__piniaStores.chunk;
-    }
-    return null;
+    var stores = getPiniaRuntimeStores();
+    return stores && stores.chunk ? stores.chunk : null;
   }
 
   function hasStoreField(store, key) {

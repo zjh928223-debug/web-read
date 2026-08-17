@@ -1,3 +1,5 @@
+import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+
 (function () {
   var arrayFields = new Set(['segments', 'words', 'wordStarts']);
   var numberFields = new Set(['currentWordIndex', 'highlightMode', 'activeWordIdx', 'activeSegIdx']);
@@ -24,10 +26,8 @@
 
   function getStore() {
     if (boundStore) return boundStore;
-    if (typeof window !== 'undefined' && window.__piniaStores && window.__piniaStores.transcript) {
-      return window.__piniaStores.transcript;
-    }
-    return null;
+    var stores = getPiniaRuntimeStores();
+    return stores && stores.transcript ? stores.transcript : null;
   }
 
   function getField(key) {

@@ -17,7 +17,6 @@ function listFiles(dir) {
 }
 
 listFiles(composablesDir).forEach((filePath) => {
-  if (filePath === runtimeStateFacadePath) return;
   const source = fs.readFileSync(filePath, 'utf8');
   assert.equal(
     source.includes('window.__state'),
@@ -31,10 +30,7 @@ assert.ok(
   'runtime-state-facade should own the runtimeState object'
 );
 
-assert.ok(
-  runtimeStateFacadeSource.includes('window.__state = runtimeState;'),
-  'runtime-state-facade should expose runtimeState only as the temporary window.__state facade'
-);
+assert.equal(runtimeStateFacadeSource.includes('window.__state'), false, 'runtime-state-facade must not publish a window.__state facade');
 
 assert.equal(
   /state:\s*window\.__state/.test(appSource),

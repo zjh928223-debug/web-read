@@ -10,14 +10,20 @@ const facadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', '
 
 async function verifyEarlyNotificationQueue() {
   const priorWindow = global.window;
+  let runtimeStores = null;
   global.window = {};
   try {
-    const moduleUrl = `data:text/javascript;base64,${Buffer.from(facadeSource).toString('base64')}`;
+    global.__getUiFacadeRuntimeStores = () => runtimeStores;
+    const testableSource = facadeSource.replace(
+      "import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';",
+      'const getPiniaRuntimeStores = globalThis.__getUiFacadeRuntimeStores;'
+    );
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(testableSource).toString('base64')}`;
     const facade = await import(moduleUrl);
     facade.showToast('early toast', 'info', 10);
     facade.showError('EARLY_ERROR', 'startup');
     const calls = [];
-    global.window.__piniaStores = { ui: {
+    runtimeStores = { ui: {
       showToast(...args) { calls.push(['showToast', ...args]); },
       showError(...args) { calls.push(['showError', ...args]); }
     } };
@@ -28,6 +34,7 @@ async function verifyEarlyNotificationQueue() {
     ]);
     assert.equal(facade.flushPendingUiNotifications(), 0);
   } finally {
+    delete global.__getUiFacadeRuntimeStores;
     global.window = priorWindow;
   }
 }

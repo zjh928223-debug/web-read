@@ -1,3 +1,5 @@
+import { runtimeState } from './runtime-state-facade.js'
+
 function getWordCount(transcript) {
   const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : []
   return segments.reduce((total, segment) => total + (Array.isArray(segment.words) ? segment.words.length : 0), 0)
@@ -239,7 +241,7 @@ async function resolveReaderSessionIdentity(manifest, requestedJobId, prepared) 
 }
 
 function defaultHasCurrentContent() {
-  const state = typeof window !== 'undefined' ? window.__state : null
+  const state = runtimeState
   if (state && Array.isArray(state.segments) && state.segments.length) return true
   const audio = typeof document !== 'undefined' ? document.getElementById('audio-player') : null
   return !!(audio && audio.src)

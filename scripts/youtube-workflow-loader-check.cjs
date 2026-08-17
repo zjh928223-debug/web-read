@@ -4,7 +4,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 async function importModule(filePath) {
-  const source = fs.readFileSync(filePath, 'utf8');
+  const source = fs.readFileSync(filePath, 'utf8').replace(
+    "import { runtimeState } from './runtime-state-facade.js'",
+    'const runtimeState = {}'
+  );
   const encoded = Buffer.from(source, 'utf8').toString('base64');
   return import(`data:text/javascript;base64,${encoded}#${Date.now()}`);
 }

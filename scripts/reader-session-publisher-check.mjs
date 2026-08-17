@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 async function importSource(pathname) {
-  const source = await fs.readFile(new URL(pathname, import.meta.url), 'utf8')
+  const source = (await fs.readFile(new URL(pathname, import.meta.url), 'utf8')).replace(
+    "import { runtimeState } from './runtime-state-facade.js'",
+    'const runtimeState = {}'
+  )
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}#${Math.random()}`)
 }
 

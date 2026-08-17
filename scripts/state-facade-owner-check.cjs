@@ -136,7 +136,7 @@ assert.ok(importRuntimeSource.includes("import { configureRuntimeStateBindings }
 assert.ok(importRuntimeSource.includes('configureRuntimeStateBindings({'));
 assert.equal(appSource.includes('Object.defineProperty(runtimeState,'), false);
 assert.ok(runtimeStateFacadeSource.includes('export const runtimeState = {};'));
-assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'));
+assert.equal(runtimeStateFacadeSource.includes('window.__state'), false);
 assert.ok(runtimeStateBindingsSource.includes('export function configureRuntimeStateBindings'));
 assert.ok(runtimeStateBindingsSource.includes('Object.defineProperty(runtimeState, field, {'));
 assert.equal(featureDepsSource.includes('notesSessionRuntime'), false);

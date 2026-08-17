@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
@@ -48,10 +48,14 @@ async function main() {
 
   await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(
-    () => typeof window.processTranscript === 'function' && window.__piniaStores,
+    () => typeof window.processTranscript === 'function',
     null,
     { timeout: 10000 }
   );
+  await page.evaluate(async () => {
+    window.__interactionRuntimeState = (await import('/src/composables/runtime-state-facade.js')).runtimeState;
+    window.__interactionStores = (await import('/src/pinia-stores/runtime-registry.js')).requirePiniaRuntimeStores();
+  });
 
   const annotationImportUi = await page.evaluate(() => ({
     hasLightweightExportButton: !!document.getElementById('btn-export-annotation-lightweight'),
@@ -66,8 +70,8 @@ async function main() {
   }));
 
   const defaultHighlightUi = await page.evaluate(() => ({
-    stateHighlightMode: window.__state.highlightMode,
-    piniaHighlightMode: window.__piniaStores.transcript.highlightMode,
+    stateHighlightMode: window.__interactionRuntimeState.highlightMode,
+    piniaHighlightMode: window.__interactionStores.transcript.highlightMode,
     buttonText: document.getElementById('highlight-mode-btn')
       ? document.getElementById('highlight-mode-btn').textContent.trim()
       : '',
@@ -124,7 +128,7 @@ async function main() {
   await page.waitForSelector('#word-2', { timeout: 10000 });
   await page.click('#word-2');
   await page.waitForFunction(
-    () => window.__piniaStores.transcript.currentWordIndex === 2,
+    () => window.__interactionStores.transcript.currentWordIndex === 2,
     null,
     { timeout: 5000 }
   );
@@ -137,9 +141,9 @@ async function main() {
     const word = document.getElementById('word-2');
     return {
       time: audio.currentTime,
-      activeWordIdx: window.__piniaStores.transcript.activeWordIdx,
-      activeSegIdx: window.__piniaStores.transcript.activeSegIdx,
-      currentWordIndex: window.__piniaStores.transcript.currentWordIndex,
+      activeWordIdx: window.__interactionStores.transcript.activeWordIdx,
+      activeSegIdx: window.__interactionStores.transcript.activeSegIdx,
+      currentWordIndex: window.__interactionStores.transcript.currentWordIndex,
       marked: !!(word && word.classList.contains('marked')),
       wordStart: word ? word.dataset.wordStart : ''
     };
@@ -168,7 +172,7 @@ async function main() {
   const hotkeySingleKeyCapture = await page.evaluate(() => ({
     backwardInput: document.getElementById('hotkey-backward-input').value,
     storedBackwardKey: localStorage.getItem('st.backwardKey'),
-    stateBackwardKey: window.__state.backwardKey
+    stateBackwardKey: window.__interactionRuntimeState.backwardKey
   }));
   await page.click('#hotkey-backward-input');
   await page.keyboard.press('z');
@@ -203,14 +207,14 @@ async function main() {
       value: input.value,
       waiting: input.classList.contains('is-hotkey-waiting'),
       storedChunkCnKey: localStorage.getItem('st.chunkCnKey'),
-      stateChunkCnKey: window.__state.chunkCnKey
+      stateChunkCnKey: window.__interactionRuntimeState.chunkCnKey
     };
   });
   await page.keyboard.press('Escape');
   const hotkeyImeNormalization = await page.evaluate(() => ({
     chunkCnInput: document.getElementById('hotkey-chunk-cn-input').value,
     storedChunkCnKey: localStorage.getItem('st.chunkCnKey'),
-    stateChunkCnKey: window.__state.chunkCnKey,
+    stateChunkCnKey: window.__interactionRuntimeState.chunkCnKey,
     inputLang: document.getElementById('hotkey-chunk-cn-input').getAttribute('lang'),
     autocomplete: document.getElementById('hotkey-chunk-cn-input').getAttribute('autocomplete'),
     spellcheck: document.getElementById('hotkey-chunk-cn-input').getAttribute('spellcheck')
@@ -229,10 +233,10 @@ async function main() {
     return {
       playbackRate: audio.playbackRate,
       speed125Active: !!document.querySelector('.speed-btn[data-speed="1.25"].speed-button-active'),
-      autoFollow: window.__state.autoFollow,
+      autoFollow: window.__interactionRuntimeState.autoFollow,
       followButtonOn: document.getElementById('toggle-follow').classList.contains('on'),
-      highlightMode: window.__state.highlightMode,
-      piniaHighlightMode: window.__piniaStores.transcript.highlightMode,
+      highlightMode: window.__interactionRuntimeState.highlightMode,
+      piniaHighlightMode: window.__interactionStores.transcript.highlightMode,
       activeSentence: document.querySelector('.sentence-active') ? document.querySelector('.sentence-active').id : ''
     };
   });
@@ -240,7 +244,7 @@ async function main() {
   await page.click('#highlight-mode-btn');
   await page.evaluate(() => window.forceUpdateUI(document.getElementById('audio-player').currentTime));
   await page.waitForFunction(
-    () => window.__state.highlightMode === 1 && window.__piniaStores.transcript.highlightMode === 1,
+    () => window.__interactionRuntimeState.highlightMode === 1 && window.__interactionStores.transcript.highlightMode === 1,
     null,
     { timeout: 5000 }
   );
@@ -256,14 +260,14 @@ async function main() {
         { id: 2, chunks: [{ en: 'Third line', zh: 'third line', a: 1, b: 2 }] }
       ]
     });
-    if (window.__state.highlightMode !== 2) {
+    if (window.__interactionRuntimeState.highlightMode !== 2) {
       window.cycleHighlightMode();
     }
   });
   await page.waitForSelector('#chunk-1', { timeout: 10000 });
   const chunkAutoEntry = await page.evaluate(() => ({
-    stateIsChunkMode: window.__state.isChunkMode,
-    piniaIsChunkMode: window.__piniaStores.chunk.isChunkMode,
+    stateIsChunkMode: window.__interactionRuntimeState.isChunkMode,
+    piniaIsChunkMode: window.__interactionStores.chunk.isChunkMode,
     buttonActive: document.getElementById('toggle-chunk-btn').classList.contains('active'),
     buttonText: document.getElementById('toggle-chunk-btn').textContent.trim()
   }));
@@ -276,12 +280,12 @@ async function main() {
     const activeStyle = activeCn ? getComputedStyle(activeCn) : null;
     const inactiveStyle = inactiveCn ? getComputedStyle(inactiveCn) : null;
     return {
-      stateMode: window.__state.chunkCnMode,
-      stateHold: window.__state.chunkCnHoldMode,
-      stateVisible: window.__state.chunkCnVisible,
-      piniaFocus: window.__piniaStores.chunk.chunkFocusMode,
-      piniaHold: window.__piniaStores.chunk.chunkCNHoldMode,
-      piniaVisible: window.__piniaStores.chunk.chunkCNVisible,
+      stateMode: window.__interactionRuntimeState.chunkCnMode,
+      stateHold: window.__interactionRuntimeState.chunkCnHoldMode,
+      stateVisible: window.__interactionRuntimeState.chunkCnVisible,
+      piniaFocus: window.__interactionStores.chunk.chunkFocusMode,
+      piniaHold: window.__interactionStores.chunk.chunkCNHoldMode,
+      piniaVisible: window.__interactionStores.chunk.chunkCNVisible,
       focusButtonText: document.getElementById('btn-chunk-focus').textContent.trim(),
       holdButtonText: document.getElementById('btn-chunk-cn-hold').textContent.trim(),
       rootFocusClass: document.getElementById('chunk-vue-container').classList.contains('cn-mode-focus'),
@@ -289,8 +293,8 @@ async function main() {
       activeCnOpacity: activeStyle ? activeStyle.opacity : '',
       inactiveCnOpacity: inactiveStyle ? inactiveStyle.opacity : '',
       wordHighlights: Array.from(document.querySelectorAll('.word-highlight')).map((el) => el.id),
-      highlightMode: window.__state.highlightMode,
-      piniaActiveWordIdx: window.__piniaStores.transcript.activeWordIdx
+      highlightMode: window.__interactionRuntimeState.highlightMode,
+      piniaActiveWordIdx: window.__interactionStores.transcript.activeWordIdx
     };
   });
   await page.keyboard.down('c');
@@ -306,8 +310,8 @@ async function main() {
     const activeCn = document.querySelector('#chunk-1 .chunk-cn');
     const inactiveCn = document.querySelector('#chunk-0 .chunk-cn');
     return {
-      stateVisible: window.__state.chunkCnVisible,
-      piniaVisible: window.__piniaStores.chunk.chunkCNVisible,
+      stateVisible: window.__interactionRuntimeState.chunkCnVisible,
+      piniaVisible: window.__interactionStores.chunk.chunkCNVisible,
       activeCnHidden: activeCn ? activeCn.classList.contains('hidden-cn') : null,
       activeCnOpacity: activeCn ? getComputedStyle(activeCn).opacity : '',
       inactiveCnOpacity: inactiveCn ? getComputedStyle(inactiveCn).opacity : ''
@@ -325,29 +329,29 @@ async function main() {
   const chunkHoldUp = await page.evaluate(() => {
     const activeCn = document.querySelector('#chunk-1 .chunk-cn');
     return {
-      stateVisible: window.__state.chunkCnVisible,
-      piniaVisible: window.__piniaStores.chunk.chunkCNVisible,
+      stateVisible: window.__interactionRuntimeState.chunkCnVisible,
+      piniaVisible: window.__interactionStores.chunk.chunkCNVisible,
       activeCnHidden: activeCn ? activeCn.classList.contains('hidden-cn') : null
     };
   });
   await page.click('#btn-chunk-focus');
   const chunkFocusToggledGlobal = await page.evaluate(() => ({
-    stateMode: window.__state.chunkCnMode,
-    piniaFocus: window.__piniaStores.chunk.chunkFocusMode,
+    stateMode: window.__interactionRuntimeState.chunkCnMode,
+    piniaFocus: window.__interactionStores.chunk.chunkFocusMode,
     buttonText: document.getElementById('btn-chunk-focus').textContent.trim(),
     rootFocusClass: document.getElementById('chunk-vue-container').classList.contains('cn-mode-focus')
   }));
   await page.click('#btn-chunk-focus');
   const chunkFocusRestored = await page.evaluate(() => ({
-    stateMode: window.__state.chunkCnMode,
-    piniaFocus: window.__piniaStores.chunk.chunkFocusMode,
+    stateMode: window.__interactionRuntimeState.chunkCnMode,
+    piniaFocus: window.__interactionStores.chunk.chunkFocusMode,
     buttonText: document.getElementById('btn-chunk-focus').textContent.trim(),
     rootFocusClass: document.getElementById('chunk-vue-container').classList.contains('cn-mode-focus')
   }));
 
   await page.evaluate(() => {
-    window.__state.markedMap.set(2, { globalIndex: 2, word: 'Second', sourceType: 'test' });
-    window.__state.vocabMatchMap.set(2, {
+    window.__interactionRuntimeState.markedMap.set(2, { globalIndex: 2, word: 'Second', sourceType: 'test' });
+    window.__interactionRuntimeState.vocabMatchMap.set(2, {
       data: {
         word: 'Second',
         boundary: 'Second line',
@@ -372,7 +376,7 @@ async function main() {
     const audio = document.getElementById('audio-player');
     return {
       time: audio.currentTime,
-      activeChunkIdx: window.__piniaStores.chunk.activeChunkIdx,
+      activeChunkIdx: window.__interactionStores.chunk.activeChunkIdx,
       activeChunks: Array.from(document.querySelectorAll('.chunk-active')).map((el) => el.id),
       notePreviewOpen: document.body.classList.contains('note-preview-open'),
       duplicateNoteSidebars: document.querySelectorAll('#note-preview-sidebar').length
@@ -380,7 +384,7 @@ async function main() {
   });
 
   await page.evaluate((audioSrc) => {
-    if (window.__state.isChunkMode && typeof window.toggleChunkMode === 'function') {
+    if (window.__interactionRuntimeState.isChunkMode && typeof window.toggleChunkMode === 'function') {
       window.toggleChunkMode(false);
     }
     const segments = Array.from({ length: 28 }, (_, index) => ({
@@ -395,10 +399,9 @@ async function main() {
     audio.src = audioSrc;
     audio.muted = true;
     audio.currentTime = 34.1;
-    window.__state.autoFollow = true;
-    window.__state.userScrollSuppress = false;
-    window.__state.highlightMode = 2;
-    if (typeof window.bridgeToPinia === 'function') window.bridgeToPinia();
+    window.__interactionRuntimeState.autoFollow = true;
+    window.__interactionRuntimeState.userScrollSuppress = false;
+    window.__interactionRuntimeState.highlightMode = 2;
     const container = document.getElementById('main-app-area');
     if (container) container.scrollTop = 0;
     window.forceUpdateUI(34.1);
@@ -407,8 +410,8 @@ async function main() {
   await page.evaluate(() => {
     const container = document.getElementById('main-app-area');
     if (container) container.scrollTop = 0;
-    window.__state.userScrollSuppress = false;
-    window.__state.lastActiveSegIndex = -1;
+    window.__interactionRuntimeState.userScrollSuppress = false;
+    window.__interactionRuntimeState.lastActiveSegIndex = -1;
     window.forceUpdateUI(34.1);
   });
   const followPagingDesktop = await page.evaluate(() => {
@@ -432,9 +435,9 @@ async function main() {
     const audio = document.getElementById('audio-player');
     const container = document.getElementById('main-app-area');
     if (container) container.scrollTop = 0;
-    window.__state.autoFollow = true;
-    window.__state.userScrollSuppress = false;
-    window.__state.lastActiveSegIndex = -1;
+    window.__interactionRuntimeState.autoFollow = true;
+    window.__interactionRuntimeState.userScrollSuppress = false;
+    window.__interactionRuntimeState.lastActiveSegIndex = -1;
     audio.currentTime = 36.1;
     window.forceUpdateUI(36.1);
   });

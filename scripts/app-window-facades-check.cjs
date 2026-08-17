@@ -6,7 +6,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'reader-runtime.js'), 'utf8');
 const uiFacadesSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'ui-facades.js'), 'utf8');
 const runtimeStateFacadeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'runtime-state-facade.js'), 'utf8');
-const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'stores', 'audio.js'), 'utf8');
+const audioStoreSource = fs.readFileSync(path.join(repoRoot, 'src', 'pinia-stores', 'audio.js'), 'utf8');
 const keyboardModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'keyboard-module.js'), 'utf8');
 const importModuleSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'import-module.js'), 'utf8');
 const piniaBridgeSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'pinia-bridge-module.js'), 'utf8');
@@ -83,7 +83,7 @@ appWindowAssignments.forEach((name) => {
 assert.ok(controlsSource.includes('window.changeSpeed = changeSpeed;'), 'controls-module should own window.changeSpeed');
 assert.ok(uiFacadesSource.includes('window.showToast = showToast;'), 'ui-facades should own window.showToast');
 assert.ok(uiFacadesSource.includes('window.showError = showError;'), 'ui-facades should own window.showError');
-assert.ok(runtimeStateFacadeSource.includes('window.__state = runtimeState;'), 'runtime-state-facade should own window.__state');
+assert.equal(runtimeStateFacadeSource.includes('window.__state'), false, 'runtime state must stay module-owned');
 assert.equal(sessionInitSource.includes('window.toggleChunkBtn'), false, 'session-init should not read window.toggleChunkBtn');
 assert.ok(
   keyboardModuleSource.includes('window.isInputLikeTarget = isInputLikeTarget;'),
@@ -95,10 +95,8 @@ assert.ok(
 ].forEach((name) => {
   assert.ok(importModuleSource.includes(`window.${name} = ${name};`), `import-module should own window.${name}`);
 });
-assert.ok(
-  piniaBridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'),
-  'pinia-bridge-module should own window.bridgeToPinia'
-);
+assert.ok(piniaBridgeSource.includes('export function bridgeToPinia()'), 'pinia bridge should expose a module API');
+assert.equal(piniaBridgeSource.includes('window.bridgeToPinia'), false, 'pinia bridge should not expose a window alias');
 assert.ok(
   annotationBubbleResolverSource.includes('window.notifyAnnotationBubbleWordClick = notifyAnnotationBubbleWordClick;'),
   'annotation-bubble-resolver should own window.notifyAnnotationBubbleWordClick'
@@ -149,7 +147,7 @@ assert.equal(
   'deleteFromDB',
   'clearDBStore'
 ].forEach((name) => {
-  assert.ok(audioStoreSource.includes(`window.${name} = function`), `audio store should own window.${name}`);
+  assert.ok(audioStoreSource.includes(`function ${name}(`), `Pinia audio store should own ${name}`);
 });
 assert.ok(
   highlightControlsSource.includes('window.cycleHighlightMode = cycleHighlightMode;'),

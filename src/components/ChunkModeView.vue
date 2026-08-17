@@ -43,6 +43,7 @@
 import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
+import { runtimeState } from '../composables/runtime-state-facade.js'
 import {
   handleChunkClick,
   handleChunkContextMenu,
@@ -84,13 +85,11 @@ export default {
     })
 
     function isMarkedWord(idx) {
-      if (idx == null || typeof window === 'undefined') return false
-      var state = window.__state
       return !!(
-        state
-        && state.markedMap
-        && typeof state.markedMap.has === 'function'
-        && state.markedMap.has(idx)
+        idx != null
+        && runtimeState.markedMap
+        && typeof runtimeState.markedMap.has === 'function'
+        && runtimeState.markedMap.has(idx)
       )
     }
 

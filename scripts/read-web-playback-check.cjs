@@ -49,14 +49,18 @@ async function main() {
 
   await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
   await page.waitForFunction(
-    () => typeof window.processTranscript === 'function' && window.__piniaStores,
+    () => typeof window.processTranscript === 'function',
     null,
     { timeout: 10000 }
   );
+  await page.evaluate(async () => {
+    window.__playbackRuntimeState = (await import('/src/composables/runtime-state-facade.js')).runtimeState;
+    window.__playbackStores = (await import('/src/pinia-stores/runtime-registry.js')).requirePiniaRuntimeStores();
+  });
 
   const defaultHighlightUi = await page.evaluate(() => ({
-    stateHighlightMode: window.__state.highlightMode,
-    piniaHighlightMode: window.__piniaStores.transcript.highlightMode,
+    stateHighlightMode: window.__playbackRuntimeState.highlightMode,
+    piniaHighlightMode: window.__playbackStores.transcript.highlightMode,
     buttonText: document.getElementById('highlight-mode-btn')
       ? document.getElementById('highlight-mode-btn').textContent.trim()
       : '',
@@ -101,13 +105,13 @@ async function main() {
   await page.click('#highlight-mode-btn');
   await page.click('#highlight-mode-btn');
   await page.waitForFunction(
-    () => window.__state.highlightMode === 1 && window.__piniaStores.transcript.highlightMode === 1,
+    () => window.__playbackRuntimeState.highlightMode === 1 && window.__playbackStores.transcript.highlightMode === 1,
     null,
     { timeout: 5000 }
   );
   const wordHighlightUi = await page.evaluate(() => ({
-    stateHighlightMode: window.__state.highlightMode,
-    piniaHighlightMode: window.__piniaStores.transcript.highlightMode,
+    stateHighlightMode: window.__playbackRuntimeState.highlightMode,
+    piniaHighlightMode: window.__playbackStores.transcript.highlightMode,
     buttonText: document.getElementById('highlight-mode-btn')
       ? document.getElementById('highlight-mode-btn').textContent.trim()
       : '',
@@ -119,17 +123,17 @@ async function main() {
     window.forceUpdateUI(audio.currentTime);
     const before = {
       time: audio.currentTime,
-      activeWordIdx: window.__piniaStores.transcript.activeWordIdx
+      activeWordIdx: window.__playbackStores.transcript.activeWordIdx
     };
     window.handleForwardClick();
     const afterForward = {
       time: audio.currentTime,
-      activeWordIdx: window.__piniaStores.transcript.activeWordIdx
+      activeWordIdx: window.__playbackStores.transcript.activeWordIdx
     };
     window.handleBackwardClick();
     const afterBackward = {
       time: audio.currentTime,
-      activeWordIdx: window.__piniaStores.transcript.activeWordIdx
+      activeWordIdx: window.__playbackStores.transcript.activeWordIdx
     };
     return { before, afterForward, afterBackward };
   });
@@ -138,7 +142,7 @@ async function main() {
     await document.getElementById('audio-player').play();
   });
   await page.waitForFunction(
-    () => window.__piniaStores.transcript.activeWordIdx >= 1,
+    () => window.__playbackStores.transcript.activeWordIdx >= 1,
     null,
     { timeout: 5000 }
   );
@@ -150,8 +154,8 @@ async function main() {
     return {
       currentTime: audio.currentTime,
       paused: audio.paused,
-      activeWordIdx: window.__piniaStores.transcript.activeWordIdx,
-      currentWordIndex: window.__piniaStores.transcript.currentWordIndex,
+      activeWordIdx: window.__playbackStores.transcript.activeWordIdx,
+      currentWordIndex: window.__playbackStores.transcript.currentWordIndex,
       highlighted: Array.from(document.querySelectorAll('.word-highlight')).map((el) => el.id),
       firstLineText: document.getElementById('segment-0') ? document.getElementById('segment-0').innerText : ''
     };
@@ -168,7 +172,7 @@ async function main() {
         { id: 2, chunks: [{ en: 'Third line', zh: 'third line', a: 1, b: 2 }] }
       ]
     });
-    if (!window.__state.isChunkMode) {
+    if (!window.__playbackRuntimeState.isChunkMode) {
       window.toggleChunkMode(true);
     }
     audio.currentTime = 2.5;
@@ -181,15 +185,15 @@ async function main() {
     const audio = document.getElementById('audio-player');
     const beforeClick = {
       time: audio.currentTime,
-      activeChunkIdx: window.__piniaStores.chunk.activeChunkIdx,
+      activeChunkIdx: window.__playbackStores.chunk.activeChunkIdx,
       activeChunks: Array.from(document.querySelectorAll('.chunk-active')).map((el) => el.id)
     };
     document.getElementById('chunk-0').click();
     const afterClick = {
       time: audio.currentTime,
-      activeChunkIdx: window.__piniaStores.chunk.activeChunkIdx,
-      isChunkMode: window.__state.isChunkMode,
-      piniaIsChunkMode: window.__piniaStores.chunk.isChunkMode,
+      activeChunkIdx: window.__playbackStores.chunk.activeChunkIdx,
+      isChunkMode: window.__playbackRuntimeState.isChunkMode,
+      piniaIsChunkMode: window.__playbackStores.chunk.isChunkMode,
       chunkCount: document.querySelectorAll('.chunk-block').length
     };
     return { beforeClick, afterClick };

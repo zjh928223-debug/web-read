@@ -48,9 +48,10 @@ assert.ok(
   'bootstrap runtime should initialize Pinia bridge once'
 );
 assert.ok(bridgeSource.includes('export function initPiniaBridge'), 'bridge module should expose an init API');
-assert.ok(bridgeSource.includes('window.bridgeToPinia = bridgeToPinia;'), 'bridge module should own window.bridgeToPinia');
+assert.ok(bridgeSource.includes('export function bridgeToPinia()'), 'bridge module should expose an explicit bridge API');
+assert.equal(bridgeSource.includes('window.bridgeToPinia'), false, 'bridge module should not publish a window bridge');
 assert.ok(bridgeSource.includes('chunkState.getSnapshot()'), 'bridge module should read chunk state owner snapshots');
 assert.ok(bridgeSource.includes('clozeState.getSnapshot()'), 'bridge module should read cloze state owner snapshots');
-assert.ok(interactionSource.includes('window.bridgeToPinia'), 'compatibility tests should still cover window.bridgeToPinia');
+assert.equal(interactionSource.includes('window.bridgeToPinia'), false, 'behavior checks should not depend on the retired window bridge');
 
 console.log('pinia bridge module check passed');

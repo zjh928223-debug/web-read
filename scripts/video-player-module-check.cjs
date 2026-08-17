@@ -9,6 +9,7 @@ const indexSource = read('index.html');
 const appSource = read('src', 'App.vue');
 const loaderSource = read('src', 'composables', 'youtube-workflow-loader.js');
 const panelSource = read('src', 'components', 'YouTubeWorkflowPanel.vue');
+const publisherSource = read('src', 'composables', 'reader-session-publisher.js');
 const stylesSource = read('styles.css');
 const playbackSource = read('src', 'composables', 'playback-module.js');
 const controlsSource = read('src', 'composables', 'controls-module.js');
@@ -48,7 +49,8 @@ assert.ok(videoFloatSource.includes('minimizeVideo'), 'video window should suppo
 assert.ok(videoFloatSource.includes('closeVideo'), 'video window close should switch back to audio');
 
 assert.ok(loaderSource.includes("client.mediaUrl(jobId, 'video')"), 'workflow loader should use an authorized Range service URL instead of a blob');
-assert.ok(loaderSource.includes('mediaSource.loadJobMedia'), 'workflow loader should register video availability at load time');
+assert.ok(loaderSource.includes('media: {'), 'workflow loader should prepare video availability with the reader session');
+assert.ok(publisherSource.includes('mediaSource.loadJobMedia(prepared.media)'), 'session publisher should register prepared video availability');
 assert.ok(panelSource.includes('setVideoPreferred'), 'workflow panel should keep the shared video preference in sync');
 assert.ok(panelSource.includes('window.__mediaSource'), 'workflow panel should use the shared media source module');
 
