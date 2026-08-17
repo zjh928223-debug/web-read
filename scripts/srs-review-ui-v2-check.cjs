@@ -130,6 +130,20 @@ async function main() {
   assert.equal(budgetReview.estimatedRemainingLabel.value, '60 分钟')
   assert.equal(budgetReview.backlogLabel.value, '1 项（约 不足 1 分钟）')
 
+  let ordinaryQueueLoads = 0
+  const ordinaryLedger = createLedger({ mode: 'balanced', promptMode: 'original_context', count: 2 })
+  const ordinaryReview = useSrsReview(createUiService(ordinaryLedger, {
+    onQueueLoad() { ordinaryQueueLoads += 1 },
+  }), { now, timezone })
+  await ordinaryReview.load()
+  assert.equal(ordinaryQueueLoads, 1)
+  assert.equal(await ordinaryReview.submitAction(ordinaryReview.actions[2]), true)
+  assert.equal(
+    ordinaryQueueLoads,
+    1,
+    'an ordinary rating must reuse the loaded queue instead of rebuilding every review card',
+  )
+
   for (const mode of ['once_daily', 'balanced', 'intensive']) {
     const ledger = createLedger({ mode, promptMode: 'word_only' })
     const review = useSrsReview(createUiService(ledger), { now, timezone })
@@ -532,6 +546,7 @@ function createUiService(initialLedger, options = {}) {
       return clone(ledger)
     },
     async getReviewCards(inputLedger) {
+      if (options.onQueueLoad) options.onQueueLoad(inputLedger)
       return inputLedger.entries.map((entry) => ({
         word: { id: entry.learning_unit_id, word: entry.learning_unit_id },
         contexts: options.contexts || [],

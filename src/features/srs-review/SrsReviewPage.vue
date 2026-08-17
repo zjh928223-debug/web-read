@@ -170,6 +170,23 @@
                 @keydown.enter.stop.prevent="playParagraphWord(paragraph, part)"
               >{{ part.text }}</span><template v-else>{{ part.text }}</template></template></template>
             </p>
+            <p
+              v-if="flowState.answerRevealed && sentenceTranslationZh"
+              class="srs-review-sentence-translation"
+              lang="zh-CN"
+            >{{ sentenceTranslationZh }}</p>
+            <p
+              v-else-if="flowState.answerRevealed && sentenceTranslationLoading"
+              class="srs-review-sentence-translation is-loading"
+              role="status"
+            >正在生成整句翻译…</p>
+            <p
+              v-else-if="flowState.answerRevealed && sentenceTranslationUnavailable"
+              class="srs-review-sentence-translation is-unavailable"
+            >
+              <span>整句翻译暂时不可用</span>
+              <button type="button" @click="hydrateCurrentSentenceTranslation">重试</button>
+            </p>
           </div>
           <div
             v-if="review.contextCueLevel.value === 'target_sentence' && hasSurroundingContext"
@@ -333,7 +350,7 @@
           <button
           v-if="action.tone === 'again' || flowState.answerRevealed"
           type="button"
-          :class="`is-${action.tone}`"
+          :class="[`is-${action.tone}`, { 'is-pending': flowState.transitioning && flowState.pendingTone === action.tone }]"
           :aria-keyshortcuts="action.shortcut"
           :disabled="review.pending.value || review.reviewingPast.value || !review.currentEligible.value || flowState.ratingCommitted || flowState.transitioning"
           @click="handleRating(action)"
@@ -341,14 +358,6 @@
           <span>{{ action.label }}</span>
         </button>
         </template>
-        <button
-          v-if="flowState.ratingCommitted && flowState.committedTone === 'again'"
-          type="button"
-          class="srs-review-next"
-          @click="flow.handleSpace()"
-        >
-          <span>下一张</span>
-        </button>
       </footer>
     </template>
   </main>
@@ -364,6 +373,10 @@ import {
   resolveReviewMeaning,
   resolveReviewSource,
 } from './srs-review-context.js'
+import {
+  sentenceTranslationKey,
+  translateSentenceBatches,
+} from '../passage-preview/sentence-translation.js'
 import { calculateSingleLineFontSize } from './srs-review-layout.js'
 import { hydrateReviewGeneralMeanings } from './srs-review-meanings.js'
 import { createSrsReviewFlow } from './srs-review-flow.js'
@@ -410,6 +423,9 @@ const sourceAudioNotice = ref('')
 const historyOpen = ref(false)
 const historyContainer = ref(null)
 const flowNotice = ref('')
+const sentenceTranslationZh = ref('')
+const sentenceTranslationLoading = ref(false)
+const sentenceTranslationUnavailable = ref(false)
 const migrationStatus = ref(null)
 const migrationBusy = ref(false)
 const migrationFailed = ref(false)
@@ -437,11 +453,14 @@ let pronunciationReadyPromise = Promise.resolve([])
 let meaningAbortController = null
 let sequencePlaybackRequest = -1
 let playbackStatusRequest = 0
+let translationRequest = 0
+const sentenceTranslationCache = new Map()
 const flowState = reactive({
   answerRevealed: false,
   ratingCommitted: false,
   transitioning: false,
   committedTone: '',
+  pendingTone: '',
   advanced: false,
 })
 const dictionaryState = reactive({
@@ -470,7 +489,6 @@ const flow = createSrsReviewFlow({
   playWordAndTargetSentence,
   stopAudio: stopCurrentPlayback,
   advance: advanceReviewCard,
-  waitBeforeAdvance: waitForReviewTransition,
   revealHint(message) {
     flowNotice.value = message
   },
@@ -604,6 +622,10 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   stopAndReleaseAudio()
   flow.resetCard()
   flowNotice.value = ''
+  translationRequest += 1
+  sentenceTranslationZh.value = ''
+  sentenceTranslationLoading.value = false
+  sentenceTranslationUnavailable.value = false
   void dictionaryAssistance.setCard(nextId ? word.value.word : '')
   if (!nextId) return
   void prefetchUpcomingPronunciations()
@@ -630,7 +652,53 @@ watch(() => word.value.word, async () => {
 
 watch(() => flowState.answerRevealed, (revealed) => {
   dictionaryAssistance.setRevealed(revealed)
+  if (revealed) void hydrateCurrentSentenceTranslation()
 })
+
+async function hydrateCurrentSentenceTranslation() {
+  const sentence = currentTranslationSentence()
+  if (!sentence || !flowState.answerRevealed) return
+  const embedded = String(viewContext.value?.translationZh || '').trim()
+  const key = sentenceTranslationKey(sentence)
+  const cached = embedded || sentenceTranslationCache.get(key)
+  if (cached) {
+    sentenceTranslationZh.value = cached
+    sentenceTranslationLoading.value = false
+    sentenceTranslationUnavailable.value = false
+    if (embedded) sentenceTranslationCache.set(key, embedded)
+    return
+  }
+  const request = ++translationRequest
+  sentenceTranslationLoading.value = true
+  sentenceTranslationUnavailable.value = false
+  try {
+    const translated = await translateSentenceBatches([{
+      id: `srs-review-${review.current.value?.word?.id || 'sentence'}`,
+      sentence,
+    }])
+    const translation = String(translated[0]?.translationZh || '').trim()
+    if (
+      request !== translationRequest
+      || !flowState.answerRevealed
+      || sentenceTranslationKey(currentTranslationSentence()) !== key
+    ) return
+    if (translation) {
+      sentenceTranslationCache.set(key, translation)
+      sentenceTranslationZh.value = translation
+      sentenceTranslationUnavailable.value = false
+    } else {
+      sentenceTranslationUnavailable.value = true
+    }
+  } catch (_error) {
+    if (request === translationRequest) sentenceTranslationUnavailable.value = true
+  } finally {
+    if (request === translationRequest) sentenceTranslationLoading.value = false
+  }
+}
+
+function currentTranslationSentence() {
+  return String(audioState.value?.targetSentence || viewContext.value?.sentence || '').trim()
+}
 
 function close() {
   historyOpen.value = false
@@ -744,12 +812,6 @@ function revealSurroundingContext() {
 function advanceReviewCard() {
   stopAndReleaseAudio()
   return review.advanceCurrent()
-}
-
-function waitForReviewTransition({ delayMs = 1500 } = {}) {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, Math.max(0, Number(delayMs) || 0))
-  })
 }
 
 async function removeCurrentWord() {

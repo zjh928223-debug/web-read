@@ -18,12 +18,27 @@ export function buildReviewContext(entry) {
   return {
     raw: context,
     sentence,
+    translationZh: resolveReviewSentenceTranslation(context),
     sourceId: normalizeText(context.source_id || context.sourceId),
     sourceTitle: normalizeText(context.source_title || context.sourceTitle),
     paragraphs: splitContextParagraphs(surrounding, sentence).map((paragraph) => (
       highlightContextParagraph(paragraph, sentence, word)
     )),
   }
+}
+
+export function resolveReviewSentenceTranslation(context) {
+  return normalizeText(
+    context?.translationZh
+    || context?.translation_zh
+    || context?.sentenceTranslation
+    || context?.sentence_translation
+    || context?.translation
+    || context?.extensions?.translationZh
+    || context?.extensions?.translation_zh
+    || context?.extensions?.sentenceTranslation
+    || context?.extensions?.sentence_translation,
+  )
 }
 
 export function resolveReviewMeaning(word, context) {

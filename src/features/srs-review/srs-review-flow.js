@@ -1,12 +1,11 @@
 const ANSWER_REQUIRED_MESSAGE = '请先显示答案'
-const CARD_ADVANCE_DELAY_MS = 1500
-
 export function createSrsReviewFlow(options = {}) {
   const state = options.state || {
     answerRevealed: false,
     ratingCommitted: false,
     transitioning: false,
     committedTone: '',
+    pendingTone: '',
     advanced: false,
   }
   let cardGeneration = 0
@@ -16,17 +15,6 @@ export function createSrsReviewFlow(options = {}) {
     state.advanced = true
     if (typeof options.advance === 'function') await options.advance()
     return true
-  }
-
-  async function waitBeforeAutomaticAdvance(tone, generation) {
-    if (generation !== cardGeneration) return false
-    if (typeof options.waitBeforeAdvance === 'function') {
-      await options.waitBeforeAdvance({
-        delayMs: CARD_ADVANCE_DELAY_MS,
-        tone,
-      })
-    }
-    return generation === cardGeneration
   }
 
   function revealAnswer() {
@@ -45,6 +33,7 @@ export function createSrsReviewFlow(options = {}) {
     }
     const generation = cardGeneration
     state.transitioning = true
+    state.pendingTone = action.tone
     if (action.tone === 'again') state.answerRevealed = true
     try {
       const saved = typeof options.submitAction === 'function'
@@ -53,42 +42,18 @@ export function createSrsReviewFlow(options = {}) {
       if (!saved || generation !== cardGeneration) return false
       state.ratingCommitted = true
       state.committedTone = action.tone
-      if (action.tone === 'good') {
-        if (await waitBeforeAutomaticAdvance(action.tone, generation)) {
-          await advanceOnce(generation)
-        }
-      } else if (action.tone === 'easy') {
-        await advanceOnce(generation)
-      } else if (action.tone === 'again') {
-        if (typeof options.playWordAndTargetSentence === 'function') {
-          await options.playWordAndTargetSentence({ maxDurationMs: 12000 })
-        } else if (typeof options.playTargetSentence === 'function') {
-          await options.playTargetSentence({ maxDurationMs: 12000 })
-        }
-      } else if (action.tone === 'hard') {
-        if (typeof options.playWordAndTargetSentence === 'function') {
-          await options.playWordAndTargetSentence({ maxDurationMs: 12000 })
-        } else if (typeof options.playTargetSentence === 'function') {
-          await options.playTargetSentence({ maxDurationMs: 12000 })
-        }
-        if (await waitBeforeAutomaticAdvance(action.tone, generation)) {
-          await advanceOnce(generation)
-        }
-      }
+      await advanceOnce(generation)
       return true
     } finally {
-      if (generation === cardGeneration) state.transitioning = false
+      if (generation === cardGeneration) {
+        state.transitioning = false
+        state.pendingTone = ''
+      }
     }
   }
 
   async function handleSpace() {
     if (!state.answerRevealed) return revealAnswer()
-    if (state.ratingCommitted && (state.committedTone === 'again' || state.committedTone === 'hard')) {
-      const generation = cardGeneration
-      if (typeof options.stopAudio === 'function') options.stopAudio()
-      await advanceOnce(generation)
-      return true
-    }
     return false
   }
 
@@ -98,6 +63,7 @@ export function createSrsReviewFlow(options = {}) {
     state.ratingCommitted = false
     state.transitioning = false
     state.committedTone = ''
+    state.pendingTone = ''
     state.advanced = false
   }
 

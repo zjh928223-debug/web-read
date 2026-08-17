@@ -4,7 +4,9 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 
 async function importProjectApis(repoRoot) {
-  const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-srs-review-${process.pid}-`))
+  const tempRoot = path.resolve(repoRoot, 'node_modules', '.cache')
+  fs.mkdirSync(tempRoot, { recursive: true })
+  const tempDir = fs.mkdtempSync(path.join(tempRoot, `read-web-srs-review-${process.pid}-`))
   try {
     const vocabularyDir = path.join(repoRoot, 'src', 'services', 'vocabulary')
     const ieltsPoolConfig = JSON.parse(fs.readFileSync(
@@ -60,6 +62,10 @@ async function importProjectApis(repoRoot) {
       path.join(tempDir, 'vue-stub.mjs'),
       'export const ref = (value) => ({ value });\nexport const computed = (getter) => ({ get value() { return getter(); } });\n',
     )
+    fs.writeFileSync(
+      path.join(tempDir, 'best-effort.mjs'),
+      'export const recordBestEffortFailure = () => {}\n',
+    )
     writeModule(
       path.join(repoRoot, 'src', 'features', 'srs-review', 'useSrsReview.js'),
       path.join(tempDir, 'useSrsReview.mjs'),
@@ -113,6 +119,10 @@ async function importProjectApis(repoRoot) {
     writeModule(
       path.join(repoRoot, 'src', 'composables', 'youtube-workflow-client.js'),
       path.join(tempDir, 'youtube-workflow-client.mjs'),
+      (source) => source.replace(
+        /from\s+['"]\.\.\/services\/runtime\/best-effort\.js['"]/,
+        "from './best-effort.mjs'",
+      ),
     )
     return {
       vocabulary: await import(pathToFileURL(path.join(tempDir, 'vocab-index.mjs')).href),
@@ -127,8 +137,7 @@ async function importProjectApis(repoRoot) {
     }
   } finally {
     const resolvedTemp = path.resolve(tempDir)
-    const resolvedRepo = path.resolve(repoRoot)
-    if (resolvedTemp.startsWith(resolvedRepo + path.sep)) {
+    if (resolvedTemp.startsWith(tempRoot + path.sep)) {
       fs.rmSync(resolvedTemp, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
     }
   }
@@ -186,6 +195,11 @@ async function run() {
     'the review header must not reveal the source article title',
   )
   assert.match(reviewPageSource, /Space 显示答案/, 'recall mode should expose the reveal-answer control')
+  assert.match(
+    reviewPageSource,
+    /srs-review-sentence-translation/,
+    'the revealed review context should expose the full-sentence Chinese translation',
+  )
   assert.match(
     reviewPageSource,
     /v-if="flowState\.answerRevealed"/,
@@ -341,8 +355,8 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-word-content\s*\{[^}]*grid-template-rows:\s*clamp\(170px,\s*25vh,\s*220px\)\s+minmax\(0,\s*1fr\)[^}]*height:\s*100%[^}]*padding-left:\s*clamp\(32px,\s*4vw,\s*56px\)/s,
-    'the English word and meanings should keep a stable, raised anchor closer to the sentence panel',
+    /\.srs-review-word-content\s*\{[^}]*grid-template-rows:\s*clamp\(170px,\s*25vh,\s*220px\)\s+auto[^}]*height:\s*auto[^}]*padding:\s*0\s+12px\s+24px\s+clamp\(32px,\s*4vw,\s*56px\)/s,
+    'the English word should keep a stable anchor while compact meanings determine their own height',
   )
   assert.match(
     reviewCssSource,
@@ -366,8 +380,8 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-meanings\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)[^}]*margin:\s*0/s,
-    'desktop meanings should use the available horizontal space',
+    /\.srs-review-meanings\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*margin:\s*0/s,
+    'desktop meanings should use a compact single-column reading flow',
   )
   assert.match(
     reviewCssSource,
@@ -484,8 +498,8 @@ async function run() {
   assert.equal(await recallFlow.rate(review.actions[2]), true, 'Good should save after reveal')
   assert.deepEqual(
     recallEvents,
-    ['hint:请先显示答案', 'submit:good', 'wait:good:1500', 'advance'],
-    'Good should keep the answer visible briefly before advancing without sentence playback',
+    ['hint:请先显示答案', 'submit:good', 'advance'],
+    'Good should advance immediately after persistence succeeds',
   )
   assert.equal(recallFlow.ratingCommitted, true)
 
@@ -514,16 +528,10 @@ async function run() {
   assert.equal(againFlow.answerRevealed, true, 'Again should reveal the answer')
   assert.deepEqual(
     againEvents,
-    ['submit:again', 'play-word-and-sentence:12000'],
-    'Again should save once, play the word before the bounded target sentence, and stay on the card',
+    ['submit:again', 'advance'],
+    'Again should save once and advance without blocking on replay audio',
   )
   assert.equal(await againFlow.rate(review.actions[0]), false, 'a committed card must ignore duplicate ratings')
-  assert.equal(await againFlow.handleSpace(), true, 'Space should leave a committed Again card')
-  assert.deepEqual(
-    againEvents,
-    ['submit:again', 'play-word-and-sentence:12000', 'stop-audio', 'advance'],
-    'leaving an Again card should stop its audio before advancing',
-  )
   againFlow.resetCard()
   assert.equal(againFlow.answerRevealed, false)
   assert.equal(againFlow.ratingCommitted, false)
@@ -553,47 +561,9 @@ async function run() {
   assert.equal(await hardFlow.rate(review.actions[1]), true)
   assert.deepEqual(
     hardEvents,
-    ['submit:hard', 'play-word-and-sentence:12000', 'wait:hard:1500', 'advance'],
-    'Hard should play the word and bounded target sentence, then pause before advancing',
+    ['submit:hard', 'advance'],
+    'Hard should advance immediately after persistence succeeds',
   )
-
-  let finishHardPlayback
-  const skippedHardEvents = []
-  const skippedHardFlow = flowModule.createSrsReviewFlow({
-    async submitAction() {
-      skippedHardEvents.push('submit:hard')
-      return true
-    },
-    playTargetSentence() {
-      skippedHardEvents.push('play-sentence')
-      return new Promise((resolve) => { finishHardPlayback = resolve })
-    },
-    stopAudio() {
-      skippedHardEvents.push('stop-audio')
-    },
-    advance() {
-      skippedHardEvents.push('advance')
-      skippedHardFlow.resetCard()
-    },
-  })
-  skippedHardFlow.revealAnswer()
-  const hardSubmission = skippedHardFlow.rate(review.actions[1])
-  await Promise.resolve()
-  assert.equal(skippedHardFlow.ratingCommitted, true)
-  assert.equal(await skippedHardFlow.handleSpace(), true, 'Space should skip Hard sentence playback')
-  finishHardPlayback(true)
-  await hardSubmission
-  assert.deepEqual(
-    skippedHardEvents,
-    ['submit:hard', 'play-sentence', 'stop-audio', 'advance'],
-    'skipping Hard playback must advance exactly once',
-  )
-  assert.equal(
-    await skippedHardFlow.handleSpace(),
-    true,
-    'Space should reveal the answer on the new card after the previous playback is canceled',
-  )
-  assert.equal(skippedHardFlow.answerRevealed, true)
 
   for (const action of review.actions) {
     const currentId = review.current.value.word.id
@@ -761,6 +731,18 @@ async function run() {
       created_at: now,
     }],
   })
+  assert.equal(
+    contextModule.buildReviewContext({
+      word: { word: 'context' },
+      contexts: [{
+        sentence: 'This is the target sentence.',
+        surrounding_text: 'This is the target sentence.',
+        extensions: { translationZh: '这是目标句。' },
+      }],
+    }).translationZh,
+    '这是目标句。',
+    'an existing context translation should be surfaced without another request',
+  )
   assert.equal(textContext.paragraphs.length, 3, 'context should be limited to three nearest passages')
   assert.equal(textContext.paragraphs.some((paragraph) => paragraph.target), true)
   assert.equal(

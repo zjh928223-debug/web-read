@@ -257,9 +257,12 @@ export function useSrsReview(service, options = {}) {
       })
       attemptDrafts.set(draftKey, draft)
     }
+    const previousLedger = sessionLedger.value
     const result = await activeService.recordReviewAttempt(draft)
     sessionLedger.value = result.ledger
-    queue.value = await activeService.getReviewCards(result.ledger)
+    if (ledgerContainsNewEntries(result.ledger, previousLedger)) {
+      queue.value = await activeService.getReviewCards(result.ledger)
+    }
     committedItemIds.add(draftKey)
     reviewLogs.value = [{
       ...result.attempt,
@@ -395,6 +398,14 @@ export function useSrsReview(service, options = {}) {
     goPrevious,
     goNext,
   }
+}
+
+function ledgerContainsNewEntries(nextLedger, previousLedger) {
+  const loadedIds = new Set((Array.isArray(previousLedger?.entries) ? previousLedger.entries : [])
+    .map((entry) => String(entry?.ledger_item_id || ''))
+    .filter(Boolean))
+  return (Array.isArray(nextLedger?.entries) ? nextLedger.entries : [])
+    .some((entry) => !loadedIds.has(String(entry?.ledger_item_id || '')))
 }
 
 function getErrorMessage(error, fallback) {

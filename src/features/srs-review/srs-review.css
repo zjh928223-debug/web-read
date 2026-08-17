@@ -461,6 +461,45 @@ audio {
   letter-spacing: -.01em;
 }
 
+.srs-review-passages .srs-review-sentence-translation {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border-left: 3px solid #9db0e8;
+  border-radius: 0 8px 8px 0;
+  color: #52617d;
+  background: rgba(237, 241, 255, .64);
+  font-family: Arial, sans-serif;
+  font-size: clamp(16px, 1.2vw, 20px);
+  line-height: 1.55;
+}
+
+.srs-review-sentence-translation.is-loading,
+.srs-review-sentence-translation.is-unavailable {
+  color: #77839a;
+}
+
+.srs-review-sentence-translation.is-unavailable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.srs-review-sentence-translation.is-unavailable button {
+  flex: none;
+  padding: 5px 10px;
+  border: 1px solid #c9d3ec;
+  border-radius: 7px;
+  color: #405994;
+  background: #fff;
+  cursor: pointer;
+}
+
+.srs-review-actions button.is-pending {
+  opacity: .72;
+  transform: translateY(1px) scale(.985);
+}
+
 .srs-review-passages p.is-seekable {
   border-radius: 9px;
   cursor: pointer;

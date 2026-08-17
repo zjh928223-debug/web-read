@@ -18,7 +18,7 @@
     "ffmpeg": "ffmpeg"
   },
   "network": {
-    "proxyUrl": ""
+    "proxyUrl": "http://127.0.0.1:7897"
   },
   "ai": {
     "model": "gemini-2.5-flash",
