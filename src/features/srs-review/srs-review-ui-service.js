@@ -17,12 +17,6 @@ import {
 import {
   createSrsReviewServiceV2,
 } from '../../services/vocabulary/srs-review-service-v2.js'
-import {
-  createIndexedDbPersonalizationShadowReportRepository,
-} from '../../services/vocabulary/personalization/personalization-shadow-report-repository.js'
-import {
-  createPersonalizationShadowService,
-} from '../../services/vocabulary/personalization/personalization-shadow-service.js'
 import { normalizeReviewPolicy } from './srs-review-policy.js'
 
 export const SRS_REVIEW_UI_SERVICE_VERSION = 'srs-review-ui-service.v1'
@@ -43,14 +37,7 @@ export function createSrsReviewUiService(options = {}) {
   const contentRepository = options.contentRepository
     || createIndexedDbVocabularyRepository({ indexedDBApi })
   const managementService = options.managementService || null
-  let personalizationShadowRunner = options.personalizationShadowRunner || null
-  if (!options.reviewService && !personalizationShadowRunner) {
-    const personalizationShadowReportRepository = options.personalizationShadowReportRepository
-      || createIndexedDbPersonalizationShadowReportRepository({ indexedDBApi })
-    personalizationShadowRunner = createPersonalizationShadowService({
-      reportRepository: personalizationShadowReportRepository,
-    })
-  }
+  const personalizationShadowRunner = options.personalizationShadowRunner || null
   const policyProvider = typeof options.policyProvider === 'function'
     ? options.policyProvider
     : () => options.policy

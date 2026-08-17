@@ -60,20 +60,19 @@ try {
   assert.match(component, /只读分析，不会改变正式复习安排/u);
 
   const viteConfig = fs.readFileSync(path.join(repoRoot, 'vite.config.js'), 'utf8');
-  assert.match(viteConfig, /personalizationShadow:\s*resolve\(__dirname, 'personalization-shadow\.html'\)/u);
+  assert.doesNotMatch(viteConfig, /personalizationShadow:\s*resolve\(__dirname, 'personalization-shadow\.html'\)/u);
   const reviewPage = fs.readFileSync(
     path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),
     'utf8',
   );
-  assert.match(reviewPage, /href="\/personalization-shadow\.html"/u);
+  assert.doesNotMatch(reviewPage, /personalization-shadow\.html|模型观察/u);
   const appPage = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
-  assert.match(appPage, /class="small-btn learning-model-entry"/u);
-  assert.match(appPage, /href="\/personalization-shadow\.html"/u);
+  assert.doesNotMatch(appPage, /personalization-shadow\.html|learning-model-entry|模型观察/u);
   const html = fs.readFileSync(path.join(repoRoot, 'personalization-shadow.html'), 'utf8');
   assert.match(html, /src="\/src\/personalization-shadow-main\.js"/u);
 
   console.log('personalization shadow diagnostics verification passed');
-  console.log('mode: read-only report inspection; no queue or schedule write surface');
+  console.log('mode: detached read-only experiment; no formal product entry or production build input');
 } finally {
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 }

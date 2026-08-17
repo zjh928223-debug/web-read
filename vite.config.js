@@ -82,8 +82,7 @@ export default defineConfig(({ mode }) => {
     rollupOptions: {
       input: {
         reader: resolve(__dirname, 'index.html'),
-        srsReview: resolve(__dirname, 'srs-review.html'),
-        personalizationShadow: resolve(__dirname, 'personalization-shadow.html')
+        srsReview: resolve(__dirname, 'srs-review.html')
       }
     }
   },

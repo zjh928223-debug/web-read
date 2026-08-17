@@ -9,11 +9,6 @@
       <span class="learning-entry-group">
         <button class="small-btn" type="button" title="复习当前已到期的单词" @click="openSrsReview">今日复习</button>
         <button class="small-btn" type="button" title="首次接触：一个主要义和一条可追溯真实短句" @click="openPassagePreview">待预习</button>
-        <a
-          class="small-btn learning-model-entry"
-          href="/personalization-shadow.html"
-          title="查看正式复习队列与个性化模型建议的只读对照"
-        >模型观察</a>
         <input
           ref="passagePreviewFileInput"
           class="passage-preview-file-input"
@@ -108,9 +103,6 @@ import {
   createVocabularyService,
 } from './services/vocabulary/index.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
-import {
-  createPersonalizationShadowSettings,
-} from './services/vocabulary/personalization/personalization-shadow-settings.js'
 import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
 
@@ -133,10 +125,8 @@ const legacyReviewService = createLegacyReviewServiceAdapter(
   legacyVocabularyMigration,
 )
 const passagePreviewAcquisition = createPassagePreviewAcquisitionCoordinator({ vocabularyService })
-const personalizationShadowSettings = createPersonalizationShadowSettings()
 const srsReviewV2Service = createSrsReviewUiService({
   managementService: vocabularyService,
-  personalizationShadowEnabled: () => personalizationShadowSettings.isEnabled(),
 })
 const srsReviewUiService = createSrsReviewSourceSelector({
   v2Service: srsReviewV2Service,

@@ -112,7 +112,13 @@ try {
   assert.equal(noSessionRuns, 0, 'legacy/no-V2 state must not fabricate a report');
 
   const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
-  assert.match(appSource, /personalizationShadowEnabled:\s*\(\) => personalizationShadowSettings\.isEnabled\(\)/u);
+  assert.doesNotMatch(appSource, /personalizationShadowEnabled|personalizationShadowSettings|personalization-shadow\.html/u);
+  const uiServiceSource = fs.readFileSync(
+    path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review-ui-service.js'),
+    'utf8',
+  );
+  assert.match(uiServiceSource, /options\.personalizationShadowRunner\s*\|\|\s*null/u);
+  assert.doesNotMatch(uiServiceSource, /createPersonalizationShadowService|createIndexedDbPersonalizationShadowReportRepository/u);
   const serviceSource = fs.readFileSync(
     path.join(repoRoot, 'src', 'services', 'vocabulary', 'srs-review-service-v2.js'),
     'utf8',
@@ -127,7 +133,7 @@ try {
   assert.match(pageSource, /不会用旧日志伪造结果/u);
 
   console.log('personalization shadow activation verification passed');
-  console.log('scope: persistent toggle + derived-report backfill; no formal review mutation');
+  console.log('scope: explicitly launched experiment + derived-report backfill; no formal runtime activation');
 } finally {
   fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 }

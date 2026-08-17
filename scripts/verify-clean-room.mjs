@@ -34,7 +34,7 @@ try {
     cwd: path.join(sourceRoot, 'tools', 'subtitle-workflow'),
   })
 
-  for (const relativePath of ['dist/index.html', 'dist/srs-review.html', 'dist/personalization-shadow.html']) {
+  for (const relativePath of ['dist/index.html', 'dist/srs-review.html']) {
     const info = await stat(path.join(sourceRoot, relativePath))
     if (!info.isFile() || info.size === 0) throw new Error(`clean-room artifact is missing: ${relativePath}`)
   }
