@@ -70,6 +70,6 @@ Key path: id
 
 ## 稳定化计划
 
-当前实施计划在 [openspec/changes/stabilize-and-simplify-read-web/](openspec/changes/stabilize-and-simplify-read-web/)；它覆盖性能测量、单一生产宿主、原子持久化、大媒体流式播放、后台可靠性、生命周期、兼容层收敛、仓库治理和最终迁移回滚。
+已完成的实施计划归档在 [openspec/changes/archive/2026-08-17-stabilize-and-simplify-read-web/](openspec/changes/archive/2026-08-17-stabilize-and-simplify-read-web/)；它覆盖性能测量、单一生产宿主、原子持久化、大媒体流式播放、后台可靠性、生命周期、兼容层收敛、仓库治理和最终迁移回滚。
 
 历史设计和已完成迁移保留用于追溯，但若与当前代码冲突，以 `CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md`、`docs/OPERATIONS.md` 和实际测试为准。

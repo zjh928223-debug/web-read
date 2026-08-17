@@ -98,6 +98,6 @@ docs/NEXT_WORKSPACE.md
 - `scripts/verify-fast.mjs`：快速行为门禁。
 - `scripts/verify-full.mjs`：隔离浏览器、build 和后端总门禁。
 - `scripts/perf/`：性能与本地 HTTP 基准。
-- `openspec/changes/stabilize-and-simplify-read-web/`：当前稳定化规格与任务事实。
+- `openspec/changes/archive/2026-08-17-stabilize-and-simplify-read-web/`：已完成稳定化工作的规格、设计与任务记录。
 
 若此地图与文件树冲突，以实际文件树和通过的行为测试为准，并在同一提交修正文档。
