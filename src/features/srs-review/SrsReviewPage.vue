@@ -107,6 +107,7 @@
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
       <h2>本次复习完成</h2>
       <p>共完成 {{ sessionCompletedCount }} 张</p>
+      <p v-if="review.deferredRevisit.value">{{ review.currentEligibilityLabel.value }}，稍后回来即可继续。</p>
       <ul class="srs-review-completion-counts">
         <li>Again 忘记：{{ review.sessionRatingCounts.value.again }}</li>
         <li>Hard 困难：{{ review.sessionRatingCounts.value.hard }}</li>
@@ -559,9 +560,10 @@ onMounted(async () => {
   fitWordHeading()
 })
 function activateReviewPage() {
+  review.refreshEligibility()
   window.addEventListener('keydown', handleReviewShortcut, true)
   document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
-  if (!audioState.value && review.current.value) {
+  if (!audioState.value && review.current.value && !review.deferredRevisit.value) {
     void loadReviewSourceForCurrentCard(++audioRequest)
   }
 }
@@ -654,7 +656,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   sentenceTranslationLoading.value = false
   sentenceTranslationUnavailable.value = false
   void dictionaryAssistance.setCard(nextId ? word.value.word : '')
-  if (!nextId) return
+  if (!nextId || review.deferredRevisit.value) return
   void prefetchUpcomingPronunciations()
   const sourcePromise = loadReviewSourceForCurrentCard(request)
   pronunciationLoading.value = true

@@ -273,6 +273,34 @@ async function main() {
     easy: 0,
   })
 
+  let revisitNow = '2026-07-29T01:00:00.000Z'
+  const deferredRevisitReview = useSrsReview(createUiService(
+    createLedger({ mode: 'balanced', promptMode: 'word_only' }),
+    { appendFutureRevisit: true },
+  ), { now: () => revisitNow, timezone })
+  await deferredRevisitReview.load()
+  assert.equal(await deferredRevisitReview.submitAction(
+    deferredRevisitReview.actions[0],
+    { advance: false, background: true },
+  ), true)
+  assert.equal(deferredRevisitReview.advanceCurrent(), true)
+  await deferredRevisitReview.flushPendingSaves()
+  assert.equal(
+    deferredRevisitReview.progress.value,
+    '复习 1 / 1',
+    'a future same-day revisit must not overflow the original batch progress',
+  )
+  assert.equal(
+    deferredRevisitReview.completed.value,
+    true,
+    'a future same-day revisit must not leave the finished batch on a disabled card',
+  )
+  assert.equal(deferredRevisitReview.deferredRevisit.value, true)
+  revisitNow = '2026-07-29T01:03:00.000Z'
+  deferredRevisitReview.refreshEligibility()
+  assert.equal(deferredRevisitReview.completed.value, false)
+  assert.equal(deferredRevisitReview.progress.value, '同日重访')
+
   let releaseAttempt
   let recordCalls = 0
   const duplicateLedger = createLedger({ mode: 'balanced', promptMode: 'word_only' })
@@ -656,6 +684,22 @@ function createUiService(initialLedger, options = {}) {
       ledger.extensions.completed_item_ids.push(current.ledger_item_id)
       ledger.extensions.attempt_ids.push(input.attempt_id)
       ledger.cursor += 1
+      if (
+        options.appendFutureRevisit
+        && !ledger.entries.some((entry) => entry.queue_kind === 'revisit')
+      ) {
+        ledger.entries.push({
+          ledger_item_id: `${ledger.session_id}:1:revisit:${current.learning_unit_id}:1`,
+          position: ledger.entries.length,
+          queue_kind: 'revisit',
+          learning_unit_id: current.learning_unit_id,
+          enqueue_reason: 'BALANCED_REVISIT_ALLOWED',
+          estimated_duration_ms: 36000,
+          planned_due_at: '2026-07-29T01:03:00.000Z',
+          revisit_ordinal: 1,
+          extensions: { prompt_mode: 'word_only' },
+        })
+      }
       ledger.status = ledger.cursor === ledger.entries.length ? 'completed' : 'active'
       const result = {
         attempt: {

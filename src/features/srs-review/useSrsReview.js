@@ -44,6 +44,7 @@ export function useSrsReview(service, options = {}) {
   const sessionLedger = ref(null)
   const reviewSource = ref(usesReviewServiceV2 ? 'v2' : (usesLegacyService ? 'legacy' : ''))
   const contextCueLevel = ref('none')
+  const eligibilityNowMs = ref(resolveNowMilliseconds(now))
   const committedItemIds = new Set()
   const attemptDrafts = new Map()
   let saveChain = Promise.resolve()
@@ -55,18 +56,7 @@ export function useSrsReview(service, options = {}) {
   const reviewingPast = computed(() => viewIndex.value < index.value)
   const canPrevious = computed(() => viewIndex.value > 0)
   const canNext = computed(() => viewIndex.value < Math.min(index.value, total.value))
-  const completed = computed(() => (
-    loaded.value
-    && dailyTotal.value > 0
-    && index.value >= total.value
-    && viewIndex.value >= total.value
-  ))
   const empty = computed(() => loaded.value && dailyTotal.value === 0)
-  const progress = computed(() => (
-    current.value
-      ? `${reviewingPast.value ? '回顾' : '复习'} ${usesReviewServiceV2 ? viewIndex.value + 1 : completedBeforeOpen.value + viewIndex.value + 1} / ${dailyTotal.value}`
-      : ''
-  ))
   const reviewHistory = computed(() => summarizeReviewLogs(reviewLogs.value, reviewDate.value))
   const mode = computed(() => sessionLedger.value?.mode || '')
   const modeLabel = computed(() => formatModeLabel(mode.value))
@@ -94,11 +84,37 @@ export function useSrsReview(service, options = {}) {
   const currentEligible = computed(() => {
     const plannedDueAt = current.value?.ledgerEntry?.planned_due_at
     if (!plannedDueAt) return true
-    return Date.parse(plannedDueAt) <= resolveNowMilliseconds(now)
+    return Date.parse(plannedDueAt) <= eligibilityNowMs.value
+  })
+  const deferredRevisit = computed(() => Boolean(
+    usesReviewServiceV2
+    && current.value?.ledgerEntry?.queue_kind === 'revisit'
+    && !reviewingPast.value
+    && !currentEligible.value
+    && index.value >= dailyTotal.value
+  ))
+  const completed = computed(() => (
+    loaded.value
+    && dailyTotal.value > 0
+    && (
+      deferredRevisit.value
+      || (index.value >= total.value && viewIndex.value >= total.value)
+    )
+  ))
+  const progress = computed(() => {
+    if (!current.value) return ''
+    if (usesReviewServiceV2) {
+      if (!reviewingPast.value && viewIndex.value >= dailyTotal.value) {
+        return currentEligible.value ? '同日重访' : `复习 ${dailyTotal.value} / ${dailyTotal.value}`
+      }
+      const position = Math.min(viewIndex.value + 1, dailyTotal.value)
+      return `${reviewingPast.value ? '回顾' : '复习'} ${position} / ${dailyTotal.value}`
+    }
+    return `${reviewingPast.value ? '回顾' : '复习'} ${completedBeforeOpen.value + viewIndex.value + 1} / ${dailyTotal.value}`
   })
   const currentEligibilityLabel = computed(() => {
     if (currentEligible.value) return ''
-    const remaining = Date.parse(current.value?.ledgerEntry?.planned_due_at) - resolveNowMilliseconds(now)
+    const remaining = Date.parse(current.value?.ledgerEntry?.planned_due_at) - eligibilityNowMs.value
     return `这次同日重访将在约 ${formatDuration(remaining)} 后可评分`
   })
   const isReviewServiceV2Active = computed(() => reviewSource.value === 'v2')
@@ -389,6 +405,11 @@ export function useSrsReview(service, options = {}) {
     })
   }
 
+  function refreshEligibility() {
+    eligibilityNowMs.value = resolveNowMilliseconds(now)
+    return currentEligible.value
+  }
+
   return {
     queue,
     index,
@@ -420,6 +441,7 @@ export function useSrsReview(service, options = {}) {
     revisitReason,
     currentEligible,
     currentEligibilityLabel,
+    deferredRevisit,
     reviewSource,
     usesReviewServiceV2: isReviewServiceV2Active,
     contextCueLevel,
@@ -437,6 +459,7 @@ export function useSrsReview(service, options = {}) {
     showSurroundingContext,
     goPrevious,
     goNext,
+    refreshEligibility,
   }
 }
 
