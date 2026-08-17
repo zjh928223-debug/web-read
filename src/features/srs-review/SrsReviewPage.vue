@@ -364,7 +364,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import {
   buildReviewContext,
   describeReviewSourceError,
@@ -538,8 +538,6 @@ const canPlaySentence = computed(() => Boolean(
 onMounted(async () => {
   wordShortcut.value = loadShortcut(wordShortcutStorageKey, 'r', 's')
   sentenceShortcut.value = loadShortcut(sentenceShortcutStorageKey, 's', wordShortcut.value)
-  window.addEventListener('keydown', handleReviewShortcut, true)
-  document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
   await Promise.all([loadLegacyMigrationStatus(), review.load()])
   meaningAbortController = new AbortController()
   void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
@@ -552,15 +550,27 @@ onMounted(async () => {
   }
   fitWordHeading()
 })
+onActivated(() => {
+  window.addEventListener('keydown', handleReviewShortcut, true)
+  document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
+})
+onDeactivated(deactivateReviewPage)
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleReviewShortcut, true)
-  document.removeEventListener('pointerdown', handleHistoryOutsidePointer, true)
+  deactivateReviewPage()
   meaningAbortController?.abort()
   wordResizeObserver?.disconnect()
   if (wordFitFrame) cancelAnimationFrame(wordFitFrame)
   dictionaryAssistance.dispose()
   stopAndReleaseAudio()
 })
+
+function deactivateReviewPage() {
+  window.removeEventListener('keydown', handleReviewShortcut, true)
+  document.removeEventListener('pointerdown', handleHistoryOutsidePointer, true)
+  historyOpen.value = false
+  shortcutEditingTarget.value = ''
+  stopAndReleaseAudio()
+}
 
 function handleHistoryOutsidePointer(event) {
   if (!historyOpen.value || historyContainer.value?.contains(event.target)) return

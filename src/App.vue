@@ -24,13 +24,16 @@
       </span>
     </Teleport>
     <Teleport to="body">
-      <SrsReviewPage
-        v-if="isSrsReviewOpen"
-        :service="srsReviewUiService"
-        :legacy-migration="legacyVocabularyMigration"
-        :dictionary-client="dictionaryClient"
-        @close="isSrsReviewOpen = false"
-      />
+      <KeepAlive>
+        <SrsReviewPage
+          v-if="isSrsReviewOpen"
+          :key="srsReviewCacheVersion"
+          :service="srsReviewUiService"
+          :legacy-migration="legacyVocabularyMigration"
+          :dictionary-client="dictionaryClient"
+          @close="isSrsReviewOpen = false"
+        />
+      </KeepAlive>
       <PassagePreviewPage
         v-if="isPassagePreviewOpen && passagePreviewItems.length"
         :items="passagePreviewItems"
@@ -47,7 +50,7 @@
         v-if="isPassagePreviewCheckOpen && passagePreviewCheckItems.length"
         :items="passagePreviewCheckItems"
         :coordinator="passagePreviewAcquisition"
-        @close="isPassagePreviewCheckOpen = false"
+        @close="closePassagePreviewCheck"
       />
     </Teleport>
     <span style="display:none" data-vue-mounted>1</span>
@@ -109,6 +112,7 @@ import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
 
 const isSrsReviewOpen = ref(false)
+const srsReviewCacheVersion = ref(0)
 const isPassagePreviewOpen = ref(false)
 const passagePreviewFileInput = ref(null)
 const passagePreviewItems = ref(loadPassagePreviewData())
@@ -385,6 +389,11 @@ async function preparePassagePreviewItems(items) {
 function closePassagePreview() {
   isPassagePreviewOpen.value = false
   passagePreviewPreloaded.value = { sentences: {}, translations: {} }
+}
+
+function closePassagePreviewCheck() {
+  isPassagePreviewCheckOpen.value = false
+  srsReviewCacheVersion.value += 1
 }
 
 async function generateTodayIeltsPreviewBatch() {

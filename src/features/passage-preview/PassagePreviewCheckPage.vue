@@ -10,14 +10,16 @@
       </div>
       <div class="passage-preview-header-meta">
         <p class="srs-review-progress" aria-live="polite">待考察 {{ completed ? items.length : currentIndex + 1 }} / {{ items.length }}</p>
+        <button class="passage-preview-shortcut-open" type="button" aria-label="打开延迟考察快捷键" @click="shortcutHelpOpen = true">快捷键</button>
       </div>
     </header>
 
     <section v-if="completed" class="srs-review-state passage-preview-complete" aria-live="polite">
-      <h2>{{ graduatedCount }} 个词已进入复习队列</h2>
+      <h2>{{ pendingSaveCount ? '考察完成，正在保存…' : `${graduatedCount} 个词已进入复习队列` }}</h2>
       <p>
-        本次考察完成；{{ notGraduatedCount ? `${notGraduatedCount} 个词需要下次再次考察。` : '通过的词现在可以在今日复习中看到。' }}
+        {{ pendingSaveCount ? `还有 ${pendingSaveCount} 条记录在后台保存。` : `本次考察完成；${notGraduatedCount ? `${notGraduatedCount} 个词需要下次再次考察。` : '通过的词现在可以在今日复习中看到。'}` }}
       </p>
+      <p v-if="errorMessage" class="srs-review-inline-notice passage-preview-check-error" role="alert">{{ errorMessage }}</p>
       <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
@@ -87,18 +89,34 @@
 
       <p v-if="errorMessage" class="srs-review-inline-notice passage-preview-check-error" role="alert">{{ errorMessage }}</p>
       <footer class="srs-review-actions passage-preview-actions passage-preview-check-actions" aria-label="延迟考察评分">
-        <button type="button" class="passage-preview-rating is-again" :disabled="saving" @click="rate('again')">忘记了</button>
-        <button type="button" class="passage-preview-rating is-hard" :disabled="saving" @click="rate('hard')">有点困难</button>
-        <button type="button" class="passage-preview-rating is-good" :disabled="saving" @click="rate('good')">想起来了</button>
-        <button type="button" class="passage-preview-rating is-easy" :disabled="saving" @click="rate('easy')">很熟</button>
+        <button type="button" class="passage-preview-rating is-again" aria-keyshortcuts="1" :disabled="ratingTransition" @click="rate('again')">忘记</button>
+        <button type="button" class="passage-preview-rating is-hard" aria-keyshortcuts="2" :disabled="ratingTransition" @click="rate('hard')">困难</button>
+        <button type="button" class="passage-preview-rating is-good" aria-keyshortcuts="3" :disabled="ratingTransition" @click="rate('good')">一般</button>
+        <button type="button" class="passage-preview-rating is-easy" aria-keyshortcuts="4" :disabled="ratingTransition" @click="rate('easy')">容易</button>
       </footer>
     </template>
+
+    <div v-if="shortcutHelpOpen" class="passage-preview-shortcut-backdrop" @pointerdown.self="shortcutHelpOpen = false">
+      <section class="passage-preview-shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="passage-preview-check-shortcut-title">
+        <header>
+          <div><p>延迟考察</p><h2 id="passage-preview-check-shortcut-title">快捷键</h2></div>
+          <button type="button" aria-label="关闭快捷键" @click="shortcutHelpOpen = false">×</button>
+        </header>
+        <div class="passage-preview-shortcut-list passage-preview-check-shortcut-list">
+          <div v-for="shortcut in shortcutHelpItems" :key="shortcut.key" class="passage-preview-shortcut-row">
+            <span>{{ shortcut.label }}</span><kbd>{{ shortcut.key }}</kbd>
+          </div>
+        </div>
+        <footer><button type="button" class="is-primary" @click="shortcutHelpOpen = false">完成</button></footer>
+      </section>
+    </div>
   </main>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createAriaAmericanPronunciationService } from '../../services/pronunciation/aria-american-pronunciation.js'
+import { isEditableKeyboardTarget } from './passage-preview-shortcuts.js'
 
 const props = defineProps({
   items: { type: Array, required: true },
@@ -109,13 +127,26 @@ const emit = defineEmits(['close'])
 const currentIndex = ref(0)
 const completed = ref(false)
 const saving = ref(false)
+const pendingSaveCount = ref(0)
+const ratingTransition = ref(false)
 const answerRevealed = ref(false)
 const errorMessage = ref('')
 const graduatedCount = ref(0)
 const notGraduatedCount = ref(0)
 const startedAt = ref(Date.now())
 const playbackPhase = ref('')
+const shortcutHelpOpen = ref(false)
 const pronunciation = createAriaAmericanPronunciationService()
+const wordShortcut = loadReviewShortcut('srs.review.wordShortcut.v1', 'r')
+const sentenceShortcut = loadReviewShortcut('srs.review.playbackShortcut.v1', 's')
+const shortcutHelpItems = [
+  { key: 'Space', label: '查看答案' },
+  { key: wordShortcut.toUpperCase(), label: '播放单词' },
+  { key: sentenceShortcut.toUpperCase(), label: '播放原句' },
+  { key: '1', label: '忘记' }, { key: '2', label: '困难' },
+  { key: '3', label: '一般' }, { key: '4', label: '容易' },
+]
+let writeQueue = Promise.resolve()
 
 const currentCheck = computed(() => props.items[currentIndex.value] || {})
 const current = computed(() => currentCheck.value.item || currentCheck.value)
@@ -126,29 +157,42 @@ const sentence = computed(() => (
 ))
 const highlightedSentence = computed(() => splitTarget(sentence.value, current.value.word || current.value.lemma))
 
-async function rate(rating) {
-  if (saving.value || !currentCheck.value) return
-  saving.value = true
+function rate(rating) {
+  if (ratingTransition.value || !currentCheck.value) return
+  ratingTransition.value = true
   errorMessage.value = ''
-  try {
-    const result = await props.coordinator.recordDelayedCheck(currentCheck.value, {
+  const pendingRating = {
+    check: currentCheck.value,
+    rating,
+    answerRevealedBeforeRating: answerRevealed.value,
+    durationMs: Math.max(0, Date.now() - startedAt.value),
+  }
+  advanceAfterRating(pendingRating)
+  queueMicrotask(() => { ratingTransition.value = false })
+  pendingSaveCount.value += 1
+  saving.value = true
+  writeQueue = writeQueue.then(async () => {
+    const result = await props.coordinator.recordDelayedCheck(pendingRating.check, {
       rating,
-      answerRevealedBeforeRating: answerRevealed.value,
-      durationMs: Math.max(0, Date.now() - startedAt.value),
-      activeDurationMs: Math.max(0, Date.now() - startedAt.value),
+      answerRevealedBeforeRating: pendingRating.answerRevealedBeforeRating,
+      durationMs: pendingRating.durationMs,
+      activeDurationMs: pendingRating.durationMs,
     })
     if (result.graduated) graduatedCount.value += 1
     else notGraduatedCount.value += 1
-    if (currentIndex.value >= props.items.length - 1) {
-      completed.value = true
-    } else {
-      currentIndex.value += 1
-      resetCurrent()
-    }
-  } catch (error) {
+  }).catch((error) => {
     errorMessage.value = error?.message || '考察记录失败，请重试。'
-  } finally {
-    saving.value = false
+  }).finally(() => {
+    pendingSaveCount.value = Math.max(0, pendingSaveCount.value - 1)
+    saving.value = pendingSaveCount.value > 0
+  })
+}
+
+function advanceAfterRating(_pendingRating) {
+  if (currentIndex.value >= props.items.length - 1) completed.value = true
+  else {
+    currentIndex.value += 1
+    resetCurrent()
   }
 }
 
@@ -189,6 +233,23 @@ function close() {
   emit('close')
 }
 
+function handleShortcutKeydown(event) {
+  if (event.defaultPrevented || event.repeat || event.altKey || event.ctrlKey || event.metaKey || isEditableKeyboardTarget(event.target)) return
+  const key = String(event.key || '').toLowerCase()
+  if (event.code === 'Space' || event.key === ' ') { event.preventDefault(); if (!answerRevealed.value) revealAnswer(); return }
+  if (key === wordShortcut) { event.preventDefault(); void speakWord(); return }
+  if (key === sentenceShortcut) { event.preventDefault(); void speakSentence(); return }
+  const rating = { 1: 'again', 2: 'hard', 3: 'good', 4: 'easy' }[event.key]
+  if (rating) { event.preventDefault(); rate(rating) }
+}
+
+function loadReviewShortcut(key, fallback) {
+  try {
+    const value = String(localStorage.getItem(key) || '').trim().toLowerCase()
+    return /^[a-z0-9]$/.test(value) ? value : fallback
+  } catch (_error) { return fallback }
+}
+
 function splitTarget(text, target) {
   const sentenceText = String(text || '')
   const word = String(target || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
@@ -201,5 +262,9 @@ function splitTarget(text, target) {
   }))
 }
 
-onBeforeUnmount(() => pronunciation.stop())
+onMounted(() => window.addEventListener('keydown', handleShortcutKeydown, true))
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleShortcutKeydown, true)
+  pronunciation.stop()
+})
 </script>

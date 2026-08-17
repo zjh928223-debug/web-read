@@ -528,6 +528,20 @@
   font-size: 11px;
 }
 
+.passage-preview-check-shortcut-list { margin-top: 20px; }
+
+.passage-preview-check-shortcut-list .passage-preview-shortcut-row > kbd {
+  display: grid;
+  min-width: 44px;
+  min-height: 32px;
+  place-items: center;
+  border: 1px solid rgba(132, 149, 176, .32);
+  border-radius: 8px;
+  background: #f6f8fb;
+  color: #344c72;
+  font: 700 13px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .passage-preview-shortcut-notice {
   min-height: 20px;
   margin: 12px 0 4px;
