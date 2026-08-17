@@ -88,17 +88,17 @@ Vite 仍承载 9 组本地能力插件。正式单一 Local App Host 已有原�
 - `verify:ui-compatibility-store`：UI Pinia 唯一 owner、retired `__uiStore` 缺失与可见 toast/error 行为检查。
 - `openspec validate stabilize-and-simplify-read-web --strict`：规格结构校验。
 
-`npm test` 当前执行 canonical `verify:full`。12.3 已用真实 browser/workflow 数据的只读副本完成六域隔离恢复、重开、checksum 与六条旅程验证；12.4 已完成三次冷启、30 分钟播放、A/B/A 快速切换、服务重启、进程取消、36 格 Quota/损坏恢复和内存增长验收。12.5 已完成旧版与 Next 的同 fixture 三轮差分：两版各 21/21 journeys、零浏览器/网络错误，十项指标中六项改善，总体比率 1.055。12.6 已补齐 current/previous manifest、逐 artifact SHA-256、health 与原子 release-target rollback；12.7 已在临时快捷方式副本上完成原子切换、正常回滚和 health-failure 自动回滚，桌面源快捷方式哈希不变。发布只剩 12.8 的用户确认与实际迁移门禁。
+`npm test` 当前执行 canonical `verify:full`。12.3 已用真实 browser/workflow 数据的只读副本完成六域隔离恢复、重开、checksum 与六条旅程验证；12.4 已完成三次冷启、30 分钟播放、A/B/A 快速切换、服务重启、进程取消、36 格 Quota/损坏恢复和内存增长验收。12.5 已完成旧版与 Next 的同 fixture 三轮差分：两版各 21/21 journeys、零浏览器/网络错误，十项指标中六项改善，总体比率 1.055。12.6 已补齐 current/previous manifest、逐 artifact SHA-256、health 与原子 release-target rollback；12.7 已完成快捷方式隔离回滚演练；12.8 已在用户明确确认后完成桌面快捷方式迁移并保留旧目标和恢复状态。
 
 ## 7. 隔离与迁移状态
 
 - Next workspace：`E:\read-web-next`，分支 `codex/read-web-next`。
 - Next 预览：`5174/8766`；自动浏览器验证：`4193/4194/4195`。
 - 日常版：`E:\read-web`，`5173/8765`。
-- Desktop shortcut 仍指向日常版。
-- 当前不允许自动切换快捷方式。
+- Desktop `英语学习.lnk` 已指向 Next 的 `launch-next-preview.ps1`（5174/8766）。
+- 原版 `E:\read-web` 与回滚状态仍保留；快捷方式不会被后续验证自动改写。
 
-只有在构建、行为、性能、数据备份/恢复、长时运行、故障注入、Release Manifest 和回滚演练全部通过，并再次获得用户确认后，才可迁移快捷方式。
+迁移已于 2026-08-17 在构建、行为、性能、数据备份/恢复、长时运行、故障注入、Release Manifest 和回滚演练完成且用户明确确认后执行。
 
 ## 8. 文档优先级
 

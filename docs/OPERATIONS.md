@@ -8,7 +8,7 @@
 - Next 手工预览使用 `5174/8766`。
 - `verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口，全部排除 `5173/8765`。
 - 不把凭据、浏览器 profile、媒体、工作流 data root 或词典数据库写入仓库。
-- 未完成发布门禁并获得用户确认前，不修改桌面快捷方式。
+- 桌面快捷方式已在 2026-08-17 获得用户明确确认后迁移；后续验证不得自动改写，旧目标必须保留用于回滚。
 
 ## Install and diagnose
 

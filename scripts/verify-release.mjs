@@ -22,23 +22,20 @@ const stages = [
   ['isolated shortcut switch and automatic rollback rehearsal (12.7)', 'powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'scripts/release-shortcut-rollback-rehearsal.ps1']],
 ]
 
-const pending = [
-  'user-approved desktop shortcut migration after every release gate (12.8) — pending',
-]
+const pending = []
 
 console.log('verify-release included:')
 stages.forEach(([label], index) => console.log(`  ${index + 1}. ${label}`))
 console.log('verify-release evidence rule: canonical architecture is prerequisite evidence only; behavior, browser, performance, and recovery stages remain independently required.')
-console.log('verify-release pending before migration:')
-pending.forEach((label) => console.log(`  - ${label}`))
+console.log('verify-release pending before migration: none')
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gate (12.8)')
+  console.log('verify-release status: READY; all release stages are implemented and the user-approved shortcut migration is recorded')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: 12.8 user-approved shortcut migration is still pending.')
+  console.error('\nverify-release BLOCKED: pending release work remains.')
   console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }

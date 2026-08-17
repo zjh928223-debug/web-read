@@ -5,11 +5,11 @@
 ## Safety contract
 
 - The current learning installation remains at `E:\read-web`.
-- The current desktop shortcut continues to launch `E:\read-web` on ports `5173` and `8765`.
+- The desktop learning shortcut was migrated with user approval on 2026-08-17 and now launches `E:\read-web-next` on ports `5174` and `8766`.
 - Development and verification here use ports `5174` and `8766`.
 - `scripts/launch-next-preview.ps1` starts only that isolated preview pair.
 - Do not stop or replace the current learning processes during development.
-- Do not change the desktop shortcut until the user approves the final migration.
+- Do not rewrite the desktop shortcut automatically; its original `E:\read-web` target remains the rollback target.
 
 ## Repository identity
 
@@ -27,13 +27,13 @@ Learning data remains outside Git:
 
 Do not copy generated media, browser profiles, credentials, or dictionary databases into Git.
 
-## Migration gate
+## Migration record
 
-Before switching the desktop shortcut:
+The desktop shortcut was switched only after:
 
 1. Build and focused checks pass.
 2. The next frontend is verified on `5174`.
 3. The embedded workflow is verified on `8766`.
 4. Core learning flows are smoke-tested with a separate browser profile.
-5. The next branch is committed and pushed.
+5. The next branch was committed locally; remote push remains a separate user-controlled action.
 6. The old shortcut target is recorded for immediate rollback.

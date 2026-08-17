@@ -128,8 +128,8 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-当前 release 会先列出并阻断未完成的 12.8；`--list` 只查看清单并
-成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
+12.8 已在用户于 2026-08-17 明确确认后完成；`--list` 现在列出完整 stage 并报告
+READY，默认执行完整 release gate。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域组合通过
 跨进程 application-profile lease 在完整 owner commit 和 Local App Host 生命周期
@@ -165,6 +165,13 @@ previous 两份 manifest 和 staged release-state；manifest 包含 Git/版本/�
 快捷方式，将副本放到系统临时目录，再对副本执行原子 Next 切换、正常 rollback 和
 模拟 health failure 自动 rollback；最后要求桌面源快捷方式哈希完全不变。底层迁移
 入口默认拒绝 Desktop 写入，实际迁移必须额外提供显式确认参数并受 12.8 用户确认约束。
+
+桌面 `英语学习.lnk` 当前指向 `E:\read-web-next\scripts\launch-next-preview.ps1`，
+工作目录为 `E:\read-web-next`。原始目标保存在 ignored release state 中；需要恢复时运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-migration.ps1 -Action Rollback -ShortcutPath "$env:USERPROFILE\Desktop\英语学习.lnk" -StatePath output\release\desktop-shortcut-migration.json -AllowDesktopMutation
+```
 
 ## 入口和 owner 规则
 

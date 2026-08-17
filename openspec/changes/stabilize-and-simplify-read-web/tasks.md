@@ -121,7 +121,7 @@
 - [x] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
 - [x] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
 - [x] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
-- [ ] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
+- [x] 12.8 仅在全部 release gates 通过并获得用户确认后，迁移桌面快捷方式；保留原版和恢复说明
 
 > 12.2 is complete: the real six-domain composition holds a durable
 > cross-process application-profile lease across restore and the Local App Host
@@ -157,3 +157,8 @@
 > normally, switched again, and automatically restored after a simulated health
 > failure. The source shortcut hash was identical before and after. The migration
 > command refuses Desktop writes unless a separate explicit confirmation flag is used.
+> 12.8 is complete after explicit user confirmation on 2026-08-17. The desktop
+> learning shortcut now launches `E:\read-web-next\scripts\launch-next-preview.ps1`
+> with working directory `E:\read-web-next`. The original `E:\read-web` target is
+> retained in `output/release/desktop-shortcut-migration.json`; the legacy workspace
+> was not deleted or modified. The documented rollback command restores it atomically.

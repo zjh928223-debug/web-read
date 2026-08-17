@@ -10,7 +10,7 @@ Read-Web 是一个本地运行的英语学习阅读器，使用 Vite、Vue 3、P
 
 - 日常使用版仍位于 `E:\read-web`，使用 `5173/8765`。
 - Next 开发预览使用 `5174/8766`。
-- 桌面快捷方式在所有发布门禁通过并获得用户确认前不得切换。
+- 桌面学习快捷方式已在 2026-08-17 获得用户明确确认后切换到 Next；原版与回滚状态保留。
 - 学习数据、媒体、凭据和大型词典不进入 Git。
 
 当前架构事实见 [CURRENT_PROJECT_STATUS.md](CURRENT_PROJECT_STATUS.md)，文件所有权见 [PROJECT_MAP.md](PROJECT_MAP.md)，启动、验证和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。

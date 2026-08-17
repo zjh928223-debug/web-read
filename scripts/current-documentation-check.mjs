@@ -25,7 +25,8 @@ assert.match(readme, /9 个 src\/composables/)
 assert.match(operations, /4193.*4194/)
 assert.match(operations, /随机 browser-safe 端口/)
 assert.match(operations, /排除 `5173\/8765`/)
-assert.match(operations, /不修改桌面快捷方式/)
+assert.match(operations, /后续验证不得自动改写/)
+assert.match(operations, /旧目标必须保留用于回滚/)
 
 for (const historical of ['ES_MODULE_PLAN.md', 'REFACTORING_README.md', 'SRS_REVIEW_PERSONAL_MVP_IMPLEMENTATION.md']) {
   assert.match(read(historical), /历史|Archived/, `${historical} must carry an archived banner`)
