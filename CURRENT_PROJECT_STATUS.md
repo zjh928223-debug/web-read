@@ -88,7 +88,7 @@ Vite 仍承载 9 组本地能力插件。正式单一 Local App Host 已有原�
 - `verify:ui-compatibility-store`：UI Pinia 唯一 owner、retired `__uiStore` 缺失与可见 toast/error 行为检查。
 - `openspec validate stabilize-and-simplify-read-web --strict`：规格结构校验。
 
-`npm test` 当前执行 canonical `verify:full`。12.3 已用真实 browser/workflow 数据的只读副本完成六域隔离恢复、重开、checksum 与六条旅程验证；发布仍被 12.4–12.8 的长时运行、差分、最终 manifest 和快捷方式回滚/确认门禁阻断。
+`npm test` 当前执行 canonical `verify:full`。12.3 已用真实 browser/workflow 数据的只读副本完成六域隔离恢复、重开、checksum 与六条旅程验证；12.4 已完成三次冷启、30 分钟播放、A/B/A 快速切换、服务重启、进程取消、36 格 Quota/损坏恢复和内存增长验收。发布仍被 12.5–12.8 的差分、最终 manifest 和快捷方式回滚/确认门禁阻断。
 
 ## 7. 隔离与迁移状态
 

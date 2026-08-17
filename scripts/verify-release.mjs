@@ -9,6 +9,7 @@ const stages = [
   ['isolated browser performance journeys (3 runs)', process.execPath, ['scripts/perf/run-browser-budget-candidate.mjs']],
   ['browser baseline diff and budget gate', process.execPath, ['scripts/perf/performance-budget-gate.mjs']],
   ['offline 1k/10k playback scale gate', process.execPath, ['scripts/perf/run-playback-scale-gate.mjs']],
+  ['isolated 30-minute stability rehearsal (12.4)', process.execPath, ['scripts/release-stability-rehearsal.mjs']],
   ['isolated backend HTTP benchmark', 'python', ['scripts/perf/backend-http-benchmark.py']],
   ['isolated application-state foundation rehearsal (12.1)', process.execPath, ['scripts/application-backup-release-rehearsal.mjs']],
   ['six-domain atomic visibility and application-startup recovery (12.2)', process.execPath, ['scripts/application-backup-atomic-boundary-check.mjs']],
@@ -18,7 +19,6 @@ const stages = [
 ]
 
 const pending = [
-  'cold-start, long-playback, restart, cancellation, quota/corruption, and memory-growth evidence (12.4) — pending',
   'old-version versus next fixture performance/behavior differential (12.5) — pending',
   'final release manifest, checksums, previous manifest, health-check, and rollback rehearsal (12.6) — pending',
   'shortcut rollback rehearsal (12.7) — pending',
@@ -32,12 +32,12 @@ console.log('verify-release pending before migration:')
 pending.forEach((label) => console.log(`  - ${label}`))
 
 if (process.argv.includes('--list')) {
-  console.log('verify-release status: BLOCKED by pending release gates (12.4, 12.5, 12.6, 12.7, 12.8)')
+  console.log('verify-release status: BLOCKED by pending release gates (12.5, 12.6, 12.7, 12.8)')
   process.exit(0)
 }
 
 if (pending.length) {
-  console.error('\nverify-release BLOCKED: 12.4/12.5/12.6/12.7/12.8 release gates are still pending.')
+  console.error('\nverify-release BLOCKED: 12.5/12.6/12.7/12.8 release gates are still pending.')
   console.error('Run npm run verify:backup-restore-rehearsal for the 12.1 foundation rehearsal and complete every pending gate before release.')
   process.exit(2)
 }

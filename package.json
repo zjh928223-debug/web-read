@@ -47,6 +47,7 @@
     "verify:backup-restore-rehearsal": "node scripts/application-backup-release-rehearsal.mjs",
     "verify:real-profile-rehearsal:contract": "node scripts/application-backup-real-profile-rehearsal-check.mjs",
     "verify:real-profile-rehearsal": "node scripts/application-backup-real-profile-rehearsal.mjs",
+    "verify:release-stability": "npm run build && node scripts/release-stability-rehearsal.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "python scripts/perf/backend-http-benchmark.py",
     "verify:performance:browser": "node scripts/perf/run-browser-journeys.mjs",

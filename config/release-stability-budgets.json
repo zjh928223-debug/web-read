@@ -1,0 +1,22 @@
+{
+  "schema": "read-web.release-stability-budgets",
+  "version": 1,
+  "status": "active",
+  "scope": "Task 12.4 isolated production-host endurance and recovery rehearsal",
+  "playbackDurationMs": 1800000,
+  "sampleIntervalMs": 30000,
+  "rapidSwitchBursts": 40,
+  "memory": {
+    "finalHeapGrowthMaxBytes": 33554432,
+    "peakHeapGrowthMaxBytes": 67108864,
+    "listenerGrowthMax": 0,
+    "liveObjectUrlMax": 1
+  },
+  "errors": {
+    "console": 0,
+    "page": 0,
+    "unhandledRejection": 0,
+    "requestFailed": 0,
+    "http": 0
+  }
+}

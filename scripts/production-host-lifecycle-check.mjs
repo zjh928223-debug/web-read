@@ -19,6 +19,8 @@ const releaseId = 'isolated-production-host-test'
 const profileId = 'isolated-random-port'
 const executionId = randomUUID()
 const outputRoot = path.resolve(process.env.READ_WEB_PRODUCTION_HOST_OUTPUT || path.join(repoRoot, 'output', 'production-host'))
+const evidencePath = path.resolve(process.env.READ_WEB_PRODUCTION_HOST_EVIDENCE || path.join(outputRoot, 'production-host-lifecycle.json'))
+const runEndurance = process.env.READ_WEB_PRODUCTION_HOST_ENDURANCE === '1'
 
 const runtimeConfig = JSON.parse(await readFile(path.join(repoRoot, 'config', 'runtime.next.json'), 'utf8'))
 assert.equal(runtimeConfig.frontend.port, 5174, 'next dev fallback must remain on 5174')
@@ -293,6 +295,12 @@ try {
         `${JSON.stringify(browserArtifact, null, 2)}\n`,
         'utf8',
       )
+      if (runEndurance) {
+        await runNode('scripts/release-playback-endurance.mjs', {
+          READ_WEB_STABILITY_BASE_URL: baseUrl,
+          READ_WEB_STABILITY_OUTPUT: process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json'),
+        })
+      }
     }
 
     const pid = host.child.pid
@@ -307,7 +315,32 @@ try {
     cycles.push({ cycle, pid, stop: cycle === 2 ? 'crash' : 'graceful', portReleased: true })
     host = null
   }
-  console.log(JSON.stringify({ status: 'passed', port, cycles, viteProcessStarted: false, devFallback: { frontend: 5174, backend: 8766 } }, null, 2))
+  const evidence = {
+    schema: 'read-web.production-host-lifecycle-evidence',
+    schemaVersion: 1,
+    capturedAt: new Date().toISOString(),
+    status: 'passed',
+    isolation: {
+      tempRoot,
+      profileId,
+      reservedPortsUntouched: true,
+      sourceDataReadOnly: true,
+    },
+    port,
+    cycles,
+    coldStarts: cycles.length,
+    serviceRestart: {
+      gracefulStops: cycles.filter((item) => item.stop === 'graceful').length,
+      crashStops: cycles.filter((item) => item.stop === 'crash').length,
+      everyPortReleased: cycles.every((item) => item.portReleased),
+    },
+    enduranceEvidence: runEndurance ? path.resolve(process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json')) : null,
+    viteProcessStarted: false,
+    devFallback: { frontend: 5174, backend: 8766 },
+  }
+  await mkdir(path.dirname(evidencePath), { recursive: true })
+  await writeFile(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8')
+  console.log(JSON.stringify(evidence, null, 2))
 } finally {
   if (host) await stopOwned(host, 'SIGKILL').catch(() => {})
   if (capability) await stopOwned(capability, 'SIGTERM')

@@ -117,7 +117,7 @@
 - [x] 12.1 实现版本化全应用 backup manifest、逐域 checksum、媒体引用策略和导入 dry-run
 - [x] 12.2 实现原子 restore、冲突报告、迁移前自动 rollback backup 和 corrupt quarantine
 - [x] 12.3 在隔离 profile 恢复真实数据副本，验证 Reader、Vocabulary、SRS、Preview、Annotation 和 workflow 完整性
-- [ ] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
+- [x] 12.4 执行三次冷启、30 分钟播放、快速材料切换、服务重启、进程取消、Quota/损坏和内存增长测试
 - [ ] 12.5 执行旧版与 next 同 fixture 性能/行为差分，确认关键预算改善且无学习功能退化
 - [ ] 12.6 生成最终 Release Manifest、artifact checksums、previous manifest 与一键 health-check/rollback
 - [ ] 12.7 在不修改原版的 dry-run 中演练快捷方式原子切换与自动回滚
@@ -134,3 +134,10 @@
 > network requests. Media bytes and retired rows remained explicitly excluded;
 > media identity metadata remains rebindable. The daily source stayed logically
 > unchanged and no source or daily service path was written.
+> 12.4 is complete: the isolated built-dist production host passed three cold
+> starts (two graceful stops and one crash), at least 1,800,000 ms of playback
+> with every sample progressing, repeated media loops, 120 A/B/A material switches,
+> zero listener growth and heap growth within the versioned budget, a real owned child
+> process cancellation, 50 canceled jobs across service restart, and all 36
+> Quota/corruption/recovery cells. All artifacts were written under an isolated
+> temporary root; daily ports, source data and external network remained untouched.

@@ -7,10 +7,10 @@
     "behavior": 85,
     "browser": 27,
     "performance": 13,
-    "release": 8
+    "release": 10
   },
-  "packageScriptCount": 222,
-  "executableScriptCount": 242,
+  "packageScriptCount": 223,
+  "executableScriptCount": 244,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1785,6 +1785,19 @@
         "scripts/verify-release.mjs"
       ],
       "owner": "package.json#scripts.verify:release"
+    },
+    {
+      "name": "verify:release-stability",
+      "command": "npm run build && node scripts/release-stability-rehearsal.mjs",
+      "category": "release",
+      "layers": [
+        "behavior",
+        "release"
+      ],
+      "invokes": [
+        "scripts/release-stability-rehearsal.mjs"
+      ],
+      "owner": "package.json#scripts.verify:release-stability"
     },
     {
       "name": "verify:render-facades",
@@ -6739,6 +6752,58 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/release-playback-endurance.mjs",
+      "category": "release",
+      "layers": [
+        "browser",
+        "performance",
+        "release",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#releaseGate",
+      "owners": [
+        "docs/architecture/script-inventory.json#releaseGate"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": true,
+        "release": true,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/release-stability-rehearsal.mjs",
+      "category": "release",
+      "layers": [
+        "release",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:release-stability",
+      "owners": [
+        "package.json#scripts.verify:release-stability"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

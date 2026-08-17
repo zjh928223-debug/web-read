@@ -128,7 +128,7 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-当前 release 会先列出并阻断未完成的 12.4、12.5、12.6、12.7、12.8；`--list` 只查看清单并
+当前 release 会先列出并阻断未完成的 12.5、12.6、12.7、12.8；`--list` 只查看清单并
 成功退出，默认执行以非零退出表示不可发布。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域组合通过
@@ -142,6 +142,12 @@ IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六�
 counts/checksums 及 Reader/Vocabulary/SRS/Preview/Annotation/workflow journeys 一致。
 它必须显式提供 browser profile、origin、workflow data root、isolated root 和每个
 额外 output root；不会被普通 `verify:full` 或无参数 release 自动调用。12.7 仍未完成。
+
+12.4 由 `npm run verify:release-stability` 执行，并已接入 release stage。它在
+built `dist` 的隔离 production host 上执行三次冷启/重启与真实 wall-clock 30 分钟
+播放，持续 A/B 切换并采集 timeupdate、Long Task、JS heap、listener、Object URL
+和浏览器错误；随后重跑 36 格 Quota/损坏/恢复矩阵、真实受控子进程取消及 50-job
+取消后重启。默认报告根使用系统临时目录；该入口拒绝日用/next 保留端口并阻断外网。
 
 ## 入口和 owner 规则
 
@@ -158,7 +164,7 @@ counts/checksums 及 Reader/Vocabulary/SRS/Preview/Annotation/workflow journeys 
 
 12.2 已覆盖真实六域 adapters、durable checkpoints、rollback/quarantine、
 冲突安全恢复、跨 owner 原子可见性、Local App Host 启动前强制 recovery seam
-和运行期 profile lease。12.3 的真实只读源/隔离恢复证据已完成；其余 pending gates
+和运行期 profile lease。12.3 的真实只读源/隔离恢复证据及 12.4 的长时稳定性证据均已完成；其余 pending gates
 完成前，任何 Full/基础 rehearsal 通过都不代表可以切换桌面快捷方式或接触真实
 学习数据。
 

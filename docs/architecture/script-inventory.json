@@ -11,6 +11,8 @@
     "scripts/perf/playback-scale-journey.mjs",
     "scripts/read-web-load-check.cjs",
     "scripts/reader-marks-activity-conflict-check.mjs",
+    "scripts/release-playback-endurance.mjs",
+    "scripts/release-process-cancellation.py",
     "scripts/srs-review-service-v2-check.cjs",
     "scripts/vocabulary-learning-events-check.cjs",
     "scripts/vocabulary-learning-uow-faults-check.mjs",
