@@ -54,6 +54,7 @@ export function generateIeltsDailyPreviewBatch({
   allocations = emptyAllocations(),
   date,
   candidateWords = [],
+  excludedLemmas = [],
   batchSize = IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE,
 } = {}) {
   const current = normalizeAllocations(allocations)
@@ -75,6 +76,7 @@ export function generateIeltsDailyPreviewBatch({
 
   const assigned = new Set(current.assignedLemmas)
   current.batches.forEach((batch) => batch.words.forEach((word) => assigned.add(word)))
+  normalizeWords(excludedLemmas).forEach((word) => assigned.add(word))
   const availableItems = normalizeCandidateItems(candidateWords)
     .filter((item) => !assigned.has(item.lemma))
   const requestedSize = Math.max(1, Math.floor(Number(batchSize) || IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE))
@@ -209,11 +211,13 @@ export function selectNextIeltsDailyPreviewBatch({
   allocations,
   currentBatchDate = null,
   consumedBatchDates = [],
+  excludedLemmas = [],
   today = formatDate(new Date()),
 } = {}) {
   const current = normalizeDate(currentBatchDate)
   const limit = normalizeDate(today) || formatDate(new Date())
   const consumed = new Set((Array.isArray(consumedBatchDates) ? consumedBatchDates : []).map(normalizeDate).filter(Boolean))
+  const excluded = new Set(normalizeWords(excludedLemmas))
   return (Array.isArray(allocations?.batches) ? allocations.batches : [])
     .filter((batch) => (
       batch?.date
@@ -221,7 +225,49 @@ export function selectNextIeltsDailyPreviewBatch({
       && (!current || batch.date > current)
       && !consumed.has(batch.date)
     ))
+    .map((batch) => filterExcludedBatchWords(batch, excluded))
+    .filter((batch) => batch.words.length > 0)
     .sort((left, right) => left.date.localeCompare(right.date))[0] || null
+}
+
+export function excludePreviouslyIntroducedPreviewItems({
+  items = [],
+  introducedRecords = [],
+  currentIndex = 0,
+} = {}) {
+  const source = Array.isArray(items) ? items : []
+  const introducedByLemma = new Map((Array.isArray(introducedRecords) ? introducedRecords : [])
+    .map((record) => [normalizeWord(record?.lemma || record?.word), normalizeText(record?.previewItemId)])
+    .filter(([lemma]) => lemma))
+  const retained = source
+    .map((item, originalIndex) => ({ item, originalIndex }))
+    .filter(({ item }) => {
+      const introducedItemId = introducedByLemma.get(normalizeWord(item?.lemma || item?.word))
+      return !introducedItemId || introducedItemId === normalizeText(item?.id)
+    })
+  if (retained.length === source.length) {
+    return { items: source, currentIndex: Math.max(0, Number(currentIndex) || 0), removedCount: 0 }
+  }
+  const previousIndex = Math.max(0, Math.min(source.length - 1, Number(currentIndex) || 0))
+  const nextCurrent = retained.find((entry) => entry.originalIndex >= previousIndex) || retained.at(-1)
+  return {
+    items: retained.map((entry) => entry.item),
+    currentIndex: nextCurrent ? retained.indexOf(nextCurrent) : 0,
+    removedCount: source.length - retained.length,
+  }
+}
+
+function filterExcludedBatchWords(batch, excluded) {
+  if (!excluded.size) return batch
+  const words = normalizeWords(batch?.words).filter((word) => !excluded.has(word))
+  const candidateItems = normalizeCandidateItems(batch?.candidateItems)
+    .filter((item) => words.includes(item.lemma))
+  const { candidateItems: _previousCandidateItems, ...batchWithoutCandidateItems } = batch
+  return {
+    ...batchWithoutCandidateItems,
+    words,
+    ...(candidateItems.length ? { candidateItems } : {}),
+  }
 }
 
 export async function materializeIeltsDailyPreviewBatch({

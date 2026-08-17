@@ -179,6 +179,7 @@ async function runCoordinatorScenario(moduleApi) {
   const rebuilt = await coordinator.rebuildRecords()
   assert.equal(rebuilt.some((record) => record.learningUnitId === 'orphan-local-only'), false)
   assert.equal(rebuilt.some((record) => record.learningUnitId === registered.record.learningUnitId), true)
+  assert.deepEqual(await coordinator.getIntroducedLemmas(), ['brain'])
   const due = await coordinator.getDueChecks({ now: delayedAt })
   assert.equal(due.length, 1)
   const checked = await coordinator.recordDelayedCheck(due[0], {

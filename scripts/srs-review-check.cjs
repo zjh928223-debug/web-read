@@ -178,6 +178,8 @@ async function run() {
     /document\.addEventListener\('pointerdown', handleHistoryOutsidePointer, true\)/,
     'the review history should listen for clicks outside its container',
   )
+  assert.match(reviewPageSource, /继续下一组（最多 30 个）/)
+  assert.match(reviewPageSource, /本组后还剩 \{\{ review\.backlogCount\.value \}\} 个/)
   assert.match(
     reviewPageSource,
     /watch\(\(\) => props\.active,[\s\S]*activateReviewPage\(\)[\s\S]*deactivateReviewPage\(\)/,
@@ -803,13 +805,42 @@ async function run() {
     'the daily queue should use the end of the local day instead of the current instant',
   )
   assert.equal(dailyReview.total.value, 2, 'words already reviewed today should not re-enter the queue')
-  assert.equal(dailyReview.dailyTotal.value, 3, 'today total should include completed and remaining words')
-  assert.equal(dailyReview.progress.value, '复习 2 / 3', 'reopening should preserve today progress')
+  assert.equal(dailyReview.dailyTotal.value, 2, 'a reopened legacy review should count only the current group')
+  assert.equal(dailyReview.progress.value, '复习 1 / 2', 'a reopened legacy review should start the current group at one')
   assert.equal(dailyReview.reviewHistory.value[0].wordCount, 1, 'history should count unique words by day')
   await dailyReview.submitRating(vocabulary.REVIEW_RATINGS.GOOD)
-  assert.equal(dailyReview.dailyTotal.value, 3, 'today total must remain fixed after another rating')
-  assert.equal(dailyReview.progress.value, '复习 3 / 3')
+  assert.equal(dailyReview.dailyTotal.value, 2, 'the current group total must remain fixed after another rating')
+  assert.equal(dailyReview.progress.value, '复习 2 / 2')
   assert.equal(dailyReview.reviewHistory.value[0].wordCount, 2)
+
+  const groupedDueEntries = Array.from({ length: 65 }, (_value, index) => (
+    createDueEntry(`grouped-${String(index + 1).padStart(2, '0')}`)
+  ))
+  const groupedReview = reviewModule.useSrsReview({
+    async getDueWords() { return groupedDueEntries },
+    async getReviewLogs() { return [] },
+    async reviewWord() { return {} },
+  })
+  await groupedReview.load()
+  assert.equal(groupedReview.total.value, 30, 'legacy review should load at most 30 words per group')
+  assert.equal(groupedReview.backlogCount.value, 35, 'legacy review should expose words left after the current group')
+  assert.equal(groupedReview.progress.value, '复习 1 / 30')
+  for (let index = 0; index < 30; index += 1) {
+    await groupedReview.submitAction(groupedReview.actions[2], { background: true })
+  }
+  assert.equal(groupedReview.completed.value, true)
+  assert.equal(groupedReview.continueLegacyBatch(), true, 'the completion page should open the next legacy group')
+  assert.equal(groupedReview.total.value, 30)
+  assert.equal(groupedReview.backlogCount.value, 5)
+  assert.equal(groupedReview.progress.value, '复习 1 / 30')
+  for (let index = 0; index < 30; index += 1) {
+    await groupedReview.submitAction(groupedReview.actions[2], { background: true })
+  }
+  assert.equal(groupedReview.continueLegacyBatch(), true)
+  assert.equal(groupedReview.total.value, 5)
+  assert.equal(groupedReview.backlogCount.value, 0)
+  assert.equal(groupedReview.progress.value, '复习 1 / 5')
+  assert.equal(groupedReview.continueLegacyBatch(), false, 'there should be no extra group after the backlog is empty')
 
   let retryCalls = 0
   const retryReview = reviewModule.useSrsReview({

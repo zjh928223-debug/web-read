@@ -86,6 +86,7 @@ import {
 import {
   generateIeltsDailyPreviewBatch,
   getPreviewBatchDate,
+  excludePreviouslyIntroducedPreviewItems,
   loadIeltsDailyPreviewAllocations,
   loadIeltsDailyPreviewContinuation,
   loadIeltsPreviewCandidateWords,
@@ -291,8 +292,35 @@ async function openStoredPassagePreview() {
       console.warn('[passage-preview] delayed-check probe unavailable', error)
     }
     passagePreviewItems.value = loadPassagePreviewData()
+    let progress = loadPassagePreviewProgress()
+    const storedBatchDate = getPreviewBatchDate(passagePreviewItems.value)
+    const reconciledItems = excludePreviouslyIntroducedPreviewItems({
+      items: passagePreviewItems.value,
+      introducedRecords: await loadPreviewIntroducedRecords(),
+      currentIndex: progress.currentIndex,
+    })
+    if (reconciledItems.removedCount > 0) {
+      if (!reconciledItems.items.length) {
+        const advanced = storedBatchDate && await advanceCompletedIeltsPreviewBatch(storedBatchDate, {
+          ...progress,
+          status: 'completed',
+          completedAt: progress.completedAt || new Date().toISOString(),
+        })
+        if (!advanced) {
+          passagePreviewItems.value = []
+          savePassagePreviewData([])
+          savePassagePreviewProgress(createInitialPassagePreviewProgress())
+          return false
+        }
+        progress = loadPassagePreviewProgress()
+      } else {
+        passagePreviewItems.value = reconciledItems.items
+        progress = { ...progress, currentIndex: reconciledItems.currentIndex }
+        savePassagePreviewData(passagePreviewItems.value)
+        savePassagePreviewProgress(progress)
+      }
+    }
     if (validatePassagePreviewItems(passagePreviewItems.value)) {
-      const progress = loadPassagePreviewProgress()
       const currentBatchDate = getPreviewBatchDate(passagePreviewItems.value)
       if (progress.status === 'completed' && currentBatchDate) {
         await advanceCompletedIeltsPreviewBatch(currentBatchDate, progress)
@@ -321,15 +349,17 @@ async function openPassagePreview() {
 async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
   const continuation = loadIeltsDailyPreviewContinuation()
   const allocations = loadIeltsDailyPreviewAllocations()
+  const excludedLemmas = await loadPreviewExcludedLemmas()
   const nextBatch = selectNextIeltsDailyPreviewBatch({
     allocations,
     currentBatchDate,
     consumedBatchDates: continuation.consumedBatchDates,
+    excludedLemmas,
     today: formatLocalDate(new Date()),
   })
   let resolvedNextBatch = nextBatch
   if (!resolvedNextBatch) {
-    const generated = await generateTodayIeltsPreviewBatch()
+    const generated = await generateTodayIeltsPreviewBatch(excludedLemmas)
     if (generated?.date > currentBatchDate) resolvedNextBatch = generated
   }
   if (!resolvedNextBatch) {
@@ -371,12 +401,14 @@ async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
 async function openFirstAvailableIeltsPreviewBatch() {
   const allocations = loadIeltsDailyPreviewAllocations()
   const continuation = loadIeltsDailyPreviewContinuation()
+  const excludedLemmas = await loadPreviewExcludedLemmas()
   const nextBatch = selectNextIeltsDailyPreviewBatch({
     allocations,
     consumedBatchDates: continuation.consumedBatchDates,
+    excludedLemmas,
     today: formatLocalDate(new Date()),
   })
-  const resolvedNextBatch = nextBatch || await generateTodayIeltsPreviewBatch()
+  const resolvedNextBatch = nextBatch || await generateTodayIeltsPreviewBatch(excludedLemmas)
   if (!resolvedNextBatch) return false
   try {
     const items = await materializeIeltsDailyPreviewBatch({ batch: resolvedNextBatch })
@@ -457,7 +489,7 @@ function closePassagePreviewCheck() {
   srsReviewCacheVersion.value += 1
 }
 
-async function generateTodayIeltsPreviewBatch() {
+async function generateTodayIeltsPreviewBatch(excludedLemmas = []) {
   const date = formatLocalDate(new Date())
   const allocations = loadIeltsDailyPreviewAllocations()
   const candidateWords = await loadIeltsPreviewCandidateWords()
@@ -465,10 +497,29 @@ async function generateTodayIeltsPreviewBatch() {
     allocations,
     date,
     candidateWords,
+    excludedLemmas,
   })
   if (!generated.created) return null
   saveIeltsDailyPreviewAllocations(generated.allocations)
   return generated.batch
+}
+
+async function loadPreviewExcludedLemmas() {
+  try {
+    return await passagePreviewAcquisition.getIntroducedLemmas()
+  } catch (error) {
+    console.warn('[passage-preview] introduced-word exclusion unavailable', error)
+    return []
+  }
+}
+
+async function loadPreviewIntroducedRecords() {
+  try {
+    return await passagePreviewAcquisition.loadRecords()
+  } catch (error) {
+    console.warn('[passage-preview] current-batch exclusion unavailable', error)
+    return []
+  }
 }
 
 async function importPassagePreviewFile(event) {

@@ -110,6 +110,7 @@
     "verify:vocabulary-personalization": "npm run verify:vocabulary-personalization-content && npm run verify:vocabulary-personalization-skills && npm run verify:vocabulary-personalization-preference && npm run verify:vocabulary-personalization-curriculum && npm run verify:vocabulary-personalization-shadow",
     "verify:passage-preview": "node scripts/passage-preview-verify.cjs",
     "verify:passage-preview:unit": "node scripts/passage-preview-check.cjs",
+    "verify:passage-preview:rating-latency-browser": "node scripts/passage-preview-rating-latency-browser-check.cjs",
     "verify:passage-preview:translation-generation": "node scripts/passage-preview-translation-generation-check.mjs",
     "verify:passage-preview:daily-continuation": "node scripts/passage-preview-daily-continuation-check.mjs",
     "verify:passage-preview:durable-state": "node scripts/passage-preview-durable-state-check.mjs",

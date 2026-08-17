@@ -238,6 +238,9 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
     registerItem,
     getDueChecks,
     recordDelayedCheck,
+    getIntroducedLemmas: async () => (
+      await rebuildRecordsFromCanonicalRepository()
+    ).map((record) => record.lemma),
     loadRecords: rebuildRecordsFromCanonicalRepository,
     rebuildRecords: rebuildRecordsFromCanonicalRepository,
   }

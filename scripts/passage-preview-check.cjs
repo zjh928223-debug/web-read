@@ -108,7 +108,13 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(checkComponentSource, /advanceAfterRating\(pendingRating\)/)
   assert.match(checkComponentSource, /<h2 :class="wordLengthClass">/)
   assert.match(checkComponentSource, /v-if="currentIndex === 0" class="passage-preview-check-hint"/)
+  assert.match(checkComponentSource, /scheduleAfterNextPaint\(stopPreviousPronunciation\)/)
   assert.match(checkComponentSource, /scheduleAfterNextPaint\(queueRatingPersistence\)/)
+  assert.doesNotMatch(
+    checkComponentSource.match(/function resetCurrent\(\)[\s\S]*?\n\}/)?.[0] || '',
+    /pronunciation\.stop\(\)/,
+    'rating must not synchronously stop pronunciation before Vue paints the next word',
+  )
   const sourceAdapter = read('src/features/passage-preview/tatoeba-preview-sentence.js')
   const sourceComposition = read('src/features/passage-preview/preview-sentence-source.js')
   const wordnikPort = read('src/services/vocabulary/personalization/wordnik-sentence-source.js')

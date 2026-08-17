@@ -6,7 +6,9 @@
         返回
       </button>
       <div class="srs-review-heading">
-        <p class="srs-review-progress" aria-live="polite">{{ review.progress.value || '今日复习' }}</p>
+        <p class="srs-review-progress" aria-live="polite">
+          {{ review.progress.value || '今日复习' }}<template v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value"> · 本组后还剩 {{ review.backlogCount.value }} 个</template>
+        </p>
       </div>
       <div ref="historyContainer" class="srs-review-summary">
         <button
@@ -107,6 +109,9 @@
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
       <h2>本次复习完成</h2>
       <p>共完成 {{ sessionCompletedCount }} 张</p>
+      <p v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value">
+        还有 {{ review.backlogCount.value }} 个待复习单词，可继续下一组。
+      </p>
       <p v-if="review.deferredRevisit.value">{{ review.currentEligibilityLabel.value }}，稍后回来即可继续。</p>
       <ul class="srs-review-completion-counts">
         <li>Again 忘记：{{ review.sessionRatingCounts.value.again }}</li>
@@ -114,6 +119,14 @@
         <li>Good 一般：{{ review.sessionRatingCounts.value.good }}</li>
         <li>Easy 容易：{{ review.sessionRatingCounts.value.easy }}</li>
       </ul>
+      <button
+        v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value"
+        type="button"
+        class="srs-review-retry"
+        @click="review.continueLegacyBatch"
+      >
+        继续下一组（最多 30 个）
+      </button>
       <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 

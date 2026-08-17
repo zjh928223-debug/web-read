@@ -45,8 +45,11 @@ export function useSrsReview(service, options = {}) {
   const reviewSource = ref(usesReviewServiceV2 ? 'v2' : (usesLegacyService ? 'legacy' : ''))
   const contextCueLevel = ref('none')
   const eligibilityNowMs = ref(resolveNowMilliseconds(now))
+  const legacyBacklogCount = ref(0)
   const committedItemIds = new Set()
   const attemptDrafts = new Map()
+  const legacyBatchSize = Math.max(1, Math.floor(Number(options.legacyBatchSize) || 30))
+  let legacyPendingQueue = []
   let saveChain = Promise.resolve()
   let reviewEventsRequest = 0
   let cardStartedAt = resolveNowMilliseconds(now)
@@ -70,11 +73,17 @@ export function useSrsReview(service, options = {}) {
       .reduce((sum, entry) => sum + Number(entry.estimated_duration_ms || 0), 0)
   })
   const estimatedRemainingLabel = computed(() => formatDuration(estimatedRemainingMs.value))
-  const backlogCount = computed(() => Number(sessionLedger.value?.backlog?.extensions?.total_count || 0))
+  const backlogCount = computed(() => (
+    reviewSource.value === 'legacy'
+      ? legacyBacklogCount.value
+      : Number(sessionLedger.value?.backlog?.extensions?.total_count || 0)
+  ))
   const backlogEstimatedMs = computed(() => Number(sessionLedger.value?.backlog?.estimated_ms || 0))
   const backlogLabel = computed(() => (
     backlogCount.value
-      ? `${backlogCount.value} 项（约 ${formatDuration(backlogEstimatedMs.value)}）`
+      ? reviewSource.value === 'legacy'
+        ? `${backlogCount.value} 项`
+        : `${backlogCount.value} 项（约 ${formatDuration(backlogEstimatedMs.value)}）`
       : '0 项'
   ))
   const revisitReason = computed(() => formatRevisitReason(
@@ -162,15 +171,12 @@ export function useSrsReview(service, options = {}) {
       sessionRatingCounts.value = createEmptyRatingCounts()
       committedItemIds.clear()
       const reviewedToday = reviewedWordIdsForDay(reviewLogs.value, reviewDate.value)
-      queue.value = diversifyReviewQueue(due).filter((entry) => (
+      const eligibleQueue = diversifyReviewQueue(due).filter((entry) => (
         !reviewedToday.has(String(entry?.word?.id || ''))
       ))
-      index.value = 0
-      viewIndex.value = 0
-      completedBeforeOpen.value = reviewedToday.size
-      dailyTotal.value = completedBeforeOpen.value + queue.value.length
+      legacyPendingQueue = eligibleQueue
+      startNextLegacyBatch()
       sessionLedger.value = null
-      resetContextCue()
       loaded.value = true
     } catch (cause) {
       error.value = getErrorMessage(cause, '无法加载今日复习')
@@ -372,6 +378,26 @@ export function useSrsReview(service, options = {}) {
     return true
   }
 
+  function continueLegacyBatch() {
+    if (!usesLegacyService || !completed.value || legacyPendingQueue.length === 0) return false
+    startNextLegacyBatch()
+    return true
+  }
+
+  function startNextLegacyBatch() {
+    queue.value = legacyPendingQueue.slice(0, legacyBatchSize)
+    legacyPendingQueue = legacyPendingQueue.slice(queue.value.length)
+    legacyBacklogCount.value = legacyPendingQueue.length
+    index.value = 0
+    viewIndex.value = 0
+    completedBeforeOpen.value = 0
+    dailyTotal.value = queue.value.length
+    sessionRatingCounts.value = createEmptyRatingCounts()
+    committedItemIds.clear()
+    cardStartedAt = resolveNowMilliseconds(now)
+    resetContextCue()
+  }
+
   async function submitRating(rating) {
     const action = SRS_REVIEW_ACTIONS.find((item) => item.rating === rating)
     if (!action) throw new Error(`Unsupported SRS review rating: ${rating}`)
@@ -484,6 +510,7 @@ export function useSrsReview(service, options = {}) {
     submitAction,
     submitRating,
     advanceCurrent,
+    continueLegacyBatch,
     flushPendingSaves,
     removeCurrent,
     showTargetSentence,

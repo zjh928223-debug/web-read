@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const {
   generateIeltsDailyPreviewBatch,
   getPreviewBatchDate,
+  excludePreviouslyIntroducedPreviewItems,
   loadIeltsDailyPreviewAllocations,
   loadIeltsPreviewCandidateWords,
   materializeIeltsDailyPreviewBatch,
@@ -68,11 +69,12 @@ const generated = generateIeltsDailyPreviewBatch({
   allocations,
   date: '2026-08-08',
   candidateWords: ['scare', 'new-word-a', 'new-word-b', 'new-word-c'],
+  excludedLemmas: ['new-word-a'],
   batchSize: 2,
 })
 assert.equal(generated.created, true)
-assert.deepEqual(generated.batch.words, ['new-word-a', 'new-word-b'])
-assert.ok(generated.allocations.assignedLemmas.includes('new-word-a'))
+assert.deepEqual(generated.batch.words, ['new-word-b', 'new-word-c'])
+assert.ok(generated.allocations.assignedLemmas.includes('new-word-b'))
 assert.deepEqual(
   generateIeltsDailyPreviewBatch({
     allocations: generated.allocations,
@@ -80,13 +82,39 @@ assert.deepEqual(
     candidateWords: ['new-word-a', 'new-word-b', 'new-word-c'],
     batchSize: 2,
   }).batch.words,
-  ['new-word-a', 'new-word-b'],
+  ['new-word-b', 'new-word-c'],
 )
 saveIeltsDailyPreviewAllocations(generated.allocations, storage)
 assert.deepEqual(
   loadIeltsDailyPreviewAllocations(storage).batches.at(-1),
-  { date: '2026-08-08', words: ['new-word-a', 'new-word-b'] },
+  { date: '2026-08-08', words: ['new-word-b', 'new-word-c'] },
 )
+
+const filteredAllocatedBatch = selectNextIeltsDailyPreviewBatch({
+  allocations,
+  currentBatchDate: '2026-07-31',
+  consumedBatchDates: [],
+  excludedLemmas: ['scare'],
+  today: '2026-08-08',
+})
+assert.equal(filteredAllocatedBatch.date, '2026-08-03')
+assert.deepEqual(filteredAllocatedBatch.words, ['variant'], 'an existing future batch should skip canonically introduced words')
+
+const reconciledCurrentBatch = excludePreviouslyIntroducedPreviewItems({
+  items: [
+    { id: 'ielts-reading:2026-08-08:scare', lemma: 'scare' },
+    { id: 'ielts-reading:2026-08-08:variant', lemma: 'variant' },
+    { id: 'ielts-reading:2026-08-08:poll', lemma: 'poll' },
+  ],
+  introducedRecords: [
+    { previewItemId: 'ielts-reading:2026-08-03:scare', lemma: 'scare' },
+    { previewItemId: 'ielts-reading:2026-08-08:variant', lemma: 'variant' },
+  ],
+  currentIndex: 1,
+})
+assert.deepEqual(reconciledCurrentBatch.items.map((item) => item.lemma), ['variant', 'poll'])
+assert.equal(reconciledCurrentBatch.currentIndex, 0)
+assert.equal(reconciledCurrentBatch.removedCount, 1)
 
 const candidateWords = await loadIeltsPreviewCandidateWords({
   fetchImpl: async (url) => {

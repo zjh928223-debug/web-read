@@ -196,6 +196,8 @@ function rate(rating) {
       saving.value = pendingSaveCount.value > 0
     })
   }
+  const stopPreviousPronunciation = () => pronunciation.stop()
+  scheduleAfterNextPaint(stopPreviousPronunciation)
   scheduleAfterNextPaint(queueRatingPersistence)
 }
 
@@ -243,7 +245,6 @@ function resetCurrent() {
   answerRevealed.value = false
   errorMessage.value = ''
   startedAt.value = Date.now()
-  pronunciation.stop()
   playbackPhase.value = ''
 }
 
