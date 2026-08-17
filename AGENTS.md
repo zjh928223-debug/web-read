@@ -1,5 +1,11 @@
 # AGENTS.md - Read-Web Current Project Notes
 
+## Canonical Workspace
+
+`E:\read-web-next` is the only active project, implementation target, and runtime source.
+`E:\read-web` is a read-only historical reference and may only be inspected when locating legacy
+behavior for a deliberate migration. Do not edit, build, launch, or commit from the historical tree.
+
 ## What This Is
 
 Read-Web is a Vite-hosted Vue 3 + Pinia migration of a legacy plain HTML/JS language-learning reader.
