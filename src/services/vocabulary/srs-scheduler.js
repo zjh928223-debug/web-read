@@ -92,8 +92,13 @@ export function createSrsScheduler(options = {}) {
 function reviewStateToCard(reviewState) {
   const card = createEmptyCard(new Date(toIsoString(reviewState.due_at)));
   card.due = new Date(toIsoString(reviewState.due_at));
-  card.stability = Number(reviewState.stability || 0);
-  card.difficulty = Number(reviewState.difficulty || 0);
+  // ts-fsrs represents a genuinely new card without a memory state. Legacy
+  // migration persists contract-valid numeric placeholders (0/1); feeding
+  // those placeholders back as an FSRS memory state is invalid.
+  if (reviewState.state !== REVIEW_STATES.NEW || Number(reviewState.reps || 0) > 0) {
+    card.stability = Number(reviewState.stability || 0);
+    card.difficulty = Number(reviewState.difficulty || 0);
+  }
   card.elapsed_days = Number(reviewState.elapsed_days || 0);
   card.scheduled_days = Number(reviewState.scheduled_days || 0);
   card.reps = Number(reviewState.reps || 0);

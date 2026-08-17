@@ -503,7 +503,7 @@ export function normalizeReviewState(input) {
   };
 }
 
-function normalizeReviewStore(content) {
+export function normalizeReviewStore(content) {
   if (content === null || content === undefined) return emptyReviewStore();
   if (!isPlainObject(content)
     || content.schema_version !== REVIEW_STORE_SCHEMA

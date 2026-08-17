@@ -66,10 +66,27 @@ export function createSrsReviewUiService(options = {}) {
     now: options.now,
   })
 
+  async function loadReviewStatesById(learningUnitIds) {
+    if (typeof reviewStateRepository.loadSnapshot === 'function') {
+      const snapshot = await reviewStateRepository.loadSnapshot()
+      return snapshot.by_learning_unit_id || {}
+    }
+    const entries = await Promise.all(learningUnitIds.map(async (learningUnitId) => (
+      [learningUnitId, await reviewStateRepository.getByLearningUnitId(learningUnitId)]
+    )))
+    return Object.fromEntries(entries.filter(([, state]) => state))
+  }
+
   async function getReviewCards(ledger) {
-    const [acquisitionSnapshot, contentSnapshot] = await Promise.all([
+    const ledgerEntries = ledger?.entries || []
+    const learningUnitIds = ledgerEntries.map((entry) => entry.learning_unit_id)
+    const [acquisitionSnapshot, contentSnapshot, reviewStatesById, contextSnapshot] = await Promise.all([
       acquisitionRepository.loadSnapshot(),
       contentRepository.loadSnapshot(),
+      loadReviewStatesById(learningUnitIds),
+      typeof contextEvidenceRepository.loadSnapshot === 'function'
+        ? contextEvidenceRepository.loadSnapshot()
+        : Promise.resolve(null),
     ])
     const pairs = acquisitionSnapshot.by_learning_unit_id || {}
     const wordsById = new Map(
@@ -80,14 +97,21 @@ export function createSrsReviewUiService(options = {}) {
       (context) => String(context.word_id || ''),
     )
 
-    return Promise.all((ledger?.entries || []).map(async (ledgerEntry) => {
+    const evidenceByLearningUnitId = contextSnapshot
+      ? groupBy(
+        Object.values(contextSnapshot.by_context_evidence_id || {}),
+        (evidence) => String(evidence.learning_unit_id || ''),
+      )
+      : null
+
+    return Promise.all(ledgerEntries.map(async (ledgerEntry) => {
       const pair = pairs[ledgerEntry.learning_unit_id]
       if (!pair || pair.acquisition_state?.status !== 'graduated') return null
       const unit = pair.learning_unit
-      const [reviewState, evidence] = await Promise.all([
-        reviewStateRepository.getByLearningUnitId(unit.learning_unit_id),
-        contextEvidenceRepository.listByLearningUnit(unit.learning_unit_id),
-      ])
+      const reviewState = reviewStatesById[unit.learning_unit_id]
+      const evidence = evidenceByLearningUnitId
+        ? (evidenceByLearningUnitId.get(String(unit.learning_unit_id)) || [])
+        : await contextEvidenceRepository.listByLearningUnit(unit.learning_unit_id)
       if (!reviewState) return null
       const word = normalizeReviewWord(wordsById.get(String(unit.word_id)), unit)
       const evidenceContexts = evidence.map((item) => evidenceToReviewContext(item, unit))
@@ -122,11 +146,12 @@ export function createSrsReviewUiService(options = {}) {
     const snapshot = await acquisitionRepository.loadSnapshot()
     const graduated = Object.values(snapshot.by_learning_unit_id || {})
       .filter((pair) => pair.acquisition_state?.status === 'graduated')
+    const reviewStatesById = await loadReviewStatesById(
+      graduated.map((pair) => pair.learning_unit.learning_unit_id),
+    )
     const nowMs = Date.parse(input.now || new Date().toISOString())
     for (const pair of graduated) {
-      const state = await reviewStateRepository.getByLearningUnitId(
-        pair.learning_unit.learning_unit_id,
-      )
+      const state = reviewStatesById[pair.learning_unit.learning_unit_id]
       if (state && Date.parse(state.due_at) <= nowMs) return true
     }
     return false

@@ -1,4 +1,8 @@
-import { bindReviewRepositoryToTransaction } from './vocabulary-learning-uow.js';
+import {
+  bindReviewRepositoryToTransaction,
+  normalizeReviewStore,
+  VOCABULARY_REVIEW_ROW_ID,
+} from './vocabulary-learning-uow.js';
 
 export const SRS_REVIEW_SESSION_LEDGER_ROW_ID = 'vocabulary.review-session-ledgers.v1';
 export const SRS_REVIEW_SESSION_LEDGER_STORE_SCHEMA = 'review-session-ledger-store.v1';
@@ -424,6 +428,18 @@ export function createIndexedDbReviewStateReader(options = {}) {
   const indexedDBApi = options.indexedDBApi ?? globalThis.indexedDB;
   const database = createDatabaseAccessor(indexedDBApi);
   return {
+    async loadSnapshot() {
+      const db = await database();
+      const transaction = db.transaction(['files'], 'readonly');
+      const completion = transactionCompletion(transaction, 'read_review_states');
+      const row = await requestResult(
+        transaction.objectStore('files').get(VOCABULARY_REVIEW_ROW_ID),
+        'get_review_states',
+      );
+      const result = normalizeReviewStore(row?.content ?? null);
+      await completion;
+      return clone(result);
+    },
     async getByLearningUnitId(learningUnitId) {
       const db = await database();
       const transaction = db.transaction(['files'], 'readonly');

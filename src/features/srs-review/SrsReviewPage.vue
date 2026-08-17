@@ -579,8 +579,7 @@ onMounted(async () => {
   sentenceShortcut.value = loadShortcut(sentenceShortcutStorageKey, 's', wordShortcut.value)
   window.addEventListener('keydown', handleReviewShortcut, true)
   document.addEventListener('pointerdown', handleHistoryOutsidePointer, true)
-  await loadLegacyMigrationStatus()
-  await review.load()
+  await Promise.all([loadLegacyMigrationStatus(), review.load()])
   meaningAbortController = new AbortController()
   void hydrateReviewGeneralMeanings(review.queue.value, props.service, {
     signal: meaningAbortController.signal,

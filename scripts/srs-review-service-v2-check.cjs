@@ -383,6 +383,32 @@ async function main() {
   }
 
   {
+    const migratedNew = harness(api, {
+      useDefaultScheduler: true,
+      reviewStates: [reviewState('one', {
+        state: 'new',
+        stability: 0,
+        difficulty: 1,
+        elapsed_days: 0,
+        scheduled_days: 0,
+        reps: 0,
+        lapses: 0,
+        learning_steps: 0,
+        last_review_at: null,
+      })],
+    });
+    const ledger = await migratedNew.start('session-migrated-new');
+    const result = await migratedNew.service.recordReviewAttempt(attempt(
+      ledger,
+      'migrated-new-again',
+      { rating: 'again' },
+    ));
+    assert.equal(result.attempt.rating, 'again');
+    assert.equal(result.attempt.before_state.stability, 0);
+    assert.equal(result.attempt.after_state.revision, 3);
+  }
+
+  {
     const test = harness(api, { useDefaultScheduler: true });
     const ledger = await test.start('session-invalid');
     const rowsBefore = test.runner.snapshot();

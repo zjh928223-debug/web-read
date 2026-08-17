@@ -464,6 +464,17 @@ export function createSrsReviewServiceV2(options = {}) {
   const locks = new Map();
   const shadowTasks = new Set();
 
+  async function loadReviewStatesById(learningUnitIds) {
+    if (typeof reviewStateRepository.loadSnapshot === 'function') {
+      const snapshot = await reviewStateRepository.loadSnapshot();
+      return snapshot.by_learning_unit_id ?? {};
+    }
+    const entries = await Promise.all(learningUnitIds.map(async (learningUnitId) => (
+      [learningUnitId, await reviewStateRepository.getByLearningUnitId(learningUnitId)]
+    )));
+    return Object.fromEntries(entries.filter(([, state]) => state));
+  }
+
   function schedulePersonalizationShadow(input) {
     if (!personalizationShadowEnabled(options) || !options.personalizationShadowRunner) return;
     const runner = typeof options.personalizationShadowRunner === 'function'
@@ -540,12 +551,21 @@ export function createSrsReviewServiceV2(options = {}) {
         .sort((left, right) => (
           left.learning_unit.learning_unit_id.localeCompare(right.learning_unit.learning_unit_id)
         ));
+      const reviewStatesById = await loadReviewStatesById(
+        pairs.map((pair) => pair.learning_unit.learning_unit_id),
+      );
+      const todayEventsByLearningUnitId = new Map();
+      for (const event of todayEvents) {
+        const events = todayEventsByLearningUnitId.get(event.learning_unit_id) ?? [];
+        events.push(event);
+        todayEventsByLearningUnitId.set(event.learning_unit_id, events);
+      }
       for (const pair of pairs) {
         const unit = pair.learning_unit;
-        const reviewState = await reviewStateRepository.getByLearningUnitId(unit.learning_unit_id);
+        const reviewState = reviewStatesById[unit.learning_unit_id];
         if (!reviewState) continue;
-        const unitEvents = todayEvents.filter((event) => event.learning_unit_id === unit.learning_unit_id);
-        const last = latestEvent(todayEvents, unit.learning_unit_id);
+        const unitEvents = todayEventsByLearningUnitId.get(unit.learning_unit_id) ?? [];
+        const last = latestEvent(unitEvents, unit.learning_unit_id);
         if (unitEvents.length > 0 && last) {
           let revisitDecision = shouldScheduleSameDayRevisit({
             local_day: input.local_day,
