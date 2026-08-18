@@ -48,6 +48,14 @@
             <label>字幕:</label>
             <label for="transcript-file" class="file-btn" id="lbl-transcript">选择字幕</label>
             <input type="file" id="transcript-file" accept=".json">
+
+            <span class="deprecated-tool-label">旧工具:</span>
+            <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
+            <button id="import-marks-btn" class="small-btn">导标记</button>
+            <button id="export-json" class="small-btn">存JSON</button>
+            <button id="export-md-all" class="small-btn">存TXT</button>
+            <button id="toggle-chunk-btn">AI切分</button>
+            <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">T</button>
           </div>
         </details>
       </div>
@@ -89,11 +97,7 @@
             词<input type="color" id="highlight-color-input" class="color-input" value="#ffeb3b">
           </span>
 
-          <input type="file" id="import-marks-file" accept=".json" style="display: none;" />
-          <button id="import-marks-btn" class="small-btn">导标记</button>
-          <button id="export-json" class="small-btn">存JSON</button>
           <span id="annotation-mark-count" class="small-btn mark-count-badge" role="status" aria-live="polite" data-count="0" title="当前文章已标记 0 个重点词">已标记 0</span>
-          <button id="export-md-all" class="small-btn">存TXT</button>
           <input type="file" id="import-annotation-lightweight-file" accept=".json" style="display: none;" />
           <button id="btn-annotation-backfill-ai" class="small-btn" type="button" title="自动导出轻回填模板、请求 Gemini 并导入解释结果">AI解释标注</button>
           <button id="btn-preview-vocabulary" class="small-btn" type="button" title="扫描当前文章的预习生词">预习生词</button>
@@ -101,9 +105,6 @@
           <button id="btn-settle-article-vocabulary" class="small-btn" type="button" title="确认本文已学完后，整理本篇生词到 SRS">已学完本篇</button>
           <div id="srs-review-entry-root"></div>
 
-          <button id="toggle-chunk-btn">AI切分</button>
-          <button id="btn-chunk-style" title="调整切分模式样式" style="font-family:serif; font-weight:bold; padding: 3px 8px; margin-right: 2px;">T</button>
-          
           <span class="hotkey-box">
             中<input id="hotkey-chunk-cn-input" class="hotkey-input" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
             <button id="btn-chunk-cn-hold" class="mini-toggle active" title="切换：按住快捷键才显示中文">按住</button>

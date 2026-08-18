@@ -1469,6 +1469,10 @@ body {
       margin-left: 10px;
       flex-wrap: wrap;
     }
+    .deprecated-tool-label {
+      color: var(--text-sub);
+      font-weight: 600;
+    }
     .file-btn.loaded { background-color: #e0f2f1; border-color: #26a69a; color: #00695c; font-weight: 500; }
     [data-theme="dark"] .file-btn.loaded { background-color: #004d40; border-color: #26a69a; color: #80cbc4; }
 

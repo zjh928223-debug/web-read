@@ -12,8 +12,6 @@
         <span class="youtube-reader-video-priority-check" aria-hidden="true">{{ videoPriority ? '✓' : '' }}</span>
         <span>视频优先</span>
       </button>
-      <button type="button" class="small-btn" :disabled="!canGoPrevious" @click="goQueue(-1)">上一篇</button>
-      <button type="button" class="small-btn" :disabled="!canUseNext" @click="goQueue(1)">下一篇</button>
     </div>
   </Teleport>
 
@@ -1052,9 +1050,6 @@ const primaryActionText = computed(() => {
 })
 const readyJobs = computed(() => queueJobs.value.filter((job) => job.status === 'ready'))
 const canceledJobs = computed(() => queueJobs.value.filter((job) => job.status === 'canceled'))
-const currentReadyIndex = computed(() => readyJobs.value.findIndex((job) => job.jobId === currentJobId.value))
-const canGoPrevious = computed(() => readyJobs.value.length > 0 && currentReadyIndex.value > 0)
-const canUseNext = computed(() => readyJobs.value.length > 0)
 const queueSummary = computed(() => {
   const total = queueJobs.value.length
   const ready = readyJobs.value.length
@@ -1940,38 +1935,10 @@ function openRecentJob(job) {
   openJob(normalizeRecentJob(job))
 }
 
-function goQueue(offset) {
-  const items = readyJobs.value
-  if (!items.length) return
-  const index = currentReadyIndex.value
-  const nextIndex = index < 0 ? (offset > 0 ? 0 : items.length - 1) : index + offset
-  if (nextIndex < 0) return
-  if (nextIndex >= items.length) {
-    const paused = pauseForDecision()
-    switchModal.value = {
-      type: 'import-folder',
-      title: '本次素材队列已经到最后一篇。',
-      message: '是否选择旧素材目录并导入到标准素材库？导入后会加入素材队列末尾。',
-      confirmText: '选择并扫描目录',
-      wasPlaying: paused
-    }
-    return
-  }
-  requestSwitch(items[nextIndex], offset > 0 ? '切换到下一篇？' : '切换到上一篇？')
-}
-
 async function confirmSwitch() {
   const modal = switchModal.value
   if (!modal) return
   await switchActionGuard.run(async () => {
-    if (modal.type === 'import-folder') {
-      switchModal.value = null
-      openPanel()
-      setWorkflowView('add')
-      await nextTick()
-      await chooseLegacyImportFolder()
-      return
-    }
     if (modal.target) await loadJob(modal.target)
     switchModal.value = null
   })

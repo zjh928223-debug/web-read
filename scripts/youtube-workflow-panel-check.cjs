@@ -81,6 +81,10 @@ async function main() {
   assert.ok(panelSource.includes('youtubeWorkflowClient.getSession(currentJobId.value)'), 'video priority refresh should re-read the current job session');
   assert.ok(panelSource.includes("youtubeWorkflowClient.mediaUrl(currentJobId.value, 'video')"), 'video priority refresh should use the authorized Range service endpoint');
   assert.ok(indexSource.includes('deprecated-file-entry') && indexSource.includes('过时入口'), 'manual audio/subtitle file inputs should be folded into the deprecated entry');
+  const deprecatedEntrySource = indexSource.match(/<details class="deprecated-file-entry">([\s\S]*?)<\/details>/u)?.[1] || '';
+  for (const controlId of ['import-marks-btn', 'export-json', 'export-md-all', 'toggle-chunk-btn', 'btn-chunk-style']) {
+    assert.ok(deprecatedEntrySource.includes(`id="${controlId}"`), `${controlId} should be folded into the deprecated entry`);
+  }
   assert.ok(panelSource.includes('jobDisplayTitle'), 'queue and recent rows should share title/url display logic');
   assert.ok(panelSource.includes('historyOpen') && panelSource.includes('refreshHistory'), 'panel should include a collapsible history library');
   assert.ok(panelSource.includes('历史库'), 'history library entry should be visible in the workflow panel');
@@ -110,9 +114,10 @@ async function main() {
   assert.equal(panelSource.includes('URL.revokeObjectURL(url)'), false, 'diagnostics export must not revoke in the click task');
   assert.ok(panelSource.includes('高级设置'), 'Base URL should be hidden in advanced settings');
   assert.ok(panelSource.includes('loadTextSetting') && panelSource.includes('saveTextSetting'), 'model and Base URL should persist outside IndexedDB');
-  assert.ok(panelSource.includes('上一篇') && panelSource.includes('下一篇'), 'reader controls should include previous/next queue navigation');
-  assert.ok(panelSource.includes('确认切换'), 'queue navigation should use a confirmation modal');
-  assert.ok(panelSource.includes("type: 'import-folder'") && panelSource.includes('chooseLegacyImportFolder'), 'queue end state should route local materials through the import flow');
+  assert.equal(panelSource.includes('上一篇') || panelSource.includes('下一篇'), false, 'reader controls should omit unused previous/next article navigation');
+  assert.equal(panelSource.includes('goQueue('), false, 'removed previous/next article navigation should not leave a dead handler');
+  assert.ok(panelSource.includes('确认切换'), 'opening another article should use a confirmation modal');
+  assert.equal(panelSource.includes("type: 'import-folder'"), false, 'removed queue navigation should not leave its end-of-queue modal branch');
   assert.ok(!panelSource.includes('window.showDirectoryPicker'), 'local folder loading should not bypass the standard material import flow');
   assert.ok(panelSource.includes('startPanelDrag') && panelSource.includes('startCapsuleDrag'), 'panel and capsule should be draggable');
   assert.ok(panelSource.includes('prioritizeJob') && panelSource.includes('retryJob'), 'queued and failed jobs should expose priority actions');
