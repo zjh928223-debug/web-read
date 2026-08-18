@@ -165,8 +165,13 @@ async function run() {
   )
   assert.match(
     reviewCssSource,
-    /:root\s*\{[^}]*font-family:\s*Arial,\s*sans-serif/s,
-    'all review typography should inherit Arial',
+    /\.srs-review-page\s*\{[^}]*font-family:\s*Arial,\s*sans-serif/s,
+    'all review typography should inherit Arial inside the review page',
+  )
+  assert.doesNotMatch(
+    reviewCssSource,
+    /(?:^|\})\s*\*\s*\{|(?:^|\})\s*(?:button|audio)(?:\s*,\s*(?:button|audio))*\s*\{/m,
+    'review styles must not mutate the reader box model or controls globally',
   )
   assert.match(
     reviewCssSource,

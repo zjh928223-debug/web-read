@@ -29,6 +29,30 @@ async function main() {
     viewport: { width: 1440, height: 960 }
   });
 
+  await page.addInitScript(() => {
+    window.__readWebStartupLayoutShifts = [];
+    if (!('PerformanceObserver' in window)) return;
+    try {
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          window.__readWebStartupLayoutShifts.push({
+            startTime: entry.startTime,
+            value: entry.value,
+            hadRecentInput: entry.hadRecentInput,
+            sources: (entry.sources || []).map((source) => ({
+              node: source.node instanceof Element
+                ? `${source.node.tagName.toLowerCase()}${source.node.id ? `#${source.node.id}` : ''}${source.node.classList.length ? `.${Array.from(source.node.classList).join('.')}` : ''}`
+                : null,
+              previousRect: source.previousRect,
+              currentRect: source.currentRect,
+            })),
+          });
+        }
+      });
+      observer.observe({ type: 'layout-shift', buffered: true });
+    } catch {}
+  });
+
   page.on('console', async (message) => {
     if (message.type() !== 'error') return;
     const location = message.location();
@@ -84,6 +108,14 @@ async function main() {
     })(),
     legacyRenderingFlagDefined: typeof window.__USE_VUE_RENDERING !== 'undefined',
   }));
+  const startupLayoutShifts = await page.evaluate(() => (
+    Array.isArray(window.__readWebStartupLayoutShifts)
+      ? window.__readWebStartupLayoutShifts
+      : []
+  ));
+  const startupLayoutShiftTotal = startupLayoutShifts
+    .filter((entry) => !entry.hadRecentInput)
+    .reduce((total, entry) => total + entry.value, 0);
 
   const undefinedSymbols = symbolStatus.filter((item) => !item.defined);
   await page.screenshot({ path: screenshotPath, fullPage: true });
@@ -98,7 +130,8 @@ async function main() {
       && renderingOwnership.vueTranscriptMounted
       && renderingOwnership.vueChunkMounted
       && renderingOwnership.legacyTranscriptHidden
-      && !renderingOwnership.legacyRenderingFlagDefined,
+      && !renderingOwnership.legacyRenderingFlagDefined
+      && startupLayoutShiftTotal < 0.01,
     mainResponse: gotoResponse ? {
       url: gotoResponse.url(),
       status: gotoResponse.status(),
@@ -112,6 +145,8 @@ async function main() {
     symbolStatus,
     undefinedSymbols,
     renderingOwnership,
+    startupLayoutShifts,
+    startupLayoutShiftTotal,
     screenshotPath
   };
 

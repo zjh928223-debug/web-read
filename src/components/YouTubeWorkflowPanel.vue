@@ -1,5 +1,5 @@
 <template>
-  <Teleport to=".controls">
+  <Teleport to="#youtube-reader-controls-root">
     <div class="youtube-reader-controls">
       <button type="button" class="small-btn" @click="openPanel">素材处理</button>
       <button

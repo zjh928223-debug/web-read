@@ -293,6 +293,13 @@ body {
   align-items: center;
 }
 
+#srs-review-entry-root {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 151px;
+  min-height: 28px;
+}
+
 .learning-model-entry {
   display: inline-flex;
   align-items: center;
@@ -309,6 +316,14 @@ body {
   display: inline-flex;
   gap: 8px;
   align-items: center;
+}
+
+#youtube-reader-controls-root {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 172px;
+  min-height: 32px;
   margin-left: auto;
 }
 
@@ -1112,9 +1127,13 @@ body {
 }
 
 @media (max-width: 640px) {
+  #youtube-reader-controls-root {
+    width: 100%;
+    min-width: 0;
+  }
+
   .youtube-reader-controls {
     width: 100%;
-    margin-left: 0;
     justify-content: flex-end;
   }
 

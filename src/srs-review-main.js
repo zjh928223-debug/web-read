@@ -6,6 +6,8 @@ import './features/srs-review/srs-review.css'
 
 const SAMPLE_URL = '/src/features/srs-review/srs-review.sample.local.json'
 
+document.documentElement.classList.add('srs-review-standalone-document')
+
 async function loadLocalSample() {
   const response = await fetch(SAMPLE_URL, { cache: 'no-store' })
   if (!response.ok) {
