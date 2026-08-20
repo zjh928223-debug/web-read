@@ -39,6 +39,7 @@ const windowObject = {
   loadFromDB() {},
   deleteFromDB() {},
   initDB() {},
+  ImportExportSharedHelpers: { markFileLoaded() {} },
   showToast() {},
   __annotationLightweightModule: { kind: 'annotation-module' },
 }
@@ -69,6 +70,7 @@ assert.equal(annotationDeps.documentObject, documentObject)
 assert.equal(annotationDeps.domRefs.audioPlayer, elements.get('audio-player'))
 assert.equal(annotationDeps.domRefs.annotationMarkCountEl, elements.get('annotation-mark-count'))
 assert.equal(annotationDeps.globals.saveToDB.name, 'bound saveToDB')
+assert.equal(annotationDeps.globals.markFileLoaded, windowObject.ImportExportSharedHelpers.markFileLoaded)
 assert.equal(annotationDeps.globals.annotationLightweightModule, windowObject.__annotationLightweightModule)
 
 const lifecycleDeps = calls[1].deps

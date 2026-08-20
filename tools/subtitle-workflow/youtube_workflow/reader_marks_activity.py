@@ -224,10 +224,18 @@ class ReaderMarksActivityRepository:
 
     @staticmethod
     def _is_legacy(value: object, kind: str, job_id: str) -> bool:
-        if not isinstance(value, dict) or value.get("jobId") != job_id:
+        if not isinstance(value, dict):
             return False
         if kind == "marks":
+            # Early material folders keyed marks to the workflow attempt that
+            # first created the folder. A later history/job alias can point at
+            # the same immutable material output, so the legacy jobId is not a
+            # reliable identity boundary. The folder selected by the current
+            # manifest is the authority; remap only this schema-1 payload in
+            # memory and leave its source file unchanged.
             return isinstance(value.get("marks"), list)
+        if value.get("jobId") != job_id:
+            return False
         return bool(value.get("lastActivityAt") or value.get("lastEvent") or value.get("event"))
 
     @staticmethod

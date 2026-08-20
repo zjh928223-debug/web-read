@@ -198,6 +198,19 @@ await assert.rejects(
 )
 assertConsistent(casFake.rows, winner)
 
+const repairFake = createAtomicIndexedDb()
+const repairPersistence = createReaderSessionPersistence({ indexedDBApi: repairFake.indexedDBApi })
+const corruptBase = fixture('corrupt-base', 'corrupt-base:1')
+await repairPersistence.commit(corruptBase, { expectedRevision: null })
+repairFake.rows.get('chunkData').revision = 'inconsistent-chunk-revision'
+const corruptLoad = await repairPersistence.loadCommitted()
+assert.equal(corruptLoad.status, 'corrupt')
+assert.equal(await repairPersistence.loadCurrentRevision(), corruptBase.revision)
+const repaired = fixture('repaired-content', 'repaired:1')
+await repairPersistence.commit(repaired, { expectedRevision: corruptBase.revision })
+assertConsistent(repairFake.rows, repaired)
+assert.deepEqual(await repairPersistence.loadCommitted(), { status: 'committed', session: repaired })
+
 console.log('reader session persistence check passed')
 
 function fixture(contentId, revision) {

@@ -88,7 +88,11 @@ try {
     await persistence.commit(old)
     const visible = { contentId: 'old', transcript: 'old', chunk: 'old', audio: 'old' }
     const client = createYoutubeWorkflowClient({ baseUrl })
-    function loader(commit = persistence.commit) {
+    function loader(
+      commit = persistence.commit,
+      loadCommitted = persistence.loadCommitted,
+      loadCurrentRevision = persistence.loadCurrentRevision,
+    ) {
       const sessionPublisher = {
         async captureVisibleSession() { return structuredClone(visible) },
         async publishPreparedSession(prepared) {
@@ -102,7 +106,7 @@ try {
       return createYoutubeWorkflowLoader({
         client,
         hasCurrentContent: () => false,
-        readerSessionPersistence: { commit, loadCommitted: persistence.loadCommitted },
+        readerSessionPersistence: { commit, loadCommitted, loadCurrentRevision },
         sessionPublisher,
         applyCurrentAudioMeta(meta) { visible.audio = meta.jobId; visible.contentId = meta.jobId },
         processTranscript(value) { visible.transcript = value.segments[0].words[0].word },
@@ -127,6 +131,103 @@ try {
     }
   }, origin)
   assert.equal(setup.contentId, 'old')
+
+  const revisionConflictRecovery = await page.evaluate(async () => {
+    const state = globalThis.__readerJourney
+    const before = structuredClone(state.visible)
+    let currentRevision = 'external:1'
+    const expectedRevisions = []
+    const loader = state.loader(
+      async (_session, options) => {
+        expectedRevisions.push(options.expectedRevision)
+        if (expectedRevisions.length === 1) {
+          currentRevision = 'external:2'
+          const error = new Error('simulated concurrent reader session commit')
+          error.name = 'ApplicationPersistenceError'
+          error.code = 'REVISION_CONFLICT'
+          error.expectedRevision = options.expectedRevision
+          error.actualRevision = currentRevision
+          throw error
+        }
+        if (options.expectedRevision !== currentRevision) {
+          throw new Error(`retry used stale revision ${options.expectedRevision}`)
+        }
+        return { status: 'committed' }
+      },
+      async () => ({ status: 'committed', session: { revision: currentRevision } }),
+    )
+    const result = await loader.loadJobIntoReader('revision-race', { replacePolicy: 'replace-current' })
+    Object.assign(state.visible, before)
+    return { result, expectedRevisions }
+  })
+  assert.equal(revisionConflictRecovery.result.status, 'loaded')
+  assert.deepEqual(revisionConflictRecovery.expectedRevisions, ['external:1', 'external:2'])
+  evidence.push({ journey: 'revision-conflict-during-open', outcome: 'reloaded-and-committed-current-revision' })
+
+  const persistentRevisionConflict = await page.evaluate(async () => {
+    const state = globalThis.__readerJourney
+    const before = structuredClone(state.visible)
+    let currentRevision = 'persistent:0'
+    const expectedRevisions = []
+    const loader = state.loader(
+      async (_session, options) => {
+        expectedRevisions.push(options.expectedRevision)
+        currentRevision = `persistent:${expectedRevisions.length}`
+        const error = new Error('simulated persistent reader session conflict')
+        error.name = 'ApplicationPersistenceError'
+        error.code = 'REVISION_CONFLICT'
+        error.expectedRevision = options.expectedRevision
+        error.actualRevision = currentRevision
+        throw error
+      },
+      async () => ({ status: 'committed', session: { revision: currentRevision } }),
+    )
+    let errorCode = ''
+    try {
+      await loader.loadJobIntoReader('persistent-revision-race', { replacePolicy: 'replace-current' })
+    } catch (error) {
+      errorCode = error.code || ''
+    }
+    const after = structuredClone(state.visible)
+    Object.assign(state.visible, before)
+    return { errorCode, expectedRevisions, before, after }
+  })
+  assert.equal(persistentRevisionConflict.errorCode, 'REVISION_CONFLICT')
+  assert.deepEqual(persistentRevisionConflict.expectedRevisions, ['persistent:0', 'persistent:1', 'persistent:2'])
+  assert.deepEqual(persistentRevisionConflict.after, persistentRevisionConflict.before)
+  evidence.push({ journey: 'persistent-revision-conflict', outcome: 'bounded-retry-and-visible-session-rollback' })
+
+  const corruptSessionRepair = await page.evaluate(async () => {
+    const state = globalThis.__readerJourney
+    const before = structuredClone(state.visible)
+    const expectedRevisions = []
+    const loader = state.loader(
+      async (_session, options) => {
+        expectedRevisions.push(options.expectedRevision)
+        if (options.expectedRevision !== 'corrupt-guard:1') {
+          const error = new Error('corrupt guard revision was not preserved')
+          error.name = 'ApplicationPersistenceError'
+          error.code = 'REVISION_CONFLICT'
+          error.expectedRevision = options.expectedRevision
+          error.actualRevision = 'corrupt-guard:1'
+          throw error
+        }
+        return { status: 'committed' }
+      },
+      async () => ({
+        status: 'corrupt',
+        session: null,
+        error: { code: 'READER_SESSION_CORRUPT' },
+      }),
+      async () => 'corrupt-guard:1',
+    )
+    const result = await loader.loadJobIntoReader('corrupt-session-repair', { replacePolicy: 'replace-current' })
+    Object.assign(state.visible, before)
+    return { result, expectedRevisions }
+  })
+  assert.equal(corruptSessionRepair.result.status, 'loaded')
+  assert.deepEqual(corruptSessionRepair.expectedRevisions, ['corrupt-guard:1'])
+  evidence.push({ journey: 'corrupt-current-session', outcome: 'atomically-replaced-using-current-guard-revision' })
 
   for (const jobId of ['no-range', 'missing']) {
     const result = await page.evaluate(async (id) => {

@@ -274,5 +274,12 @@ export function createReaderSessionPersistence(options = {}) {
     }
   }
 
-  return Object.freeze({ commit, loadCommitted })
+  async function loadCurrentRevision() {
+    const manifestRow = await persistence.get('readableSessionRow', 'readerSession')
+    return typeof manifestRow?.revision === 'string' && manifestRow.revision
+      ? manifestRow.revision
+      : null
+  }
+
+  return Object.freeze({ commit, loadCommitted, loadCurrentRevision })
 }

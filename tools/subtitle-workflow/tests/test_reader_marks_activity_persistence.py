@@ -26,6 +26,33 @@ class PageClosedError(OSError):
 
 
 class ReaderMarksActivityPersistenceTests(unittest.TestCase):
+    def test_public_marks_reads_legacy_material_folder_after_job_id_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager, client, job_id = self._ready_service(Path(tmp))
+            try:
+                mark_path = self._reader_path(manager, job_id, "reader-marks.json")
+                legacy = {
+                    "schemaVersion": 1,
+                    "jobId": "legacy-job-id-for-the-same-material-folder",
+                    "updatedAt": "2026-07-16T08:43:19+00:00",
+                    "marks": [{"globalIndex": 14, "word": "temperatures", "start": 3.48}],
+                }
+                mark_path.parent.mkdir(parents=True, exist_ok=True)
+                mark_path.write_text(json.dumps(legacy), encoding="utf-8")
+                source = mark_path.read_bytes()
+
+                loaded = client.get(f"/api/jobs/{job_id}/reader-marks")
+
+                self.assertEqual(loaded.status_code, 200)
+                self.assertEqual(loaded.json()["jobId"], job_id)
+                self.assertEqual(loaded.json()["marks"][0]["word"], "temperatures")
+                self.assertEqual(loaded.json()["marks"][0]["globalIndex"], 14)
+                self.assertEqual(loaded.json()["revision"], 0)
+                self.assertEqual(mark_path.read_bytes(), source)
+            finally:
+                client.close()
+                manager.close()
+
     def test_public_marks_and_activity_two_writers_same_revision_have_one_winner(self):
         with tempfile.TemporaryDirectory() as tmp:
             manager, client, job_id = self._ready_service(Path(tmp))

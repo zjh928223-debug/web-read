@@ -47,7 +47,7 @@ export function createSessionRuntimeAdapters(env = {}) {
       loadFromDB: audioStore.loadFromDB.bind(audioStore),
       deleteFromDB: audioStore.deleteFromDB.bind(audioStore),
       initDB: audioStore.initDB.bind(audioStore),
-      markFileLoaded: windowObject.markFileLoaded,
+      markFileLoaded: windowObject.ImportExportSharedHelpers?.markFileLoaded || windowObject.markFileLoaded,
       applyCurrentAudioMeta: windowObject.applyCurrentAudioMeta,
       buildCurrentSentenceDocId: windowObject.buildCurrentSentenceDocId,
       processVisual: windowObject.processVisual,
