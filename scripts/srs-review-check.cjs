@@ -1034,6 +1034,45 @@ async function run() {
     'transcript context should expand a stored fragment around its matched position',
   )
 
+  const gainConsensusSentence = 'It took decades and many lines of evidence for the theory of plate tectonics to develop and gain consensus.'
+  const ambiguousPlateTectonicsSource = await contextModule.resolveReviewSource({
+    source_id: 'plate-tectonics-source',
+    sentence: gainConsensusSentence,
+  }, {
+    word: 'gain consensus',
+    client: {
+      async getFile(_sourceId, kind) {
+        if (kind === 'chunkData') throw new Error('No chunk data in transcript matching fixture')
+        if (kind !== 'transcript') throw new Error(`Unexpected review source file kind: ${kind}`)
+        return new Blob([JSON.stringify({
+          segments: [
+            { text: 'Plate tectonics.', start: 1, end: 2 },
+            { text: gainConsensusSentence, start: 20, end: 28 },
+          ],
+        })])
+      },
+      fileUrl() {
+        return 'https://example.test/plate-tectonics-audio'
+      },
+    },
+  })
+  assert.equal(
+    ambiguousPlateTectonicsSource.targetSentence,
+    gainConsensusSentence,
+    'a short repeated subtitle must not outrank the exact target sentence',
+  )
+  assert.equal(
+    contextModule.findTranscriptSegment({
+      segments: [
+        { text: 'Plate tectonics.', start: 1, end: 2 },
+        { text: 'It took decades and many lines of evidence for the theory', start: 20, end: 24 },
+        { text: 'of plate tectonics to develop and gain consensus.', start: 24, end: 28 },
+      ],
+    }, gainConsensusSentence, 'gain consensus').text,
+    'of plate tectonics to develop and gain consensus.',
+    'a split target sentence should resolve to the subtitle fragment containing the review word',
+  )
+
   assert.deepEqual(
     contextModule.findTranscriptWordRange({
       words: [

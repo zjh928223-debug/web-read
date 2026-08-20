@@ -315,13 +315,16 @@ function validateRowPort(rowPort) {
   }
 }
 
-function createRepositoryCore(storage) {
+function createRepositoryCore(storage, options = {}) {
+  const trustedNormalizedStore = options.trustedNormalizedStore === true;
+
   async function loadStore() {
-    return normalizeStore(await storage.loadStore());
+    const store = await storage.loadStore();
+    return trustedNormalizedStore ? store : normalizeStore(store);
   }
 
   async function saveStore(store) {
-    await storage.saveStore(normalizeStore(store));
+    await storage.saveStore(trustedNormalizedStore ? store : normalizeStore(store));
   }
 
   async function loadSnapshot() {
@@ -529,12 +532,22 @@ export function bindAcquisitionRepositoryToTransaction(rowPort) {
   return bindAcquisitionRepositoryToTransactionInternal(rowPort, false);
 }
 
+const bufferedAcquisitionStores = new WeakMap();
+
 function bindAcquisitionRepositoryToTransactionInternal(rowPort, includeSnapshot) {
   validateRowPort(rowPort);
+  const buffered = rowPort.buffered === true;
   const repository = createRepositoryCore({
     async loadStore() {
+      if (buffered && bufferedAcquisitionStores.has(rowPort)) {
+        return bufferedAcquisitionStores.get(rowPort);
+      }
       const row = await rowPort.getRow(ACQUISITION_ROW_ID);
-      if (row === null || row === undefined) return createEmptyStore();
+      if (row === null || row === undefined) {
+        const empty = createEmptyStore();
+        if (buffered) bufferedAcquisitionStores.set(rowPort, empty);
+        return empty;
+      }
       if (!isPlainObject(row) || row.id !== ACQUISITION_ROW_ID || !Object.prototype.hasOwnProperty.call(row, 'content')) {
         rowPort.abort(contractError('INVALID_FIELD_TYPE', 'Invalid acquisition FileRow', {
           row_id: ACQUISITION_ROW_ID,
@@ -553,8 +566,9 @@ function bindAcquisitionRepositoryToTransactionInternal(rowPort, includeSnapshot
           sourceRow: clone(row),
         }));
       }
+      let normalized;
       try {
-        normalizeStore(row.content);
+        normalized = normalizeStore(row.content);
       } catch (error) {
         if (error?.code === 'UNSUPPORTED_SCHEMA_VERSION') throw error;
         rowPort.abort(contractError('CORRUPT', 'Acquisition store content is invalid', {
@@ -562,17 +576,19 @@ function bindAcquisitionRepositoryToTransactionInternal(rowPort, includeSnapshot
           sourceRow: clone(row),
         }));
       }
-      return row.content;
+      if (buffered) bufferedAcquisitionStores.set(rowPort, normalized);
+      return buffered ? normalized : row.content;
     },
     async saveStore(store) {
+      if (buffered) bufferedAcquisitionStores.set(rowPort, store);
       await rowPort.putRow({
         id: ACQUISITION_ROW_ID,
-        content: clone(store),
+        content: buffered ? store : clone(store),
         timestamp: new Date().toISOString(),
-        checksum: checksumFor(store),
+        ...(buffered ? {} : { checksum: checksumFor(store) }),
       });
     },
-  });
+  }, { trustedNormalizedStore: buffered });
   if (includeSnapshot) return repository;
   return {
     getLearningUnit: repository.getLearningUnit,

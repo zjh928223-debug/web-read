@@ -637,6 +637,45 @@ async function main() {
   assert.equal(completedSettlement.candidates.length, 0);
   assert.equal(completedSettlement.summary.processed, 5);
   assert.equal(completedSettlement.summary.completed, true);
+  await settlementProgressRepository.recordSettlementTargets(
+    'article-settlement',
+    settlement.candidates.map((candidate) => candidate.targetId),
+    { updatedAt: '2026-07-10T03:01:00.000Z' },
+  );
+  assert.equal(
+    api.getArticleSrsSettlementProgressStatus(await settlementProgressRepository.getProgress('article-settlement')),
+    'completed',
+    'opening a fully processed legacy settlement should backfill its target universe and expose a durable completed state',
+  );
+  const legacyAllRepository = api.createInMemoryArticleSrsSettlementProgressRepository();
+  await legacyAllRepository.recordApplication('legacy-all-settlement', {
+    appliedTargetIds: ['legacy-word', 'legacy-phrase'],
+    mode: 'all',
+    appliedAt: '2026-07-09T03:00:00.000Z',
+  });
+  assert.equal(
+    api.getArticleSrsSettlementProgressStatus(await legacyAllRepository.getProgress('legacy-all-settlement')),
+    'completed',
+    'a successful legacy add-words-and-phrases record should render completed before the dialog is reopened',
+  );
+
+  const processingRepository = api.createInMemoryArticleSrsSettlementProgressRepository();
+  await processingRepository.claimApplication('article-processing', {
+    candidateTargetIds: ['manual-word'],
+    allCandidateTargetIds: ['manual-word'],
+    claimedAt: '2099-07-10T04:00:00.000Z',
+  });
+  const processingProgress = await processingRepository.getProgress('article-processing');
+  assert.equal(
+    api.getArticleSrsSettlementProgressStatus(processingProgress),
+    'processing',
+    'an active application claim should be shown as processing rather than already processed',
+  );
+  const processingSettlement = api.applyArticleSrsSettlementProgress(settlement, processingProgress);
+  assert.ok(
+    processingSettlement.candidates.some((candidate) => candidate.targetId === 'manual-word'),
+    'an in-flight candidate should remain visible instead of disappearing as already processed',
+  );
 
   const wordsOnlyVocabulary = await createService(api);
   const wordsOnlySelection = api.selectArticleSrsSettlementCandidates({
@@ -670,6 +709,30 @@ async function main() {
   assert.ok(await allVocabulary.service.getWordByLemma('take it for granted'));
   assert.ok(await allVocabulary.service.getWordByLemma('crust mantle'));
   assert.equal(await allVocabulary.service.getWordByLemma('tectonic'), null, 'per-item removed candidates should not be applied');
+
+  let bulkLookupCalls = 0;
+  let perWordLookupCalls = 0;
+  const bulkLookupService = {
+    async getWordsAndContextsByLemmas(lemmas) {
+      bulkLookupCalls += 1;
+      return new Map(lemmas.map((lemma) => [lemma, { word: null, contexts: [] }]));
+    },
+    async getWordByLemma() {
+      perWordLookupCalls += 1;
+      return null;
+    },
+    isAcquisitionEnabled() {
+      return false;
+    },
+    async addWordLegacy() {},
+  };
+  await api.applyArticleSrsSettlement({
+    vocabularyService: bulkLookupService,
+    candidates: settlement.candidates.slice(0, 3),
+    mode: 'all',
+  });
+  assert.equal(bulkLookupCalls, 1, 'settlement apply should preload existing words and contexts in one snapshot read');
+  assert.equal(perWordLookupCalls, 0, 'settlement apply should not repeat per-word lookups after bulk preload');
   const rebuiltAfterPartialApply = await api.buildArticleSrsSettlement({
     items: settlementItems,
     vocabularyService: allVocabulary.service,
@@ -845,19 +908,22 @@ async function main() {
   assert.ok(previewModuleSource.includes('settlementProgressRepository.recordSkip'), 'explicitly skipped settlement targets should stay skipped after reload');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.setCandidateRemoved'), 'per-item X selections should persist immediately instead of waiting for final apply');
   assert.ok(previewModuleSource.includes('getArticleSrsSettlementProgressStatus'), 'the settlement button should reflect persisted article progress');
+  assert.ok(previewModuleSource.includes('recordSettlementTargets'), 'opening a legacy settlement should backfill its durable target universe');
   assert.ok(previewModuleSource.includes('释义已精简'), 'the settlement button should expose the persisted refinement mark');
-  assert.ok(previewModuleSource.includes('本篇已有整理记录'), 'the settlement button should expose persisted processed targets');
+  assert.ok(previewModuleSource.includes('已学完本篇'), 'the settlement button should expose a durable completed state');
+  assert.equal(previewModuleSource.includes('windowObject.prompt(SETTLEMENT_REFINEMENT_PROMPT'), false, 'saved system credentials should be used without a browser API-key prompt');
   assert.ok(previewModuleSource.includes('articleId: settlement.articleId'), 'dialog actions should keep the article identity captured when the settlement was opened');
   assert.ok(previewModuleSource.includes('options.articleId'), 'async settlement writes should not resolve their progress key from mutable current state after completion');
   assert.ok(previewModuleSource.includes('settlement.summary.processed > 0'), 'legacy same-article SRS contexts should also surface a persistent processed badge after opening');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.claimRefinementAttempt'), 'refinement attempts should be atomically claimed before the backend request is dispatched');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.claimApplication'), 'SRS application should atomically claim targets before writing vocabulary state');
+  assert.ok(previewModuleSource.includes('scheduleBackgroundTask'), 'SRS application should yield one browser task so the dialog closes and paints before background writes begin');
   assert.ok(previewModuleSource.includes('settlementProgressRepository.releaseApplicationClaim'), 'failed SRS writes should release their atomic target claims');
   assert.ok(previewModuleSource.includes('client.runAnnotationBackfill(articleId'), 'refinement backend routing should use the article identity captured by the dialog');
   assert.ok(previewModuleSource.includes('currentIdentity.jobId !== articleId'), 'stale dialogs should be rejected after the current article changes');
   assert.ok(progressModuleSource.includes('transaction.oncomplete'), 'IndexedDB progress writes should resolve only after transaction commit');
   const refinementFailureIndex = previewModuleSource.indexOf('recordRefinementFailure');
-  const refinementFailureThrowIndex = previewModuleSource.indexOf('throw apiError', refinementFailureIndex);
+  const refinementFailureThrowIndex = previewModuleSource.indexOf('throw formatGeminiModelError(apiError)', refinementFailureIndex);
   assert.ok(
     refinementFailureIndex >= 0
       && refinementFailureThrowIndex > refinementFailureIndex

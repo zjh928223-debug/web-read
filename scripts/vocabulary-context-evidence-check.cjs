@@ -560,6 +560,30 @@ async function main() {
     ],
   );
 
+  let bufferedTransactionRow = null;
+  const bufferedContents = [];
+  const bufferedRowPort = {
+    transaction_id: 'transaction-context-buffered',
+    buffered: true,
+    async getRow() {
+      return bufferedTransactionRow;
+    },
+    async putRow(row) {
+      bufferedTransactionRow = row;
+      bufferedContents.push(row.content);
+    },
+    abort(error) {
+      throw error;
+    },
+  };
+  await api.bindContextEvidenceRepositoryToTransaction(bufferedRowPort).put(normalized[0], null);
+  await api.bindContextEvidenceRepositoryToTransaction(bufferedRowPort).put(normalized[1], null);
+  assert.strictEqual(
+    bufferedContents[1],
+    bufferedContents[0],
+    'buffered context writes must reuse one normalized store instead of cloning the full history per candidate',
+  );
+
   const fakeIndexedDb = createFakeIndexedDb();
   const indexedRepository = api.createIndexedDbContextEvidenceRepository({
     indexedDBApi: fakeIndexedDb.api,

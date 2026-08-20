@@ -132,7 +132,7 @@ export async function resolveReviewSource(context, options = {}) {
         timeoutMs,
       }).catch(() => null),
     ])
-    const contextWindow = buildTranscriptContextWindow(transcript, sentence)
+    const contextWindow = buildTranscriptContextWindow(transcript, sentence, 3, options.word)
     const target = contextWindow.find((item) => item.target)
     if (!target) {
       const error = new Error('Review transcript does not contain the target sentence')
@@ -359,24 +359,29 @@ export function withTimeout(promise, timeoutMs, onTimeout) {
   ]).finally(() => clearTimeout(timeout))
 }
 
-export function findTranscriptSegment(transcript, sentence) {
-  const index = findTranscriptSegmentIndex(transcript, sentence)
+export function findTranscriptSegment(transcript, sentence, word = '') {
+  const index = findTranscriptSegmentIndex(transcript, sentence, word)
   return index >= 0 ? transcript.segments[index] : null
 }
 
-export function findTranscriptSegmentIndex(transcript, sentence) {
+export function findTranscriptSegmentIndex(transcript, sentence, word = '') {
   const target = normalizeMatchText(sentence)
   if (!target) return -1
   const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : []
-  return segments.findIndex((segment) => {
+  let bestMatch = null
+  segments.forEach((segment, index) => {
     const candidate = normalizeMatchText(getSegmentText(segment))
-    return candidate && (candidate === target || candidate.includes(target) || target.includes(candidate))
+    const match = scoreTranscriptMatch(candidate, target, word)
+    if (!match) return
+    const ranked = { ...match, index }
+    if (!bestMatch || compareTranscriptMatches(ranked, bestMatch) > 0) bestMatch = ranked
   })
+  return bestMatch ? bestMatch.index : -1
 }
 
-export function buildTranscriptContextWindow(transcript, sentence, maximum = 3) {
+export function buildTranscriptContextWindow(transcript, sentence, maximum = 3, word = '') {
   const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : []
-  const targetIndex = findTranscriptSegmentIndex(transcript, sentence)
+  const targetIndex = findTranscriptSegmentIndex(transcript, sentence, word)
   if (targetIndex < 0) return []
   const limit = Math.max(1, Math.min(Number(maximum) || 3, segments.length))
   const start = Math.max(0, Math.min(targetIndex - 1, segments.length - limit))
@@ -387,6 +392,46 @@ export function buildTranscriptContextWindow(transcript, sentence, maximum = 3) 
       target: start + offset === targetIndex,
     }))
     .filter((item) => item.text)
+}
+
+function scoreTranscriptMatch(candidate, target, word) {
+  if (!candidate) return null
+  if (candidate === target) {
+    return { relation: 3, containsWord: 1, closeness: 0 }
+  }
+  if (candidate.includes(target)) {
+    return {
+      relation: 2,
+      containsWord: containsTokenSequence(candidate, word) ? 1 : 0,
+      closeness: target.length - candidate.length,
+    }
+  }
+  if (target.includes(candidate)) {
+    return {
+      relation: 1,
+      containsWord: containsTokenSequence(candidate, word) ? 1 : 0,
+      closeness: candidate.length,
+    }
+  }
+  return null
+}
+
+function compareTranscriptMatches(left, right) {
+  return left.relation - right.relation
+    || left.containsWord - right.containsWord
+    || left.closeness - right.closeness
+    || right.index - left.index
+}
+
+function containsTokenSequence(candidate, value) {
+  const targetWords = tokenizeMatchWords(value)
+  if (!targetWords.length) return false
+  const candidateWords = tokenizeMatchWords(candidate)
+  if (candidateWords.length < targetWords.length) return false
+  for (let index = 0; index <= candidateWords.length - targetWords.length; index += 1) {
+    if (targetWords.every((word, offset) => candidateWords[index + offset] === word)) return true
+  }
+  return false
 }
 
 export function findTranscriptWordRange(segment, value) {

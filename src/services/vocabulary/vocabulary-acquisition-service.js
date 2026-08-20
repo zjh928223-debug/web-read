@@ -9,6 +9,7 @@ import { normalizeContextEvidence } from './vocabulary-context-evidence.js';
 import { normalizeLearningEvent } from './vocabulary-learning-events.js';
 import {
   canonicalJson,
+  runVocabularyLearningBatchSession,
   runVocabularyLearningUnitOfWork,
 } from './vocabulary-learning-uow.js';
 
@@ -231,10 +232,15 @@ function graduationFailure(eligibility) {
 export function createVocabularyAcquisitionService(options = {}) {
   if (!isPlainObject(options)) fail('INVALID_FIELD_TYPE', 'Service options must be an object', { field: 'options' });
   const enabled = options.enabled ?? false;
+  const hasCustomUnitOfWork = Object.prototype.hasOwnProperty.call(options, 'runUnitOfWork');
+  const hasCustomBatchSession = Object.prototype.hasOwnProperty.call(options, 'runBatchSession');
   const runUnitOfWork = options.runUnitOfWork ?? runVocabularyLearningUnitOfWork;
+  const runBatchSession = options.runBatchSession ?? runVocabularyLearningBatchSession;
+  const batchSupported = hasCustomBatchSession || !hasCustomUnitOfWork;
   const now = options.now ?? (() => new Date().toISOString());
   if (typeof enabled !== 'boolean'
     || typeof runUnitOfWork !== 'function'
+    || typeof runBatchSession !== 'function'
     || typeof now !== 'function') {
     fail('INVALID_FIELD_TYPE', 'Invalid acquisition service dependency', { field: 'options' });
   }
@@ -254,7 +260,7 @@ export function createVocabularyAcquisitionService(options = {}) {
     );
   }
 
-  return {
+  const service = {
     queueCandidate(rawCommand) {
       return run(rawCommand, COMMAND_TYPES.QUEUE_CANDIDATE, async (uow, command) => {
         const unit = normalizeLearningUnit(command.payload.learning_unit);
@@ -647,4 +653,22 @@ export function createVocabularyAcquisitionService(options = {}) {
       });
     },
   };
+  if (batchSupported) {
+    service.runBatch = function runBatch(work) {
+      if (!enabled) return Promise.reject(featureFlagError());
+      if (typeof work !== 'function') return Promise.reject(contractError('INVALID_FIELD_TYPE', 'Batch work must be a function', { field: 'work' }));
+      return runBatchSession({ now }, async (runCommand) => {
+        const batchService = createVocabularyAcquisitionService({
+          enabled,
+          now,
+          runUnitOfWork(commandDependencies, rawCommand, execute) {
+            return runCommand(commandDependencies, rawCommand, execute);
+          },
+        });
+        return work(batchService);
+      });
+    };
+  }
+
+  return service;
 }

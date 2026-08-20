@@ -181,6 +181,9 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
     ? SRS_ADD_MODES.WORDS_ONLY
     : SRS_ADD_MODES.ALL;
   const candidates = Array.isArray(options.candidates) ? options.candidates : [];
+  const existingInfoByKey = options.existingInfoByKey instanceof Map
+    ? options.existingInfoByKey
+    : null;
   const selected = mode === SRS_ADD_MODES.WORDS_ONLY
     ? candidates.filter((candidate) => candidate && candidate.entry_type === VOCABULARY_ENTRY_TYPES.WORD)
     : candidates;
@@ -192,10 +195,19 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
     ignoredSkipped: 0,
     relearned: 0,
   };
+  const yieldControl = typeof options.yieldControl === 'function'
+    ? options.yieldControl
+    : () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  for (const candidate of selected) {
+  const pendingWrites = [];
+  for (let candidateIndex = 0; candidateIndex < selected.length; candidateIndex += 1) {
+    const candidate = selected[candidateIndex];
     if (!candidate || !candidate.lemma) continue;
-    const existing = await vocabularyService.getWordByLemma(candidate.lemma, { language: candidate.language });
+    const existingKey = `${normalizeLanguage(candidate.language)}::${normalizeLookupKey(candidate.lemma)}`;
+    const existingInfo = existingInfoByKey && existingInfoByKey.get(existingKey);
+    const existing = existingInfoByKey
+      ? existingInfo && existingInfo.word || null
+      : await vocabularyService.getWordByLemma(candidate.lemma, { language: candidate.language });
     if (existing && existing.status === WORD_STATUSES.IGNORED && !candidate.relearn) {
       result.ignoredSkipped += 1;
       result.processed += 1;
@@ -213,7 +225,7 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
       preserve_existing_metadata: !!existing,
     };
     if (acquisitionEnabled) {
-      await vocabularyService.queueVocabularyAcquisition(wordInput);
+      pendingWrites.push({ candidate, existing, wordInput });
     } else {
       await vocabularyService.addWordLegacy({
         ...wordInput,
@@ -224,10 +236,33 @@ export async function applySrsCandidatesToVocabulary(options = {}) {
         result.relearned += 1;
       }
     }
-    if (!existing) result.added += 1;
-    else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
-    else result.existingContextAdded += 1;
-    result.processed += 1;
+    if (!acquisitionEnabled) {
+      if (!existing) result.added += 1;
+      else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
+      else result.existingContextAdded += 1;
+      result.processed += 1;
+      if (candidateIndex < selected.length - 1) await yieldControl();
+    }
+  }
+
+  if (acquisitionEnabled && pendingWrites.length) {
+    if (typeof vocabularyService.queueVocabularyAcquisitions === 'function') {
+      await vocabularyService.queueVocabularyAcquisitions(
+        pendingWrites.map((item) => item.wordInput),
+        {
+          existingWords: pendingWrites.map((item) => item.existing),
+          transactionChunkSize: options.transactionChunkSize,
+        },
+      );
+    } else {
+      for (const item of pendingWrites) await vocabularyService.queueVocabularyAcquisition(item.wordInput);
+    }
+    pendingWrites.forEach(({ existing }) => {
+      if (!existing) result.added += 1;
+      else if (existing.status === WORD_STATUSES.KNOWN) result.knownContextAdded += 1;
+      else result.existingContextAdded += 1;
+      result.processed += 1;
+    });
   }
 
   result.remaining = getRemainingSrsCandidatesAfterApply(candidates, mode);

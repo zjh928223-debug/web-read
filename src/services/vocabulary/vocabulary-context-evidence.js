@@ -630,14 +630,20 @@ function validateExpectedRevision(expectedRevision) {
   }
 }
 
-function applyPut(snapshotInput, evidenceInput, expectedRevision) {
+function applyPut(snapshotInput, evidenceInput, expectedRevision, options = {}) {
   validateExpectedRevision(expectedRevision);
-  const snapshot = normalizeStore(snapshotInput);
+  const snapshot = options.trustedNormalizedSnapshot === true
+    ? snapshotInput
+    : normalizeStore(snapshotInput);
   const evidence = normalizeContextEvidence(evidenceInput);
-  const duplicate = Object.values(snapshot.by_context_evidence_id).find((item) => (
-    item.context_evidence_id !== evidence.context_evidence_id
-    && evidenceDedupeKey(item) === evidenceDedupeKey(evidence)
-  ));
+  const evidenceKey = evidenceDedupeKey(evidence);
+  const duplicateId = options.dedupeByKey?.get(evidenceKey);
+  const duplicate = duplicateId && duplicateId !== evidence.context_evidence_id
+    ? snapshot.by_context_evidence_id[duplicateId]
+    : Object.values(snapshot.by_context_evidence_id).find((item) => (
+      item.context_evidence_id !== evidence.context_evidence_id
+      && evidenceDedupeKey(item) === evidenceKey
+    ));
   if (duplicate) {
     return { snapshot, result: cloneJson(duplicate), changed: false };
   }
@@ -657,6 +663,7 @@ function applyPut(snapshotInput, evidenceInput, expectedRevision) {
       });
     }
     snapshot.by_context_evidence_id[evidence.context_evidence_id] = evidence;
+    options.dedupeByKey?.set(evidenceKey, evidence.context_evidence_id);
     return { snapshot, result: cloneJson(evidence), changed: true };
   }
 
@@ -683,7 +690,9 @@ function applyPut(snapshotInput, evidenceInput, expectedRevision) {
     return { snapshot, result: cloneJson(existing), changed: false };
   }
   const updated = { ...evidence, revision: existing.revision + 1 };
+  options.dedupeByKey?.delete(evidenceDedupeKey(existing));
   snapshot.by_context_evidence_id[evidence.context_evidence_id] = updated;
+  options.dedupeByKey?.set(evidenceDedupeKey(updated), evidence.context_evidence_id);
   return { snapshot, result: cloneJson(updated), changed: true };
 }
 
@@ -973,15 +982,41 @@ export function bindContextEvidenceRepositoryToTransaction(rowPort) {
     });
   }
 
+  const buffered = rowPort.buffered === true;
+  const loadBufferedState = async () => {
+    if (bufferedContextStores.has(rowPort)) return bufferedContextStores.get(rowPort);
+    const row = await rowPort.getRow(CONTEXT_EVIDENCE_STORE_KEY);
+    const snapshot = normalizeStore(row?.content ?? null);
+    const state = {
+      snapshot,
+      dedupeByKey: new Map(Object.values(snapshot.by_context_evidence_id).map((evidence) => [
+        evidenceDedupeKey(evidence),
+        evidence.context_evidence_id,
+      ])),
+    };
+    bufferedContextStores.set(rowPort, state);
+    return state;
+  };
   const loadSnapshot = async () => {
+    if (buffered) return (await loadBufferedState()).snapshot;
     const row = await rowPort.getRow(CONTEXT_EVIDENCE_STORE_KEY);
     return normalizeStore(row?.content ?? null);
   };
   const putEvidence = async (evidence, expectedRevision) => {
     try {
-      const row = await rowPort.getRow(CONTEXT_EVIDENCE_STORE_KEY);
-      const outcome = applyPut(row?.content ?? null, evidence, expectedRevision);
+      const bufferedState = buffered ? await loadBufferedState() : null;
+      const row = buffered ? null : await rowPort.getRow(CONTEXT_EVIDENCE_STORE_KEY);
+      const outcome = applyPut(
+        buffered ? bufferedState.snapshot : row?.content ?? null,
+        evidence,
+        expectedRevision,
+        buffered ? {
+          trustedNormalizedSnapshot: true,
+          dedupeByKey: bufferedState.dedupeByKey,
+        } : {},
+      );
       if (outcome.changed) {
+        if (buffered) bufferedState.snapshot = outcome.snapshot;
         await rowPort.putRow({
           id: CONTEXT_EVIDENCE_STORE_KEY,
           content: outcome.snapshot,
@@ -1005,6 +1040,8 @@ export function bindContextEvidenceRepositoryToTransaction(rowPort) {
     put: repository.put,
   };
 }
+
+const bufferedContextStores = new WeakMap();
 
 export function selectValidatedAnchor(learningUnitId, contexts) {
   const id = normalizeId(learningUnitId, 'learning_unit_id');

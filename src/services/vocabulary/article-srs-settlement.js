@@ -361,8 +361,28 @@ export async function applyArticleSrsSettlement(options = {}) {
   const mode = selection.mode;
   const selected = [];
   const alreadyAppliedTargetIds = [];
+  const candidatesByLanguage = new Map();
+  selection.selectedCandidates.forEach((candidate) => {
+    const language = normalizeLanguage(candidate && candidate.language);
+    const group = candidatesByLanguage.get(language) || [];
+    group.push(candidate);
+    candidatesByLanguage.set(language, group);
+  });
+  const existingInfoByKey = new Map();
+  for (const [language, languageCandidates] of candidatesByLanguage) {
+    const existingForLanguage = await getExistingWordsAndContexts(
+      vocabularyService,
+      languageCandidates.map((candidate) => candidate && candidate.lemma),
+      language,
+    );
+    existingForLanguage.forEach((value, lookupKey) => {
+      existingInfoByKey.set(`${language}::${normalizeLookupKey(lookupKey)}`, value);
+    });
+  }
   for (const candidate of selection.selectedCandidates) {
-    const existingInfo = await getExistingWordInfo(vocabularyService, candidate.lemma, candidate.language);
+    const existingInfo = existingInfoByKey.get(
+      `${normalizeLanguage(candidate.language)}::${normalizeLookupKey(candidate.lemma)}`,
+    ) || { word: null, contexts: [] };
     const context = candidate && candidate.context || {};
     const existingSourceContext = findContextFromCurrentSource(
       existingInfo.contexts,
@@ -382,6 +402,8 @@ export async function applyArticleSrsSettlement(options = {}) {
     vocabularyService,
     candidates: selected,
     mode,
+    existingInfoByKey,
+    transactionChunkSize: options.transactionChunkSize,
   });
 
   let signalContextsRecorded = 0;

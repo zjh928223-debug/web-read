@@ -162,6 +162,56 @@ async function main() {
 
   const first = await applyArticle(api, service, [candidate()]);
   assert.equal(first.added, 1);
+
+  const batchVocabularyRepositoryBase = api.createInMemoryVocabularyRepository();
+  let batchVocabularySnapshotWrites = 0;
+  const batchVocabularyRepository = {
+    ...batchVocabularyRepositoryBase,
+    updateSnapshot(...args) {
+      batchVocabularySnapshotWrites += 1;
+      return batchVocabularyRepositoryBase.updateSnapshot(...args);
+    },
+  };
+  const batchRunner = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
+  const batchReader = createAcquisitionReader(batchRunner.snapshot);
+  let individualTransactionCount = 0;
+  let batchTransactionCount = 0;
+  const batchService = api.createVocabularyService({
+    repository: batchVocabularyRepository,
+    scheduler: schedulerStub(),
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+    acquisitionRepository: batchReader,
+    runVocabularyLearningUnitOfWork(...args) {
+      individualTransactionCount += 1;
+      return batchRunner.run(...args);
+    },
+    runVocabularyLearningBatchSession(...args) {
+      batchTransactionCount += 1;
+      return batchRunner.runBatchSession(...args);
+    },
+  });
+  const batchCandidates = Array.from({ length: 20 }, (_, index) => candidate({
+    target_id: `batch-target-${index}`,
+    targetId: `batch-target-${index}`,
+    word: `batchword${index}`,
+    lemma: `batchword${index}`,
+    context: {
+      source_id: 'article-batch',
+      sentence: `Batchword${index} appears in this article.`,
+    },
+  }));
+  const batchResult = await applyArticle(api, batchService, batchCandidates);
+  assert.equal(batchResult.added, 20);
+  assert.equal(batchTransactionCount, 5, 'twenty article candidates should use five short canonical learning transactions');
+  assert.equal(individualTransactionCount, 0, 'batch article settlement must not open one transaction per state command');
+  assert.equal(batchVocabularySnapshotWrites, 1, 'twenty article candidates should finalize the legacy vocabulary snapshot once');
+  assertCanonicalReviewCount(batchRunner.snapshot(), 20, 'batch settlement should commit one canonical review state per candidate');
+  const batchAcquisitionRow = batchRunner.snapshot()
+    .find((row) => row.id === 'vocabulary.acquisition.store.v1');
+  assert.equal(Object.keys(batchAcquisitionRow?.content?.by_learning_unit_id || {}).length, 20);
+  assert.ok(Object.values(batchAcquisitionRow.content.by_learning_unit_id)
+    .every((pair) => pair.acquisition_state.status === 'graduated'));
   assert.equal(first.selectedCount, 1);
   const legacySnapshot = await vocabularyRepository.loadSnapshot();
   assert.equal(legacySnapshot.words.length, 1);

@@ -752,8 +752,46 @@ function makeRow(id, content, timestamp) {
 }
 
 async function loadManifestFromRowPort(rowPort) {
+  if (rowPort.buffered === true) {
+    const state = getBufferedLearningEventState(rowPort);
+    if (state.manifest) return state.manifest;
+    const row = await rowPort.getRow(LEARNING_EVENT_MANIFEST_ROW_ID);
+    state.manifest = normalizeManifest(row ? row.content : null);
+    return state.manifest;
+  }
   const row = await rowPort.getRow(LEARNING_EVENT_MANIFEST_ROW_ID);
   return normalizeManifest(row ? row.content : null);
+}
+
+const bufferedLearningEventStates = new WeakMap();
+
+function getBufferedLearningEventState(rowPort) {
+  let state = bufferedLearningEventStates.get(rowPort);
+  if (!state) {
+    state = { manifest: null, shards: new Map() };
+    bufferedLearningEventStates.set(rowPort, state);
+  }
+  return state;
+}
+
+async function loadShardFromRowPort(rowPort, rowId, expectedPartition = null) {
+  if (rowPort.buffered === true) {
+    const state = getBufferedLearningEventState(rowPort);
+    if (state.shards.has(rowId)) return state.shards.get(rowId);
+    const row = await rowPort.getRow(rowId);
+    if (!row) return null;
+    const shard = normalizeShard(row.content, rowId, expectedPartition);
+    state.shards.set(rowId, shard);
+    return shard;
+  }
+  const row = await rowPort.getRow(rowId);
+  return row ? normalizeShard(row.content, rowId, expectedPartition) : null;
+}
+
+function transactionRow(rowPort, id, content, timestamp) {
+  return rowPort.buffered === true
+    ? { id, content, timestamp }
+    : makeRow(id, content, timestamp);
 }
 
 export function bindLearningEventRepositoryToTransaction(row_port, event_partition) {
@@ -773,14 +811,13 @@ export function bindLearningEventRepositoryToTransaction(row_port, event_partiti
     const manifest = await loadManifestFromRowPort(row_port);
     const location = manifest.event_locations[eventId];
     if (!location) return null;
-    const row = await row_port.getRow(location);
-    if (!row) {
+    const shard = await loadShardFromRowPort(row_port, location);
+    if (!shard) {
       throw contractError('TRANSACTION_ABORTED', 'Manifest points to a missing event shard', {
         reason: 'MISSING_EVENT_SHARD',
         row_id: location,
       });
     }
-    const shard = normalizeShard(row.content, location);
     const event = shard.events.find((candidate) => candidate.event_id === eventId);
     if (!event) {
       throw contractError('TRANSACTION_ABORTED', 'Manifest points to a missing event', {
@@ -839,14 +876,13 @@ export function bindLearningEventRepositoryToTransaction(row_port, event_partiti
       };
     } else {
       activeShardId = partitionEntry.active_shard_id;
-      const activeRow = await row_port.getRow(activeShardId);
-      if (!activeRow) {
+      shard = await loadShardFromRowPort(row_port, activeShardId, fixedPartition);
+      if (!shard) {
         throw contractError('TRANSACTION_ABORTED', 'Active event shard is missing', {
           reason: 'MISSING_EVENT_SHARD',
           row_id: activeShardId,
         });
       }
-      shard = normalizeShard(activeRow.content, activeShardId, fixedPartition);
       if (shard.events.length >= LEARNING_EVENT_SHARD_MAX_EVENTS) {
         const nextIndex = shard.shard_index + 1;
         activeShardId = shardRowId(fixedPartition, nextIndex);
@@ -864,7 +900,14 @@ export function bindLearningEventRepositoryToTransaction(row_port, event_partiti
           shard_index: nextIndex,
           events: [],
         };
+        if (row_port.buffered === true) {
+          getBufferedLearningEventState(row_port).shards.set(activeShardId, shard);
+        }
       }
+    }
+
+    if (row_port.buffered === true) {
+      getBufferedLearningEventState(row_port).shards.set(activeShardId, shard);
     }
 
     shard.events.push(event);
@@ -872,9 +915,9 @@ export function bindLearningEventRepositoryToTransaction(row_port, event_partiti
     manifest.partitions[fixedPartition] = partitionEntry;
     manifest.event_locations[event.event_id] = activeShardId;
     manifest.revision += 1;
-    await row_port.putRow(makeRow(activeShardId, shard, event.recorded_at));
+    await row_port.putRow(transactionRow(row_port, activeShardId, shard, event.recorded_at));
     await row_port.putRow(
-      makeRow(LEARNING_EVENT_MANIFEST_ROW_ID, manifest, event.recorded_at),
+      transactionRow(row_port, LEARNING_EVENT_MANIFEST_ROW_ID, manifest, event.recorded_at),
     );
     return cloneJson(event);
   }

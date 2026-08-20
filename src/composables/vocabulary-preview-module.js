@@ -26,6 +26,10 @@ import { getAnnotationGenerationStorage } from './session-annotation-services.js
 import { formatDictionarySuggestion } from '../dictionary/ecdict/browser/dictionary-suggestion-view.mjs';
 import { createAriaAmericanPronunciationService } from '../services/pronunciation/aria-american-pronunciation.js';
 import { getPiniaRuntimeStores } from '../pinia-stores/runtime-registry.js';
+import {
+  canRunArticleSrsSettlementInWorker,
+  runArticleSrsSettlementInWorker,
+} from '../services/vocabulary/article-srs-settlement-worker-client.js';
 
 const MODEL_STORAGE_KEY = 'annotationBackfillAi.model';
 const SESSION_API_KEY = '__annotationBackfillAiSessionApiKey';
@@ -36,10 +40,20 @@ const SETTLEMENT_DIALOG_MAX_WIDTH = 980;
 const SETTLEMENT_DIALOG_MAX_HEIGHT = 860;
 const SETTLEMENT_DIALOG_EDGE_GAP = 8;
 const SETTLEMENT_SIMPLE_MEANING_MAX_LENGTH = 24;
-const SETTLEMENT_REFINEMENT_PROMPT = '请输入 Gemini API key，用于本次 AI 精简释义：';
 
 function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function formatGeminiModelError(error) {
+  const message = normalizeText(error && error.message ? error.message : error);
+  const code = normalizeText(error && error.code).toLowerCase();
+  const quotaOrCapacity = /(?:429|quota|resource.?exhausted|rate.?limit|high demand|capacity|temporar(?:y|ily) unavailable)/i.test(message)
+    || /(?:quota|rate|resource.?exhausted|unavailable)/i.test(code);
+  if (quotaOrCapacity) {
+    return new Error('当前模型额度已满或暂时繁忙，请到“素材处理 → 设置 → 高级设置”切换模型后重试。');
+  }
+  return error instanceof Error ? error : new Error(message || 'AI 精简释义失败');
 }
 
 function normalizeSourceTitle(value) {
@@ -985,6 +999,13 @@ export function createVocabularyPreviewController(deps = {}) {
   const documentObject = deps.documentObject || windowObject.document;
   const client = deps.client || null;
   const vocabularyService = deps.vocabularyService || createVocabularyService();
+  const settlementApplicationRunner = typeof deps.runSettlementApplication === 'function'
+    ? deps.runSettlementApplication
+    : (options) => (
+      canRunArticleSrsSettlementInWorker(windowObject)
+        ? runArticleSrsSettlementInWorker({ ...options, windowObject })
+        : applyArticleSrsSettlement({ ...options, vocabularyService })
+    );
   const settlementProgressRepository = deps.settlementProgressRepository
     || createIndexedDbArticleSrsSettlementProgressRepository();
   const showToast = typeof deps.showToast === 'function' ? deps.showToast : function () {};
@@ -1018,6 +1039,7 @@ export function createVocabularyPreviewController(deps = {}) {
   let settlementProgressBadgeRequestId = 0;
   let settlementOpening = false;
   let settlementCache = null;
+  const settlementApplicationsInFlight = new Map();
 
   function updateSettlementProgressBadge(status) {
     if (!settleButton) return;
@@ -1031,6 +1053,16 @@ export function createVocabularyPreviewController(deps = {}) {
     if (status === 'processed') {
       settleButton.textContent = '本篇已有整理记录';
       settleButton.title = '本文已有加入或跳过记录；打开可查看尚未处理的候选';
+      return;
+    }
+    if (status === 'processing') {
+      settleButton.textContent = '正在后台加入…';
+      settleButton.title = '生词正在后台写入，不影响继续阅读';
+      return;
+    }
+    if (status === 'completed') {
+      settleButton.textContent = '已学完本篇';
+      settleButton.title = '本文候选已全部加入或跳过';
       return;
     }
     if (status === 'refined') {
@@ -1270,13 +1302,39 @@ export function createVocabularyPreviewController(deps = {}) {
         });
         settlementCache = { key: cacheKey, value: builtSettlement };
       }
-      const progress = await settlementProgressRepository.getProgress(sourceInfo.sourceId);
+      let progress = await settlementProgressRepository.getProgress(sourceInfo.sourceId);
+      const candidateTargetIds = (Array.isArray(builtSettlement.candidates) ? builtSettlement.candidates : [])
+        .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
+        .filter(Boolean);
+      const alreadyAppliedTargetIds = (Array.isArray(builtSettlement.excluded) ? builtSettlement.excluded : [])
+        .filter((candidate) => candidate && candidate.reason === 'already_added_current_article')
+        .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
+        .filter(Boolean);
+      const settlementTargetIds = Array.from(new Set([
+        ...candidateTargetIds,
+        ...alreadyAppliedTargetIds,
+      ]));
+      const knownTargetIds = new Set(progress && progress.settlement_target_ids || []);
+      const knownAppliedTargetIds = new Set(progress && progress.applied_target_ids || []);
+      const requiresProgressReconciliation = settlementTargetIds.some((targetId) => !knownTargetIds.has(targetId))
+        || alreadyAppliedTargetIds.some((targetId) => !knownAppliedTargetIds.has(targetId));
+      if (requiresProgressReconciliation && typeof settlementProgressRepository.recordSettlementTargets === 'function') {
+        progress = await settlementProgressRepository.recordSettlementTargets(
+          sourceInfo.sourceId,
+          settlementTargetIds,
+          { appliedTargetIds: alreadyAppliedTargetIds },
+        );
+      }
       if (getCurrentIdentity(state).jobId !== identity.jobId) {
         throw new Error('当前文章已切换，请重新打开“整理本篇生词”。');
       }
       const settlement = applyArticleSrsSettlementProgress(builtSettlement, progress);
       settlement.articleId = sourceInfo.sourceId;
-      if (settlement.summary && settlement.summary.processed > 0) {
+      if (settlement.summary && settlement.summary.completed) {
+        updateSettlementProgressBadge('completed');
+      } else if (settlement.summary && settlement.summary.processing > 0) {
+        updateSettlementProgressBadge('processing');
+      } else if (settlement.summary && settlement.summary.processed > 0) {
         updateSettlementProgressBadge('processed');
       }
       settlementDialog.open(settlement);
@@ -1290,15 +1348,6 @@ export function createVocabularyPreviewController(deps = {}) {
     }
   }
 
-  function requestSettlementRefinementApiKey() {
-    const existing = getSessionApiKey(windowObject);
-    if (existing) return existing;
-    if (!windowObject || typeof windowObject.prompt !== 'function') return '';
-    const entered = normalizeText(windowObject.prompt(SETTLEMENT_REFINEMENT_PROMPT, ''));
-    if (entered) persistSessionApiKey(windowObject, entered);
-    return entered;
-  }
-
   async function refineSettlementMeanings(options = {}) {
     if (!client || typeof client.runAnnotationBackfill !== 'function') {
       throw new Error('本地素材处理服务尚未就绪');
@@ -1310,9 +1359,7 @@ export function createVocabularyPreviewController(deps = {}) {
     const candidates = (Array.isArray(options.candidates) ? options.candidates : [])
       .filter((candidate) => !removedTargetIds.has(normalizeText(candidate && candidate.targetId)));
     const refinableCandidates = getSettlementMeaningRefinementCandidates(candidates);
-    const model = getStoredModel(windowObject) || DEFAULT_MODEL;
-    const apiKey = requestSettlementRefinementApiKey();
-    if (!apiKey) throw new Error('需要 Gemini API key 才能精简释义');
+    const apiKey = getSessionApiKey(windowObject);
     const initialTemplate = buildSettlementMeaningRefinementTemplate({
       candidates: refinableCandidates,
       sourceId: articleId,
@@ -1335,15 +1382,13 @@ export function createVocabularyPreviewController(deps = {}) {
     });
     const payload = {
       template,
-      model,
-      apiKey,
       mergeWithLatest: false,
       purpose: 'srs_meaning_refinement',
       singleRequest: true,
       maxApiCalls: 1,
     };
-    persistModel(windowObject, model);
-    persistSessionApiKey(windowObject, apiKey);
+    if (apiKey) payload.apiKey = apiKey;
+    if (apiKey) persistSessionApiKey(windowObject, apiKey);
     claimedCandidates.forEach((candidate) => {
       candidate.refinement_attempted = true;
       candidate.refinement_status = 'pending';
@@ -1362,7 +1407,7 @@ export function createVocabularyPreviewController(deps = {}) {
         candidate.refinement_status = 'failed';
       });
       await refreshSettlementProgressBadge(currentIdentity);
-      throw apiError;
+      throw formatGeminiModelError(apiError);
     }
     const result = response && response.result ? response.result : response;
     const stats = applySettlementMeaningRefinementResult(claimedCandidates, result);
@@ -1382,6 +1427,48 @@ export function createVocabularyPreviewController(deps = {}) {
     return stats;
   }
 
+  async function runClaimedSettlementApplication(context) {
+    const {
+      actionIdentity,
+      articleId,
+      claimToken,
+      claimedCandidates,
+      claimedTargetIds,
+      mode,
+    } = context;
+    try {
+      const result = await settlementApplicationRunner({
+        candidates: claimedCandidates,
+        mode,
+      });
+      try {
+        await settlementProgressRepository.recordApplication(articleId, {
+          appliedTargetIds: [
+            ...(result.selectedTargetIds || []),
+            ...(result.alreadyAppliedTargetIds || []),
+          ],
+          claimToken,
+          mode,
+        });
+      } catch (progressError) {
+        showError('VOCABULARY_SETTLEMENT_PROGRESS', `SRS 已写入，但整理印记保存失败：${progressError && progressError.message ? progressError.message : '未知错误'}`);
+      }
+      settlementCache = null;
+      await refreshSettlementProgressBadge(actionIdentity.currentIdentity);
+      showToast(`后台整理完成：新增 ${result.added} 个，追加语境 ${result.existingContextAdded + result.knownContextAdded} 个，重新学习 ${result.relearned || 0} 个。`, 'success');
+      return result;
+    } catch (error) {
+      try {
+        await settlementProgressRepository.releaseApplicationClaim(articleId, claimedTargetIds, { claimToken });
+      } catch (_releaseError) {}
+      await refreshSettlementProgressBadge(actionIdentity.currentIdentity);
+      showError('VOCABULARY_SETTLEMENT', error && error.message ? error.message : '加入 SRS 失败');
+      return null;
+    } finally {
+      settlementApplicationsInFlight.delete(articleId);
+    }
+  }
+
   async function applySettlement(options = {}) {
     let claimedTargetIds = [];
     let claimToken = '';
@@ -1389,10 +1476,17 @@ export function createVocabularyPreviewController(deps = {}) {
     try {
       const actionIdentity = getCurrentSettlementActionIdentity(options);
       articleId = actionIdentity.articleId;
+      if (settlementApplicationsInFlight.has(articleId)) {
+        showToast('本篇生词正在后台加入。', 'info');
+        return { background: true };
+      }
       const selection = selectArticleSrsSettlementCandidates(options);
       const claim = await settlementProgressRepository.claimApplication(articleId, {
         candidateTargetIds: selection.selectedTargetIds,
         skippedTargetIds: selection.removedTargetIds,
+        allCandidateTargetIds: (Array.isArray(options.candidates) ? options.candidates : [])
+          .map((candidate) => normalizeText(candidate && (candidate.targetId || candidate.target_id)))
+          .filter(Boolean),
       });
       claimedTargetIds = claim.claimedTargetIds;
       claimToken = claim.claimToken;
@@ -1405,27 +1499,23 @@ export function createVocabularyPreviewController(deps = {}) {
         showToast('这些候选已在另一窗口处理或已加入 SRS。', 'info');
         return { selectedCount: 0, selectedTargetIds: [], removedTargetIds: selection.removedTargetIds };
       }
-      const result = await applyArticleSrsSettlement({
-        vocabularyService,
-        candidates: claimedCandidates,
-        mode: 'all',
-      });
-      try {
-        await settlementProgressRepository.recordApplication(articleId, {
-          appliedTargetIds: [
-            ...(result.selectedTargetIds || []),
-            ...(result.alreadyAppliedTargetIds || []),
-          ],
+      updateSettlementProgressBadge('processing');
+      const scheduleBackgroundTask = typeof windowObject.setTimeout === 'function'
+        ? (callback) => windowObject.setTimeout(callback, 0)
+        : (callback) => setTimeout(callback, 0);
+      const operation = new Promise((resolve) => scheduleBackgroundTask(resolve))
+        .then(() => runClaimedSettlementApplication({
+          actionIdentity,
+          articleId,
           claimToken,
+          claimedCandidates,
+          claimedTargetIds,
           mode: options.mode,
-        });
-      } catch (progressError) {
-        showError('VOCABULARY_SETTLEMENT_PROGRESS', `SRS 已写入，但整理印记保存失败：${progressError && progressError.message ? progressError.message : '未知错误'}`);
-      }
-      settlementCache = null;
-      await refreshSettlementProgressBadge(actionIdentity.currentIdentity);
-      showToast(`已整理入 SRS：新增 ${result.added} 个，追加语境 ${result.existingContextAdded + result.knownContextAdded} 个，重新学习 ${result.relearned || 0} 个。`, 'success');
-      return result;
+        }));
+      settlementApplicationsInFlight.set(articleId, operation);
+      void operation;
+      showToast('已转到后台加入，可继续阅读。', 'info');
+      return { background: true, selectedCount: claimedCandidates.length };
     } catch (error) {
       if (articleId && claimedTargetIds.length) {
         try {

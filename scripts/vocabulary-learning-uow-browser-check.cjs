@@ -10,12 +10,12 @@ function startModuleServer(repoRoot) {
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      response.end('<!doctype html><meta charset="utf-8"><title>P6 IDB verification</title>');
+      response.end('<!doctype html><meta charset="utf-8"><script type="importmap">{"imports":{"ts-fsrs":"/node_modules/ts-fsrs/dist/index.mjs"}}</script><title>P6 IDB verification</title>');
       return;
     }
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/u, '');
     const target = path.resolve(repoRoot, relative);
-    if (!target.startsWith(`${path.resolve(repoRoot)}${path.sep}`) || !target.endsWith('.js')) {
+    if (!target.startsWith(`${path.resolve(repoRoot)}${path.sep}`) || !/\.m?js$/u.test(target)) {
       response.writeHead(404);
       response.end('not found');
       return;
@@ -30,7 +30,10 @@ function startModuleServer(repoRoot) {
         'content-type': 'text/javascript; charset=utf-8',
         'cache-control': 'no-store',
       });
-      response.end(content);
+      response.end(String(content).replaceAll(
+        "from 'ts-fsrs'",
+        "from '/node_modules/ts-fsrs/dist/index.mjs'",
+      ));
     });
   });
   return new Promise((resolve, reject) => {
@@ -374,6 +377,307 @@ async function main() {
     assert.equal(requestFailure.error.code, 'TRANSACTION_ABORTED');
     assert.deepEqual(requestFailure.after, requestFailure.before);
 
+    const batchResult = await page.evaluate(async () => {
+      const acquisition = await import('/src/services/vocabulary/vocabulary-acquisition-service.js');
+      let completedReadwriteTransactions = 0;
+      const originalTransaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function patchedTransaction(...args) {
+        const transaction = originalTransaction.apply(this, args);
+        if (args[1] === 'readwrite') {
+          transaction.addEventListener('complete', () => {
+            completedReadwriteTransactions += 1;
+          });
+        }
+        return transaction;
+      };
+      const service = acquisition.createVocabularyAcquisitionService({
+        enabled: true,
+        now: () => '2026-07-20T10:30:00.000Z',
+      });
+      const commandFor = (index) => ({
+        command_id: `browser-batch-command-${index}`,
+        correlation_id: `browser-batch-correlation-${index}`,
+        event_partition: '2026-07',
+        payload: {
+          learning_unit: {
+            learning_unit_id: `browser-batch-unit-${index}`,
+            word_id: `browser-batch-word-${index}`,
+            normalized_form: `browser-batch-${index}`,
+            language: 'en',
+            target_sense_id: null,
+            target_sense_key: null,
+            target_sense: null,
+            created_at: '2026-07-20T10:30:00.000Z',
+            updated_at: '2026-07-20T10:30:00.000Z',
+          },
+          event_id: `browser-batch-event-${index}`,
+        },
+      });
+      let results;
+      try {
+        results = await service.runBatch(async (batchService) => {
+          const values = [];
+          for (let index = 0; index < 20; index += 1) {
+            values.push(await batchService.queueCandidate(commandFor(index)));
+          }
+          return values;
+        });
+      } finally {
+        IDBDatabase.prototype.transaction = originalTransaction;
+      }
+      const rows = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(['files'], 'readonly');
+          const getAll = transaction.objectStore('files').getAll();
+          getAll.onerror = () => reject(getAll.error);
+          transaction.oncomplete = () => {
+            database.close();
+            resolve(getAll.result);
+          };
+        };
+      });
+      return {
+        resultCount: results.length,
+        completedReadwriteTransactions,
+        receiptCount: rows.filter((row) => row.id.startsWith('vocabulary.learning-command-receipt.v1:browser-batch-command-')).length,
+        unitCount: Object.keys(rows.find((row) => row.id === 'vocabulary.acquisition.store.v1')?.content?.by_learning_unit_id || {})
+          .filter((id) => id.startsWith('browser-batch-unit-')).length,
+      };
+    });
+    assert.deepEqual(batchResult, {
+      resultCount: 20,
+      completedReadwriteTransactions: 1,
+      receiptCount: 20,
+      unitCount: 20,
+    });
+
+    const articleBatchResult = await page.evaluate(async () => {
+      const vocabulary = await import('/src/services/vocabulary/vocabulary-service.js');
+      let completedReadwriteTransactions = 0;
+      const originalTransaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function patchedTransaction(...args) {
+        const transaction = originalTransaction.apply(this, args);
+        if (args[1] === 'readwrite') {
+          transaction.addEventListener('complete', () => {
+            completedReadwriteTransactions += 1;
+          });
+        }
+        return transaction;
+      };
+      const service = vocabulary.createVocabularyService({
+        acquisitionEnabled: true,
+        now: () => new Date('2026-07-20T10:40:00.000Z'),
+      });
+      const candidates = Array.from({ length: 20 }, (_, index) => ({
+        word: `browserarticleword${index}`,
+        lemma: `browserarticleword${index}`,
+        language: 'en',
+        meaning: `Browser article meaning ${index}`,
+        target_id: `browser-article-target-${index}`,
+        context: {
+          source_id: 'browser-article-batch',
+          sentence: `Browserarticleword${index} appears here.`,
+          meaning: `Browser article meaning ${index}`,
+        },
+      }));
+      const startedAt = performance.now();
+      let results;
+      let caughtError = null;
+      try {
+        results = await service.queueVocabularyAcquisitions(candidates);
+      } catch (error) {
+        caughtError = { name: error.name, code: error.code, message: error.message, details: error.details };
+        results = [];
+      } finally {
+        IDBDatabase.prototype.transaction = originalTransaction;
+      }
+      const elapsedMs = performance.now() - startedAt;
+      const rows = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(['files'], 'readonly');
+          const getAll = transaction.objectStore('files').getAll();
+          transaction.oncomplete = () => {
+            database.close();
+            resolve(getAll.result);
+          };
+        };
+      });
+      const reviewRow = rows.find((row) => row.id === 'vocabulary.review.store.v2');
+      const resultLearningUnitIds = new Set(results.map((result) => result.learningUnit?.learning_unit_id).filter(Boolean));
+      return {
+        resultCount: results.length,
+        graduatedCount: results.filter((result) => result.acquisitionState?.status === 'graduated').length,
+        completedReadwriteTransactions,
+        canonicalReviewCount: Object.keys(reviewRow?.content?.by_learning_unit_id || {})
+          .filter((id) => resultLearningUnitIds.has(id)).length,
+        elapsedMs,
+        caughtError,
+      };
+    });
+    assert.equal(articleBatchResult.caughtError, null, JSON.stringify(articleBatchResult.caughtError));
+    assert.equal(articleBatchResult.resultCount, 20);
+    assert.equal(articleBatchResult.graduatedCount, 20);
+    assert.equal(articleBatchResult.completedReadwriteTransactions, 6, 'article settlement should use five short canonical batches and one legacy finalization transaction');
+    assert.equal(articleBatchResult.canonicalReviewCount, 20);
+    assert.ok(articleBatchResult.elapsedMs < 2000, `twenty-candidate article settlement took ${articleBatchResult.elapsedMs}ms`);
+
+    const accumulatedHistoryResult = await page.evaluate(async () => {
+      const vocabulary = await import('/src/services/vocabulary/vocabulary-service.js');
+      const service = vocabulary.createVocabularyService({
+        acquisitionEnabled: true,
+        now: () => new Date('2026-07-20T11:00:00.000Z'),
+      });
+      const makeCandidates = (prefix, count) => Array.from({ length: count }, (_, index) => ({
+        word: `${prefix}${index}`,
+        lemma: `${prefix}${index}`,
+        language: 'en',
+        meaning: `Accumulated history meaning ${index}`,
+        target_id: `${prefix}-target-${index}`,
+        context: {
+          source_id: `${prefix}-article`,
+          sentence: `${prefix}${index} appears in accumulated history.`,
+          meaning: `Accumulated history meaning ${index}`,
+        },
+      }));
+      await service.queueVocabularyAcquisitions(
+        makeCandidates('historyseedword', 300),
+        { transactionChunkSize: 300 },
+      );
+      let heartbeatAt = performance.now();
+      let maxHeartbeatGapMs = 0;
+      const heartbeat = setInterval(() => {
+        const current = performance.now();
+        maxHeartbeatGapMs = Math.max(maxHeartbeatGapMs, current - heartbeatAt);
+        heartbeatAt = current;
+      }, 16);
+      await new Promise((resolve) => setTimeout(resolve, 32));
+      const startedAt = performance.now();
+      const results = await service.queueVocabularyAcquisitions(makeCandidates('historynextword', 20));
+      await new Promise((resolve) => setTimeout(resolve, 32));
+      clearInterval(heartbeat);
+      return {
+        elapsedMs: performance.now() - startedAt,
+        maxHeartbeatGapMs,
+        resultCount: results.length,
+        graduatedCount: results.filter((result) => result.acquisitionState?.status === 'graduated').length,
+      };
+    });
+    assert.equal(accumulatedHistoryResult.resultCount, 20);
+    assert.equal(accumulatedHistoryResult.graduatedCount, 20);
+    assert.ok(
+      accumulatedHistoryResult.elapsedMs < 2000,
+      `twenty-candidate settlement against 300-word history took ${accumulatedHistoryResult.elapsedMs}ms`,
+    );
+    assert.ok(
+      accumulatedHistoryResult.maxHeartbeatGapMs < 180,
+      `direct article settlement blocked the browser main thread for ${accumulatedHistoryResult.maxHeartbeatGapMs}ms`,
+    );
+
+    const workerHistoryResult = await page.evaluate(async () => {
+      const workerClient = await import('/src/services/vocabulary/article-srs-settlement-worker-client.js');
+      const candidates = Array.from({ length: 20 }, (_, index) => ({
+        targetId: `worker-history-target-${index}`,
+        target_id: `worker-history-target-${index}`,
+        word: `workerhistoryword${index}`,
+        lemma: `workerhistoryword${index}`,
+        entry_type: 'word',
+        language: 'en',
+        meaning: `Worker history meaning ${index}`,
+        eligible: true,
+        context: {
+          source_id: 'worker-history-article',
+          sentence: `Workerhistoryword${index} appears here.`,
+          meaning: `Worker history meaning ${index}`,
+        },
+      }));
+      let heartbeatAt = performance.now();
+      let maxHeartbeatGapMs = 0;
+      const heartbeat = setInterval(() => {
+        const current = performance.now();
+        maxHeartbeatGapMs = Math.max(maxHeartbeatGapMs, current - heartbeatAt);
+        heartbeatAt = current;
+      }, 16);
+      await new Promise((resolve) => setTimeout(resolve, 32));
+      const startedAt = performance.now();
+      const result = await workerClient.runArticleSrsSettlementInWorker({
+        windowObject: window,
+        candidates,
+        mode: 'all',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 32));
+      clearInterval(heartbeat);
+      return {
+        elapsedMs: performance.now() - startedAt,
+        maxHeartbeatGapMs,
+        selectedCount: result.selectedCount,
+        added: result.added,
+      };
+    });
+    assert.equal(workerHistoryResult.selectedCount, 20);
+    assert.equal(workerHistoryResult.added, 20);
+    assert.ok(
+      workerHistoryResult.maxHeartbeatGapMs < 80,
+      `worker article settlement blocked the browser main thread for ${workerHistoryResult.maxHeartbeatGapMs}ms`,
+    );
+
+    const batchRollback = await page.evaluate(async () => {
+      const acquisition = await import('/src/services/vocabulary/vocabulary-acquisition-service.js');
+      const readRows = () => new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(['files'], 'readonly');
+          const getAll = transaction.objectStore('files').getAll();
+          transaction.oncomplete = () => {
+            database.close();
+            resolve(getAll.result.sort((left, right) => left.id.localeCompare(right.id)));
+          };
+        };
+      });
+      const before = await readRows();
+      const service = acquisition.createVocabularyAcquisitionService({
+        enabled: true,
+        now: () => '2026-07-20T10:45:00.000Z',
+      });
+      let errorCode;
+      try {
+        await service.runBatch(async (batchService) => {
+          await batchService.queueCandidate({
+            command_id: 'browser-batch-rollback-command',
+            correlation_id: 'browser-batch-rollback-correlation',
+            event_partition: '2026-07',
+            payload: {
+              learning_unit: {
+                learning_unit_id: 'browser-batch-rollback-unit',
+                word_id: 'browser-batch-rollback-word',
+                normalized_form: 'browser-batch-rollback',
+                language: 'en',
+                target_sense_id: null,
+                target_sense_key: null,
+                target_sense: null,
+                created_at: '2026-07-20T10:45:00.000Z',
+                updated_at: '2026-07-20T10:45:00.000Z',
+              },
+              event_id: 'browser-batch-rollback-event',
+            },
+          });
+          throw new Error('synthetic batch rollback');
+        });
+      } catch (error) {
+        errorCode = error.code;
+      }
+      const after = await readRows();
+      return { errorCode, unchanged: JSON.stringify(after) === JSON.stringify(before) };
+    });
+    assert.deepEqual(batchRollback, { errorCode: 'TRANSACTION_ABORTED', unchanged: true });
+
     const productionFaults = await page.evaluate(async () => {
       const uow = await import('/src/services/vocabulary/vocabulary-learning-uow.js');
       const persistence = await import('/src/services/vocabulary/vocabulary-persistence.js');
@@ -664,7 +968,7 @@ async function main() {
       wrongVersion: 'UNKNOWN_SCHEMA',
     });
 
-    console.log('Vocabulary learning production IndexedDB browser verification passed.');
+    console.log(`Vocabulary learning production IndexedDB browser verification passed (20-candidate article batch: ${articleBatchResult.elapsedMs.toFixed(1)} ms; after 300-word history: ${accumulatedHistoryResult.elapsedMs.toFixed(1)} ms; worker total: ${workerHistoryResult.elapsedMs.toFixed(1)} ms; worker main-thread gap: ${workerHistoryResult.maxHeartbeatGapMs.toFixed(1)} ms).`);
   } finally {
     if (context) await context.close();
     await server.close();

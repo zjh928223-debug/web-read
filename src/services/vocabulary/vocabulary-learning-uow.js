@@ -535,15 +535,24 @@ export function bindReviewRepositoryToTransaction(row_port) {
       field: 'row_port',
     });
   }
+  const buffered = row_port.buffered === true;
   const load = async () => {
+    if (buffered && bufferedReviewStores.has(row_port)) {
+      return bufferedReviewStores.get(row_port);
+    }
     const row = await row_port.getRow(VOCABULARY_REVIEW_ROW_ID);
-    return normalizeReviewStore(row?.content ?? null);
+    const store = normalizeReviewStore(row?.content ?? null);
+    if (buffered) bufferedReviewStores.set(row_port, store);
+    return store;
   };
-  const save = async (store, timestamp) => row_port.putRow({
-    id: VOCABULARY_REVIEW_ROW_ID,
-    content: store,
-    timestamp,
-  });
+  const save = async (store, timestamp) => {
+    if (buffered) bufferedReviewStores.set(row_port, store);
+    return row_port.putRow({
+      id: VOCABULARY_REVIEW_ROW_ID,
+      content: store,
+      timestamp,
+    });
+  };
   return {
     async getByLearningUnitId(learning_unit_id) {
       requiredId(learning_unit_id, 'learning_unit_id');
@@ -598,6 +607,8 @@ export function bindReviewRepositoryToTransaction(row_port) {
     },
   };
 }
+
+const bufferedReviewStores = new WeakMap();
 
 export function assembleVocabularyLearningUnitOfWork(row_port, event_partition) {
   if (!EVENT_PARTITION.test(event_partition)) {
@@ -655,6 +666,9 @@ function normalizeCommand(command) {
 }
 
 async function executeWithRowPort(rowPort, command, execute, now) {
+  if (rowPort.buffered === true) {
+    rowPortMetadata.set(rowPort, { touchedRowIds: new Set(), eventIds: new Set() });
+  }
   const receiptRowId = `${VOCABULARY_COMMAND_RECEIPT_PREFIX}${command.command_id}`;
   const fingerprint = fingerprintVocabularyLearningCommand(command.command_type, command.payload);
   const existing = await rowPort.getRow(receiptRowId);
@@ -727,6 +741,37 @@ async function executeWithRowPort(rowPort, command, execute, now) {
   return clone(result);
 }
 
+function createBufferedVocabularyLearningRowPort(basePort) {
+  const cachedRows = new Map();
+  const dirtyRows = new Map();
+  const port = {
+    transaction_id: `${basePort.transaction_id}:buffered`,
+    buffered: true,
+    async getRow(rowId) {
+      const metadata = rowPortMetadata.get(port);
+      metadata?.touchedRowIds.add(rowId);
+      if (cachedRows.has(rowId)) return cachedRows.get(rowId);
+      const row = await basePort.getRow(rowId);
+      cachedRows.set(rowId, row);
+      return row;
+    },
+    async putRow(row) {
+      const metadata = rowPortMetadata.get(port);
+      metadata?.touchedRowIds.add(row.id);
+      cachedRows.set(row.id, row);
+      dirtyRows.set(row.id, row);
+    },
+    abort(error) {
+      return basePort.abort(error);
+    },
+    async flush() {
+      for (const row of dirtyRows.values()) await basePort.putRow(row);
+    },
+  };
+  rowPortMetadata.set(port, { touchedRowIds: new Set(), eventIds: new Set() });
+  return port;
+}
+
 function transactionCompletion(transaction) {
   return new Promise((resolve, reject) => {
     try {
@@ -743,6 +788,42 @@ function transactionCompletion(transaction) {
       reject(normalizeStorageError(error, 'transaction'));
     }
   });
+}
+
+function keepVocabularyLearningTransactionAlive(transaction) {
+  let active = true;
+  let failure = null;
+  let store;
+  try {
+    store = transaction.objectStore('files');
+  } catch (error) {
+    throw normalizeStorageError(error, 'start_batch_keepalive');
+  }
+  const pump = () => {
+    if (!active) return;
+    let request;
+    try {
+      request = store.get(VOCABULARY_REVISION_WATERMARK_ROW_ID);
+    } catch (error) {
+      failure = normalizeStorageError(error, 'batch_keepalive');
+      active = false;
+      return;
+    }
+    request.onsuccess = () => {
+      if (active) pump();
+    };
+    request.onerror = () => {
+      failure = normalizeStorageError(request.error, 'batch_keepalive');
+      active = false;
+    };
+  };
+  pump();
+  return {
+    stop() {
+      active = false;
+      if (failure) throw failure;
+    },
+  };
 }
 
 function requestResult(idbRequest, operation) {
@@ -1010,6 +1091,62 @@ export async function runVocabularyLearningUnitOfWork(
   return runAttempt(true);
 }
 
+export async function runVocabularyLearningBatchSession(
+  dependencies = {},
+  executeSession,
+) {
+  if (!isPlainObject(dependencies)
+    || Object.keys(dependencies).some((key) => !['indexedDBApi', 'now'].includes(key))) {
+    fail('INVALID_FIELD_TYPE', 'Invalid batch unit-of-work dependencies', { field: 'dependencies' });
+  }
+  if (typeof executeSession !== 'function') {
+    fail('INVALID_FIELD_TYPE', 'executeSession must be a function', { field: 'executeSession' });
+  }
+  const indexedDBApi = dependencies.indexedDBApi
+    ?? (typeof globalThis !== 'undefined' ? globalThis.indexedDB : null);
+  const defaultNow = dependencies.now ?? (() => new Date().toISOString());
+  const runAttempt = async (allowRecovery) => {
+    const database = await openExistingDatabase(indexedDBApi);
+    let transaction;
+    let completion;
+    let keepAlive;
+    try {
+      transaction = database.transaction(['files'], 'readwrite');
+      completion = transactionCompletion(transaction);
+      keepAlive = keepVocabularyLearningTransactionAlive(transaction);
+      const basePort = createVocabularyLearningTransactionRowPort(
+        transaction,
+        `vocabulary-learning-batch-${++transactionSequence}`,
+      );
+      const bufferedPort = createBufferedVocabularyLearningRowPort(basePort);
+      const result = await executeSession(async (commandDependencies, rawCommand, execute) => {
+        if (typeof execute !== 'function') fail('INVALID_FIELD_TYPE', 'execute must be a function', { field: 'execute' });
+        const command = normalizeCommand(rawCommand);
+        const now = commandDependencies?.now ?? defaultNow;
+        return executeWithRowPort(bufferedPort, command, execute, now);
+      });
+      keepAlive.stop();
+      await bufferedPort.flush();
+      await completion;
+      return clone(result);
+    } catch (error) {
+      const normalized = normalizeThrown(error);
+      try { keepAlive?.stop(); } catch { /* Preserve the triggering error. */ }
+      try { transaction?.abort(); } catch { /* Completion preserves the stable error. */ }
+      if (completion) await completion.catch(() => undefined);
+      if (allowRecovery && normalized.code === 'CORRUPT') {
+        database.close?.();
+        await recoverCorruptVocabularyRow(indexedDBApi, normalized, defaultNow);
+        return runAttempt(false);
+      }
+      throw normalized;
+    } finally {
+      database.close?.();
+    }
+  };
+  return runAttempt(true);
+}
+
 export function createInMemoryVocabularyLearningUnitOfWorkRunner(options = {}) {
   if (!isPlainObject(options)) fail('INVALID_FIELD_TYPE', 'In-memory options must be an object', { field: 'options' });
   let rows = new Map();
@@ -1070,8 +1207,41 @@ export function createInMemoryVocabularyLearningUnitOfWorkRunner(options = {}) {
       throw normalizeThrown(error);
     }
   };
+  const runBatchSession = async (dependencies, executeSession) => {
+    const staged = new Map([...rows].map(([key, value]) => [key, clone(value)]));
+    const basePort = {
+      transaction_id: `in-memory-vocabulary-learning-${++runCount}`,
+      async getRow(rowId) {
+        return staged.has(rowId) ? clone(staged.get(rowId)) : null;
+      },
+      async putRow(row) {
+        staged.set(row.id, clone(row));
+      },
+      abort(error) {
+        throw normalizeThrown(error);
+      },
+    };
+    rowPortMetadata.set(basePort, { touchedRowIds: new Set(), eventIds: new Set() });
+    const bufferedPort = createBufferedVocabularyLearningRowPort(basePort);
+    try {
+      const result = await executeSession(async (commandDependencies, rawCommand, execute) => (
+        executeWithRowPort(
+          bufferedPort,
+          normalizeCommand(rawCommand),
+          execute,
+          commandDependencies?.now ?? dependencies?.now ?? now,
+        )
+      ));
+      await bufferedPort.flush();
+      rows = staged;
+      return clone(result);
+    } catch (error) {
+      throw normalizeThrown(error);
+    }
+  };
   return {
     run,
+    runBatchSession,
     snapshot() {
       return [...rows.values()].map(clone).sort((left, right) => left.id.localeCompare(right.id));
     },

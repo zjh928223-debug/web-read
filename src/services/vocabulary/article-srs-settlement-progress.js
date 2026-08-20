@@ -100,6 +100,7 @@ function normalizeProgress(progress, articleIdFallback = '') {
     application_claims: (Array.isArray(progress.application_claims || progress.applicationClaims)
       ? progress.application_claims || progress.applicationClaims
       : []).map(normalizeClaim).filter(Boolean),
+    settlement_target_ids: normalizeTargetIds(progress.settlement_target_ids || progress.settlementTargetIds),
     removed_target_ids: normalizeTargetIds(progress.removed_target_ids || progress.removedTargetIds),
     applied_target_ids: normalizeTargetIds(progress.applied_target_ids || progress.appliedTargetIds),
     skipped_target_ids: normalizeTargetIds(progress.skipped_target_ids || progress.skippedTargetIds),
@@ -159,6 +160,7 @@ export function createArticleSrsSettlementProgressRepository(storage) {
           article_id: normalizedArticleId,
           refinements: [],
           application_claims: [],
+          settlement_target_ids: [],
           removed_target_ids: [],
           applied_target_ids: [],
           skipped_target_ids: [],
@@ -172,6 +174,7 @@ export function createArticleSrsSettlementProgressRepository(storage) {
         article_id: normalizedArticleId,
         refinements: [],
         application_claims: [],
+        settlement_target_ids: [],
         removed_target_ids: [],
         applied_target_ids: [],
         skipped_target_ids: [],
@@ -300,9 +303,32 @@ export function createArticleSrsSettlementProgressRepository(storage) {
     });
   }
 
+  function recordSettlementTargets(articleId, targetIds = [], options = {}) {
+    const settlementTargetIds = normalizeTargetIds(targetIds);
+    const appliedTargetIds = normalizeTargetIds(options.appliedTargetIds || options.applied_target_ids);
+    const updatedAt = toIsoString(options.updatedAt || options.updated_at || new Date());
+    return updateProgress(articleId, (current) => ({
+      ...current,
+      settlement_target_ids: Array.from(new Set([
+        ...current.settlement_target_ids,
+        ...settlementTargetIds,
+      ])),
+      applied_target_ids: Array.from(new Set([
+        ...current.applied_target_ids,
+        ...appliedTargetIds,
+      ])),
+      updated_at: updatedAt,
+    }));
+  }
+
   async function claimApplication(articleId, options = {}) {
     const requestedTargetIds = normalizeTargetIds(options.candidateTargetIds || options.candidate_target_ids);
     const requestedSkippedIds = normalizeTargetIds(options.skippedTargetIds || options.skipped_target_ids);
+    const settlementTargetIds = normalizeTargetIds(
+      options.allCandidateTargetIds
+      || options.all_candidate_target_ids
+      || [...requestedTargetIds, ...requestedSkippedIds]
+    );
     const claimedAt = toIsoString(options.claimedAt || options.claimed_at || new Date());
     const claimToken = normalizeText(options.claimToken || options.claim_token) || createOperationToken('application');
     let claimedTargetIds = [];
@@ -319,6 +345,10 @@ export function createArticleSrsSettlementProgressRepository(storage) {
       const expiresAt = new Date(Date.parse(claimedAt) + APPLICATION_CLAIM_TTL_MS).toISOString();
       return {
         ...current,
+        settlement_target_ids: Array.from(new Set([
+          ...current.settlement_target_ids,
+          ...settlementTargetIds,
+        ])),
         application_claims: [
           ...activeClaims,
           ...claimedTargetIds.map((targetId) => ({ target_id: targetId, claim_token: claimToken, claimed_at: claimedAt, expires_at: expiresAt })),
@@ -396,6 +426,7 @@ export function createArticleSrsSettlementProgressRepository(storage) {
     recordRefinement,
     recordRefinementFailure,
     setCandidateRemoved,
+    recordSettlementTargets,
     claimApplication,
     releaseApplicationClaim,
     recordApplication,
@@ -492,7 +523,26 @@ export function createIndexedDbArticleSrsSettlementProgressRepository(options = 
 export function getArticleSrsSettlementProgressStatus(progress) {
   const normalized = normalizeProgress(progress || {}, progress && (progress.article_id || progress.articleId));
   if (!normalized) return 'none';
-  if (normalized.removed_target_ids.length || normalized.applied_target_ids.length || normalized.skipped_target_ids.length || getActiveClaims(normalized).length) return 'processed';
+  if (getActiveClaims(normalized).length) return 'processing';
+  const finalizedTargetIds = new Set([
+    ...normalized.applied_target_ids,
+    ...normalized.skipped_target_ids,
+  ]);
+  const hasUnfinalizedRefinementTarget = normalized.refinements.some((item) => (
+    item.target_id && !finalizedTargetIds.has(item.target_id)
+  ));
+  const legacyCompletedAll = normalized.settlement_target_ids.length === 0
+    && normalized.last_apply_mode === 'all'
+    && !!normalized.applied_at
+    && finalizedTargetIds.size > 0
+    && !hasUnfinalizedRefinementTarget
+    && normalized.removed_target_ids.length === 0;
+  if (legacyCompletedAll) return 'completed';
+  if (normalized.settlement_target_ids.length
+    && normalized.settlement_target_ids.every((targetId) => finalizedTargetIds.has(targetId))) {
+    return 'completed';
+  }
+  if (normalized.removed_target_ids.length || finalizedTargetIds.size) return 'processed';
   const currentRefinements = normalized.refinements.filter((item) => (
     item.prompt_version === SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION
   ));
@@ -514,7 +564,6 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
   const processedTargetIds = new Set([
     ...normalizedProgress.applied_target_ids,
     ...normalizedProgress.skipped_target_ids,
-    ...processingTargetIds,
   ]);
   const sourceCandidates = Array.isArray(next.candidates) ? next.candidates : [];
   const matchedProcessedTargetIds = new Set();
@@ -534,6 +583,7 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
       }
     }
     if (processedTargetIds.has(targetId)) matchedProcessedTargetIds.add(targetId);
+    candidate.application_processing = processingTargetIds.has(targetId);
     return candidate;
   }).filter((candidate) => !matchedProcessedTargetIds.has(getTargetId(candidate)));
   const baseSummary = summarizeArticleSrsSettlement(next.candidates, next.excluded);
@@ -541,7 +591,7 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
   next.summary = {
     ...baseSummary,
     processed,
-    processing: Array.from(matchedProcessedTargetIds).filter((targetId) => processingTargetIds.has(targetId)).length,
+    processing: sourceCandidates.filter((candidate) => processingTargetIds.has(getTargetId(candidate))).length,
     completed: (sourceCandidates.length > 0 || processed > 0) && next.candidates.length === 0,
   };
   const currentTargetIds = new Set(sourceCandidates.map(getTargetId).filter(Boolean));

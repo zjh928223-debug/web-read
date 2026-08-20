@@ -629,6 +629,42 @@ async function main() {
     rows.get(manifest.partitions['2026-07'].shard_ids[1]).content.events.length,
     1,
   );
+
+  const bufferedRows = new Map();
+  const bufferedManifestContents = [];
+  const bufferedPort = {
+    transaction_id: 'buffered-learning-events',
+    buffered: true,
+    async getRow(rowId) {
+      return bufferedRows.get(rowId) || null;
+    },
+    async putRow(row) {
+      bufferedRows.set(row.id, row);
+      if (row.id === api.LEARNING_EVENT_MANIFEST_ROW_ID) {
+        bufferedManifestContents.push(row.content);
+      }
+    },
+  };
+  const bufferedEvents = api.bindLearningEventRepositoryToTransaction(bufferedPort, '2026-07');
+  await bufferedEvents.append(api.normalizeLearningEvent({
+    ...fixture.candidate_event,
+    event_id: 'event-buffered-0001',
+    command_id: 'command-buffered-0001',
+    correlation_id: 'correlation-buffered-0001',
+  }));
+  await api.bindLearningEventRepositoryToTransaction(bufferedPort, '2026-07').append(
+    api.normalizeLearningEvent({
+      ...fixture.candidate_event,
+      event_id: 'event-buffered-0002',
+      command_id: 'command-buffered-0002',
+      correlation_id: 'correlation-buffered-0002',
+    }),
+  );
+  assert.strictEqual(
+    bufferedManifestContents[1],
+    bufferedManifestContents[0],
+    'buffered event writes must reuse one manifest instead of cloning the full event index per event',
+  );
   await assert.rejects(
     () => api.bindLearningEventRepositoryToTransaction(port, '2026-08').append(
       fixture.candidate_event,

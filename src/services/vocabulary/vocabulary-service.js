@@ -19,6 +19,7 @@ import { createIndexedDbVocabularyRepository } from './vocabulary-repository.js'
 import { createSrsScheduler } from './srs-scheduler.js';
 import {
   deriveTargetSenseKey,
+  normalizeLearningUnit,
 } from './vocabulary-learning-models.js';
 import {
   createIndexedDbAcquisitionRepository,
@@ -43,11 +44,18 @@ export function createVocabularyService(options = {}) {
   const acquisitionEnabled = resolveAcquisitionFeatureFlag(options);
   const acquisitionRepository = options.acquisitionRepository
     || createIndexedDbAcquisitionRepository(options.acquisitionRepositoryOptions || {});
-  const acquisitionService = options.acquisitionService || createVocabularyAcquisitionService({
+  const acquisitionServiceOptions = {
     enabled: acquisitionEnabled,
-    runUnitOfWork: options.runVocabularyLearningUnitOfWork,
     now: () => toIsoString(nowProvider()),
-  });
+  };
+  if (typeof options.runVocabularyLearningUnitOfWork === 'function') {
+    acquisitionServiceOptions.runUnitOfWork = options.runVocabularyLearningUnitOfWork;
+  }
+  if (typeof options.runVocabularyLearningBatchSession === 'function') {
+    acquisitionServiceOptions.runBatchSession = options.runVocabularyLearningBatchSession;
+  }
+  const acquisitionService = options.acquisitionService
+    || createVocabularyAcquisitionService(acquisitionServiceOptions);
   const legacyCompatibilityCalls = [];
 
   function normalizeWordInput(input = {}) {
@@ -119,17 +127,23 @@ export function createVocabularyService(options = {}) {
   }
 
   async function queueVocabularyAcquisition(input = {}) {
+    return queueVocabularyAcquisitionWithService(input, acquisitionService);
+  }
+
+  async function queueVocabularyAcquisitionWithService(input = {}, acquisitionCommands, batchOptions = {}) {
     const result = await queueAcquisitionInternal(input, {
       source: 'article-settlement',
       createContextEvidence: createArticleContextEvidence,
+      acquisitionCommands,
+      ...batchOptions,
     });
     if (result.alreadyGraduated) return result;
-    if (typeof acquisitionService.completeArticleLearning !== 'function') {
+    if (typeof acquisitionCommands.completeArticleLearning !== 'function') {
       throw new Error('Article settlement requires the article completion acquisition command');
     }
     const completedAt = normalizeWordInput(input).createdAt;
     const commandBase = `article-completion:${result.learningUnit.learning_unit_id}`;
-    const completion = await acquisitionService.completeArticleLearning({
+    const completion = await acquisitionCommands.completeArticleLearning({
       command_id: `${commandBase}:command`,
       correlation_id: commandBase,
       event_partition: completedAt.slice(0, 7),
@@ -144,7 +158,10 @@ export function createVocabularyService(options = {}) {
     });
     return {
       ...result,
-      acquisitionState: await acquisitionRepository.getState(result.learningUnit.learning_unit_id),
+      acquisitionState: {
+        ...(result.acquisitionState || {}),
+        status: 'graduated',
+      },
       alreadyGraduated: true,
       articleCompletion: completion,
     };
@@ -155,6 +172,105 @@ export function createVocabularyService(options = {}) {
       source: 'ielts-preview',
       createContextEvidence: createPreviewContextEvidence,
     });
+  }
+
+  async function queueVocabularyAcquisitions(inputs = [], batchOptions = {}) {
+    const candidates = (Array.isArray(inputs) ? inputs : []).filter((input) => input && input.word);
+    if (!candidates.length) return [];
+    if (!acquisitionEnabled || typeof acquisitionService.runBatch !== 'function') {
+      const results = [];
+      for (const input of candidates) results.push(await queueVocabularyAcquisition(input));
+      return results;
+    }
+
+    const normalizedCandidates = candidates.map((input) => normalizeWordInput(input));
+    const yieldControl = typeof batchOptions.yieldControl === 'function'
+      ? batchOptions.yieldControl
+      : yieldVocabularyBatchControl;
+    const suppliedExistingWords = Array.isArray(batchOptions.existingWords)
+      ? batchOptions.existingWords
+      : null;
+    const lookupSnapshot = suppliedExistingWords ? null : await repository.loadSnapshot();
+    const preparedWords = candidates.map((input, index) => {
+      const normalized = normalizedCandidates[index];
+      const supplied = suppliedExistingWords && suppliedExistingWords[index];
+      const existing = supplied && supplied.id
+        ? supplied
+        : lookupSnapshot?.words.find((word) => (
+          word.lookup_key === normalized.lookupKey
+          && word.language === normalized.language
+        ));
+      if (existing) return cloneVocabularyValue(existing);
+      return upsertWordInSnapshot(
+        { words: [] },
+        { ...input, context: null },
+        normalized,
+      );
+    });
+    const acquisitionSnapshot = typeof acquisitionRepository.loadSnapshot === 'function'
+      ? await acquisitionRepository.loadSnapshot()
+      : { by_learning_unit_id: {} };
+    const acquisitionPairs = Object.values(acquisitionSnapshot && acquisitionSnapshot.by_learning_unit_id || {});
+    const acquisitionPairByWordAndSense = new Map(acquisitionPairs.map((pair) => [
+      `${pair?.learning_unit?.word_id || ''}::${pair?.learning_unit?.target_sense_key || ''}`,
+      pair,
+    ]));
+    const tasks = candidates.map((input, index) => {
+      const word = preparedWords[index];
+      const normalized = normalizedCandidates[index];
+      const targetSenseKey = deriveTargetSenseKey(createTargetSense(input, normalized));
+      const matchingPair = acquisitionPairByWordAndSense.get(`${word.id}::${targetSenseKey}`) || null;
+      const existingPair = matchingPair?.learning_unit?.archived_at === null ? matchingPair : null;
+      return { index, input, word, existingPair };
+    });
+    const results = new Array(candidates.length);
+    const pendingTasks = [];
+    for (const task of tasks) {
+      if (task.existingPair?.acquisition_state?.status === 'graduated') {
+        results[task.index] = await queueVocabularyAcquisitionWithService(task.input, acquisitionService, {
+          preparedWord: task.word,
+          existingBySense: task.existingPair.learning_unit,
+          existingState: task.existingPair.acquisition_state,
+          deferVocabularyFinalization: true,
+        });
+      } else {
+        pendingTasks.push(task);
+      }
+    }
+    if (pendingTasks.length) {
+      const transactionChunkSize = Number.isInteger(batchOptions.transactionChunkSize)
+        && batchOptions.transactionChunkSize > 0
+        ? batchOptions.transactionChunkSize
+        : 4;
+      for (let chunkStart = 0; chunkStart < pendingTasks.length; chunkStart += transactionChunkSize) {
+        const chunk = pendingTasks.slice(chunkStart, chunkStart + transactionChunkSize);
+        await acquisitionService.runBatch(async (batchService) => {
+          for (const task of chunk) {
+            const { index, input, word, existingPair } = task;
+            results[index] = await queueVocabularyAcquisitionWithService(input, batchService, {
+              preparedWord: word,
+              existingBySense: existingPair && existingPair.learning_unit || null,
+              existingState: existingPair && existingPair.acquisition_state || null,
+              deferVocabularyFinalization: true,
+            });
+          }
+        });
+        if (chunkStart + transactionChunkSize < pendingTasks.length) {
+          await yieldControl();
+        }
+      }
+    }
+    await yieldControl();
+    const finalizedWords = await repository.updateSnapshot((snapshot) => candidates.map((input, index) => (
+      upsertWordInSnapshot(snapshot, {
+        ...input,
+        __prepared_word_id: preparedWords[index].id,
+      }, normalizedCandidates[index])
+    )).map((word, index) => {
+      addContextIfPresent(snapshot, word.id, candidates[index].context, normalizedCandidates[index].createdAt);
+      return word;
+    }));
+    return results.map((result, index) => ({ ...result, word: finalizedWords[index] }));
   }
 
   async function completePendingArticleLearning(options = {}) {
@@ -210,56 +326,61 @@ export function createVocabularyService(options = {}) {
       throw new Error('Vocabulary acquisition writes are disabled');
     }
     const normalized = normalizeWordInput(input);
-    const word = await upsertVocabularyEntry({ ...input, context: null });
+    const commands = options.acquisitionCommands || acquisitionService;
+    const word = options.preparedWord || await upsertVocabularyEntry({ ...input, context: null });
     const targetSense = createTargetSense(input, normalized);
     const targetSenseKey = deriveTargetSenseKey(targetSense);
-    const existingBySense = await acquisitionRepository.findActiveByWordAndSense(
-      word.id,
-      targetSenseKey,
-    );
+    const existingBySenseProvided = Object.prototype.hasOwnProperty.call(options, 'existingBySense');
+    const existingBySense = existingBySenseProvided
+      ? options.existingBySense
+      : await acquisitionRepository.findActiveByWordAndSense(word.id, targetSenseKey);
     const identity = createAcquisitionIdentity(word, input, targetSenseKey);
-    let unit = existingBySense
-      || await acquisitionRepository.getLearningUnit(identity.learningUnitId);
+    let unit = existingBySense;
+    if (!unit && !existingBySenseProvided) {
+      unit = await acquisitionRepository.getLearningUnit(identity.learningUnitId);
+    }
+    const existingStateProvided = Object.prototype.hasOwnProperty.call(options, 'existingState');
     let state = unit
-      ? await acquisitionRepository.getState(unit.learning_unit_id)
+      ? existingStateProvided ? options.existingState : await acquisitionRepository.getState(unit.learning_unit_id)
       : null;
     let attachedContextEvidence = null;
 
     if (!unit) {
-      await acquisitionService.queueCandidate(createAcquisitionCommand(
+      const initialUnit = normalizeLearningUnit({
+        schema_version: 'learning-unit.v1',
+        learning_unit_id: identity.learningUnitId,
+        word_id: word.id,
+        normalized_form: normalized.lemma,
+        language: normalized.language,
+        target_sense_id: null,
+        target_sense_key: null,
+        target_sense: null,
+        created_at: normalized.createdAt,
+        updated_at: normalized.createdAt,
+        archived_at: null,
+        revision: 0,
+        extensions: {
+          source: options.source || 'article-settlement',
+          ...(options.source === 'ielts-preview' ? {
+            preview_item_id: normalizeNullableText(input.preview_item_id || input.previewItemId),
+          } : {}),
+        },
+      });
+      await commands.queueCandidate(createAcquisitionCommand(
         identity,
         'queue',
         normalized.createdAt,
         {
-          learning_unit: {
-            schema_version: 'learning-unit.v1',
-            learning_unit_id: identity.learningUnitId,
-            word_id: word.id,
-            normalized_form: normalized.lemma,
-            language: normalized.language,
-            target_sense_id: null,
-            target_sense_key: null,
-            target_sense: null,
-            created_at: normalized.createdAt,
-            updated_at: normalized.createdAt,
-            archived_at: null,
-            revision: 0,
-            extensions: {
-              source: options.source || 'article-settlement',
-              ...(options.source === 'ielts-preview' ? {
-                preview_item_id: normalizeNullableText(input.preview_item_id || input.previewItemId),
-              } : {}),
-            },
-          },
+          learning_unit: initialUnit,
           event_id: identity.queueEventId,
         },
       ));
-      unit = await acquisitionRepository.getLearningUnit(identity.learningUnitId);
-      state = await acquisitionRepository.getState(identity.learningUnitId);
+      unit = initialUnit;
+      state = { status: 'candidate', context_evidence_ids: [], validated_anchor_id: null, revision: 0 };
     }
 
     if (state?.status === 'candidate' && unit?.target_sense_id === null) {
-      await acquisitionService.selectTargetSense(createAcquisitionCommand(
+      await commands.selectTargetSense(createAcquisitionCommand(
         identity,
         'sense',
         unit.created_at,
@@ -271,12 +392,17 @@ export function createVocabularyService(options = {}) {
           event_id: identity.senseEventId,
         },
       ));
-      unit = await acquisitionRepository.getLearningUnit(unit.learning_unit_id);
-      state = await acquisitionRepository.getState(unit.learning_unit_id);
+      unit = normalizeLearningUnit({
+        ...unit,
+        target_sense_id: identity.targetSenseId,
+        target_sense: targetSense,
+        target_sense_key: null,
+        revision: unit.revision + 1,
+      });
     }
 
     if (state?.status === 'candidate') {
-      await acquisitionService.introduceCandidate(createAcquisitionCommand(
+      await commands.introduceCandidate(createAcquisitionCommand(
         identity,
         'introduce',
         unit.created_at,
@@ -286,7 +412,7 @@ export function createVocabularyService(options = {}) {
           occurred_at: unit.created_at,
         },
       ));
-      state = await acquisitionRepository.getState(unit.learning_unit_id);
+      state = { ...state, status: 'introduced', revision: state.revision + 1 };
     }
 
     if ((state?.status === 'introduced' || state?.status === 'acquiring')
@@ -294,7 +420,7 @@ export function createVocabularyService(options = {}) {
       const evidence = options.createContextEvidence?.(input, unit, identity, unit.created_at) || null;
       attachedContextEvidence = evidence;
       if (evidence) {
-        await acquisitionService.attachContextEvidence(createAcquisitionCommand(
+        await commands.attachContextEvidence(createAcquisitionCommand(
           identity,
           'context',
           unit.created_at,
@@ -304,11 +430,16 @@ export function createVocabularyService(options = {}) {
             event_id: identity.contextEventId,
           },
         ));
-        state = await acquisitionRepository.getState(unit.learning_unit_id);
+        state = {
+          ...state,
+          status: 'acquiring',
+          context_evidence_ids: [...new Set([...state.context_evidence_ids, identity.evidenceId])],
+          revision: state.revision + 1,
+        };
       }
     }
 
-    const storedWord = await upsertVocabularyEntry(input);
+    const storedWord = options.deferVocabularyFinalization ? word : await upsertVocabularyEntry(input);
     return {
       word: storedWord,
       learningUnit: unit,
@@ -523,6 +654,7 @@ export function createVocabularyService(options = {}) {
     addWordLegacy,
     upsertVocabularyEntry,
     queueVocabularyAcquisition,
+    queueVocabularyAcquisitions,
     queuePreviewVocabularyAcquisition,
     completePendingArticleLearning,
     getAcquisitionRepository: () => acquisitionRepository,
@@ -544,6 +676,13 @@ export function createVocabularyService(options = {}) {
   };
 }
 
+function yieldVocabularyBatchControl() {
+  if (typeof globalThis.scheduler?.yield === 'function') {
+    return globalThis.scheduler.yield();
+  }
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 function upsertWordInSnapshot(snapshot, input, normalized) {
   let word = snapshot.words.find((item) => (
     item.lookup_key === normalized.lookupKey
@@ -551,7 +690,7 @@ function upsertWordInSnapshot(snapshot, input, normalized) {
   ));
   if (!word) {
     word = {
-      id: createVocabularyId('vocab_word'),
+      id: normalizeText(input.__prepared_word_id) || createVocabularyId('vocab_word'),
       word: normalized.wordText,
       lemma: normalized.lemma,
       lookup_key: normalized.lookupKey,
