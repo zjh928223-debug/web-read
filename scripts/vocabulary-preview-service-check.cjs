@@ -169,6 +169,30 @@ async function main() {
   assert.ok(scan.excluded.some((item) => item.reason === 'already_explained_current_article'));
   assert.ok(scan.excluded.some((item) => item.reason === 'vocabulary_learning'));
 
+  let previewBulkLookupCalls = 0;
+  let previewPerWordLookupCalls = 0;
+  const bulkPreviewScan = await api.buildPreviewScan({
+    state: previewState,
+    sourceId: 'article-preview-bulk',
+    vocabularyService: {
+      async getWordsAndContextsByLemmas(lemmas) {
+        previewBulkLookupCalls += 1;
+        return new Map(lemmas.map((lemma) => [lemma, {
+          word: lemma === 'grill' ? { id: 'word-grill', lemma, status: 'learning' } : null,
+          contexts: [],
+        }]));
+      },
+      async getWordByLemma() {
+        previewPerWordLookupCalls += 1;
+        return null;
+      },
+    },
+    maxCount: 20,
+  });
+  assert.equal(previewBulkLookupCalls, 1, 'preview scan should read the vocabulary snapshot once for all candidate lemmas');
+  assert.equal(previewPerWordLookupCalls, 0, 'preview scan should not reload the full vocabulary snapshot per candidate');
+  assert.equal(bulkPreviewScan.candidates.some((candidate) => candidate.lemma === 'grill'), false);
+
   const lightweightFilterScan = await api.buildPreviewScan({
     state: createPreviewStateFromWords([
       'Bus',

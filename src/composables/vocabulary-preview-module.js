@@ -992,6 +992,9 @@ export function createVocabularyPreviewController(deps = {}) {
   const dictionaryEnrichmentAdapter = deps.dictionaryEnrichmentAdapter || null;
   let previewVisible = false;
   let latestPreviewScan = null;
+  let previewScanInFlight = null;
+  let previewScanInFlightIdentityKey = '';
+  let previewScanRequestId = 0;
   const previewDialog = createPreviewDialog({
     documentObject,
     initialModel: getStoredModel(windowObject) || DEFAULT_MODEL,
@@ -1079,6 +1082,7 @@ export function createVocabularyPreviewController(deps = {}) {
     const identity = getCurrentIdentity(state);
     const identityKey = `${identity.jobId}::${identity.audioKey}`;
     if (activeIdentityKey && identityKey !== activeIdentityKey) {
+      previewScanRequestId += 1;
       previewVisible = false;
       latestPreviewScan = null;
       settlementCache = null;
@@ -1089,8 +1093,12 @@ export function createVocabularyPreviewController(deps = {}) {
     updateSettlementProgressBadge('none');
     void refreshSettlementProgressBadge(identity);
     if (previewButton) {
-      previewButton.disabled = !available;
-      previewButton.title = available ? '扫描当前文章的预习生词' : '请先打开标准素材库里的文章';
+      const scanning = !!previewScanInFlight && previewScanInFlightIdentityKey === identityKey;
+      previewButton.disabled = !available || scanning;
+      previewButton.textContent = scanning ? '扫描中…' : '预习生词';
+      previewButton.title = scanning
+        ? '正在扫描当前文章的预习生词'
+        : available ? '扫描当前文章的预习生词' : '请先打开标准素材库里的文章';
     }
     if (settleButton) {
       settleButton.disabled = !available || settlementOpening;
@@ -1105,13 +1113,8 @@ export function createVocabularyPreviewController(deps = {}) {
     }
   }
 
-  async function scanPreview() {
+  async function performPreviewScan(identityKey, requestId) {
     try {
-      const identity = getCurrentIdentity(state);
-      if (!identity.jobId) {
-        showError('VOCABULARY_PREVIEW', '请先打开标准素材库里的文章');
-        return null;
-      }
       const { scope, bundle } = await loadCurrentAnnotationBundle(windowObject);
       const sourceInfo = getSourceInfo(state, scope);
       const context = buildStateContext(state, scope, sourceInfo);
@@ -1127,6 +1130,9 @@ export function createVocabularyPreviewController(deps = {}) {
       const enrichedCandidates = dictionaryEnrichmentAdapter
         ? await dictionaryEnrichmentAdapter.enrichCandidates(previewScan.candidates)
         : previewScan.candidates;
+      const currentIdentity = getCurrentIdentity(state);
+      const currentIdentityKey = `${currentIdentity.jobId}::${currentIdentity.audioKey}`;
+      if (requestId !== previewScanRequestId || currentIdentityKey !== identityKey) return null;
       latestPreviewScan = {
         ...previewScan,
         candidates: enrichedCandidates,
@@ -1134,9 +1140,35 @@ export function createVocabularyPreviewController(deps = {}) {
       previewDialog.open(latestPreviewScan);
       return latestPreviewScan;
     } catch (error) {
-      showError('VOCABULARY_PREVIEW', error && error.message ? error.message : '预习生词扫描失败');
+      const currentIdentity = getCurrentIdentity(state);
+      const currentIdentityKey = `${currentIdentity.jobId}::${currentIdentity.audioKey}`;
+      if (requestId === previewScanRequestId && currentIdentityKey === identityKey) {
+        showError('VOCABULARY_PREVIEW', error && error.message ? error.message : '预习生词扫描失败');
+      }
       return null;
     }
+  }
+
+  function scanPreview() {
+    const identity = getCurrentIdentity(state);
+    if (!identity.jobId) {
+      showError('VOCABULARY_PREVIEW', '请先打开标准素材库里的文章');
+      return Promise.resolve(null);
+    }
+    const identityKey = `${identity.jobId}::${identity.audioKey}`;
+    if (previewScanInFlight && previewScanInFlightIdentityKey === identityKey) return previewScanInFlight;
+    const requestId = ++previewScanRequestId;
+    let trackedTask;
+    trackedTask = performPreviewScan(identityKey, requestId).finally(() => {
+      if (previewScanInFlight !== trackedTask) return;
+      previewScanInFlight = null;
+      previewScanInFlightIdentityKey = '';
+      refreshAvailability();
+    });
+    previewScanInFlight = trackedTask;
+    previewScanInFlightIdentityKey = identityKey;
+    refreshAvailability();
+    return trackedTask;
   }
 
   async function runPreviewExplanation(values = {}) {
@@ -1448,10 +1480,14 @@ export function createVocabularyPreviewController(deps = {}) {
     getStatusSnapshot() {
       return {
         previewVisible,
+        previewScanning: !!previewScanInFlight,
         latestPreviewSummary: latestPreviewScan && latestPreviewScan.summary || null,
       };
     },
     dispose() {
+      previewScanRequestId += 1;
+      previewScanInFlight = null;
+      previewScanInFlightIdentityKey = '';
       previewDialog.dispose();
       settlementDialog.dispose();
     },

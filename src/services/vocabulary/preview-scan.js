@@ -365,6 +365,24 @@ function toPreviewCandidate(entry, context, options = {}) {
   };
 }
 
+async function loadExistingPreviewWords(entries, vocabularyService, language) {
+  if (!vocabularyService || typeof vocabularyService.getWordsAndContextsByLemmas !== 'function') return null;
+  const lemmas = (Array.isArray(entries) ? entries : [])
+    .map((entry) => normalizeLookupKey(entry && entry.lemma))
+    .filter(Boolean);
+  if (!lemmas.length) return new Map();
+  const lookup = await vocabularyService.getWordsAndContextsByLemmas(lemmas, { language });
+  return lookup instanceof Map ? lookup : null;
+}
+
+function getExistingPreviewWord(lookup, lemma) {
+  if (!(lookup instanceof Map)) return null;
+  const lookupKey = normalizeLookupKey(lemma);
+  const record = lookup.get(lookupKey) || lookup.get(lemma) || null;
+  if (record && Object.prototype.hasOwnProperty.call(record, 'word')) return record.word || null;
+  return record && record.id ? record : null;
+}
+
 export async function buildPreviewScan(options = {}) {
   const context = options.context || buildPreviewDocumentContext(options.state || {}, options);
   const vocabularyService = options.vocabularyService || null;
@@ -381,6 +399,7 @@ export async function buildPreviewScan(options = {}) {
   ]
     .map((entry) => ({ ...entry, score: scorePreviewEntry(entry) }))
     .sort((left, right) => right.score - left.score || right.frequency - left.frequency || left.lemma.localeCompare(right.lemma));
+  const existingWords = await loadExistingPreviewWords(rawEntries, vocabularyService, options.language);
 
   const candidates = [];
   const alreadyExplained = [];
@@ -394,8 +413,10 @@ export async function buildPreviewScan(options = {}) {
       excluded.push({ lemma: entry.lemma, reason: 'already_explained_current_article' });
       continue;
     }
-    if (vocabularyService && typeof vocabularyService.getWordByLemma === 'function') {
-      const existingWord = await vocabularyService.getWordByLemma(entry.lemma, { language: options.language });
+    if (vocabularyService && (existingWords || typeof vocabularyService.getWordByLemma === 'function')) {
+      const existingWord = existingWords
+        ? getExistingPreviewWord(existingWords, entry.lemma)
+        : await vocabularyService.getWordByLemma(entry.lemma, { language: options.language });
       if (existingWord) {
         excluded.push({ lemma: entry.lemma, reason: `vocabulary_${existingWord.status || 'existing'}` });
         continue;
