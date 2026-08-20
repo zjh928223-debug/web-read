@@ -1441,6 +1441,7 @@ async function loadJob(job) {
       })
     }
     readerSessionLoadInProgress = true
+    const shouldResumeAudio = !!(getAudio() && !getAudio().paused)
     const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
     if (!result || result.status !== 'loaded') return
     clearMaterialRepairState(job.jobId)
@@ -1464,6 +1465,7 @@ async function loadJob(job) {
     })
     const audio = getAudio()
     if (audio) audio.pause()
+    if (shouldResumeAudio) resumeReaderAudioFromPanel()
   } catch (err) {
     showMaterialLoadFailure(job, err)
   } finally {
@@ -2078,6 +2080,16 @@ function getReaderMedia() {
 
 function getAudio() {
   return getReaderMedia()
+}
+
+function resumeReaderAudioFromPanel() {
+  const audio = getAudio()
+  if (!audio || !audio.paused) return false
+  observeBestEffort(Promise.resolve(audio.play()), {
+    operationId: 'panel-audio-resume',
+    reason: 'reader playback paused while loading material from the panel should resume when loading succeeds',
+  })
+  return true
 }
 
 function startReaderSession(job) {

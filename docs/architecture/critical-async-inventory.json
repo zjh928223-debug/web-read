@@ -18,7 +18,6 @@
     "annotation-storage-read",
     "panel-audio-resume",
     "panel-backend-config-load",
-    "panel-clipboard-copy",
     "panel-current-video-refresh",
     "panel-job-refresh",
     "panel-setting-read",
