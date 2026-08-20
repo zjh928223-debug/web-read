@@ -57,11 +57,13 @@ async function main() {
     replacePolicy: 'ask',
   });
   await client.getJob('job-1');
+  await client.deleteJob('job-delete');
   await client.cancelJob('job-1');
   await client.prioritizeJob('job-2');
   await client.redoJob('job-3');
   await client.retryJob('job-4', { stage: 'translating' });
   await client.clearCanceledJobs();
+  await client.clearFailedJobs();
   const pickerSignal = new AbortController().signal;
   await client.pickImportFolder({ initialDir: 'D:/legacy-materials' }, { signal: pickerSignal });
   await client.pickVideoFile({ initialDir: 'D:/legacy-materials' }, { signal: pickerSignal });
@@ -99,11 +101,13 @@ async function main() {
     'http://127.0.0.1:8765/api/maintenance/cleanup',
     'http://127.0.0.1:8765/api/jobs',
     'http://127.0.0.1:8765/api/jobs/job-1',
+    'http://127.0.0.1:8765/api/jobs/job-delete',
     'http://127.0.0.1:8765/api/jobs/job-1/cancel',
     'http://127.0.0.1:8765/api/jobs/job-2/prioritize',
     'http://127.0.0.1:8765/api/jobs/job-3/redo',
     'http://127.0.0.1:8765/api/jobs/job-4/retry',
     'http://127.0.0.1:8765/api/jobs/clear-canceled',
+    'http://127.0.0.1:8765/api/jobs/clear-failed',
     'http://127.0.0.1:8765/api/import/pick-folder',
     'http://127.0.0.1:8765/api/media/pick-video',
     'http://127.0.0.1:8765/api/import/scan',
@@ -131,32 +135,67 @@ async function main() {
   assert.equal(calls[9].options.method, 'POST');
   assert.equal(calls[10].options.method, 'POST');
   assert.equal(JSON.parse(calls[10].options.body).geminiMode, 'mock');
-  assert.equal(calls[12].options.method, 'POST');
+  assert.equal(calls[12].options.method, 'DELETE');
   assert.equal(calls[13].options.method, 'POST');
   assert.equal(calls[14].options.method, 'POST');
   assert.equal(calls[15].options.method, 'POST');
   assert.equal(calls[16].options.method, 'POST');
   assert.equal(calls[17].options.method, 'POST');
   assert.equal(calls[18].options.method, 'POST');
-  assert.equal(calls[17].options.signal, pickerSignal);
-  assert.equal(calls[18].options.signal, pickerSignal);
   assert.equal(calls[19].options.method, 'POST');
   assert.equal(calls[20].options.method, 'POST');
-  assert.equal(JSON.parse(calls[20].options.body).geminiMode, 'mock');
-  assert.equal(calls[23].options.method, 'POST');
-  assert.equal(JSON.parse(calls[23].options.body).videoPath, 'D:/legacy-materials/a/a.mp4');
-  assert.equal(calls[27].options.method, 'DELETE');
-  assert.equal(calls[29].options.method, 'POST');
-  assert.equal(JSON.parse(calls[29].options.body).event, 'progress');
+  assert.equal(calls[19].options.signal, pickerSignal);
+  assert.equal(calls[20].options.signal, pickerSignal);
+  assert.equal(calls[21].options.method, 'POST');
+  assert.equal(calls[22].options.method, 'POST');
+  assert.equal(JSON.parse(calls[22].options.body).geminiMode, 'mock');
+  assert.equal(calls[25].options.method, 'POST');
+  assert.equal(JSON.parse(calls[25].options.body).videoPath, 'D:/legacy-materials/a/a.mp4');
+  assert.equal(calls[29].options.method, 'DELETE');
   assert.equal(calls[31].options.method, 'POST');
-  assert.equal(JSON.parse(calls[31].options.body).marks[0].word, 'workflow');
-  assert.equal(calls[32].options.method, 'POST');
-  assert.equal(JSON.parse(calls[32].options.body).template.articleId, 'article-1');
-  assert.equal(JSON.parse(calls[32].options.body).model, 'gemini-test');
+  assert.equal(JSON.parse(calls[31].options.body).event, 'progress');
+  assert.equal(calls[33].options.method, 'POST');
+  assert.equal(JSON.parse(calls[33].options.body).marks[0].word, 'workflow');
+  assert.equal(calls[34].options.method, 'POST');
+  assert.equal(JSON.parse(calls[34].options.body).template.articleId, 'article-1');
+  assert.equal(JSON.parse(calls[34].options.body).model, 'gemini-test');
   assert.ok(calls.every((call) => call.options.headers['X-Read-Web-Token'] === 'test-client-token'));
   assert.equal(client.fileUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/file/video?access_token=test-client-token');
   assert.equal(client.mediaUrl('job-1', 'video'), 'http://127.0.0.1:8765/api/jobs/job-1/media/video?access_token=test-client-token');
   assert.equal(client.eventsUrl('job-1'), 'http://127.0.0.1:8765/api/jobs/job-1/events?access_token=test-client-token');
+
+  const rangeProbeCalls = [];
+  const rangeProbeClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    fetchImpl: async (url, options = {}) => {
+      rangeProbeCalls.push({ url, options });
+      return {
+        ok: true,
+        status: 206,
+        headers: new Map([
+          ['content-range', 'bytes 0-0/10'],
+          ['accept-ranges', 'bytes'],
+          ['etag', '"probe"'],
+        ]),
+      };
+    },
+  });
+  await rangeProbeClient.probeMediaRange('job-1', 'audio');
+  assert.equal(rangeProbeCalls[0].options.cache, 'no-store', 'Range availability probes must bypass stale cached CORS responses');
+  assert.equal(rangeProbeCalls[0].options.headers.Range, 'bytes=0-0');
+
+  const unsupportedRangeClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    fetchImpl: async () => ({ ok: true, status: 206, headers: new Map() }),
+  });
+  await assert.rejects(
+    unsupportedRangeClient.probeMediaRange('job-1', 'audio'),
+    (error) => {
+      assert.equal(error.code, 'MEDIA_RANGE_UNSUPPORTED');
+      assert.deepEqual(error.details, { status: 206, contentRange: '', acceptRanges: '' });
+      return true;
+    },
+  );
 
   const protocolCalls = [];
   const protocolClient = api.createYoutubeWorkflowClient({
@@ -190,6 +229,8 @@ async function main() {
     idempotencyKey: 'retry-operation-1',
     expectedRevision: 7,
   });
+  await protocolClient.deleteJob('job-delete', { expectedRevision: 7 });
+  await protocolClient.clearFailedJobs({ expectedRevision: 7 });
   assert.deepEqual(
     protocolCalls.map(({ options }) => ({
       idempotencyKey: options.headers['Idempotency-Key'],
@@ -202,6 +243,8 @@ async function main() {
       { idempotencyKey: 'cancel-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
       { idempotencyKey: 'prioritize-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
       { idempotencyKey: 'retry-operation-1', expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+      { idempotencyKey: undefined, expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
+      { idempotencyKey: undefined, expectedRevision: '7', ifMatch: '"7"', token: 'test-client-token' },
     ],
   );
   assert.ok(

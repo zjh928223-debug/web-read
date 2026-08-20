@@ -1,7 +1,9 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from youtube_workflow.core import (
     FakeWorkflowRunner,
@@ -10,6 +12,7 @@ from youtube_workflow.core import (
     WorkflowRequest,
     assert_manifest_has_no_secret,
     classify_error,
+    classify_error_code,
     validate_session_files,
     marks_integrity,
 )
@@ -25,7 +28,7 @@ class FakeCommandRunner:
             output_pattern = Path(cmd[cmd.index("-o") + 1])
             output_pattern.parent.mkdir(parents=True, exist_ok=True)
             format_selector = cmd[cmd.index("-f") + 1]
-            suffix = ".mp4" if "bestvideo" in format_selector else ".webm"
+            suffix = ".mp4" if "bestvideo" in format_selector or "ext=mp4" in format_selector else ".webm"
             media = output_pattern.parent / f"Example Video{suffix}"
             media.write_bytes(b"fake media")
             emit_line("[download] 100%")
@@ -209,6 +212,39 @@ class WorkflowCoreTests(unittest.TestCase):
         self.assertEqual(classify_error(RuntimeError("Gemini quota exceeded")), "gemini")
         self.assertEqual(classify_error(RuntimeError("output.json invalid format")), "output")
 
+    def test_classify_error_code_identifies_youtube_media_403(self):
+        self.assertEqual(
+            classify_error_code("yt-dlp failed: HTTP Error 403: Forbidden"),
+            "YOUTUBE_MEDIA_HTTP_403",
+        )
+        self.assertEqual(classify_error_code("Gemini quota exceeded"), "")
+
+    def test_proxy_settings_preserve_existing_bypass_and_add_loopback_hosts(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "NO_PROXY": "internal.example,metadata.internal",
+            },
+            clear=True,
+        ):
+            runner = LocalWorkflowRunner(
+                WorkflowConfig(
+                    output_dir=Path(tmp),
+                    proxy_url="http://127.0.0.1:7897",
+                ),
+                command_runner=FakeCommandRunner(),
+            )
+
+            runner._apply_proxy_settings()
+
+            self.assertEqual(os.environ["HTTP_PROXY"], "http://127.0.0.1:7897")
+            self.assertEqual(os.environ["HTTPS_PROXY"], "http://127.0.0.1:7897")
+            self.assertEqual(
+                set(os.environ["NO_PROXY"].split(",")),
+                {"internal.example", "metadata.internal", "127.0.0.1", "localhost", "::1"},
+            )
+            self.assertEqual(os.environ["no_proxy"], os.environ["NO_PROXY"])
+
     def test_local_runner_uses_commands_and_mock_translation_without_gemini_key(self):
         with tempfile.TemporaryDirectory() as tmp:
             command_runner = FakeCommandRunner()
@@ -228,7 +264,11 @@ class WorkflowCoreTests(unittest.TestCase):
 
             self.assertEqual([source for source, _cmd in command_runner.calls], ["yt-dlp", "whisperx"])
             yt_dlp_cmd = command_runner.calls[0][1]
-            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestvideo+bestaudio/best")
+            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
+            self.assertEqual(
+                yt_dlp_cmd[yt_dlp_cmd.index("--extractor-args") + 1],
+                "youtube:player_client=mweb",
+            )
             whisperx_cmd = command_runner.calls[1][1]
             self.assertEqual(manifest["status"], "ready")
             self.assertEqual(manifest["request"]["videoPriority"], True)
@@ -277,6 +317,52 @@ class WorkflowCoreTests(unittest.TestCase):
             yt_dlp_cmd = command_runner.calls[0][1]
             self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestaudio/best")
             self.assertEqual(manifest["request"]["videoPriority"], False)
+
+    def test_retry_with_downloaded_video_and_no_transcript_resumes_at_whisperx(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            job_dir = root / "job"
+            workflow_dir = job_dir / "_workflow"
+            workflow_dir.mkdir(parents=True)
+            video = job_dir / "Example Video.mp4"
+            video.write_bytes(b"fake video")
+            request = WorkflowRequest(url="https://example.com/retry", gemini_mode="mock")
+            previous_manifest = {
+                "jobId": "old-job",
+                "title": "Example Video",
+                "url": request.url,
+                "status": "failed",
+                "stage": "failed",
+                "checkpoint": {
+                    "jobId": "old-job",
+                    "title": "Example Video",
+                    "url": request.url,
+                    "outputDir": str(job_dir),
+                    "files": {"audio": str(video), "video": str(video)},
+                    "workflow": {},
+                    "lastStage": "downloading",
+                },
+            }
+            command_runner = FakeCommandRunner()
+
+            manifest = LocalWorkflowRunner(
+                WorkflowConfig(output_dir=root),
+                command_runner=command_runner,
+            ).retry_from_stage(
+                request,
+                job_id="retry-job",
+                previous_manifest=previous_manifest,
+                retry_stage="translating",
+                emit=lambda event: None,
+            )
+
+            self.assertEqual([source for source, _cmd in command_runner.calls], ["whisperx"])
+            self.assertEqual(Path(command_runner.calls[0][1][1]), video)
+            self.assertEqual(manifest["status"], "ready")
+            self.assertEqual(manifest["retryStage"], "transcribing")
+            self.assertTrue(Path(manifest["files"]["transcript"]).is_file())
+            self.assertEqual(previous_manifest["checkpoint"]["jobId"], "old-job")
+            validate_session_files(manifest)
 
     def test_local_runner_stage_retry_reuses_checkpoint_input(self):
         with tempfile.TemporaryDirectory() as tmp:

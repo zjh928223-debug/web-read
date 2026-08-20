@@ -84,6 +84,14 @@ class CheckpointFailingRunner:
 
     def run(self, request, job_id, emit=None, cancel_event=None):
         self.last_checkpoint["jobId"] = job_id
+        audio = self.output_dir / "checkpoint.audio.mp3"
+        transcript = self.output_dir / "checkpoint.transcript.json"
+        input_json = self.output_dir / "checkpoint.input.json"
+        audio.write_bytes(b"fake audio")
+        transcript.write_text(json.dumps({"segments": [{"text": "hello"}]}), encoding="utf-8")
+        input_json.write_text(json.dumps({"s": [{"id": 0, "chunks": []}]}), encoding="utf-8")
+        self.last_checkpoint["files"] = {"audio": str(audio), "transcript": str(transcript)}
+        self.last_checkpoint["workflow"] = {"inputJson": str(input_json)}
         emit({"jobId": job_id, "status": "translating", "stage": "translating", "message": "Gemini rate limit"})
         raise RuntimeError("Gemini rate limit")
 
@@ -628,6 +636,40 @@ class ServiceAppTests(unittest.TestCase):
             self.assertFalse(output_dir.exists())
             self.assertEqual(restarted_client.get(f"/api/history/{job_id}").status_code, 404)
 
+    def test_youtube_video_identity_blocks_url_variants_until_reprocess_is_explicit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+
+            created = client.post(
+                "/api/jobs",
+                json={"url": "https://youtu.be/AbCdEf12345?t=20", "geminiMode": "mock"},
+            )
+            self.assertEqual(created.status_code, 200)
+            self.assertEqual(self._wait_ready(client, created.json()["jobId"])["status"], "ready")
+
+            duplicate = client.post(
+                "/api/jobs",
+                json={"url": "https://www.youtube.com/watch?v=AbCdEf12345&feature=share", "geminiMode": "mock"},
+            )
+            self.assertEqual(duplicate.status_code, 409)
+            self.assertEqual(duplicate.json()["detail"]["code"], "MATERIAL_ALREADY_EXISTS")
+            self.assertEqual(duplicate.json()["detail"]["materialKey"], "youtube:AbCdEf12345")
+
+            reprocess = client.post(
+                "/api/jobs",
+                json={
+                    "url": "https://www.youtube.com/shorts/AbCdEf12345",
+                    "geminiMode": "mock",
+                    "forceReprocess": True,
+                },
+            )
+            self.assertEqual(reprocess.status_code, 200)
+            self.assertNotEqual(reprocess.json()["jobId"], created.json()["jobId"])
+            self.assertEqual(self._wait_ready(client, reprocess.json()["jobId"])["status"], "ready")
+            manager.close()
+
     def test_reader_activity_records_progress_and_recent_reading_order(self):
         with tempfile.TemporaryDirectory() as tmp:
             config = WorkflowConfig(output_dir=Path(tmp))
@@ -675,10 +717,10 @@ class ServiceAppTests(unittest.TestCase):
 
             recent = client.get("/api/reader/recent?limit=10").json()
             ordered_ids = [item["jobId"] for item in recent]
-            self.assertLess(ordered_ids.index(job_ids[0]), ordered_ids.index(job_ids[1]))
-            self.assertLess(ordered_ids.index(job_ids[1]), ordered_ids.index(job_ids[2]))
-            self.assertEqual(recent[0]["readStatus"], "in-progress")
-            self.assertEqual(recent[1]["readStatus"], "completed")
+            self.assertLess(ordered_ids.index(job_ids[1]), ordered_ids.index(job_ids[0]))
+            self.assertLess(ordered_ids.index(job_ids[0]), ordered_ids.index(job_ids[2]))
+            self.assertEqual(recent[0]["readStatus"], "completed")
+            self.assertEqual(recent[1]["readStatus"], "in-progress")
             self.assertEqual(recent[2]["readStatus"], "not-started")
 
             history = client.get("/api/history?limit=10").json()
@@ -689,8 +731,9 @@ class ServiceAppTests(unittest.TestCase):
             restarted = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
             restarted_client = TestClient(create_app(restarted))
             restored_recent = restarted_client.get("/api/reader/recent?query=read-&limit=10").json()
-            self.assertEqual(restored_recent[0]["jobId"], job_ids[0])
-            self.assertEqual(restored_recent[0]["markCount"], 4)
+            self.assertEqual(restored_recent[0]["jobId"], job_ids[1])
+            restored_in_progress = next(item for item in restored_recent if item["jobId"] == job_ids[0])
+            self.assertEqual(restored_in_progress["markCount"], 4)
 
     def test_non_terminal_persisted_job_recovers_as_failed(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1649,6 +1692,27 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(persisted["jobId"], ready["jobId"])
             self.assertEqual(persisted["marks"], saved.json()["marks"])
 
+    def test_new_reader_session_reports_absent_marks_resource_as_null_integrity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+
+            created = client.post(
+                "/api/jobs",
+                json={"url": "https://example.com/no-reader-marks", "geminiMode": "mock"},
+            ).json()
+            ready = self._wait_ready(client, created["jobId"])
+            session = client.get(f"/api/jobs/{ready['jobId']}/session").json()
+            marks_path = Path(session["outputDir"]) / "_workflow" / "reader-marks.json"
+
+            self.assertIsNone(session["integrity"]["marks"])
+            self.assertFalse(marks_path.exists())
+            loaded = client.get(f"/api/jobs/{ready['jobId']}/reader-marks")
+            self.assertEqual(loaded.status_code, 200)
+            self.assertEqual(loaded.json()["marks"], [])
+            self.assertIsNone(loaded.json()["integrity"])
+
     def test_diagnostics_package_redacts_secrets_and_omits_content_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             credential_store = MemoryCredentialStore()
@@ -2102,13 +2166,15 @@ class ServiceAppTests(unittest.TestCase):
 
             ranged = client.get(
                 f"/api/jobs/{ready['jobId']}/media/video",
-                headers={"Range": "bytes=2-5"},
+                headers={"Range": "bytes=2-5", "Origin": "http://127.0.0.1:5174"},
             )
             self.assertEqual(ranged.status_code, 206)
             self.assertEqual(ranged.content, b"2345")
             self.assertEqual(ranged.headers["content-range"], "bytes 2-5/10")
             self.assertEqual(ranged.headers["content-length"], "4")
             self.assertEqual(ranged.headers["etag"], full.headers["etag"])
+            exposed = {item.strip().lower() for item in ranged.headers["access-control-expose-headers"].split(",")}
+            self.assertTrue({"accept-ranges", "content-range", "etag"}.issubset(exposed))
 
             unsatisfied = client.get(
                 f"/api/jobs/{ready['jobId']}/media/video",
@@ -2238,6 +2304,25 @@ class ServiceAppTests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 400)
             self.assertNotIn("SECRET", response.text)
+
+    def test_jobs_reject_missing_whisperx_before_queueing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(
+                output_dir=Path(tmp),
+                yt_dlp_path=Path(__file__),
+                whisperx_path=Path(tmp) / "missing-whisperx.exe",
+            )
+            client = TestClient(create_app(JobManager(config=config)))
+
+            response = client.post(
+                "/api/jobs",
+                json={"url": "https://example.com/video", "geminiMode": "mock"},
+            )
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.json()["detail"]["code"], "WORKFLOW_TOOL_MISSING")
+            self.assertEqual(response.json()["detail"]["tool"], "WhisperX")
+            self.assertEqual(client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["jobs"], [])
 
     def test_cancel_marks_running_job_canceled(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -2517,9 +2602,11 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(failed_snapshot["status"], "failed")
             self.assertEqual(client.get("/api/history?status=failed").json(), [])
 
-            clear = client.post("/api/jobs/clear-failed")
+            before_clear = client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["revision"]
+            clear = client.post("/api/jobs/clear-failed", headers={"X-Expected-Revision": str(before_clear)})
             self.assertEqual(clear.status_code, 200)
             self.assertEqual(clear.json()["cleared"], 1)
+            self.assertGreater(clear.json()["revision"], before_clear)
             self.assertEqual(client.get(f"/api/jobs/{failed['jobId']}").status_code, 404)
 
     def test_failed_job_can_be_deleted_from_queue_without_history_entry(self):
@@ -2540,10 +2627,15 @@ class ServiceAppTests(unittest.TestCase):
             self._wait_status(client, failed["jobId"], "failed")
             self.assertEqual(client.get("/api/history?status=failed").json(), [])
 
-            deleted = client.delete(f"/api/jobs/{failed['jobId']}")
+            before_delete = client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["revision"]
+            deleted = client.delete(
+                f"/api/jobs/{failed['jobId']}",
+                headers={"X-Expected-Revision": str(before_delete)},
+            )
             self.assertEqual(deleted.status_code, 200)
             self.assertEqual(deleted.json()["deleted"], True)
             self.assertEqual(deleted.json()["jobId"], failed["jobId"])
+            self.assertGreater(deleted.json()["revision"], before_delete)
             self.assertEqual(client.get(f"/api/jobs/{failed['jobId']}").status_code, 404)
             self.assertEqual(client.get("/api/history?status=failed").json(), [])
 
@@ -2577,6 +2669,47 @@ class ServiceAppTests(unittest.TestCase):
             ready = self._wait_ready(client, retry_job["jobId"])
             self.assertEqual(ready["status"], "ready")
             self.assertEqual(calls, [("translating", "translating")])
+
+    def test_retry_stage_is_capped_by_available_checkpoint_files(self):
+        class MediaOnlyFailingRunner:
+            def __init__(self, output_dir):
+                output_dir = Path(output_dir)
+                media = output_dir / "downloaded.mp4"
+                media.write_bytes(b"fake video")
+                self.last_checkpoint = {
+                    "jobId": "",
+                    "title": "Downloaded",
+                    "url": "https://example.com/media-only",
+                    "outputDir": str(output_dir),
+                    "files": {"audio": str(media), "video": str(media)},
+                    "workflow": {},
+                    "lastStage": "downloading",
+                }
+
+            def run(self, request, job_id, emit=None, cancel_event=None):
+                self.last_checkpoint["jobId"] = job_id
+                emit({"jobId": job_id, "status": "transcribing", "stage": "transcribing", "message": "missing whisperx"})
+                raise RuntimeError("missing whisperx")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = []
+            config = WorkflowConfig(output_dir=Path(tmp))
+            runners = [MediaOnlyFailingRunner(Path(tmp)), RetryProbeRunner(Path(tmp), calls)]
+            manager = JobManager(config=config, runner_factory=lambda: runners.pop(0))
+            client = TestClient(create_app(manager))
+
+            failed = client.post(
+                "/api/jobs",
+                json={"url": "https://example.com/media-only", "geminiMode": "mock"},
+            ).json()
+            self._wait_status(client, failed["jobId"], "failed")
+
+            response = client.post(f"/api/jobs/{failed['jobId']}/retry", json={"stage": "translating"})
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["retryStage"], "transcribing")
+            self._wait_ready(client, response.json()["jobId"])
+            self.assertEqual(calls, [("downloading", "transcribing")])
 
     def test_failed_job_error_details_redact_api_key(self):
         class SecretFailingRunner:

@@ -309,7 +309,23 @@ async function main() {
   const outProjection = Buffer.from(canonicalJson([{ globalIndex: 99, sourceType: 'manual-mark', start: '0.5', word: 'bad' }]));
   outOfRange.integrity = { ...outOfRange.integrity, marks: { bytes: outProjection.length, representation: 'marks-fields.v1', sha256: sha256(outProjection) } };
   outOfRange.revision = `sha256:${sha256(Buffer.from(canonicalJson({ contentId: outOfRange.contentId, integrity: outOfRange.integrity })))}`;
-  await assertIntegrityFailure({ manifest: { integrity: outOfRange.integrity, revision: outOfRange.revision }, marks: outOfRange.marks, marksIntegrity: { algorithm: 'sha256', ...outOfRange.integrity.marks } }, 'READER_SESSION_MARK_OUT_OF_RANGE');
+  let outOfRangeCommit = null;
+  const outOfRangeLoader = api.createYoutubeWorkflowLoader({
+    client: {
+      async getSession() { return { jobId: 'negative-job', contentId: outOfRange.contentId, revision: outOfRange.revision, integrity: outOfRange.integrity, files: {} }; },
+      async getFile(_jobId, kind) { return new Blob([kind === 'transcript' ? outOfRange.transcriptBytes : outOfRange.chunkBytes]); },
+      async getReaderMarks() { return { marks: outOfRange.marks, integrity: { algorithm: 'sha256', ...outOfRange.integrity.marks } }; },
+      mediaUrl(jobId, kind) { return `http://workflow.test/${jobId}/${kind}`; },
+      async probeMediaRange() { return { status: 206 }; },
+    },
+    hasCurrentContent: () => false,
+    readerSessionPersistence: { async loadCommitted() { return null; }, async commit(value) { outOfRangeCommit = value; } },
+    sessionPublisher: publisherFor(),
+    validateTranscriptData: (value) => value,
+    validateChunkData: (value) => value,
+  });
+  assert.equal((await outOfRangeLoader.loadJobIntoReader('negative-job', { replacePolicy: 'replace-current' })).status, 'loaded');
+  assert.deepEqual(outOfRangeCommit.marks, [], 'foreign or stale marks must not make a valid transcript unloadable');
 
   const failedWrites = [];
   const badLoader = api.createYoutubeWorkflowLoader({

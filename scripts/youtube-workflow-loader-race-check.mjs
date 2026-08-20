@@ -2,7 +2,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 const loaderUrl = new URL('../src/composables/youtube-workflow-loader.js', import.meta.url)
-const loaderSource = await fs.readFile(loaderUrl, 'utf8')
+const runtimeStateStub = 'export const runtimeState = {}'
+const runtimeStateUrl = `data:text/javascript;base64,${Buffer.from(runtimeStateStub).toString('base64')}`
+const loaderSource = (await fs.readFile(loaderUrl, 'utf8'))
+  .replace("'./runtime-state-facade.js'", `'${runtimeStateUrl}'`)
 const { createYoutubeWorkflowLoader } = await import(
   `data:text/javascript;base64,${Buffer.from(loaderSource).toString('base64')}`
 )

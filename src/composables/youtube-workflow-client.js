@@ -192,6 +192,13 @@ export function createYoutubeWorkflowClient(options = {}) {
     async getJob(jobId) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`)))
     },
+    async deleteJob(jobId, options = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`), {
+        method: 'DELETE',
+        headers: mutationHeaders(options, { revision: true }),
+        ...(options.signal ? { signal: options.signal } : {}),
+      }))
+    },
     async getJobsSnapshot(jobIds, options = {}) {
       const uniqueIds = [...new Set((Array.isArray(jobIds) ? jobIds : [])
         .map((jobId) => String(jobId || '').trim())
@@ -233,6 +240,13 @@ export function createYoutubeWorkflowClient(options = {}) {
     async clearCanceledJobs() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-canceled'), {
         method: 'POST'
+      }))
+    },
+    async clearFailedJobs(options = {}) {
+      return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-failed'), {
+        method: 'POST',
+        headers: mutationHeaders(options, { revision: true }),
+        ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
     async pickImportFolder(payload = {}, options = {}) {
@@ -289,6 +303,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       const response = await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/media/${encodeURIComponent(kind)}`), {
         method: 'GET',
         headers: { Range: 'bytes=0-0' },
+        cache: 'no-store',
         ...(options.signal ? { signal: options.signal } : {}),
       })
       if (response.status === 404 || response.status === 410) {
@@ -301,6 +316,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       if (response.status !== 206 || !/^bytes 0-0\/\d+$/i.test(contentRange) || !/\bbytes\b/i.test(acceptRanges)) {
         const error = new Error('Reader media does not support HTTP Range')
         error.code = 'MEDIA_RANGE_UNSUPPORTED'
+        error.details = {
+          status: response.status,
+          contentRange,
+          acceptRanges,
+        }
         throw error
       }
       return {
@@ -341,6 +361,8 @@ export function createYoutubeWorkflowClient(options = {}) {
     async readerRecent(options = {}) {
       const params = new URLSearchParams()
       if (options.query) params.set('query', options.query)
+      if (options.timeScope) params.set('timeScope', options.timeScope)
+      if (Number.isInteger(options.offset) && options.offset > 0) params.set('offset', String(options.offset))
       params.set('limit', options.limit || 50)
       return readJsonResponse(await fetchImpl(apiUrl(`/api/reader/recent?${params.toString()}`)))
     },

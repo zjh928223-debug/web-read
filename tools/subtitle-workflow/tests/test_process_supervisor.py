@@ -2,7 +2,7 @@ import subprocess
 import unittest
 from io import StringIO
 
-from youtube_workflow.core import SubprocessCommandRunner
+from youtube_workflow.core import SubprocessCommandRunner, WorkflowCommandError
 from youtube_workflow.process_supervisor import ProcessCleanupError, ProcessSupervisor
 
 
@@ -93,6 +93,22 @@ class ProcessSupervisorTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "consumer failed"):
             runner.run(["fake-tool"], "yt-dlp", lambda _line: (_ for _ in ()).throw(RuntimeError("consumer failed")))
 
+        self.assertIsNone(supervisor.snapshot())
+
+    def test_command_runner_preserves_the_actionable_process_error(self):
+        process = FakeProcess(returncode=1)
+        process.stdout = StringIO(
+            "[download] 37.7% of 12.00MiB\n"
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden\n"
+        )
+        supervisor = ProcessSupervisor(process_factory=lambda *args, **kwargs: process, platform_name="posix")
+        runner = SubprocessCommandRunner(supervisor=supervisor)
+
+        with self.assertRaises(WorkflowCommandError) as raised:
+            runner.run(["yt-dlp", "https://example.com/video"], "yt-dlp", lambda _line: None)
+
+        self.assertIn("HTTP Error 403: Forbidden", str(raised.exception))
+        self.assertNotIn("https://example.com/video", str(raised.exception))
         self.assertIsNone(supervisor.snapshot())
 
 

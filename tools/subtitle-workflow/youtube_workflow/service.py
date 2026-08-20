@@ -40,11 +40,15 @@ from .core import (
     WorkflowRequest,
     analyze_session_quality,
     build_diagnostics,
+    canonical_material_key,
     classify_error,
+    classify_error_code,
     coerce_bool,
     load_json_file,
     make_manifest,
     marks_integrity,
+    resolve_executable_path,
+    resolve_retry_stage,
     utc_now_iso,
     validate_session_files,
 )
@@ -994,6 +998,7 @@ class JobManager:
         event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
     ):
         self.config = config or WorkflowConfig()
+        self.enforce_tool_preflight = runner_factory is None
         self.runner_factory = runner_factory or (lambda: LocalWorkflowRunner(self.config))
         self.credential_store = credential_store or default_credential_store()
         self.merriam_credential_store = merriam_credential_store or default_credential_store(
@@ -1104,6 +1109,27 @@ class JobManager:
             return record
         return None
 
+    def _require_workflow_tools(self, stage: str) -> None:
+        if not self.enforce_tool_preflight:
+            return
+        required = []
+        if stage == "downloading":
+            required.append(("yt-dlp", self.config.yt_dlp_path))
+        if stage in {"downloading", "transcribing"}:
+            required.append(("WhisperX", self.config.whisperx_path))
+        for label, configured_path in required:
+            if resolve_executable_path(configured_path) is not None:
+                continue
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "WORKFLOW_TOOL_MISSING",
+                    "tool": label,
+                    "configuredPath": str(configured_path or ""),
+                    "message": f"{label} 未安装或配置路径无效，请先修复设置。",
+                },
+            )
+
     def _find_mutation_receipt_locked(self, key: str, fingerprint: str) -> dict | None:
         if not key:
             return None
@@ -1151,6 +1177,7 @@ class JobManager:
             request = self._with_saved_credential(request)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        self._require_workflow_tools("downloading")
         fingerprint = _request_fingerprint(request, operation="create")
         job_id = uuid.uuid4().hex[:12]
         record = JobRecord(
@@ -1169,6 +1196,18 @@ class JobManager:
                 snapshot["idempotent"] = True
                 return snapshot
             self._check_expected_revision_locked(expected_revision)
+            if not request.force_reprocess:
+                duplicate = self._find_duplicate_material_locked(request.url)
+                if duplicate is not None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "MATERIAL_ALREADY_EXISTS",
+                            "message": "这个视频已经在素材库或任务中。",
+                            "materialKey": canonical_material_key(request.url),
+                            "existing": duplicate,
+                        },
+                    )
             self.jobs[job_id] = record
             self.pending.append(record)
             try:
@@ -1182,6 +1221,37 @@ class JobManager:
         snapshot = record.public_snapshot()
         snapshot["revision"] = self._jobs_revision_locked()
         return snapshot
+
+    def _find_duplicate_material_locked(self, url: str) -> dict | None:
+        material_key = canonical_material_key(url)
+        if not material_key:
+            return None
+        records = sorted(self.jobs.values(), key=lambda item: item.updated_at, reverse=True)
+        for record in records:
+            if record.status == "canceled":
+                continue
+            if canonical_material_key(record.request.url) != material_key:
+                continue
+            snapshot = record.public_snapshot()
+            return {
+                "jobId": snapshot.get("jobId"),
+                "title": snapshot.get("title", ""),
+                "status": snapshot.get("status", ""),
+                "stage": snapshot.get("stage", ""),
+                "url": record.request.url,
+            }
+        for item in self.store.load_history():
+            item_url = item.get("url") or (item.get("request") or {}).get("url")
+            if canonical_material_key(str(item_url or "")) != material_key:
+                continue
+            return {
+                "jobId": item.get("jobId"),
+                "title": item.get("title", ""),
+                "status": item.get("status", "ready"),
+                "stage": item.get("stage", "ready"),
+                "url": item_url,
+            }
+        return None
 
     def pick_import_folder(self, payload: dict | None = None) -> dict:
         initial_dir = str((payload or {}).get("initialDir") or (payload or {}).get("initialPath") or "").strip()
@@ -1625,6 +1695,7 @@ class JobManager:
             auto_open_when_ready=request.auto_open_when_ready,
             replace_policy=request.replace_policy,
             video_priority=request.video_priority,
+            force_reprocess=request.force_reprocess,
         )
 
     def _load_persisted_jobs(self) -> None:
@@ -1967,7 +2038,9 @@ class JobManager:
             raise HTTPException(status_code=409, detail="only failed or ready jobs can be retried")
         previous_manifest = self._manifest_for_job(job_id)
         checkpoint = previous_manifest.get("checkpoint") if isinstance(previous_manifest.get("checkpoint"), dict) else {}
-        retry_stage = str(payload.get("stage") or checkpoint.get("lastStage") or "translating").strip() or "translating"
+        requested_stage = str(payload.get("stage") or "").strip()
+        retry_stage = resolve_retry_stage(checkpoint, requested_stage or None)
+        self._require_workflow_tools(retry_stage)
         request = WorkflowRequest(
             url=original.request.url,
             gemini_mode=original.request.gemini_mode,
@@ -2071,8 +2144,9 @@ class JobManager:
             self._persist_jobs_locked()
         return {"cleared": len(canceled_ids)}
 
-    def clear_failed_jobs(self) -> dict:
+    def clear_failed_jobs(self, expected_revision: int | None = None) -> dict:
         with self.lock:
+            self._check_expected_revision_locked(expected_revision)
             failed_ids = {
                 job_id
                 for job_id, record in self.jobs.items()
@@ -2082,11 +2156,14 @@ class JobManager:
             for job_id in failed_ids:
                 self.jobs.pop(job_id, None)
             self.recent = [entry for entry in self.recent if entry.get("jobId") not in failed_ids]
-            self._persist_jobs_locked()
-        return {"cleared": len(failed_ids)}
+            if failed_ids:
+                self._persist_jobs_locked()
+            revision = self._jobs_revision_locked()
+        return {"cleared": len(failed_ids), "revision": revision}
 
-    def delete_job(self, job_id: str) -> dict:
+    def delete_job(self, job_id: str, expected_revision: int | None = None) -> dict:
         with self.lock:
+            self._check_expected_revision_locked(expected_revision)
             record = self.jobs.get(job_id)
             if not record:
                 raise HTTPException(status_code=404, detail="job not found")
@@ -2097,14 +2174,26 @@ class JobManager:
             self.jobs.pop(job_id, None)
             self.recent = [entry for entry in self.recent if entry.get("jobId") != job_id]
             self._persist_jobs_locked()
-        return {"deleted": True, "jobId": job_id, "status": status}
+            revision = self._jobs_revision_locked()
+        return {"deleted": True, "jobId": job_id, "status": status, "revision": revision}
 
     def list_history(self, query: str = "", status: str = "", limit: int = 50) -> list[dict]:
         self._require_domain_writable("history")
         return self.store.search_history(query=query, status=status, limit=limit)
 
-    def list_reader_recent(self, query: str = "", limit: int = 50) -> list[dict]:
-        return self.store.search_reader_recent(query=query, limit=limit)
+    def list_reader_recent(
+        self,
+        query: str = "",
+        limit: int = 50,
+        time_scope: str = "all",
+        offset: int = 0,
+    ) -> list[dict]:
+        return self.store.search_reader_recent(
+            query=query,
+            limit=limit,
+            time_scope=time_scope,
+            offset=offset,
+        )
 
     def record_reader_activity(self, payload: dict | None = None) -> dict:
         payload = payload or {}
@@ -2668,6 +2757,7 @@ class JobManager:
         except ReaderPersistenceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.to_detail()) from exc
         marks = normalize_reader_marks(result["payload"].get("marks"))
+        resource_exists = path.is_file()
         return {
             "schemaVersion": result["schemaVersion"],
             "jobId": job_id,
@@ -2676,7 +2766,7 @@ class JobManager:
             "checksum": result["checksum"],
             "marks": marks,
             "markCount": len(marks),
-            "integrity": marks_integrity(marks),
+            "integrity": marks_integrity(marks) if resource_exists else None,
             "recovered": result["recovered"],
         }
 
@@ -3397,7 +3487,7 @@ class JobManager:
                     cancel_event=record.cancel_event,
                 )
                 manifest["retryOf"] = record.retry_of
-                manifest["retryStage"] = record.retry_stage
+                manifest["retryStage"] = str(manifest.get("retryStage") or record.retry_stage)
             elif record.import_plan:
                 if not hasattr(runner, "import_from_plan"):
                     raise RuntimeError("workflow runner does not support legacy import")
@@ -3422,6 +3512,9 @@ class JobManager:
             status = "canceled" if record.cancel_event.is_set() else "failed"
             safe_message = redact_text(str(exc), [record.request.api_key])
             error = {"category": classify_error(safe_message), "message": safe_message}
+            error_code = classify_error_code(safe_message)
+            if error_code:
+                error["code"] = error_code
             checkpoint = getattr(runner, "last_checkpoint", None)
             checkpoint_output = Path(str(checkpoint.get("outputDir"))) if isinstance(checkpoint, dict) and checkpoint.get("outputDir") else self.config.output_dir
             checkpoint_files = checkpoint.get("files") if isinstance(checkpoint, dict) and isinstance(checkpoint.get("files"), dict) else {}
@@ -3579,6 +3672,7 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision", "if-match"],
+        expose_headers=["accept-ranges", "content-range", "etag"],
     )
 
     @app.get("/api/health")
@@ -3704,8 +3798,8 @@ def create_app(
         return manager.clear_canceled_jobs()
 
     @app.post("/api/jobs/clear-failed")
-    def clear_failed_jobs():
-        return manager.clear_failed_jobs()
+    def clear_failed_jobs(request: Request):
+        return manager.clear_failed_jobs(expected_revision=_expected_revision_from_request(request))
 
     @app.post("/api/import/pick-folder")
     def import_pick_folder(payload: dict | None = None):
@@ -3736,8 +3830,8 @@ def create_app(
         return manager.delete_history(job_id, delete_files=deleteFiles)
 
     @app.get("/api/reader/recent")
-    def reader_recent(query: str = "", limit: int = 50):
-        return manager.list_reader_recent(query=query, limit=limit)
+    def reader_recent(query: str = "", limit: int = 50, timeScope: str = "all", offset: int = 0):
+        return manager.list_reader_recent(query=query, limit=limit, time_scope=timeScope, offset=offset)
 
     @app.post("/api/reader/activity")
     def reader_activity(payload: dict | None = None):
@@ -3756,8 +3850,8 @@ def create_app(
         return manager.get_job(job_id).public_snapshot()
 
     @app.delete("/api/jobs/{job_id}")
-    def delete_job(job_id: str):
-        return manager.delete_job(job_id)
+    def delete_job(job_id: str, request: Request):
+        return manager.delete_job(job_id, expected_revision=_expected_revision_from_request(request))
 
     @app.get("/api/jobs/{job_id}/events")
     def job_events(job_id: str):

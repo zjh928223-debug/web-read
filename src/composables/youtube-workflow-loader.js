@@ -1,5 +1,7 @@
 import { runtimeState } from './runtime-state-facade.js'
 
+const READER_SESSION_COMMIT_ATTEMPTS = 3
+
 function getWordCount(transcript) {
   const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : []
   return segments.reduce((total, segment) => total + (Array.isArray(segment.words) ? segment.words.length : 0), 0)
@@ -166,22 +168,62 @@ function validateGeneratedSession({ audioUrl, transcript, chunkData, validateTra
   return { transcript: normalizedTranscript, chunkData: normalizedChunkData }
 }
 
+function normalizedMarkWord(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+}
+
+function resolvePreparedMarkIndex(mark, words) {
+  const requestedIndex = Number(mark?.globalIndex)
+  const requestedWord = normalizedMarkWord(mark?.word)
+  const requestedStart = Number(mark?.start)
+  const hasStart = Number.isFinite(requestedStart)
+  const matches = (word) => {
+    const candidateWord = normalizedMarkWord(word?.word || word?.text)
+    const wordMatches = !requestedWord || !candidateWord || requestedWord === candidateWord
+    const candidateStart = Number(word?.start)
+    const startMatches = !hasStart || !Number.isFinite(candidateStart) || Math.abs(candidateStart - requestedStart) <= 0.75
+    return wordMatches && startMatches
+  }
+  if (Number.isInteger(requestedIndex) && requestedIndex >= 0 && requestedIndex < words.length && matches(words[requestedIndex])) {
+    return requestedIndex
+  }
+  let bestIndex = -1
+  let bestDistance = Number.POSITIVE_INFINITY
+  words.forEach((word, index) => {
+    const candidateWord = normalizedMarkWord(word?.word || word?.text)
+    if (requestedWord && candidateWord !== requestedWord) return
+    const candidateStart = Number(word?.start)
+    if (hasStart && Number.isFinite(candidateStart)) {
+      const distance = Math.abs(candidateStart - requestedStart)
+      if (distance > 0.75 || distance >= bestDistance) return
+      bestDistance = distance
+      bestIndex = index
+      return
+    }
+    if (!hasStart && bestIndex < 0) bestIndex = index
+  })
+  return bestIndex
+}
+
 function normalizePreparedMarks(marks, transcript) {
   const words = (transcript?.segments || []).flatMap((segment) => Array.isArray(segment?.words) ? segment.words : [])
-  return marks.map((mark) => {
-    const globalIndex = Number(mark?.globalIndex)
-    if (!Number.isInteger(globalIndex) || globalIndex < 0 || globalIndex >= words.length) {
-      throw validationError('READER_SESSION_MARK_OUT_OF_RANGE', 'reader mark globalIndex is outside the prepared transcript')
-    }
+  const normalized = new Map()
+  marks.forEach((mark) => {
+    const globalIndex = resolvePreparedMarkIndex(mark, words)
+    if (globalIndex < 0) return
     const word = words[globalIndex] || {}
-    return {
+    normalized.set(globalIndex, {
       ...mark,
       globalIndex,
       word: String(mark.word || word.word || word.text || ''),
       ...(Number.isFinite(Number(mark.start ?? word.start)) ? { start: Number(mark.start ?? word.start) } : {}),
       sourceType: String(mark.sourceType || mark.source || 'manual-mark'),
-    }
+    })
   })
+  return [...normalized.values()]
 }
 
 async function resolveReaderSessionIdentity(manifest, requestedJobId, prepared) {
@@ -308,13 +350,31 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   async function prepareExpectedRevision() {
     if (typeof readerSessionPersistence.loadCommitted !== 'function') return null
     const current = await readerSessionPersistence.loadCommitted()
-    return current?.status === 'committed' && typeof current.session?.revision === 'string'
-      ? current.session.revision
-      : null
+    if (current?.status === 'committed' && typeof current.session?.revision === 'string') {
+      return current.session.revision
+    }
+    if (typeof readerSessionPersistence.loadCurrentRevision === 'function') {
+      return readerSessionPersistence.loadCurrentRevision()
+    }
+    return null
   }
 
-  async function commitLatestSession(load, session, requestOptions, expectedRevision) {
-    return readerSessionPersistence.commit(session, { ...requestOptions, expectedRevision })
+  async function commitLatestSession(load, session, requestOptions) {
+    for (let attempt = 1; attempt <= READER_SESSION_COMMIT_ATTEMPTS; attempt += 1) {
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      const expectedRevision = await prepareExpectedRevision()
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      try {
+        await readerSessionPersistence.commit(session, { ...requestOptions, expectedRevision })
+        return { status: 'committed' }
+      } catch (error) {
+        const canRetry = error?.code === 'REVISION_CONFLICT'
+          && attempt < READER_SESSION_COMMIT_ATTEMPTS
+          && isCurrentLoad(load)
+        if (!canRetry) throw error
+      }
+    }
+    throw new Error('reader session commit attempts exhausted')
   }
 
   async function restoreAnnotationBackfillResult(jobId) {
@@ -366,13 +426,12 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
       if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
       const audioUrl = client.mediaUrl(jobId, 'audio')
-      const [manifest, transcriptBlob, chunkBlob, marksPayload, , expectedRevision] = await Promise.all([
+      const [manifest, transcriptBlob, chunkBlob, marksPayload] = await Promise.all([
         client.getSession(jobId, requestOptions),
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
         prepareReaderMarks(jobId, requestOptions),
         client.probeMediaRange(jobId, 'audio', requestOptions),
-        prepareExpectedRevision(),
       ])
       if (!isCurrentLoad(load)) return supersededResult(load)
       const [transcriptPrepared, chunkPrepared] = await Promise.all([
@@ -437,14 +496,18 @@ export function createYoutubeWorkflowLoader(deps = {}) {
           await sessionPublisher.restoreVisibleSession(visibleSnapshot)
           return supersededResult(load)
         }
-        await commitLatestSession(load, {
+        const commitResult = await commitLatestSession(load, {
           contentId,
           revision,
           audioMeta,
           transcript: validated.transcript,
           chunkData: validated.chunkData,
           marks: normalizedMarks,
-        }, requestOptions, expectedRevision)
+        }, requestOptions)
+        if (commitResult.status === 'superseded') {
+          await sessionPublisher.restoreVisibleSession(visibleSnapshot)
+          return commitResult
+        }
         committed = true
       } catch (error) {
         if (!committed && isCurrentLoad(load)) {

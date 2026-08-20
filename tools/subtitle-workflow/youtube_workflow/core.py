@@ -6,12 +6,14 @@ import shutil
 import subprocess
 import sys
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 from typing import Callable, Iterable
+from urllib.parse import parse_qs, urlsplit
 
 from .durable_json import DurableJsonRepository
 from .process_supervisor import ProcessSupervisor
@@ -110,6 +112,8 @@ STAGES = (
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm", ".wmv"}
+YOUTUBE_VIDEO_FORMAT_SELECTOR = "best[ext=mp4]/best"
+YOUTUBE_PLAYER_CLIENT = "mweb"
 
 
 def is_audio_media(path: Path) -> bool:
@@ -132,6 +136,78 @@ def choose_downloaded_media(files: Iterable[Path], video_priority: bool) -> Path
         if is_audio_media(path):
             return path
     return ordered[0]
+
+
+def existing_checkpoint_file(value) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_file() else None
+
+
+def existing_checkpoint_directory(value) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_dir() else None
+
+
+def resolve_executable_path(value) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw)
+    if candidate.is_absolute() or candidate.parent != Path("."):
+        return candidate if candidate.is_file() else None
+    resolved = shutil.which(raw)
+    return Path(resolved) if resolved else None
+
+
+def resolve_retry_stage(checkpoint: dict | None, requested_stage: str | None = None) -> str:
+    if not isinstance(checkpoint, dict):
+        return "downloading"
+    aliases = {
+        "download": "downloading",
+        "whisperx": "transcribing",
+        "subtitle": "transcribing",
+        "transcript": "transcribing",
+        "chunking": "segmenting",
+        "gemini": "translating",
+        "translation": "translating",
+        "ready": "translating",
+        "validating": "translating",
+    }
+    explicitly_requested = bool(str(requested_stage or "").strip())
+    requested = str(requested_stage or "").strip().lower()
+    requested = aliases.get(requested, requested)
+    if explicitly_requested and requested == "downloading":
+        return "downloading"
+    if existing_checkpoint_directory(checkpoint.get("outputDir")) is None:
+        return "downloading"
+
+    files = checkpoint.get("files") if isinstance(checkpoint.get("files"), dict) else {}
+    media_file = (
+        existing_checkpoint_file(files.get("transcriptionAudio"))
+        or existing_checkpoint_file(files.get("audio"))
+        or existing_checkpoint_file(files.get("video"))
+    )
+    if media_file is None:
+        return "downloading"
+    if explicitly_requested and requested == "transcribing":
+        return "transcribing"
+
+    transcript_path = existing_checkpoint_file(files.get("transcript"))
+    if transcript_path is None:
+        return "transcribing"
+    if explicitly_requested and requested == "segmenting":
+        return "segmenting"
+
+    workflow = checkpoint.get("workflow") if isinstance(checkpoint.get("workflow"), dict) else {}
+    if existing_checkpoint_file(workflow.get("inputJson")) is None:
+        return "segmenting"
+    return "translating"
 
 
 @dataclass
@@ -186,6 +262,7 @@ class WorkflowRequest:
     auto_open_when_ready: bool = False
     replace_policy: str = "ask"
     video_priority: bool = True
+    force_reprocess: bool = False
 
     @classmethod
     def from_payload(cls, payload: dict) -> "WorkflowRequest":
@@ -211,6 +288,7 @@ class WorkflowRequest:
             auto_open_when_ready=coerce_bool(payload.get("autoOpenWhenReady", payload.get("auto_open_when_ready", False))),
             replace_policy=replace_policy,
             video_priority=coerce_bool(payload.get("videoPriority", payload.get("video_priority", True)), True),
+            force_reprocess=coerce_bool(payload.get("forceReprocess", payload.get("force_reprocess", False))),
         )
 
     def safe_manifest_request(self) -> dict:
@@ -222,7 +300,36 @@ class WorkflowRequest:
             "autoOpenWhenReady": self.auto_open_when_ready,
             "replacePolicy": self.replace_policy,
             "videoPriority": self.video_priority,
+            "forceReprocess": self.force_reprocess,
         }
+
+
+def youtube_video_id(url: str) -> str:
+    try:
+        parsed = urlsplit(str(url or "").strip())
+    except ValueError:
+        return ""
+    host = parsed.hostname.lower().rstrip(".") if parsed.hostname else ""
+    allowed = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"}
+    if host not in allowed:
+        return ""
+    candidate = ""
+    if host.endswith("youtu.be"):
+        candidate = next((part for part in parsed.path.split("/") if part), "")
+    else:
+        query = parse_qs(parsed.query)
+        candidate = str((query.get("v") or [""])[0])
+        if not candidate:
+            parts = [part for part in parsed.path.split("/") if part]
+            if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+                candidate = parts[1]
+    candidate = candidate.strip()
+    return candidate if re.fullmatch(r"[A-Za-z0-9_-]{6,32}", candidate) else ""
+
+
+def canonical_material_key(url: str) -> str:
+    video_id = youtube_video_id(url)
+    return f"youtube:{video_id}" if video_id else ""
 
 
 def utc_now_iso() -> str:
@@ -295,6 +402,13 @@ def classify_error(error: Exception | str) -> str:
     if any(token in text for token in ("output.json", "manifest", "transcript", "chunk", "format", "json")):
         return "output"
     return "unknown"
+
+
+def classify_error_code(error: Exception | str) -> str:
+    text = str(error).lower()
+    if "403" in text and any(token in text for token in ("youtube", "yt-dlp", "download video data")):
+        return "YOUTUBE_MEDIA_HTTP_403"
+    return ""
 
 
 def load_json_file(path: Path) -> dict:
@@ -616,6 +730,18 @@ class FakeWorkflowRunner:
         return manifest
 
 
+class WorkflowCommandError(RuntimeError):
+    def __init__(self, source: str, returncode: int, output_tail: list[str]):
+        self.source = source
+        self.returncode = returncode
+        self.output_tail = list(output_tail)
+        diagnostic = next(
+            (line for line in reversed(self.output_tail) if "error" in line.lower()),
+            self.output_tail[-1] if self.output_tail else f"exit code {returncode}",
+        )
+        super().__init__(f"{source} failed: {diagnostic}")
+
+
 class SubprocessCommandRunner:
     def __init__(self, supervisor: ProcessSupervisor | None = None):
         self.supervisor = supervisor or ProcessSupervisor()
@@ -634,6 +760,7 @@ class SubprocessCommandRunner:
 
     def run(self, cmd: list[str], source: str, emit_line: Callable[[str], None], cancel_event: Event | None = None) -> None:
         cancel_event = cancel_event or Event()
+        output_tail: list[str] = []
         if cancel_event.is_set():
             raise RuntimeError("任务已取消，未启动新的外部命令。")
         handle = self.supervisor.start(
@@ -656,10 +783,12 @@ class SubprocessCommandRunner:
                     raise RuntimeError(f"任务已取消，{source} 已停止。")
                 line = raw_line.strip()
                 if line:
+                    output_tail.append(line)
+                    del output_tail[:-40]
                     emit_line(line)
             process.wait()
             if process.returncode != 0:
-                raise subprocess.CalledProcessError(process.returncode, cmd)
+                raise WorkflowCommandError(source, process.returncode, output_tail)
         finally:
             if process.poll() is None:
                 self.supervisor.cancel(handle)
@@ -681,6 +810,40 @@ class LocalWorkflowRunner:
         checkpoint["updatedAt"] = utc_now_iso()
         self.last_checkpoint = dict(checkpoint)
         _write_json(checkpoint_path, checkpoint)
+
+    def _require_configured_tool(self, label: str, configured_path: Path) -> None:
+        if not isinstance(self.command_runner, SubprocessCommandRunner):
+            return
+        if resolve_executable_path(configured_path) is None:
+            raise RuntimeError(f"{label} 未安装或配置路径无效：{configured_path}")
+
+    def _run_whisperx(
+        self,
+        media_file: Path,
+        target_folder: Path,
+        emit_line: Callable[[str], None],
+        cancel_event: Event,
+    ) -> Path:
+        self._require_configured_tool("WhisperX", self.config.whisperx_path)
+        whisperx_cmd = [
+            str(self.config.whisperx_path),
+            str(media_file),
+            "--model", "large-v3",
+            "--device", "cuda",
+            "--compute_type", "float16",
+            "--language", "en",
+            "--vad_method", "silero",
+            "--beam_size", "8",
+            "--batch_size", "4",
+            "--return_char_alignments",
+            "--output_format", "json",
+            "--output_dir", str(target_folder),
+        ]
+        self.command_runner.run(whisperx_cmd, "whisperx", emit_line, cancel_event=cancel_event)
+        raw_transcript_path = target_folder / f"{media_file.stem}.json"
+        if not raw_transcript_path.is_file():
+            raise RuntimeError("没有找到 WhisperX 生成的原始 JSON 文件。")
+        return raw_transcript_path
 
     def run(
         self,
@@ -716,11 +879,20 @@ class LocalWorkflowRunner:
 
         media_label = "视频" if request.video_priority else "音频"
         stage("downloading", f"开始下载 YouTube {media_label}。")
+        self._require_configured_tool("yt-dlp", self.config.yt_dlp_path)
         download_cmd = [str(self.config.yt_dlp_path)]
         if self.config.cookies_path.exists():
             download_cmd.extend(["--cookies", str(self.config.cookies_path)])
-        download_cmd.extend(["--js-runtimes", "node", "--remote-components", "ejs:github"])
-        format_selector = "bestvideo+bestaudio/best" if request.video_priority else "bestaudio/best"
+        download_cmd.extend([
+            "--js-runtimes", "node",
+            "--remote-components", "ejs:github",
+            "--extractor-args", f"youtube:player_client={YOUTUBE_PLAYER_CLIENT}",
+        ])
+        # YouTube now requires a per-video GVS PO token for the mweb client.
+        # The local yt-dlp WPC provider supplies it.  A progressive MP4 keeps
+        # video and audio on the same authorized URL; split bestvideo/bestaudio
+        # streams are rejected with HTTP 403 on the current YouTube rollout.
+        format_selector = YOUTUBE_VIDEO_FORMAT_SELECTOR if request.video_priority else "bestaudio/best"
         download_cmd.extend(["-f", format_selector, "--newline", "-o", str(temp_folder / "%(title)s.%(ext)s"), request.url])
         self.command_runner.run(download_cmd, "yt-dlp", lambda line: command_line("yt-dlp", line), cancel_event=cancel_event)
 
@@ -761,25 +933,12 @@ class LocalWorkflowRunner:
         self._save_checkpoint(checkpoint_path, checkpoint, "downloading")
 
         stage("transcribing", "开始启动 WhisperX。")
-        whisperx_cmd = [
-            str(self.config.whisperx_path),
-            str(transcription_audio_file),
-            "--model", "large-v3",
-            "--device", "cuda",
-            "--compute_type", "float16",
-            "--language", "en",
-            "--vad_method", "silero",
-            "--beam_size", "8",
-            "--batch_size", "4",
-            "--return_char_alignments",
-            "--output_format", "json",
-            "--output_dir", str(target_folder),
-        ]
-        self.command_runner.run(whisperx_cmd, "whisperx", lambda line: command_line("whisperx", line), cancel_event=cancel_event)
-
-        raw_transcript_path = target_folder / f"{transcription_audio_file.stem}.json"
-        if not raw_transcript_path.exists():
-            raise RuntimeError("没有找到 WhisperX 生成的原始 JSON 文件。")
+        raw_transcript_path = self._run_whisperx(
+            transcription_audio_file,
+            target_folder,
+            lambda line: command_line("whisperx", line),
+            cancel_event,
+        )
 
         transcript_path = target_folder / f"{file_stem}.transcript.json"
         if raw_transcript_path != transcript_path:
@@ -855,31 +1014,36 @@ class LocalWorkflowRunner:
     ) -> dict:
         emit = emit or (lambda event: None)
         cancel_event = cancel_event or Event()
-        checkpoint = previous_manifest.get("checkpoint") if isinstance(previous_manifest, dict) else None
+        source_checkpoint = previous_manifest.get("checkpoint") if isinstance(previous_manifest, dict) else None
+        checkpoint = deepcopy(source_checkpoint) if isinstance(source_checkpoint, dict) else None
         if not isinstance(checkpoint, dict):
             return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
         started_at = utc_now_iso()
         started_perf = time.perf_counter()
         log_summary: list[str] = []
-        retry_stage = str(retry_stage or checkpoint.get("lastStage") or "translating").strip()
-        if retry_stage in {"download", "downloading"}:
+        resume_stage = resolve_retry_stage(checkpoint, retry_stage)
+        retry_stage = resume_stage
+        if retry_stage == "downloading":
             return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
 
-        target_folder = Path(str(checkpoint.get("outputDir", "")))
+        target_folder = existing_checkpoint_directory(checkpoint.get("outputDir"))
+        if target_folder is None:
+            return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
         title = str(checkpoint.get("title") or previous_manifest.get("title") or safe_title_from_url(request.url))
         file_stem = safe_filename_stem(title)
         files = checkpoint.get("files") if isinstance(checkpoint.get("files"), dict) else {}
         workflow = checkpoint.get("workflow") if isinstance(checkpoint.get("workflow"), dict) else {}
-        audio_file = Path(str(files.get("audio", "")))
-        video_file = Path(str(files.get("video", ""))) if files.get("video") else None
-        transcription_audio_file = Path(str(files.get("transcriptionAudio", ""))) if files.get("transcriptionAudio") else None
-        transcript_path = Path(str(files.get("transcript", "")))
+        video_file = existing_checkpoint_file(files.get("video"))
+        transcription_checkpoint_file = existing_checkpoint_file(files.get("transcriptionAudio"))
+        audio_file = existing_checkpoint_file(files.get("audio")) or video_file or transcription_checkpoint_file
+        transcription_audio_file = transcription_checkpoint_file or audio_file or video_file
+        transcript_path = existing_checkpoint_file(files.get("transcript"))
         workflow_dir = target_folder / "_workflow"
         workflow_dir.mkdir(parents=True, exist_ok=True)
         checkpoint_path = workflow_dir / "checkpoint.json"
-        input_json_path = Path(str(workflow.get("inputJson") or workflow_dir / "input.json"))
-        output_json_path = Path(str(workflow.get("outputJson") or workflow_dir / "output.json"))
-        public_chunk_path = Path(str(workflow.get("publicChunk") or target_folder / f"{file_stem}.ai-chunks.json"))
+        input_json_path = Path(str(workflow.get("inputJson") or (workflow_dir / "input.json")))
+        output_json_path = Path(str(workflow.get("outputJson") or (workflow_dir / "output.json")))
+        public_chunk_path = Path(str(workflow.get("publicChunk") or (target_folder / f"{file_stem}.ai-chunks.json")))
         if previous_manifest.get("status") == "ready":
             version_suffix = datetime.now().strftime("%Y%m%d-%H%M%S")
             output_json_path = workflow_dir / f"output.{version_suffix}.json"
@@ -904,14 +1068,33 @@ class LocalWorkflowRunner:
         }
         self.last_checkpoint = dict(checkpoint)
 
-        if retry_stage in {"transcribing", "whisperx"} and not transcript_path.exists():
-            return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
-        if retry_stage in {"transcribing", "whisperx"}:
+        if retry_stage == "transcribing":
+            if transcription_audio_file is None:
+                return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
+            stage("transcribing", "从已下载素材继续启动 WhisperX。")
+            raw_transcript_path = self._run_whisperx(
+                transcription_audio_file,
+                target_folder,
+                lambda line: command_line("whisperx", line),
+                cancel_event,
+            )
+            transcript_path = target_folder / f"{file_stem}.transcript.json"
+            if raw_transcript_path != transcript_path:
+                if transcript_path.exists():
+                    transcript_path.unlink()
+                raw_transcript_path.replace(transcript_path)
+            checkpoint_files = {"audio": str(audio_file or transcription_audio_file), "transcript": str(transcript_path)}
+            if video_file:
+                checkpoint_files["video"] = str(video_file)
+            if transcription_audio_file != (audio_file or video_file):
+                checkpoint_files["transcriptionAudio"] = str(transcription_audio_file)
+            checkpoint["files"] = checkpoint_files
+            self._save_checkpoint(checkpoint_path, checkpoint, "transcribing")
             retry_stage = "segmenting"
 
-        if retry_stage in {"segmenting", "chunking"} or not input_json_path.exists():
-            if not transcript_path.exists():
-                return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
+        if retry_stage == "segmenting" or not input_json_path.is_file():
+            if transcript_path is None or not transcript_path.is_file():
+                raise RuntimeError("检查点缺少有效字幕文件，无法继续生成语块。")
             if request.gemini_mode == "real":
                 stage("segmenting", "从检查点重新生成语块 input.json。")
                 try:
@@ -925,9 +1108,9 @@ class LocalWorkflowRunner:
             self._save_checkpoint(checkpoint_path, checkpoint, "segmenting")
             retry_stage = "translating"
 
-        if retry_stage in {"translating", "gemini", "translation"} or not output_json_path.exists() or not public_chunk_path.exists():
-            if not input_json_path.exists():
-                return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
+        if retry_stage == "translating" or not output_json_path.is_file() or not public_chunk_path.is_file():
+            if not input_json_path.is_file():
+                raise RuntimeError("检查点缺少有效语块输入文件，无法继续翻译。")
             stage("translating", f"从检查点重新生成 AI 切分文件。Gemini 模式: {request.gemini_mode}")
             if request.gemini_mode == "real":
                 self._generate_real_output(input_json_path, output_json_path, request, log_summary, emit, job_id)
@@ -941,7 +1124,7 @@ class LocalWorkflowRunner:
             }
             if video_file:
                 checkpoint["files"]["video"] = str(video_file)
-            if transcription_audio_file:
+            if transcription_audio_file and transcription_audio_file != (audio_file or video_file):
                 checkpoint["files"]["transcriptionAudio"] = str(transcription_audio_file)
             self._save_checkpoint(checkpoint_path, checkpoint, "translating")
 
@@ -953,7 +1136,7 @@ class LocalWorkflowRunner:
         }
         if video_file:
             files["video"] = str(video_file)
-        if transcription_audio_file:
+        if transcription_audio_file and transcription_audio_file != (audio_file or video_file):
             files["transcriptionAudio"] = str(transcription_audio_file)
         checkpoint["files"] = files
         self._save_checkpoint(checkpoint_path, checkpoint, "validating")
@@ -967,11 +1150,11 @@ class LocalWorkflowRunner:
             title=title,
             started_at=started_at,
             finished_at=utc_now_iso(),
-            log_summary=log_summary + [f"retryFromStage={retry_stage}", f"totalSeconds={time.perf_counter() - started_perf:.1f}"],
+            log_summary=log_summary + [f"retryFromStage={resume_stage}", f"totalSeconds={time.perf_counter() - started_perf:.1f}"],
         )
         manifest["checkpoint"] = dict(checkpoint)
         manifest["retryOf"] = previous_manifest.get("jobId")
-        manifest["retryStage"] = retry_stage
+        manifest["retryStage"] = resume_stage
         validate_session_files(manifest)
         assert_manifest_has_no_secret(manifest, [request.api_key])
         _write_json(target_folder / "manifest.json", manifest)
@@ -1174,10 +1357,27 @@ class LocalWorkflowRunner:
     def _apply_proxy_settings(self) -> None:
         if not self.config.proxy_url:
             return
+        bypass_hosts: list[str] = []
+        seen_bypass_hosts: set[str] = set()
+        for value in (
+            os.environ.get("NO_PROXY", ""),
+            os.environ.get("no_proxy", ""),
+            "127.0.0.1,localhost,::1",
+        ):
+            for candidate in value.split(","):
+                host = candidate.strip()
+                identity = host.casefold()
+                if not host or identity in seen_bypass_hosts:
+                    continue
+                seen_bypass_hosts.add(identity)
+                bypass_hosts.append(host)
+        bypass_value = ",".join(bypass_hosts)
         os.environ["HTTP_PROXY"] = self.config.proxy_url
         os.environ["HTTPS_PROXY"] = self.config.proxy_url
         os.environ["http_proxy"] = self.config.proxy_url
         os.environ["https_proxy"] = self.config.proxy_url
+        os.environ["NO_PROXY"] = bypass_value
+        os.environ["no_proxy"] = bypass_value
 
     def _build_input_json(self, transcript_path: Path, output_json_path: Path) -> None:
         chunker_dir = SCRIPT_DIR / "chunker"
