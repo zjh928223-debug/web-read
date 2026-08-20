@@ -17,6 +17,7 @@ node_modules/
 .playwright-cli/
 .playwright-deps/
 .codex/startup-logs/
+.codex/runtime-state/
 .codex/config.toml
 .claude/settings.local.json
 .codex-vite-*.log
