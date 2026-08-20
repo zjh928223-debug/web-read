@@ -653,9 +653,19 @@ class WorkflowHistoryStore:
         })
         return summary
 
-    def search_reader_recent(self, query: str = "", limit: int = 50) -> list[dict]:
+    def search_reader_recent(
+        self,
+        query: str = "",
+        limit: int = 50,
+        time_scope: str = "all",
+        offset: int = 0,
+    ) -> list[dict]:
         needle = str(query or "").strip().lower()
         limit = max(1, min(200, int(limit or 50)))
+        offset = max(0, int(offset or 0))
+        time_scope = str(time_scope or "all").strip().lower()
+        if time_scope not in {"all", "recent", "earlier"}:
+            time_scope = "all"
         with self.lock:
             index_by_id = {
                 str(item.get("jobId")): dict(item)
@@ -677,8 +687,23 @@ class WorkflowHistoryStore:
                     or needle in str(item.get("folderName", "")).lower()
                     or needle in str(item.get("outputDir", "")).lower()
                 ]
+            if time_scope != "all":
+                seven_days_ago = datetime.now(timezone.utc).timestamp() - (7 * 24 * 60 * 60)
+
+                def matches_time_scope(item):
+                    stamp = item.get("lastActivityAt") or item.get("finishedAt") or item.get("createdAt")
+                    try:
+                        parsed = datetime.fromisoformat(str(stamp or "").replace("Z", "+00:00"))
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=timezone.utc)
+                        is_recent = parsed.timestamp() >= seven_days_ago
+                    except (TypeError, ValueError):
+                        is_recent = False
+                    return is_recent if time_scope == "recent" else not is_recent
+
+                items = [item for item in items if matches_time_scope(item)]
             items.sort(key=self._reader_sort_key)
-            return items[:limit]
+            return items[offset:offset + limit]
 
     def _merge_reader_activity(self, item: dict, activity: dict, payload: dict, event_type: str, now: str) -> dict:
         output_dir = str(item.get("outputDir") or "")
@@ -801,15 +826,8 @@ class WorkflowHistoryStore:
         )
 
     def _reader_sort_key(self, item: dict) -> tuple:
-        has_activity = bool(item.get("lastActivityAt"))
-        completed = bool(item.get("completed"))
-        group = 2
-        if has_activity and not completed:
-            group = 0
-        elif has_activity and completed:
-            group = 1
         stamp = item.get("lastActivityAt") or item.get("finishedAt") or item.get("createdAt") or ""
-        return (group, _reverse_time_key(stamp), str(item.get("title", "")).lower())
+        return (_reverse_time_key(stamp), str(item.get("title", "")).lower())
 
     def _upsert_reader_index_item_locked(self, summary: dict) -> None:
         job_id = summary.get("jobId")

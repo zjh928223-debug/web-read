@@ -104,14 +104,13 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
     await page.waitForSelector('[data-reader-conflict-action]', { state: 'visible' })
   } catch (error) {
     const debug = await page.evaluate(() => ({
-      currentAudioMeta: window.__state?.currentAudioMeta || null,
-      currentJobId: document.querySelector('[data-reader-save-state]')?.textContent || '',
-      state: document.querySelector('[data-reader-save-state]')?.textContent || '',
+      currentAudioMeta: window.__sessionStateProvider?.getState?.()?.currentAudioMeta || null,
+      notice: document.querySelector('p.youtube-workflow-hint[data-tone="warning"]')?.textContent || '',
       actionCount: document.querySelectorAll('[data-reader-conflict-action]').length,
     }))
     throw new Error(`conflict action did not appear: ${JSON.stringify(debug)}; ${error.message}`)
   }
-  assert.match(await page.locator('[data-reader-save-state]').innerText(), /并发冲突/)
+  assert.match(await page.locator('p.youtube-workflow-hint[data-tone="warning"]').innerText(), /并发冲突|其他标签页更新/)
 
   await page.evaluate(() => {
     const button = document.querySelector('[data-reader-conflict-action]')
@@ -122,7 +121,7 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
     const value = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
     return value.revision === 2 && value.marks.some((mark) => mark.word === 'owner-b')
   }, 'conflict retry')
-  await page.waitForFunction(() => document.querySelector('[data-reader-save-state]')?.textContent === '学习记录已保存')
+  await page.waitForFunction(() => document.querySelectorAll('[data-reader-conflict-action]').length === 0)
 
   assert.equal(authorityGets, 2, 'the failed authority read plus two clicks must make only one retry read')
   assert.equal(marksRequests.length, 2, 'conflict resolution must not duplicate the original write')
@@ -701,13 +700,21 @@ async function dispatchPageShow(page, persisted) {
 }
 
 async function setReaderState(page, jobId, word, dispatchMarksChange = false) {
+  await page.waitForFunction(() => {
+    try {
+      return Boolean(window.__sessionStateProvider?.getState?.())
+    } catch (_error) {
+      return false
+    }
+  })
   await page.evaluate(({ id, markWord, dispatch }) => {
-    window.__state.currentAudioMeta = { source: 'youtube-workflow', jobId: id, name: `${id}.audio`, size: 1 }
-    window.__state.words = [
+    const state = window.__sessionStateProvider.getState()
+    state.currentAudioMeta = { source: 'youtube-workflow', jobId: id, name: `${id}.audio`, size: 1 }
+    state.words = [
       { word: markWord, start: 0, end: 0.5 },
       { word: `${markWord}-second`, start: 0.5, end: 1 },
     ]
-    window.__state.markedMap = new Map([[0, {
+    state.markedMap = new Map([[0, {
       globalIndex: 0,
       word: markWord,
       start: 0,

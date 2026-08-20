@@ -1,33 +1,25 @@
 <template>
   <Teleport to="#youtube-reader-controls-root">
     <div class="youtube-reader-controls">
-      <button type="button" class="small-btn" @click="openPanel">素材处理</button>
-      <button
-        type="button"
-        class="small-btn youtube-reader-video-priority"
-        :aria-pressed="videoPriority ? 'true' : 'false'"
-        :data-active="videoPriority ? 'true' : 'false'"
-        @click="toggleVideoPriority"
-      >
-        <span class="youtube-reader-video-priority-check" aria-hidden="true">{{ videoPriority ? '✓' : '' }}</span>
-        <span>视频优先</span>
+      <button type="button" class="small-btn youtube-material-entry" @click="openPanel">
+        <span>素材处理</span>
+        <small v-if="activeTaskCount" class="youtube-material-entry-count is-active">{{ activeTaskEntryText }}</small>
+        <small v-if="failedTaskCount" class="youtube-material-entry-count is-failed">{{ failedTaskCount }}</small>
+        <small v-if="completionSignal" class="youtube-material-entry-count is-complete">✓</small>
       </button>
     </div>
   </Teleport>
 
   <div class="youtube-workflow">
-    <div v-if="panelOpen" class="youtube-workflow-backdrop" @pointerdown.self="handleBackdropPointerDown">
-      <section ref="panelDialogRoot" class="youtube-workflow-panel" :style="panelStyle" role="dialog" aria-modal="true" aria-label="素材处理" :aria-busy="panelPending ? 'true' : 'false'" @pointerdown.stop>
-        <header class="youtube-workflow-header" @pointerdown="startPanelDrag">
+    <div v-if="panelOpen" class="youtube-workflow-backdrop">
+      <section ref="panelDialogRoot" class="youtube-workflow-panel" role="dialog" aria-modal="true" aria-label="素材处理" :aria-busy="panelPending ? 'true' : 'false'" @pointerdown.stop>
+        <header class="youtube-workflow-header">
           <div>
             <h2>素材处理</h2>
-            <p :class="['youtube-workflow-health', serviceOnline ? 'online' : 'offline']" role="status" aria-live="polite" aria-atomic="true">
-              {{ serviceOnline ? '后台服务已连接' : '后台服务未启动' }}
-            </p>
           </div>
           <div class="youtube-window-actions">
-            <button type="button" class="youtube-workflow-icon-btn" aria-label="缩小" title="缩小" @click="shrinkPanel">-</button>
-            <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭" title="关闭" @click="closePanel">x</button>
+            <button type="button" class="small-btn primary youtube-add-material-button" @click="setWorkflowView('add')">+ 添加素材</button>
+            <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭" title="关闭" @click="closePanel">×</button>
           </div>
         </header>
 
@@ -36,26 +28,15 @@
           <span>当前后端地址：{{ youtubeWorkflowClient.baseUrl }}</span>
         </div>
 
-        <p v-if="workflowMutationNotice" class="youtube-workflow-hint" data-workflow-mutation-notice role="status" aria-live="polite" data-tone="warning">
-          {{ workflowMutationNotice }}
-        </p>
-
         <div class="youtube-workflow-layout">
           <nav class="youtube-workflow-section-tabs youtube-workflow-nav" aria-label="素材处理视图">
-            <button type="button" data-view="add" :aria-pressed="workflowView === 'add'" :data-active="workflowView === 'add' ? 'true' : 'false'" @click="setWorkflowView('add')">
-              <span>添加</span>
+            <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">
+              <span>素材库</span>
             </button>
             <button type="button" data-view="queue" :aria-pressed="workflowView === 'queue'" :data-active="workflowView === 'queue' ? 'true' : 'false'" @click="setWorkflowView('queue')">
-              <span>队列</span>
-              <small v-if="queueJobs.length">{{ queueJobs.length }}</small>
-            </button>
-            <button type="button" data-view="recent" :aria-pressed="workflowView === 'recent'" :data-active="workflowView === 'recent' ? 'true' : 'false'" @click="setWorkflowView('recent')">
-              <span>最近</span>
-              <small v-if="recentJobs.length">{{ recentJobs.length }}</small>
-            </button>
-            <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">
-              <span>历史</span>
-              <small v-if="historyJobs.length">{{ historyJobs.length }}</small>
+              <span>任务</span>
+              <small v-if="activeTaskCount">{{ activeTaskCount }}</small>
+              <small v-else-if="failedTaskCount" class="is-failed">{{ failedTaskCount }}</small>
             </button>
             <button type="button" data-view="settings" :aria-pressed="workflowView === 'settings'" :data-active="workflowView === 'settings' ? 'true' : 'false'" @click="setWorkflowView('settings')">
               <span>设置</span>
@@ -63,62 +44,41 @@
           </nav>
 
           <main class="youtube-workflow-content">
+            <p v-if="workflowMutationNotice" class="youtube-workflow-hint" data-workflow-mutation-notice role="status" aria-live="polite" data-tone="warning">
+              {{ workflowMutationNotice }}
+            </p>
             <section v-if="workflowView === 'add'" class="youtube-workflow-add-view youtube-workflow-page">
               <div class="youtube-workflow-page-head">
                 <div>
                   <h3>添加素材</h3>
-                  <p>粘贴链接或选择本地目录后加入处理队列。</p>
-                </div>
-                <div class="youtube-setting-chips" aria-label="当前处理设置">
-                  <span>{{ materialModeText }}</span>
-                  <span>模型 {{ model || '未设置' }}</span>
-                  <span>{{ credentialCompactText }}</span>
+                  <p>粘贴视频链接，可一次添加多个。</p>
                 </div>
               </div>
 
-              <form class="youtube-workflow-form" @submit.prevent="enqueueUrls">
+              <form class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueUrls">
                 <label class="youtube-material-link-label">
-                  <span>素材链接</span>
+                  <span>视频链接</span>
                   <textarea
                     v-model.trim="linkInput"
                     class="youtube-material-link-input"
                     name="youtube-material-link"
                     autocomplete="off"
-                    rows="4"
-                    placeholder="粘贴一个或多个 http/https 视频素材链接，每行一个"
+                    rows="2"
+                    placeholder="粘贴 YouTube 链接；多个链接请每行一个"
                     @keydown.enter.ctrl.prevent="commitLinkInput"
                     @paste="handleLinkPaste"
                     @blur="commitLinkInput"
                   />
                 </label>
 
-                <div class="youtube-primary-actions">
-                  <button type="submit" :disabled="starting || !canEnqueue">
-                    <span>{{ primaryActionText }}</span>
-                  </button>
-                  <button type="button" class="small-btn" :disabled="legacyImportBusy" @click="chooseLegacyImportFolder">选择并扫描目录</button>
-                  <button v-if="nativePickerRetryable" type="button" class="small-btn" :disabled="legacyImportBusy" @click="retryNativePicker">重试选择</button>
-                  <button type="button" class="small-btn" :disabled="legacyImportBusy || !legacyImportPath.trim()" @click="scanLegacyImport">重新扫描</button>
-                </div>
-
-                <div class="youtube-mode-options" aria-label="素材模式">
-                  <label class="youtube-workflow-check youtube-workflow-mode-check">
-                    <input v-model="videoPriority" type="checkbox">
-                    <span>视频优先</span>
-                  </label>
-                  <span>{{ materialModeHelpText }}</span>
-                </div>
-
                 <div class="youtube-link-card-list">
-                  <article v-for="(card, index) in linkCards" :key="card.id" class="youtube-link-card" :data-valid="card.valid">
-                    <span class="youtube-link-index">{{ index + 1 }}</span>
-                    <span class="youtube-link-status">{{ card.valid ? '✓' : '!' }}</span>
+                  <article v-for="(card, index) in linkCards" :key="card.id" class="youtube-link-card" :data-valid="card.valid" :data-duplicate="card.duplicate ? 'true' : 'false'">
                     <div class="youtube-link-main">
-                      <small class="youtube-link-state-text">{{ card.valid ? '格式有效' : '链接格式无效' }}</small>
-                      <strong>{{ shortUrl(card.url) }}</strong>
+                      <strong>{{ card.metadataTitle || linkCardFallbackTitle(card) }}</strong>
+                      <small v-if="!card.valid || card.duplicate || card.metadataState === 'loading'" class="youtube-link-state-text">{{ linkCardStateText(card) }}</small>
+                      <span v-if="card.metadataAuthor" class="youtube-link-author">{{ card.metadataAuthor }}</span>
                     </div>
-                    <button type="button" class="small-btn" @click="copyLink(card.url)">复制</button>
-                    <button type="button" class="small-btn" @click="removeLinkCard(card.id)">删除</button>
+                    <button type="button" class="small-btn youtube-link-remove" :aria-label="`移除第 ${index + 1} 条链接`" @click="removeLinkCard(card.id)">移除</button>
                   </article>
                 </div>
 
@@ -128,155 +88,118 @@
                 <p v-if="linkNotice" class="youtube-workflow-hint" data-tone="warning">
                   {{ linkNotice }}
                 </p>
-                <p v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-workflow-hint">需要填写 Gemini API key 或保存系统凭据</p>
-                <p v-else-if="!validLinkCards.length" class="youtube-workflow-hint">暂无可处理素材</p>
+                <div v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-add-credential-needed">
+                  <span>需要先保存 Gemini API Key</span>
+                  <button type="button" class="small-btn" @click="setWorkflowView('settings')">去设置</button>
+                </div>
+                <div class="youtube-primary-actions youtube-add-submit-row">
+                  <button type="submit" class="primary" :disabled="starting || !canEnqueue">
+                    <span>{{ primaryActionText }}</span>
+                  </button>
+                </div>
               </form>
-
-              <section class="youtube-import-panel">
-                <div class="youtube-workflow-summary">
-                  <strong>导入旧素材目录</strong>
-                  <span>扫描旧素材目录并批量加入队列</span>
-                </div>
-                <label class="youtube-import-path">
-                  <span>已选目录</span>
-                  <input
-                    :value="legacyImportPath || '尚未选择目录'"
-                    type="text"
-                    name="youtube-legacy-import-path"
-                    autocomplete="off"
-                    readonly
-                  >
-                </label>
-                <div class="youtube-primary-actions">
-                  <button type="button" class="small-btn primary" :disabled="legacyImportBusy || !canEnqueueLegacyImport" @click="enqueueLegacyImport">加入素材队列 {{ legacyImportSelectedCount }} 项</button>
-                  <span v-if="legacyImportNotice" class="youtube-workflow-hint">{{ legacyImportNotice }}</span>
-                </div>
-                <div v-if="legacyImportItems.length" class="youtube-import-list">
-                  <article v-for="item in legacyImportItems" :key="item.id || importSourcePath(item)" class="youtube-import-item" :data-selected="item.selected ? 'true' : 'false'">
-                    <label class="youtube-workflow-check">
-                      <input v-model="item.selected" type="checkbox">
-                      <span>{{ importActionText(item) }}</span>
-                    </label>
-                    <strong>{{ item.title || item.audioName || item.videoName }}</strong>
-                    <small>{{ importConfidenceText(item) }}</small>
-                    <small>{{ shortPath(importSourcePath(item)) }}</small>
-                  </article>
-                </div>
-              </section>
-
-              <section v-if="geminiMode === 'real'" class="youtube-workflow-settings-strip">
-                <div class="youtube-workflow-summary">
-                  <strong>处理设置</strong>
-                  <span>{{ credentialStatusText }}</span>
-                </div>
-                <label>
-                  <span>模型</span>
-                  <input v-model.trim="model" type="text" name="youtube-workflow-model" autocomplete="off" placeholder="gemini-2.5-flash">
-                </label>
-                <label>
-                  <span>Gemini API key</span>
-                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
-                </label>
-                <label class="youtube-workflow-check">
-                  <input v-model="rememberApiKey" type="checkbox">
-                  <span>保存 API key 到系统凭据</span>
-                </label>
-                <div class="youtube-credential-actions">
-                  <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
-                  <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
-                </div>
-                <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
-              </section>
             </section>
 
             <section v-if="workflowView === 'queue'" class="youtube-workflow-process-view youtube-workflow-page">
               <div class="youtube-workflow-page-head">
                 <div>
-                  <h3>素材队列</h3>
-                  <p>按处理状态查看任务，完成后可直接打开。</p>
+                  <h3>任务</h3>
                 </div>
                 <button type="button" class="small-btn" @click="refreshQueue">刷新</button>
               </div>
               <div class="youtube-workflow-toolbar">
-                <span>{{ queueSummary }}</span>
-                <button type="button" class="small-btn" @click="showCancelRecords">查看取消记录</button>
-                <span v-if="cancelRecordsNotice" class="youtube-workflow-hint">{{ cancelRecordsNotice }}</span>
+                <span>{{ taskSummary }}</span>
+                <button v-if="failedTaskCount" type="button" class="small-btn youtube-clear-failures" @click="clearFailedTasks">清除失败记录</button>
               </div>
 
               <section class="youtube-workflow-queue">
-                <div v-if="!queueJobs.length" class="youtube-workflow-empty">暂无任务</div>
+                <div v-if="!taskGroups.length" class="youtube-workflow-empty">当前没有进行中或失败的任务</div>
                 <article
-                  v-for="(job, index) in queueJobs"
-                  :key="job.jobId"
+                  v-for="group in taskGroups"
+                  :key="group.key"
                   class="youtube-workflow-job youtube-workflow-queue-job"
-                  :data-status="job.status"
-                  :data-active="isActiveJob(job) ? 'true' : 'false'"
+                  :data-status="group.displayJob.status"
+                  :data-active="group.statusKind === 'active' ? 'true' : 'false'"
                 >
                   <div class="youtube-workflow-job-main">
-                    <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                    <strong class="youtube-job-title">{{ jobDisplayTitle(group.displayJob) }}</strong>
                     <div class="youtube-job-status-line">
-                      <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
-                      <span class="youtube-job-position">{{ index + 1 }} / {{ queueJobs.length }}</span>
-                      <span class="youtube-job-position">{{ jobProgressText(job) }}</span>
+                      <span class="youtube-job-status-badge">{{ jobStageProgressText(group.displayJob) }}</span>
+                      <span v-if="group.attemptCount > 1" class="youtube-task-attempt-count">{{ group.attemptCount }} 次尝试</span>
                     </div>
-                    <small class="youtube-job-source">{{ jobSourceText(job) }}</small>
+                    <small class="youtube-job-source">{{ taskSourceText(group.displayJob) }}</small>
                     <div class="youtube-job-progress" aria-hidden="true">
-                      <span :style="{ width: `${jobProgressPercent(job)}%` }"></span>
+                      <span :style="{ width: `${jobProgressPercent(group.displayJob)}%` }"></span>
                     </div>
-                    <small v-if="job.status === 'ready'">{{ readyJobMetaText(job) }}</small>
-                    <small v-if="job.error" class="youtube-workflow-error">{{ errorLabel(job.error.category) }}：{{ job.error.message }}</small>
-                    <div v-if="isActiveJob(job)" class="youtube-job-log" aria-label="运行日志">
+                    <small v-if="group.displayJob.error" class="youtube-workflow-error">{{ failureReasonText(group.displayJob) }}</small>
+                    <div v-if="group.statusKind === 'active'" class="youtube-job-log" aria-label="运行日志">
                       <div class="youtube-job-log-title">当前过程</div>
                       <ul>
-                        <li v-for="line in jobLogLines(job)" :key="line">{{ line }}</li>
+                        <li v-for="line in jobLogLines(group.displayJob)" :key="line">{{ line }}</li>
                       </ul>
                     </div>
+                    <details v-if="group.attemptCount > 1" class="youtube-task-attempt-details">
+                      <summary>查看以往尝试</summary>
+                      <p v-for="attempt in group.attempts.slice(1)" :key="attempt.jobId">
+                        {{ exactJobTime(attempt) }} · {{ failureReasonText(attempt) }}
+                      </p>
+                    </details>
                   </div>
                   <div class="youtube-workflow-job-actions">
-                    <button
-                      v-if="job.status === 'ready'"
-                      type="button"
-                      class="small-btn primary"
-                      :disabled="job.jobId === currentJobId"
-                      @click="openJob(job)"
-                    >
-                      {{ openJobActionText(job) }}
-                    </button>
-                    <button v-if="job.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(job)">置顶</button>
-                    <button v-if="job.status === 'failed'" type="button" class="small-btn primary" @click="retryJob(job, 'translating')">重试</button>
-                    <button v-if="!terminalStatuses.has(job.status)" type="button" class="small-btn" @click="cancelJob(job)">取消</button>
+                    <button v-if="group.displayJob.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(group.displayJob)">置顶</button>
+                    <button v-if="group.statusKind === 'failed'" type="button" class="small-btn primary" @click="retryJob(group.displayJob)">重试</button>
+                    <button v-if="group.statusKind === 'failed'" type="button" class="small-btn danger" @click="deleteFailedTaskGroup(group)">删除记录</button>
+                    <button v-if="group.statusKind === 'active'" type="button" class="small-btn" @click="cancelJob(group.displayJob)">取消</button>
                   </div>
                 </article>
               </section>
             </section>
 
-            <section v-if="workflowView === 'recent'" class="youtube-workflow-recent youtube-workflow-page">
+            <section v-if="workflowView === 'library'" class="youtube-workflow-library-view youtube-workflow-page">
               <div class="youtube-workflow-page-head">
                 <div>
-                  <h3>最近阅读</h3>
-                  <p>从上次位置继续，或打开已完成素材。</p>
+                  <h3>素材库</h3>
                 </div>
-                <span>{{ recentSummary }}</span>
+                <span>{{ librarySummary }}</span>
               </div>
-              <div class="youtube-workflow-toolbar">
-                <input
-                  v-model.trim="recentQuery"
-                  class="youtube-recent-search"
-                  type="search"
-                  name="youtube-recent-search"
-                  autocomplete="off"
-                  placeholder="搜索文章"
-                  @keydown.enter.prevent="refreshRecent"
-                >
-                <div class="youtube-filter-tabs" aria-label="最近阅读筛选">
-                  <button type="button" :data-active="recentFilter === 'all' ? 'true' : 'false'" @click="recentFilter = 'all'">全部</button>
-                  <button type="button" :data-active="recentFilter === 'unfinished' ? 'true' : 'false'" @click="recentFilter = 'unfinished'">未听完</button>
-                  <button type="button" :data-active="recentFilter === 'finished' ? 'true' : 'false'" @click="recentFilter = 'finished'">已听完</button>
-                </div>
-                <button type="button" class="small-btn" @click="refreshRecent">刷新</button>
+              <div class="youtube-filter-tabs youtube-library-time-filter" aria-label="素材时间筛选">
+                <button type="button" :data-active="libraryTimeScope === 'all' ? 'true' : 'false'" @click="setLibraryTimeScope('all')">全部</button>
+                <button type="button" :data-active="libraryTimeScope === 'recent' ? 'true' : 'false'" @click="setLibraryTimeScope('recent')">7 天内</button>
+                <button type="button" :data-active="libraryTimeScope === 'earlier' ? 'true' : 'false'" @click="setLibraryTimeScope('earlier')">更早</button>
               </div>
+
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
-              <p class="youtube-workflow-hint" :data-tone="readerSaveStateTone" data-reader-save-state>{{ readerSaveStateText }}</p>
+              <section class="youtube-workflow-history youtube-material-library-list">
+                <div v-if="libraryPending && !recentJobs.length" class="youtube-workflow-empty">正在读取素材库…</div>
+                <div v-else-if="!recentJobs.length" class="youtube-workflow-empty">这个时间范围内暂无素材</div>
+                <article
+                  v-for="job in recentJobs"
+                  :key="job.jobId"
+                  class="youtube-workflow-job youtube-workflow-library-job"
+                  :data-status="job.needsRepair ? 'needs-repair' : 'ready'"
+                >
+                  <div class="youtube-workflow-job-main">
+                    <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
+                    <div class="youtube-job-status-line">
+                      <span>{{ libraryRelativeTime(job) }}</span>
+                      <span>{{ libraryExactTime(job) }}</span>
+                      <span v-if="job.needsRepair" class="youtube-library-repair-state">需要修复</span>
+                    </div>
+                  </div>
+                  <div class="youtube-workflow-job-actions">
+                    <button type="button" class="small-btn youtube-library-open" :disabled="openingJobId === job.jobId" @click="openRecentJob(job)">打开</button>
+                    <button type="button" class="small-btn youtube-library-more" aria-label="更多操作" :aria-expanded="expandedLibraryJobId === job.jobId ? 'true' : 'false'" @click="toggleLibraryMenu(job)">···</button>
+                  </div>
+                  <div v-if="expandedLibraryJobId === job.jobId" class="youtube-library-row-menu">
+                    <small class="youtube-library-source-detail">{{ librarySourceText(job) }}</small>
+                    <button type="button" class="small-btn" @click="confirmReprocess(job)">重新处理</button>
+                    <button type="button" class="small-btn" @click="showQuality(job)">查看处理详情</button>
+                  </div>
+                </article>
+                <button v-if="libraryHasMore" type="button" class="small-btn youtube-library-load-more" :disabled="libraryPending" @click="loadMoreLibrary">
+                  {{ libraryPending ? '加载中…' : '加载更多' }}
+                </button>
+              </section>
               <button
                 v-if="readerConflictVisible"
                 type="button"
@@ -284,139 +207,55 @@
                 data-reader-conflict-action
                 @click="resolveReaderConflict"
               >确认并保存本地最新意图</button>
-
-              <div v-if="!visibleRecentJobs.length" class="youtube-workflow-empty">暂无最近阅读</div>
-              <article
-                v-for="job in visibleRecentJobs"
-                :key="job.jobId"
-                class="youtube-workflow-job youtube-workflow-recent-job"
-                :data-status="job.readStatus || 'not-started'"
-              >
-                <div class="youtube-workflow-job-main">
-                  <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-                  <div class="youtube-job-status-line">
-                    <span class="youtube-job-status-badge">{{ readStatusText(job) }}</span>
-                    <span class="youtube-job-position">{{ readerTimeText(job) }}</span>
-                  </div>
-                  <small>{{ readerProgressText(job) }}</small>
-                  <div class="youtube-job-progress" aria-hidden="true">
-                    <span :style="{ width: `${readerProgressPercent(job)}%` }"></span>
-                  </div>
-                </div>
-                <div class="youtube-workflow-job-actions">
-                  <button
-                    type="button"
-                    class="small-btn primary"
-                    :disabled="job.jobId === currentJobId"
-                    @click="openRecentJob(job)"
-                  >
-                    {{ recentOpenActionText(job) }}
-                  </button>
-                </div>
-              </article>
             </section>
 
-            <section v-if="workflowView === 'library'" class="youtube-workflow-library-view youtube-workflow-page">
-              <div class="youtube-workflow-page-head">
+            <section v-if="workflowView === 'add'" class="youtube-add-duplicate-help" aria-live="polite">
+              <div v-for="card in duplicateLinkCards" :key="`duplicate-${card.id}`" class="youtube-duplicate-material-notice">
                 <div>
-                  <h3>历史库</h3>
-                  <p>查找已处理素材，打开、查看报告或管理本地文件。</p>
+                  <strong>{{ card.metadataTitle || jobDisplayTitle(card.duplicate.job) }}</strong>
+                  <span>{{ duplicateStateText(card.duplicate) }}</span>
                 </div>
-                <span>{{ historySummary }}</span>
+                <div class="youtube-workflow-actions">
+                  <button v-if="card.duplicate.state === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(card.duplicate.job)">打开已有素材</button>
+                  <button v-if="card.duplicate.state === 'active'" type="button" class="small-btn" @click="setWorkflowView('queue')">查看当前任务</button>
+                  <button v-if="card.duplicate.state === 'failed'" type="button" class="small-btn" @click="retryJob(card.duplicate.job)">重试</button>
+                  <button type="button" class="small-btn" @click="confirmReprocess(card.duplicate.job, card.url)">明确重新处理</button>
+                </div>
               </div>
-              <div class="youtube-history-filters">
-                <input
-                  v-model.trim="historyQuery"
-                  type="search"
-                  name="youtube-history-search"
-                  autocomplete="off"
-                  placeholder="搜索标题 / URL"
-                  @keydown.enter.prevent="refreshHistory"
-                >
-                <select v-model="historyStatus" name="youtube-history-status" @change="refreshHistory">
-                  <option value="">全部状态</option>
-                  <option value="ready">成功</option>
-                  <option value="failed">失败</option>
-                  <option value="canceled">取消</option>
-                </select>
-                <button type="button" class="small-btn" @click="refreshHistory">搜索</button>
-              </div>
-
-              <section v-if="historyOpen" class="youtube-workflow-history">
-                <div v-if="!historyJobs.length" class="youtube-workflow-empty">暂无历史记录</div>
-                <article
-                  v-for="job in historyJobs"
-                  :key="job.jobId"
-                  class="youtube-workflow-job youtube-workflow-history-job"
-                  :data-status="job.status"
-                  :data-expanded="expandedHistoryJobId === job.jobId ? 'true' : 'false'"
-                >
-                  <div class="youtube-workflow-job-main">
-                    <strong class="youtube-job-title">{{ jobDisplayTitle(job) }}</strong>
-                    <div class="youtube-job-status-line">
-                      <span class="youtube-job-status-badge">{{ statusText(job) }}</span>
-                      <span class="youtube-job-position">{{ historyMetaText(job) }}</span>
-                    </div>
-                    <small class="youtube-job-source">{{ historySourceText(job) }}</small>
-                  </div>
-                  <div class="youtube-workflow-job-actions">
-                    <button v-if="job.status === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(job)">重新打开</button>
-                    <button v-if="job.status === 'failed'" type="button" class="small-btn primary" @click="retryJob(job, 'translating')">重试</button>
-                    <button v-if="job.status === 'ready'" type="button" class="small-btn" @click="showQuality(job)">报告</button>
-                    <button type="button" class="small-btn" @click="toggleHistoryDetails(job)">{{ expandedHistoryJobId === job.jobId ? '收起' : '更多' }}</button>
-                  </div>
-                  <div v-if="expandedHistoryJobId === job.jobId" class="youtube-history-detail">
-                    <span>质量报告：{{ job.status === 'ready' ? '可查看' : '暂无' }}</span>
-                    <span>来源：{{ historySourceText(job) }}</span>
-                    <span>记录：{{ historyMetaText(job) }}</span>
-                    <div class="youtube-danger-actions">
-                      <button type="button" class="small-btn" @click="deleteHistoryJob(job, false)">删记录</button>
-                      <button type="button" class="small-btn danger" @click="deleteHistoryJob(job, true)">删文件</button>
-                    </div>
-                  </div>
-                </article>
-              </section>
             </section>
 
             <section v-if="workflowView === 'settings'" class="youtube-workflow-settings-view youtube-workflow-page">
               <div class="youtube-workflow-page-head">
                 <div>
                   <h3>设置</h3>
-                  <p>配置模型、凭据和后台维护选项。</p>
                 </div>
               </div>
-              <section class="youtube-workflow-settings-strip">
-                <div class="youtube-workflow-summary">
-                  <strong>模型与凭据</strong>
-                  <span>{{ credentialStatusText }}</span>
+              <section v-if="geminiMode === 'real'" class="youtube-api-key-settings">
+                <div class="youtube-api-key-heading">
+                  <strong>Gemini API Key</strong>
+                  <span v-if="credentialStatus.stored">已保存</span>
+                  <span v-else>尚未保存</span>
                 </div>
-                <label class="youtube-workflow-check youtube-workflow-mode-check">
-                  <input v-model="videoPriority" type="checkbox">
-                  <span>视频优先</span>
+                <label class="youtube-api-key-field">
+                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" aria-label="Gemini API Key" placeholder="输入新的 API Key">
                 </label>
+                <div class="youtube-credential-actions">
+                  <button type="button" class="small-btn primary" :disabled="!apiKey.trim()" @click="saveCredential">
+                    {{ credentialStatus.stored ? '更新 API Key' : '保存 API Key' }}
+                  </button>
+                </div>
+                <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
+              </section>
+              <p v-else class="youtube-workflow-hint">当前为本地开发模式，无需配置 API Key。</p>
+
+              <button type="button" class="youtube-advanced-toggle" :aria-expanded="showAdvanced ? 'true' : 'false'" @click="showAdvanced = !showAdvanced">
+                <span>{{ showAdvanced ? '收起高级设置' : '高级设置' }}</span>
+              </button>
+              <div v-if="showAdvanced" class="youtube-advanced-settings">
                 <label>
                   <span>模型</span>
                   <input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash">
                 </label>
-                <label v-if="geminiMode === 'real'">
-                  <span>Gemini API key</span>
-                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" placeholder="留空时使用已保存的系统凭据">
-                </label>
-                <label v-if="geminiMode === 'real'" class="youtube-workflow-check">
-                  <input v-model="rememberApiKey" type="checkbox">
-                  <span>保存 API key 到系统凭据</span>
-                </label>
-                <div v-if="geminiMode === 'real'" class="youtube-credential-actions">
-                  <button type="button" class="small-btn" :disabled="!apiKey.trim()" @click="saveCredential">保存 key</button>
-                  <button type="button" class="small-btn" :disabled="!credentialStatus.stored" @click="deleteCredential">清除已保存 key</button>
-                </div>
-                <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
-              </section>
-
-              <button type="button" class="youtube-advanced-toggle" @click="showAdvanced = !showAdvanced">
-                {{ showAdvanced ? '收起高级设置' : '高级设置' }}
-              </button>
-              <div v-if="showAdvanced" class="youtube-advanced-settings">
                 <label>
                   <span>Base URL（可选，使用代理网关时填写）</span>
                   <input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址">
@@ -448,102 +287,56 @@
                   <button type="button" class="small-btn" @click="confirmCleanup">清理旧文件</button>
                   <button type="button" class="small-btn" @click="downloadDiagnosticsPackage">导出诊断包</button>
                 </div>
+                <div v-if="geminiMode === 'real' && credentialStatus.stored" class="youtube-advanced-danger-row">
+                  <button type="button" class="small-btn danger" @click="confirmDeleteCredential">清除已保存 API Key</button>
+                </div>
                 <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
                 <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
-                <p>普通 Gemini 官方 API 留空即可。</p>
               </div>
             </section>
           </main>
         </div>
 
-        <div class="youtube-workflow-panel-footer">
-          <label class="youtube-workflow-check">
-            <input v-model="showFloatingAfterClose" type="checkbox">
-            <span>显示任务浮标</span>
-          </label>
-          <span class="youtube-workflow-hint">关闭后保留队列状态入口</span>
-        </div>
-
-        <div v-if="cancelRecordsOpen" class="youtube-subwindow">
-          <section ref="cancelRecordsDialogRoot" class="youtube-subwindow-card" role="dialog" aria-modal="true" aria-labelledby="youtube-cancel-records-title" :aria-busy="cancelRecordsPending ? 'true' : 'false'">
-            <header>
-              <strong id="youtube-cancel-records-title">取消记录</strong>
-              <button ref="cancelRecordsInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭取消记录" title="关闭" :disabled="cancelRecordsPending" @click="closeCancelRecords">x</button>
-            </header>
-            <p v-if="!canceledJobs.length" ref="cancelRecordsDialogStatus" role="status" aria-live="polite" aria-atomic="true">没有取消记录。</p>
-            <ul v-else>
-              <li v-for="job in canceledJobs" :key="job.jobId">{{ shortUrl(job.request && job.request.url) || job.jobId }}</li>
-            </ul>
-            <button type="button" class="small-btn" :disabled="!canceledJobs.length || cancelRecordsPending" @click="confirmClearCanceled">清空取消记录</button>
-          </section>
-        </div>
       </section>
     </div>
 
     <Teleport to="body">
-      <button
-        v-if="materialFloatingVisible"
-        type="button"
-        class="youtube-material-float youtube-task-capsule"
-        :class="{ 'is-dragging': capsuleDragging }"
-        :data-edge="capsuleEdge"
-        :style="capsuleStyle"
-        @pointerenter="capsuleHovering = true"
-        @pointerleave="capsuleHovering = false"
-        @pointerdown.stop="startCapsuleDrag"
-        @click="openFromCapsule"
-      >
-        <strong>{{ materialFloatTitle }}</strong>
-        <span>{{ materialFloatStatus }}</span>
-      </button>
+      <div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">
+        <section ref="qualityDialogRoot" class="youtube-subwindow-card youtube-quality-card" role="dialog" aria-modal="true" aria-labelledby="youtube-quality-dialog-title" :aria-busy="qualityPending ? 'true' : 'false'">
+          <header>
+            <strong id="youtube-quality-dialog-title">质量报告</strong>
+            <button ref="qualityDialogInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" :disabled="qualityPending" @click="closeQualityModal">x</button>
+          </header>
+          <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
+          <p ref="qualityDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ qualityIssueSummary(qualityModal.report) }}</p>
+          <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
+            <li v-for="issue in qualityModal.report.issues.slice(0, 8)" :key="issue.code + issue.message">
+              {{ issue.code }}：{{ issue.message }}
+            </li>
+          </ul>
+          <div class="youtube-workflow-actions">
+            <button type="button" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</button>
+            <button type="button" class="small-btn" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</button>
+            <button type="button" class="small-btn" :disabled="qualityPending" @click="closeQualityModal">关闭</button>
+          </div>
+        </section>
+      </div>
     </Teleport>
 
-    <div v-if="switchModal" class="youtube-switch-modal-backdrop">
-      <section ref="switchDialogRoot" class="youtube-switch-modal" role="dialog" aria-modal="true" aria-labelledby="youtube-switch-dialog-title" :aria-busy="switchPending ? 'true' : 'false'">
-        <h3 id="youtube-switch-dialog-title">{{ switchModal.title }}</h3>
-        <p v-if="switchModal.target">目标：{{ jobDisplayTitle(switchModal.target) }}</p>
-        <p v-if="switchModal.queueText">队列：{{ switchModal.queueText }}</p>
-        <p v-if="switchModal.currentText">当前文章：{{ switchModal.currentText }}</p>
-        <p ref="switchDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ switchModal.message }}</p>
-        <div class="youtube-workflow-actions">
-          <button ref="switchDialogInitialFocus" type="button" :disabled="switchPending" @click="confirmSwitch">{{ switchModal.confirmText }}</button>
-          <button type="button" class="small-btn" :disabled="switchPending" @click="cancelSwitch">取消</button>
-        </div>
-      </section>
-    </div>
-
-    <div v-if="incompletePrompt" class="youtube-switch-modal-backdrop">
-      <section ref="incompleteDialogRoot" class="youtube-switch-modal" role="dialog" aria-modal="true" aria-labelledby="youtube-incomplete-dialog-title" :aria-busy="incompletePending ? 'true' : 'false'">
-        <h3 id="youtube-incomplete-dialog-title">当前阅读内容不完整</h3>
-        <p ref="incompleteDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ incompletePrompt.message }}</p>
-        <p>本地补处理放在 02；当前可以把阅读器视为空并打开队列文章。</p>
-        <div class="youtube-workflow-actions">
-          <button ref="incompleteDialogInitialFocus" type="button" :disabled="incompletePending" @click="openIncompleteTarget">打开队列文章</button>
-          <button type="button" class="small-btn" :disabled="incompletePending" @click="closeIncompletePrompt">取消</button>
-        </div>
-      </section>
-    </div>
-
-    <div v-if="qualityModal" class="youtube-subwindow">
-      <section ref="qualityDialogRoot" class="youtube-subwindow-card youtube-quality-card" role="dialog" aria-modal="true" aria-labelledby="youtube-quality-dialog-title" :aria-busy="qualityPending ? 'true' : 'false'">
-        <header>
-          <strong id="youtube-quality-dialog-title">质量报告</strong>
-          <button ref="qualityDialogInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" :disabled="qualityPending" @click="closeQualityModal">x</button>
-        </header>
-        <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
-        <p ref="qualityDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ qualityIssueSummary(qualityModal.report) }}</p>
-        <ul v-if="qualityModal.report.issues && qualityModal.report.issues.length">
-          <li v-for="issue in qualityModal.report.issues.slice(0, 8)" :key="issue.code + issue.message">
-            {{ issue.code }}：{{ issue.message }}
-          </li>
-        </ul>
-        <div class="youtube-workflow-actions">
-          <button type="button" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</button>
-          <button type="button" class="small-btn" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</button>
-          <button type="button" class="small-btn" :disabled="qualityPending" @click="closeQualityModal">关闭</button>
-        </div>
-      </section>
-    </div>
+    <Teleport to="body">
+      <aside
+        v-if="materialNotice"
+        class="youtube-material-notice"
+        role="status"
+        aria-live="polite"
+        @mouseenter="pauseMaterialNotice"
+        @mouseleave="resumeMaterialNotice"
+      >
+        <span>{{ materialNotice.message }}</span>
+        <button type="button" class="small-btn" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</button>
+        <button type="button" class="youtube-material-notice-close" aria-label="关闭提示" @click="clearMaterialNotice">×</button>
+      </aside>
+    </Teleport>
   </div>
 </template>
 
@@ -561,10 +354,8 @@ import { createJobPollingScheduler } from '../services/workflow/job-polling-sche
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
-import { createErrorPresenter } from '../services/runtime/error-presenter.js'
 import { createDialogController, createPendingActionGuard } from '../services/runtime/dialog-controller.js'
 import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js'
-import { createNativePickerController } from '../services/workflow/native-picker-controller.js'
 import {
   createWorkflowOperationFingerprint,
   cleanupWorkflowOperationReceipts,
@@ -572,16 +363,19 @@ import {
   removeWorkflowOperationReceipt,
   writeWorkflowOperationReceipt,
 } from '../services/workflow/operation-receipt.js'
+import {
+  canonicalMaterialKey,
+  exactDateTime,
+  extractYoutubeVideoId,
+  findDuplicateMaterial,
+  groupTaskAttempts,
+  materialTimestamp,
+} from '../services/workflow/material-center-model.js'
 
 const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const audioStore = useAudioStore()
 const chunkStore = useChunkStore()
 const marksStore = useMarksStore()
-const FLOAT_SNAP_THRESHOLD = 96
-const FLOAT_PEEK_WIDTH = 42
-const DEFAULT_CAPSULE_SIZE = { width: 132, height: 48 }
-const PANEL_MAX_SIZE = { width: 720, height: 860 }
-const PANEL_DEFAULT_MARGIN = 24
 const READER_SYNC_INTERVAL_MS = 15000
 const READER_OUTBOX_KEY = 'read-web.reader-save-outbox.v1'
 const READER_OUTBOX_SCHEMA_VERSION = 1
@@ -590,29 +384,10 @@ const READER_OUTBOX_ENTRY_SCHEMA_VERSION = 2
 const READER_OUTBOX_QUARANTINE_PREFIX = 'read-web.reader-save-outbox-quarantine.v1.'
 
 const panelOpen = ref(false)
-const panelShrunk = ref(false)
 const serviceOnline = ref(false)
 const linkInput = ref('')
 const linkCards = ref([])
-const errorPresenter = createErrorPresenter()
 const linkNotice = ref('')
-const legacyImportPath = ref(loadTextSetting('youtubeWorkflow.legacyImportPath', ''))
-const legacyImportPreview = ref(null)
-const legacyImportNotice = ref('')
-const legacyImportBusy = ref(false)
-const nativePickerRetryable = ref(false)
-const nativePicker = createNativePickerController({
-  client: youtubeWorkflowClient,
-  refocus: (target) => {
-    if (target && typeof target.focus === 'function' && target.isConnected) target.focus()
-    else window.focus()
-  },
-  onState(state) {
-    legacyImportBusy.value = state.status === 'busy'
-    nativePickerRetryable.value = state.retryable === true
-  }
-})
-const rememberApiKey = ref(loadBoolSetting('youtubeWorkflow.rememberApiKey', false))
 const apiKey = ref('')
 const credentialStatus = ref({ stored: false, provider: '' })
 const credentialNotice = ref('')
@@ -631,52 +406,31 @@ const workflowRevision = ref(null)
 const workflowMutationNotice = ref('')
 const queueJobs = ref([])
 const recentJobs = ref([])
-const recentQuery = ref('')
-const recentFilter = ref('all')
-const workflowView = ref('recent')
+const workflowView = ref('library')
+const libraryTimeScope = ref('all')
+const libraryPending = ref(false)
+const libraryHasMore = ref(false)
+const libraryPageSize = 20
+const expandedLibraryJobId = ref('')
+const openingJobId = ref('')
+const completionSignal = ref(false)
+const visibleCompletedJobIds = ref([])
 const readerActivityNotice = ref('')
 const readerMarksSaveState = ref('saved')
 const readerActivitySaveState = ref('saved')
-const historyJobs = ref([])
-const historyOpen = ref(true)
-const historyQuery = ref('')
-const historyStatus = ref('')
-const expandedHistoryJobId = ref('')
-const videoPriority = ref(loadBoolSetting('youtubeWorkflow.videoPriority', true))
-const showFloatingAfterClose = ref(false)
-const cancelRecordsOpen = ref(false)
-const cancelRecordsNotice = ref('')
-const switchModal = ref(null)
-const incompletePrompt = ref(null)
-const switchPending = ref(false)
-const incompletePending = ref(false)
+const videoPriority = ref(true)
 const qualityPending = ref(false)
-const cancelRecordsPending = ref(false)
 const panelDialogRoot = ref(null)
-const switchDialogRoot = ref(null)
-const switchDialogStatus = ref(null)
-const switchDialogInitialFocus = ref(null)
-const incompleteDialogRoot = ref(null)
-const incompleteDialogStatus = ref(null)
-const incompleteDialogInitialFocus = ref(null)
 const qualityDialogRoot = ref(null)
 const qualityDialogStatus = ref(null)
 const qualityDialogInitialFocus = ref(null)
-const cancelRecordsDialogRoot = ref(null)
-const cancelRecordsDialogStatus = ref(null)
-const cancelRecordsInitialFocus = ref(null)
 const qualityModal = ref(null)
+const materialNotice = ref(null)
+const repairStates = new Map()
 const currentJobId = ref('')
-const panelPosition = ref(getDefaultPanelPosition())
-const capsulePosition = ref(clampPosition(loadPosition('youtubeWorkflowCapsulePosition', { x: 24, y: 540 }), DEFAULT_CAPSULE_SIZE.width, DEFAULT_CAPSULE_SIZE.height))
-const capsuleDragging = ref(false)
-const capsuleHovering = ref(false)
 const playback = new Map()
 const loadedReadyJobs = new Set()
 let jobPollingScheduler = null
-let panelDrag = null
-let capsuleDrag = null
-let capsuleMoved = false
 let linkSequence = 0
 const pendingWorkflowActions = new Map()
 let workflowSnapshotFlight = null
@@ -687,41 +441,25 @@ let readerLastSyncAt = 0
 let playbackTrackedMedia = null
 let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
+let readerSessionLoadInProgress = false
 let readerUnloadFlushed = false
 let readerCloseGeneration = 0
 let readerOutboxReplayPromise = null
+let completionSignalTimer = 0
+let materialNoticeTimer = 0
+const completedTaskTimers = new Map()
 const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
 const panelDialogController = createDialogController()
-const switchDialogController = createDialogController()
-const incompleteDialogController = createDialogController()
 const qualityDialogController = createDialogController()
-const cancelRecordsDialogController = createDialogController()
-const switchActionGuard = createPendingActionGuard({ onChange: (pending) => { switchPending.value = pending } })
-const incompleteActionGuard = createPendingActionGuard({ onChange: (pending) => { incompletePending.value = pending } })
 const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
-const cancelRecordsActionGuard = createPendingActionGuard({ onChange: (pending) => { cancelRecordsPending.value = pending } })
-const panelPending = computed(() => starting.value || legacyImportBusy.value)
+const panelPending = computed(() => starting.value)
 const readerMarksLedgers = new Map()
 const readerActivityLedgers = new Map()
 const readerMarksRevisions = new Map()
 const readerActivityRevisions = new Map()
 const readerConflicts = new Map()
 const readerConflictVisible = ref(false)
-
-const readerSaveStateText = computed(() => {
-  const states = [readerMarksSaveState.value, readerActivitySaveState.value]
-  if (states.includes('conflict')) return '学习记录存在并发冲突，需确认后重试'
-  if (states.includes('error')) return '学习记录保存失败，保留待重试'
-  if (states.includes('saving')) return '学习记录保存中'
-  if (states.includes('dirty')) return '学习记录有待保存更新'
-  return '学习记录已保存'
-})
-const readerSaveStateTone = computed(() => (
-  readerSaveStateText.value.includes('失败') || readerSaveStateText.value.includes('冲突')
-    ? 'warning'
-    : 'muted'
-))
 
 function updateReaderConflictVisibility() {
   const matching = [...readerConflicts.values()].filter(
@@ -924,8 +662,7 @@ async function handleWorkflowMutationConflict(error) {
   } catch (_refreshError) {
     // Keep the typed conflict and known revision visible when the refresh is also offline.
   }
-  const revision = Number.isInteger(workflowRevision.value) ? `（当前 revision ${workflowRevision.value}）` : ''
-  workflowMutationNotice.value = `队列已被其他页面更新${revision}，已刷新权威状态；请重新点击操作重试。`
+  workflowMutationNotice.value = '素材状态刚刚更新，请再试一次。'
 }
 
 function getReaderMarksLedger(jobId) {
@@ -1009,18 +746,11 @@ const geminiMode = computed(() => {
   const requested = params.get('workflowMode') || window.localStorage.getItem('youtubeWorkflow.devMode') || 'real'
   return ['mock', 'off'].includes(requested) ? requested : 'real'
 })
-const validLinkCards = computed(() => linkCards.value.filter((card) => card.valid))
+const enqueuableLinkCards = computed(() => linkCards.value.filter((card) => card.valid && !card.duplicate))
+const duplicateLinkCards = computed(() => linkCards.value.filter((card) => card.valid && card.duplicate))
 const invalidLinkCards = computed(() => linkCards.value.filter((card) => !card.valid))
 const pendingValidLinkCount = computed(() => parseLinks(linkInput.value).filter((link) => isValidMaterialUrl(link)).length)
-const enqueuableMaterialCount = computed(() => validLinkCards.value.length + pendingValidLinkCount.value)
-const legacyImportItems = computed(() => {
-  const items = legacyImportPreview.value && legacyImportPreview.value.items
-  return Array.isArray(items) ? items : []
-})
-const legacyImportSelectedCount = computed(() => legacyImportItems.value.filter((item) => item && item.selected).length)
-const canEnqueueLegacyImport = computed(() => {
-  return legacyImportSelectedCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
-})
+const enqueuableMaterialCount = computed(() => enqueuableLinkCards.value.length + pendingValidLinkCount.value)
 const canEnqueue = computed(() => {
   return enqueuableMaterialCount.value > 0 && (geminiMode.value !== 'real' || !!apiKey.value.trim() || credentialStatus.value.stored)
 })
@@ -1039,106 +769,38 @@ function buildCreateJobPayload(url) {
   return payload
 }
 
-function hasPendingCreateReceipt(url) {
-  return Boolean(readWorkflowOperationReceipt({ actionType: 'create', payload: buildCreateJobPayload(url) }))
-}
-
 const primaryActionText = computed(() => {
   if (starting.value) return '提交中…'
-  if (enqueuableMaterialCount.value) return `加入队列 ${enqueuableMaterialCount.value} 项`
-  return '暂无可处理素材'
+  if (enqueuableMaterialCount.value > 1) return `开始处理 ${enqueuableMaterialCount.value} 项`
+  return '开始处理'
 })
-const readyJobs = computed(() => queueJobs.value.filter((job) => job.status === 'ready'))
-const canceledJobs = computed(() => queueJobs.value.filter((job) => job.status === 'canceled'))
-const queueSummary = computed(() => {
-  const total = queueJobs.value.length
-  const ready = readyJobs.value.length
-  const running = queueJobs.value.filter((job) => !terminalStatuses.has(job.status)).length
-  return `${total} 项 · ${running} 处理中/等待 · ${ready} 可打开`
+const taskGroups = computed(() => {
+  const groups = groupTaskAttempts(queueJobs.value)
+  const completed = queueJobs.value
+    .filter((job) => job?.status === 'ready' && visibleCompletedJobIds.value.includes(job.jobId))
+    .map((job) => ({
+      key: `completed:${job.jobId}`,
+      attempts: [job],
+      active: null,
+      latest: job,
+      displayJob: job,
+      statusKind: 'completed',
+      attemptCount: 1,
+    }))
+  return [...groups, ...completed]
 })
-const visibleRecentJobs = computed(() => {
-  if (recentFilter.value === 'unfinished') {
-    return recentJobs.value.filter((job) => job && !readerCompletedForDisplay(job))
-  }
-  if (recentFilter.value === 'finished') {
-    return recentJobs.value.filter((job) => job && readerCompletedForDisplay(job))
-  }
-  return recentJobs.value
+const activeTaskCount = computed(() => taskGroups.value.filter((group) => group.statusKind === 'active').length)
+const failedTaskCount = computed(() => taskGroups.value.filter((group) => group.statusKind === 'failed').length)
+const activeTaskEntryText = computed(() => {
+  if (activeTaskCount.value !== 1) return `${activeTaskCount.value} 项`
+  const group = taskGroups.value.find((item) => item.statusKind === 'active')
+  return jobStageFraction(group?.displayJob)
 })
-const recentSummary = computed(() => {
-  const total = recentJobs.value.length
-  const unfinished = recentJobs.value.filter((job) => job && !readerCompletedForDisplay(job)).length
-  const completed = recentJobs.value.filter((job) => job && readerCompletedForDisplay(job)).length
-  return `${total} 篇 · ${unfinished} 未听完 · ${completed} 已听完`
-})
-const historySummary = computed(() => {
-  const ready = historyJobs.value.filter((job) => job.status === 'ready').length
-  return `${historyJobs.value.length} 项 · ${ready} 成功`
-})
-const credentialCompactText = computed(() => {
-  if (geminiMode.value !== 'real') return '凭据 开发模式'
-  return credentialStatus.value && credentialStatus.value.stored ? '凭据 系统已保存' : '凭据 未保存'
-})
-const credentialStatusText = computed(() => {
-  if (!credentialStatus.value || !credentialStatus.value.stored) return '未保存系统凭据'
-  return `已保存系统凭据：${credentialStatus.value.provider || 'system'}`
-})
-const materialModeText = computed(() => {
-  return videoPriority.value ? '视频优先' : '音频优先'
-})
-const materialModeHelpText = computed(() => {
-  return videoPriority.value ? '优先下载带画面素材，适合后续查看视频。' : '优先走音频素材，处理更轻量。'
-})
-const materialFloatingVisible = computed(() => {
-  return showFloatingAfterClose.value
-})
-const materialFloatTitle = computed(() => {
-  const total = queueJobs.value.length
-  if (!total) return '素材'
-  const activeIndex = queueJobs.value.findIndex((job) => !terminalStatuses.has(job.status))
-  const current = activeIndex >= 0 ? activeIndex + 1 : total
-  return `素材 ${current}/${total}`
-})
-const materialFloatStatus = computed(() => {
-  if (!queueJobs.value.length) return '暂无任务'
-  const failed = queueJobs.value.filter((job) => job.status === 'failed').length
-  const ready = readyJobs.value.length
-  const active = queueJobs.value.find((job) => !terminalStatuses.has(job.status))
-  if (failed) return `${errorLabel(active && active.error && active.error.category)} · 可读 ${ready} · 失败 ${failed}`
-  if (active) return `${statusText(active)} · 可读 ${ready} · 失败 0`
-  return `可读 ${ready} · 失败 0`
-})
-const panelStyle = computed(() => ({ left: `${panelPosition.value.x}px`, top: `${panelPosition.value.y}px` }))
-const capsuleStyle = computed(() => {
-  const edge = capsuleEdge.value
-  const canHide = !capsuleDragging.value && !capsuleHovering.value
-  let left = capsulePosition.value.x
-  if (canHide && edge === 'left') left = -(getCapsuleSize().width - FLOAT_PEEK_WIDTH)
-  if (canHide && edge === 'right') left = getViewportSize().width - FLOAT_PEEK_WIDTH
-  return {
-    position: 'fixed',
-    left: `${left}px`,
-    top: `${capsulePosition.value.y}px`,
-    transform: 'none'
-  }
-})
-const capsuleEdge = computed(() => getCapsuleEdge(capsulePosition.value, getCapsuleSize().width))
+const taskSummary = computed(() => `${activeTaskCount.value} 项处理中 · ${failedTaskCount.value} 项需要处理`)
+const librarySummary = computed(() => `${recentJobs.value.length}${libraryHasMore.value ? '+' : ''} 项`)
 
 watch(model, (value) => saveTextSetting('youtubeWorkflow.model', value))
 watch(baseUrl, (value) => saveTextSetting('youtubeWorkflow.baseUrl', value))
-watch(legacyImportPath, (value) => saveTextSetting('youtubeWorkflow.legacyImportPath', value))
-watch(videoPriority, (value) => {
-  saveBoolSetting('youtubeWorkflow.videoPriority', value)
-  syncVideoPreferred(value)
-})
-watch(rememberApiKey, (value) => {
-  saveBoolSetting('youtubeWorkflow.rememberApiKey', value)
-})
-watch(materialFloatingVisible, async (visible) => {
-  if (!visible) return
-  await nextTick()
-  correctCapsuleOverflow()
-})
 
 function getMediaSource() {
   return typeof window !== 'undefined' ? window.__mediaSource : null
@@ -1150,10 +812,6 @@ function syncVideoPreferred(value) {
     mediaSource.setVideoPreferred(!!value)
   }
   if (value) refreshCurrentJobMediaForVideoPriority()
-}
-
-function toggleVideoPriority() {
-  videoPriority.value = !videoPriority.value
 }
 
 async function refreshCurrentJobMediaForVideoPriority() {
@@ -1200,16 +858,13 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  cancelRecordsActionGuard.dispose()
+  if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
+  if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
+  completedTaskTimers.forEach((timer) => window.clearTimeout(timer))
+  completedTaskTimers.clear()
   qualityActionGuard.dispose()
-  incompleteActionGuard.dispose()
-  switchActionGuard.dispose()
-  cancelRecordsDialogController.dispose()
   qualityDialogController.dispose()
-  incompleteDialogController.dispose()
-  switchDialogController.dispose()
   panelDialogController.dispose()
-  nativePicker.cancel()
   stopPolling()
   jobPollingScheduler?.dispose()
   jobPollingScheduler = null
@@ -1248,40 +903,6 @@ watch(panelOpen, async (open) => {
 
 watch(panelPending, (pending) => panelDialogController.setBusy(pending))
 
-watch(switchModal, async (modal) => {
-  if (!modal) {
-    switchDialogController.close()
-    return
-  }
-  await nextTick()
-  if (!switchDialogRoot.value) return
-  switchDialogController.open(switchDialogRoot.value, {
-    initialFocus: switchDialogInitialFocus.value,
-    statusElement: switchDialogStatus.value,
-    isPending: () => switchPending.value,
-    onRequestClose: cancelSwitch,
-  })
-})
-
-watch(switchPending, (pending) => switchDialogController.setBusy(pending))
-
-watch(incompletePrompt, async (prompt) => {
-  if (!prompt) {
-    incompleteDialogController.close()
-    return
-  }
-  await nextTick()
-  if (!incompleteDialogRoot.value) return
-  incompleteDialogController.open(incompleteDialogRoot.value, {
-    initialFocus: incompleteDialogInitialFocus.value,
-    statusElement: incompleteDialogStatus.value,
-    isPending: () => incompletePending.value,
-    onRequestClose: closeIncompletePrompt,
-  })
-})
-
-watch(incompletePending, (pending) => incompleteDialogController.setBusy(pending))
-
 watch(qualityModal, async (modal) => {
   if (!modal) {
     qualityDialogController.close()
@@ -1298,23 +919,6 @@ watch(qualityModal, async (modal) => {
 })
 
 watch(qualityPending, (pending) => qualityDialogController.setBusy(pending))
-
-watch(cancelRecordsOpen, async (open) => {
-  if (!open) {
-    cancelRecordsDialogController.close()
-    return
-  }
-  await nextTick()
-  if (!cancelRecordsDialogRoot.value) return
-  cancelRecordsDialogController.open(cancelRecordsDialogRoot.value, {
-    initialFocus: cancelRecordsInitialFocus.value,
-    statusElement: cancelRecordsDialogStatus.value,
-    isPending: () => cancelRecordsPending.value,
-    onRequestClose: closeCancelRecords,
-  })
-})
-
-watch(cancelRecordsPending, (pending) => cancelRecordsDialogController.setBusy(pending))
 
 function makeLoader() {
   if (readerSessionLoader) return readerSessionLoader
@@ -1397,10 +1001,19 @@ function addLinkCards(links) {
       continue
     }
     if (valid && key) existing.add(key)
-    nextCards.push({
+    const card = {
       id: `link-${Date.now()}-${++linkSequence}`,
       url,
-      valid
+      valid,
+      duplicate: valid ? findDuplicateMaterial(url, queueJobs.value, recentJobs.value) : null,
+      metadataState: valid && extractYoutubeVideoId(url) ? 'loading' : 'idle',
+      metadataTitle: '',
+      metadataAuthor: '',
+    }
+    nextCards.push(card)
+    if (card.metadataState === 'loading') observeBestEffort(hydrateLinkCardMetadata(card), {
+      operationId: `material-link-metadata-${card.id}`,
+      reason: 'video metadata is optional; the stable YouTube video ID remains usable when oEmbed is unavailable',
     })
   }
   if (nextCards.length) linkCards.value.push(...nextCards)
@@ -1417,18 +1030,7 @@ function isValidMaterialUrl(value) {
 }
 
 function normalizeMaterialUrl(value) {
-  try {
-    const url = new URL(String(value || '').trim())
-    url.hash = ''
-    url.hostname = url.hostname.toLowerCase()
-    if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '')
-    const params = Array.from(url.searchParams.entries()).sort(([left], [right]) => left.localeCompare(right))
-    url.search = ''
-    for (const [key, val] of params) url.searchParams.append(key, val)
-    return url.toString()
-  } catch (_err) {
-    return String(value || '').trim()
-  }
+  return canonicalMaterialKey(value)
 }
 
 function existingMaterialKeys() {
@@ -1436,11 +1038,49 @@ function existingMaterialKeys() {
   for (const card of linkCards.value) {
     if (card.valid) keys.add(normalizeMaterialUrl(card.url))
   }
-  for (const job of queueJobs.value) {
-    const url = job && job.request && job.request.url
-    if (url && isValidMaterialUrl(url) && !hasPendingCreateReceipt(url)) keys.add(normalizeMaterialUrl(url))
-  }
   return keys
+}
+
+async function hydrateLinkCardMetadata(card) {
+  const videoId = extractYoutubeVideoId(card.url)
+  if (!videoId) return
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 4000)
+  try {
+    const endpoint = new URL('https://www.youtube.com/oembed')
+    endpoint.searchParams.set('url', `https://www.youtube.com/watch?v=${videoId}`)
+    endpoint.searchParams.set('format', 'json')
+    const response = await fetch(endpoint, { signal: controller.signal })
+    if (!response.ok) throw new Error(`metadata ${response.status}`)
+    const metadata = await response.json()
+    card.metadataTitle = String(metadata?.title || '').trim()
+    card.metadataAuthor = String(metadata?.author_name || '').trim()
+    card.metadataState = 'ready'
+  } catch (_error) {
+    card.metadataState = 'unavailable'
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+function refreshLinkDuplicates() {
+  for (const card of linkCards.value) {
+    card.duplicate = card.valid
+      ? findDuplicateMaterial(card.url, queueJobs.value, recentJobs.value)
+      : null
+  }
+}
+
+function linkCardStateText(card) {
+  if (!card.valid) return '链接格式无效'
+  if (card.duplicate) return duplicateStateText(card.duplicate)
+  if (card.metadataState === 'loading') return '正在读取视频信息'
+  return '可以添加'
+}
+
+function linkCardFallbackTitle(card) {
+  const videoId = extractYoutubeVideoId(card?.url)
+  return videoId ? `YouTube 视频 · ${videoId}` : shortUrl(card?.url)
 }
 
 function removeLinkCard(id) {
@@ -1448,30 +1088,16 @@ function removeLinkCard(id) {
   if (!linkCards.value.length) linkNotice.value = ''
 }
 
-async function copyLink(url) {
-  try {
-    await navigator.clipboard.writeText(url)
-  } catch (error) {
-    const presented = recordBestEffortFailure(error, {
-      operationId: 'panel-clipboard-copy',
-      reason: 'clipboard permission failure leaves the source link visible for manual copy',
-    })
-    linkNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
-  }
-}
-
 async function enqueueUrls() {
   commitLinkInput()
-  const cards = validLinkCards.value
+  refreshLinkDuplicates()
+  const cards = enqueuableLinkCards.value
   if (!cards.length) return
   if (geminiMode.value === 'real' && !apiKey.value.trim() && !credentialStatus.value.stored) return
   starting.value = true
   workflowMutationNotice.value = ''
   let submittedCount = 0
   try {
-    if (geminiMode.value === 'real' && rememberApiKey.value && apiKey.value.trim()) {
-      await saveCredential({ silent: true })
-    }
     for (const card of cards) {
       const payload = buildCreateJobPayload(card.url)
       const actionId = `create:${card.id}`
@@ -1480,13 +1106,16 @@ async function enqueueUrls() {
           return youtubeWorkflowClient.createJob(payload, workflowMutationOptions(action))
         })
         rememberWorkflowRevision(job)
-        updateJob(job)
+        updateJob(card.metadataTitle ? { ...job, title: card.metadataTitle } : job)
         linkCards.value = linkCards.value.filter((item) => item.id !== card.id)
         forgetPendingWorkflowAction(actionId)
         submittedCount += 1
       } catch (err) {
         if (isWorkflowMutationConflict(err)) await handleWorkflowMutationConflict(err)
-        else linkNotice.value = err && err.message ? err.message : String(err)
+        else if (err?.code === 'MATERIAL_ALREADY_EXISTS') {
+          card.duplicate = duplicateFromServerError(err, card.url)
+          linkNotice.value = '已阻止重复处理；可打开已有素材或明确重新处理。'
+        } else linkNotice.value = err && err.message ? err.message : String(err)
         break
       }
     }
@@ -1500,146 +1129,42 @@ async function enqueueUrls() {
   }
 }
 
-async function chooseLegacyImportFolder() {
-  legacyImportNotice.value = '正在打开系统文件夹选择框；如果没有看到，请检查任务栏或用 Alt+Tab 切换。'
-  try {
-    const result = await nativePicker.pick('folder', { initialDir: legacyImportPath.value })
-    if (!result || !result.selected || !result.path) {
-      legacyImportNotice.value = '已取消选择目录'
-      return
-    }
-    legacyImportPath.value = result.path
-    legacyImportPreview.value = null
-    await scanLegacyImport(result.path)
-  } catch (err) {
-    const presented = errorPresenter.present(err)
-    legacyImportNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
-  }
-}
-
-async function retryNativePicker() {
-  legacyImportNotice.value = '正在重新打开系统文件夹选择框…'
-  try {
-    const result = await nativePicker.retry()
-    if (!result || !result.selected || !result.path) {
-      legacyImportNotice.value = '已取消选择目录'
-      return
-    }
-    legacyImportPath.value = result.path
-    legacyImportPreview.value = null
-    await scanLegacyImport(result.path)
-  } catch (err) {
-    const presented = errorPresenter.present(err)
-    legacyImportNotice.value = `${presented.notice.message} (${presented.notice.operationId})`
-  }
-}
-
-async function scanLegacyImport(rootOverride = '', options = {}) {
-  const rootPath = String(rootOverride || legacyImportPath.value || '').trim()
-  if (!rootPath) {
-    legacyImportNotice.value = '请先选择旧素材目录'
-    return
-  }
-  if (!options.keepBusy) legacyImportBusy.value = true
-  legacyImportNotice.value = '正在扫描旧素材目录…'
-  try {
-    const preview = await youtubeWorkflowClient.scanImportRoot({ rootPath })
-    legacyImportPreview.value = preview
-    const summary = preview && preview.summary ? preview.summary : {}
-    legacyImportNotice.value = `发现 ${summary.total || 0} 项，默认选中 ${summary.selected || 0} 项`
-  } catch (err) {
-    legacyImportPreview.value = null
-    legacyImportNotice.value = err && err.message ? err.message : String(err)
-  } finally {
-    if (!options.keepBusy) legacyImportBusy.value = false
-  }
-}
-
-async function enqueueLegacyImport() {
-  const items = legacyImportItems.value.filter((item) => item && item.selected)
-  if (!items.length) {
-    legacyImportNotice.value = '没有选中的旧素材'
-    return
-  }
-  if (geminiMode.value === 'real' && !apiKey.value.trim() && !credentialStatus.value.stored) {
-    legacyImportNotice.value = '需要填写 Gemini API key 或使用已保存的系统凭据'
-    return
-  }
-  legacyImportBusy.value = true
-  try {
-    if (geminiMode.value === 'real' && rememberApiKey.value && apiKey.value.trim()) {
-      await saveCredential({ silent: true })
-    }
-    const payload = {
-      items,
-      geminiMode: geminiMode.value,
-      model: model.value,
-      baseUrl: baseUrl.value,
-      videoPriority: videoPriority.value,
-      autoOpenWhenReady: false,
-      replacePolicy: 'ask'
-    }
-    if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
-    const result = await youtubeWorkflowClient.createImportJobs(payload)
-    const jobs = Array.isArray(result.jobs) ? result.jobs : []
-    queueJobs.value.push(...jobs)
-    legacyImportNotice.value = `已加入素材队列 ${result.created || jobs.length || 0} 项`
-    workflowView.value = 'queue'
-    startPolling()
-  } catch (err) {
-    legacyImportNotice.value = err && err.message ? err.message : String(err)
-  } finally {
-    legacyImportBusy.value = false
-  }
-}
-
-function openPanel(options = {}) {
-  if (!options.preservePosition) panelPosition.value = getDefaultPanelPosition()
+function openPanel() {
   panelOpen.value = true
-  panelShrunk.value = false
-  checkHealth()
-  loadBackendConfig()
-  loadCredentialStatus()
-  refreshQueue()
+  workflowView.value = 'library'
+  observeBestEffort(checkHealth(), {
+    operationId: 'material-center-health-refresh',
+    reason: 'the material library opens immediately while service health refreshes in the background',
+  })
+  observeBestEffort(refreshQueue(), {
+    operationId: 'material-center-task-refresh',
+    reason: 'task status refresh must not block opening the fixed material panel',
+  })
+  observeBestEffort(refreshLibrary(), {
+    operationId: 'material-center-library-refresh',
+    reason: 'library refresh runs after the panel is already interactive',
+  })
 }
 
 function setWorkflowView(view) {
   workflowView.value = view
-  if (view === 'recent') refreshRecent()
   if (view === 'queue') refreshQueue()
-  if (view === 'library') {
-    historyOpen.value = true
-    refreshHistory()
-  }
-  if (view === 'settings') {
+  if (view === 'library') refreshLibrary()
+  if (view === 'settings' || view === 'add') {
     loadBackendConfig()
     loadCredentialStatus()
   }
 }
 
-function shrinkPanel() {
-  panelOpen.value = false
-  panelShrunk.value = true
-  cancelRecordsOpen.value = false
-}
-
 function closePanel() {
   panelOpen.value = false
-  panelShrunk.value = false
-  panelPosition.value = getDefaultPanelPosition()
   apiKey.value = ''
-  cancelRecordsOpen.value = false
-}
-
-function handleBackdropPointerDown() {
-  shrinkPanel()
 }
 
 async function refreshQueue() {
   workflowRevisionNeedsRefresh = true
-  await checkHealth()
   await refreshJobsSnapshot(queueJobs.value.map((job) => job.jobId))
-  await refreshRecent()
+  refreshLinkDuplicates()
 }
 
 function requestWorkflowSnapshot(jobIds, signal, options = {}) {
@@ -1675,32 +1200,46 @@ async function refreshJobsSnapshot(jobIds, signal) {
   return jobs
 }
 
-async function refreshRecent() {
+async function refreshLibrary(options = {}) {
+  const append = options.append === true
+  if (libraryPending.value) return
+  libraryPending.value = true
   try {
-    const items = await youtubeWorkflowClient.readerRecent({ query: recentQuery.value, limit: 50 })
-    recentJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
+    const offset = append ? recentJobs.value.length : 0
+    const items = await youtubeWorkflowClient.readerRecent({
+      limit: libraryPageSize,
+      offset,
+      timeScope: libraryTimeScope.value,
+    })
+    const normalized = Array.isArray(items)
+      ? items.filter((item) => item && item.jobId).map((item) => ({ ...item, ...(repairStates.get(item.jobId) || {}) }))
+      : []
+    recentJobs.value = append ? [...recentJobs.value, ...normalized] : normalized
+    recentJobs.value.sort((left, right) => materialTimestamp(right) - materialTimestamp(left))
+    libraryHasMore.value = normalized.length === libraryPageSize
+    refreshLinkDuplicates()
     readerActivityNotice.value = ''
   } catch (err) {
     readerActivityNotice.value = err && err.message ? err.message : String(err)
+  } finally {
+    libraryPending.value = false
   }
 }
 
-async function toggleHistory() {
-  historyOpen.value = !historyOpen.value
-  if (historyOpen.value) await refreshHistory()
+function refreshRecent() {
+  return refreshLibrary()
 }
 
-async function refreshHistory() {
-  try {
-    const items = await youtubeWorkflowClient.history({
-      query: historyQuery.value,
-      status: historyStatus.value,
-      limit: 50
-    })
-    historyJobs.value = Array.isArray(items) ? items.filter((item) => item && item.jobId) : []
-  } catch (err) {
-    window.alert(err && err.message ? err.message : String(err))
-  }
+function setLibraryTimeScope(scope) {
+  if (libraryTimeScope.value === scope && recentJobs.value.length) return
+  libraryTimeScope.value = scope
+  recentJobs.value = []
+  libraryHasMore.value = false
+  refreshLibrary()
+}
+
+function loadMoreLibrary() {
+  return refreshLibrary({ append: true })
 }
 
 async function loadBackendConfig() {
@@ -1735,17 +1274,23 @@ async function saveCredential(options = {}) {
   if (!apiKey.value.trim()) return
   try {
     credentialStatus.value = await youtubeWorkflowClient.saveCredential({ apiKey: apiKey.value })
-    credentialNotice.value = options.silent ? '' : 'API key 已保存到系统凭据'
+    apiKey.value = ''
+    credentialNotice.value = options.silent ? '' : 'API Key 已保存'
   } catch (err) {
     credentialNotice.value = err && err.message ? err.message : String(err)
     if (options.silent) throw err
   }
 }
 
+function confirmDeleteCredential() {
+  if (!window.confirm('清除 API Key 后，新任务将无法进行 AI 处理。确定清除吗？')) return
+  deleteCredential()
+}
+
 async function deleteCredential() {
   try {
     credentialStatus.value = await youtubeWorkflowClient.deleteCredential()
-    credentialNotice.value = '已清除系统凭据'
+    credentialNotice.value = 'API Key 已清除'
   } catch (err) {
     credentialNotice.value = err && err.message ? err.message : String(err)
   }
@@ -1829,13 +1374,25 @@ function updateJob(fresh) {
   rememberWorkflowRevision(fresh)
   const index = queueJobs.value.findIndex((job) => job.jobId === fresh.jobId)
   const previous = index >= 0 ? queueJobs.value[index] : null
+  if (previous?.title && !fresh.title) fresh = { ...fresh, title: previous.title }
   if (index >= 0) queueJobs.value[index] = fresh
   else queueJobs.value.push(fresh)
   if (fresh.status === 'ready' && previous && previous.status !== 'ready') {
-    maybeAutoOpen(fresh)
+    completionSignal.value = true
+    visibleCompletedJobIds.value = [...new Set([...visibleCompletedJobIds.value, fresh.jobId])]
+    const previousTaskTimer = completedTaskTimers.get(fresh.jobId)
+    if (previousTaskTimer) window.clearTimeout(previousTaskTimer)
+    completedTaskTimers.set(fresh.jobId, window.setTimeout(() => {
+      visibleCompletedJobIds.value = visibleCompletedJobIds.value.filter((jobId) => jobId !== fresh.jobId)
+      completedTaskTimers.delete(fresh.jobId)
+    }, 5000))
+    if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
+    completionSignalTimer = window.setTimeout(() => { completionSignal.value = false }, 5000)
+    refreshLibrary()
   }
   if (terminalStatuses.has(fresh.status) && (!previous || previous.status !== fresh.status)) {
     refreshRecent()
+    window.setTimeout(startPolling, 0)
   }
 }
 
@@ -1848,8 +1405,8 @@ function startPolling() {
         readerActivityNotice.value = error && error.message ? error.message : String(error)
       },
       isHidden: () => document.hidden,
-      intervalMs: 1000,
-      hiddenIntervalMs: 5000,
+      intervalMs: 2000,
+      hiddenIntervalMs: 10000,
     })
   }
   const activeIds = queueJobs.value
@@ -1863,140 +1420,137 @@ function stopPolling() {
   jobPollingScheduler?.stop()
 }
 
-async function maybeAutoOpen(job) {
-  if (loadedReadyJobs.has(job.jobId)) return
-  const state = getReaderContentState()
-  if (state.kind === 'complete') return
-  if (state.kind === 'audio-only') {
-    incompletePrompt.value = { job, message: '当前只有音频，缺少 Whisper 字幕。' }
-    return
-  }
-  if (state.kind === 'transcript-only') {
-    incompletePrompt.value = { job, message: '当前只有字幕，缺少音频。' }
-    return
-  }
-  await loadJob(job)
-}
-
-function getReaderContentState() {
-  const audio = getAudio()
-  const hasAudio = !!(audio && audio.src)
-  const state = runtimeState || {}
-  const hasTranscript = Array.isArray(state.segments) && state.segments.length > 0
-  if (hasAudio && hasTranscript) return { kind: 'complete' }
-  if (hasAudio) return { kind: 'audio-only' }
-  if (hasTranscript) return { kind: 'transcript-only' }
-  return { kind: 'empty' }
-}
-
 function openJob(job) {
-  const state = getReaderContentState()
-  if (state.kind === 'complete') {
-    requestSwitch(job, '打开这篇？')
-  } else if (state.kind === 'audio-only') {
-    incompletePrompt.value = { job, message: '当前只有音频，缺少 Whisper 字幕。' }
-  } else if (state.kind === 'transcript-only') {
-    incompletePrompt.value = { job, message: '当前只有字幕，缺少音频。' }
-  } else {
-    loadJob(job)
-  }
-}
-
-async function openIncompleteTarget() {
-  const job = incompletePrompt.value && incompletePrompt.value.job
-  if (!job) return
-  await incompleteActionGuard.run(async () => {
-    await loadJob(job)
-    incompletePrompt.value = null
-  })
-}
-
-function closeIncompletePrompt() {
-  if (incompletePending.value) return
-  incompletePrompt.value = null
-}
-
-function requestSwitch(job, title) {
-  const paused = pauseForDecision()
-  const index = readyJobs.value.findIndex((item) => item.jobId === job.jobId)
-  switchModal.value = {
-    type: 'job',
-    target: job,
-    title,
-    queueText: index >= 0 ? `${index + 1} / ${readyJobs.value.length}` : '',
-    currentText: currentJobId.value ? listenText(queueJobs.value.find((item) => item.jobId === currentJobId.value) || recentJobs.value.find((item) => item.jobId === currentJobId.value)) : '未开始',
-    message: '确认后会加载目标文章，当前播放会停止，新文章不会自动播放。',
-    confirmText: '确认切换',
-    wasPlaying: paused
-  }
+  if (!job?.jobId || openingJobId.value) return
+  clearMaterialNotice()
+  openingJobId.value = job.jobId
+  hidePanelAfterLoad()
+  loadJob(job)
 }
 
 function openRecentJob(job) {
   openJob(normalizeRecentJob(job))
 }
 
-async function confirmSwitch() {
-  const modal = switchModal.value
-  if (!modal) return
-  await switchActionGuard.run(async () => {
-    if (modal.target) await loadJob(modal.target)
-    switchModal.value = null
-  })
-}
-
-function cancelSwitch() {
-  if (switchPending.value) return
-  const modal = switchModal.value
-  switchModal.value = null
-  if (modal && modal.wasPlaying) {
-    const audio = getAudio()
-    if (audio) {
-      observeBestEffort(audio.play(), {
-        operationId: 'panel-audio-resume',
-        reason: 'browser autoplay rejection keeps playback paused and available for explicit user retry',
-      })
-    }
-  }
-}
-
-function pauseForDecision() {
-  const audio = getAudio()
-  const wasPlaying = !!(audio && !audio.paused)
-  if (audio && wasPlaying) audio.pause()
-  return wasPlaying
-}
-
 async function loadJob(job) {
   try {
     if (currentJobId.value && currentJobId.value !== job.jobId) {
-      await syncReaderActivity('switch')
+      observeBestEffort(syncReaderActivity('switch'), {
+        operationId: `reader-background-switch-save-${currentJobId.value}`,
+        reason: 'captured reader progress persists in the background and never blocks opening the next material',
+      })
     }
+    readerSessionLoadInProgress = true
     const result = await makeLoader().loadJobIntoReader(job.jobId, { replacePolicy: 'replace-current' })
     if (!result || result.status !== 'loaded') return
+    clearMaterialRepairState(job.jobId)
     currentJobId.value = job.jobId
     updateReaderConflictVisibility()
     loadedReadyJobs.add(job.jobId)
     startReaderSession(job)
-    const activity = await youtubeWorkflowClient.getReaderActivity(job.jobId)
-    if (Number.isInteger(activity?.revision)) readerActivityRevisions.set(job.jobId, activity.revision)
-    await syncReaderActivity('open', { manifest: result && result.manifest })
-    await refreshRecent()
+    observeBestEffort(youtubeWorkflowClient.getReaderActivity(job.jobId).then((activity) => {
+      if (Number.isInteger(activity?.revision)) readerActivityRevisions.set(job.jobId, activity.revision)
+    }), {
+      operationId: `reader-background-activity-load-${job.jobId}`,
+      reason: 'activity revision hydration is not required for the first rendered reader frame',
+    })
+    observeBestEffort(syncReaderActivity('open', { manifest: result && result.manifest }), {
+      operationId: `reader-background-open-save-${job.jobId}`,
+      reason: 'open activity persists after the material is already visible',
+    })
+    observeBestEffort(refreshLibrary(), {
+      operationId: `reader-background-library-refresh-${job.jobId}`,
+      reason: 'library ordering refresh is secondary to displaying the selected material',
+    })
     const audio = getAudio()
     if (audio) audio.pause()
-    hidePanelAfterLoad()
   } catch (err) {
-    const presented = errorPresenter.present(err, {
-      operationId: `panel-material-load-${job.jobId}`,
-      details: { jobId: job.jobId },
-    })
-    if (typeof window.showToast === 'function') window.showToast(`${presented.notice.message} (${presented.notice.operationId})`, 'error')
+    showMaterialLoadFailure(job, err)
+  } finally {
+    readerSessionLoadInProgress = false
+    if (openingJobId.value === job.jobId) openingJobId.value = ''
   }
 }
 
 function hidePanelAfterLoad() {
   panelOpen.value = false
-  panelShrunk.value = false
-  cancelRecordsOpen.value = false
+}
+
+function classifyMaterialLoadFailure(error) {
+  const code = String(error?.code || error?.category || '').toLowerCase()
+  const message = String(error?.message || '').toLowerCase()
+  const combined = `${code} ${message}`
+  if (/chunk|segment|translation/u.test(combined)) {
+    return { message: 'AI 切分结果不可用，请重新 AI 切分', actionLabel: '重新 AI 切分', action: 'segmenting' }
+  }
+  if (/subtitle|transcript|caption/u.test(combined)) {
+    return { message: '字幕不可用，请重新生成字幕', actionLabel: '重新生成字幕', action: 'transcribing' }
+  }
+  if (/credential|api.?key|auth|gemini/u.test(combined)) {
+    return { message: 'API 认证失效，请检查设置', actionLabel: '检查设置', action: 'settings' }
+  }
+  if (/file|media|audio|range|missing|incomplete|404|410/u.test(combined)) {
+    return { message: '本地素材不完整，请重新下载', actionLabel: '重新下载', action: 'downloading' }
+  }
+  const concise = String(error?.message || '素材暂时无法读取').trim().slice(0, 88)
+  return { message: `${concise}，请查看原因`, actionLabel: '查看原因', action: 'details' }
+}
+
+function showMaterialLoadFailure(job, error) {
+  const failure = classifyMaterialLoadFailure(error)
+  repairStates.set(job.jobId, {
+    needsRepair: true,
+    repairReason: failure.message,
+    repairAction: failure.action,
+  })
+  recentJobs.value = recentJobs.value.map((item) => (
+    item.jobId === job.jobId ? { ...item, ...repairStates.get(job.jobId) } : item
+  ))
+  materialNotice.value = { ...failure, job, error }
+  resumeMaterialNotice()
+}
+
+function clearMaterialRepairState(jobId) {
+  repairStates.delete(jobId)
+  recentJobs.value = recentJobs.value.map((item) => {
+    if (item.jobId !== jobId) return item
+    const { needsRepair: _needsRepair, repairReason: _repairReason, repairAction: _repairAction, ...readyItem } = item
+    return readyItem
+  })
+}
+
+function pauseMaterialNotice() {
+  if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
+  materialNoticeTimer = 0
+}
+
+function resumeMaterialNotice() {
+  pauseMaterialNotice()
+  if (!materialNotice.value) return
+  materialNoticeTimer = window.setTimeout(clearMaterialNotice, 10000)
+}
+
+function clearMaterialNotice() {
+  pauseMaterialNotice()
+  materialNotice.value = null
+}
+
+function runMaterialNoticeAction() {
+  const notice = materialNotice.value
+  if (!notice) return
+  clearMaterialNotice()
+  openPanel()
+  if (notice.action === 'settings') {
+    setWorkflowView('settings')
+    return
+  }
+  if (notice.action === 'details') {
+    setWorkflowView('library')
+    expandedLibraryJobId.value = notice.job?.jobId || ''
+    return
+  }
+  setWorkflowView('queue')
+  if (notice.job) retryJob(notice.job, notice.action)
 }
 
 function isJobOpened(job) {
@@ -2050,8 +1604,171 @@ function jobSourceText(job) {
   return job && job.jobId ? `任务 ${job.jobId}` : '暂无来源'
 }
 
+function taskSourceText(job) {
+  const stamp = exactJobTime(job)
+  const videoId = extractYoutubeVideoId(job?.request?.url || job?.url)
+  return [videoId ? `YouTube · ${videoId}` : '', stamp].filter(Boolean).join(' · ') || jobSourceText(job)
+}
+
+function exactJobTime(job) {
+  return exactDateTime(job?.updatedAt || job?.finishedAt || job?.createdAt)
+}
+
+function failureReasonText(job) {
+  const error = job?.error || {}
+  const reason = String(error.message || '').trim()
+  const diagnosticText = [error.code, reason, ...(Array.isArray(job?.logSummary) ? job.logSummary : [])]
+    .filter(Boolean)
+    .join('\n')
+  if (
+    error.code === 'YOUTUBE_MEDIA_HTTP_403'
+    || (/\b403\b|forbidden/iu.test(diagnosticText) && /youtube|yt-dlp|download video data/iu.test(diagnosticText))
+  ) {
+    return 'YouTube 媒体授权失败（HTTP 403），请重新处理'
+  }
+  if (reason) return reason
+  const category = String(error.category || '').trim()
+  return category ? `${errorLabel(category)}需要重新处理` : '处理未完成，请重试'
+}
+
+function libraryStamp(job) {
+  return job?.lastActivityAt || job?.lastOpenedAt || job?.finishedAt || job?.createdAt
+}
+
+function libraryRelativeTime(job) {
+  const stamp = libraryStamp(job)
+  const date = new Date(stamp)
+  if (Number.isNaN(date.getTime())) return '很久之前'
+  const now = new Date()
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const days = Math.max(0, Math.floor((startToday - startDate) / (24 * 60 * 60 * 1000)))
+  if (days === 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days <= 7) return `${days} 天前`
+  return '很久之前'
+}
+
+function libraryExactTime(job) {
+  return exactDateTime(libraryStamp(job))
+}
+
+function librarySourceText(job) {
+  const videoId = extractYoutubeVideoId(job?.url || job?.request?.url)
+  if (videoId) return `YouTube · ${videoId}`
+  return job?.sourceType === 'legacy-import' ? '本地导入素材' : '学习素材'
+}
+
+function toggleLibraryMenu(job) {
+  expandedLibraryJobId.value = expandedLibraryJobId.value === job?.jobId ? '' : job?.jobId || ''
+}
+
+function duplicateStateText(duplicate) {
+  if (!duplicate) return ''
+  if (duplicate.state === 'active') return '这个视频正在处理中'
+  if (duplicate.state === 'failed') return '这个视频此前处理失败'
+  return '这个视频已经处理过'
+}
+
+function duplicateFromServerError(error, url) {
+  const existing = error?.detail?.existing || {}
+  const status = String(existing.status || '').toLowerCase()
+  return {
+    key: error?.detail?.materialKey || canonicalMaterialKey(url),
+    youtubeVideoId: extractYoutubeVideoId(url),
+    job: { ...existing, request: { url: existing.url || url }, url: existing.url || url },
+    state: terminalStatuses.has(status)
+      ? status === 'failed' ? 'failed' : 'ready'
+      : 'active',
+    matches: [existing],
+  }
+}
+
+async function deleteFailedTaskGroup(group) {
+  const ids = group.attempts
+    .filter((attempt) => attempt?.status === 'failed')
+    .map((attempt) => attempt.jobId)
+  if (!ids.length) return
+  workflowMutationNotice.value = ''
+  try {
+    for (const jobId of ids) {
+      await ensureWorkflowRevision()
+      const deleted = await youtubeWorkflowClient.deleteJob(jobId, {
+        expectedRevision: workflowRevision.value,
+      })
+      rememberWorkflowRevision(deleted)
+      queueJobs.value = queueJobs.value.filter((job) => job.jobId !== jobId)
+    }
+    refreshLinkDuplicates()
+  } catch (error) {
+    if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)
+    else workflowMutationNotice.value = error?.message || String(error)
+  }
+}
+
+async function clearFailedTasks() {
+  if (!window.confirm('只清除失败提示和失败任务记录，不会删除成功素材或复习数据。继续吗？')) return
+  workflowMutationNotice.value = ''
+  try {
+    await ensureWorkflowRevision()
+    const cleared = await youtubeWorkflowClient.clearFailedJobs({
+      expectedRevision: workflowRevision.value,
+    })
+    rememberWorkflowRevision(cleared)
+    queueJobs.value = queueJobs.value.filter((job) => job.status !== 'failed')
+    refreshLinkDuplicates()
+  } catch (error) {
+    if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)
+    else workflowMutationNotice.value = error?.message || String(error)
+  }
+}
+
+async function confirmReprocess(job, explicitUrl = '') {
+  const url = explicitUrl || job?.url || job?.request?.url
+  if (!url) return
+  const title = jobDisplayTitle(job) || linkCardFallbackTitle({ url })
+  if (!window.confirm(`重新处理会创建一个新的后台任务，已有成功素材会继续保留。\n\n${title}`)) return
+  const payload = { ...buildCreateJobPayload(url), forceReprocess: true }
+  const actionId = `reprocess:${job?.jobId || canonicalMaterialKey(url)}:${Date.now()}`
+  try {
+    const created = await runPendingWorkflowAction(actionId, 'create', '', payload, (action) => (
+      youtubeWorkflowClient.createJob(payload, workflowMutationOptions(action))
+    ))
+    updateJob(created)
+    forgetPendingWorkflowAction(actionId)
+    expandedLibraryJobId.value = ''
+    setWorkflowView('queue')
+    startPolling()
+  } catch (error) {
+    workflowMutationNotice.value = error?.message || String(error)
+  }
+}
+
 function historySourceText(job) {
   return jobSourceText(job)
+}
+
+function jobStageFraction(job) {
+  const stage = String(job?.stage || job?.status || '').toLowerCase()
+  if (stage === 'queued') return '等待中'
+  if (stage === 'downloading') return '1/4'
+  if (stage === 'transcribing') return '2/4'
+  if (stage === 'segmenting' || stage === 'translating') return '3/4'
+  if (stage === 'validating' || stage === 'ready') return '4/4'
+  return ''
+}
+
+function jobStageProgressText(job) {
+  const stage = String(job?.stage || job?.status || '').toLowerCase()
+  if (job?.status === 'failed') return '处理失败'
+  if (job?.status === 'canceled') return '已取消'
+  if (stage === 'queued') return '等待开始'
+  if (stage === 'downloading') return '1/4 · 下载素材'
+  if (stage === 'transcribing') return '2/4 · 生成字幕'
+  if (stage === 'segmenting' || stage === 'translating') return '3/4 · AI 切分与翻译'
+  if (stage === 'validating') return '4/4 · 正在检查'
+  if (stage === 'ready') return '4/4 · 已完成'
+  return statusText(job || {})
 }
 
 function jobProgressPercent(job) {
@@ -2060,26 +1777,17 @@ function jobProgressPercent(job) {
   if (Number.isFinite(direct) && direct >= 0) return Math.max(0, Math.min(100, direct <= 1 ? direct * 100 : direct))
   const stage = String(job.stage || job.status || '')
   const fallback = {
-    queued: 8,
-    downloading: 24,
-    transcribing: 46,
-    segmenting: 64,
-    translating: 78,
-    validating: 90,
+    queued: 6,
+    downloading: 25,
+    transcribing: 50,
+    segmenting: 75,
+    translating: 75,
+    validating: 92,
     ready: 100,
     failed: 100,
     canceled: 100
   }
   return fallback[stage] ?? fallback[job.status] ?? 0
-}
-
-function jobProgressText(job) {
-  if (!job) return ''
-  if (job.status === 'ready') return '已完成'
-  if (job.status === 'failed') return '需要处理'
-  if (job.status === 'canceled') return '已取消'
-  if (job.status === 'queued') return '排队中'
-  return `${Math.round(jobProgressPercent(job))}%`
 }
 
 function clampRatio(value) {
@@ -2108,11 +1816,6 @@ function readerProgressPercent(job) {
   if (!job) return 0
   if (readerCompletedForDisplay(job)) return 100
   return Math.max(0, Math.min(100, readerProgressRatio(job) * 100))
-}
-
-function toggleHistoryDetails(job) {
-  const jobId = job && job.jobId
-  expandedHistoryJobId.value = expandedHistoryJobId.value === jobId ? '' : jobId
 }
 
 function recentTaskMetaText(job) {
@@ -2246,10 +1949,11 @@ async function prioritizeJob(job) {
   }
 }
 
-async function retryJob(job, stage = 'translating') {
-  const payload = { stage, model: model.value, baseUrl: baseUrl.value, videoPriority: videoPriority.value }
+async function retryJob(job, stage = '') {
+  const payload = { model: model.value, baseUrl: baseUrl.value, videoPriority: videoPriority.value }
+  if (stage) payload.stage = stage
   if (geminiMode.value === 'real' && apiKey.value.trim()) payload.apiKey = apiKey.value
-  const actionId = `retry:${job.jobId}:${stage}`
+  const actionId = `retry:${job.jobId}:${stage || 'auto'}`
   workflowMutationNotice.value = ''
   try {
     const retried = await runPendingWorkflowAction(actionId, 'retry', job.jobId, payload, (action) => {
@@ -2272,29 +1976,6 @@ async function retryQualityJob(job, stage) {
 function closeQualityModal() {
   if (qualityPending.value) return
   qualityModal.value = null
-}
-
-async function confirmClearCanceled() {
-  if (!window.confirm('只清空取消记录，成功和失败任务会保留。继续吗？')) return
-  await cancelRecordsActionGuard.run(async () => {
-    await youtubeWorkflowClient.clearCanceledJobs()
-    queueJobs.value = queueJobs.value.filter((job) => job.status !== 'canceled')
-    cancelRecordsOpen.value = false
-  })
-}
-
-function closeCancelRecords() {
-  if (cancelRecordsPending.value) return
-  cancelRecordsOpen.value = false
-}
-
-function showCancelRecords() {
-  if (!canceledJobs.value.length) {
-    cancelRecordsNotice.value = '当前没有取消记录'
-    return
-  }
-  cancelRecordsNotice.value = ''
-  cancelRecordsOpen.value = true
 }
 
 function historyMetaText(job) {
@@ -2330,16 +2011,6 @@ function maintenanceText(info) {
   return `任务 ${info.jobs || 0} · 历史 ${info.history || 0} · 输出 ${formatBytes(info.outputBytes || 0)} · 状态 ${formatBytes(info.stateBytes || 0)}`
 }
 
-async function deleteHistoryJob(job, deleteFiles) {
-  const message = deleteFiles
-    ? `确定删除历史记录并删除生成文件吗？\n${jobDisplayTitle(job)}`
-    : `确定只删除历史记录吗？\n${jobDisplayTitle(job)}`
-  if (!window.confirm(message)) return
-  await youtubeWorkflowClient.deleteHistory(job.jobId, { deleteFiles })
-  historyJobs.value = historyJobs.value.filter((item) => item.jobId !== job.jobId)
-  await refreshRecent()
-}
-
 async function showQuality(job) {
   try {
     const report = await youtubeWorkflowClient.quality(job.jobId)
@@ -2354,24 +2025,6 @@ function qualityIssueSummary(report) {
   const total = Array.isArray(report.issues) ? report.issues.length : 0
   if (!total) return `通过 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
   return `发现 ${total} 个问题 · ${report.chunkCount || 0} 个 chunk · ${report.wordCount || 0} 个词`
-}
-
-function importSourcePath(item) {
-  return item && (item.audioPath || item.videoPath || item.sourcePath || '')
-}
-
-function importActionText(item) {
-  if (!item) return ''
-  return item.action === 'ai_only' ? '已有字幕：只做 AI 切分' : '无字幕：Whisper 转写 + AI 切分'
-}
-
-function importConfidenceText(item) {
-  if (!item) return ''
-  const parts = []
-  if (item.duplicate) parts.push('疑似已导入')
-  if (item.action === 'ai_only') parts.push(`字幕匹配 ${Number(item.confidence || 0)}%`)
-  if (item.reason) parts.push(item.reason)
-  return parts.join(' · ') || '可导入'
 }
 
 function statusText(job) {
@@ -2578,6 +2231,7 @@ function scheduleReaderActivitySync() {
 }
 
 async function syncReaderActivity(event = 'progress') {
+  if (readerSessionLoadInProgress && event !== 'switch') return null
   if (!currentJobId.value) return null
   const payload = buildReaderActivityPayload(event)
   if (!payload) return null
@@ -2680,6 +2334,7 @@ function submitCurrentReaderMarks() {
 }
 
 function handleReaderMarksChanged() {
+  if (readerSessionLoadInProgress) return
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
   submitCurrentReaderMarks()
@@ -3021,7 +2676,7 @@ function settleReaderOutboxSuccess(entry, saved) {
   }
   if (entry.kind === 'activity') mergeRecentReaderItem(saved)
   if (!removeReaderOutboxEntry(entry)) {
-    setReaderOutboxState(entry, 'error', '学习记录已提交，但本地恢复凭据未能清除，请稍后重试')
+    setReaderOutboxState(entry, 'error')
     return false
   }
   clearReaderConflict(entry.kind, entry.jobId, entry.operationId)
@@ -3059,7 +2714,7 @@ async function replayReaderOutboxEntry(entry) {
       )
       return false
     }
-    setReaderOutboxState(entry, 'error', '学习记录保存失败，保留待重试')
+    setReaderOutboxState(entry, 'error')
     return false
   }
 }
@@ -3098,6 +2753,7 @@ function handleReaderPageShow(event) {
 }
 
 function handleBeforeUnload() {
+  if (readerSessionLoadInProgress) return
   if (readerUnloadFlushed) return
   ensureCurrentJobFromAudioMeta()
   const payload = buildReaderActivityPayload('close')
@@ -3173,42 +2829,6 @@ function saveTextSetting(key, value) {
   }
 }
 
-function loadBoolSetting(key, fallback) {
-  try {
-    const value = window.localStorage.getItem(key)
-    return value == null ? fallback : value === 'true'
-  } catch (error) {
-    recordPanelSettingFailure(error, 'read', key)
-    return fallback
-  }
-}
-
-function saveBoolSetting(key, value) {
-  try {
-    window.localStorage.setItem(key, value ? 'true' : 'false')
-  } catch (error) {
-    recordPanelSettingFailure(error, 'write', key)
-  }
-}
-
-function loadPosition(key, fallback) {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(key) || '')
-    if (Number.isFinite(parsed.x) && Number.isFinite(parsed.y)) return parsed
-  } catch (error) {
-    recordPanelSettingFailure(error, 'read', key)
-  }
-  return fallback
-}
-
-function savePosition(key, value) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  } catch (error) {
-    recordPanelSettingFailure(error, 'write', key)
-  }
-}
-
 function recordPanelSettingFailure(error, action, key) {
   if (action === 'read') {
     recordBestEffortFailure(error, {
@@ -3225,136 +2845,4 @@ function recordPanelSettingFailure(error, action, key) {
   })
 }
 
-function getViewportSize() {
-  if (typeof window === 'undefined') return { width: 1280, height: 720 }
-  return {
-    width: window.innerWidth || 1280,
-    height: window.innerHeight || 720
-  }
-}
-
-function getDefaultPanelPosition() {
-  const viewport = getViewportSize()
-  const width = Math.min(PANEL_MAX_SIZE.width, Math.max(320, viewport.width - PANEL_DEFAULT_MARGIN * 2))
-  const height = Math.min(PANEL_MAX_SIZE.height, Math.max(240, viewport.height - PANEL_DEFAULT_MARGIN * 2))
-  return clampPosition({
-    x: viewport.width - width - PANEL_DEFAULT_MARGIN,
-    y: PANEL_DEFAULT_MARGIN
-  }, width, height)
-}
-
-function startPanelDrag(event) {
-  if (event.target && event.target.closest('button,input,select,textarea')) return
-  panelDrag = { dx: event.clientX - panelPosition.value.x, dy: event.clientY - panelPosition.value.y }
-  window.addEventListener('pointermove', movePanel)
-  window.addEventListener('pointerup', stopPanelDrag, { once: true })
-}
-
-function movePanel(event) {
-  if (!panelDrag) return
-  panelPosition.value = clampPosition({ x: event.clientX - panelDrag.dx, y: event.clientY - panelDrag.dy }, 320, 240)
-}
-
-function stopPanelDrag() {
-  window.removeEventListener('pointermove', movePanel)
-  panelDrag = null
-}
-
-function startCapsuleDrag(event) {
-  event.preventDefault()
-  const rect = event.currentTarget && typeof event.currentTarget.getBoundingClientRect === 'function'
-    ? event.currentTarget.getBoundingClientRect()
-    : null
-  const width = Math.ceil(rect && rect.width ? rect.width : DEFAULT_CAPSULE_SIZE.width)
-  const height = Math.ceil(rect && rect.height ? rect.height : DEFAULT_CAPSULE_SIZE.height)
-  const visiblePosition = clampPosition({
-    x: rect ? rect.left : capsulePosition.value.x,
-    y: rect ? rect.top : capsulePosition.value.y
-  }, width, height)
-  capsuleMoved = false
-  capsulePosition.value = visiblePosition
-  capsuleDragging.value = true
-  capsuleDrag = {
-    dx: event.clientX - visiblePosition.x,
-    dy: event.clientY - visiblePosition.y,
-    width,
-    height
-  }
-  if (event.currentTarget && typeof event.currentTarget.setPointerCapture === 'function') {
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-  window.addEventListener('pointermove', moveCapsule)
-  window.addEventListener('pointerup', stopCapsuleDrag, { once: true })
-}
-
-function moveCapsule(event) {
-  if (!capsuleDrag) return
-  capsuleMoved = true
-  const width = capsuleDrag.width || DEFAULT_CAPSULE_SIZE.width
-  const height = capsuleDrag.height || DEFAULT_CAPSULE_SIZE.height
-  capsulePosition.value = clampPosition({ x: event.clientX - capsuleDrag.dx, y: event.clientY - capsuleDrag.dy }, width, height)
-}
-
-function stopCapsuleDrag() {
-  const width = capsuleDrag && capsuleDrag.width ? capsuleDrag.width : getCapsuleSize().width
-  const height = capsuleDrag && capsuleDrag.height ? capsuleDrag.height : getCapsuleSize().height
-  capsulePosition.value = snapToEdge(capsulePosition.value, width, height)
-  window.requestAnimationFrame(correctCapsuleOverflow)
-  savePosition('youtubeWorkflowCapsulePosition', capsulePosition.value)
-  window.removeEventListener('pointermove', moveCapsule)
-  window.setTimeout(() => { capsuleMoved = false }, 0)
-  capsuleDragging.value = false
-  window.setTimeout(syncCapsuleHovering, 0)
-  window.setTimeout(syncCapsuleHovering, 80)
-  capsuleDrag = null
-}
-
-function openFromCapsule() {
-  if (!capsuleMoved) openPanel({ preservePosition: true })
-}
-
-function clampPosition(value, width, height) {
-  const viewport = getViewportSize()
-  return {
-    x: Math.max(8, Math.min(viewport.width - width - 8, value.x)),
-    y: Math.max(8, Math.min(viewport.height - height - 8, value.y))
-  }
-}
-
-function getCapsuleSize() {
-  const element = document.querySelector('.youtube-material-float')
-  const rect = element && element.getBoundingClientRect()
-  return {
-    width: Math.ceil(rect && rect.width ? rect.width : DEFAULT_CAPSULE_SIZE.width),
-    height: Math.ceil(rect && rect.height ? rect.height : DEFAULT_CAPSULE_SIZE.height)
-  }
-}
-
-function snapToEdge(value, width, height, threshold = FLOAT_SNAP_THRESHOLD) {
-  const next = { ...value }
-  const viewport = getViewportSize()
-  if (next.x < threshold) next.x = 8
-  if (viewport.width - (next.x + width) < threshold) next.x = viewport.width - width - 8
-  if (next.y < threshold) next.y = 8
-  if (viewport.height - (next.y + height) < threshold) next.y = viewport.height - height - 8
-  return next
-}
-
-function correctCapsuleOverflow() {
-  const size = getCapsuleSize()
-  capsulePosition.value = clampPosition(capsulePosition.value, size.width, size.height)
-  savePosition('youtubeWorkflowCapsulePosition', capsulePosition.value)
-}
-
-function syncCapsuleHovering() {
-  const element = document.querySelector('.youtube-material-float')
-  capsuleHovering.value = !!(element && element.matches(':hover'))
-}
-
-function getCapsuleEdge(value, width) {
-  const viewport = getViewportSize()
-  if (value.x <= 10) return 'left'
-  if (Math.abs(viewport.width - (value.x + width) - 8) <= 10) return 'right'
-  return 'none'
-}
 </script>
