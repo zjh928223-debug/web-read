@@ -152,6 +152,14 @@ async function main() {
   assert.equal(state.markedMap.size, 0);
   assert.deepEqual(saves.at(-1), { key: 'marks', value: [] });
 
+  state.markedMap.set(3, { globalIndex: 3, word: 'Last', sourceType: 'manual-mark' });
+  const incrementallyMerged = await runtime.rebuildMarksFromAnnotationItems([
+    { targetId: 'target-a', occurrenceKey: 'occ-a' }
+  ], { sourceType: 'annotation-lightweight-import', replaceExisting: false });
+  assert.deepEqual(incrementallyMerged, { addedCount: 2, totalCount: 3 });
+  assert.equal(state.markedMap.has(3), true, 'incremental annotation import should preserve existing marks');
+  assert.equal(state.markedMap.get(3).word, 'Last');
+
   console.log('session annotation marks check passed');
 }
 

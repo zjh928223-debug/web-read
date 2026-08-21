@@ -289,6 +289,7 @@ function createController(api, overrides = {}) {
     currentAudioKey: 'audio-1',
   };
   const imported = [];
+  const importOptions = [];
   const calls = [];
   const notices = [];
   const template = overrides.template || createTemplate(['target-1']);
@@ -313,7 +314,8 @@ function createController(api, overrides = {}) {
     state,
     annotationLightweightModule: overrides.annotationLightweightModule || {
       buildManualLightweightAnnotationTemplate: () => template,
-      importManualLightweightAnnotations: async (file) => {
+      importManualLightweightAnnotations: async (file, options) => {
+        importOptions.push(options);
         imported.push(await readJsonFileLike(file));
         return { importedCount: imported.at(-1).items.length, skippedCount: 0 };
       },
@@ -327,7 +329,7 @@ function createController(api, overrides = {}) {
     srsPendingRepository: overrides.srsPendingRepository,
     enableInlineSrs: overrides.enableInlineSrs,
   });
-  return { button, controller, imported, calls, notices, client, state };
+  return { button, controller, imported, importOptions, calls, notices, client, state };
 }
 
 async function main() {
@@ -360,7 +362,7 @@ async function main() {
   {
     const storage = new FakeStorage();
     const windowObject = createWindowObject({ localStorage: storage });
-    const { controller, calls, imported } = createController(api, { windowObject });
+    const { controller, calls, imported, importOptions } = createController(api, { windowObject });
     controller.openDialog();
     assert.equal(controller.isDialogOpen(), true);
     await controller.run({ model: 'gemini-annotation-test', apiKey: 'SECRET-RUN-ONLY' });
@@ -376,6 +378,7 @@ async function main() {
       payload: { template: createTemplate(['target-1']), model: 'gemini-annotation-test', apiKey: 'SECRET-RUN-ONLY' },
     }]);
     assert.deepEqual(imported, [createResult(['target-1'])]);
+    assert.deepEqual(importOptions, [{ replaceExisting: false }]);
     assert.equal(storage.getItem('annotationBackfillAi.model'), 'gemini-annotation-test');
     assert.equal(storage.getItem('annotationBackfillAi.apiKey'), null);
 

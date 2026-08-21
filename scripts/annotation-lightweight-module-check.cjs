@@ -66,6 +66,7 @@ async function main() {
   let exported = false;
   let templateBuilt = false;
   let importedFile = null;
+  let importedOptions = null;
   api.configureManualLightweightAnnotationRuntime({
     buildManualLightweightAnnotationTemplate: () => {
       templateBuilt = true;
@@ -75,8 +76,9 @@ async function main() {
       exported = true;
       return { ok: true };
     },
-    importManualLightweightAnnotations: async (file) => {
+    importManualLightweightAnnotations: async (file, options) => {
       importedFile = file;
+      importedOptions = options;
       return {
         importedCount: 2,
         skippedCount: 0,
@@ -96,6 +98,11 @@ async function main() {
   const errorCalls = [];
   let refreshed = false;
   const file = { name: 'light.json' };
+
+  const incrementalOptions = { replaceExisting: false };
+  await api.importManualLightweightAnnotations(file, incrementalOptions);
+  assert.equal(importedFile, file);
+  assert.equal(importedOptions, incrementalOptions, 'import facade should forward the options object unchanged');
 
   api.initManualLightweightAnnotationControls({
     exportButton,

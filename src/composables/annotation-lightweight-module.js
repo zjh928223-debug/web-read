@@ -33,9 +33,9 @@
     throw new Error('Annotation lightweight export module is not ready');
   }
 
-  async function importManualLightweightAnnotations(file) {
+  async function importManualLightweightAnnotations(file, options) {
     if (typeof runtimeHandlers.importManualLightweightAnnotations === 'function') {
-      return runtimeHandlers.importManualLightweightAnnotations(file);
+      return runtimeHandlers.importManualLightweightAnnotations(file, options);
     }
     throw new Error('Annotation lightweight import module is not ready');
   }

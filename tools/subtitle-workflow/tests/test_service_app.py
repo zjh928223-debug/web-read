@@ -1470,6 +1470,67 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(response["metadata"]["batchSize"], 15)
             self.assertEqual(response["metadata"]["batchCount"], 2)
 
+    def test_annotation_backfill_rejects_incomplete_batch_results(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = []
+
+            def partial_annotation_requester(_cache_dir, _model_name, _system_prompt, payload_obj, **_kwargs):
+                calls.append(list(payload_obj.get("items", [])))
+                first_item = payload_obj["items"][0]
+                return json.dumps({
+                    "items": [{
+                        "targetId": first_item["targetId"],
+                        "markedText": first_item.get("markedText", first_item["targetId"]),
+                        "boundary": first_item.get("markedText", first_item["targetId"]),
+                        "type": "word",
+                        "meaning": "meaning",
+                        "memoryHint": "hint",
+                    }]
+                })
+
+            credential_store = MemoryCredentialStore()
+            credential_store.set_secret("SECRET-ANNOTATION-BACKFILL")
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(
+                config=config,
+                runner_factory=lambda: FakeWorkflowRunner(config),
+                credential_store=credential_store,
+                annotation_backfill_requester=partial_annotation_requester,
+            )
+            try:
+                with TestClient(create_app(manager)) as client:
+                    created = client.post(
+                        "/api/jobs",
+                        json={"url": "https://example.com/backfill-incomplete", "geminiMode": "mock"},
+                    ).json()
+                    ready = self._wait_ready(client, created["jobId"])
+                    template = {
+                        "schemaVersion": 1,
+                        "articleId": "article-incomplete",
+                        "items": [
+                            {"targetId": "target-1", "markedText": "workflow"},
+                            {"targetId": "target-2", "markedText": "memory"},
+                        ],
+                    }
+
+                    accepted = client.post(
+                        f"/api/jobs/{ready['jobId']}/annotation-backfill",
+                        json={"template": template, "model": "gemini-test", "maxRetries": 0},
+                    )
+                    self.assertEqual(accepted.status_code, 202)
+                    failed = self._wait_backfill_operation(
+                        client, ready["jobId"], accepted.json()["operationId"], "failed"
+                    )
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual([item["targetId"] for item in calls[0]], ["target-1", "target-2"])
+                    self.assertEqual(failed["error"]["category"], "upstream")
+                    self.assertIn("target-2", failed["error"]["message"])
+                    output_dir = Path(client.get(f"/api/jobs/{ready['jobId']}/session").json()["outputDir"])
+                    backfill_dir = output_dir / "_workflow" / "annotation-backfill"
+                    self.assertFalse((backfill_dir / "latest-result.json").exists())
+            finally:
+                manager.close()
+
     def test_srs_meaning_refinement_uses_single_request_without_overwriting_annotation_latest(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []

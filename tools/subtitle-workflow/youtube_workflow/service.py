@@ -332,6 +332,38 @@ def parse_annotation_backfill_response(response_text: str, log_func=None) -> dic
     return parsed
 
 
+def annotation_backfill_target_ids(items) -> list[str]:
+    target_ids = []
+    seen = set()
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        target_id = str(item.get("targetId") or "").strip()
+        if target_id and target_id not in seen:
+            seen.add(target_id)
+            target_ids.append(target_id)
+    return target_ids
+
+
+def validate_annotation_backfill_batch_result(request_template: dict, result: dict) -> None:
+    requested_ids = annotation_backfill_target_ids(
+        request_template.get("items") if isinstance(request_template, dict) else []
+    )
+    if not requested_ids:
+        return
+    returned_ids = set(annotation_backfill_target_ids(result.get("items") if isinstance(result, dict) else []))
+    missing_ids = [target_id for target_id in requested_ids if target_id not in returned_ids]
+    if not missing_ids:
+        return
+    preview = ", ".join(missing_ids[:5])
+    if len(missing_ids) > 5:
+        preview += ", ..."
+    raise RuntimeError(
+        "Gemini annotation backfill response is incomplete: "
+        f"missing {len(missing_ids)} requested target(s): {preview}"
+    )
+
+
 def normalize_annotation_backfill_text(value) -> str:
     return " ".join(str(value or "").split())
 
@@ -2468,6 +2500,7 @@ class JobManager:
                                 time.sleep(retry_wait)
                 try:
                     batch_result = parse_annotation_backfill_response(response_text, log_func=log_annotation_backfill)
+                    validate_annotation_backfill_batch_result(request_template, batch_result)
                 except Exception as exc:
                     (backfill_dir / "latest-result.raw.txt").write_text(str(response_text or ""), encoding="utf-8")
                     (runs_dir / f"{run_id}-batch-{batch_index}-result.raw.txt").write_text(
@@ -2476,7 +2509,8 @@ class JobManager:
                     )
                     safe_detail = redact_text(str(exc), [api_key])
                     self.append_service_log(
-                        f"annotation-backfill {job_id}: parse failed in batch {batch_index}/{len(request_templates)}: {safe_detail}"
+                        f"annotation-backfill {job_id}: response parse/validation failed in batch "
+                        f"{batch_index}/{len(request_templates)}: {safe_detail}"
                     )
                     raise HTTPException(status_code=502, detail=safe_detail)
                 result = merge_annotation_backfill_results(result, batch_result)

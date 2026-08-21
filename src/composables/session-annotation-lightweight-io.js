@@ -119,7 +119,7 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
     );
     await storage.saveBundle(scope, normalized.generated, normalized.status);
     await requireLightweightIoFunction(deps, 'refreshGeneratedAnnotationIndexForCurrentDocument')();
-    requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems(
+    await requireLightweightIoFunction(deps, 'rebuildMarksFromAnnotationItems')(excludePreviewGeneratedItems(
       normalized.generated && normalized.generated.items
     ), {
       sourceType: 'annotation-lightweight-import',
