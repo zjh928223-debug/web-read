@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "frontend": {
+    "host": "127.0.0.1",
+    "port": 5184
+  },
+  "backend": {
+    "host": "127.0.0.1",
+    "port": 8776
+  },
+  "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+  "python": {
+    "executable": "python"
+  },
+  "tools": {
+    "ytDlp": "yt-dlp",
+    "whisperx": "whisperx",
+    "ffmpeg": "ffmpeg"
+  },
+  "network": {
+    "proxyUrl": "http://127.0.0.1:7897"
+  },
+  "ai": {
+    "model": "gemini-2.5-flash",
+    "baseUrl": ""
+  }
+}

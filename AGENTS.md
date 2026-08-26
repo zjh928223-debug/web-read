@@ -2,9 +2,20 @@
 
 ## Canonical Workspace
 
-`E:\read-web-next` is the only active project, implementation target, and runtime source.
+`E:\read-web-next-optimization` is the only active implementation target for architecture optimization.
+`E:\read-web-next` is the protected daily reader and may only be inspected for comparison until the
+user explicitly approves promotion. Do not edit, build, launch, or commit from that protected tree.
 `E:\read-web` is a read-only historical reference and may only be inspected when locating legacy
 behavior for a deliberate migration. Do not edit, build, launch, or commit from the historical tree.
+
+## Optimization Workspace Isolation
+
+- Use `config/runtime.optimization.json` for manual optimization runs.
+- Use frontend/backend ports `5184/8776`; never reuse the daily reader's `5174/8766`.
+- Use `E:\ReadWebData\SubtitleWorkflow-Optimization`; never write to the daily reader data root.
+- Start the optimization preview with `scripts/launch-optimization-preview.ps1`.
+- Preserve the copied uncommitted WhisperX/language-processing work unless the user explicitly
+  asks to change or discard it.
 
 ## What This Is
 
