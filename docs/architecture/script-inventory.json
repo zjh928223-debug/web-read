@@ -31,13 +31,16 @@
     "scripts/download-mdict-supplements.ps1",
     "scripts/launch-learning-page.ps1",
     "scripts/launch-next-preview.ps1",
+    "scripts/launch-optimization-preview.ps1",
     "scripts/lib/architecture-source-shape-policy.mjs",
     "scripts/lib/browser-port-policy.cjs",
     "scripts/lib/browser-port-policy.mjs",
     "scripts/lib/compatibility-isolation.mjs",
     "scripts/lib/compatibility-network-policy.mjs",
     "scripts/start-latest-reader.ps1",
-    "scripts/vocabulary-repository-browser-reopen-check.cjs"
+    "scripts/vocabulary-repository-browser-reopen-check.cjs",
+    "scripts/youtube-workflow-panel-behavior-check.cjs",
+    "scripts/youtube-workflow-panel-check.cjs"
   ],
   "archiveDelete": [
     ".codex/actions/check-read26-load.sh",

@@ -31,8 +31,7 @@ index.html
 src/
 ├── App.vue / main.js                 Vue root 与 Pinia 启动
 ├── components/                       Reader、Chunk、Video、Workflow UI
-├── pinia-stores/                     真实应用 store
-├── stores/                           window 兼容 store（待退役）
+├── pinia-stores/                     真实应用 store（当前唯一 store 所有者）
 ├── composables/
 │   ├── reader-runtime-assembly.js    Reader 顶层顺序
 │   ├── reader-*-runtime.js           import/control/playback/keyboard/app 行为域
@@ -85,6 +84,7 @@ docs/NEXT_WORKSPACE.md
 - `read-26.html`
 - root `app.js`
 - `reader-runtime-shell.js`
+- `src/stores/` window 兼容 store layer（已删除）
 - reader notes runtime/session/store/persistence
 - cloze UI 与手工 chunk 导入
 - former root annotation/chunk-note artifacts (deleted; see `docs/architecture/legacy-deletion-inventory.json`)
