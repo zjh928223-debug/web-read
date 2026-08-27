@@ -1,22 +1,34 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { sha256File, writeJsonAtomic } from './lib/release-manifest.mjs'
+import {
+  loadReleaseManifestSchema,
+  resolveViteConfigPath,
+  sha256File,
+  classifyExternalToolProbe,
+  EXTERNAL_TOOL_SUPPORT_MATRIX,
+  validateReleaseManifestSchema,
+  writeJsonAtomic,
+} from './lib/release-manifest.mjs'
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = parseArgs(process.argv.slice(2))
+const repoRoot = path.resolve(args.root || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const outputDir = path.resolve(args.output || path.join(repoRoot, 'output', 'release'))
 const previousRoot = path.resolve(args['previous-root'] || process.env.READ_WEB_PREVIOUS_RELEASE_ROOT || 'E:\\read-web')
 
-if (args['require-clean'] && git(repoRoot, 'status', '--porcelain')) throw new Error('release candidate requires a clean Git worktree')
+if (args['require-clean'] && git(repoRoot, 'status', '--porcelain', '--untracked-files=all')) throw new Error('release candidate requires a clean Git worktree')
 await stat(path.join(repoRoot, 'dist', 'index.html'))
 await stat(path.join(previousRoot, 'index.html'))
-await mkdir(outputDir, { recursive: true })
 
 const current = await createManifest(repoRoot, 'candidate')
 const previous = await createManifest(previousRoot, 'previous')
+const schema = await loadReleaseManifestSchema()
+validateManifestOrThrow(current, schema, 'candidate', repoRoot)
+validateManifestOrThrow(previous, schema, 'previous', previousRoot)
+await mkdir(outputDir, { recursive: true })
 await writeJsonAtomic(path.join(outputDir, 'release-manifest.json'), current)
 await writeJsonAtomic(path.join(outputDir, 'previous-release-manifest.json'), previous)
 await writeJsonAtomic(path.join(outputDir, 'release-state.json'), {
@@ -34,40 +46,76 @@ console.log(`current=${current.release.gitSha} previous=${previous.release.gitSh
 async function createManifest(root, role) {
   const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
   const artifactPaths = await collectArtifacts(root)
+  const sourcePaths = artifactPaths.filter((relative) => !relative.replaceAll('\\', '/').startsWith('dist/'))
+  const distPaths = artifactPaths.filter((relative) => relative.replaceAll('\\', '/').startsWith('dist/'))
+  const nodeVersion = resolveRuntimeVersion(root, 'node', process.execPath, ['--version'])
+  const npmVersion = resolveRuntimeVersion(
+    root,
+    'npm',
+    process.platform === 'win32' ? process.execPath : 'npm',
+    process.platform === 'win32'
+      ? [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'), '--version']
+      : ['--version'],
+  )
+  const pythonVersion = resolveRuntimeVersion(root, 'python', process.platform === 'win32' ? 'python.exe' : 'python', ['--version'])
+  const nodeLock = await lockSummary(root, 'package-lock.json', 'npm')
+  const pythonLock = await lockSummary(root, 'tools/subtitle-workflow/requirements-service.lock', 'pip-require-hashes')
+  const externalTools = {
+    ffmpeg: await toolDescriptor(root, 'ffmpeg', ['-version']),
+    ytDlp: await toolDescriptor(root, 'yt-dlp', ['--version']),
+    whisperx: await toolDescriptor(root, 'whisperx', ['--version']),
+  }
+  const runtime = {
+    node: nodeVersion,
+    npm: npmVersion,
+    python: pythonVersion,
+    dataRoot: process.env.READ_WEB_SUBTITLE_DATA_ROOT || null,
+    sourceSha256: await digestPaths(root, sourcePaths),
+    distSha256: await digestPaths(root, distPaths),
+  }
+  runtime.toolchainSha256 = toolchainDigest({
+    node: runtime.node,
+    npm: runtime.npm,
+    python: runtime.python,
+    packageManager: packageJson.packageManager || '',
+    engines: packageJson.engines || {},
+    dependencyLocks: { node: nodeLock, python: pythonLock },
+    externalTools,
+  })
+  validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, Boolean(args['require-clean']))
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     role,
     release: {
+      releaseId: git(root, 'rev-parse', 'HEAD'),
       application: packageJson.name,
       frontendVersion: packageJson.version,
+      formatVersion: 2,
       productionHostVersion: '0.2.3',
       backendVersion: '0.2.3',
       gitSha: git(root, 'rev-parse', 'HEAD'),
       gitBranch: git(root, 'branch', '--show-current'),
-      dirty: Boolean(git(root, 'status', '--porcelain')),
+      dirty: Boolean(git(root, 'status', '--porcelain', '--untracked-files=all')),
       root,
     },
-    runtime: {
-      node: process.version,
-      npm: packageJson.packageManager?.replace(/^npm@/, '') || null,
-      python: command(root, 'python', ['--version']),
-    },
+    runtime,
     dependencyLocks: {
-      node: await optionalHash(root, 'package-lock.json'),
-      python: await optionalHash(root, 'tools/subtitle-workflow/requirements-service.lock'),
+      node: nodeLock,
+      python: pythonLock,
     },
-    externalTools: {
-      ffmpeg: command(root, 'ffmpeg', ['-version'])?.split(/\r?\n/, 1)[0] || null,
-      ytDlp: command(root, 'yt-dlp', ['--version']),
-      whisperx: command(root, 'whisperx', ['--version']),
-    },
+    externalTools,
     dataCompatibility: {
-      indexedDb: { name: 'SeekPlayerDB', version: 1, objectStore: 'files' },
+      indexedDb: { name: 'SeekPlayerDB', version: 1, objectStore: 'files', keyPath: 'id' },
       workflowServiceVersion: '0.2.3',
+      migration: { minimumSchemaVersion: 1, maximumSchemaVersion: 1, dryRunRequired: true, reversible: true },
       rollback: { minimumSchemaVersion: 1, maximumSchemaVersion: 1, reversible: true },
     },
     configuration: { schemaVersion: 1, minimumCompatible: 1, maximumCompatible: 1 },
+    compatibility: {
+      migration: { fromSchemaVersion: 1, toSchemaVersion: 1, dryRun: true, reversible: true },
+      rollback: { minimumReleaseFormatVersion: 2, maximumReleaseFormatVersion: 2, compatible: true, dataPreserving: true, reversible: true },
+    },
     artifacts: await Promise.all(artifactPaths.map(async (relative) => ({
       path: relative.replaceAll('\\', '/'),
       bytes: (await stat(path.join(root, relative))).size,
@@ -79,14 +127,15 @@ async function createManifest(root, role) {
 async function collectArtifacts(root) {
   const required = ['index.html', 'package.json', 'package-lock.json']
   const optional = [
-    'vite.config.mjs', 'scripts/launch-next-preview.ps1',
+    'scripts/launch-next-preview.ps1',
     'tools/subtitle-workflow/requirements-service.txt',
     'tools/subtitle-workflow/requirements-service.lock',
     'tools/subtitle-workflow/youtube_workflow/service.py',
     'tools/subtitle-workflow/youtube_workflow/production_host_prototype.py',
   ]
   const files = []
-  for (const relative of [...required, ...optional]) {
+  const viteConfig = resolveViteConfigPath(root)
+  for (const relative of [...required, ...(viteConfig ? [viteConfig] : []), ...optional]) {
     try {
       if ((await stat(path.join(root, relative))).isFile()) files.push(relative)
     } catch {
@@ -112,12 +161,185 @@ async function optionalHash(root, relative) {
   try { return await sha256File(path.join(root, relative)) } catch { return null }
 }
 
+async function lockSummary(root, relative, kind) {
+  const filename = path.join(root, relative)
+  const sha256 = await optionalHash(root, relative)
+  if (!sha256) throw new Error(`required dependency lock missing: ${filename}`)
+  const summary = { path: relative.replaceAll('\\', '/'), sha256, kind }
+  if (kind === 'npm') {
+    try { summary.lockfileVersion = JSON.parse(await readFile(filename, 'utf8')).lockfileVersion ?? null } catch { summary.lockfileVersion = null }
+  } else {
+    try {
+      const text = await readFile(filename, 'utf8')
+      summary.requireHashLines = text.split(/\r?\n/).filter((line) => line.includes('--hash=sha256:')).length
+      summary.pythonPolicy = /CPython\s+([0-9]+\.[0-9]+)/i.exec(text)?.[1] || null
+    } catch {
+      summary.requireHashLines = 0
+      summary.pythonPolicy = null
+    }
+  }
+  return summary
+}
+
+async function toolDescriptor(root, name, args) {
+  const policy = name === 'yt-dlp' ? EXTERNAL_TOOL_SUPPORT_MATRIX.ytDlp : EXTERNAL_TOOL_SUPPORT_MATRIX[name]
+  const configuredPath = process.env[`READ_WEB_RELEASE_${name === 'yt-dlp' ? 'YTDLP' : name.toUpperCase()}`]
+  const executable = await resolveCommandPath(root, name, configuredPath)
+  const verification = `probe=${args.join(' ')}; outputPattern=${policy.outputPattern}; supportMatrix=${policy.matrixId}; sha256=resolved-executable`
+  if (!executable) {
+    return {
+      executable: configuredPath || name,
+      version: null,
+      versionLine: null,
+      sha256: null,
+      source: configuredPath ? 'configured-path' : 'PATH',
+      verification,
+      required: false,
+      status: 'missing',
+      supportMatrix: policy.matrixId,
+      compatibility: {
+        matrix: policy.matrixId,
+        status: 'missing',
+        supported: false,
+        reason: 'executable-not-found',
+      },
+    }
+  }
+  const result = commandResult(root, executable, args)
+  const probe = classifyExternalToolProbe(name, result || { exitCode: null })
+  return {
+    executable,
+    version: probe.version,
+    versionLine: probe.versionLine,
+    sha256: await optionalHashAbsolute(executable),
+    source: executable,
+    verification,
+    required: false,
+    status: probe.status,
+    supportMatrix: policy.matrixId,
+    compatibility: probe.compatibility,
+  }
+}
+
+async function resolveCommandPath(root, name, configuredPath = '') {
+  const configuredAbsolute = configuredPath ? path.resolve(root, configuredPath) : ''
+  if (configuredAbsolute) {
+    try {
+      if ((await stat(configuredAbsolute)).isFile()) return configuredAbsolute
+    } catch {}
+  }
+  const resolver = process.platform === 'win32' ? 'where.exe' : 'which'
+  try {
+    const output = execFileSync(resolver, [name], { cwd: root, encoding: 'utf8', windowsHide: true })
+    return output.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || null
+  } catch { return null }
+}
+
+async function optionalHashAbsolute(filename) {
+  try { return await sha256File(filename) } catch { return null }
+}
+
+async function digestPaths(root, paths) {
+  const lines = []
+  for (const relative of paths.sort()) lines.push(`${relative.replaceAll('\\', '/')}:${await sha256File(path.join(root, relative))}`)
+  return createHash('sha256').update(lines.join('\n')).digest('hex')
+}
+
 function git(root, ...values) {
   return execFileSync('git', ['-C', root, ...values], { encoding: 'utf8', windowsHide: true }).trim()
 }
 
 function command(root, file, values) {
-  try { return execFileSync(file, values, { cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return null }
+  const result = commandResult(root, file, values)
+  if (!result || result.error || result.exitCode !== 0) return null
+  return `${result.stdout || ''}\n${result.stderr || ''}`.trim() || null
+}
+
+function commandResult(root, file, values) {
+  try {
+    const result = spawnSync(file, values, {
+      cwd: root,
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return {
+      exitCode: result.status,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      error: result.error || null,
+    }
+  } catch (error) {
+    return { exitCode: null, stdout: '', stderr: '', error }
+  }
+}
+
+function resolveRuntimeVersion(root, environmentName, defaultExecutable, values) {
+  const executable = process.env[`READ_WEB_RELEASE_${environmentName.toUpperCase()}`] || defaultExecutable
+  const commandOutput = command(root, executable, values)
+  const commandVersion = firstVersionLine(commandOutput)
+  if (commandVersion) return commandVersion
+  throw new Error(`release manifest runtime ${environmentName} version is unavailable: ${root}`)
+}
+
+function firstVersionLine(value) {
+  if (!value) return null
+  return String(value).split(/\r?\n/).map((line) => line.trim()).find(Boolean) || null
+}
+
+function versionToken(value) {
+  const match = /(?<!\d)(\d+\.\d+\.\d+)(?!\d)/.exec(String(value || ''))
+  return match?.[1] || null
+}
+
+function toolchainDigest(value) {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+}
+
+function validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, requirePackageManager = false) {
+  const expectedNode = packageJson.engines?.node
+  const expectedNpm = packageJson.engines?.npm
+  const actualNode = versionToken(runtime.node)
+  const actualNpm = versionToken(runtime.npm)
+  const actualPython = versionToken(runtime.python)
+  const isCandidate = role === 'candidate'
+  if (isCandidate && !/^\d+\.\d+\.\d+$/.test(String(expectedNode || ''))) {
+    throw new Error(`release manifest Node policy is unavailable or unsupported: ${root}`)
+  }
+  if (isCandidate && !/^\d+\.\d+\.\d+$/.test(String(expectedNpm || ''))) {
+    throw new Error(`release manifest npm policy is unavailable or unsupported: ${root}`)
+  }
+  if (expectedNode && actualNode !== expectedNode) {
+    throw new Error(`release manifest Node version is unsupported: ${actualNode || runtime.node}; expected ${expectedNode}: ${root}`)
+  }
+  if (expectedNpm && actualNpm !== expectedNpm) {
+    throw new Error(`release manifest npm version is unsupported: ${actualNpm || runtime.npm}; expected ${expectedNpm}: ${root}`)
+  }
+  const packageManager = String(packageJson.packageManager || '')
+  if (isCandidate && requirePackageManager && !new RegExp(`^npm@${escapeRegExp(String(expectedNpm))}$`).test(packageManager)) {
+    throw new Error(`release manifest packageManager must declare npm@${expectedNpm}: ${root}`)
+  }
+  if (packageManager && !new RegExp(`^npm@${escapeRegExp(String(expectedNpm || ''))}$`).test(packageManager)) {
+    throw new Error(`release manifest packageManager does not match engines.npm: ${root}`)
+  }
+  const pythonPolicy = String(pythonLock.pythonPolicy || '')
+  if (isCandidate && !/^\d+\.\d+$/.test(pythonPolicy)) {
+    throw new Error(`release manifest Python policy is unavailable: ${root}`)
+  }
+  if (pythonPolicy && (!actualPython || !actualPython.startsWith(`${pythonPolicy}.`))) {
+    throw new Error(`release manifest Python version is unsupported: ${actualPython || runtime.python}; expected CPython ${pythonPolicy}.x: ${root}`)
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function validateManifestOrThrow(manifest, schema, role, root) {
+  const failures = validateReleaseManifestSchema(manifest, schema)
+  if (failures.length) {
+    throw new Error(`release manifest schema validation failed before write (${role}, ${root}): ${failures.join('; ')}`)
+  }
 }
 
 function parseArgs(values) {

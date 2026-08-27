@@ -9,7 +9,7 @@
     "performance": 17,
     "release": 15
   },
-  "packageScriptCount": 233,
+  "packageScriptCount": 235,
   "executableScriptCount": 256,
   "packageCommands": [
     {
@@ -1172,6 +1172,30 @@
         "scripts/retired-notes-drain-check.mjs"
       ],
       "owner": "package.json#scripts.verify:notes-wrapper-drain"
+    },
+    {
+      "name": "verify:optimization-launcher",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/optimization-launcher-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:optimization-launcher"
+    },
+    {
+      "name": "verify:optimization-launcher:pwsh",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind pwsh",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/optimization-launcher-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:optimization-launcher:pwsh"
     },
     {
       "name": "verify:passage-preview",
@@ -5165,6 +5189,7 @@
       "path": "scripts/lib/release-manifest.mjs",
       "category": "release",
       "layers": [
+        "architecture",
         "release"
       ],
       "aggregates": [],
@@ -5175,7 +5200,9 @@
       ],
       "invocation": "inventory-only",
       "evidence": {
-        "sourceShape": [],
+        "sourceShape": [
+          "asserts-file-shape"
+        ],
         "sourceRead": false,
         "browser": false,
         "performance": false,

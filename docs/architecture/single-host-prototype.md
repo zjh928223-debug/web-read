@@ -1,6 +1,8 @@
 # Single-host prototype comparison
 
-This is evidence for OpenSpec task 3.1. The prototype is intentionally not connected to the launcher, RuntimeConfig, or authentication.
+This is the architecture evidence for OpenSpec task 3.1. The FastAPI Local App Host prototype is
+now wired into the isolated optimization launcher; the nine Node capability plugins remain behind
+an explicitly managed loopback sidecar until they are ported.
 
 ## Current Vite server capabilities
 
@@ -36,7 +38,26 @@ restored owners.
 | FastAPI single host | one Python host after migration | native prototype proven | existing ASGI routes and Range preserved | require focused Python ports or temporary Node sidecar | preferred target; consolidates the already larger local API |
 | Node sidecar | Node host plus current Python workflow, unless workflow is proxied | straightforward with Vite/Express | needs HTTP proxy to Python | reused directly | lower short-term porting, but retains two owners/processes |
 
-The experiment supports FastAPI as the target production host, while explicitly leaving the nine Node plugin migrations as follow-up work before Vite can be removed from daily use.
+The experiment supports FastAPI as the production host. The optimization launcher now removes Vite
+from the default serving path: it builds `dist`, starts a loopback stable front door on `5184`, and
+runs each FastAPI candidate Host on an isolated internal port. The capability sidecar remains on
+`8776` only for the still-Node-owned endpoint implementations. Vite remains an explicit
+source-debugging fallback, and the nine plugin migrations remain follow-up work.
+
+### Optimization launcher integration
+
+`scripts/launch-optimization-preview.ps1` resolves `config/runtime.optimization.json`, validates
+the fixed loopback ports and isolated data root, builds into a unique staging directory, validates
+the complete artifact checksum/manifest contract, and atomically publishes an immutable versioned
+release. The old Host remains behind the stable front door while the new internal Host and its
+per-instance profile lease become ready; an activation journal keeps the last committed target
+visible while the front-door target and active release/Host pointers are switched, and only a
+committed, coherent set becomes public before the old Host is stopped. The old release is retained
+as a rollback target and the project-root `dist` is never changed by this launcher. The Python host receives the
+selected manifest plus isolated browser/Python profile paths and holds its application-profile lease
+for its lifetime. The launcher manages the sidecar and Host with a token kept outside the page and
+logs, atomic state files, and separate stdout/stderr logs. `-Stop` uses recorded PID and
+process-start identity; `-DevFallback` is the only path that invokes the existing Vite launcher.
 
 ### Cold-process probe (2026-08-12)
 
