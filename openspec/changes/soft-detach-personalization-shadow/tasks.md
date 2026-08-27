@@ -6,7 +6,7 @@
 
 ## 2. 构建与实验保留
 
-- [x] 2.1 从 `vite.config.js` production inputs 和 clean-room artifact expectations 移除 `personalization-shadow.html`
+- [x] 2.1 从 `vite.config.mjs` production inputs 和 clean-room artifact expectations 移除 `personalization-shadow.html`
 - [x] 2.2 更新 personalization focused verification，确认独立实验源码仍存在且正式产品边界已生效
 
 ## 3. 验证与交付

@@ -41,7 +41,7 @@ try {
   await fs.rm(root, { recursive: true, force: true })
 }
 
-const vite = await fs.readFile(new URL('../vite.config.js', import.meta.url), 'utf8')
+const vite = await fs.readFile(new URL('../vite.config.mjs', import.meta.url), 'utf8')
 assert.match(vite, /loadRuntimeConfig/)
 assert.match(vite, /runtime\.frontend\.port/)
 assert.match(vite, /runtime\.network\.proxyUrl/)

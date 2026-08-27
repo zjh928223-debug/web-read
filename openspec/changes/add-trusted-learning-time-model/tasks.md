@@ -24,7 +24,7 @@
 - [ ] 3.4 实现服务端 verified anchor cache，以单调 clock 从最近 anchor 外推并在 TTL 前复用
 - [ ] 3.5 实现 `server_clock` fallback，确保 provider 失败不会冒充 `internet_verified`
 - [ ] 3.6 新增 focused Vite plugin 暴露只读 `GET /api/learning-time`，返回最小 observation DTO，并拒绝非 GET 或带学习 payload 的请求
-- [ ] 3.7 将 time plugin 接入 `vite.config.js` 的既有 plugin 顺序，不改变 reader `index.html` script order
+- [ ] 3.7 将 time plugin 接入 `vite.config.mjs` 的既有 plugin 顺序，不改变 reader `index.html` script order
 - [ ] 3.8 增加 endpoint 测试，覆盖 cache hit、并发请求合并、超时、fallback、无敏感字段和稳定 schema
 
 ## 4. 浏览器 `TrustedLearningClock`

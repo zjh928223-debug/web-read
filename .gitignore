@@ -18,6 +18,8 @@ node_modules/
 .playwright-deps/
 .codex/startup-logs/
 .codex/runtime-state/
+.codex/releases/
+.codex/release-staging/
 .codex/config.toml
 .claude/settings.local.json
 .codex-vite-*.log

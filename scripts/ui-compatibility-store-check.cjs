@@ -61,6 +61,7 @@ async function main() {
   });
   const consoleErrors = [];
   const pageErrors = [];
+  let browser = null;
 
   try {
     const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js');
@@ -78,7 +79,7 @@ async function main() {
     });
     assert.equal(await waitForServer(targetUrl), true, `Vite did not become ready at ${targetUrl}`);
 
-    const browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     await page.route('**/*', async (route) => {
       const url = route.request().url();
@@ -92,18 +93,24 @@ async function main() {
 
     const response = await page.goto(targetUrl, { waitUntil: 'load', timeout: 30_000 });
     assert.ok(response && response.status() < 400, `reader startup returned ${response && response.status()}`);
-    await page.waitForFunction(() => Boolean(window.__piniaStores?.ui && typeof window.showToast === 'function'));
+    await page.waitForFunction(() => Boolean(
+      document.querySelector('[data-vue-mounted]') &&
+      typeof window.showToast === 'function' &&
+      typeof window.showError === 'function'
+    ));
 
     const initial = await page.evaluate(() => ({
       legacyUiStoreType: typeof window.__uiStore,
       hasLegacyUiStore: Object.prototype.hasOwnProperty.call(window, '__uiStore'),
-      piniaUiStore: Boolean(window.__piniaStores && window.__piniaStores.ui),
+      piniaRuntimeRegistryGlobal: typeof window.__piniaStores,
+      vueMounted: Boolean(document.querySelector('[data-vue-mounted]')),
       showToastType: typeof window.showToast,
       showErrorType: typeof window.showError
     }));
     assert.equal(initial.legacyUiStoreType, 'undefined');
     assert.equal(initial.hasLegacyUiStore, false);
-    assert.equal(initial.piniaUiStore, true);
+    assert.equal(initial.piniaRuntimeRegistryGlobal, 'undefined');
+    assert.equal(initial.vueMounted, true);
     assert.equal(initial.showToastType, 'function');
     assert.equal(initial.showErrorType, 'function');
 
@@ -119,9 +126,9 @@ async function main() {
 
     assert.deepEqual(consoleErrors, [], `UI compatibility behavior emitted console errors: ${consoleErrors.join(' | ')}`);
     assert.deepEqual(pageErrors, [], `UI compatibility behavior emitted page errors: ${pageErrors.join(' | ')}`);
-    await browser.close();
     console.log(`UI compatibility store behavior passed at ${targetUrl}`);
   } finally {
+    await browser?.close().catch(() => {});
     if (serverProcess) killProcessTree(serverProcess);
     fs.rmSync(isolationRoot, { recursive: true, force: true });
   }

@@ -60,15 +60,32 @@ try {
   Assert-True (-not $orphan.HasExited) 'an adopted healthy runtime must not be stopped'
 
   $ownedPort = Get-RandomLoopbackPort
-  $arguments = @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}')
+  $sharedInstanceId = [Guid]::NewGuid().ToString('N')
+  $arguments = @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}')
   $first = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
     -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-    -ArgumentList $arguments -ReadyTimeoutSeconds 3
-  Assert-True ($first.status -eq 'started') 'first launch should start an owned instance'
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v1'
+  Assert-True ($first.status -eq 'started' -and $first.instanceId -eq $sharedInstanceId) 'first launch should start the requested owned instance identity'
   $second = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
     -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-    -ArgumentList $arguments -ReadyTimeoutSeconds 3
-  Assert-True ($second.status -eq 'reused' -and $second.pid -eq $first.pid) 'duplicate launch should reuse the owned instance'
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v1'
+  Assert-True ($second.status -eq 'reused' -and $second.pid -eq $first.pid -and $second.instanceId -eq $sharedInstanceId) 'duplicate launch should reuse the shared owned instance'
+  $replacement = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
+    -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v2'
+  Assert-True ($replacement.status -eq 'started' -and $replacement.pid -ne $first.pid -and $replacement.executableIdentity -eq 'content-v2') 'an executable identity change must replace a fixed-identity runtime'
+
+  $replacementFailed = $false
+  try {
+    Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
+      -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
+      -ArgumentList @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}', '--fail-ready') `
+      -ReadyTimeoutSeconds 1 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v3'
+  } catch { $replacementFailed = $_.Exception.Message -match 'did not become ready|previous runtime restored' }
+  Assert-True $replacementFailed 'failed executable replacement must be observable'
+  $restoredHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$ownedPort/health" -TimeoutSec 2
+  $restoredState = Get-Content -LiteralPath $ownedState -Raw | ConvertFrom-Json
+  Assert-True ($restoredHealth.status -eq 'ready' -and $restoredHealth.executableIdentity -eq 'content-v2' -and $restoredState.executableIdentity -eq 'content-v2') 'failed executable replacement did not restore the previous healthy runtime'
   Assert-True (Stop-OwnedRuntimeInstance -StatePath $ownedState -ExpectedReleaseId 'test-release' -ExpectedProfileId 'isolated-test' -ExpectedInstanceId $first.instanceId) 'owned instance should stop'
   Assert-True (-not (Test-Path -LiteralPath $ownedState)) 'owned state should be removed after stop'
 

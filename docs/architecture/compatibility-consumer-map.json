@@ -9,7 +9,7 @@
   },
   "summary": {
     "compatibilitySurfaces": 85,
-    "staticReaders": 54,
+    "staticReaders": 55,
     "staticWriters": 60,
     "runtimeDefined": 61,
     "runtimeCalled": 1,
@@ -79,7 +79,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1354
+          "line": 966
         },
         {
           "file": "src/composables/reader-feature-runtime-deps.js",
@@ -91,7 +91,7 @@
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 255
+          "line": 297
         }
       ],
       "writes": [
@@ -324,23 +324,23 @@
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1149
+          "line": 819
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1334
+          "line": 946
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2453
+          "line": 2088
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2453
+          "line": 2088
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2454
+          "line": 2089
         },
         {
           "file": "src/composables/app-handlers.js",
@@ -513,7 +513,7 @@
         },
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 508
+          "line": 721
         }
       ],
       "writes": [],
@@ -617,7 +617,7 @@
       "writes": [
         {
           "file": "src/composables/vocabulary-preview-module.js",
-          "line": 1464
+          "line": 1590
         }
       ],
       "runtime": {
@@ -745,7 +745,7 @@
         },
         {
           "file": "src/composables/vocabulary-preview-module.js",
-          "line": 171
+          "line": 185
         }
       ],
       "writes": [
@@ -822,11 +822,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1328
+          "line": 940
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1328
+          "line": 940
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1087,35 +1087,35 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1351
+          "line": 963
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1351
+          "line": 963
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1352
+          "line": 964
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1352
+          "line": 964
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 387
+          "line": 446
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 387
+          "line": 446
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 388
+          "line": 447
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 388
+          "line": 447
         }
       ],
       "writes": [
@@ -1432,7 +1432,12 @@
     },
     {
       "name": "ImportExportSharedHelpers",
-      "reads": [],
+      "reads": [
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 50
+        }
+      ],
       "writes": [
         {
           "file": "src/utils/import-export-helpers.js",
@@ -1560,7 +1565,7 @@
         "name": "markFileLoaded",
         "defined": false,
         "type": "undefined",
-        "reads": 1,
+        "reads": 0,
         "calls": 0,
         "assigned": false
       }
@@ -1624,11 +1629,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1337
+          "line": 949
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1348
+          "line": 960
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1655,11 +1660,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1336
+          "line": 948
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1347
+          "line": 959
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1705,28 +1710,6 @@
       }
     },
     {
-      "name": "prompt",
-      "reads": [
-        {
-          "file": "src/composables/vocabulary-preview-module.js",
-          "line": 1264
-        },
-        {
-          "file": "src/composables/vocabulary-preview-module.js",
-          "line": 1265
-        }
-      ],
-      "writes": [],
-      "runtime": {
-        "name": "prompt",
-        "defined": false,
-        "type": "undefined",
-        "reads": 0,
-        "calls": 0,
-        "assigned": false
-      }
-    },
-    {
       "name": "scheduleGeneratedAnnotationIndexRefresh",
       "reads": [],
       "writes": [
@@ -1742,6 +1725,28 @@
         "reads": 0,
         "calls": 0,
         "assigned": true
+      }
+    },
+    {
+      "name": "scheduler",
+      "reads": [
+        {
+          "file": "src/services/vocabulary/vocabulary-service.js",
+          "line": 680
+        },
+        {
+          "file": "src/services/vocabulary/vocabulary-service.js",
+          "line": 681
+        }
+      ],
+      "writes": [],
+      "runtime": {
+        "name": "scheduler",
+        "defined": false,
+        "type": "undefined",
+        "reads": 0,
+        "calls": 0,
+        "assigned": false
       }
     },
     {
@@ -1807,15 +1812,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 1358
-        },
-        {
-          "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2025
-        },
-        {
-          "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2025
+          "line": 970
         },
         {
           "file": "src/composables/media-source-module.js",
@@ -1854,11 +1851,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2702
+          "line": 2348
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2702
+          "line": 2348
         }
       ],
       "writes": [
@@ -1976,11 +1973,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 3189
+          "line": 2837
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 3189
+          "line": 2837
         },
         {
           "file": "src/composables/session-runtime-adapters.js",

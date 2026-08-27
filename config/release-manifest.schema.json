@@ -3,27 +3,191 @@
   "$id": "read-web-release-manifest-v1",
   "title": "Read-Web local release manifest",
   "type": "object",
-  "required": ["schemaVersion", "generatedAt", "release", "runtime", "dataCompatibility", "artifacts"],
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "release",
+    "runtime",
+    "dependencyLocks",
+    "externalTools",
+    "configuration",
+    "dataCompatibility",
+    "compatibility",
+    "artifacts"
+  ],
   "properties": {
     "schemaVersion": { "const": 1 },
     "generatedAt": { "type": "string", "format": "date-time" },
     "release": {
       "type": "object",
-      "required": ["application", "frontendVersion", "backendVersion", "gitSha", "gitBranch", "dirty"]
+      "required": [
+        "releaseId",
+        "formatVersion",
+        "application",
+        "frontendVersion",
+        "productionHostVersion",
+        "backendVersion",
+        "gitSha",
+        "gitBranch",
+        "dirty",
+        "root"
+      ],
+      "properties": {
+        "releaseId": { "type": "string", "minLength": 1 },
+        "formatVersion": { "const": 2 },
+        "application": { "type": "string", "minLength": 1 },
+        "frontendVersion": { "type": "string", "minLength": 1 },
+        "productionHostVersion": { "type": "string", "minLength": 1 },
+        "backendVersion": { "type": "string", "minLength": 1 },
+        "gitSha": { "type": "string", "minLength": 1 },
+        "gitBranch": { "type": "string" },
+        "dirty": { "type": "boolean" },
+        "root": { "type": "string", "minLength": 1 }
+      }
     },
-    "runtime": { "type": "object" },
-    "dataCompatibility": { "type": "object" },
+    "runtime": {
+      "type": "object",
+      "required": ["node", "npm", "python", "dataRoot", "sourceSha256", "distSha256"],
+      "properties": {
+        "node": { "type": "string", "minLength": 1 },
+        "npm": { "type": "string", "minLength": 1 },
+        "python": { "type": "string", "minLength": 1 },
+        "dataRoot": { "type": ["string", "null"] },
+        "sourceSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "distSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "toolchainSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "dependencyLocks": {
+      "type": "object",
+      "required": ["node", "python"],
+      "properties": {
+        "node": { "$ref": "#/$defs/lockSummary" },
+        "python": { "$ref": "#/$defs/lockSummary" }
+      }
+    },
+    "externalTools": {
+      "type": "object",
+      "required": ["ffmpeg", "ytDlp", "whisperx"],
+      "properties": {
+        "ffmpeg": { "$ref": "#/$defs/externalTool" },
+        "ytDlp": { "$ref": "#/$defs/externalTool" },
+        "whisperx": { "$ref": "#/$defs/externalTool" }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "required": ["schemaVersion", "minimumCompatible", "maximumCompatible"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "minimumCompatible": { "type": "integer", "minimum": 1 },
+        "maximumCompatible": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "dataCompatibility": {
+      "type": "object",
+      "required": ["indexedDb", "migration", "rollback"],
+      "properties": {
+        "indexedDb": {
+          "type": "object",
+          "required": ["name", "version", "objectStore", "keyPath"],
+          "properties": {
+            "name": { "const": "SeekPlayerDB" },
+            "version": { "const": 1 },
+            "objectStore": { "const": "files" },
+            "keyPath": { "const": "id" }
+          }
+        },
+        "workflowServiceVersion": { "type": "string", "minLength": 1 },
+        "migration": { "$ref": "#/$defs/migration" },
+        "rollback": { "$ref": "#/$defs/rollback" }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["migration", "rollback"],
+      "properties": {
+        "migration": { "$ref": "#/$defs/migration" },
+        "rollback": { "$ref": "#/$defs/rollback" }
+      }
+    },
     "artifacts": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["path"],
+        "required": ["path", "bytes", "sha256"],
         "properties": {
-          "path": { "type": "string" },
+          "path": { "type": "string", "minLength": 1 },
           "bytes": { "type": "integer", "minimum": 0 },
           "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
           "missing": { "type": "boolean" }
         }
+      }
+    }
+  },
+  "$defs": {
+    "lockSummary": {
+      "type": "object",
+      "required": ["path", "sha256", "kind"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "kind": { "type": "string", "minLength": 1 },
+        "lockfileVersion": { "type": ["integer", "null"] },
+        "requireHashLines": { "type": "integer", "minimum": 0 },
+        "pythonPolicy": { "type": ["string", "null"] }
+      }
+    },
+    "externalTool": {
+      "type": "object",
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "version": { "type": ["string", "null"] },
+        "versionLine": { "type": ["string", "null"] },
+        "sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+        "source": { "type": "string", "minLength": 1 },
+        "verification": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["verified", "missing", "degraded"] },
+        "supportMatrix": { "type": "string", "minLength": 1 },
+        "compatibility": { "$ref": "#/$defs/externalToolCompatibility" }
+      },
+      "required": ["executable", "version", "versionLine", "sha256", "source", "verification", "required", "status", "supportMatrix", "compatibility"]
+    },
+    "externalToolCompatibility": {
+      "type": "object",
+      "required": ["matrix", "status", "supported", "reason"],
+      "properties": {
+        "matrix": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["supported", "missing", "unsupported-version", "invalid-output", "probe-failed"] },
+        "supported": { "type": "boolean" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "required": ["reversible"],
+      "properties": {
+        "minimumSchemaVersion": { "type": "integer", "minimum": 1 },
+        "maximumSchemaVersion": { "type": "integer", "minimum": 1 },
+        "fromSchemaVersion": { "type": "integer", "minimum": 1 },
+        "toSchemaVersion": { "type": "integer", "minimum": 1 },
+        "dryRunRequired": { "type": "boolean" },
+        "dryRun": { "type": "boolean" },
+        "reversible": { "type": "boolean" }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "required": ["reversible"],
+      "properties": {
+        "minimumSchemaVersion": { "type": "integer", "minimum": 1 },
+        "maximumSchemaVersion": { "type": "integer", "minimum": 1 },
+        "minimumReleaseFormatVersion": { "type": "integer", "minimum": 1 },
+        "maximumReleaseFormatVersion": { "type": "integer", "minimum": 1 },
+        "reversible": { "type": "boolean" },
+        "compatible": { "type": "boolean" },
+        "dataPreserving": { "type": "boolean" }
       }
     }
   }

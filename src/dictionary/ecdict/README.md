@@ -4,7 +4,7 @@ ECDICT 的 Node SQLite service 仍与阅读器业务隔离，只读访问独立�
 browser client、`DictionaryEnrichmentAdapter` 和 formatter；当前已接入文章预习和复习答案区，
 但不会写入 SRS、复习记录、Vocabulary Entry 或现有释义。默认 `ECDICT_ENABLED=false`。
 
-`vite.config.js` 可以静态加载 ECDICT plugin 模块；关闭开关时 plugin 不注册 endpoint，
+`vite.config.mjs` 可以静态加载 ECDICT plugin 模块；关闭开关时 plugin 不注册 endpoint，
 SQLite service 也不会初始化。启用后，SQLite service 只在第一次查询时延迟加载。
 
 ## 边界

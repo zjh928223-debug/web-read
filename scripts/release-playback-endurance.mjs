@@ -156,8 +156,8 @@ try {
       bursts,
       switches: sequence.length,
       patternValid: sequence.every((value, index) => value === ['a', 'b', 'a'][index % 3]),
-      finalWord: window.__state.words[0]?.word,
-      finalWordCount: window.__state.words.length,
+      finalWord: document.querySelector('#transcript-vue-container [data-word-index="0"]')?.textContent?.trim() || '',
+      finalWordCount: document.querySelectorAll('#transcript-vue-container [data-word-index]').length,
     }
   }, { materials, bursts: budgets.rapidSwitchBursts })
   assert.equal(artifact.rapidSwitch.patternValid, true)

@@ -40,7 +40,7 @@ Wave 1/2、文章结算和其他工作，本轮没有清理或回退这些内容
  M src/services/vocabulary/srs-candidates.js
  M src/services/vocabulary/vocabulary-service.js
  M styles.css
- M vite.config.js
+ M vite.config.mjs
 ?? .codex-vite-5521.err.log
 ?? .codex-vite-5521.log
 ?? .codex-vite-5521.out.log

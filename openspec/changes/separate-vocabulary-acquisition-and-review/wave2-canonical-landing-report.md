@@ -25,7 +25,7 @@ P7–P10 已从统一集成 worktree 增量落地到 canonical。OpenSpec 进度
 - `src/features/srs-review/srs-review.css`
 - `src/services/annotation/click-resolver.js`
 - `styles.css`
-- `vite.config.js`
+- `vite.config.mjs`
 - Passage Preview、SRS policy/planner、pronunciation、Wave 1/P6 文件、日志和
   Playwright 产物等既有 untracked 内容
 

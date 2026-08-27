@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
   "categories": {
-    "architecture": 109,
-    "behavior": 86,
+    "architecture": 110,
+    "behavior": 87,
     "browser": 27,
-    "performance": 14,
+    "performance": 17,
     "release": 15
   },
-  "packageScriptCount": 230,
-  "executableScriptCount": 251,
+  "packageScriptCount": 235,
+  "executableScriptCount": 256,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1100,6 +1100,18 @@
       "owner": "package.json#scripts.verify:marks-store"
     },
     {
+      "name": "verify:material-center-model",
+      "command": "node scripts/material-center-model-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/material-center-model-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:material-center-model"
+    },
+    {
       "name": "verify:media-playback-result",
       "command": "node scripts/media-playback-result-check.cjs",
       "category": "behavior",
@@ -1162,6 +1174,30 @@
       "owner": "package.json#scripts.verify:notes-wrapper-drain"
     },
     {
+      "name": "verify:optimization-launcher",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/optimization-launcher-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:optimization-launcher"
+    },
+    {
+      "name": "verify:optimization-launcher:pwsh",
+      "command": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind pwsh",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/optimization-launcher-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:optimization-launcher:pwsh"
+    },
+    {
       "name": "verify:passage-preview",
       "command": "node scripts/passage-preview-verify.cjs",
       "category": "behavior",
@@ -1220,6 +1256,20 @@
         "scripts/passage-preview-preload-check.mjs"
       ],
       "owner": "package.json#scripts.verify:passage-preview:preload"
+    },
+    {
+      "name": "verify:passage-preview:rating-latency-browser",
+      "command": "node scripts/passage-preview-rating-latency-browser-check.cjs",
+      "category": "performance",
+      "layers": [
+        "browser",
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/passage-preview-rating-latency-browser-check.cjs"
+      ],
+      "owner": "package.json#scripts.verify:passage-preview:rating-latency-browser"
     },
     {
       "name": "verify:passage-preview:session-cache",
@@ -1388,9 +1438,8 @@
     {
       "name": "verify:personalization-shadow-activation",
       "command": "node scripts/personalization-shadow-activation-check.mjs",
-      "category": "architecture",
+      "category": "behavior",
       "layers": [
-        "architecture",
         "behavior"
       ],
       "invokes": [
@@ -1410,6 +1459,19 @@
         "scripts/personalization-shadow-diagnostics-check.mjs"
       ],
       "owner": "package.json#scripts.verify:personalization-shadow-diagnostics"
+    },
+    {
+      "name": "verify:personalization-shadow-product-boundary",
+      "command": "node scripts/personalization-shadow-product-boundary-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/personalization-shadow-product-boundary-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:personalization-shadow-product-boundary"
     },
     {
       "name": "verify:pinia-bridge-module",
@@ -2623,9 +2685,10 @@
     {
       "name": "verify:vocabulary-learning-uow-browser",
       "command": "node scripts/vocabulary-learning-uow-browser-check.cjs",
-      "category": "browser",
+      "category": "performance",
       "layers": [
         "browser",
+        "performance",
         "behavior"
       ],
       "invokes": [
@@ -2735,8 +2798,9 @@
     {
       "name": "verify:vocabulary-preview-ui",
       "command": "node scripts/vocabulary-preview-ui-check.cjs",
-      "category": "behavior",
+      "category": "browser",
       "layers": [
+        "browser",
         "behavior"
       ],
       "invokes": [
@@ -2879,27 +2943,27 @@
     },
     {
       "name": "verify:youtube-workflow-panel",
-      "command": "node scripts/youtube-workflow-panel-check.cjs",
+      "command": "node scripts/youtube-workflow-panel-v3-check.cjs",
       "category": "architecture",
       "layers": [
         "architecture",
         "behavior"
       ],
       "invokes": [
-        "scripts/youtube-workflow-panel-check.cjs"
+        "scripts/youtube-workflow-panel-v3-check.cjs"
       ],
       "owner": "package.json#scripts.verify:youtube-workflow-panel"
     },
     {
       "name": "verify:youtube-workflow-panel-behavior",
-      "command": "node scripts/youtube-workflow-panel-behavior-check.cjs",
+      "command": "node scripts/youtube-workflow-panel-v3-browser-check.cjs",
       "category": "browser",
       "layers": [
         "browser",
         "behavior"
       ],
       "invokes": [
-        "scripts/youtube-workflow-panel-behavior-check.cjs"
+        "scripts/youtube-workflow-panel-v3-browser-check.cjs"
       ],
       "owner": "package.json#scripts.verify:youtube-workflow-panel-behavior"
     },
@@ -5125,6 +5189,7 @@
       "path": "scripts/lib/release-manifest.mjs",
       "category": "release",
       "layers": [
+        "architecture",
         "release"
       ],
       "aggregates": [],
@@ -5135,7 +5200,9 @@
       ],
       "invocation": "inventory-only",
       "evidence": {
-        "sourceShape": [],
+        "sourceShape": [
+          "asserts-file-shape"
+        ],
         "sourceRead": false,
         "browser": false,
         "performance": false,
@@ -5249,6 +5316,30 @@
         "sourceShape": [
           "asserts-file-shape"
         ],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/material-center-model-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:material-center-model",
+      "owners": [
+        "package.json#scripts.verify:material-center-model"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
         "sourceRead": true,
         "browser": false,
         "performance": false,
@@ -5504,6 +5595,32 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/passage-preview-rating-latency-browser-check.cjs",
+      "category": "performance",
+      "layers": [
+        "browser",
+        "performance",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:passage-preview:rating-latency-browser",
+      "owners": [
+        "package.json#scripts.verify:passage-preview:rating-latency-browser"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": true,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {
@@ -5874,9 +5991,8 @@
     },
     {
       "path": "scripts/personalization-shadow-activation-check.mjs",
-      "category": "architecture",
+      "category": "behavior",
       "layers": [
-        "architecture",
         "behavior"
       ],
       "aggregates": [],
@@ -5887,9 +6003,7 @@
       ],
       "invocation": "direct",
       "evidence": {
-        "sourceShape": [
-          "asserts-source-text"
-        ],
+        "sourceShape": [],
         "sourceRead": true,
         "browser": false,
         "performance": false,
@@ -5923,6 +6037,34 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/personalization-shadow-product-boundary-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:personalization-shadow-product-boundary",
+      "owners": [
+        "package.json#scripts.verify:personalization-shadow-product-boundary"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-file-shape",
+          "asserts-source-text"
+        ],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },
@@ -6218,9 +6360,10 @@
     },
     {
       "path": "scripts/read-web-load-check.cjs",
-      "category": "browser",
+      "category": "performance",
       "layers": [
         "browser",
+        "performance",
         "behavior"
       ],
       "aggregates": [],
@@ -6234,7 +6377,7 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": true,
-        "performance": false,
+        "performance": true,
         "release": false,
         "behaviorAssertions": false,
         "executesModule": true,
@@ -9101,9 +9244,10 @@
     },
     {
       "path": "scripts/vocabulary-learning-uow-browser-check.cjs",
-      "category": "browser",
+      "category": "performance",
       "layers": [
         "browser",
+        "performance",
         "behavior"
       ],
       "aggregates": [],
@@ -9117,7 +9261,7 @@
         "sourceShape": [],
         "sourceRead": false,
         "browser": true,
-        "performance": false,
+        "performance": true,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
@@ -9225,8 +9369,9 @@
     },
     {
       "path": "scripts/vocabulary-preview-ui-check.cjs",
-      "category": "behavior",
+      "category": "browser",
       "layers": [
+        "browser",
         "behavior"
       ],
       "aggregates": [],
@@ -9239,12 +9384,12 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,
-        "browser": false,
+        "browser": true,
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
-        "startsBrowser": false
+        "startsBrowser": true
       }
     },
     {
@@ -9631,11 +9776,11 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:youtube-workflow-panel-behavior",
+      "owner": "docs/architecture/script-inventory.json#devTool",
       "owners": [
-        "package.json#scripts.verify:youtube-workflow-panel-behavior"
+        "docs/architecture/script-inventory.json#devTool"
       ],
-      "invocation": "direct",
+      "invocation": "inventory-only",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -9656,11 +9801,11 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:youtube-workflow-panel",
+      "owner": "docs/architecture/script-inventory.json#devTool",
       "owners": [
-        "package.json#scripts.verify:youtube-workflow-panel"
+        "docs/architecture/script-inventory.json#devTool"
       ],
-      "invocation": "direct",
+      "invocation": "inventory-only",
       "evidence": {
         "sourceShape": [
           "asserts-source-text",
@@ -9702,6 +9847,58 @@
         "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/youtube-workflow-panel-v3-browser-check.cjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:youtube-workflow-panel-behavior",
+      "owners": [
+        "package.json#scripts.verify:youtube-workflow-panel-behavior"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/youtube-workflow-panel-v3-check.cjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:youtube-workflow-panel",
+      "owners": [
+        "package.json#scripts.verify:youtube-workflow-panel"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
       }
     },
     {

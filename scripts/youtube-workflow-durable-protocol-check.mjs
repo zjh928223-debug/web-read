@@ -78,9 +78,11 @@ async function openWorkflowPanel(page, appUrl) {
 }
 
 async function submitUrl(page, url) {
-  await page.locator('button[data-view="add"]').click()
+  await page.getByRole('button', { name: /添加素材/ }).click()
   const input = page.locator('textarea[name="youtube-material-link"]')
   await input.fill(url)
+  await input.press('Tab')
+  await page.locator('.youtube-link-card').waitFor({ state: 'visible' })
   await page.locator('.youtube-workflow-form button[type="submit"]').click()
 }
 

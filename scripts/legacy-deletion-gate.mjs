@@ -26,11 +26,11 @@ for (const relativePath of rootArtifacts) {
 }
 
 const index = read('index.html')
-const vite = read('vite.config.js')
+const vite = read('vite.config.mjs')
 const packageJson = read('package.json')
 for (const artifact of rootArtifacts) {
   assert.equal(index.includes(`<script src="${artifact}"></script>`), false, `index.html must not load ${artifact}`)
-  assert.equal(vite.includes(artifact), false, `vite.config.js must not copy ${artifact}`)
+  assert.equal(vite.includes(artifact), false, `vite.config.mjs must not copy ${artifact}`)
   assert.equal(packageJson.includes(artifact), false, `package scripts must not reference ${artifact}`)
 }
 

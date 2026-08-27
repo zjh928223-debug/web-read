@@ -249,8 +249,10 @@ const journeys = {
     const wordSamples = []
     for (let index = 0; index < fixture.interactions.wordUpdates; index += 1) {
       const durationMs = await sample('word.active-update', () => page.evaluate((wordIndex) => {
-        const word = window.__state.words[wordIndex]
-        window.forceUpdateUI(Number(word.start) + 0.001)
+        const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
+        const start = Number(word?.getAttribute('data-word-start'))
+        if (!Number.isFinite(start)) throw new Error(`Missing DOM word start for index ${wordIndex}`)
+        window.forceUpdateUI(start + 0.001, { wordIndex })
       }, index % readerMaterial.wordCount))
       wordSamples.push(durationMs)
     }
@@ -260,8 +262,11 @@ const journeys = {
     const chunkSamples = []
     for (let index = 0; index < fixture.interactions.chunkUpdates; index += 1) {
       const durationMs = await sample('chunk.active-update', () => page.evaluate((chunkIndex) => {
-        const chunk = window.__state.chunkItems[chunkIndex]
-        window.forceUpdateUI(Number(chunk.start) + 0.001)
+        const chunk = document.querySelector(`#chunk-${chunkIndex}`)
+        const firstWord = chunk?.querySelector('[data-word-start]')
+        const start = Number(firstWord?.getAttribute('data-word-start'))
+        if (!Number.isFinite(start)) throw new Error(`Missing DOM chunk start for index ${chunkIndex}`)
+        window.forceUpdateUI(start + 0.001)
       }, index % chunkCount))
       chunkSamples.push(durationMs)
     }
@@ -316,8 +321,17 @@ const journeys = {
     await measure('srs-review.rate', async () => {
       const rating = page.locator('.srs-review-actions .is-good')
       await rating.waitFor({ state: 'visible' })
+      const previousWord = await page.locator('.srs-review-word-line h2').textContent()
+      const previousProgress = await page.locator('.srs-review-progress').textContent()
       await rating.click()
-      await page.waitForFunction(() => document.querySelector('.srs-review-actions button')?.disabled === true || document.querySelector('.srs-review-inline-notice'))
+      await page.waitForFunction(({ previousWord: priorWord, previousProgress: priorProgress }) => {
+        const completed = document.querySelector('.srs-review-state h2')?.textContent?.trim() === '本次复习完成'
+        const nextWord = document.querySelector('.srs-review-word-line h2')?.textContent?.trim()
+        const nextProgress = document.querySelector('.srs-review-progress')?.textContent?.trim()
+        return completed
+          || Boolean(nextWord && nextWord !== priorWord?.trim())
+          || Boolean(nextProgress && nextProgress !== priorProgress?.trim())
+      }, { previousWord, previousProgress })
     })
     return { reviewVisible: await page.locator('.srs-review-page').isVisible() }
   },

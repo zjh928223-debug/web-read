@@ -22,6 +22,8 @@ const included = [
     cwd: workflowRoot,
   }),
   command('frontend production build', npmCommand, ['run', 'build']),
+  command('optimization built launcher lifecycle and release safety', npmCommand, ['run', 'verify:optimization-launcher']),
+  command('optimization built launcher lifecycle and release safety (pwsh)', npmCommand, ['run', 'verify:optimization-launcher:pwsh']),
   command('isolated development browser journeys', process.execPath, ['scripts/vite-verify.js'], {
     env: {
       READ_WEB_PORT: isolatedPorts.dev,

@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
@@ -13,12 +13,14 @@ import { createAiPreviewSentenceVitePlugin } from './src/services/vocabulary/ai-
 import { createIeltsLearningPoolVitePlugin } from './src/services/vocabulary/ielts-learning-pool-vite-plugin.mjs'
 import { loadRuntimeConfig } from './src/services/runtime/runtime-config-node.mjs'
 
+const projectRoot = dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const runtime = loadRuntimeConfig({ env: { ...env, ...process.env }, cwd: process.cwd() })
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
   const ecdictServiceUrl = pathToFileURL(resolve(
-    __dirname,
+    projectRoot,
     'src/dictionary/ecdict/application/ecdict-service.mjs'
   )).href
   return {
@@ -81,8 +83,8 @@ export default defineConfig(({ mode }) => {
   build: {
     rollupOptions: {
       input: {
-        reader: resolve(__dirname, 'index.html'),
-        srsReview: resolve(__dirname, 'srs-review.html')
+        reader: resolve(projectRoot, 'index.html'),
+        srsReview: resolve(projectRoot, 'srs-review.html')
       }
     }
   },

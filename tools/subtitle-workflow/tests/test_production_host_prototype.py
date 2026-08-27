@@ -168,6 +168,52 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 self.assertTrue(ranged.headers["content-range"].startswith("bytes 2-5/"))
                 self.assertEqual(client.head(f"/api/jobs/{job_id}/media/audio").status_code, 200)
 
+    def test_drain_rejects_new_side_effects_and_allows_inflight_json_write_to_finish(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dist = root / "dist"
+            dist.mkdir()
+            (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+            started = threading.Event()
+            release = threading.Event()
+            workflow = FastAPI()
+
+            @workflow.post("/api/jobs/slow-json-write")
+            def slow_json_write():
+                started.set()
+                self.assertTrue(release.wait(3), "slow workflow fixture was not released")
+                (root / "workflow.json").write_text(json.dumps({"complete": True}), encoding="utf-8")
+                return {"complete": True}
+
+            app = create_local_app_host(
+                dist_dir=dist,
+                workflow_app=workflow,
+                access_token="drain-token",
+                workflow_access_token="drain-token",
+            )
+            result = {}
+            with TestClient(app, base_url="http://127.0.0.1", headers={"X-Read-Web-Token": "drain-token"}) as client:
+                worker = threading.Thread(
+                    target=lambda: result.setdefault("response", client.post("/api/jobs/slow-json-write")),
+                    daemon=True,
+                )
+                worker.start()
+                self.assertTrue(started.wait(3), "slow workflow request did not enter the host")
+                drain = client.post("/api/app/drain")
+                self.assertEqual(drain.status_code, 200)
+                self.assertFalse(drain.json()["acceptingRequests"])
+                rejected = client.post("/api/jobs/new-side-effect", json={})
+                self.assertEqual(rejected.status_code, 503)
+                release.set()
+                worker.join(3)
+                self.assertFalse(worker.is_alive(), "in-flight workflow request did not drain")
+                self.assertEqual(result["response"].status_code, 200)
+                self.assertEqual(json.loads((root / "workflow.json").read_text(encoding="utf-8")), {"complete": True})
+                status = client.get("/api/app/drain-status")
+                self.assertEqual(status.status_code, 200)
+                self.assertEqual(status.json()["inflightRequests"], 0)
+                self.assertFalse(client.get("/").status_code == 503, "static dist should remain readable during drain")
+
     def test_cli_token_is_environment_only_and_health_binds_release_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -289,7 +335,13 @@ class ProductionHostPrototypeTests(unittest.TestCase):
 
     def test_real_node_capability_host_owns_all_nine_routes_through_local_app_host(self):
         repository_root = Path(__file__).resolve().parents[3]
-        environment = {**os.environ, "READ_WEB_SERVICE_TOKEN": "node-instance-token"}
+        environment = {
+            **os.environ,
+            "READ_WEB_SERVICE_TOKEN": "node-instance-token",
+            "READ_WEB_RELEASE_ID": "node-release",
+            "READ_WEB_PROFILE_ID": "node-profile",
+            "READ_WEB_INSTANCE_ID": "node-instance",
+        }
         process = subprocess.Popen(
             ["node", "tools/local-capability-host.mjs", "--port", "0"],
             cwd=repository_root,
@@ -302,6 +354,13 @@ class ProductionHostPrototypeTests(unittest.TestCase):
         try:
             ready = json.loads(process.stdout.readline())
             self.assertEqual(ready["status"], "ready")
+            health_request = urllib.request.Request(f"http://127.0.0.1:{ready['port']}/api/app/health")
+            with urllib.request.urlopen(health_request) as health_response:
+                self.assertEqual(health_response.status, 200)
+                health = json.load(health_response)
+                self.assertEqual(health["releaseId"], "node-release")
+                self.assertEqual(health["profileId"], "node-profile")
+                self.assertEqual(health["instanceId"], "node-instance")
             health_request = urllib.request.Request(f"http://127.0.0.1:{ready['port']}/api/app/capabilities")
             with urllib.request.urlopen(health_request) as health_response:
                 self.assertEqual(health_response.status, 200)

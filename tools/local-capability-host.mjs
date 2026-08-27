@@ -33,6 +33,9 @@ export function loadCapabilityRuntimeConfig(env = process.env, cwd = process.cwd
     host: env.READ_WEB_CAPABILITY_HOST || '127.0.0.1',
     port: Number.parseInt(env.READ_WEB_CAPABILITY_PORT || '8770', 10),
     accessToken: String(env.READ_WEB_SERVICE_TOKEN || '').trim(),
+    releaseId: String(env.READ_WEB_RELEASE_ID || '').trim(),
+    profileId: String(env.READ_WEB_PROFILE_ID || '').trim(),
+    instanceId: String(env.READ_WEB_INSTANCE_ID || '').trim(),
     localSentenceDatabasePath: env.LOCAL_SENTENCE_DATABASE_PATH,
     translationApiKey: env.VOCABULARY_TRANSLATION_API_KEY || env.GEMINI_API_KEY,
     translationModels: compactModels(env.VOCABULARY_TRANSLATION_MODEL, env.VOCABULARY_TRANSLATION_FALLBACK_MODELS),
@@ -97,6 +100,16 @@ export function createLocalCapabilityServer(options = {}) {
     }
     if (!isAllowedLoopbackOrigin(request.headers.origin || '', request.headers.host || '')) {
       sendJson(response, 403, { detail: 'origin not allowed' })
+      return
+    }
+    if (request.method === 'GET' && requestUrl.pathname === '/api/app/health') {
+      sendJson(response, 200, {
+        status: 'ready',
+        service: 'read-web-local-capabilities',
+        releaseId: config.releaseId,
+        profileId: config.profileId,
+        instanceId: config.instanceId,
+      })
       return
     }
     if (request.method === 'GET' && requestUrl.pathname === '/api/app/capabilities') {

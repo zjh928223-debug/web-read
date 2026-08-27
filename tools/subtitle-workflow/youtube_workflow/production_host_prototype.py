@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from hashlib import sha256
 from http.cookies import SimpleCookie
 from ipaddress import ip_address
@@ -90,6 +91,7 @@ class PathPreservingAsgiDispatch:
         access_token: str,
         workflow_access_token: str,
         capability_access_token: str,
+        drain_state: dict | None = None,
     ):
         self.host_app = host_app
         self.workflow_app = workflow_app
@@ -97,6 +99,11 @@ class PathPreservingAsgiDispatch:
         self.access_token = access_token
         self.workflow_access_token = workflow_access_token
         self.capability_access_token = capability_access_token
+        self.drain_state = drain_state if drain_state is not None else {
+            "draining": False,
+            "inflight": 0,
+            "drainStartedAt": None,
+        }
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -108,6 +115,29 @@ class PathPreservingAsgiDispatch:
             if rejection is not None:
                 await rejection(scope, receive, send)
                 return
+            if path == "/api/app/drain" and str(scope.get("method", "GET")).upper() == "POST":
+                await self._handle_drain(scope, send)
+                return
+            if path == "/api/app/drain-status" and str(scope.get("method", "GET")).upper() in {"GET", "HEAD"}:
+                await self._handle_drain_status(scope, send)
+                return
+            if self.drain_state["draining"] and self._is_side_effect_path(path):
+                await Response(
+                    status_code=503,
+                    content=json.dumps({"status": "draining", "detail": "new side effects are disabled"}),
+                    media_type="application/json",
+                )(scope, receive, send)
+                return
+        if scope["type"] in {"http", "websocket"}:
+            self.drain_state["inflight"] += 1
+            try:
+                await self._dispatch(scope, receive, send, path)
+            finally:
+                self.drain_state["inflight"] = max(0, self.drain_state["inflight"] - 1)
+            return
+        await self._dispatch(scope, receive, send, path)
+
+    async def _dispatch(self, scope, receive, send, path: str):
         if (
             self.capability_app is not None
             and scope["type"] in {"http", "websocket"}
@@ -123,6 +153,33 @@ class PathPreservingAsgiDispatch:
             )
             return
         await self.host_app(scope, receive, self._cookie_send(send))
+
+    @staticmethod
+    def _is_side_effect_path(path: str) -> bool:
+        return path.startswith("/api/") and path not in {
+            "/api/health",
+            "/api/app/health",
+            "/api/app/capabilities",
+            "/api/app/drain-status",
+        }
+
+    async def _handle_drain(self, scope, send):
+        self.drain_state["draining"] = True
+        self.drain_state["drainStartedAt"] = self.drain_state["drainStartedAt"] or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        await JSONResponse({
+            "status": "draining",
+            "acceptingRequests": False,
+            "inflightRequests": self.drain_state["inflight"],
+            "drainStartedAt": self.drain_state["drainStartedAt"],
+        })(scope, lambda: {"type": "http.request", "body": b"", "more_body": False}, send)
+
+    async def _handle_drain_status(self, scope, send):
+        await JSONResponse({
+            "status": "draining" if self.drain_state["draining"] else "accepting",
+            "acceptingRequests": not self.drain_state["draining"],
+            "inflightRequests": self.drain_state["inflight"],
+            "drainStartedAt": self.drain_state["drainStartedAt"],
+        })(scope, lambda: {"type": "http.request", "body": b"", "more_body": False}, send)
 
     def _security_rejection(self, scope, path: str):
         headers = _headers(scope)
@@ -238,7 +295,10 @@ def create_local_app_host(
     workflow_token = str(workflow_access_token or instance_token).strip()
     capability_token = str(capability_access_token or instance_token).strip()
     root = Path(dist_dir).resolve()
-    workflow = workflow_app or create_workflow_app(access_token=workflow_token)
+    workflow = workflow_app or create_workflow_app(
+        access_token=workflow_token,
+        bind_host=bind_host,
+    )
     capabilities = capability_app or (
         LocalCapabilityProxy(capability_base_url, capability_token) if capability_base_url else None
     )
@@ -246,6 +306,11 @@ def create_local_app_host(
     manifest_identity = dict(release_manifest_identity or {})
     compatible_config = dict(config_compatibility or {})
     startup_recovery = dict(application_startup_recovery or {}) if application_startup_recovery else None
+    drain_state = {
+        "draining": False,
+        "inflight": 0,
+        "drainStartedAt": None,
+    }
     app = FastAPI(title="Read-Web Local App Host")
 
     @app.get("/api/app/health")
@@ -256,10 +321,14 @@ def create_local_app_host(
             "releaseId": str(release_id),
             "profileId": str(profile_id),
             "instanceId": str(instance_id),
+            "dataRoot": str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT", "")),
             "manifest": manifest_identity,
             "configCompatibility": compatible_config,
             "distReady": (root / "index.html").is_file(),
             "applicationStartupRecovery": startup_recovery,
+            "acceptingRequests": not drain_state["draining"],
+            "inflightRequests": drain_state["inflight"],
+            "drainStartedAt": drain_state["drainStartedAt"],
             "startupMs": round(max(0.0, (perf_counter() - boot_started_at) * 1000), 3),
         }
 
@@ -285,6 +354,7 @@ def create_local_app_host(
         access_token=instance_token,
         workflow_access_token=workflow_token,
         capability_access_token=capability_token,
+        drain_state=drain_state,
     )
 
 

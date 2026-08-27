@@ -1,5 +1,6 @@
 # Read-Web workflow service lock for CPython 3.10 / Windows x86-64.
 # Generated from requirements-service.txt with pip 26.0.1 on 2026-08-12.
+# Uvicorn was refreshed to 0.52.4 on 2026-08-26 for websockets-sansio compatibility.
 # Regenerate intentionally and review the complete version/hash diff.
 aiohappyeyeballs==2.7.1 --hash=sha256:9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472
 aiohttp==3.14.3 --hash=sha256:bdd0e2834dce1a26c1bbe26464861e16bbe217042cbff619247c11594472518c
@@ -20,7 +21,7 @@ edge-tts==7.2.8 --hash=sha256:361fe48ce7ef613adbe30f664e3765dd71029c6cb57427279e
 exceptiongroup==1.3.1 --hash=sha256:a7a39a3bd276781e98394987d3a5701d0c4edffb633bb7a5144577f82c773598
 fastapi==0.138.0 --hash=sha256:b6f54fd1bd72c80b0f899f172c61a600f6f7af9b43d4d772a018f35624048cb0
 frozenlist==1.8.0 --hash=sha256:667c3777ca571e5dbeb76f331562ff98b957431df140b54c85fd4d52eea8d8f6
-google-auth==2.56.3 --hash=sha256:8ec438808f813ad034535000261eed1067475d229d05bbf4216e78c3f2362e53
+google-auth[requests]==2.56.3 --hash=sha256:8ec438808f813ad034535000261eed1067475d229d05bbf4216e78c3f2362e53
 google-genai==1.68.0 --hash=sha256:a1bc9919c0e2ea2907d1e319b65471d3d6d58c54822039a249fe1323e4178d15
 h11==0.16.0 --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
 httpcore==1.0.9 --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55
@@ -44,7 +45,7 @@ tenacity==9.1.4 --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881a
 typing-extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
 typing-inspection==0.4.3 --hash=sha256:5f42b23858a91e0b4ef521f5418f03a0da3c9216fd2995ef5e73463100e676cd
 urllib3==2.7.0 --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
-uvicorn==0.49.0 --hash=sha256:ba3d14c3ee7e41c6c654c46c9eb489d33213cdd30aa1696eab1374337c13f68f
+uvicorn==0.52.4 --hash=sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1
 watchfiles==1.2.0 --hash=sha256:03b14855c6f35539e2d95c442ae9530a75762f1e26567152b9ed05f96534a74d
 websockets==16.1.1 --hash=sha256:d57685547e0060cc6fd90ee6a28405d6bd395e525545f13c8d7cd99c78afd79f
 yarl==1.24.5 --hash=sha256:240cbec09667c1fed4c6cd0060b9ec57332427d7441289a2ed8875dc9fb2b224

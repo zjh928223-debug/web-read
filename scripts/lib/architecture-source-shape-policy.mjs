@@ -12,6 +12,7 @@ export const ARCHITECTURE_EVIDENCE_OWNED_BY_OTHER_GATES = new Set([
   'scripts/passage-preview-check.cjs',
   'scripts/personalization-shadow-activation-check.mjs',
   'scripts/personalization-shadow-diagnostics-check.mjs',
+  'scripts/personalization-shadow-product-boundary-check.mjs',
   'scripts/production-host-lifecycle-check.mjs',
   'scripts/runtime-config-integration-check.mjs',
   'scripts/application-backup-target-integrity-matrix-check.mjs',
@@ -24,6 +25,7 @@ export const ARCHITECTURE_EVIDENCE_OWNED_BY_OTHER_GATES = new Set([
   'scripts/vocabulary-preview-service-check.cjs',
   'scripts/youtube-workflow-loader-check.cjs',
   'scripts/youtube-workflow-panel-check.cjs',
+  'scripts/youtube-workflow-panel-v3-check.cjs',
 ])
 
 export const CANONICAL_ARCHITECTURE_SOURCE_SHAPE_EXCLUSIONS = new Set([

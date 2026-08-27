@@ -1,0 +1,6 @@
+# Test-only dependencies for the Starlette/FastAPI HTTP and WebSocket clients.
+#
+# The production service lock intentionally does not install a test client.
+# Use requirements-service-test.lock for a fully hashed test environment.
+-r requirements-service.txt
+httpx2==2.12.0

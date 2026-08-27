@@ -27,6 +27,19 @@ function Test-TcpPortOccupied {
   }
 }
 
+function Wait-ManagedTcpPortFree {
+  param(
+    [Parameter(Mandatory)][int]$Port,
+    [int]$TimeoutSeconds = 5
+  )
+  $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+  do {
+    if (-not (Test-TcpPortOccupied -Port $Port)) { return $true }
+    Start-Sleep -Milliseconds 100
+  } while ([DateTime]::UtcNow -lt $deadline)
+  return $false
+}
+
 function Get-LoopbackPortOwnerProcess {
   param([Parameter(Mandatory)][int]$Port)
   $command = Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue
@@ -56,26 +69,30 @@ function Test-HealthIdentity {
     $Health,
     [Parameter(Mandatory)][string]$ReleaseId,
     [Parameter(Mandatory)][string]$ProfileId,
-    [Parameter(Mandatory)][string]$InstanceId
+    [Parameter(Mandatory)][string]$InstanceId,
+    [string]$ExecutableIdentity = ''
   )
   return $null -ne $Health `
-    -and [string]$Health.releaseId -eq $ReleaseId `
-    -and [string]$Health.profileId -eq $ProfileId `
-    -and [string]$Health.instanceId -eq $InstanceId `
-    -and [string]$Health.status -in @('ok', 'ready')
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'releaseId') -eq $ReleaseId `
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'profileId') -eq $ProfileId `
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'instanceId') -eq $InstanceId `
+    -and (-not $ExecutableIdentity -or [string](Get-ManagedRecordValue -Object $Health -Name 'executableIdentity') -eq $ExecutableIdentity) `
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'status') -in @('ok', 'ready')
 }
 
 function Test-HealthProfileIdentity {
   param(
     $Health,
     [Parameter(Mandatory)][string]$ReleaseId,
-    [Parameter(Mandatory)][string]$ProfileId
+    [Parameter(Mandatory)][string]$ProfileId,
+    [string]$ExecutableIdentity = ''
   )
   return $null -ne $Health `
-    -and [string]$Health.releaseId -eq $ReleaseId `
-    -and [string]$Health.profileId -eq $ProfileId `
-    -and -not [string]::IsNullOrWhiteSpace([string]$Health.instanceId) `
-    -and [string]$Health.status -in @('ok', 'ready')
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'releaseId') -eq $ReleaseId `
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'profileId') -eq $ProfileId `
+    -and -not [string]::IsNullOrWhiteSpace([string](Get-ManagedRecordValue -Object $Health -Name 'instanceId')) `
+    -and (-not $ExecutableIdentity -or [string](Get-ManagedRecordValue -Object $Health -Name 'executableIdentity') -eq $ExecutableIdentity) `
+    -and [string](Get-ManagedRecordValue -Object $Health -Name 'status') -in @('ok', 'ready')
 }
 
 function Read-InstanceState {
@@ -125,6 +142,661 @@ function Write-InstanceStateAtomic {
   }
 }
 
+function Get-ProcessStartUtc {
+  param($Process)
+  try { return $Process.StartTime.ToUniversalTime().ToString('O') } catch { return '' }
+}
+
+function Get-ProcessCommandLine {
+  param($Process)
+  try {
+    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($Process.Id)" -ErrorAction Stop
+    return [string]$processInfo.CommandLine
+  } catch {
+    return ''
+  }
+}
+
+function Test-ManagedProcessExecutable {
+  param(
+    $Process,
+    [string]$ExpectedFilePath = '',
+    [string[]]$ExpectedArgumentFragments = @()
+  )
+  if ($null -eq $Process) { return $false }
+  if ($ExpectedFilePath) {
+    try {
+      $actualPath = [string]$Process.Path
+      if (-not $actualPath -or -not [String]::Equals(
+          [IO.Path]::GetFullPath($actualPath),
+          [IO.Path]::GetFullPath($ExpectedFilePath),
+          [StringComparison]::OrdinalIgnoreCase)) {
+        return $false
+      }
+    } catch {
+      return $false
+    }
+  }
+  $commandLine = Get-ProcessCommandLine -Process $Process
+  foreach ($fragment in @($ExpectedArgumentFragments)) {
+    if ($fragment -and (-not $commandLine -or $commandLine.IndexOf([string]$fragment, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { return $false }
+  }
+  return $true
+}
+
+function Find-ManagedProcessByExecutable {
+  param(
+    [int]$Pid = 0,
+    [string]$ProcessStartUtc = '',
+    [Parameter(Mandatory)][string]$ExpectedFilePath,
+    [string[]]$ExpectedArgumentFragments = @()
+  )
+  $expectedFullPath = ''
+  try { $expectedFullPath = [IO.Path]::GetFullPath($ExpectedFilePath) } catch { return $null }
+  $processes = @()
+  $processMetadata = @()
+  if ($Pid -gt 0) {
+    $candidate = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+    if ($null -ne $candidate) { $processes = @($candidate) }
+  } else {
+    # Recovery is allowed to inspect only the executable named by the launch
+    # receipt.  Do not enumerate every process on the machine: besides being
+    # slow on Windows PowerShell, that would make a stale journal needlessly
+    # touch unrelated process metadata.  CIM's executable path and command
+    # line together are the ownership proof before a PID is adopted.
+    try {
+      $leaf = [IO.Path]::GetFileName($expectedFullPath)
+      if (-not $leaf) { return $null }
+      $escapedLeaf = $leaf.Replace("'", "''")
+      $processMetadata = @(Get-CimInstance Win32_Process -Filter "Name='$escapedLeaf'" -ErrorAction Stop)
+    } catch {
+      return $null
+    }
+  }
+  $candidates = if ($Pid -gt 0) { $processes | ForEach-Object { [pscustomobject]@{ process = $_; commandLine = $null; executablePath = $null } } } else {
+    $processMetadata | ForEach-Object {
+      if ([String]::Equals([string]$_.ExecutablePath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+        $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue
+        if ($null -ne $process) {
+          [pscustomobject]@{ process = $process; commandLine = [string]$_.CommandLine; executablePath = [string]$_.ExecutablePath }
+        }
+      }
+    }
+  }
+  foreach ($candidate in $candidates) {
+    $process = $candidate.process
+    if ($ProcessStartUtc) {
+      try {
+        $dateStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+        $expected = ([DateTimeOffset]::Parse(
+          $ProcessStartUtc,
+          [Globalization.CultureInfo]::InvariantCulture,
+          $dateStyles
+        )).UtcDateTime
+        $actual = $process.StartTime.ToUniversalTime()
+        if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -gt 1000) { continue }
+      } catch { continue }
+    }
+    if ($Pid -gt 0) {
+      $matches = Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $ExpectedFilePath -ExpectedArgumentFragments $ExpectedArgumentFragments
+    } else {
+      $matches = $true
+      foreach ($fragment in @($ExpectedArgumentFragments)) {
+        if ($fragment -and (-not $candidate.commandLine -or $candidate.commandLine.IndexOf([string]$fragment, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+          $matches = $false
+          break
+        }
+      }
+    }
+    if ($matches) {
+      return $process
+    }
+  }
+  return $null
+}
+
+function Find-ManagedProcessByReceipt {
+  param(
+    [int]$Pid = 0,
+    [string]$ProcessStartUtc = '',
+    [string]$ExpectedFilePath = '',
+    [string[]]$ExpectedArgumentFragments = @()
+  )
+  if ($Pid -lt 1 -or -not $ProcessStartUtc) { return $null }
+  $process = Get-Process -Id $Pid -ErrorAction SilentlyContinue
+  if ($null -eq $process) { return $null }
+  try {
+    $dateStyles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    $expected = ([DateTimeOffset]::Parse(
+      $ProcessStartUtc,
+      [Globalization.CultureInfo]::InvariantCulture,
+      $dateStyles
+    )).UtcDateTime
+    $actual = $process.StartTime.ToUniversalTime()
+    if ([Math]::Abs(($actual - $expected).TotalMilliseconds) -gt 1000) { return $null }
+  } catch {
+    return $null
+  }
+  if (-not (Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $ExpectedFilePath -ExpectedArgumentFragments $ExpectedArgumentFragments)) { return $null }
+  return $process
+}
+
+function Write-ManagedLaunchIntent {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$Status,
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [Parameter(Mandatory)][int]$Port,
+    [Parameter(Mandatory)][string]$HealthUrl,
+    [Parameter(Mandatory)][string]$FilePath,
+    [Parameter(Mandatory)][string[]]$ArgumentList,
+    [string]$WorkingDirectory = '',
+    [string]$StandardOutputPath = '',
+    [string]$StandardErrorPath = '',
+    [string]$ExecutableIdentity = '',
+    [int]$Pid = 0,
+    [string]$ProcessStartUtc = '',
+    [hashtable]$Metadata = @{}
+  )
+  $intent = [ordered]@{
+    schemaVersion = 1
+    status = $Status
+    releaseId = $ReleaseId
+    profileId = $ProfileId
+    instanceId = $InstanceId
+    port = $Port
+    healthUrl = $HealthUrl
+    filePath = $FilePath
+    argumentList = @($ArgumentList)
+    workingDirectory = $WorkingDirectory
+    standardOutputPath = $StandardOutputPath
+    standardErrorPath = $StandardErrorPath
+    executableIdentity = $ExecutableIdentity
+    pid = $Pid
+    processStartUtc = $ProcessStartUtc
+    createdAtUtc = ([DateTime]::UtcNow).ToString('O')
+    updatedAtUtc = ([DateTime]::UtcNow).ToString('O')
+  }
+  if ($Metadata) {
+    $intent.metadata = [ordered]@{}
+    foreach ($metadataName in $Metadata.Keys) { $intent.metadata[[string]$metadataName] = $Metadata[$metadataName] }
+  }
+  Write-InstanceStateAtomic -StatePath $Path -State $intent
+}
+
+function Resolve-ManagedArgumentList {
+  param(
+    [string[]]$ArgumentList = @(),
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [Parameter(Mandatory)][int]$Port,
+    [string]$ExecutableIdentity = ''
+  )
+  return @($ArgumentList | ForEach-Object {
+    [string]$_ -replace '\{instanceId\}', $InstanceId -replace '\{releaseId\}', $ReleaseId -replace '\{profileId\}', $ProfileId -replace '\{port\}', [string]$Port -replace '\{executableIdentity\}', $ExecutableIdentity
+  })
+}
+
+function Get-ManagedRecordValue {
+  param($Object, [Parameter(Mandatory)][string]$Name)
+  if ($null -eq $Object) { return $null }
+  $property = $Object.PSObject.Properties[$Name]
+  if ($null -eq $property) { return $null }
+  return $property.Value
+}
+
+function ConvertTo-ManagedStartRecord {
+  param([Parameter(Mandatory)][hashtable]$Spec)
+  $record = [ordered]@{
+    statePath = if ($Spec.ContainsKey('StatePath')) { [string]$Spec.StatePath } else { '' }
+    launchIntentPath = if ($Spec.ContainsKey('LaunchIntentPath')) { [string]$Spec.LaunchIntentPath } else { '' }
+    releaseId = [string]$Spec.ReleaseId
+    profileId = [string]$Spec.ProfileId
+    instanceId = [string]$Spec.InstanceId
+    port = [int]$Spec.Port
+    healthUrl = [string]$Spec.HealthUrl
+    filePath = [string]$Spec.FilePath
+    argumentList = @($Spec.ArgumentList)
+    workingDirectory = [string]$Spec.WorkingDirectory
+    readyTimeoutSeconds = [int]$Spec.ReadyTimeoutSeconds
+    reservedDailyPorts = @($Spec.ReservedDailyPorts)
+    standardOutputPath = [string]$Spec.StandardOutputPath
+    standardErrorPath = [string]$Spec.StandardErrorPath
+    executableIdentity = [string]$Spec.ExecutableIdentity
+    metadata = [ordered]@{}
+  }
+  if ($Spec.Metadata) {
+    foreach ($metadataName in $Spec.Metadata.Keys) { $record.metadata[[string]$metadataName] = $Spec.Metadata[$metadataName] }
+  }
+  return $record
+}
+
+function ConvertFrom-ManagedStartRecord {
+  param(
+    [Parameter(Mandatory)]$Record,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][string]$LaunchIntentPath
+  )
+  $metadata = @{}
+  $recordMetadata = Get-ManagedRecordValue -Object $Record -Name 'metadata'
+  if ($null -ne $recordMetadata) {
+    foreach ($property in @($recordMetadata.PSObject.Properties)) { $metadata[$property.Name] = $property.Value }
+  }
+  return @{
+    ReleaseId = [string](Get-ManagedRecordValue -Object $Record -Name 'releaseId')
+    ProfileId = [string](Get-ManagedRecordValue -Object $Record -Name 'profileId')
+    InstanceId = [string](Get-ManagedRecordValue -Object $Record -Name 'instanceId')
+    Port = [int](Get-ManagedRecordValue -Object $Record -Name 'port')
+    HealthUrl = [string](Get-ManagedRecordValue -Object $Record -Name 'healthUrl')
+    StatePath = $StatePath
+    FilePath = [string](Get-ManagedRecordValue -Object $Record -Name 'filePath')
+    ArgumentList = @((Get-ManagedRecordValue -Object $Record -Name 'argumentList') | ForEach-Object { [string]$_ })
+    WorkingDirectory = [string](Get-ManagedRecordValue -Object $Record -Name 'workingDirectory')
+    ReadyTimeoutSeconds = [Math]::Max(1, [int](Get-ManagedRecordValue -Object $Record -Name 'readyTimeoutSeconds'))
+    ReservedDailyPorts = @((Get-ManagedRecordValue -Object $Record -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    StandardOutputPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardOutputPath')
+    StandardErrorPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardErrorPath')
+    ExecutableIdentity = [string](Get-ManagedRecordValue -Object $Record -Name 'executableIdentity')
+    Metadata = $metadata
+    LaunchIntentPath = $LaunchIntentPath
+  }
+}
+
+function Write-ManagedReplacementRecord {
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][hashtable]$Fallback,
+    [Parameter(Mandatory)][hashtable]$Candidate,
+    [hashtable]$Preflight = $null
+  )
+  $record = [ordered]@{
+    schemaVersion = 1
+    status = 'replacing'
+    statePath = $StatePath
+    profileId = [string]$Fallback.ProfileId
+    port = [int]$Fallback.Port
+    createdAtUtc = ([DateTime]::UtcNow).ToString('O')
+    fallback = ConvertTo-ManagedStartRecord -Spec $Fallback
+    candidate = ConvertTo-ManagedStartRecord -Spec $Candidate
+  }
+  if ($null -ne $Preflight) { $record.preflight = ConvertTo-ManagedStartRecord -Spec $Preflight }
+  Write-InstanceStateAtomic -StatePath $Path -State $record
+}
+
+function Recover-ManagedRuntimeReplacement {
+  param([Parameter(Mandatory)][string]$ReplacementPath)
+  if (-not (Test-Path -LiteralPath $ReplacementPath -PathType Leaf)) { return $true }
+  $record = Read-InstanceState -StatePath $ReplacementPath
+  if ($null -eq $record -or [int](Get-ManagedRecordValue -Object $record -Name 'schemaVersion') -ne 1 -or (Get-ManagedRecordValue -Object $record -Name 'status') -ne 'replacing') { return $false }
+  $statePath = [string](Get-ManagedRecordValue -Object $record -Name 'statePath')
+  $fallbackRecord = Get-ManagedRecordValue -Object $record -Name 'fallback'
+  $candidateRecord = Get-ManagedRecordValue -Object $record -Name 'candidate'
+  $preflightRecord = Get-ManagedRecordValue -Object $record -Name 'preflight'
+  if (-not $statePath -or $null -eq $fallbackRecord -or $null -eq $candidateRecord) { return $false }
+  $fallback = ConvertFrom-ManagedStartRecord -Record $fallbackRecord -StatePath $statePath -LaunchIntentPath "$statePath.intent.json"
+  $candidate = ConvertFrom-ManagedStartRecord -Record $candidateRecord -StatePath $statePath -LaunchIntentPath "$statePath.intent.json"
+  if (-not $fallback.ReleaseId -or -not $fallback.ProfileId -or -not $fallback.InstanceId -or -not $fallback.HealthUrl -or -not $fallback.FilePath -or $fallback.Port -lt 1 -or $fallback.ArgumentList.Count -eq 0) { return $false }
+
+  if ($null -ne $preflightRecord) {
+    $preflightStatePath = [string](Get-ManagedRecordValue -Object $preflightRecord -Name 'statePath')
+    if (-not $preflightStatePath) { return $false }
+    $preflight = ConvertFrom-ManagedStartRecord -Record $preflightRecord -StatePath $preflightStatePath -LaunchIntentPath "$preflightStatePath.intent.json"
+    if (-not $preflight.ReleaseId -or -not $preflight.ProfileId -or -not $preflight.InstanceId -or -not $preflight.HealthUrl -or -not $preflight.FilePath -or $preflight.Port -lt 1 -or $preflight.ArgumentList.Count -eq 0) { return $false }
+    $preflightMatch = Find-ManagedOrphanRuntime `
+      -Port $preflight.Port `
+      -HealthUrl $preflight.HealthUrl `
+      -ReleaseId $preflight.ReleaseId `
+      -ProfileId $preflight.ProfileId `
+      -InstanceId $preflight.InstanceId `
+      -ExecutableIdentity $preflight.ExecutableIdentity `
+      -ExpectedFilePath $preflight.FilePath `
+      -ExpectedArgumentFragments $preflight.ArgumentList
+    $preflightProcess = Find-ManagedProcessByExecutable `
+      -ExpectedFilePath $preflight.FilePath `
+      -ExpectedArgumentFragments $preflight.ArgumentList
+    if ($null -ne $preflightMatch) {
+      if (-not (Stop-ManagedOrphanRuntime `
+          -Port $preflight.Port `
+          -HealthUrl $preflight.HealthUrl `
+          -ReleaseId $preflight.ReleaseId `
+          -ProfileId $preflight.ProfileId `
+          -InstanceId $preflight.InstanceId `
+          -ExecutableIdentity $preflight.ExecutableIdentity `
+          -ExpectedFilePath $preflight.FilePath `
+          -ExpectedArgumentFragments $preflight.ArgumentList `
+          -StopTimeoutSeconds 5) -or -not (Wait-ManagedTcpPortFree -Port $preflight.Port -TimeoutSeconds 5)) { return $false }
+    } elseif ($null -ne $preflightProcess) {
+      try {
+        Stop-Process -Id $preflightProcess.Id -ErrorAction Stop
+        try { $preflightProcess.WaitForExit(5000) | Out-Null } catch {}
+      } catch { return $false }
+      if (-not (Wait-ManagedTcpPortFree -Port $preflight.Port -TimeoutSeconds 5)) { return $false }
+    } elseif (Test-TcpPortOccupied -Port $preflight.Port) {
+      return $false
+    }
+    if (Test-Path -LiteralPath $preflight.StatePath -PathType Leaf) {
+      $preflightState = Read-InstanceState -StatePath $preflight.StatePath
+      if ($null -ne $preflightState -and [string]$preflightState.profileId -eq $preflight.ProfileId -and [string]$preflightState.instanceId -eq $preflight.InstanceId) {
+        Remove-Item -LiteralPath $preflight.StatePath -Force -ErrorAction SilentlyContinue
+      }
+    }
+    Remove-Item -LiteralPath $preflight.LaunchIntentPath -Force -ErrorAction SilentlyContinue
+  }
+
+  $oldState = Read-InstanceState -StatePath $statePath
+  if ($null -ne $oldState) {
+    $oldProcess = Get-MatchingOwnedProcess -State $oldState
+    $oldHealth = Get-LauncherHealth -HealthUrl $fallback.HealthUrl
+    if ($null -ne $oldProcess -and (Test-HealthIdentity -Health $oldHealth -ReleaseId $fallback.ReleaseId -ProfileId $fallback.ProfileId -InstanceId $fallback.InstanceId -ExecutableIdentity $fallback.ExecutableIdentity)) {
+      Remove-Item -LiteralPath $ReplacementPath -Force -ErrorAction SilentlyContinue
+      return $true
+    }
+  }
+
+  $candidateMatch = Find-ManagedOrphanRuntime `
+    -Port $candidate.Port `
+    -HealthUrl $candidate.HealthUrl `
+    -ReleaseId $candidate.ReleaseId `
+    -ProfileId $candidate.ProfileId `
+    -InstanceId $candidate.InstanceId `
+    -ExecutableIdentity $candidate.ExecutableIdentity `
+    -ExpectedFilePath $candidate.FilePath `
+    -ExpectedArgumentFragments $candidate.ArgumentList
+  $candidateProcess = Find-ManagedProcessByExecutable `
+    -ExpectedFilePath $candidate.FilePath `
+    -ExpectedArgumentFragments $candidate.ArgumentList
+  if ($null -ne $candidateMatch) {
+    $stopped = Stop-ManagedOrphanRuntime `
+      -Port $candidate.Port `
+      -HealthUrl $candidate.HealthUrl `
+      -ReleaseId $candidate.ReleaseId `
+      -ProfileId $candidate.ProfileId `
+      -InstanceId $candidate.InstanceId `
+      -ExecutableIdentity $candidate.ExecutableIdentity `
+      -ExpectedFilePath $candidate.FilePath `
+      -StopTimeoutSeconds 5
+    if (-not $stopped -or (Test-TcpPortOccupied -Port $candidate.Port)) { return $false }
+  } elseif ($null -ne $candidateProcess) {
+    try {
+      Stop-Process -Id $candidateProcess.Id -ErrorAction Stop
+      try { $candidateProcess.WaitForExit(5000) | Out-Null } catch {}
+    } catch {
+      return $false
+    }
+    if (-not (Wait-ManagedTcpPortFree -Port $candidate.Port -TimeoutSeconds 5)) { return $false }
+  } elseif (Test-TcpPortOccupied -Port $candidate.Port) {
+    # A listener that does not prove the candidate health/path identity is
+    # never stopped during replacement recovery.
+    return $false
+  }
+
+  try {
+    Start-ManagedRuntimeInstance @fallback -SkipTestKillHook | Out-Null
+    Remove-Item -LiteralPath $ReplacementPath -Force -ErrorAction SilentlyContinue
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Get-ManagedStartSpecFromState {
+  param($State)
+  if ($null -eq $State) { return $null }
+  $propertyNames = @($State.PSObject.Properties | Select-Object -ExpandProperty Name)
+  if ($propertyNames -notcontains 'filePath' -or $propertyNames -notcontains 'healthUrl' -or $propertyNames -notcontains 'argumentList') { return $null }
+  $filePath = [string]$State.filePath
+  $healthUrl = [string]$State.healthUrl
+  $arguments = @($State.argumentList | ForEach-Object { [string]$_ })
+  if (-not $filePath -or -not $healthUrl -or $arguments.Count -eq 0) { return $null }
+  $metadata = @{}
+  $reserved = @(
+    'schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid',
+    'processStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
+    'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath',
+    'healthUrl', 'launchIntentPath'
+  )
+  foreach ($property in @($State.PSObject.Properties)) {
+    if ($reserved -notcontains $property.Name) { $metadata[$property.Name] = $property.Value }
+  }
+  return @{
+    ReleaseId = [string]$State.releaseId
+    ProfileId = [string]$State.profileId
+    InstanceId = [string]$State.instanceId
+    Port = [int]$State.port
+    HealthUrl = $healthUrl
+    StatePath = ''
+    FilePath = $filePath
+    ArgumentList = $arguments
+    WorkingDirectory = [string]$State.workingDirectory
+    ReadyTimeoutSeconds = 30
+    ReservedDailyPorts = @(5173, 8765)
+    StandardOutputPath = [string]$State.standardOutputPath
+    StandardErrorPath = [string]$State.standardErrorPath
+    ExecutableIdentity = [string](Get-ManagedRecordValue -Object $State -Name 'executableIdentity')
+    Metadata = $metadata
+  }
+}
+
+function Find-ManagedOrphanRuntime {
+  param(
+    [Parameter(Mandatory)][int]$Port,
+    [Parameter(Mandatory)][string]$HealthUrl,
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [string]$ExecutableIdentity = '',
+    [string]$ExpectedFilePath = '',
+    [string[]]$ExpectedArgumentFragments = @()
+  )
+  $process = Get-LoopbackPortOwnerProcess -Port $Port
+  if ($null -eq $process) { return $null }
+  $health = Get-LauncherHealth -HealthUrl $HealthUrl
+  if (-not (Test-HealthIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId $InstanceId -ExecutableIdentity $ExecutableIdentity)) {
+    return $null
+  }
+  if (-not (Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $ExpectedFilePath -ExpectedArgumentFragments $ExpectedArgumentFragments)) {
+    return $null
+  }
+  return [pscustomobject]@{ process = $process; health = $health }
+}
+
+function Stop-ManagedOrphanRuntime {
+  param(
+    [Parameter(Mandatory)][int]$Port,
+    [Parameter(Mandatory)][string]$HealthUrl,
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [string]$ExecutableIdentity = '',
+    [string]$ExpectedFilePath = '',
+    [string[]]$ExpectedArgumentFragments = @(),
+    [int]$StopTimeoutSeconds = 3
+  )
+  $match = Find-ManagedOrphanRuntime `
+    -Port $Port `
+    -HealthUrl $HealthUrl `
+    -ReleaseId $ReleaseId `
+    -ProfileId $ProfileId `
+    -InstanceId $InstanceId `
+    -ExecutableIdentity $ExecutableIdentity `
+    -ExpectedFilePath $ExpectedFilePath `
+    -ExpectedArgumentFragments $ExpectedArgumentFragments
+  if ($null -eq $match) { return $false }
+  $process = $match.process
+  try {
+    Stop-Process -Id $process.Id -ErrorAction Stop
+    try { $process.WaitForExit([Math]::Max(1, $StopTimeoutSeconds) * 1000) | Out-Null } catch {}
+    $process.Refresh()
+    if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction Stop }
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Start-ManagedRuntimeProcessCore {
+  param(
+    [Parameter(Mandatory)][string]$ReleaseId,
+    [Parameter(Mandatory)][string]$ProfileId,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [Parameter(Mandatory)][int]$Port,
+    [Parameter(Mandatory)][string]$HealthUrl,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][string]$FilePath,
+    [string[]]$ArgumentList = @(),
+    [string]$WorkingDirectory = '',
+    [int]$ReadyTimeoutSeconds = 30,
+    [int[]]$ReservedDailyPorts = @(5173, 8765),
+    [string]$StandardOutputPath = '',
+    [string]$StandardErrorPath = '',
+    [string]$ExecutableIdentity = '',
+    [hashtable]$Metadata = @{},
+    [Parameter(Mandatory)][string]$LaunchIntentPath,
+    [switch]$SkipTestKillHook
+  )
+  $process = $null
+  $state = $null
+  $arguments = @($ArgumentList | ForEach-Object {
+    [string]$_ -replace '\{instanceId\}', $InstanceId -replace '\{releaseId\}', $ReleaseId -replace '\{profileId\}', $ProfileId -replace '\{port\}', [string]$Port -replace '\{executableIdentity\}', $ExecutableIdentity
+  })
+  Write-ManagedLaunchIntent `
+    -Path $LaunchIntentPath `
+    -Status 'starting' `
+    -ReleaseId $ReleaseId `
+    -ProfileId $ProfileId `
+    -InstanceId $InstanceId `
+    -Port $Port `
+    -HealthUrl $HealthUrl `
+    -FilePath $FilePath `
+    -ArgumentList $arguments `
+    -WorkingDirectory $WorkingDirectory `
+    -StandardOutputPath $StandardOutputPath `
+    -StandardErrorPath $StandardErrorPath `
+    -ExecutableIdentity $ExecutableIdentity `
+    -Metadata $Metadata
+  try {
+    $previousInstanceId = $env:READ_WEB_INSTANCE_ID
+    $env:READ_WEB_INSTANCE_ID = $InstanceId
+    $start = @{ FilePath = $FilePath; ArgumentList = $arguments; PassThru = $true; WindowStyle = 'Hidden' }
+    if ($WorkingDirectory) { $start.WorkingDirectory = $WorkingDirectory }
+    if ($StandardOutputPath) { $start.RedirectStandardOutput = $StandardOutputPath }
+    if ($StandardErrorPath) { $start.RedirectStandardError = $StandardErrorPath }
+    try { $process = Start-Process @start } finally { $env:READ_WEB_INSTANCE_ID = $previousInstanceId }
+
+    $processStartUtc = Get-ProcessStartUtc -Process $process
+    $runtimeRole = if ($Metadata.ContainsKey('runtimeRole')) { [string]$Metadata.runtimeRole } else { '' }
+    if (-not $SkipTestKillHook `
+      -and [string]$env:READ_WEB_OPTIMIZATION_TEST_KILL_PHASE -eq 'host-process-started' `
+      -and $runtimeRole -eq 'production-host') {
+      # Deliberately terminate before the PID receipt is refreshed.  The
+      # activation journal carries the candidate's port/health/argument
+      # identity, allowing the next launcher to find this exact child even if
+      # no manager state was ever written.
+      Write-Host "Synthetic launcher process termination after managed process spawn, before receipt: $InstanceId"
+      Stop-Process -Id $PID -Force -ErrorAction Stop
+      throw 'Synthetic launcher process-start boundary did not terminate the process.'
+    }
+    Write-ManagedLaunchIntent `
+      -Path $LaunchIntentPath `
+      -Status 'spawned' `
+      -ReleaseId $ReleaseId `
+      -ProfileId $ProfileId `
+      -InstanceId $InstanceId `
+      -Port $Port `
+      -HealthUrl $HealthUrl `
+      -FilePath $FilePath `
+      -ArgumentList $arguments `
+      -WorkingDirectory $WorkingDirectory `
+      -StandardOutputPath $StandardOutputPath `
+      -StandardErrorPath $StandardErrorPath `
+      -ExecutableIdentity $ExecutableIdentity `
+      -Pid $process.Id `
+      -ProcessStartUtc $processStartUtc `
+      -Metadata $Metadata
+
+    $state = [ordered]@{
+      schemaVersion = 1
+      releaseId = $ReleaseId
+      profileId = $ProfileId
+      instanceId = $InstanceId
+      port = $Port
+      pid = $process.Id
+      processStartUtc = $processStartUtc
+      startedAtUtc = ([DateTime]::UtcNow).ToString('O')
+      executableIdentity = $ExecutableIdentity
+      healthUrl = $HealthUrl
+      filePath = $FilePath
+      argumentList = @($arguments)
+      workingDirectory = $WorkingDirectory
+      standardOutputPath = $StandardOutputPath
+      standardErrorPath = $StandardErrorPath
+      launchIntentPath = $LaunchIntentPath
+    }
+    foreach ($metadataName in $Metadata.Keys) {
+      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'launchIntentPath')) {
+        throw "Managed runtime metadata may not replace ownership field '$metadataName'."
+      }
+      $state[[string]$metadataName] = $Metadata[$metadataName]
+    }
+    Write-InstanceStateAtomic -StatePath $StatePath -State $state
+    Write-ManagedLaunchIntent `
+      -Path $LaunchIntentPath `
+      -Status 'state-written' `
+      -ReleaseId $ReleaseId `
+      -ProfileId $ProfileId `
+      -InstanceId $InstanceId `
+      -Port $Port `
+      -HealthUrl $HealthUrl `
+      -FilePath $FilePath `
+      -ArgumentList $arguments `
+      -WorkingDirectory $WorkingDirectory `
+      -StandardOutputPath $StandardOutputPath `
+      -StandardErrorPath $StandardErrorPath `
+      -ExecutableIdentity $ExecutableIdentity `
+      -Pid $process.Id `
+      -ProcessStartUtc $processStartUtc `
+      -Metadata $Metadata
+
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $ReadyTimeoutSeconds))
+    do {
+      $process.Refresh()
+      if ($process.HasExited) { throw "Managed process exited before ready with code $($process.ExitCode)." }
+      $health = Get-LauncherHealth -HealthUrl $HealthUrl
+      if (Test-HealthIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId $InstanceId -ExecutableIdentity $ExecutableIdentity) {
+        $portOwner = Get-LoopbackPortOwnerProcess -Port $Port
+        if ($null -ne $portOwner -and $portOwner.Id -ne $process.Id) {
+          $state.pid = $portOwner.Id
+          $state.processStartUtc = Get-ProcessStartUtc -Process $portOwner
+          Write-InstanceStateAtomic -StatePath $StatePath -State $state
+        }
+        $readyPid = if ($null -ne $portOwner) { $portOwner.Id } else { $process.Id }
+        Remove-Item -LiteralPath $LaunchIntentPath -Force -ErrorAction SilentlyContinue
+        return [pscustomobject]@{ status = 'started'; pid = $readyPid; instanceId = $InstanceId; url = $HealthUrl; executableIdentity = $ExecutableIdentity }
+      }
+      Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Managed process did not become ready within $ReadyTimeoutSeconds seconds."
+  } catch {
+    $failure = $_
+    if ($null -ne $process) {
+      try {
+        $process.Refresh()
+        if (-not $process.HasExited) {
+          Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          try { $process.WaitForExit(3000) | Out-Null } catch {}
+        }
+      } catch {}
+    }
+    Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $LaunchIntentPath -Force -ErrorAction SilentlyContinue
+    throw $failure
+  }
+}
+
 function Stop-OwnedRuntimeInstance {
   param(
     [Parameter(Mandatory)][string]$StatePath,
@@ -160,14 +832,26 @@ function Start-ManagedRuntimeInstance {
     [int]$ReadyTimeoutSeconds = 30,
     [int[]]$ReservedDailyPorts = @(5173, 8765),
     [string]$StandardOutputPath = '',
-    [string]$StandardErrorPath = ''
+    [string]$StandardErrorPath = '',
+    [string]$InstanceId = '',
+    [string]$ExecutableIdentity = '',
+    [hashtable]$Metadata = @{},
+    [string]$LaunchIntentPath = '',
+    [hashtable]$FallbackStart = $null,
+    [hashtable]$PreflightStart = $null,
+    [switch]$SkipTestKillHook
   )
   Assert-LauncherPortSafety -Port $Port -ProfileId $ProfileId -ReservedDailyPorts $ReservedDailyPorts
   $stateDirectory = Split-Path -Parent $StatePath
   if (-not $stateDirectory) { $stateDirectory = (Get-Location).Path }
   New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
+  if (-not $LaunchIntentPath) { $LaunchIntentPath = "$StatePath.intent.json" }
   $lockPath = "$StatePath.lock"
+  $replacementPath = "$StatePath.replacement.json"
   $lock = $null
+  $replacementFallback = $null
+  $fallbackRecovered = $false
+  $replacementOldStopped = $false
   try {
     try {
       $lock = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -179,97 +863,207 @@ function Start-ManagedRuntimeInstance {
     if ($null -ne $existing) {
       $owned = Get-MatchingOwnedProcess -State $existing
       $health = Get-LauncherHealth -HealthUrl $HealthUrl
+      $requestedInstanceMatches = (-not $InstanceId) -or ([string]$existing.instanceId -eq $InstanceId)
+      $baseHealthIdentityMatches = Test-HealthIdentity `
+        -Health $health `
+        -ReleaseId $ReleaseId `
+        -ProfileId $ProfileId `
+        -InstanceId ([string]$existing.instanceId)
+      $executableIdentityMatches = (-not $ExecutableIdentity) -or (
+        ([string](Get-ManagedRecordValue -Object $existing -Name 'executableIdentity') -eq $ExecutableIdentity) `
+          -and ([string](Get-ManagedRecordValue -Object $health -Name 'executableIdentity') -eq $ExecutableIdentity)
+      )
       if ($null -ne $owned `
         -and [string]$existing.releaseId -eq $ReleaseId `
         -and [string]$existing.profileId -eq $ProfileId `
         -and [int]$existing.port -eq $Port `
-        -and (Test-HealthIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId ([string]$existing.instanceId))) {
-        return [pscustomobject]@{ status = 'reused'; pid = $owned.Id; instanceId = [string]$existing.instanceId; url = $HealthUrl }
+        -and $requestedInstanceMatches `
+        -and $baseHealthIdentityMatches `
+        -and $executableIdentityMatches) {
+        return [pscustomobject]@{ status = 'reused'; pid = $owned.Id; instanceId = [string]$existing.instanceId; url = $HealthUrl; executableIdentity = $ExecutableIdentity }
       }
-      if ($null -ne $owned) { throw 'A launcher-owned process exists but its health identity does not match; refusing replacement.' }
+      if ($null -ne $owned) {
+        $sameManagedIdentity = [string]$existing.releaseId -eq $ReleaseId `
+          -and [string]$existing.profileId -eq $ProfileId `
+          -and [int]$existing.port -eq $Port `
+          -and $requestedInstanceMatches
+        if ($ExecutableIdentity -and $sameManagedIdentity -and $baseHealthIdentityMatches -and -not $executableIdentityMatches) {
+          $replacementFallback = Get-ManagedStartSpecFromState -State $existing
+          if ($null -eq $replacementFallback -and $null -ne $FallbackStart) {
+            $replacementFallback = @{}
+            foreach ($fallbackName in $FallbackStart.Keys) { $replacementFallback[$fallbackName] = $FallbackStart[$fallbackName] }
+          }
+          if ($null -eq $replacementFallback) {
+            throw 'Executable identity changed, but no ownership-checked recovery start specification is available; refusing replacement.'
+          }
+          $replacementFallback.StatePath = $StatePath
+          $replacementFallback.LaunchIntentPath = $LaunchIntentPath
+          $replacementFallback.ReadyTimeoutSeconds = [Math]::Max(1, $ReadyTimeoutSeconds)
+          $replacementFallback.ReservedDailyPorts = @($ReservedDailyPorts)
+          $replacementCandidateInstanceId = [string]$existing.instanceId
+          $replacementCandidate = @{
+            ReleaseId = $ReleaseId
+            ProfileId = $ProfileId
+            InstanceId = $replacementCandidateInstanceId
+            Port = $Port
+            HealthUrl = $HealthUrl
+            StatePath = $StatePath
+            FilePath = $FilePath
+            ArgumentList = Resolve-ManagedArgumentList -ArgumentList $ArgumentList -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId $replacementCandidateInstanceId -Port $Port -ExecutableIdentity $ExecutableIdentity
+            WorkingDirectory = $WorkingDirectory
+            ReadyTimeoutSeconds = [Math]::Max(1, $ReadyTimeoutSeconds)
+            ReservedDailyPorts = @($ReservedDailyPorts)
+            StandardOutputPath = $StandardOutputPath
+            StandardErrorPath = $StandardErrorPath
+            ExecutableIdentity = $ExecutableIdentity
+            Metadata = $Metadata
+          }
+          $replacementPreflight = $null
+          if ($null -ne $PreflightStart) {
+            $replacementPreflight = @{}
+            foreach ($preflightName in $PreflightStart.Keys) { $replacementPreflight[$preflightName] = $PreflightStart[$preflightName] }
+            $replacementPreflight.ProfileId = $ProfileId
+            $replacementPreflight.ReleaseId = $ReleaseId
+            $replacementPreflight.ExecutableIdentity = $ExecutableIdentity
+          }
+          Write-ManagedReplacementRecord `
+            -Path $replacementPath `
+            -StatePath $StatePath `
+            -Fallback $replacementFallback `
+            -Candidate $replacementCandidate `
+            -Preflight $replacementPreflight
+          if ($null -ne $replacementPreflight) {
+            Start-ManagedRuntimeInstance @replacementPreflight -SkipTestKillHook | Out-Null
+            Stop-OwnedRuntimeInstance `
+              -StatePath $replacementPreflight.StatePath `
+              -ExpectedReleaseId $replacementPreflight.ReleaseId `
+              -ExpectedProfileId $replacementPreflight.ProfileId `
+              -ExpectedInstanceId $replacementPreflight.InstanceId `
+              -StopTimeoutSeconds 5 | Out-Null
+          }
+          Stop-OwnedRuntimeInstance `
+            -StatePath $StatePath `
+            -ExpectedReleaseId $ReleaseId `
+            -ExpectedProfileId $ProfileId `
+            -ExpectedInstanceId ([string]$existing.instanceId) `
+            -StopTimeoutSeconds 5 | Out-Null
+          $replacementOldStopped = $true
+          $runtimeRole = if ($Metadata.ContainsKey('runtimeRole')) { [string]$Metadata.runtimeRole } else { '' }
+          if ([string]$env:READ_WEB_OPTIMIZATION_TEST_KILL_PHASE -in @('runtime-replacement-stopped', 'front-door-replacement-stopped') `
+            -and ($runtimeRole -eq 'front-door' -or $env:READ_WEB_OPTIMIZATION_TEST_KILL_PHASE -eq 'runtime-replacement-stopped')) {
+            Write-Host "Synthetic launcher process termination after managed replacement stop: $($existing.instanceId)"
+            Stop-Process -Id $PID -Force -ErrorAction Stop
+            throw 'Synthetic managed replacement stop boundary did not terminate the process.'
+          }
+        } else {
+          throw 'A launcher-owned process exists but its health identity does not match; refusing replacement.'
+        }
+      }
       Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
     }
 
     if (Test-TcpPortOccupied -Port $Port) {
       $health = Get-LauncherHealth -HealthUrl $HealthUrl
-      if (Test-HealthProfileIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId) {
+      $requestedInstanceMatches = (-not $InstanceId) -or ([string]$health.instanceId -eq $InstanceId)
+      if ((Test-HealthProfileIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -ExecutableIdentity $ExecutableIdentity) -and $requestedInstanceMatches) {
         $portOwner = Get-LoopbackPortOwnerProcess -Port $Port
-        $knownPid = if ($null -ne $portOwner) { $portOwner.Id } else { 0 }
-        if ($null -ne $portOwner) {
-          Write-InstanceStateAtomic -StatePath $StatePath -State ([ordered]@{
-            schemaVersion = 1
-            releaseId = $ReleaseId
-            profileId = $ProfileId
-            instanceId = [string]$health.instanceId
-            port = $Port
-            pid = $portOwner.Id
-            processStartUtc = ($portOwner.StartTime.ToUniversalTime()).ToString('O')
-            startedAtUtc = ([DateTime]::UtcNow).ToString('O')
-          })
+        if ($null -eq $portOwner) {
+          throw "Port $Port has a matching health response but its loopback process owner could not be proven; refusing adoption."
         }
+        $adoptedArguments = Resolve-ManagedArgumentList `
+          -ArgumentList $ArgumentList `
+          -ReleaseId $ReleaseId `
+          -ProfileId $ProfileId `
+          -InstanceId ([string]$health.instanceId) `
+          -Port $Port `
+          -ExecutableIdentity $ExecutableIdentity
+        if (-not (Test-ManagedProcessExecutable -Process $portOwner -ExpectedFilePath $FilePath -ExpectedArgumentFragments $adoptedArguments)) {
+          throw "Port $Port is occupied by a process whose executable or arguments do not match the requested runtime; refusing adoption."
+        }
+        Write-InstanceStateAtomic -StatePath $StatePath -State ([ordered]@{
+          schemaVersion = 1
+          releaseId = $ReleaseId
+          profileId = $ProfileId
+          instanceId = [string]$health.instanceId
+          port = $Port
+          pid = $portOwner.Id
+          processStartUtc = Get-ProcessStartUtc -Process $portOwner
+          startedAtUtc = ([DateTime]::UtcNow).ToString('O')
+          executableIdentity = $ExecutableIdentity
+          healthUrl = $HealthUrl
+          filePath = $FilePath
+          argumentList = @($adoptedArguments)
+          workingDirectory = $WorkingDirectory
+          standardOutputPath = $StandardOutputPath
+          standardErrorPath = $StandardErrorPath
+          launchIntentPath = $LaunchIntentPath
+        })
         return [pscustomobject]@{
           status = 'reused'
-          pid = $knownPid
+          pid = $portOwner.Id
           instanceId = [string]$health.instanceId
           url = $HealthUrl
           adopted = $true
+          executableIdentity = $ExecutableIdentity
         }
       }
       throw "Port $Port is occupied by an unknown process; it will not be stopped. Choose another port or handle it manually."
     }
 
-    $instanceId = [Guid]::NewGuid().ToString('N')
-    $previousInstanceId = $env:READ_WEB_INSTANCE_ID
-    $env:READ_WEB_INSTANCE_ID = $instanceId
-    $arguments = @($ArgumentList | ForEach-Object {
-      [string]$_ -replace '\{instanceId\}', $instanceId -replace '\{releaseId\}', $ReleaseId -replace '\{profileId\}', $ProfileId -replace '\{port\}', [string]$Port
-    })
-    $start = @{ FilePath = $FilePath; ArgumentList = $arguments; PassThru = $true; WindowStyle = 'Hidden' }
-    if ($WorkingDirectory) { $start.WorkingDirectory = $WorkingDirectory }
-    if ($StandardOutputPath) { $start.RedirectStandardOutput = $StandardOutputPath }
-    if ($StandardErrorPath) { $start.RedirectStandardError = $StandardErrorPath }
-    try { $process = Start-Process @start } finally { $env:READ_WEB_INSTANCE_ID = $previousInstanceId }
-    $state = [ordered]@{
-      schemaVersion = 1
-      releaseId = $ReleaseId
-      profileId = $ProfileId
-      instanceId = $instanceId
-      port = $Port
-      pid = $process.Id
-      processStartUtc = ($process.StartTime.ToUniversalTime()).ToString('O')
-      startedAtUtc = ([DateTime]::UtcNow).ToString('O')
-    }
-    Write-InstanceStateAtomic -StatePath $StatePath -State $state
-
-    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $ReadyTimeoutSeconds))
-    do {
-      $process.Refresh()
-      if ($process.HasExited) { throw "Managed process exited before ready with code $($process.ExitCode)." }
-      $health = Get-LauncherHealth -HealthUrl $HealthUrl
-      if (Test-HealthIdentity -Health $health -ReleaseId $ReleaseId -ProfileId $ProfileId -InstanceId $instanceId) {
-        $portOwner = Get-LoopbackPortOwnerProcess -Port $Port
-        if ($null -ne $portOwner -and $portOwner.Id -ne $process.Id) {
-          $state.pid = $portOwner.Id
-          $state.processStartUtc = ($portOwner.StartTime.ToUniversalTime()).ToString('O')
-          Write-InstanceStateAtomic -StatePath $StatePath -State $state
-        }
-        $readyPid = if ($null -ne $portOwner) { $portOwner.Id } else { $process.Id }
-        return [pscustomobject]@{ status = 'started'; pid = $readyPid; instanceId = $instanceId; url = $HealthUrl }
-      }
-      Start-Sleep -Milliseconds 100
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "Managed process did not become ready within $ReadyTimeoutSeconds seconds."
+    $instanceId = if ($InstanceId) { $InstanceId.Trim() } else { [Guid]::NewGuid().ToString('N') }
+    if (-not $instanceId) { throw 'InstanceId must not be empty when supplied.' }
+    $result = Start-ManagedRuntimeProcessCore `
+      -ReleaseId $ReleaseId `
+      -ProfileId $ProfileId `
+      -InstanceId $instanceId `
+      -Port $Port `
+      -HealthUrl $HealthUrl `
+      -StatePath $StatePath `
+      -FilePath $FilePath `
+      -ArgumentList $ArgumentList `
+      -WorkingDirectory $WorkingDirectory `
+      -ReadyTimeoutSeconds $ReadyTimeoutSeconds `
+      -ReservedDailyPorts $ReservedDailyPorts `
+      -StandardOutputPath $StandardOutputPath `
+      -StandardErrorPath $StandardErrorPath `
+      -ExecutableIdentity $ExecutableIdentity `
+      -Metadata $Metadata `
+      -LaunchIntentPath $LaunchIntentPath `
+      -SkipTestKillHook:$SkipTestKillHook
+    if (Test-Path -LiteralPath $replacementPath -PathType Leaf) { Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue }
+    return $result
   } catch {
     $failure = $_
-    $created = Read-InstanceState -StatePath $StatePath
-    if ($null -ne $created -and $created.releaseId -eq $ReleaseId -and $created.profileId -eq $ProfileId) {
-      $owned = Get-MatchingOwnedProcess -State $created
-      if ($null -ne $owned) {
-        Stop-Process -Id $owned.Id -Force -ErrorAction SilentlyContinue
-        try { $owned.WaitForExit(3000) | Out-Null } catch {}
+    $fallbackFailure = ''
+    if ($null -ne $replacementFallback -and -not $replacementOldStopped) {
+      # A preflight candidate failed while the old fixed-port process was
+      # still serving.  Do not start a second process on that port; retain the
+      # old state and remove only this completed replacement receipt.
+      Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue
+      $fallbackRecovered = $true
+      $fallbackFailure = 'previous runtime remained active during preflight'
+    } elseif ($null -ne $replacementFallback) {
+      try {
+        Start-ManagedRuntimeProcessCore @replacementFallback -SkipTestKillHook | Out-Null
+        $fallbackRecovered = $true
+        Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue
+      } catch {
+        $fallbackFailure = $_.Exception.Message
       }
-      Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
     }
+    if (-not $fallbackRecovered) {
+      $created = Read-InstanceState -StatePath $StatePath
+      if ($null -ne $created -and $created.releaseId -eq $ReleaseId -and $created.profileId -eq $ProfileId) {
+        $owned = Get-MatchingOwnedProcess -State $created
+        if ($null -ne $owned) {
+          Stop-Process -Id $owned.Id -Force -ErrorAction SilentlyContinue
+          try { $owned.WaitForExit(3000) | Out-Null } catch {}
+        }
+        Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
+      }
+    }
+    if ($fallbackRecovered) { throw "Managed runtime replacement failed; previous runtime restored: $($failure.Exception.Message)" }
+    if ($fallbackFailure) { throw "Managed runtime replacement failed and recovery failed: $($failure.Exception.Message); recovery: $fallbackFailure" }
     throw $failure
   } finally {
     if ($null -ne $lock) { $lock.Dispose() }
@@ -277,4 +1071,12 @@ function Start-ManagedRuntimeInstance {
   }
 }
 
-Export-ModuleMember -Function Assert-LauncherPortSafety, Start-ManagedRuntimeInstance, Stop-OwnedRuntimeInstance
+Export-ModuleMember -Function `
+  Assert-LauncherPortSafety, `
+  Start-ManagedRuntimeInstance, `
+  Stop-OwnedRuntimeInstance, `
+  Find-ManagedOrphanRuntime, `
+  Stop-ManagedOrphanRuntime, `
+  Find-ManagedProcessByReceipt, `
+  Find-ManagedProcessByExecutable, `
+  Recover-ManagedRuntimeReplacement
