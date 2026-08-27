@@ -8,7 +8,9 @@ parser.add_argument('--port', type=int, required=True)
 parser.add_argument('--release-id', required=True)
 parser.add_argument('--profile-id', required=True)
 parser.add_argument('--instance-id', required=True)
+parser.add_argument('--executable-identity', default='')
 parser.add_argument('--ready-delay', type=float, default=0)
+parser.add_argument('--fail-ready', action='store_true')
 args = parser.parse_args()
 started = time.monotonic()
 
@@ -18,12 +20,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
             return
-        ready = time.monotonic() - started >= args.ready_delay
+        ready = (not args.fail_ready) and time.monotonic() - started >= args.ready_delay
         body = json.dumps({
             'status': 'ready' if ready else 'starting',
             'releaseId': args.release_id,
             'profileId': args.profile_id,
             'instanceId': args.instance_id,
+            'executableIdentity': args.executable_identity,
         }).encode()
         self.send_response(200)
         self.send_header('content-type', 'application/json')

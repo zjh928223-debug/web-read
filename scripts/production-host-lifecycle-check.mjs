@@ -21,6 +21,7 @@ const executionId = randomUUID()
 const outputRoot = path.resolve(process.env.READ_WEB_PRODUCTION_HOST_OUTPUT || path.join(repoRoot, 'output', 'production-host'))
 const evidencePath = path.resolve(process.env.READ_WEB_PRODUCTION_HOST_EVIDENCE || path.join(outputRoot, 'production-host-lifecycle.json'))
 const runEndurance = process.env.READ_WEB_PRODUCTION_HOST_ENDURANCE === '1'
+const runBrowserJourneys = process.env.READ_WEB_PRODUCTION_HOST_BROWSER !== '0'
 
 const runtimeConfig = JSON.parse(await readFile(path.join(repoRoot, 'config', 'runtime.next.json'), 'utf8'))
 assert.equal(runtimeConfig.frontend.port, 5174, 'next dev fallback must remain on 5174')
@@ -180,7 +181,12 @@ const manifestBytes = Buffer.from(`${JSON.stringify({
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   release: { application: 'read-final', frontendVersion: '1.0.0', backendVersion: '0.2.3', gitSha: releaseId, gitBranch: 'isolated', dirty: false },
-  runtime: {}, dataCompatibility: {}, artifacts: [],
+  runtime: {},
+  dataCompatibility: {
+    indexedDb: { name: 'SeekPlayerDB', version: 1, objectStore: 'files', keyPath: 'id' },
+    workflowServiceVersion: '0.2.3',
+  },
+  artifacts: [],
 }, null, 2)}\n`)
 await writeFile(manifestPath, manifestBytes)
 const manifestSha256 = createHash('sha256').update(manifestBytes).digest('hex')
@@ -268,7 +274,7 @@ try {
       else process.env.READ_WEB_BACKUP_LOCK_TIMEOUT_MS = previousLockTimeout
     }
 
-    if (cycle === 1) {
+    if (cycle === 1 && runBrowserJourneys) {
       await runNode('scripts/perf/browser-journeys.mjs', {
         READ_WEB_PERF_BASE_URL: baseUrl,
         READ_WEB_PERF_OUTPUT: path.join(outputRoot, 'browser-journeys'),
@@ -295,7 +301,7 @@ try {
         `${JSON.stringify(browserArtifact, null, 2)}\n`,
         'utf8',
       )
-      if (runEndurance) {
+      if (runEndurance && runBrowserJourneys) {
         await runNode('scripts/release-playback-endurance.mjs', {
           READ_WEB_STABILITY_BASE_URL: baseUrl,
           READ_WEB_STABILITY_OUTPUT: process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json'),
@@ -334,7 +340,11 @@ try {
       crashStops: cycles.filter((item) => item.stop === 'crash').length,
       everyPortReleased: cycles.every((item) => item.portReleased),
     },
-    enduranceEvidence: runEndurance ? path.resolve(process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json')) : null,
+    browserJourneys: {
+      status: runBrowserJourneys ? 'passed' : 'skipped',
+      reason: runBrowserJourneys ? null : 'non-browser production-host lifecycle evidence requested',
+    },
+    enduranceEvidence: runEndurance && runBrowserJourneys ? path.resolve(process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json')) : null,
     viteProcessStarted: false,
     devFallback: { frontend: 5174, backend: 8766 },
   }
