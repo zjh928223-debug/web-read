@@ -166,7 +166,7 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
   try {
     await waitFor(() => unloadRequests.length >= 2, 'keepalive requests')
   } catch (error) {
-    const debug = await firstPage.evaluate((key) => ({ outbox: localStorage.getItem(key), jobId: window.__state?.currentAudioMeta?.jobId || '', fetches: window.__readerRecoveryFetches }), outboxKey)
+    const debug = await firstPage.evaluate((key) => ({ outbox: localStorage.getItem(key), fetches: window.__readerRecoveryFetches }), outboxKey)
     throw new Error(`keepalive requests missing: ${JSON.stringify({ debug, pageErrors })}; ${error.message}`)
   }
   const storedEntries = await readOutboxEntries(firstPage)

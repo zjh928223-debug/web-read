@@ -126,51 +126,85 @@ async function runScale(page, wordCount) {
   await page.evaluate(() => window.__playbackScaleProbe.resetLongTasks())
   const samples = { word: [], chunk: [], seek: [], mark: [], mode: [] }
 
-  await page.evaluate(() => { window.__state.highlightMode = 1; window.forceUpdateUI(0, { wordIndex: 0 }) })
+  await page.evaluate(() => {
+    const button = document.getElementById('highlight-mode-btn')
+    if (!button || typeof window.cycleHighlightMode !== 'function') {
+      throw new Error('Highlight mode public control is unavailable')
+    }
+    let attempts = 0
+    while (button.textContent?.trim() !== '高亮:词' && attempts < 3) {
+      window.cycleHighlightMode()
+      attempts += 1
+    }
+    if (button.textContent?.trim() !== '高亮:词') throw new Error('Unable to select word highlight mode')
+    window.forceUpdateUI(0, { wordIndex: 0 })
+  })
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
-    samples.word.push(await sample(page, (wordIndex) => window.forceUpdateUI(window.__state.words[wordIndex].start, { wordIndex }), index))
+    samples.word.push(await sample(page, (wordIndex) => {
+      const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
+      const start = Number(word?.getAttribute('data-word-start'))
+      if (!Number.isFinite(start)) throw new Error(`Missing DOM word start for index ${wordIndex}`)
+      window.forceUpdateUI(start, { wordIndex })
+    }, index))
   }
 
   await page.evaluate(() => window.toggleChunkMode(true))
   await page.locator(`#chunk-${material.segmentCount - 1}`).waitFor({ state: 'attached', timeout: 30_000 })
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.chunk.push(await sample(page, (chunkIndex) => {
-      const chunk = window.__state.chunkItems[chunkIndex]
-      window.forceUpdateUI(chunk.start + 0.001)
+      const chunk = document.querySelector(`#chunk-${chunkIndex}`)
+      const firstWord = chunk?.querySelector('[data-word-start]')
+      const start = Number(firstWord?.getAttribute('data-word-start'))
+      if (!Number.isFinite(start)) throw new Error(`Missing DOM chunk start for index ${chunkIndex}`)
+      window.forceUpdateUI(start + 0.001)
     }, index))
   }
   await page.evaluate(() => window.toggleChunkMode(false))
 
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.seek.push(await sample(page, (wordIndex) => {
+      const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
+      const start = Number(word?.getAttribute('data-word-start'))
+      if (!Number.isFinite(start)) throw new Error(`Missing DOM word start for index ${wordIndex}`)
       const audio = document.getElementById('audio-player')
       audio.currentTime = (wordIndex % 90) / 100
       audio.dispatchEvent(new Event('seeking'))
-      window.forceUpdateUI(window.__state.words[wordIndex].start, { wordIndex })
+      window.forceUpdateUI(start, { wordIndex })
       audio.dispatchEvent(new Event('seeked'))
     }, index))
   }
 
-  await page.evaluate(() => window.__state.markedMap.clear())
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.mark.push(await sample(page, (wordIndex) => {
-      window.__marksStore.toggleMark(window.__state.markedMap, wordIndex, window.__state.words, () => {}, () => {})
+      const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
+      const start = Number(word?.getAttribute('data-word-start'))
+      if (!Number.isFinite(start)) throw new Error(`Missing DOM word start for index ${wordIndex}`)
+      window.forceUpdateUI(start, { wordIndex })
+      const markKey = document.getElementById('hotkey-input')?.value || 'm'
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: markKey, bubbles: true }))
     }, index))
   }
 
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.mode.push(await sample(page, () => window.toggleChunkMode(), null, false))
   }
-  await page.waitForFunction(() => window.__state.isChunkMode === false)
+  await page.waitForFunction(() => {
+    const transcript = document.getElementById('transcript-vue-container')
+    const chunk = document.getElementById('chunk-vue-container')
+    return transcript?.classList.contains('reader-view-hidden') === false
+      && chunk?.classList.contains('reader-view-hidden') === true
+      && transcript.querySelectorAll('.word-highlight').length === 1
+      && chunk.querySelectorAll('.chunk-active').length === 0
+  })
   const afterOperations = await listenerSnapshot(page)
   const runtime = await page.evaluate(() => ({
     longTasks: [...window.__playbackScaleProbe.longTasks],
-    wordCount: window.__state.words.length,
-    chunkCount: window.__state.chunkItems.length,
-    markedWords: window.__state.markedMap.size,
-    finalMode: window.__state.isChunkMode ? 'chunk' : 'transcript',
-    activeWordCount: document.querySelectorAll('.word-highlight').length,
-    activeChunkCount: document.querySelectorAll('.chunk-active').length,
+    wordCount: document.querySelectorAll('#transcript-vue-container [data-word-index]').length,
+    chunkCount: document.querySelectorAll('#chunk-vue-container .chunk-block').length,
+    markedWords: document.querySelectorAll('#transcript-vue-container [data-word-index].marked').length,
+    finalMode: document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') ? 'transcript' : 'chunk',
+    activeWordCount: document.querySelectorAll('#transcript-vue-container .word-highlight').length,
+    activeChunkCount: document.querySelectorAll('#chunk-vue-container .chunk-active').length,
   }))
   return {
     wordCount,

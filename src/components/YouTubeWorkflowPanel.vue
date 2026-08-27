@@ -769,6 +769,19 @@ function buildCreateJobPayload(url) {
   return payload
 }
 
+function hasPendingCreateReceipt(url) {
+  return Boolean(readWorkflowOperationReceipt({ actionType: 'create', payload: buildCreateJobPayload(url) }))
+}
+
+function findWorkflowDuplicate(url) {
+  const materialKey = canonicalMaterialKey(url)
+  const jobs = queueJobs.value.filter((job) => {
+    const jobUrl = job?.request?.url || job?.url
+    return canonicalMaterialKey(jobUrl) !== materialKey || !hasPendingCreateReceipt(jobUrl)
+  })
+  return findDuplicateMaterial(url, jobs, recentJobs.value)
+}
+
 const primaryActionText = computed(() => {
   if (starting.value) return '提交中…'
   if (enqueuableMaterialCount.value > 1) return `开始处理 ${enqueuableMaterialCount.value} 项`
@@ -1005,7 +1018,7 @@ function addLinkCards(links) {
       id: `link-${Date.now()}-${++linkSequence}`,
       url,
       valid,
-      duplicate: valid ? findDuplicateMaterial(url, queueJobs.value, recentJobs.value) : null,
+      duplicate: valid ? findWorkflowDuplicate(url) : null,
       metadataState: valid && extractYoutubeVideoId(url) ? 'loading' : 'idle',
       metadataTitle: '',
       metadataAuthor: '',
@@ -1066,7 +1079,7 @@ async function hydrateLinkCardMetadata(card) {
 function refreshLinkDuplicates() {
   for (const card of linkCards.value) {
     card.duplicate = card.valid
-      ? findDuplicateMaterial(card.url, queueJobs.value, recentJobs.value)
+      ? findWorkflowDuplicate(card.url)
       : null
   }
 }
