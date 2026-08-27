@@ -59,7 +59,7 @@ try {
   assert.doesNotMatch(component, /reportRepository\.(?:put|clear)|flushPersonalizationShadow|publishPlan/u);
   assert.match(component, /只读分析，不会改变正式复习安排/u);
 
-  const viteConfig = fs.readFileSync(path.join(repoRoot, 'vite.config.js'), 'utf8');
+  const viteConfig = fs.readFileSync(path.join(repoRoot, 'vite.config.mjs'), 'utf8');
   assert.doesNotMatch(viteConfig, /personalizationShadow:\s*resolve\(__dirname, 'personalization-shadow\.html'\)/u);
   const reviewPage = fs.readFileSync(
     path.join(repoRoot, 'src', 'features', 'srs-review', 'SrsReviewPage.vue'),

@@ -79,7 +79,7 @@ async function createManifest(root, role) {
 async function collectArtifacts(root) {
   const required = ['index.html', 'package.json', 'package-lock.json']
   const optional = [
-    'vite.config.js', 'scripts/launch-next-preview.ps1',
+    'vite.config.mjs', 'scripts/launch-next-preview.ps1',
     'tools/subtitle-workflow/requirements-service.txt',
     'tools/subtitle-workflow/requirements-service.lock',
     'tools/subtitle-workflow/youtube_workflow/service.py',

@@ -4,7 +4,7 @@ This is evidence for OpenSpec task 3.1. The prototype is intentionally not conne
 
 ## Current Vite server capabilities
 
-`vite.config.js` installs nine application endpoint plugins in addition to Vue:
+`vite.config.mjs` installs nine application endpoint plugins in addition to Vue:
 
 | Plugin | Route family | Runtime dependency |
 | --- | --- | --- |

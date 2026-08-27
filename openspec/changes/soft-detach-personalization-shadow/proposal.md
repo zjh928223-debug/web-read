@@ -22,6 +22,6 @@
 
 ## Impact
 
-- 影响 `src/App.vue`、`src/features/srs-review/SrsReviewPage.vue`、`src/features/srs-review/srs-review-ui-service.js`、`vite.config.js` 及相关 focused verification。
+- 影响 `src/App.vue`、`src/features/srs-review/SrsReviewPage.vue`、`src/features/srs-review/srs-review-ui-service.js`、`vite.config.mjs` 及相关 focused verification。
 - `src/services/vocabulary/personalization/`、`src/features/personalization-shadow/` 与 `src/personalization-shadow-main.js` 保留，但不再进入正式 reader/review 运行路径或生产多页面构建。
 - 不改变正式 SRS 排程、LearningEvent 持久化、IndexedDB version 1、`files` object store 或已有用户数据。

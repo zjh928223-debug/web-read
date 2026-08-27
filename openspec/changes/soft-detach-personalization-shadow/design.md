@@ -37,7 +37,7 @@ personalization shadow 目前同时出现在正式 reader 导航、V2 review ser
 
 ### 3. 从 Vite production inputs 移除独立页面
 
-`vite.config.js` 的正式输入只保留 reader 与 standalone SRS review。源 `personalization-shadow.html` 不删除，因此 dev server 的显式实验入口仍然可用，但 `npm run build` 不再生成对应产物。
+`vite.config.mjs` 的正式输入只保留 reader 与 standalone SRS review。源 `personalization-shadow.html` 不删除，因此 dev server 的显式实验入口仍然可用，但 `npm run build` 不再生成对应产物。
 
 ### 4. 保留事件与报告数据
 

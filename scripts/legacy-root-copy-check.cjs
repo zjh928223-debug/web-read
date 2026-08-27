@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repoRoot = path.resolve(__dirname, '..');
-const viteConfigSource = fs.readFileSync(path.join(repoRoot, 'vite.config.js'), 'utf8');
+const viteConfigSource = fs.readFileSync(path.join(repoRoot, 'vite.config.mjs'), 'utf8');
 const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 [
@@ -16,7 +16,7 @@ const indexSource = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
   'annotation-bubble.js',
   'annotation-api-settings-ui.js'
 ].forEach((pattern) => {
-  assert.equal(viteConfigSource.includes(pattern), false, `vite.config.js should not include ${pattern}`);
+  assert.equal(viteConfigSource.includes(pattern), false, `vite.config.mjs should not include ${pattern}`);
 });
 
 [

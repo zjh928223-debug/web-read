@@ -85,7 +85,7 @@ client, enrichment adapter, and formatter. Article preview and the SRS answer-re
 browser modules for transient suggestions. The review page receives its client through a prop and
 keeps only a session-memory cache; neither flow persists results or replaces existing meanings.
 
-`ECDICT_ENABLED` defaults to `false`. `vite.config.js` may statically import the plugin module, but the
+`ECDICT_ENABLED` defaults to `false`. `vite.config.mjs` may statically import the plugin module, but the
 disabled plugin registers no endpoint and does not access the database. When enabled, the SQLite
 service loads lazily on the first query.
 

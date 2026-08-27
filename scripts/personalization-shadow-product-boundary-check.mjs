@@ -7,7 +7,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 const appSource = read('src/App.vue')
 const uiServiceSource = read('src/features/srs-review/srs-review-ui-service.js')
-const viteConfigSource = read('vite.config.js')
+const viteConfigSource = read('vite.config.mjs')
 const cleanRoomSource = read('scripts/verify-clean-room.mjs')
 
 assert.doesNotMatch(appSource, /personalization-shadow\.html|learning-model-entry|createPersonalizationShadowSettings|personalizationShadowEnabled/u)

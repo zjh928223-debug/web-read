@@ -135,7 +135,7 @@ test('disabled Vite plugin registers nothing and never loads the service', () =>
 });
 
 test('Vite config keeps the SQLite service lazy with a stable absolute module URL', async () => {
-  const source = await readFile(new URL('../../../../vite.config.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../../../../vite.config.mjs', import.meta.url), 'utf8');
   assert.match(source, /pathToFileURL\(resolve\(/);
   assert.match(source, /serviceLoader:\s*\(\)\s*=>\s*import\(ecdictServiceUrl\)/);
   assert.doesNotMatch(source, /^import\s+.*ecdict-service\.mjs.*$/m);

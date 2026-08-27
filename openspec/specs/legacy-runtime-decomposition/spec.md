@@ -94,7 +94,7 @@ Defines the stage-gated cleanup constraints for removing the former root `app.js
 - **THEN** `npm run build` MUST 通过
 
 #### Scenario: Removing legacy copy logic
-- **WHEN** `vite.config.js` 中的 root script copy logic 准备删除
+- **WHEN** `vite.config.mjs` 中的 root script copy logic 准备删除
 - **THEN** 所有被复制脚本 MUST 已经不再由 `index.html` 作为 root regular script 加载
 - **THEN** production build output MUST 仍能通过 load verification
 
