@@ -782,7 +782,7 @@ function Assert-RealLauncherLifecycle {
     $committedTargetSnapshot = Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath
     $tokenSnapshot = Read-OptimizationRuntimeText -Path $tokenPath
     $hostSnapshot = Read-OptimizationRuntimeText -Path $hostStatePath
-    $validPendingJournal = ConvertTo-Json @{ 
+    $validPendingJournal = ConvertTo-Json @{
       schemaVersion = 1
       status = 'switching'
       phase = 'target-switched'
