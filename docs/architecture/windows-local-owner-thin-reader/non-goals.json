@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "architecture-non-goal-guard",
+  "implementationStatus": "milestone-contract-and-baseline-only",
+  "forbiddenCapabilities": [
+    "Mac owner implementation",
+    "Tailscale transport",
+    "VPN transport",
+    "remote deployment",
+    "non-loopback bind or transport",
+    "multi-device synchronization",
+    "cloud repository",
+    "Windows owner repository implementation",
+    "browser typed API client implementation",
+    "profile lease/journal cutover",
+    "domain writer migration",
+    "production owner-mode checkpoint",
+    "implicit distributed transaction",
+    "full media Blob or ArrayBuffer in API, backup, or migration payload"
+  ],
+  "frozenIndexedDbSchema": {
+    "databaseName": "SeekPlayerDB",
+    "version": 1,
+    "objectStore": "files",
+    "keyPath": "id",
+    "policy": "No upgrade, clear, rebuild, object-store creation, deletion, or key-path change is part of this milestone",
+    "futureChange": "Any schema migration requires a separate explicitly authorized change"
+  },
+  "scriptLoadOrder": {
+    "source": "index.html",
+    "sequence": [
+      "https://cse.google.com/cse.js?cx=048d09e2e2f764b7b",
+      "src/composables/glass-effects.js",
+      "src/composables/app-handlers.js",
+      "src/composables/style-editor.js",
+      "src/composables/import-module.js",
+      "src/composables/keyboard-module.js",
+      "src/composables/media-source-module.js",
+      "src/composables/playback-module.js",
+      "src/composables/controls-module.js",
+      "src/composables/legacy-control-bindings.js",
+      "/src/main.js"
+    ],
+    "policy": "Exact sequence is guarded; this milestone does not reorder index.html scripts"
+  },
+  "protectedWorkingTreeFiles": [
+    {
+      "path": "tools/subtitle-workflow/chunker/chunk_rules.py",
+      "sha256AtCapture": "sha256:68ae3145d05d97a15cccb6c48228659d3798b639f256eb83e84e9fbcc8b798e7"
+    },
+    {
+      "path": "tools/subtitle-workflow/language_service.py",
+      "sha256AtCapture": "sha256:e31ec41b563f48d27b3c045a2f208f6cee8e47d23deeb0ddf9d265897bbb93ee"
+    },
+    {
+      "path": "tools/subtitle-workflow/tests/test_language_service.py",
+      "sha256AtCapture": "sha256:f400c69ee90646f819a03ad5e4567682d27f540f4c05f88b2d0cce3f2509c673"
+    },
+    {
+      "path": "tools/subtitle-workflow/tests/test_workflow_core.py",
+      "sha256AtCapture": "sha256:a4ed5d51679265cb4848e9b8f0de392bad60d3442606df6c009baaa154012a87"
+    },
+    {
+      "path": "tools/subtitle-workflow/youtube_workflow/core.py",
+      "sha256AtCapture": "sha256:cbab0dbe97b54dd7ca970bcbd4af53822ee8059e346767e8647a24fe567cf6d5"
+    },
+    {
+      "path": "tools/subtitle-workflow/tests/test_chunk_rules.py",
+      "sha256AtCapture": "sha256:6a1b0cdc99fac54dcee697f91b0589825b0c7d3416dfe90cd1eec22064c010ad"
+    }
+  ],
+  "frozenSourceFiles": [
+    {
+      "path": "src/services/persistence/application-persistence.js",
+      "sha256AtCapture": "sha256:1a9a4bdc247e9ae1aa4ca045c51a406fede5001c86961d6ff3b24546046f1541"
+    },
+    {
+      "path": "src/services/persistence/reader-session-persistence.js",
+      "sha256AtCapture": "sha256:22aaf811292ace0bb3e2c2c66e11e33d38f3a247eadf0cfd5651fb62443fe3f8"
+    },
+    {
+      "path": "src/services/vocabulary/vocabulary-repository.js",
+      "sha256AtCapture": "sha256:f2311862b57583aaa3cdab0c035c26b25a2392ff37ac45e394700d531525e2c8"
+    },
+    {
+      "path": "src/services/vocabulary/vocabulary-acquisition-repository.js",
+      "sha256AtCapture": "sha256:1ce245a655d80dd2fd053a9dec80b7c6d3deca9714d6806248487792ad6e78ab"
+    },
+    {
+      "path": "src/services/vocabulary/vocabulary-learning-events.js",
+      "sha256AtCapture": "sha256:3ccd021040fb2265ea8355749522ec95226ee953311f62c5a488739e8f187a31"
+    },
+    {
+      "path": "src/services/vocabulary/vocabulary-learning-uow.js",
+      "sha256AtCapture": "sha256:b865cc5e3ede443f48e9ea1c3d974b6e6ae84f75de75bf435e633ac0226d070a"
+    },
+    {
+      "path": "src/services/vocabulary/srs-review-session-ledger.js",
+      "sha256AtCapture": "sha256:de0d5fe390aad05bafa2592e71b4ba665e9f5b290b9ff61b606a8e512c66b3e8"
+    },
+    {
+      "path": "src/services/vocabulary/vocabulary-context-evidence.js",
+      "sha256AtCapture": "sha256:3870c54286fc907a6fc24496f7429911a6279fc532106e43b0f2b0a520612482"
+    },
+    {
+      "path": "src/services/vocabulary/srs-pending-candidates.js",
+      "sha256AtCapture": "sha256:362243bd22a653a7b48d6baaaf850ac444152c8a570c7da0d66d6470827c9312"
+    },
+    {
+      "path": "src/services/vocabulary/article-srs-settlement-progress.js",
+      "sha256AtCapture": "sha256:0853a9cbe53d1f565160bb2851ac6ddafeb439a7355575f6f6a12baee90102ac"
+    },
+    {
+      "path": "src/services/vocabulary/personalization/personalization-shadow-report-repository.js",
+      "sha256AtCapture": "sha256:4a043ecb959dba70ca78b9123b2babae15f3e01025030b181f82157f76708aa3"
+    },
+    {
+      "path": "src/pinia-stores/audio.js",
+      "sha256AtCapture": "sha256:90d2e88405a211bd3a28bdf9d94961280985e05b2017be539aab66a6f546d3a9"
+    }
+  ],
+  "protectedFilesPolicy": "The six files above remain unedited, unstaged, and uncommitted; their current content hashes must remain equal to capture hashes",
+  "dataPolicy": {
+    "optimizationConfig": "config/runtime.optimization.json",
+    "optimizationDataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+    "dailyDataRoot": "E:\\ReadWebData\\SubtitleWorkflow",
+    "protectedTrees": ["E:\\read-web-next", "E:\\read-web"],
+    "policy": "No reads or writes outside the optimization workspace/config/data-root boundary are allowed for this milestone"
+  },
+  "architectureGuardChecks": [
+    "frozen IndexedDB constants and source fingerprints",
+    "exact index.html script order",
+    "optimization loopback ports and data root",
+    "protected working-tree hashes and staged-path exclusion",
+    "all six domain registrations and typed API schema",
+    "no owner-mode or domain writer migration claim"
+  ],
+  "artifactChecksum": "sha256:5d809ec28de7775ae0b72220adae4a10f526fb001b23eb38eb4bed0ce247738a"
+}

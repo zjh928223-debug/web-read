@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "api-first-baseline-journeys",
+  "capturedAt": "2026-08-28",
+  "environmentRef": "environment-baseline.json",
+  "executionPolicy": {
+    "config": "config/runtime.optimization.json",
+    "frontend": "127.0.0.1:5184",
+    "backend": "127.0.0.1:8776",
+    "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+    "network": "No external network call is part of these evidence checks",
+    "browserServicePolicy": "A live browser/host journey is not run here when its existing harness allocates a non-optimization port; it is recorded as blocked rather than silently using daily ports"
+  },
+  "statusSemantics": {
+    "pass": "The named focused check or static contract assertion ran with exitCode 0",
+    "blocked": "The API-first journey is required but cannot be exercised because task 2.1 defines a contract only; no owner API/capability is implemented",
+    "not-run": "A live or browser harness was intentionally not started because it would require a later owner capability or a non-optimization service port",
+    "notAClaim": "Legacy focused-check pass does not mean a Windows Host owner API exists"
+  },
+  "journeys": [
+    {
+      "id": "cold-start",
+      "name": "冷启 / owner readiness",
+      "apiFirstStatus": "blocked",
+      "blocker": "Typed owner capability/readiness endpoint is contract-only in task 2.1; launching the current workflow service would not prove six-domain owner readiness",
+      "legacyEvidence": [],
+      "rollbackTarget": "Previous release and application-backup profile artifact"
+    },
+    {
+      "id": "reader-session",
+      "name": "Reader Session prepare/commit/load",
+      "apiFirstStatus": "blocked",
+      "blocker": "Reader Session owner facade and API client are tasks 2.2/3.1; current evidence exercises the frozen browser persistence boundary only",
+      "legacyEvidence": [
+        { "checkId": "reader-session-persistence", "command": "node scripts/reader-session-persistence-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated fake IndexedDB; no service" },
+        { "checkId": "reader-session-publisher", "command": "node scripts/reader-session-publisher-check.mjs", "status": "pass", "exitCode": 0, "scope": "pure publisher behavior; no service" }
+      ],
+      "rollbackTarget": "readerSession/audioMeta/transcript/chunkData/marks rows and quarantine evidence"
+    },
+    {
+      "id": "vocabulary-srs",
+      "name": "Vocabulary/SRS snapshot, acquisition, review and event boundary",
+      "apiFirstStatus": "blocked",
+      "blocker": "Vocabulary owner repository/API seam is not implemented; browser repositories remain the current owner",
+      "legacyEvidence": [
+        { "checkId": "vocabulary-srs-service", "command": "node scripts/vocabulary-srs-service-check.cjs", "status": "pass", "exitCode": 0, "scope": "in-memory/service contract" },
+        { "checkId": "vocabulary-snapshot-repository", "command": "node scripts/vocabulary-snapshot-repository-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated fake IndexedDB/CAS" },
+        { "checkId": "vocabulary-acquisition-repository", "command": "node scripts/vocabulary-acquisition-repository-check.cjs", "status": "pass", "exitCode": 0, "scope": "isolated repository contract" },
+        { "checkId": "srs-review", "command": "node scripts/srs-review-check.cjs", "status": "pass", "exitCode": 0, "scope": "review service contract" }
+      ],
+      "rollbackTarget": "vocabulary rows, revision watermark, event manifest/shards and command receipts"
+    },
+    {
+      "id": "passage-preview",
+      "name": "Preview data/progress/continuation/rating boundary",
+      "apiFirstStatus": "blocked",
+      "blocker": "Preview owner batch/transition API is not implemented; localStorage remains the current writer",
+      "legacyEvidence": [
+        { "checkId": "passage-preview-durable-state", "command": "node scripts/passage-preview-durable-state-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated in-memory localStorage" },
+        { "checkId": "passage-preview-daily-continuation", "command": "node scripts/passage-preview-daily-continuation-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated localStorage/fetch stub" },
+        { "checkId": "passage-preview-shortcuts", "command": "node scripts/passage-preview-shortcuts-check.mjs", "status": "pass", "exitCode": 0, "scope": "preference storage contract" },
+        { "checkId": "passage-preview-session-cache", "command": "node scripts/passage-preview-session-cache-check.mjs", "status": "pass", "exitCode": 0, "scope": "bounded session cache" }
+      ],
+      "rollbackTarget": "preview durable envelope and legacy localStorage key set"
+    },
+    {
+      "id": "annotation",
+      "name": "Annotation generated/status/bundle and lightweight import/export",
+      "apiFirstStatus": "blocked",
+      "blocker": "Annotation owner facade is not implemented; current audio-folder/localStorage storage remains compatibility writer",
+      "legacyEvidence": [
+        { "checkId": "annotation-storage-envelope", "command": "node scripts/annotation-storage-envelope-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated memory storage and file-handle stubs" },
+        { "checkId": "annotation-lightweight-module", "command": "node scripts/annotation-lightweight-module-check.cjs", "status": "pass", "exitCode": 0, "scope": "module boundary contract" }
+      ],
+      "rollbackTarget": "annotation.bundle.v2/generated/status files and corrupt evidence"
+    },
+    {
+      "id": "marks-activity",
+      "name": "marks/activity latest-wins, CAS and idempotency",
+      "apiFirstStatus": "blocked",
+      "blocker": "Current service endpoint and Python durable owner exist, but the six-domain typed owner registry/receipt contract is not implemented",
+      "legacyEvidence": [
+        { "checkId": "reader-marks-activity-conflict", "command": "node scripts/reader-marks-activity-conflict-check.mjs", "status": "pass", "exitCode": 0, "scope": "isolated repository conflict/idempotency" },
+        { "checkId": "workflow-reader-marks-ledger", "command": "node scripts/workflow-reader-marks-ledger-check.mjs", "status": "pass", "exitCode": 0, "scope": "workflow ledger contract" }
+      ],
+      "rollbackTarget": "per-job reader-marks/reader-activity/journal JSON"
+    },
+    {
+      "id": "workflow",
+      "name": "workflow jobs/history/config/reader-index client boundary",
+      "apiFirstStatus": "blocked",
+      "blocker": "Current workflow service/client is not the versioned six-domain owner API; no cutover or new repository is allowed in this milestone",
+      "legacyEvidence": [
+        { "checkId": "youtube-workflow-client", "command": "node scripts/youtube-workflow-client-check.cjs", "status": "pass", "exitCode": 0, "scope": "fetch stub and typed current error handling" },
+        { "checkId": "youtube-workflow-loader", "command": "node scripts/youtube-workflow-loader-check.cjs", "status": "pass", "exitCode": 0, "scope": "loader contract" },
+        { "checkId": "youtube-workflow-streaming", "command": "node scripts/youtube-workflow-streaming-contract-check.mjs", "status": "not-run", "exitCode": null, "scope": "existing harness cannot resolve its relative imports from the data-URL fixture loader; no semantic pass is claimed" },
+        { "checkId": "youtube-workflow-operation-receipt", "command": "node scripts/youtube-workflow-operation-receipt-check.cjs", "status": "pass", "exitCode": 0, "scope": "bounded local receipt hint" }
+      ],
+      "rollbackTarget": "jobs/history/reader-index/config JSON and workflow application-backup artifact"
+    },
+    {
+      "id": "a-b-a",
+      "name": "A/B/A Reader Session switch and late response",
+      "apiFirstStatus": "blocked",
+      "blocker": "The existing browser journey harness starts an ephemeral HTTP server on a browser-safe dynamic port and exercises the browser repository; this milestone has no owner API to substitute and does not use a daily or non-optimization port",
+      "legacyEvidence": [
+        { "checkId": "reader-session-load-browser", "command": "node scripts/reader-session-load-browser-journeys-check.mjs", "status": "not-run", "exitCode": null, "scope": "live browser harness intentionally not started; dynamic-port policy would not be the optimization host" }
+      ],
+      "rollbackTarget": "last committed visible Reader Session"
+    },
+    {
+      "id": "host-restart",
+      "name": "host restart / pending receipt recovery",
+      "apiFirstStatus": "blocked",
+      "blocker": "No typed owner host, profile lease, journal, or receipt-query endpoint exists until task 2.2+; no restart result is claimed",
+      "legacyEvidence": [],
+      "rollbackTarget": "previous owner profile plus pending journal/manual recovery evidence"
+    },
+    {
+      "id": "large-media-range",
+      "name": "300/540 MiB media Range and no-copy",
+      "apiFirstStatus": "blocked",
+      "blocker": "The owner media capability endpoint is not implemented; the existing 300/540 MiB harness starts its own ephemeral server and is not run as a false owner-capability pass",
+      "legacyEvidence": [
+        { "checkId": "youtube-workflow-streaming", "command": "node scripts/youtube-workflow-streaming-contract-check.mjs", "status": "not-run", "exitCode": null, "scope": "existing harness cannot resolve its relative imports from the data-URL fixture loader; no semantic pass is claimed" },
+        { "checkId": "youtube-workflow-large-media-budget", "command": "node scripts/youtube-workflow-large-media-budget-check.mjs", "status": "not-run", "exitCode": null, "scope": "300/540 MiB dynamic fixture server intentionally not started in this contract-only milestone" }
+      ],
+      "rollbackTarget": "media identity/reference metadata only; source media remains in authorized output root"
+    }
+  ],
+  "overall": {
+    "apiFirstOwnerReady": false,
+    "legacyEvidenceOnly": true,
+    "liveServiceStarted": false,
+    "portsReclaimed": true,
+    "cutoverExecuted": false,
+    "domainWritersMigrated": false,
+    "reviewDecision": "stop after tasks 1.1-1.6 and 2.1"
+  },
+  "artifactChecksum": "sha256:fb35a33a505eef58d1154f4f5eaac5b405e23c8a1dce7f11c6a6db8f40e742e7"
+}

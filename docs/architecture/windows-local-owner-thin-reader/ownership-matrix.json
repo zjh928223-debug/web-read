@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "six-domain-ownership-matrix",
+  "capturedAt": "2026-08-28",
+  "matrixSemantics": {
+    "currentOwner": "The component that currently owns the durable write boundary, not the future API authority",
+    "futureOwnerFacade": "Stable semantic facade name only; no implementation or route is claimed by this milestone",
+    "allReadWriteCallers": "The caller lists cover current source-backed durable reads/writes. UI-only preference and transient ECDICT readers are separately classified in the consumer map",
+    "migrationWave": "The first wave in which a domain may be cut over; later tasks must add independent backup, canary, drain, checkpoint, rollback, and writer-zero evidence"
+  },
+  "domains": [
+    {
+      "domain": "reader-session",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/reader-session",
+      "currentOwner": "Browser IndexedDB ApplicationPersistence/reader-session-persistence; reader session UI is assembled by the Vue panel and session runtime",
+      "readCallers": [
+        { "file": "src/services/persistence/reader-session-persistence.js", "lines": "180-253", "symbols": ["loadCommitted", "loadCurrentRevision"], "access": "read", "boundary": "IndexedDB/files compatibility repository" },
+        { "file": "src/composables/session-restore-runtime.js", "lines": "63-77", "symbols": ["loadFromDB"], "access": "read", "boundary": "session restore facade" },
+        { "file": "src/composables/youtube-workflow-loader.js", "lines": "288-410", "symbols": ["prepareExpectedRevision", "loadJobIntoReader"], "access": "read", "boundary": "loader and session identity" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "937-972,1448-1485", "symbols": ["createReaderSessionLoader", "loadJob"], "access": "read", "boundary": "reader UI orchestration" },
+        { "file": "src/services/persistence/read-web-application-backup.js", "lines": "126-180,880-1015", "symbols": ["createReadWebApplicationBackupAdapters", "reader-session adapter"], "access": "read", "boundary": "inventory/backup/restore only" }
+      ],
+      "writeCallers": [
+        { "file": "src/pinia-stores/audio.js", "lines": "7-88", "symbols": ["initDB", "saveToDB", "deleteFromDB", "clearDBStore"], "access": "write/delete", "boundary": "legacy direct IDB writer" },
+        { "file": "src/services/persistence/reader-session-persistence.js", "lines": "137-178", "symbols": ["commit", "quarantine"], "access": "write", "boundary": "session row batch/CAS" },
+        { "file": "src/composables/session-annotation-marks.js", "lines": "140-157", "symbols": ["saveToDB('marks')"], "access": "write", "boundary": "legacy mark row writer" },
+        { "file": "src/composables/reader-import-runtime.js", "lines": "1-80", "symbols": ["saveToDB dependency wiring"], "access": "write", "boundary": "import compatibility path" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "2345-2350,2472-2605", "symbols": ["applyReaderMarks", "writeReaderOutboxEntry", "reader outbox"], "access": "write", "boundary": "marks row plus local retry bridge" }
+      ],
+      "browserDirectWritersRef": ["reader.idb.audio-store", "reader.session-persistence", "reader.session-mark-facade", "reader.local-outbox"],
+      "backupAdapter": "read-web-application-backup reader-session adapter (IDB rows + reader save outbox)",
+      "revisionSource": "readerSession manifest/contentId/revision/checksum; session commit uses compareAndSwapMany when expectedRevision is present",
+      "mediaReferences": "audioMeta identity/authorized URL metadata only; no media bytes",
+      "rollbackTarget": "previous reader-session rows and application-backup artifact; retain old session on failed publish",
+      "futureOwnerFacade": "windowsHost.readerSessionOwner",
+      "querySurface": ["snapshot", "current-revision", "media-identity", "commit-receipt", "restore-status"],
+      "commandSurface": ["prepare", "commit", "restore", "receipt-query"],
+      "migrationWave": "wave-1-reader-session",
+      "zeroGate": "No browser IDB put/delete/clear for audioMeta/transcript/chunkData/marks/readerSession after checkpoint; outbox is read-only/import evidence during rollback window",
+      "milestoneStatus": "inventory-only; no writer migration"
+    },
+    {
+      "domain": "marks-activity",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/marks-activity",
+      "currentOwner": "Python ReaderMarksActivityRepository owns per-job durable JSON; browser panel owns latest-wins intent and retry outbox",
+      "readCallers": [
+        { "file": "src/composables/youtube-workflow-client.js", "lines": "362-390", "symbols": ["getReaderActivity", "getReaderMarks"], "access": "read", "boundary": "workflow API client" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "503-568,670-738,1448-1485", "symbols": ["loadReaderConflict", "loadReaderMarks/activity"], "access": "read", "boundary": "latest-wins conflict recovery" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/reader_marks_activity.py", "lines": "84-112,184-218", "symbols": ["read_marks", "read_activity", "_read"], "access": "read", "boundary": "durable JSON owner" },
+        { "file": "src/services/persistence/read-web-application-backup.js", "lines": "168-180,520-620", "symbols": ["marks-activity adapter seam"], "access": "read", "boundary": "backup adapter input" }
+      ],
+      "writeCallers": [
+        { "file": "src/composables/youtube-workflow-client.js", "lines": "119-137,387-390", "symbols": ["requestReaderActivity", "requestReaderMarks", "saveReaderMarks"], "access": "write", "boundary": "HTTP API client" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "670-738,2781-2814", "symbols": ["saveReaderMarks/activity", "handleReaderPageHide"], "access": "write", "boundary": "client latest-wins and close-time outbox" },
+        { "file": "src/services/persistence/latest-wins-ledger.js", "lines": "1-60", "symbols": ["createLatestWinsLedger"], "access": "write-intent", "boundary": "in-memory coalescing" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/reader_marks_activity.py", "lines": "87-142,410-445", "symbols": ["write_marks", "update_activity", "ReaderMarksCommitJournal"], "access": "write", "boundary": "durable JSON CAS/idempotency owner" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/service.py", "lines": "3866-3976", "symbols": ["reader activity/marks routes"], "access": "write", "boundary": "service route" }
+      ],
+      "browserDirectWritersRef": ["marks.browser-api-caller", "reader.local-outbox"],
+      "backupAdapter": "ReaderMarksActivityBackupAdapter",
+      "revisionSource": "per-job marks/activity envelope revision and expectedRevision; activity operation_id is idempotency key; commit journal has its own revision",
+      "mediaReferences": "jobId/contentId references only",
+      "rollbackTarget": "previous per-job marks/activity/journal JSON and pre-operation application-backup artifact",
+      "futureOwnerFacade": "windowsHost.marksActivityOwner",
+      "querySurface": ["marks", "activity", "revision", "receipt", "conflict"],
+      "commandSurface": ["marks-commit", "activity-append", "receipt-query"],
+      "migrationWave": "wave-2-marks-activity",
+      "zeroGate": "No direct browser canonical marks/activity write after checkpoint; API caller may retain latest intent only; repeated activity operation IDs produce one effect",
+      "milestoneStatus": "inventory-only; current backend owner remains authoritative"
+    },
+    {
+      "domain": "vocabulary-srs",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/vocabulary-srs",
+      "currentOwner": "Browser vocabulary repositories, SRS review services, learning-event repository, context evidence repository, and personalization shadow repository over SeekPlayerDB/files",
+      "readCallers": [
+        { "file": "src/services/vocabulary/vocabulary-service.js", "lines": "18-46,454-500", "symbols": ["createVocabularyService", "loadSnapshot", "findWordByLemma"], "access": "read", "boundary": "vocabulary repository" },
+        { "file": "src/features/srs-review/srs-review-ui-service.js", "lines": "24-220", "symbols": ["createSrsReviewUiService"], "access": "read", "boundary": "review UI service" },
+        { "file": "src/services/vocabulary/vocabulary-acquisition-repository.js", "lines": "627-651,1016-1043", "symbols": ["createIndexedDbAcquisitionRepository"], "access": "read", "boundary": "acquisition repository" },
+        { "file": "src/services/vocabulary/srs-review-session-ledger.js", "lines": "348-460", "symbols": ["createIndexedDbReviewSessionLedgerRepository", "createIndexedDbReviewStateReader"], "access": "read", "boundary": "review-session ledger/state repository" },
+        { "file": "src/services/vocabulary/vocabulary-context-evidence.js", "lines": "776-971", "symbols": ["createIndexedDbContextEvidenceRepository", "loadSnapshot"], "access": "read", "boundary": "context evidence repository" },
+        { "file": "src/services/vocabulary/vocabulary-learning-events.js", "lines": "1041-1112,1301-1385", "symbols": ["createIndexedDbLearningEventRepository"], "access": "read", "boundary": "event manifest/shards" },
+        { "file": "src/services/vocabulary/srs-pending-candidates.js", "lines": "100-196", "symbols": ["createIndexedDbSrsPendingCandidatesRepository", "getPendingCandidates"], "access": "read", "boundary": "pending candidate repository" },
+        { "file": "src/services/vocabulary/article-srs-settlement-progress.js", "lines": "449-520", "symbols": ["createIndexedDbArticleSrsSettlementProgressRepository", "getProgress"], "access": "read", "boundary": "settlement progress repository" },
+        { "file": "src/services/vocabulary/legacy-vocabulary-migration.js", "lines": "397-452", "symbols": ["createLegacyVocabularyMigration", "getStatus"], "access": "read", "boundary": "legacy migration plan" },
+        { "file": "src/services/vocabulary/personalization/personalization-shadow-report-repository.js", "lines": "259-295", "symbols": ["createIndexedDbPersonalizationShadowReportRepository"], "access": "read", "boundary": "shadow report repository" }
+      ],
+      "writeCallers": [
+        { "file": "src/services/vocabulary/vocabulary-repository.js", "lines": "96-593", "symbols": ["createIndexedDbVocabularyRepository", "compareAndSwap", "updateSnapshot"], "access": "write", "boundary": "IDB snapshot/CAS" },
+        { "file": "src/services/vocabulary/vocabulary-learning-uow.js", "lines": "1-18,500-710,996-1031", "symbols": ["runVocabularyLearningUnitOfWork", "bindReviewRepositoryToTransaction"], "access": "write", "boundary": "multi-row learning UoW" },
+        { "file": "src/services/vocabulary/vocabulary-acquisition-repository.js", "lines": "627-1045", "symbols": ["putLearningUnit", "putState", "putAttempt"], "access": "write", "boundary": "acquisition row/CAS" },
+        { "file": "src/services/vocabulary/srs-review-session-ledger.js", "lines": "384-460", "symbols": ["createIndexedDbReviewSessionLedgerRepository", "put"], "access": "write", "boundary": "review-session ledger/state rows" },
+        { "file": "src/services/vocabulary/vocabulary-context-evidence.js", "lines": "855-971", "symbols": ["createIndexedDbContextEvidenceRepository", "putEvidence"], "access": "write", "boundary": "context evidence row/CAS" },
+        { "file": "src/services/vocabulary/vocabulary-learning-events.js", "lines": "1301-1385", "symbols": ["append"], "access": "write", "boundary": "event shard/manifest" },
+        { "file": "src/services/vocabulary/personalization/personalization-shadow-report-repository.js", "lines": "259-295", "symbols": ["createIndexedDbPersonalizationShadowReportRepository", "put"], "access": "write", "boundary": "shadow report row/CAS" },
+        { "file": "src/services/vocabulary/article-srs-settlement-progress.js", "lines": "449-515", "symbols": ["updateProgress"], "access": "write", "boundary": "settlement progress row" },
+        { "file": "src/services/vocabulary/legacy-vocabulary-migration.js", "lines": "397-515", "symbols": ["createLegacyVocabularyMigration", "migrateCandidate", "runUnitOfWork"], "access": "migration", "boundary": "legacy vocabulary migration UoW" },
+        { "file": "src/features/srs-review/SrsReviewPage.vue", "lines": "850-930", "symbols": ["review/remove actions"], "access": "command", "boundary": "SRS UI" },
+        { "file": "src/features/passage-preview/passage-preview-acquisition.js", "lines": "11-20,46-248", "symbols": ["savePassagePreviewAcquisitionRecords", "createPassagePreviewAcquisitionCoordinator"], "access": "write", "boundary": "preview-to-vocabulary acquisition" },
+        { "file": "src/composables/annotation-backfill-ai-module.js", "lines": "963-1192", "symbols": ["storeSrsCandidatesForRun", "addSrsCandidates", "applySrsCandidatesToVocabulary"], "access": "write/command", "boundary": "annotation backfill to vocabulary/SRS" },
+        { "file": "src/composables/vocabulary-preview-module.js", "lines": "1009-1012,1305-1555", "symbols": ["settlementProgressRepository", "applySettlement"], "access": "write/command", "boundary": "preview settlement progress and vocabulary application" }
+      ],
+      "browserDirectWritersRef": ["vocabulary.idb-repositories", "vocabulary.learning-uow", "vocabulary.review-session-ledger", "vocabulary.context-evidence", "vocabulary.learning-events", "vocabulary.personalization-shadow", "vocabulary.pending-candidates", "vocabulary.settlement-progress", "vocabulary.legacy-migration", "vocabulary.srs-ui", "vocabulary.preview-acquisition", "vocabulary.annotation-backfill", "vocabulary.preview-settlement"],
+      "backupAdapter": "IndexedDB vocabulary-srs prefix adapter",
+      "revisionSource": "vocabulary.revision-watermark.v1 and per-record/UoW CAS; learning-event manifest revision; pending candidate rows are currently timestamp-only",
+      "mediaReferences": "source locator/context evidence only; ECDICT and local sentence SQLite are read-only transient assistance",
+      "rollbackTarget": "pre-command vocabulary rows, watermark, event manifest/shards, and command receipts in an application-backup artifact",
+      "futureOwnerFacade": "windowsHost.vocabularySrsOwner",
+      "querySurface": ["snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"],
+      "commandSurface": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report"],
+      "migrationWave": "wave-5-vocabulary-srs",
+      "zeroGate": "No browser IndexedDB write for declared vocabulary rows after checkpoint; every command has owner revision/receipt; ECDICT remains outside the durable owner",
+      "milestoneStatus": "inventory-only; no repository or UoW migration"
+    },
+    {
+      "domain": "passage-preview",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/passage-preview",
+      "currentOwner": "Browser App.vue and passage-preview feature modules over localStorage, with acquisition handoff into vocabulary services",
+      "readCallers": [
+        { "file": "src/App.vue", "lines": "114-124,521-552", "symbols": ["loadPassagePreviewData/Progress", "import handlers", "session cache"], "access": "read", "boundary": "preview page state" },
+        { "file": "src/features/passage-preview/passage-preview-storage.js", "lines": "1-100", "symbols": ["loadPassagePreviewData", "loadPassagePreviewProgress"], "access": "read", "boundary": "localStorage compatibility store" },
+        { "file": "src/features/passage-preview/passage-preview-daily-continuation.js", "lines": "26-52,150-198", "symbols": ["loadIeltsDailyPreview*"], "access": "read", "boundary": "daily preview state" },
+        { "file": "src/services/persistence/read-web-application-backup.js", "lines": "17-38,168-180", "symbols": ["PASSAGE_PREVIEW_STORAGE_KEYS", "passage-preview adapter"], "access": "read", "boundary": "key inventory/backup" }
+      ],
+      "writeCallers": [
+        { "file": "src/App.vue", "lines": "261-409,457-493", "symbols": ["savePassagePreviewData/Progress", "saveIeltsDailyPreview*", "savePassagePreviewSessionCache"], "access": "write", "boundary": "page orchestration" },
+        { "file": "src/features/passage-preview/passage-preview-durable-state.js", "lines": "43-55", "symbols": ["updatePassagePreviewDurableState"], "access": "write", "boundary": "localStorage revision/CAS" },
+        { "file": "src/features/passage-preview/passage-preview-storage.js", "lines": "23-70", "symbols": ["savePassagePreviewData", "savePassagePreviewProgress"], "access": "write", "boundary": "direct localStorage writer" },
+        { "file": "src/features/passage-preview/passage-preview-daily-continuation.js", "lines": "35-52,157-198", "symbols": ["saveIeltsDailyPreview*"], "access": "write", "boundary": "daily state writer" },
+        { "file": "src/features/passage-preview/passage-preview-shortcuts.js", "lines": "53-82", "symbols": ["savePassagePreviewShortcuts", "savePassagePreviewShortcut"], "access": "write-preference", "boundary": "UI preference" }
+      ],
+      "browserDirectWritersRef": ["preview.local-storage", "preview.durable-envelope", "preview.daily-continuation", "preview.preference-storage"],
+      "backupAdapter": "localStorage passage-preview key-spec adapter",
+      "revisionSource": "passage-preview durable-state.v1 integer revision and expectedRevision; legacy data/progress/preferences have no independent CAS",
+      "mediaReferences": "preview source/item locator and sentence metadata only",
+      "rollbackTarget": "pre-change preview localStorage keys and durable envelope; application-backup preview domain",
+      "futureOwnerFacade": "windowsHost.passagePreviewOwner",
+      "querySurface": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
+      "commandSurface": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import"],
+      "migrationWave": "wave-3-passage-preview",
+      "zeroGate": "No localStorage canonical preview write after checkpoint; preference/session-cache writes remain explicitly ephemeral or non-canonical; legacy keys become read-only/import evidence",
+      "milestoneStatus": "inventory-only; no localStorage writer migration"
+    },
+    {
+      "domain": "annotation",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/annotation",
+      "currentOwner": "Browser AnnotationGenerationStorage using audio-folder handle or localStorage fallback; workflow service supplies backfill output",
+      "readCallers": [
+        { "file": "src/services/annotation/storage.js", "lines": "42-112,223-285", "symbols": ["loadBundle", "loadJson", "inspectRuntimeArtifacts"], "access": "read", "boundary": "audio folder/localStorage" },
+        { "file": "src/composables/session-annotation-generated-index.js", "lines": "1-240", "symbols": ["generated annotation index"], "access": "read", "boundary": "runtime index" },
+        { "file": "src/services/annotation/result-store.js", "lines": "38-104", "symbols": ["indexBundle", "query"], "access": "read", "boundary": "in-memory query index" },
+        { "file": "src/composables/youtube-workflow-loader.js", "lines": "410-470", "symbols": ["restoreAnnotationBackfillResult"], "access": "read", "boundary": "workflow API result" }
+      ],
+      "writeCallers": [
+        { "file": "src/services/annotation/storage.js", "lines": "114-172,265-338", "symbols": ["saveBundle", "saveJson"], "access": "write", "boundary": "audio folder/localStorage direct writer" },
+        { "file": "src/composables/session-annotation-lightweight-io.js", "lines": "1-220", "symbols": ["import/export lightweight annotations"], "access": "write/import", "boundary": "session annotation facade" },
+        { "file": "src/composables/annotation-lightweight-module.js", "lines": "1-120", "symbols": ["importManualLightweightAnnotations", "export"], "access": "write/import", "boundary": "window compatibility module" },
+        { "file": "src/composables/annotation-backfill-ai-module.js", "lines": "1-220", "symbols": ["backfill run/import"], "access": "command", "boundary": "workflow client and annotation storage" },
+        { "file": "src/composables/vocabulary-preview-module.js", "lines": "148-184,1200-1245", "symbols": ["savePreviewGeneratedItems", "loadCurrentAnnotationBundle"], "access": "write/merge", "boundary": "preview AI result into annotation bundle" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/service.py", "lines": "3950-3970", "symbols": ["annotation-backfill routes"], "access": "write/produce", "boundary": "workflow backfill output" }
+      ],
+      "browserDirectWritersRef": ["annotation.storage", "annotation.lightweight-import", "annotation.backfill-import", "annotation.vocabulary-preview"],
+      "backupAdapter": "localStorage annotation prefix adapter; audio-folder path requires explicit runtime adapter evidence",
+      "revisionSource": "annotation.bundle.v2 integer revision/commitId; generated/status standalone files are timestamped",
+      "mediaReferences": "audioKey/documentId scope and occurrence/source references only; ECDICT suggestions are transient",
+      "rollbackTarget": "pre-run bundle/generated/status artifacts and corrupt evidence, captured by application-backup annotation domain",
+      "futureOwnerFacade": "windowsHost.annotationOwner",
+      "querySurface": ["bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"],
+      "commandSurface": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import"],
+      "migrationWave": "wave-4-annotation",
+      "zeroGate": "No browser audio-folder/localStorage annotation canonical write after checkpoint; compatibility importer only; transient dictionary suggestions never become durable annotation records",
+      "milestoneStatus": "inventory-only; no annotation storage migration"
+    },
+    {
+      "domain": "workflow",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/workflow",
+      "currentOwner": "Python workflow service, WorkflowHistoryStore, DurableJsonRepository, and ProcessSupervisor under the configured optimization data root",
+      "readCallers": [
+        { "file": "src/composables/youtube-workflow-client.js", "lines": "101-220,340-430", "symbols": ["health", "getConfig", "jobs", "history", "eventsUrl"], "access": "read", "boundary": "workflow HTTP client" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "1149-1277,1379-1485", "symbols": ["loadBackendConfig", "refresh jobs/library", "loadJob"], "access": "read", "boundary": "workflow UI" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/history.py", "lines": "329-405,409-578,578-878", "symbols": ["WorkflowHistoryStore load/search"], "access": "read", "boundary": "DurableJsonRepository" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/application_backup.py", "lines": "298-520", "symbols": ["WorkflowBackupAdapter.collect"], "access": "read", "boundary": "backup adapter" }
+      ],
+      "writeCallers": [
+        { "file": "src/composables/youtube-workflow-client.js", "lines": "140-220,260-340", "symbols": ["createJob", "cancelJob", "retryJob", "saveConfig"], "access": "write", "boundary": "workflow HTTP client" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "984-1408,1712-1750", "symbols": ["link/start/cancel/retry/config actions"], "access": "write", "boundary": "workflow UI command caller" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/service.py", "lines": "1195-1260,1885-1915,3712-3995", "symbols": ["create_job", "_persist_jobs_locked", "API routes"], "access": "write", "boundary": "service/process owner" },
+        { "file": "tools/subtitle-workflow/youtube_workflow/history.py", "lines": "405-481,481-578,838-878", "symbols": ["save_jobs", "save_history", "save_config"], "access": "write", "boundary": "atomic durable JSON" },
+        { "file": "src/services/workflow/operation-receipt.js", "lines": "177-235", "symbols": ["writeWorkflowOperationReceipt", "quarantineStoredReceipt"], "access": "write-compatibility", "boundary": "localStorage dedupe hint" }
+      ],
+      "browserDirectWritersRef": ["workflow.client", "workflow.local-receipt-hint"],
+      "backupAdapter": "WorkflowBackupAdapter",
+      "revisionSource": "jobs/history envelope revision and DurableJsonRepository known revisions; output records carry source revision or zero",
+      "mediaReferences": "authorized relative identity/size/modified metadata with identity-metadata-rebind; no media bytes",
+      "rollbackTarget": "workflow JSON backups/journal and application-backup artifact in the same isolated profile root",
+      "futureOwnerFacade": "windowsHost.workflowOwner",
+      "querySurface": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
+      "commandSurface": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
+      "migrationWave": "wave-6-workflow",
+      "zeroGate": "No browser direct JSON/localStorage canonical workflow write after checkpoint; service process identity and authorized media Range remain host boundaries",
+      "milestoneStatus": "inventory-only; current Python service remains owner"
+    }
+  ],
+  "artifactChecksum": "sha256:2a59a9afcb81f0635d68d15db70ee5e50fb7fe13f1bf40aa67f84a15c911af81"
+}

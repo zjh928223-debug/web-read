@@ -1,15 +1,15 @@
 ## 1. 冻结 Windows 本机基线与安全范围
 
-- [ ] 1.1 在 `read-web-next-optimization` 隔离 worktree 记录当前 git SHA、`config/runtime.optimization.json`、frontend/backend `5184/8776`、隔离 data root、Node/Python/tool versions，并确认 `E:\read-web-next`、`E:\read-web` 与日常数据根未被读取写入。
-- [ ] 1.2 读取现有 `docs/persistence/application-backup.md`、`CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md` 和四个 modified capability spec，冻结六域当前 record/key/checksum inventory。
-- [ ] 1.3 生成六域 ownership matrix，逐项列出 canonical record、当前 owner、所有读写 caller、backup adapter、revision source、媒体引用和可回滚 target。
-- [ ] 1.4 生成 browser direct-writer consumer map，覆盖 `IndexedDB`、`localStorage`、raw JSON/SQLite bridge、`window.*`/DOM facade 与 workflow client；为每个 caller 标记迁移波次和归零 gate。
-- [ ] 1.5 建立 API-first baseline journeys：冷启、Reader Session、Vocabulary/SRS、Preview、Annotation、marks/activity、workflow、A/B/A、host restart 和大媒体 Range；保存 machine-readable 结果与 checksum。
-- [ ] 1.6 在 architecture guard 中固定本 change 的 non-goals：不开放 Mac/Tailscale/非-loopback transport、不改变 `SeekPlayerDB v1/files/id`、不修改或丢弃未提交 WhisperX/语言处理文件。
+- [x] 1.1 在 `read-web-next-optimization` 隔离 worktree 记录当前 git SHA、`config/runtime.optimization.json`、frontend/backend `5184/8776`、隔离 data root、Node/Python/tool versions，并确认 `E:\read-web-next`、`E:\read-web` 与日常数据根未被读取写入。
+- [x] 1.2 读取现有 `docs/persistence/application-backup.md`、`CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md` 和四个 modified capability spec，冻结六域当前 record/key/checksum inventory。
+- [x] 1.3 生成六域 ownership matrix，逐项列出 canonical record、当前 owner、所有读写 caller、backup adapter、revision source、媒体引用和可回滚 target。
+- [x] 1.4 生成 browser direct-writer consumer map，覆盖 `IndexedDB`、`localStorage`、raw JSON/SQLite bridge、`window.*`/DOM facade 与 workflow client；为每个 caller 标记迁移波次和归零 gate。
+- [x] 1.5 建立 API-first baseline journeys：冷启、Reader Session、Vocabulary/SRS、Preview、Annotation、marks/activity、workflow、A/B/A、host restart 和大媒体 Range；保存 machine-readable 结果与 checksum。
+- [x] 1.6 在 architecture guard 中固定本 change 的 non-goals：不开放 Mac/Tailscale/非-loopback transport、不改变 `SeekPlayerDB v1/files/id`、不修改或丢弃未提交 WhisperX/语言处理文件。
 
 ## 2. 建立唯一 owner、lease 与 typed API contract（必须串行）
 
-- [ ] 2.1 定义 versioned API envelope、domain/operation registry、requestId/correlationId、expectedRevision、idempotencyKey、commitStatus、receipt 和 typed error schema。
+- [x] 2.1 定义 versioned API envelope、domain/operation registry、requestId/correlationId、expectedRevision、idempotencyKey、commitStatus、receipt 和 typed error schema。
 - [ ] 2.2 实现六域 owner registry 与 Windows Host-managed repository contract，启动时拒绝缺失、重复、unknown schema、unclaimed row、无 backup/recovery adapter 或无 transaction/revision/recovery evidence 的 profile；browser bridge 不得作为最终 repository。
 - [ ] 2.3 将现有 cross-process application-profile lease 接入 Local App Host lifetime、restore、migration cutover 和 owner read；证明同一 profile 不会出现两个 authoritative writer，并让 owner-mode checkpoint 成为唯一 authority switch。
 - [ ] 2.4 建立 pending journal、per-domain prepare/commit evidence、baseline/staged recovery 和 recovery-before-ready 状态机；缺少 evidence 时返回 `manual-recovery`。

@@ -1,0 +1,299 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "versioned-typed-windows-thin-reader-api-contract",
+  "contractId": "windows-thin-reader-api",
+  "contractVersion": "windows-thin-reader-api.v1",
+  "implementationStatus": "contract-only",
+  "routePolicy": "Semantic operation names are frozen; concrete HTTP route paths are intentionally not frozen by task 2.1",
+  "transport": {
+    "kind": "http-json-loopback",
+    "bindAddress": "127.0.0.1",
+    "portSource": "config/runtime.optimization.json",
+    "optimizationFrontendPort": 5184,
+    "optimizationBackendPort": 8776,
+    "nonLoopbackAllowed": false,
+    "remoteTransport": false,
+    "corsIsAuthentication": false,
+    "authorizationBeforePathOrCredentialAccess": true
+  },
+  "identityAndMutationRules": {
+    "requestId": {
+      "type": "string",
+      "required": true,
+      "meaning": "Unique identity for one transport request",
+      "maxLength": 128,
+      "format": "opaque-safe-token"
+    },
+    "correlationId": {
+      "type": "string",
+      "required": true,
+      "meaning": "Stable identity across a UI intent, retries, owner work, and receipt lookup",
+      "maxLength": 128,
+      "format": "opaque-safe-token"
+    },
+    "expectedRevision": {
+      "type": "integer-or-string-or-null",
+      "requiredWhen": "mutable domain command, except an explicitly registered bootstrap prepare",
+      "meaning": "The caller's authoritative base revision; owner rejects stale values and never silently last-writes-wins",
+      "allowed": ["non-negative integer", "non-empty revision token", null]
+    },
+    "idempotencyKey": {
+      "type": "string-or-null",
+      "requiredWhen": "every mutation command and every retry that could repeat a side effect",
+      "meaning": "Stable mutation identity; same key plus same request fingerprint returns the same receipt/effect",
+      "maxLength": 256,
+      "allowed": ["non-empty safe string", null]
+    },
+    "commitStatus": {
+      "type": "enum",
+      "values": ["not-applicable", "pending", "committed", "rejected", "conflict", "commit-unknown", "not-ready", "manual-recovery"],
+      "meaning": "Durability status, never inferred from HTTP transport success"
+    },
+    "receipt": {
+      "requiredWhen": "mutation response with committed, rejected, conflict, or commit-unknown status",
+      "meaning": "Authoritative owner evidence or an explicit receipt lookup handle",
+      "queryRule": "commit-unknown remains unresolved until receipt query or authoritative revision inspection"
+    }
+  },
+  "requestEnvelopeSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["contractVersion", "requestId", "correlationId", "kind", "domain", "operation", "payload"],
+    "properties": {
+      "contractVersion": { "const": "windows-thin-reader-api.v1" },
+      "requestId": { "$ref": "#/$defs/safeIdentity" },
+      "correlationId": { "$ref": "#/$defs/safeIdentity" },
+      "kind": { "enum": ["query", "command", "receipt-query", "capability-query", "backup-query", "backup-command", "media-query"] },
+      "domain": { "enum": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow", "profile"] },
+      "operation": { "$ref": "#/$defs/safeOperation" },
+      "expectedRevision": { "$ref": "#/$defs/revisionToken" },
+      "idempotencyKey": { "$ref": "#/$defs/idempotencyToken" },
+      "capability": { "$ref": "#/$defs/safeOperation" },
+      "payload": { "type": "object" }
+    }
+  },
+  "responseEnvelopeSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["contractVersion", "requestId", "correlationId", "domain", "operation", "outcome", "commitStatus", "revision", "receipt", "payload"],
+    "properties": {
+      "contractVersion": { "const": "windows-thin-reader-api.v1" },
+      "requestId": { "$ref": "#/$defs/safeIdentity" },
+      "correlationId": { "$ref": "#/$defs/safeIdentity" },
+      "domain": { "enum": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow", "profile"] },
+      "operation": { "$ref": "#/$defs/safeOperation" },
+      "outcome": { "enum": ["read", "committed", "rejected", "conflict", "commit-unknown", "not-ready", "manual-recovery"] },
+      "commitStatus": { "enum": ["not-applicable", "pending", "committed", "rejected", "conflict", "commit-unknown", "not-ready", "manual-recovery"] },
+      "revision": { "$ref": "#/$defs/revisionToken" },
+      "receipt": { "oneOf": [{ "$ref": "#/$defs/receipt" }, { "type": "null" }] },
+      "capability": { "type": "object" },
+      "diagnostic": { "type": "object" },
+      "payload": { "type": "object" },
+      "error": { "oneOf": [{ "$ref": "#/$defs/typedError" }, { "type": "null" }] }
+    }
+  },
+  "receiptSchema": {
+    "$ref": "#/$defs/receipt"
+  },
+  "typedErrorSchema": {
+    "$ref": "#/$defs/typedError"
+  },
+  "$defs": {
+    "safeIdentity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "safeOperation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9.-]{0,95}$"
+    },
+    "idempotencyToken": {
+      "type": ["string", "null"],
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
+    },
+    "revisionToken": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "string", "minLength": 1, "maxLength": 128 },
+        { "type": "null" }
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptId", "contractVersion", "requestId", "correlationId", "domain", "operation", "idempotencyKey", "commitStatus", "revision", "effectFingerprint", "recordChecksums", "createdAt", "committedAt", "queryOperation"],
+      "properties": {
+        "receiptId": { "$ref": "#/$defs/safeIdentity" },
+        "contractVersion": { "const": "windows-thin-reader-api.v1" },
+        "requestId": { "$ref": "#/$defs/safeIdentity" },
+        "correlationId": { "$ref": "#/$defs/safeIdentity" },
+        "domain": { "enum": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow"] },
+        "operation": { "$ref": "#/$defs/safeOperation" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyToken" },
+        "commitStatus": { "enum": ["pending", "committed", "rejected", "conflict", "commit-unknown", "not-ready", "manual-recovery"] },
+        "revision": { "$ref": "#/$defs/revisionToken" },
+        "effectFingerprint": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "recordChecksums": { "type": "array", "items": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "committedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "queryOperation": { "const": "receipt-query" }
+      }
+    },
+    "typedError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code", "category", "message", "retryable", "correlationId", "details"],
+      "properties": {
+        "type": { "const": "windows-thin-reader-error.v1" },
+        "code": { "enum": ["invalid-request", "unauthorized", "forbidden", "not-ready", "not-found", "conflict", "revision-conflict", "unsupported-schema", "corrupt", "quota", "timeout", "upstream", "commit-unknown", "manual-recovery", "unsupported-operation", "path-not-allowed", "idempotency-required", "revision-required"] },
+        "category": { "enum": ["validation", "authorization", "readiness", "not-found", "conflict", "schema", "storage", "capacity", "timeout", "upstream", "recovery", "unsupported"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "retryable": { "type": "boolean" },
+        "correlationId": { "$ref": "#/$defs/safeIdentity" },
+        "details": { "type": "object", "additionalProperties": true }
+      }
+    }
+  },
+  "outcomeRules": [
+    { "outcome": "read", "commitStatus": "not-applicable", "revision": "authoritative revision or null" },
+    { "outcome": "committed", "commitStatus": "committed", "revision": "required authoritative domain revision", "receipt": "required" },
+    { "outcome": "rejected", "commitStatus": "rejected", "revision": "must not advance", "error": "required" },
+    { "outcome": "conflict", "commitStatus": "conflict", "revision": "current authoritative revision when known", "error": "required; stale client must not overwrite" },
+    { "outcome": "commit-unknown", "commitStatus": "commit-unknown", "revision": "null or last known revision", "receipt": "lookup handle required; do not replay with a new idempotency key" },
+    { "outcome": "not-ready", "commitStatus": "not-ready", "revision": "must not advance", "error": "required; no browser fallback write" },
+    { "outcome": "manual-recovery", "commitStatus": "manual-recovery", "revision": "must not advance", "error": "required; readiness remains blocked" }
+  ],
+  "operationRules": {
+    "query": "Queries may omit expectedRevision and idempotencyKey, but must carry requestId/correlationId and return an authoritative revision when one exists",
+    "command": "Mutable commands must carry expectedRevision and idempotencyKey according to the registered domain rule; owner returns receipt or typed non-commit result",
+    "receiptQuery": "Receipt lookup uses the original idempotencyKey/correlationId and never creates a second side effect",
+    "backupRestore": "Cross-domain backup/restore is explicit and uses profile lease/journal in a later task; no implicit distributed transaction is defined here",
+    "media": "Media query returns capability/identity/range metadata; complete media bytes are invalid payloads"
+  },
+  "domainRegistry": [
+    {
+      "domain": "reader-session",
+      "currentImplementation": "browser compatibility persistence; not API-authoritative",
+      "futureOwnerFacade": "windowsHost.readerSessionOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/reader-session",
+      "queryOperations": ["snapshot", "current-revision", "media-identity", "restore-status"],
+      "commandOperations": ["prepare", "commit", "restore", "receipt-query"],
+      "capabilities": ["reader-session.query", "reader-session.prepare", "reader-session.commit", "reader-session.restore", "reader-session.receipt"],
+      "mutationRequirements": { "expectedRevision": "required for commit/restore when a base exists", "idempotencyKey": "required for commit/restore" },
+      "revisionSource": "readerSession manifest revision/contentId/checksum",
+      "backupAdapter": "read-web-application-backup reader-session adapter",
+      "recoveryHandler": "reader-session quarantine and restore handler, future host-owned",
+      "authorityReadyInThisMilestone": false
+    },
+    {
+      "domain": "vocabulary-srs",
+      "currentImplementation": "browser vocabulary/SRS repositories over SeekPlayerDB/files; not API-authoritative",
+      "futureOwnerFacade": "windowsHost.vocabularySrsOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/vocabulary-srs",
+      "queryOperations": ["snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"],
+      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "receipt-query"],
+      "capabilities": ["vocabulary-srs.query", "vocabulary-srs.entry-command", "vocabulary-srs.review-command", "vocabulary-srs.learning-command", "vocabulary-srs.receipt"],
+      "mutationRequirements": { "expectedRevision": "required for mutable row/UoW command", "idempotencyKey": "required for review, acquisition, learning-event, and report commands" },
+      "revisionSource": "vocabulary revision watermark plus repository/UoW CAS",
+      "backupAdapter": "IndexedDB vocabulary-srs prefix adapter",
+      "recoveryHandler": "vocabulary quarantine/revision-watermark recovery handler, future host-owned",
+      "authorityReadyInThisMilestone": false
+    },
+    {
+      "domain": "passage-preview",
+      "currentImplementation": "browser App.vue/localStorage preview modules; not API-authoritative",
+      "futureOwnerFacade": "windowsHost.passagePreviewOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/passage-preview",
+      "queryOperations": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
+      "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
+      "capabilities": ["passage-preview.query", "passage-preview.commit", "passage-preview.batch", "passage-preview.receipt"],
+      "mutationRequirements": { "expectedRevision": "required for durable envelope/batch transitions", "idempotencyKey": "required for every state/rating/transition command" },
+      "revisionSource": "passage-preview durable-state.v1 integer revision",
+      "backupAdapter": "localStorage passage-preview key-spec adapter",
+      "recoveryHandler": "preview key/schema/quota recovery handler, future host-owned",
+      "authorityReadyInThisMilestone": false
+    },
+    {
+      "domain": "annotation",
+      "currentImplementation": "browser audio-folder/localStorage AnnotationGenerationStorage; not API-authoritative",
+      "futureOwnerFacade": "windowsHost.annotationOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/annotation",
+      "queryOperations": ["bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"],
+      "commandOperations": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import", "receipt-query"],
+      "capabilities": ["annotation.query", "annotation.commit", "annotation.import", "annotation.export", "annotation.receipt"],
+      "mutationRequirements": { "expectedRevision": "required for bundle commit when a bundle exists", "idempotencyKey": "required for bundle/import commands; export is read-like but still correlated" },
+      "revisionSource": "annotation.bundle.v2 integer revision/commitId",
+      "backupAdapter": "localStorage annotation prefix adapter plus explicit audio-folder adapter later",
+      "recoveryHandler": "annotation corrupt/permission/quarantine handler, future host-owned",
+      "authorityReadyInThisMilestone": false
+    },
+    {
+      "domain": "marks-activity",
+      "currentImplementation": "Python per-job JSON owner with browser API/outbox compatibility caller; not six-domain typed owner API",
+      "futureOwnerFacade": "windowsHost.marksActivityOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/marks-activity",
+      "queryOperations": ["marks", "activity", "revision", "receipt", "conflict"],
+      "commandOperations": ["marks-commit", "activity-append", "receipt-query"],
+      "capabilities": ["marks-activity.query", "marks-activity.commit", "marks-activity.receipt"],
+      "mutationRequirements": { "expectedRevision": "required for marks/activity CAS", "idempotencyKey": "required for activity and retryable marks commands" },
+      "revisionSource": "per-job marks/activity envelope revision and commit journal",
+      "backupAdapter": "ReaderMarksActivityBackupAdapter",
+      "recoveryHandler": "reader marks/activity recovery and commit journal handler",
+      "authorityReadyInThisMilestone": false
+    },
+    {
+      "domain": "workflow",
+      "currentImplementation": "Python WorkflowHistoryStore/DurableJsonRepository and service API; not six-domain typed owner API",
+      "futureOwnerFacade": "windowsHost.workflowOwner",
+      "canonicalRecordsRef": "domain-inventory.json#/domains/workflow",
+      "queryOperations": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
+      "commandOperations": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
+      "capabilities": ["workflow.query", "workflow.job-command", "workflow.config-command", "workflow.media-range", "workflow.receipt"],
+      "mutationRequirements": { "expectedRevision": "required when current domain revision exists", "idempotencyKey": "required for start/cancel/retry/config/index commands" },
+      "revisionSource": "jobs/history envelope revisions and DurableJsonRepository known revisions",
+      "backupAdapter": "WorkflowBackupAdapter",
+      "recoveryHandler": "workflow JSON recovery/ProcessSupervisor handler",
+      "authorityReadyInThisMilestone": false
+    }
+  ],
+  "typedErrorCodes": [
+    { "code": "invalid-request", "category": "validation", "retryable": false },
+    { "code": "unauthorized", "category": "authorization", "retryable": false },
+    { "code": "forbidden", "category": "authorization", "retryable": false },
+    { "code": "not-ready", "category": "readiness", "retryable": true },
+    { "code": "not-found", "category": "not-found", "retryable": false },
+    { "code": "conflict", "category": "conflict", "retryable": true },
+    { "code": "revision-conflict", "category": "conflict", "retryable": true },
+    { "code": "unsupported-schema", "category": "schema", "retryable": false },
+    { "code": "corrupt", "category": "storage", "retryable": false },
+    { "code": "quota", "category": "capacity", "retryable": false },
+    { "code": "timeout", "category": "timeout", "retryable": true },
+    { "code": "upstream", "category": "upstream", "retryable": true },
+    { "code": "commit-unknown", "category": "recovery", "retryable": true },
+    { "code": "manual-recovery", "category": "recovery", "retryable": false },
+    { "code": "unsupported-operation", "category": "unsupported", "retryable": false },
+    { "code": "path-not-allowed", "category": "authorization", "retryable": false },
+    { "code": "idempotency-required", "category": "validation", "retryable": false },
+    { "code": "revision-required", "category": "validation", "retryable": false }
+  ],
+  "securityAndMediaBoundary": {
+    "hostOriginTokenCapability": "Required for future owner mutation middleware; CORS alone is insufficient",
+    "tokenPersistence": "Never in URL, durable browser storage, or ordinary diagnostics",
+    "pathPolicy": "Only configured optimization profile/data root; reject path escape before path read",
+    "mediaPolicy": "Authorized URL/capability plus Range/ETag metadata only; complete Blob/ArrayBuffer/data URI is rejected",
+    "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
+  },
+  "futureImplementationBoundary": {
+    "notDefinedHere": ["repository implementation", "owner registry startup", "profile lease", "pending journal", "receipt persistence", "auth middleware", "cutover checkpoint", "API client", "production mutation"],
+    "nextAllowedTask": "2.2 owner registry/repository contract and readiness guard",
+    "authorityReady": false
+  },
+  "artifactChecksum": "sha256:143d93c19d2574248ddf88c17340add63130bd8461f0d1d0ac782f4de6b74a7a"
+}

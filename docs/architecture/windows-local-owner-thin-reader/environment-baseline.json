@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "windows-optimization-environment-baseline",
+  "capturedAt": "2026-08-28",
+  "workspace": {
+    "path": "E:\\read-web-next-optimization",
+    "head": "491bd8a718a82faf9659a460b9b817c69c18eeb0",
+    "parent": "669867e0c4e3c03e24361f32ef79a89d4ccedb20",
+    "branch": "codex/read-web-optimization",
+    "statusAtCapture": [
+      " M tools/subtitle-workflow/chunker/chunk_rules.py",
+      " M tools/subtitle-workflow/language_service.py",
+      " M tools/subtitle-workflow/tests/test_language_service.py",
+      " M tools/subtitle-workflow/tests/test_workflow_core.py",
+      " M tools/subtitle-workflow/youtube_workflow/core.py",
+      "?? tools/subtitle-workflow/tests/test_chunk_rules.py"
+    ]
+  },
+  "runtimeConfig": {
+    "path": "config/runtime.optimization.json",
+    "schemaVersion": 1,
+    "frontend": {
+      "host": "127.0.0.1",
+      "port": 5184
+    },
+    "backend": {
+      "host": "127.0.0.1",
+      "port": 8776
+    },
+    "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+    "pythonExecutable": "python",
+    "configuredTools": {
+      "ytDlp": "yt-dlp",
+      "whisperx": "whisperx",
+      "ffmpeg": "ffmpeg"
+    },
+    "networkProxyConfigured": true,
+    "networkProxy": "http://127.0.0.1:7897",
+    "configSha256": "sha256:afbd505a0940b64fd929232c6866df3f311a41be8f44f15b2ae212dd83d4b2bf"
+  },
+  "toolVersions": {
+    "node": {
+      "command": "node",
+      "version": "v24.13.1",
+      "available": true
+    },
+    "npm": {
+      "command": "npm",
+      "version": "11.8.0",
+      "available": true
+    },
+    "python": {
+      "command": "python",
+      "version": "Python 3.10.10",
+      "available": true
+    },
+    "git": {
+      "command": "git",
+      "version": "git version 2.51.0.windows.1",
+      "available": true
+    },
+    "openspec": {
+      "command": "openspec",
+      "version": "1.2.0",
+      "available": true
+    },
+    "ripgrep": {
+      "command": "rg",
+      "version": "ripgrep 15.2.0 (rev e89fff89ac)",
+      "available": true
+    },
+    "ytDlp": {
+      "command": "yt-dlp",
+      "version": "2026.06.09",
+      "available": true
+    },
+    "whisperx": {
+      "command": "whisperx",
+      "version": null,
+      "available": false,
+      "probe": "PowerShell command resolution reported that whisperx is not recognized"
+    },
+    "ffmpeg": {
+      "command": "ffmpeg",
+      "version": "ffmpeg version 2025-06-04-git-a4c1a5b084-full_build-www.gyan.dev",
+      "available": true
+    }
+  },
+  "optimizationIsolation": {
+    "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+    "frontend": "127.0.0.1:5184",
+    "backend": "127.0.0.1:8776",
+    "temporaryFixturePolicy": "Only explicitly named temporary fixture directories under the optimization workspace or system temp may be used",
+    "realProfilePayloadRead": false,
+    "realProfilePayloadWrite": false,
+    "networkJourneys": false
+  },
+  "treeAccessAudit": {
+    "E:\\read-web-next": {
+      "read": false,
+      "write": false,
+      "build": false,
+      "launch": false,
+      "commit": false
+    },
+    "E:\\read-web": {
+      "read": false,
+      "write": false,
+      "build": false,
+      "launch": false,
+      "commit": false
+    },
+    "E:\\ReadWebData\\SubtitleWorkflow": {
+      "read": false,
+      "write": false,
+      "launch": false,
+      "commit": false
+    }
+  },
+  "portsAtCapture": {
+    "5184": "free",
+    "8776": "free"
+  },
+  "evidenceLimit": "This is a source/config baseline, not a claim that the future owner API or host readiness endpoint is implemented",
+  "artifactChecksum": "sha256:229981199c2b917aff796fd3115a7e9829852e3773a9098b763a96149636f250"
+}
