@@ -3,10 +3,11 @@
 This directory is the human entry point and machine-readable evidence bundle for the first reviewable
 milestone of `windows-local-owner-thin-reader`.
 
-The milestone freezes the current Windows optimization boundary and defines the future API seam. It does
-not implement a Windows owner repository, a browser API client, a lease/journal cutover, or any domain
-writer migration. The current browser and Python owners are recorded as facts so that later waves can move
-one boundary at a time without treating the compatibility path as authoritative by accident.
+The milestone freezes the current Windows optimization boundary and defines the future API seam. Task 2.2
+adds a contract-only six-domain owner registry and a Local App Host readiness guard; it does not implement
+the owner repositories, a browser API client, a lease/journal cutover, or any domain writer migration. The
+current browser and Python owners are recorded as facts so that later waves can move one boundary at a time
+without treating the compatibility path as authoritative by accident.
 
 ## Frozen artifacts
 
@@ -23,6 +24,9 @@ one boundary at a time without treating the compatibility path as authoritative 
 - `non-goals.json` — frozen schema, transport, script-order, protected-file, and implementation guard.
 - `api-contract.json` — versioned typed envelope, domain/operation registry, identity/revision/idempotency,
   commit receipt, and typed error schema. It is a contract-only artifact; it is not a capability claim.
+- `owner-registry.json` — exactly six Host-managed repository contracts with key/schema claims, query/
+  command surfaces, revision/backup/recovery evidence, and explicit pre-cutover authority state. It is
+  validated at Local App Host startup; invalid profiles are degraded and owner operations remain rejected.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -30,6 +34,12 @@ whitespace. `scripts/windows-local-owner-contract-check.mjs` validates the bundl
 service. `scripts/windows-local-owner-baseline-check.mjs` executes every evidence item marked `pass` with a
 shell-free Node runner and leaves `not-run` items untouched; its output includes a checksum of the real run.
 `scripts/windows-local-owner-determinism-check.mjs` repeats canonicalization and source-map checks.
+
+The owner registry validator is behavior-oriented: it rejects missing or duplicate domains/owners, unknown
+or unsupported profile rows, missing backup/recovery or transaction/revision/recovery evidence, browser-only
+repositories, and canonical browser bridge claims. A valid registry still reports `ownerApiReady: false` and
+`acceptingApiAuthoritativeOperations: false` until a later migration task implements the repository and
+cutover contract.
 
 ## Evidence semantics
 

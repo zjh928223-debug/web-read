@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 1,
+  "change": "windows-local-owner-thin-reader",
+  "artifactKind": "windows-host-owner-registry-contract",
+  "registryVersion": "windows-owner-registry.v1",
+  "implementationStatus": "contract-ready-pre-cutover",
+  "ownerApiReady": false,
+  "acceptingApiAuthoritativeOperations": false,
+  "validationPolicy": {
+    "exactDomains": [
+      "reader-session",
+      "vocabulary-srs",
+      "passage-preview",
+      "annotation",
+      "marks-activity",
+      "workflow"
+    ],
+    "requiredEvidence": ["transaction", "revision", "recovery"],
+    "browserBridgeIsNeverCanonical": true,
+    "hostRepositoryIsRequired": true
+  },
+  "registrations": [
+    {
+      "domain": "reader-session",
+      "owner": {
+        "identity": "windows-host.owner.reader-session.v1",
+        "facade": "windowsHost.readerSessionOwner"
+      },
+      "canonicalRecords": [
+        {"key": "audioMeta", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
+        {"key": "transcript", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
+        {"key": "chunkData", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
+        {"key": "marks", "schemaVersions": ["reader-session.v3 payload; reader-marks.v1 projection"]},
+        {"key": "readerSession", "schemaVersions": ["3"]},
+        {"keyPattern": "readerSessionQuarantine:*", "schemaVersions": ["1"]}
+      ],
+      "compatibilityRecords": [
+        {"key": "audio", "schemaVersions": ["legacy-media-row.unversioned"]},
+        {"key": "visual", "schemaVersions": ["legacy-visual-row.unversioned"]},
+        {"key": "read-web.reader-save-outbox.v1", "schemaVersions": ["reader-save-outbox.v1"]},
+        {"keyPattern": "read-web.reader-save-outbox.v2.*", "schemaVersions": ["reader-save-outbox.v2"]},
+        {"keyPattern": "read-web.reader-save-outbox-quarantine.v1.*", "schemaVersions": ["reader-save-outbox-quarantine.v1"]}
+      ],
+      "queryOperations": ["get-session", "get-media", "get-transcript", "get-chunks", "get-marks"],
+      "commandOperations": ["save-session", "save-media", "save-transcript", "save-chunks", "save-marks"],
+      "revisionSource": {
+        "identity": "reader-session.manifest-revision",
+        "source": "readerSession manifest revision plus content identity/checksum"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.reader-session",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "reader-session",
+        "source": "src/services/persistence/read-web-application-backup.js"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.reader-session",
+        "source": "reader-session quarantine/restore evidence boundary; implementation deferred"
+      },
+      "repository": {
+        "identity": "windows-host.repository.reader-session.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "ApplicationPersistence typed transaction boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "readerSession manifest revision evidence"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "application backup quarantine and restore evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "browser compatibility persistence",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    },
+    {
+      "domain": "vocabulary-srs",
+      "owner": {
+        "identity": "windows-host.owner.vocabulary-srs.v1",
+        "facade": "windowsHost.vocabularySrsOwner"
+      },
+      "canonicalRecords": [
+        {"key": "vocabulary.srs.store.v1", "schemaVersions": ["1"]},
+        {"key": "vocabulary.acquisition.store.v1", "schemaVersions": ["acquisition-store.v1"]},
+        {"key": "vocabulary.review.store.v2", "schemaVersions": ["review-store.v2; review-state.v2", "review-store.v2", "review-state.v2"]},
+        {"key": "vocabulary.review-session-ledgers.v1", "schemaVersions": ["review-session-ledger-store.v1; session-ledger.v1", "review-session-ledger-store.v1", "session-ledger.v1"]},
+        {"key": "vocabulary.learning-events.manifest.v1", "schemaVersions": ["learning-event-manifest.v1"]},
+        {"keyPattern": "vocabulary.learning-events.v1.*", "schemaVersions": ["learning-event-shard.v1"]},
+        {"key": "vocabulary.context-evidence.store.v1", "schemaVersions": ["context-evidence-store.v1; context-evidence.v1", "context-evidence-store.v1", "context-evidence.v1"]},
+        {"key": "vocabulary.personalization.shadow-reports.v1", "schemaVersions": ["personalization-shadow-report-store.v1; personalization-shadow-model-snapshot.v1", "personalization-shadow-report-store.v1", "personalization-shadow-model-snapshot.v1"]},
+        {"key": "vocabulary-srs-pending-candidates", "schemaVersions": ["1"]},
+        {"keyPattern": "vocabulary-article-srs-settlement-progress:*", "schemaVersions": ["1"]},
+        {"key": "vocabulary.revision-watermark.v1", "schemaVersions": ["vocabulary-revision-watermark.v1"]},
+        {"keyPattern": "vocabulary.learning-command-receipt.v1:*", "schemaVersions": ["command-receipt.v1"]}
+      ],
+      "compatibilityRecords": [
+        {"keyPattern": "legacy-migration:*", "schemaVersions": ["legacy-migration.v1"]}
+      ],
+      "queryOperations": ["get-entry", "get-review-state", "get-context-evidence", "get-learning-events"],
+      "commandOperations": ["upsert-entry", "record-review", "record-learning-event", "settle-article"],
+      "revisionSource": {
+        "identity": "vocabulary-srs.revision-watermark",
+        "source": "vocabulary.revision-watermark.v1 and learning-event manifest"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.vocabulary-srs",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "vocabulary-srs",
+        "source": "src/services/persistence/read-web-application-backup.js"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.vocabulary-srs",
+        "source": "vocabulary backup adapter validation/quarantine boundary; implementation deferred"
+      },
+      "repository": {
+        "identity": "windows-host.repository.vocabulary-srs.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "ApplicationPersistence typed transaction boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "vocabulary revision watermark and event manifest"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "application backup adapter validation and quarantine evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "browser vocabulary/SRS persistence",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    },
+    {
+      "domain": "passage-preview",
+      "owner": {
+        "identity": "windows-host.owner.passage-preview.v1",
+        "facade": "windowsHost.passagePreviewOwner"
+      },
+      "canonicalRecords": [
+        {"key": "vocabulary.passage-preview.durable-state.v1", "schemaVersions": ["passage-preview.durable-state.v1"]},
+        {"key": "vocabulary.passage-preview.data.v2", "schemaVersions": ["passage-preview.local-data.v2"]},
+        {"key": "vocabulary.passage-preview.progress.v2", "schemaVersions": ["passage-preview.local-progress.v2"]},
+        {"key": "vocabulary.passage-preview.data.v1", "schemaVersions": ["passage-preview.legacy-data.v1"]},
+        {"key": "vocabulary.passage-preview.progress.v1", "schemaVersions": ["passage-preview.legacy-progress.v1"]},
+        {"key": "vocabulary.passage-preview.acquisition.v1", "schemaVersions": ["passage-preview.acquisition.v1"]},
+        {"key": "vocabulary.passage-preview.delayed-check.v1", "schemaVersions": ["passage-preview.delayed-check.v1"]},
+        {"key": "vocabulary.passage-preview.reacquisition-progress.v1", "schemaVersions": ["passage-preview.reacquisition-progress.v1"]},
+        {"key": "vocabulary.ielts-daily-preview.allocations.v1", "schemaVersions": ["ielts-daily-preview.allocations.v1"]},
+        {"key": "vocabulary.ielts-daily-preview.continuation.v1", "schemaVersions": ["ielts-daily-preview.continuation.v1"]},
+        {"key": "vocabulary.ielts-daily-preview.archive.v1", "schemaVersions": ["ielts-daily-preview.archive.v1"]}
+      ],
+      "nonCanonicalRecords": [
+        {"key": "vocabulary.passage-preview.session-cache.v1", "schemaVersions": ["passage-preview.session-cache.v1"]},
+        {"key": "vocabulary.passage-preview.shortcuts.v2", "schemaVersions": ["passage-preview.shortcuts.v2"]},
+        {"key": "vocabulary.passage-preview.shortcut.translation.v1", "schemaVersions": ["passage-preview.shortcut.v1"]},
+        {"key": "vocabulary.passage-preview.shortcut.context.v1", "schemaVersions": ["passage-preview.shortcut.v1"]},
+        {"key": "vocabulary.passage-preview.translation-display-mode.v1", "schemaVersions": ["passage-preview.display-mode.v1"]}
+      ],
+      "queryOperations": ["get-preview", "get-preview-progress", "get-translation", "get-ielts-state"],
+      "commandOperations": ["save-preview", "save-preview-progress", "save-translation-preference"],
+      "revisionSource": {
+        "identity": "passage-preview.durable-state-revision",
+        "source": "vocabulary.passage-preview.durable-state.v1 revision"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.passage-preview",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "passage-preview",
+        "source": "src/services/persistence/read-web-application-backup.js"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.passage-preview",
+        "source": "passage-preview localStorage key-spec restore/quarantine boundary; implementation deferred"
+      },
+      "repository": {
+        "identity": "windows-host.repository.passage-preview.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "passage-preview durable state revision"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "application backup localStorage restore evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "browser passage-preview localStorage persistence",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    },
+    {
+      "domain": "annotation",
+      "owner": {
+        "identity": "windows-host.owner.annotation.v1",
+        "facade": "windowsHost.annotationOwner"
+      },
+      "canonicalRecords": [
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.bundle.v2.json", "schemaVersions": ["annotation-bundle.v2"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.generated.json", "schemaVersions": ["1"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.status.json", "schemaVersions": ["1"]}
+      ],
+      "compatibilityRecords": [
+        {"key": "annotation-full-export.json", "schemaVersions": ["export payload not a canonical bundle"]},
+        {"key": "annotation.debug", "schemaVersions": ["none"]}
+      ],
+      "queryOperations": ["get-annotation-bundle", "get-annotation-status", "list-annotations"],
+      "commandOperations": ["save-annotation-bundle", "save-annotation-status", "delete-annotation"],
+      "revisionSource": {
+        "identity": "annotation.bundle-revision",
+        "source": "annotation bundle/status revision and generated checksum"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.annotation",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "annotation",
+        "source": "src/services/persistence/read-web-application-backup.js"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.annotation",
+        "source": "annotation localStorage prefix restore/quarantine boundary; implementation deferred"
+      },
+      "repository": {
+        "identity": "windows-host.repository.annotation.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "annotation bundle/status revision and checksum"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "application backup prefix restore/quarantine evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "browser annotation localStorage persistence",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    },
+    {
+      "domain": "marks-activity",
+      "owner": {
+        "identity": "windows-host.owner.marks-activity.v1",
+        "facade": "windowsHost.marksActivityOwner"
+      },
+      "canonicalRecords": [
+        {"key": "_workflow/reader-marks.json", "schemaVersions": ["reader-marks.v1"]},
+        {"key": "_workflow/reader-activity.json", "schemaVersions": ["reader-activity.v1"]},
+        {"key": "_workflow/reader-marks-commit-journal.json", "schemaVersions": ["reader-marks-commit-journal.v1"]}
+      ],
+      "compatibilityRecords": [
+        {"keyPattern": "read-web.reader-save-outbox.*", "schemaVersions": ["reader-save-outbox.v1/v2", "reader-save-outbox.v1", "reader-save-outbox.v2"]}
+      ],
+      "queryOperations": ["get-marks", "get-activity", "get-mark-revision"],
+      "commandOperations": ["save-marks", "record-activity", "rebuild-mark-projection"],
+      "revisionSource": {
+        "identity": "marks-activity.commit-revision",
+        "source": "reader marks commit journal and projection revision"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.marks-activity",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "marks-activity",
+        "source": "src/services/persistence/read-web-application-backup.js"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.marks-activity",
+        "source": "marks/activity backup journal restore/quarantine boundary; implementation deferred"
+      },
+      "repository": {
+        "identity": "windows-host.repository.marks-activity.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "marks commit journal and projection revision"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "application backup journal restore evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "browser marks store and workflow projection",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    },
+    {
+      "domain": "workflow",
+      "owner": {
+        "identity": "windows-host.owner.workflow.v1",
+        "facade": "windowsHost.workflowOwner"
+      },
+      "canonicalRecords": [
+        {"key": "jobs.json", "schemaVersions": ["1"]},
+        {"key": "history.json", "schemaVersions": ["1"]},
+        {"key": "reader-index.json", "schemaVersions": ["1"]},
+        {"key": "config.json", "schemaVersions": ["1"]},
+        {"keyPattern": "output:*", "schemaVersions": ["1"]},
+        {"key": "mediaReferences[]", "schemaVersions": ["identity-metadata-rebind"]}
+      ],
+      "compatibilityRecords": [
+        {"keyPattern": "read-web.workflow-operation-receipt.v1.*", "schemaVersions": ["1"]},
+        {"keyPattern": "read-web.workflow-operation-receipt-quarantine.v1.*", "schemaVersions": ["1"]}
+      ],
+      "queryOperations": ["get-job", "list-jobs", "get-history", "get-output", "get-workflow-config"],
+      "commandOperations": ["submit-job", "cancel-job", "retry-job", "write-output"],
+      "revisionSource": {
+        "identity": "workflow.history-and-job-revision",
+        "source": "DurableJsonRepository jobs/history revision and workflow operation state"
+      },
+      "backupAdapter": {
+        "identity": "read-web-application-backup.workflow",
+        "registry": "createReadWebApplicationBackupAdapters",
+        "domain": "workflow",
+        "source": "src/services/persistence/read-web-application-backup.js plus WorkflowBackupAdapter"
+      },
+      "recoveryHandler": {
+        "identity": "windows-host.recovery.workflow",
+        "source": "DurableJsonRepository recovery outcome and WorkflowBackupAdapter restore boundary"
+      },
+      "repository": {
+        "identity": "windows-host.repository.workflow.v1",
+        "type": "host-managed",
+        "implementation": "contract-only",
+        "canonicalWhenApiAuthoritative": true,
+        "availableForCanonicalCommit": false
+      },
+      "evidence": {
+        "transaction": {"required": true, "status": "declared-contract", "source": "DurableJsonRepository atomic update boundary"},
+        "revision": {"required": true, "status": "declared-contract", "source": "WorkflowHistoryStore and durable job state revision"},
+        "recovery": {"required": true, "status": "declared-contract", "source": "DurableJsonRepository recovery and WorkflowBackupAdapter evidence"}
+      },
+      "authority": {
+        "mode": "pre-cutover",
+        "currentOwner": "Python workflow service",
+        "currentOwnerWritable": true,
+        "hostApiAuthoritative": false,
+        "hostApiWritable": false
+      },
+      "browserBridge": {
+        "mode": "read-only-inventory-import-rollback",
+        "canonical": false,
+        "commitExecutor": false,
+        "writable": false
+      }
+    }
+  ],
+  "artifactChecksum": "sha256:76666ac8b63491dc379df562f2eca2d5c1b9113d06a3e1bb2f5598eef4b4400d"
+}

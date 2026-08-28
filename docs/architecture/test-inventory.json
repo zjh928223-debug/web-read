@@ -9,7 +9,7 @@
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 248,
+  "packageScriptCount": 249,
   "executableScriptCount": 273,
   "packageCommands": [
     {
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -3019,6 +3019,18 @@
         "scripts/windows-local-owner-non-goals-self-test.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-non-goals-self-test"
+    },
+    {
+      "name": "verify:windows-owner-registry",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_registry",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-registry"
     },
     {
       "name": "verify:workflow-application-backup",
@@ -7646,6 +7658,8 @@
         "package.json#scripts.dictionary:build",
         "package.json#scripts.sentences:build",
         "package.json#scripts.verify:runtime-config",
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-registry",
         "package.json#scripts.verify:workflow-application-backup",
         "package.json#scripts.verify:workflow-application-backup-restore"
       ],

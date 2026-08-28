@@ -19,6 +19,7 @@ export const OWNER_ARTIFACT_FILES = Object.freeze([
   'baseline-journeys.json',
   'non-goals.json',
   'api-contract.json',
+  'owner-registry.json',
 ])
 
 export const WINDOWS_OWNER_DOMAINS = Object.freeze([

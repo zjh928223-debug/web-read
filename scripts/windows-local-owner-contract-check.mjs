@@ -17,14 +17,52 @@ const matrix = artifacts['ownership-matrix.json']
 const consumers = artifacts['browser-direct-writer-consumer-map.json']
 const api = artifacts['api-contract.json']
 const nonGoals = artifacts['non-goals.json']
+const ownerRegistry = artifacts['owner-registry.json']
 
 const sortedDomains = (values) => [...values].sort()
 const inventoryDomains = inventory.domains.map((item) => item.domain)
 const matrixDomains = matrix.domains.map((item) => item.domain)
 const registryDomains = api.domainRegistry.map((item) => item.domain)
+const ownerRegistryDomains = ownerRegistry.registrations.map((item) => item.domain)
 assert(JSON.stringify(sortedDomains(inventoryDomains)) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)), 'inventory does not cover exactly six required domains')
 assert(JSON.stringify(sortedDomains(matrixDomains)) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)), 'ownership matrix does not cover exactly six required domains')
 assert(JSON.stringify(sortedDomains(registryDomains)) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)), 'API registry does not cover exactly six required domains')
+assert(ownerRegistry.schemaVersion === 1, 'Windows owner registry schema version changed')
+assert(ownerRegistry.registryVersion === 'windows-owner-registry.v1', 'Windows owner registry version changed')
+assert(ownerRegistry.implementationStatus === 'contract-ready-pre-cutover', 'Windows owner registry must remain contract-ready')
+assert(ownerRegistry.ownerApiReady === false, 'Windows owner registry cannot claim readiness')
+assert(ownerRegistry.acceptingApiAuthoritativeOperations === false, 'Windows owner registry cannot accept API-authoritative operations')
+assert(JSON.stringify(sortedDomains(ownerRegistryDomains)) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)), 'owner registry does not cover exactly six required domains')
+const ownerIdentities = new Set()
+const repositoryIdentities = new Set()
+for (const registration of ownerRegistry.registrations) {
+  assert(registration.owner?.identity && registration.owner?.facade, `${registration.domain} owner identity/facade is missing`)
+  assert(!ownerIdentities.has(registration.owner.identity), `duplicate owner identity: ${registration.owner.identity}`)
+  ownerIdentities.add(registration.owner.identity)
+  assert(registration.canonicalRecords?.length > 0, `${registration.domain} owner registry has no canonical claims`)
+  assert(registration.queryOperations?.length > 0, `${registration.domain} owner registry has no query surface`)
+  assert(registration.commandOperations?.length > 0, `${registration.domain} owner registry has no command surface`)
+  for (const claimGroup of ['canonicalRecords', 'compatibilityRecords', 'nonCanonicalRecords']) {
+    for (const claim of registration[claimGroup] || []) {
+      assert((claim.key || claim.keyPattern) && claim.schemaVersions?.length > 0, `${registration.domain} owner registry has an incomplete ${claimGroup} claim`)
+    }
+  }
+  assert(registration.revisionSource?.identity && registration.revisionSource?.source, `${registration.domain} owner registry has no revision source`)
+  assert(registration.backupAdapter?.registry === 'createReadWebApplicationBackupAdapters' && registration.backupAdapter?.domain === registration.domain && registration.backupAdapter?.source, `${registration.domain} owner registry has no application backup adapter binding`)
+  assert(registration.recoveryHandler?.identity && registration.recoveryHandler?.source, `${registration.domain} owner registry has no recovery handler`)
+  assert(registration.repository?.identity && registration.repository?.type === 'host-managed', `${registration.domain} owner repository is not Host-managed`)
+  assert(registration.repository?.implementation === 'contract-only', `${registration.domain} owner repository must remain contract-only`)
+  assert(registration.repository?.availableForCanonicalCommit === false, `${registration.domain} owner repository cannot accept commits in this milestone`)
+  assert(!repositoryIdentities.has(registration.repository.identity), `duplicate repository identity: ${registration.repository.identity}`)
+  repositoryIdentities.add(registration.repository.identity)
+  for (const evidenceName of ['transaction', 'revision', 'recovery']) {
+    const evidence = registration.evidence?.[evidenceName]
+    assert(evidence?.required === true && evidence?.source, `${registration.domain} owner registry lacks ${evidenceName} evidence`)
+  }
+  assert(registration.authority?.mode === 'pre-cutover' && registration.authority?.currentOwner && typeof registration.authority?.currentOwnerWritable === 'boolean', `${registration.domain} owner authority is not pre-cutover`)
+  assert(registration.authority?.hostApiAuthoritative === false && registration.authority?.hostApiWritable === false, `${registration.domain} owner authority claims API readiness`)
+  assert(registration.browserBridge?.mode && registration.browserBridge?.canonical === false && registration.browserBridge?.commitExecutor === false && registration.browserBridge?.writable === false, `${registration.domain} browser bridge cannot be canonical`)
+}
 
 const inventoryByDomain = new Map(inventory.domains.map((item) => [item.domain, item]))
 for (const domain of WINDOWS_OWNER_DOMAINS) {
@@ -136,7 +174,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

@@ -22,6 +22,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from .service import create_app as create_workflow_app
+from .windows_owner_registry import (
+    OwnerRegistryError,
+    load_owner_registry,
+    owner_registry_error_status,
+    validate_owner_registry_profile,
+)
 
 
 CAPABILITY_ROUTE_PREFIXES = (
@@ -94,6 +100,7 @@ class PathPreservingAsgiDispatch:
         workflow_access_token: str,
         capability_access_token: str,
         drain_state: dict | None = None,
+        owner_registry_status: dict | None = None,
     ):
         self.host_app = host_app
         self.workflow_app = workflow_app
@@ -106,6 +113,18 @@ class PathPreservingAsgiDispatch:
             "inflight": 0,
             "drainStartedAt": None,
         }
+        self.owner_registry_status = dict(owner_registry_status or {
+            "valid": False,
+            "status": "invalid",
+            "code": "OWNER_REGISTRY_NOT_CONFIGURED",
+            "message": "Windows owner registry is not configured",
+            "details": {},
+            "domainCount": 0,
+            "ownerApiReady": False,
+            "acceptingApiAuthoritativeOperations": False,
+            "validatedRowCount": 0,
+            "domains": [],
+        })
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
@@ -129,6 +148,9 @@ class PathPreservingAsgiDispatch:
                     content=json.dumps({"status": "draining", "detail": "new side effects are disabled"}),
                     media_type="application/json",
                 )(scope, receive, send)
+                return
+            if self._is_owner_api_path(path):
+                await self._handle_owner_operation_guard(scope, receive, send)
                 return
         if scope["type"] in {"http", "websocket"}:
             self.drain_state["inflight"] += 1
@@ -164,6 +186,45 @@ class PathPreservingAsgiDispatch:
             "/api/app/capabilities",
             "/api/app/drain-status",
         }
+
+    @staticmethod
+    def _is_owner_api_path(path: str) -> bool:
+        return path.startswith("/api/app/owner/") or path.startswith("/api/owner/")
+
+    async def _handle_owner_operation_guard(self, scope, receive, send):
+        registry_valid = self.owner_registry_status.get("valid") is True
+        owner_api_ready = self.owner_registry_status.get("ownerApiReady") is True
+        reason = "pre-cutover" if registry_valid else "owner-registry-invalid"
+        message = (
+            "Windows Host owner API is not authoritative in this milestone"
+            if registry_valid
+            else "Windows Host owner registry profile is invalid"
+        )
+        request_id = f"windows-owner-request-{secrets.token_urlsafe(12)}"
+        correlation_id = f"windows-owner-correlation-{secrets.token_urlsafe(12)}"
+        await JSONResponse(
+            {
+                "contractVersion": "windows-thin-reader-api.v1",
+                "requestId": request_id,
+                "correlationId": correlation_id,
+                "domain": "profile",
+                "operation": "owner-command",
+                "outcome": "not-ready",
+                "commitStatus": "not-ready",
+                "revision": None,
+                "receipt": None,
+                "error": {
+                    "type": "windows-thin-reader-error.v1",
+                    "code": "not-ready",
+                    "category": "readiness",
+                    "message": message,
+                    "retryable": not owner_api_ready,
+                    "correlationId": correlation_id,
+                    "details": {"reason": reason},
+                },
+            },
+            status_code=503,
+        )(scope, receive, send)
 
     async def _handle_drain(self, scope, send):
         self.drain_state["draining"] = True
@@ -272,6 +333,25 @@ def _is_allowed_loopback_origin(value: str, request_host: str) -> bool:
     )
 
 
+def _default_owner_registry_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "docs" / "architecture" / "windows-local-owner-thin-reader" / "owner-registry.json"
+
+
+def _load_owner_registry_status(
+    *,
+    owner_registry: dict | None,
+    owner_registry_path: Path | None,
+    owner_profile_rows: list[dict] | None,
+) -> dict:
+    try:
+        registry = owner_registry
+        if registry is None:
+            registry = load_owner_registry(owner_registry_path or _default_owner_registry_path())
+        return validate_owner_registry_profile(registry, rows=owner_profile_rows)
+    except OwnerRegistryError as error:
+        return owner_registry_error_status(error)
+
+
 def create_local_app_host(
     *,
     dist_dir: Path,
@@ -289,6 +369,9 @@ def create_local_app_host(
     release_manifest_identity: dict | None = None,
     config_compatibility: dict | None = None,
     application_startup_recovery: dict | None = None,
+    owner_registry: dict | None = None,
+    owner_registry_path: Path | None = None,
+    owner_profile_rows: list[dict] | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -297,6 +380,11 @@ def create_local_app_host(
     workflow_token = str(workflow_access_token or instance_token).strip()
     capability_token = str(capability_access_token or instance_token).strip()
     root = Path(dist_dir).resolve()
+    owner_registry_status = _load_owner_registry_status(
+        owner_registry=owner_registry,
+        owner_registry_path=owner_registry_path,
+        owner_profile_rows=owner_profile_rows,
+    )
     workflow = workflow_app or create_workflow_app(
         access_token=workflow_token,
         bind_host=bind_host,
@@ -317,8 +405,11 @@ def create_local_app_host(
 
     @app.get("/api/app/health")
     def app_health():
+        dist_ready = (root / "index.html").is_file()
+        registry_valid = owner_registry_status.get("valid") is True
+        owner_api_ready = owner_registry_status.get("ownerApiReady") is True
         return {
-            "status": "ready" if (root / "index.html").is_file() else "degraded",
+            "status": "ready" if dist_ready and registry_valid else "degraded",
             "service": "read-web-local-app-host",
             "releaseId": str(release_id),
             "profileId": str(profile_id),
@@ -326,7 +417,10 @@ def create_local_app_host(
             "dataRoot": str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT", "")),
             "manifest": manifest_identity,
             "configCompatibility": compatible_config,
-            "distReady": (root / "index.html").is_file(),
+            "distReady": dist_ready,
+            "ownerRegistry": owner_registry_status,
+            "durableOwnerReady": registry_valid and owner_api_ready,
+            "acceptingApiAuthoritativeOperations": registry_valid and owner_api_ready,
             "applicationStartupRecovery": startup_recovery,
             "acceptingRequests": not drain_state["draining"],
             "inflightRequests": drain_state["inflight"],
@@ -357,6 +451,7 @@ def create_local_app_host(
         workflow_access_token=workflow_token,
         capability_access_token=capability_token,
         drain_state=drain_state,
+        owner_registry_status=owner_registry_status,
     )
 
 
