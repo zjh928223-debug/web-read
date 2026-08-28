@@ -147,6 +147,7 @@ export function missingMatrixConsumerRefs(consumerRecords, matrixRefs, requiredI
 }
 
 const SOURCE_TOKEN_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/u
+const INDEXED_DB_API_ROOTS = new Set(['indexedDB', 'indexedDBApi'])
 
 export function consumerEvidenceTokens(consumer) {
   const explicitTokens = Array.isArray(consumer?.evidenceTokens)
@@ -178,19 +179,16 @@ function uniqueSorted(values) {
 export function indexedDbSchemaSemanticFingerprint(source) {
   const tokens = tokenizeJavaScript(source)
   const bindings = collectLiteralBindings(tokens)
+  const indexedDbApiAliases = collectIndexedDbApiAliases(tokens)
   const openCalls = findCalls(tokens, 'open')
-    .filter((call) => {
-      const receiver = tokens[call.index - 2]
-      return tokens[call.index - 1]?.value === '.'
-        && (receiver?.value === 'indexedDB' || receiver?.value === 'indexedDBApi')
-    })
+    .filter((call) => isIndexedDbApiMethodCall(tokens, call, indexedDbApiAliases))
   const objectStoreCalls = findCalls(tokens, 'objectStore')
     .filter((call) => isIndexedDbObjectStoreCall(tokens, call))
   const transactionCalls = findCalls(tokens, 'transaction')
   const createObjectStoreCalls = findCalls(tokens, 'createObjectStore')
   const deleteObjectStoreCalls = findCalls(tokens, 'deleteObjectStore')
   const deleteDatabaseCalls = findCalls(tokens, 'deleteDatabase')
-    .filter((call) => isIndexedDbApiMethodCall(tokens, call))
+    .filter((call) => isIndexedDbApiMethodCall(tokens, call, indexedDbApiAliases))
   const objectStoreAliases = collectObjectStoreAliases(tokens, objectStoreCalls, bindings)
 
   const databaseNames = [
@@ -357,6 +355,24 @@ function collectLiteralBindings(tokens) {
   return bindings
 }
 
+function collectIndexedDbApiAliases(tokens) {
+  const aliases = new Set(INDEXED_DB_API_ROOTS)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let index = 0; index < tokens.length - 3; index += 1) {
+      if (!['const', 'let', 'var'].includes(tokens[index].value)) continue
+      const name = tokens[index + 1]
+      const source = tokens[index + 3]
+      if (name?.type !== 'identifier' || tokens[index + 2]?.value !== '=' || source?.type !== 'identifier') continue
+      if (!aliases.has(source.value) || aliases.has(name.value)) continue
+      aliases.add(name.value)
+      changed = true
+    }
+  }
+  return aliases
+}
+
 function literalBindingsByName(bindings, pattern) {
   return [...bindings.entries()]
     .filter(([name]) => pattern.test(name))
@@ -498,10 +514,11 @@ function isIndexedDbObjectStoreCall(tokens, call) {
   return false
 }
 
-function isIndexedDbApiMethodCall(tokens, call) {
+function isIndexedDbApiMethodCall(tokens, call, indexedDbApiAliases) {
   const receiver = tokens[call.index - 2]
   return tokens[call.index - 1]?.value === '.'
-    && (receiver?.value === 'indexedDB' || receiver?.value === 'indexedDBApi')
+    && receiver?.type === 'identifier'
+    && indexedDbApiAliases.has(receiver.value)
 }
 
 function assignedIdentifierBefore(tokens, index) {

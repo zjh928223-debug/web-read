@@ -109,6 +109,30 @@ assert(schemaIdentity.versions.includes(String(FROZEN_IDB_SCHEMA.version)), 'fix
 assert(schemaIdentity.storeNames.includes(FROZEN_IDB_SCHEMA.objectStore), 'fixture store was not captured')
 assert(schemaIdentity.keyPaths.includes(FROZEN_IDB_SCHEMA.keyPath), 'fixture key path was not captured')
 
+assertSchemaChangeRejected(
+  `${schemaFixture}
+const api = indexedDB;
+api.open('OtherDB', DB_VERSION);
+`,
+  'aliased IndexedDB database changes',
+)
+assertSchemaChangeRejected(
+  `${schemaFixture}
+const api = indexedDBApi;
+const chainedApi = api;
+chainedApi.open(DB_NAME, 2);
+`,
+  'aliased IndexedDB version changes',
+)
+assertSchemaChangeRejected(
+  `${schemaFixture}
+const api = indexedDBApi;
+const chainedApi = api;
+chainedApi.deleteDatabase(DB_NAME);
+`,
+  'aliased deleteDatabase operations',
+)
+
 const existingCreateOperation = `${schemaFixture}
 const databaseForSchema = indexedDB;
 databaseForSchema.createObjectStore('files', { keyPath: 'id' });
