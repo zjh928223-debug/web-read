@@ -196,6 +196,22 @@ function readVisibleTarget() {
       return { target: null, visibility: { status: 'none', journalStatus, journalPhase } }
     }
 
+    if (journalPhase === 'commit-pointer-pending' && !sameTarget(target, committedTarget)) {
+      // The launcher records durable commit intent before replacing the
+      // committed-target file. Keep the last committed target visible during
+      // that tiny interval; once the replacement file matches, the normal
+      // committed branch below exposes the new target.
+      const previousCommittedTarget = normalizeTarget(readSnapshotJson(journal.oldCommittedTargetSnapshot) || readSnapshotJson(journal.oldTargetSnapshot))
+      const previous = readJournalPreviousTarget(journal, target, previousCommittedTarget)
+      if (previous) {
+        return {
+          target: previous,
+          visibility: { status: 'previous-release', journalStatus, journalPhase },
+        }
+      }
+      return { target: null, visibility: { status: 'none', journalStatus, journalPhase } }
+    }
+
     if (!committedTarget || !sameTarget(target, committedTarget) || !targetMatchesActivePointers(committedTarget) || !targetMatchesCommittedJournal(committedTarget, journal)) {
       return { target: null, visibility: { status: 'none', journalStatus, journalPhase } }
     }

@@ -109,12 +109,19 @@ replacement, but marks that readiness only as an internal candidate preflight. A
 committed active target: the launcher drains/stops the candidate, drains/stops the old Host, then restarts
 the same candidate instance in authoritative mode and waits for `profileLeaseMode: authoritative`,
 `profileLeaseReady: true`, and a live stable lease before writing the front-door target. Thus the old and
-replacement Host never hold two stable profile leases at once. If promotion fails, the activation journal
-restores the old Host from its captured manager receipt before restoring the old pointers; a standby result
-is never committed. A normal/committed Host without the stable lease is degraded, while the temporary
+replacement Host never hold two stable profile leases at once. If promotion fails, recovery first
+ownership-checks and drains/stops the replacement, waits until the stable profile lease is absent, then
+restores the old Host from its captured manager receipt and only afterward restores the old pointers; a
+standby result is never committed. A normal/committed Host without the stable lease is degraded, while the temporary
 candidate may report ready only with the explicit preflight flag. The current boolean drain/freeze inputs
 are only a contract/test seam for the future 7.1 coordinator; they do not claim that real browser freeze
 or drain has been verified.
+
+Before replacing the committed front-door target, the launcher durably records `status: committed` with
+`phase: commit-pointer-pending`. The stable front door continues serving the previous target until the
+new committed-target file matches; after that file is visible, a launcher crash can only enter forward
+recovery. A committed journal is never sent through the rollback branch; if its replacement is not ready,
+the journal remains for a safe retry and the service stays fail-closed.
 
 The current optimization candidate therefore reports `profileLeaseReady: true` and
 `ownerMode.status: pre-cutover`, while `durableOwnerReady` and

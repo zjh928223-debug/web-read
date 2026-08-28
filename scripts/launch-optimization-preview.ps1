@@ -291,6 +291,24 @@ function Remove-OptimizationApplicationIsolation {
   } catch { return $false }
 }
 
+function Wait-OptimizationProfileAuthorityLeaseFree {
+  param(
+    [Parameter(Mandatory)][string]$AuthorityRoot,
+    [int]$TimeoutSeconds = 5
+  )
+  try {
+    $resolvedAuthorityRoot = [IO.Path]::GetFullPath($AuthorityRoot).TrimEnd('\', '/')
+    if (-not $resolvedAuthorityRoot) { return $false }
+    $lockPath = "$resolvedAuthorityRoot.read-web-path.lock"
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+    do {
+      if (-not (Test-Path -LiteralPath $lockPath)) { return $true }
+      Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $deadline)
+    return -not (Test-Path -LiteralPath $lockPath)
+  } catch { return $false }
+}
+
 function Test-OptimizationActivationPairReady {
   param([Parameter(Mandatory)]$Journal)
   try {
@@ -649,6 +667,13 @@ function Restore-OptimizationOldHostFromJournal {
     }
     Remove-Item -LiteralPath $oldHostPath -Force -ErrorAction SilentlyContinue
   }
+  $authorityRoot = Get-OptimizationObjectText -Object $Journal -Name 'newApplicationProfileAuthorityRoot'
+  if (-not $authorityRoot) {
+    $authorityRoot = Get-OptimizationObjectText -Object $oldHostSnapshot -Name 'applicationProfileAuthorityRoot'
+  }
+  if (-not $authorityRoot -or -not (Wait-OptimizationProfileAuthorityLeaseFree -AuthorityRoot $authorityRoot -TimeoutSeconds 5)) {
+    throw 'Optimization promotion rollback cannot prove that the replacement Host released the stable profile lease.'
+  }
   Set-OptimizationActivationJournal -Journal $Journal -Status 'rolling-back' -Phase 'old-host-restore-starting'
   $health = Start-OptimizationHostFromSnapshot `
     -State $oldHostSnapshot `
@@ -669,7 +694,14 @@ function Invoke-OptimizationActivationRecovery {
   }
   $status = Get-OptimizationObjectText -Object $journal -Name 'status'
   Write-Host "Recovering interrupted optimization activation journal (phase $(Get-OptimizationObjectText -Object $journal -Name 'phase'), status $status)."
-  if ($status -eq 'committed' -and (Test-OptimizationActivationPairReady -Journal $journal)) {
+  if ($status -eq 'committed') {
+    if (-not (Test-OptimizationActivationPairReady -Journal $journal)) {
+      # A committed journal is durable commit intent, including the narrow
+      # interval before the committed-target file is replaced.  Never send it
+      # through the rollback branch just because the replacement is not ready;
+      # retain the receipt for a safe forward recovery/retry.
+      throw 'Committed optimization activation is not ready for forward recovery; retaining the committed journal and refusing rollback.'
+    }
     $newRelease = Get-OptimizationReleaseDescriptor -ReleaseRoot (Get-OptimizationObjectText -Object $journal -Name 'newReleaseRoot')
     $newHostPath = Get-OptimizationObjectText -Object $journal -Name 'newHostManagerStatePath'
     $newHostState = Read-OptimizationJsonFile -Path $newHostPath
@@ -710,15 +742,10 @@ function Invoke-OptimizationActivationRecovery {
 
   $newInstanceId = Get-OptimizationObjectText -Object $journal -Name 'newInstanceId'
   $newHostPath = Get-OptimizationObjectText -Object $journal -Name 'newHostManagerStatePath'
+  $promotionRecovery = (Get-OptimizationObjectText -Object $journal -Name 'oldHostReleasedForPromotion') -eq 'True' `
+    -or (Get-OptimizationObjectText -Object $journal -Name 'oldHostReleaseInProgress') -eq 'True'
+  $newHostLeaseCleanupComplete = $true
   $recoveryCleanupComplete = $true
-  if ((Get-OptimizationObjectText -Object $journal -Name 'oldHostReleasedForPromotion') -eq 'True' `
-    -or (Get-OptimizationObjectText -Object $journal -Name 'oldHostReleaseInProgress') -eq 'True') {
-    Restore-OptimizationOldHostFromJournal -Journal $journal | Out-Null
-  }
-  Restore-JsonSnapshot -Path $frontDoorTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldTargetSnapshot')
-  Restore-JsonSnapshot -Path $frontDoorCommittedTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldCommittedTargetSnapshot')
-  Restore-JsonSnapshot -Path $activeReleasePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveReleaseSnapshot')
-  Restore-JsonSnapshot -Path $hostStatePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveHostSnapshot')
 
   if ($newHostPath -and (Test-Path -LiteralPath $newHostPath -PathType Leaf)) {
     $newHostCleanupComplete = $false
@@ -738,7 +765,10 @@ function Invoke-OptimizationActivationRecovery {
         } catch { Write-Warning "Interrupted new Host ownership-checked stop failed; journal retained for retry: $($_.Exception.Message)" }
       }
     } catch { Write-Warning "Interrupted new Host cleanup was incomplete: $($_.Exception.Message)" }
-    if (-not $newHostCleanupComplete) { $recoveryCleanupComplete = $false }
+    if (-not $newHostCleanupComplete) {
+      $newHostLeaseCleanupComplete = $false
+      $recoveryCleanupComplete = $false
+    }
     if ($newHostCleanupComplete -or -not (Test-Path -LiteralPath $newHostPath -PathType Leaf)) {
       Remove-Item -LiteralPath $newHostPath -Force -ErrorAction SilentlyContinue
       $cleanupIsolationRoot = $newIsolationRoot
@@ -773,15 +803,30 @@ function Invoke-OptimizationActivationRecovery {
             $recoveryCleanupComplete = $false
           }
         } catch {
+          $newHostLeaseCleanupComplete = $false
           $recoveryCleanupComplete = $false
           Write-Warning "Interrupted pending Host ownership-checked stop failed; journal retained for retry: $($_.Exception.Message)"
         }
       }
     } catch {
+      $newHostLeaseCleanupComplete = $false
       $recoveryCleanupComplete = $false
       Write-Warning "Interrupted pending Host state could not be inspected; journal retained for retry: $($_.Exception.Message)"
     }
   }
+  if ($promotionRecovery) {
+    if (-not $newHostLeaseCleanupComplete) {
+      throw 'Interrupted optimization promotion could not ownership-check and stop the replacement Host; refusing to restore the old Host while its lease may remain held.'
+    }
+    # The replacement may have been authoritative when the launcher crashed.
+    # Its process and stable lease must be gone before the old Host can be
+    # restarted or retained as the sole authority.
+    Restore-OptimizationOldHostFromJournal -Journal $journal | Out-Null
+  }
+  Restore-JsonSnapshot -Path $frontDoorTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldTargetSnapshot')
+  Restore-JsonSnapshot -Path $frontDoorCommittedTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldCommittedTargetSnapshot')
+  Restore-JsonSnapshot -Path $activeReleasePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveReleaseSnapshot')
+  Restore-JsonSnapshot -Path $hostStatePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveHostSnapshot')
   if (-not (Test-Path -LiteralPath $newHostPath -PathType Leaf)) {
     if (-not (Remove-OptimizationApplicationIsolation -Root (Join-Path $defaultOptimizationDataRoot '.read-web-application\instances') -Path (Get-OptimizationObjectText -Object $journal -Name 'newApplicationIsolationRoot'))) {
       $recoveryCleanupComplete = $false
@@ -1457,7 +1502,10 @@ try {
   if (-not $activationReady) {
     throw 'Atomic optimization activation readiness/coherence validation failed before commit.'
   }
-  Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'commit-pointer-pending'
+  # The committed journal is the durable commit intent.  Persist it before
+  # publishing the committed target so a crash after that target is visible
+  # can only take the forward-recovery branch.
+  Set-OptimizationActivationJournal -Journal $activationJournal -Status 'committed' -Phase 'commit-pointer-pending'
   Write-OptimizationFrontDoorTarget `
     -Path $frontDoorCommittedTargetPath `
     -HostName $frontendHost `
@@ -1466,12 +1514,8 @@ try {
     -ProfileId $profileId `
     -InstanceId $newInstanceId
   $frontDoorCommittedTargetSwitched = $true
-  Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'commit-pointer-switched'
+  Set-OptimizationActivationJournal -Journal $activationJournal -Status 'committed' -Phase 'commit-pointer-switched'
   Invoke-OptimizationCrashPoint -Phase 'commit-pointer'
-
-  # Once the committed front-door pointer is published, recovery must finish
-  # old-instance cleanup in place instead of rolling back a committed target.
-  Set-OptimizationActivationJournal -Journal $activationJournal -Status 'committed' -Phase 'committed'
 
   if ($null -ne $existingHostState -and $existingHostManagerStatePath -ne $newHostManagerStatePath) {
     $oldIsolationRoot = Get-OptimizationObjectText -Object $existingHostState -Name 'applicationIsolationRoot'
