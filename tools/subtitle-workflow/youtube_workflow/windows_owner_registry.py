@@ -19,6 +19,7 @@ OWNER_REGISTRY_SCHEMA_VERSION = 1
 OWNER_REGISTRY_VERSION = "windows-owner-registry.v1"
 OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION = 1
 OWNER_PROFILE_EVIDENCE_SOURCE = "read-web-production-backup.composition"
+OWNER_MODE_CHECKPOINT_SCHEMA_VERSION = 1
 WINDOWS_OWNER_DOMAINS = (
     "reader-session",
     "vocabulary-srs",
@@ -74,6 +75,104 @@ def _require_bool(value: Any, code: str, message: str) -> bool:
     if not isinstance(value, bool):
         raise OwnerRegistryError(code, message)
     return value
+
+
+def _validate_profile_lease(evidence: Any, profile_id: str | None) -> dict[str, Any]:
+    lease = _require_object(
+        evidence,
+        "OWNER_PROFILE_LEASE_MISSING",
+        "Windows owner profile lease evidence is required",
+    )
+    if lease.get("schemaVersion") != OWNER_MODE_CHECKPOINT_SCHEMA_VERSION:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_LEASE_UNSUPPORTED_SCHEMA",
+            "Windows owner profile lease schema is unsupported",
+        )
+    if lease.get("status") != "held":
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_LEASE_INVALID",
+            "Windows owner profile lease is not held",
+        )
+    lease_profile_id = _required_text(
+        lease.get("profileId"),
+        "OWNER_PROFILE_LEASE_MISSING",
+        "Windows owner profile lease needs a profile id",
+    )
+    expected_profile_id = str(profile_id or "").strip()
+    if expected_profile_id and lease_profile_id != expected_profile_id:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_LEASE_MISMATCH",
+            "Windows owner profile lease belongs to a different profile",
+            details={"expectedProfileId": expected_profile_id, "actualProfileId": lease_profile_id},
+        )
+    for field_name in ("profileKeyHash", "leaseIdHash", "ownerTokenHash"):
+        value = lease.get(field_name)
+        if not isinstance(value, str) or not _CHECKSUM_PATTERN.fullmatch(value):
+            raise OwnerRegistryError(
+                "OWNER_PROFILE_LEASE_INVALID",
+                f"Windows owner profile lease has invalid {field_name}",
+            )
+    if not isinstance(lease.get("pid"), int) or lease["pid"] <= 0:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_LEASE_INVALID",
+            "Windows owner profile lease needs a positive owner pid",
+        )
+    return {
+        "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+        "status": "held",
+        "profileId": lease_profile_id,
+        "profileKeyHash": lease["profileKeyHash"],
+        "leaseIdHash": lease["leaseIdHash"],
+        "ownerTokenHash": lease["ownerTokenHash"],
+        "pid": lease["pid"],
+    }
+
+
+def _validate_owner_mode_evidence(value: Any) -> dict[str, Any]:
+    owner_mode = _require_object(
+        value,
+        "OWNER_MODE_CHECKPOINT_MISSING",
+        "Owner-mode checkpoint evidence is required",
+    )
+    if owner_mode.get("schemaVersion") != OWNER_MODE_CHECKPOINT_SCHEMA_VERSION:
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_UNSUPPORTED_SCHEMA",
+            "Owner-mode checkpoint evidence schema is unsupported",
+        )
+    status = owner_mode.get("status")
+    if status not in {"pre-cutover", "authoritative", "invalid", "not-ready"}:
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_INVALID",
+            "Owner-mode checkpoint evidence has an invalid status",
+        )
+    for field_name in ("authoritativeDomains", "invalidDomains"):
+        values = owner_mode.get(field_name)
+        if not isinstance(values, list) or any(item not in _DOMAIN_SET for item in values):
+            raise OwnerRegistryError(
+                "OWNER_MODE_CHECKPOINT_INVALID",
+                f"Owner-mode checkpoint evidence has invalid {field_name}",
+            )
+    if len(set(owner_mode["authoritativeDomains"])) != len(owner_mode["authoritativeDomains"]):
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_INVALID",
+            "Owner-mode authoritative domains must be unique",
+        )
+    if len(set(owner_mode["invalidDomains"])) != len(owner_mode["invalidDomains"]):
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_INVALID",
+            "Owner-mode invalid domains must be unique",
+        )
+    if set(owner_mode["authoritativeDomains"]) & set(owner_mode["invalidDomains"]):
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_INVALID",
+            "Owner-mode domain evidence cannot be both authoritative and invalid",
+        )
+    return {
+        "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+        "status": status,
+        "authoritativeDomains": list(owner_mode["authoritativeDomains"]),
+        "invalidDomains": list(owner_mode["invalidDomains"]),
+    }
 
 
 def _claim_pattern(claim: dict[str, Any]) -> str:
@@ -540,6 +639,8 @@ def validate_owner_registry_profile(
         "valid": True,
         "contractValid": True,
         "profileEvidenceReady": False,
+        "profileLeaseReady": False,
+        "profileLease": None,
         "profileEvidenceSource": None,
         "status": "contract-ready-pre-cutover",
         "schemaVersion": OWNER_REGISTRY_SCHEMA_VERSION,
@@ -549,6 +650,12 @@ def validate_owner_registry_profile(
         "acceptingApiAuthoritativeOperations": False,
         "validatedRowCount": len(rows),
         "domains": summaries,
+        "ownerMode": {
+            "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+            "status": "pre-cutover",
+            "authoritativeDomains": [],
+            "invalidDomains": [],
+        },
     }
 
 
@@ -580,7 +687,7 @@ def _validate_profile_evidence_bindings(registrations: list[dict[str, Any]], evi
             "Backup adapter registry does not bind the exact six domains",
         )
 
-    for binding_name in ("transaction", "revision", "recovery"):
+    for binding_name in ("applicationLease", "transaction", "revision", "recovery"):
         _require_verified_binding(bindings.get(binding_name), binding_name)
 
     domain_bindings = bindings.get("domains")
@@ -615,6 +722,8 @@ def _validate_profile_evidence_bindings(registrations: list[dict[str, Any]], evi
 def validate_owner_registry_profile_evidence(
     registry: dict[str, Any],
     evidence: dict[str, Any] | None,
+    *,
+    profile_id: str | None = None,
 ) -> dict[str, Any]:
     """Validate real, read-only profile/provider evidence for Host readiness."""
 
@@ -632,6 +741,15 @@ def validate_owner_registry_profile_evidence(
         raise OwnerRegistryError(
             "OWNER_PROFILE_EVIDENCE_SOURCE_INVALID",
             "Windows owner profile evidence source is not the production composition",
+        )
+
+    profile_lease = _validate_profile_lease(evidence.get("profileLease"), profile_id)
+    owner_mode = _validate_owner_mode_evidence(evidence.get("ownerMode"))
+    if owner_mode["status"] == "invalid":
+        raise OwnerRegistryError(
+            "OWNER_MODE_CHECKPOINT_INVALID",
+            "Windows owner-mode checkpoint evidence is invalid",
+            details={"invalidDomains": owner_mode["invalidDomains"]},
         )
 
     contract = validate_owner_registry_profile(registry, rows=evidence.get("rows"))
@@ -723,10 +841,13 @@ def validate_owner_registry_profile_evidence(
         "contractValid": True,
         "profileEvidenceReady": True,
         "profileEvidenceSource": OWNER_PROFILE_EVIDENCE_SOURCE,
+        "profileLeaseReady": True,
+        "profileLease": profile_lease,
         "profileEvidenceMode": inventory.get("profileMode", "unspecified"),
         "legacyBrowserData": inventory.get("legacyBrowserData", "unspecified"),
         "profileChecksum": profile_checksum,
         "backupArtifactChecksum": artifact_checksum,
+        "ownerMode": owner_mode,
     }
 
 
@@ -742,6 +863,8 @@ def owner_registry_profile_not_ready_status(
             "valid": False,
             "contractValid": True,
             "profileEvidenceReady": False,
+            "profileLeaseReady": False,
+            "profileLease": None,
             "profileEvidenceSource": None,
             "status": "profile-not-ready",
             "code": error.code,
@@ -749,6 +872,12 @@ def owner_registry_profile_not_ready_status(
             "details": dict(error.details),
             "ownerApiReady": False,
             "acceptingApiAuthoritativeOperations": False,
+            "ownerMode": {
+                "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+                "status": "not-ready",
+                "authoritativeDomains": [],
+                "invalidDomains": [],
+            },
         }
     )
     return status
@@ -761,6 +890,8 @@ def owner_registry_error_status(error: OwnerRegistryError) -> dict[str, Any]:
         "valid": False,
         "contractValid": False,
         "profileEvidenceReady": False,
+        "profileLeaseReady": False,
+        "profileLease": None,
         "profileEvidenceSource": None,
         "status": "invalid",
         "code": error.code,
@@ -771,4 +902,10 @@ def owner_registry_error_status(error: OwnerRegistryError) -> dict[str, Any]:
         "acceptingApiAuthoritativeOperations": False,
         "validatedRowCount": 0,
         "domains": [],
+        "ownerMode": {
+            "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+            "status": "invalid",
+            "authoritativeDomains": [],
+            "invalidDomains": [],
+        },
     }

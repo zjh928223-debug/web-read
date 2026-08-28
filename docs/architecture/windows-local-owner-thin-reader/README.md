@@ -4,10 +4,12 @@ This directory is the human entry point and machine-readable evidence bundle for
 milestone of `windows-local-owner-thin-reader`.
 
 The milestone freezes the current Windows optimization boundary and defines the future API seam. Task 2.2
-adds a contract-only six-domain owner registry and a Local App Host readiness guard; it does not implement
-the owner repositories, a browser API client, a lease/journal cutover, or any domain writer migration. The
-current browser and Python owners are recorded as facts so that later waves can move one boundary at a time
-without treating the compatibility path as authoritative by accident.
+adds a contract-only six-domain owner registry and a Local App Host readiness guard. Task 2.3 wires the
+existing cross-process application-profile lease through Host lifetime and production restore entry points,
+and adds an atomic owner-mode checkpoint contract; it still does not implement the owner repositories, a
+browser API client, or any domain writer migration. The current browser and Python owners are recorded as
+facts so that later waves can move one boundary at a time without treating the compatibility path as
+authoritative by accident.
 
 ## Frozen artifacts
 
@@ -23,11 +25,15 @@ without treating the compatibility path as authoritative by accident.
   evidence; journeys that require the not-yet-built owner API are explicitly `blocked`.
 - `non-goals.json` — frozen schema, transport, script-order, protected-file, and implementation guard.
 - `api-contract.json` — versioned typed envelope, domain/operation registry, identity/revision/idempotency,
-  commit receipt, and typed error schema. It is a contract-only artifact; it is not a capability claim.
+  commit receipt, typed error schema, and profile-lease/owner-mode semantics. It is a contract-only
+  artifact; it is not a capability claim.
 - `owner-registry.json` — exactly six Host-managed repository contracts with key/schema claims, query/
   command surfaces, revision/backup/recovery evidence, and explicit pre-cutover authority state. The
   static contract and the explicit read-only profile evidence are validated at Local App Host startup;
   missing or invalid profile evidence is degraded and owner operations remain rejected.
+- `owner-mode-checkpoint.schema.json` — the small versioned schema for the single per-domain authority
+  switch; it requires lease identity, old-writer drain evidence, Host-managed repository revision evidence,
+  and a checksum.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -38,7 +44,7 @@ shell-free Node runner and leaves `not-run` items untouched; its output includes
 
 The owner registry validator is behavior-oriented: it rejects missing or duplicate domains/owners, unknown
 or unsupported profile rows, missing inventory/read evidence, missing backup/recovery or
-transaction/revision/recovery bindings, browser-only repositories, and canonical browser bridge claims. A
+transaction/revision/recovery/application-lease bindings, browser-only repositories, and canonical browser bridge claims. A
 valid profile still reports `ownerApiReady: false` and `acceptingApiAuthoritativeOperations: false` until a
 later migration task implements the repository and cutover contract.
 
@@ -73,6 +79,31 @@ operations at 503. `profileEvidenceReady: true` for the empty candidate means th
 bindings are readable, not that a durable owner or API authority exists: `durableOwnerReady` and
 `acceptingApiAuthoritativeOperations` remain false until later cutover work, while the real browser
 IndexedDB/localStorage remains old-owner pending task 3.3's read-only inventory/import bridge.
+
+## Task 2.3 lease and checkpoint contract
+
+`read-web-production-backup.mjs` is the single lease implementation for the optimization application
+profile. Its atomic claim directory, canonical lock, heartbeat, PID/stale recovery, and release-on-error
+behavior are reused by the Local App Host lock-holder, production restore target, owner read helper, and
+the migration-cutover checkpoint helper. The lock-holder keeps the lease for the Host lifetime; a second
+process receives `BACKUP_PATH_LOCK_TIMEOUT`, and a failed or stopped Host releases it before the next
+startup.
+
+`owner-mode/checkpoints/<domain>.json` is the only authority-switch record. It is created atomically while
+the profile lease is held, cannot overwrite an existing checkpoint, and must bind the profile identity,
+stable profile-lease identity, blocked old writer, read-only compatibility mode, zero in-flight mutations,
+Host-managed repository identity/type, base/current revision evidence, and `host-api=authoritative`. A
+missing checkpoint keeps the domain `pre-cutover`; corrupt, foreign, partial, or unsupported checkpoints
+are rejected. `readOwnerCanonicalDomain` calls only an explicitly matching Host-managed repository reader
+under the same lease and never falls back to browser storage.
+
+The current optimization candidate therefore reports `profileLeaseReady: true` and
+`ownerMode.status: pre-cutover`, while `durableOwnerReady` and
+`acceptingApiAuthoritativeOperations` remain false and owner commands remain typed `503`. The checkpoint
+helper is a contract/test seam for later cutover; it does not migrate writers or make the static six-domain
+registry authoritative. Focused behavior evidence is `npm run verify:windows-owner-lease`, and the
+production lifecycle check also proves the running Host holds the lease and keeps the owner API in
+pre-cutover mode.
 
 Neither the baseline nor the initializer opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a
 real browser profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`,

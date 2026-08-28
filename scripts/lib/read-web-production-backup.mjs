@@ -24,6 +24,11 @@ const PATH_LOCK_RETRY_MS = 15
 const PATH_LOCK_HEARTBEAT_MS = 1_000
 const OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION = 1
 const OWNER_PROFILE_EVIDENCE_SOURCE = 'read-web-production-backup.composition'
+const OWNER_MODE_CHECKPOINT_SCHEMA_VERSION = 1
+const OWNER_MODE_CHECKPOINT_DIR = 'owner-mode'
+const OWNER_MODE_CHECKPOINT_SUBDIR = 'checkpoints'
+const OWNER_MODE_AUTHORITY = 'host-api=authoritative'
+const OWNER_MODE_LEASE_SCHEMA_VERSION = 1
 const OWNER_PROFILE_DOMAINS = Object.freeze([
   'reader-session',
   'vocabulary-srs',
@@ -40,6 +45,7 @@ const OWNER_PROFILE_WORKFLOW_RECEIPT_PREFIXES = Object.freeze([
 
 let backupModulesPromise
 const applicationPathLockContext = new AsyncLocalStorage()
+const applicationPathLeaseContext = new AsyncLocalStorage()
 
 function unsafeIsolationPath(message, details = {}) {
   const error = new Error(message)
@@ -490,9 +496,10 @@ async function withPathMutex(filePath, operation, options = {}) {
   while (true) {
     await cleanupStalePathClaims(lockPath, staleAfterMs)
     const claimPath = pathLockClaimPath(lockPath, ownerToken)
+    let acquiredAt
     try {
       await mkdir(claimPath)
-      const acquiredAt = new Date().toISOString()
+      acquiredAt = new Date().toISOString()
       await writePathLockMetadata(claimPath, {
         schemaVersion: PATH_LOCK_SCHEMA_VERSION,
         ownerToken,
@@ -521,8 +528,17 @@ async function withPathMutex(filePath, operation, options = {}) {
     }
     await rm(claimPath, { recursive: true, force: true }).catch(() => {})
     const stopHeartbeat = startPathLockHeartbeat(lockPath, ownerToken)
+    const lease = Object.freeze({
+      schemaVersion: PATH_LOCK_SCHEMA_VERSION,
+      filePath: path.resolve(filePath),
+      profileKey: pathMutexKey(filePath),
+      lockPath,
+      ownerToken,
+      pid: process.pid,
+      acquiredAt,
+    })
     try {
-      return await operation()
+      return await operation(lease)
     } finally {
       await stopHeartbeat()
       await rm(claimPath, { recursive: true, force: true }).catch(() => {})
@@ -534,10 +550,17 @@ async function withPathMutex(filePath, operation, options = {}) {
 async function withApplicationPathMutex(filePath, operation) {
   const key = pathMutexKey(filePath)
   const held = applicationPathLockContext.getStore()
-  if (held?.has(key)) return operation()
+  const heldLeases = applicationPathLeaseContext.getStore()
+  if (held?.has(key)) return operation(heldLeases?.get(key) || null)
   const next = new Set(held || [])
   next.add(key)
-  return withPathMutex(filePath, () => applicationPathLockContext.run(next, operation))
+  return withPathMutex(filePath, (lease) => {
+    const nextLeases = new Map(heldLeases || [])
+    nextLeases.set(key, lease)
+    return applicationPathLockContext.run(next, () => (
+      applicationPathLeaseContext.run(nextLeases, () => operation(lease))
+    ))
+  })
 }
 
 async function delay(milliseconds) {
@@ -594,6 +617,380 @@ async function writeJsonAtomic(filePath, value) {
     await rm(temporary, { force: true }).catch(() => {})
     throw error
   }
+}
+
+function ownerModeError(code, message, details = {}) {
+  const error = new Error(message)
+  error.code = code
+  error.details = details
+  return error
+}
+
+function sha256Value(value) {
+  return `sha256:${createHash('sha256').update(String(value)).digest('hex')}`
+}
+
+function checksumValue(value) {
+  return `sha256:${createHash('sha256').update(canonicalJson(value)).digest('hex')}`
+}
+
+function ownerModeDomain(domain) {
+  const value = String(domain || '').trim()
+  if (!OWNER_PROFILE_DOMAINS.includes(value)) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_UNKNOWN_DOMAIN',
+      `Owner-mode checkpoint domain is not registered: ${value || '[missing]'}`,
+      { domain: value || null },
+    )
+  }
+  return value
+}
+
+function resolveProfileId(options, profileDir) {
+  const explicit = options?.profileId || process.env.READ_WEB_PROFILE_ID
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim()
+  return `isolated-profile-${createHash('sha256').update(pathMutexKey(profileDir)).digest('hex').slice(0, 16)}`
+}
+
+function profileLeaseEvidence(lease, { isolationRoot, profileId } = {}) {
+  if (!lease || typeof lease !== 'object' || typeof lease.ownerToken !== 'string' || !lease.ownerToken
+    || typeof lease.profileKey !== 'string' || !lease.profileKey
+    || typeof isolationRoot !== 'string' || !isolationRoot.trim()) {
+    throw ownerModeError(
+      'OWNER_MODE_PROFILE_LEASE_REQUIRED',
+      'Owner-mode operation requires the active application profile lease',
+    )
+  }
+  const expectedKey = pathMutexKey(isolationRoot)
+  if (lease.profileKey !== expectedKey) {
+    throw ownerModeError(
+      'OWNER_MODE_PROFILE_LEASE_MISMATCH',
+      'Active lease does not belong to the requested application profile',
+      { expectedProfileKeyHash: sha256Value(expectedKey), actualProfileKeyHash: sha256Value(lease.profileKey) },
+    )
+  }
+  const normalizedProfileId = String(profileId || '').trim()
+  if (!normalizedProfileId) {
+    throw ownerModeError('OWNER_MODE_PROFILE_ID_REQUIRED', 'Owner-mode operation requires a profile id')
+  }
+  return Object.freeze({
+    schemaVersion: OWNER_MODE_LEASE_SCHEMA_VERSION,
+    status: 'held',
+    profileId: normalizedProfileId,
+    profileKeyHash: sha256Value(expectedKey),
+    leaseIdHash: sha256Value(`read-web.application-profile-lease.v1:${expectedKey}`),
+    ownerTokenHash: sha256Value(lease.ownerToken),
+    pid: lease.pid,
+  })
+}
+
+function assertActiveProfileLease(lease, context) {
+  return profileLeaseEvidence(lease, context)
+}
+
+function ownerModeCheckpointPath(profileDir, domain) {
+  return path.join(profileDir, OWNER_MODE_CHECKPOINT_DIR, OWNER_MODE_CHECKPOINT_SUBDIR, `${ownerModeDomain(domain)}.json`)
+}
+
+function ownerModeCheckpointChecksum(value) {
+  const { checksum: _checksum, ...core } = value || {}
+  return checksumValue(core)
+}
+
+function normalizedOwnerRepository(repository) {
+  if (!repository || typeof repository !== 'object' || Array.isArray(repository)) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_REPOSITORY_INVALID',
+      'Owner-mode checkpoint requires a Host-managed repository descriptor',
+    )
+  }
+  const identity = typeof repository.identity === 'string' ? repository.identity.trim() : ''
+  const type = typeof repository.type === 'string' ? repository.type.trim() : ''
+  const revisions = {
+    baseRevision: repository.baseRevision,
+    revision: repository.revision,
+  }
+  if (!identity || type !== 'host-managed'
+    || !Number.isInteger(revisions.baseRevision) || revisions.baseRevision < 0
+    || !Number.isInteger(revisions.revision) || revisions.revision < revisions.baseRevision
+    || typeof repository.baseEvidence !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(repository.baseEvidence)
+    || typeof repository.revisionEvidence !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(repository.revisionEvidence)) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_REPOSITORY_INVALID',
+      'Owner-mode checkpoint repository evidence is incomplete or not Host-managed',
+      { identity: identity || null, type: type || null },
+    )
+  }
+  return {
+    identity,
+    type,
+    baseRevision: revisions.baseRevision,
+    revision: revisions.revision,
+    baseEvidence: repository.baseEvidence,
+    revisionEvidence: repository.revisionEvidence,
+  }
+}
+
+function validateOwnerModeCheckpoint(value, { isolationRoot, profileId, lease, domain } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw ownerModeError('OWNER_MODE_CHECKPOINT_CORRUPT', 'Owner-mode checkpoint is not an object')
+  }
+  if (value.schemaVersion !== OWNER_MODE_CHECKPOINT_SCHEMA_VERSION) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_UNKNOWN_SCHEMA',
+      'Owner-mode checkpoint schema is unsupported',
+      { schemaVersion: value.schemaVersion ?? null },
+    )
+  }
+  const expectedDomain = ownerModeDomain(domain || value.domain)
+  if (value.domain !== expectedDomain) {
+    throw ownerModeError('OWNER_MODE_CHECKPOINT_INVALID', 'Owner-mode checkpoint domain does not match the requested domain')
+  }
+  const expectedProfileId = String(profileId || '').trim()
+  if (!expectedProfileId || value.profileId !== expectedProfileId) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_PROFILE_MISMATCH',
+      'Owner-mode checkpoint belongs to a different application profile',
+      { expectedProfileId: expectedProfileId || null, actualProfileId: value.profileId || null },
+    )
+  }
+  const currentLease = assertActiveProfileLease(lease, { isolationRoot, profileId: expectedProfileId })
+  const checkpointLease = value.lease
+  if (!checkpointLease || typeof checkpointLease !== 'object'
+    || checkpointLease.schemaVersion !== OWNER_MODE_LEASE_SCHEMA_VERSION
+    || checkpointLease.profileKeyHash !== currentLease.profileKeyHash
+    || checkpointLease.leaseIdHash !== currentLease.leaseIdHash) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_LEASE_MISMATCH',
+      'Owner-mode checkpoint is not bound to the active application profile lease',
+      { profileId: expectedProfileId },
+    )
+  }
+  if (value.oldWriterBlocked !== true
+    || value.compatibilityMode !== 'read-only'
+    || value.inFlight !== 0) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_INVALID',
+      'Owner-mode checkpoint does not prove the old writer is blocked and drained',
+    )
+  }
+  const repository = normalizedOwnerRepository(value.repository)
+  if (value.authorityMode !== OWNER_MODE_AUTHORITY
+    || typeof value.committedAt !== 'string' || !Number.isFinite(Date.parse(value.committedAt))
+    || typeof value.checksum !== 'string' || value.checksum !== ownerModeCheckpointChecksum(value)) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_CORRUPT',
+      'Owner-mode checkpoint checksum or authority evidence is invalid',
+    )
+  }
+  return Object.freeze({
+    schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+    profileId: value.profileId,
+    domain: value.domain,
+    lease: Object.freeze({
+      schemaVersion: OWNER_MODE_LEASE_SCHEMA_VERSION,
+      profileKeyHash: checkpointLease.profileKeyHash,
+      leaseIdHash: checkpointLease.leaseIdHash,
+    }),
+    oldWriterBlocked: true,
+    compatibilityMode: 'read-only',
+    inFlight: 0,
+    repository: Object.freeze(repository),
+    authorityMode: OWNER_MODE_AUTHORITY,
+    committedAt: value.committedAt,
+    checksum: value.checksum,
+  })
+}
+
+async function withOwnerProfileLease(options, operation) {
+  if (typeof operation !== 'function') {
+    throw ownerModeError('OWNER_MODE_PROFILE_LEASE_CONFIGURATION', 'Owner-mode profile lease requires an operation')
+  }
+  if (!options?.isolationRoot || !options?.profileDir) {
+    throw ownerModeError(
+      'OWNER_MODE_PROFILE_LEASE_CONFIGURATION',
+      'Owner-mode profile lease requires isolationRoot and profileDir',
+    )
+  }
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot: options.isolationRoot,
+    paths: { profileDir: options.profileDir },
+    forbiddenRoots: options.forbiddenRoots,
+  })
+  const isolationRoot = validatedLayout.isolationRoot
+  const profileDir = validatedLayout.paths.profileDir
+  const profileId = resolveProfileId(options, profileDir)
+  return withApplicationPathMutex(isolationRoot, async (lease) => {
+    const evidence = assertActiveProfileLease(lease, { isolationRoot, profileId })
+    return operation(Object.freeze({
+      isolationRoot,
+      profileDir,
+      profileId,
+      lease,
+      profileLease: evidence,
+    }))
+  })
+}
+
+async function readOwnerModeCheckpointUnlocked({ profileDir, isolationRoot, profileId, lease, domain }) {
+  const checkpointDomain = ownerModeDomain(domain)
+  const filePath = ownerModeCheckpointPath(profileDir, checkpointDomain)
+  if (!await pathExists(filePath)) return null
+  await assertExistingBrowserProfilePathIsContained(profileDir, filePath)
+  const value = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
+  if (!value) return null
+  return validateOwnerModeCheckpoint(value, {
+    isolationRoot,
+    profileId,
+    lease,
+    domain: checkpointDomain,
+  })
+}
+
+async function writeOwnerModeCheckpointUnlocked(context, options) {
+  const { isolationRoot, profileDir, profileId, lease, profileLease } = context
+  if (options.oldWriterBlocked !== true
+    || options.compatibilityMode !== 'read-only'
+    || options.inFlight !== 0) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_PRECONDITION_FAILED',
+      'Owner-mode checkpoint requires blocked old writer, read-only compatibility, and zero in-flight mutations',
+    )
+  }
+  const domain = ownerModeDomain(options.domain)
+  const repository = normalizedOwnerRepository(options.repository)
+  const core = {
+    schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+    profileId,
+    domain,
+    lease: {
+      schemaVersion: OWNER_MODE_LEASE_SCHEMA_VERSION,
+      profileKeyHash: profileLease.profileKeyHash,
+      leaseIdHash: profileLease.leaseIdHash,
+    },
+    oldWriterBlocked: true,
+    compatibilityMode: 'read-only',
+    inFlight: 0,
+    repository,
+    authorityMode: OWNER_MODE_AUTHORITY,
+    committedAt: typeof options.committedAt === 'string' && options.committedAt
+      ? options.committedAt
+      : new Date().toISOString(),
+  }
+  const candidate = { ...core, checksum: ownerModeCheckpointChecksum(core) }
+  const filePath = ownerModeCheckpointPath(profileDir, domain)
+  if (await pathExists(filePath)) {
+    await assertExistingBrowserProfilePathIsContained(profileDir, filePath)
+    const existing = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
+    const verified = validateOwnerModeCheckpoint(existing, {
+      isolationRoot,
+      profileId,
+      lease,
+      domain,
+    })
+    if (canonicalJson(verified) === canonicalJson(candidate)) {
+      return Object.freeze({ created: false, status: 'existing', path: filePath, checkpoint: verified })
+    }
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_EXISTS',
+      `Owner-mode checkpoint already exists for ${domain}`,
+      { domain, path: filePath },
+    )
+  }
+  await writeJsonAtomic(filePath, candidate)
+  const reread = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
+  const checkpoint = validateOwnerModeCheckpoint(reread, {
+    isolationRoot,
+    profileId,
+    lease,
+    domain,
+  })
+  return Object.freeze({ created: true, status: 'created', path: filePath, checkpoint })
+}
+
+export async function withReadWebApplicationProfileLease(options = {}, operation) {
+  return withOwnerProfileLease(options, operation)
+}
+
+export async function writeOwnerModeCheckpoint(options = {}) {
+  return withOwnerProfileLease(options, (context) => writeOwnerModeCheckpointUnlocked(context, options))
+}
+
+export async function commitOwnerModeCheckpoint(options = {}) {
+  return writeOwnerModeCheckpoint(options)
+}
+
+export async function runOwnerModeMigrationCutover(options = {}) {
+  return commitOwnerModeCheckpoint(options)
+}
+
+export async function readOwnerModeCheckpoint(options = {}) {
+  return withOwnerProfileLease(options, async (context) => {
+    const checkpoint = await readOwnerModeCheckpointUnlocked({ ...context, domain: options.domain })
+    return checkpoint ? Object.freeze(clone(checkpoint)) : null
+  })
+}
+
+async function inspectOwnerModeCheckpointsUnlocked(context) {
+  const domains = {}
+  for (const domain of OWNER_PROFILE_DOMAINS) {
+    try {
+      const checkpoint = await readOwnerModeCheckpointUnlocked({ ...context, domain })
+      domains[domain] = checkpoint
+        ? { status: 'authoritative', revision: checkpoint.repository.revision, checksum: checkpoint.checksum }
+        : { status: 'pre-cutover' }
+    } catch (error) {
+      domains[domain] = { status: 'invalid', code: error.code || 'OWNER_MODE_CHECKPOINT_INVALID' }
+    }
+  }
+  const authoritativeDomains = OWNER_PROFILE_DOMAINS.filter((domain) => domains[domain].status === 'authoritative')
+  const invalidDomains = OWNER_PROFILE_DOMAINS.filter((domain) => domains[domain].status === 'invalid')
+  return {
+    schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+    status: invalidDomains.length ? 'invalid' : authoritativeDomains.length ? 'authoritative' : 'pre-cutover',
+    profileId: context.profileId,
+    profileLease: context.profileLease,
+    authoritativeDomains,
+    invalidDomains,
+    domains,
+  }
+}
+
+export async function inspectOwnerModeCheckpoints(options = {}) {
+  return withOwnerProfileLease(options, (context) => inspectOwnerModeCheckpointsUnlocked(context))
+}
+
+export async function readOwnerCanonicalDomain(options = {}) {
+  if (!options.repository || typeof options.repository !== 'object'
+    || typeof options.repository.read !== 'function') {
+    throw ownerModeError(
+      'OWNER_MODE_REPOSITORY_UNAVAILABLE',
+      'Owner read requires a Host-managed repository reader',
+    )
+  }
+  return withOwnerProfileLease(options, async (context) => {
+    const checkpoint = await readOwnerModeCheckpointUnlocked({ ...context, domain: options.domain })
+    if (!checkpoint) {
+      throw ownerModeError(
+        'OWNER_MODE_AUTHORITY_NOT_READY',
+        `Owner-mode authority is not enabled for ${options.domain}`,
+        { domain: options.domain },
+      )
+    }
+    if (options.repository.type !== 'host-managed'
+      || String(options.repository.identity || '').trim() !== checkpoint.repository.identity) {
+      throw ownerModeError(
+        'OWNER_MODE_REPOSITORY_MISMATCH',
+        `Owner read repository does not match the ${options.domain} checkpoint`,
+        { domain: options.domain },
+      )
+    }
+    return options.repository.read({
+      domain: checkpoint.domain,
+      checkpoint: clone(checkpoint),
+      profileLease: clone(context.profileLease),
+    })
+  })
 }
 
 function stateChecksum(value) {
@@ -1605,6 +2002,10 @@ function ownerProfileRowsFromArtifact(browser, artifact) {
 
 function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
   const targetCapabilities = restoreTarget?.restoreCapabilities || {}
+  const applicationLeaseBound = targetCapabilities.applicationProfileLease === true
+    && restoreTarget?.applicationLeaseRequired === true
+    && typeof restoreTarget?.applicationLeaseSource === 'string'
+    && restoreTarget.applicationLeaseSource.length > 0
   const transactionBound = targetCapabilities.atomicRevisionCommit === true
     && typeof restoreTarget?.beginTransaction === 'function'
   const revisionBound = !!artifact
@@ -1658,6 +2059,10 @@ function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
       ...verified(adapterRegistryBound),
       requiredDomains: [...OWNER_PROFILE_DOMAINS],
     },
+    applicationLease: {
+      ...verified(applicationLeaseBound),
+      source: restoreTarget?.applicationLeaseSource || 'read-web-production-backup.composition',
+    },
     transaction: verified(transactionBound),
     revision: verified(revisionBound),
     recovery: verified(recoveryBound),
@@ -1665,7 +2070,7 @@ function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
   }
 }
 
-async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery }) {
+async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery, profileLease, profileId, isolationRoot }) {
   let artifact = null
   let collectionError = null
   let rows = []
@@ -1678,6 +2083,7 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
   const bindings = ownerProfileBindingEvidence({ adapters, restoreTarget, artifact })
   const allBindingsBound = [
     bindings.backupAdapterRegistry,
+    bindings.applicationLease,
     bindings.transaction,
     bindings.revision,
     bindings.recovery,
@@ -1689,11 +2095,19 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
   ].every((binding) => binding?.bound === true && binding?.status === 'verified')
   const inventoryPresent = browser.profilePresent === true
   const profileMode = process.env.READ_WEB_APPLICATION_PROFILE_MODE || 'explicit-isolated-profile'
-  const ready = inventoryPresent && !collectionError && allBindingsBound
+  const ownerMode = await inspectOwnerModeCheckpointsUnlocked({
+    profileDir: browser.filePath ? path.dirname(browser.filePath) : null,
+    isolationRoot,
+    profileId,
+    lease: profileLease,
+    profileLease: profileLeaseEvidence(profileLease, { isolationRoot, profileId }),
+  })
+  const ready = inventoryPresent && !collectionError && allBindingsBound && ownerMode.status !== 'invalid'
   return {
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
     source: OWNER_PROFILE_EVIDENCE_SOURCE,
     ready,
+    profileLease: profileLeaseEvidence(profileLease, { isolationRoot, profileId }),
     profileChecksum: ownerProfileChecksum(browser.state),
     inventory: {
       present: inventoryPresent,
@@ -1720,6 +2134,7 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
       },
     rows,
     bindings,
+    ownerMode,
     startupRecovery: startupRecovery || { status: 'none' },
   }
 }
@@ -1745,7 +2160,9 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     repoRoot,
     configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
   })).executable
-  return withApplicationPathMutex(isolationRoot, async () => {
+  const profileId = resolveProfileId(options, canonicalPaths.profileDir)
+  return withApplicationPathMutex(isolationRoot, async (profileLease) => {
+  const currentProfileLease = assertActiveProfileLease(profileLease, { isolationRoot, profileId })
   const isolationLayout = Object.freeze({
     isolationRoot,
     paths: canonicalPaths,
@@ -1794,7 +2211,12 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       },
       storageKeyPrefix: targetOptions.storageKeyPrefix || 'isolated.',
       atomicRevisionCommit: true,
-      withApplicationLock: (operation) => withApplicationPathMutex(isolationRoot, operation),
+      applicationLeaseRequired: true,
+      applicationLeaseSource: 'read-web-production-backup.application-profile-lease',
+      withApplicationLock: (operation) => withApplicationPathMutex(isolationRoot, async (lease) => {
+        assertActiveProfileLease(lease, { isolationRoot, profileId })
+        return operation()
+      }),
       capacityBytes: targetOptions.capacityBytes,
       faults: targetOptions.faults,
       rollbackStore: targetOptions.rollbackStore,
@@ -1833,6 +2255,9 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     service,
     pythonAdapters,
     startupRecovery,
+    profileLease,
+    profileId,
+    isolationRoot,
   })
   return Object.freeze({
     kind: 'read-web-isolated-application-restore-target',
@@ -1843,6 +2268,9 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     startupRecovery: startupRecovery ? Object.freeze(clone(startupRecovery)) : null,
     browserProfile: browser,
     pythonAdapters,
+    profileId,
+    profileLease: Object.freeze(clone(currentProfileLease)),
+    ownerMode: Object.freeze(clone(ownerProfileEvidence.ownerMode)),
     ownerProfileEvidence: Object.freeze(clone(ownerProfileEvidence)),
     async createBackup(backupOptions = {}) {
       return service.createBackup(backupOptions)
@@ -1903,16 +2331,17 @@ export async function withReadWebApplicationStartupLock(options = {}, operation)
     },
     forbiddenRoots: options.forbiddenRoots,
   })
-  return withApplicationPathMutex(validatedLayout.isolationRoot, async () => {
+  return withApplicationPathMutex(validatedLayout.isolationRoot, async (profileLease) => {
     const composition = await createReadWebProductionBackupComposition(options)
     return operation(Object.freeze({
       composition,
       startupRecovery: composition.startupRecovery,
+      profileLease: composition.profileLease,
     }))
   })
 }
 
-function ownerProfileReadFailureEvidence(error) {
+function ownerProfileReadFailureEvidence(error, { isolationRoot, profileId, lease } = {}) {
   const sourceError = typeof error?.code === 'string' && error.code
     ? error.code
     : 'OWNER_PROFILE_INVENTORY_READ_FAILED'
@@ -1925,6 +2354,9 @@ function ownerProfileReadFailureEvidence(error) {
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
     source: OWNER_PROFILE_EVIDENCE_SOURCE,
     ready: false,
+    profileLease: lease && isolationRoot && profileId
+      ? profileLeaseEvidence(lease, { isolationRoot, profileId })
+      : null,
     profileChecksum: null,
     inventory: {
       present: false,
@@ -1943,6 +2375,7 @@ function ownerProfileReadFailureEvidence(error) {
     rows: [],
     bindings: {
       backupAdapterRegistry: { ...failedBinding(), requiredDomains: [...OWNER_PROFILE_DOMAINS] },
+      applicationLease: failedBinding(),
       transaction: failedBinding(),
       revision: failedBinding(),
       recovery: failedBinding(),
@@ -1951,6 +2384,12 @@ function ownerProfileReadFailureEvidence(error) {
         revision: failedBinding(),
         recovery: failedBinding(),
       }])),
+    },
+    ownerMode: {
+      schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+      status: 'not-ready',
+      authoritativeDomains: [],
+      invalidDomains: [],
     },
     startupRecovery: { status: 'not-run', reason: 'profile-inventory-read-failed' },
   }
@@ -1966,8 +2405,13 @@ async function holdApplicationProfileAfterReadFailure(options, error) {
     },
     forbiddenRoots: options.forbiddenRoots,
   })
-  return withApplicationPathMutex(validatedLayout.isolationRoot, async () => {
-    const ownerProfileEvidence = ownerProfileReadFailureEvidence(error)
+  const profileId = resolveProfileId(options, validatedLayout.paths.profileDir)
+  return withApplicationPathMutex(validatedLayout.isolationRoot, async (lease) => {
+    const ownerProfileEvidence = ownerProfileReadFailureEvidence(error, {
+      isolationRoot: validatedLayout.isolationRoot,
+      profileId,
+      lease,
+    })
     await new Promise((resolve, reject) => {
       process.stdout.write(`${JSON.stringify({
         status: 'ready',

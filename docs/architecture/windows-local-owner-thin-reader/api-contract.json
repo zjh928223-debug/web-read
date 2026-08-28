@@ -174,8 +174,30 @@
     "query": "Queries may omit expectedRevision and idempotencyKey, but must carry requestId/correlationId and return an authoritative revision when one exists",
     "command": "Mutable commands must carry expectedRevision and idempotencyKey according to the registered domain rule; owner returns receipt or typed non-commit result",
     "receiptQuery": "Receipt lookup uses the original idempotencyKey/correlationId and never creates a second side effect",
-    "backupRestore": "Cross-domain backup/restore is explicit and uses profile lease/journal in a later task; no implicit distributed transaction is defined here",
+    "backupRestore": "Cross-domain backup/restore is explicit; production restore entry points now require the application profile lease, while the pending journal remains a later task",
     "media": "Media query returns capability/identity/range metadata; complete media bytes are invalid payloads"
+  },
+  "profileLeaseAndOwnerMode": {
+    "schemaVersion": 1,
+    "leaseSource": "read-web-production-backup.application-profile-lease",
+    "scope": "one isolated Windows application profile",
+    "lifetime": "held by the Local App Host lock-holder from startup evidence through stop or startup failure",
+    "checkpointPath": "owner-mode/checkpoints/<domain>.json",
+    "checkpointSchema": "owner-mode-checkpoint.schema.json",
+    "checkpointRequiredFields": [
+      "profileId",
+      "domain",
+      "lease",
+      "oldWriterBlocked",
+      "compatibilityMode",
+      "inFlight",
+      "repository",
+      "authorityMode",
+      "checksum"
+    ],
+    "authoritySwitch": "Only a valid atomic checkpoint may declare host-api=authoritative; missing or invalid checkpoints remain pre-cutover/not-ready",
+    "browserBridgeCanonical": false,
+    "currentOptimizationMode": "pre-cutover"
   },
   "domainRegistry": [
     {
@@ -291,9 +313,9 @@
     "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
   },
   "futureImplementationBoundary": {
-    "notDefinedHere": ["repository implementation", "owner registry startup", "profile lease", "pending journal", "receipt persistence", "auth middleware", "cutover checkpoint", "API client", "production mutation"],
-    "nextAllowedTask": "2.2 owner registry/repository contract and readiness guard",
+    "notDefinedHere": ["repository implementation", "pending journal", "receipt persistence", "auth middleware", "API client", "production mutation"],
+    "nextAllowedTask": "2.4 pending journal and recovery evidence",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:143d93c19d2574248ddf88c17340add63130bd8461f0d1d0ac782f4de6b74a7a"
+  "artifactChecksum": "sha256:60a9ab67fc2cefe62e24f148c646a06fbd8333e31735e859571e71d83937350c"
 }

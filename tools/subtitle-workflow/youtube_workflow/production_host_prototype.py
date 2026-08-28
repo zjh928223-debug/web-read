@@ -119,6 +119,8 @@ class PathPreservingAsgiDispatch:
             "valid": False,
             "contractValid": False,
             "profileEvidenceReady": False,
+            "profileLeaseReady": False,
+            "profileLease": None,
             "profileEvidenceSource": None,
             "profileEvidenceMode": None,
             "legacyBrowserData": None,
@@ -131,6 +133,12 @@ class PathPreservingAsgiDispatch:
             "acceptingApiAuthoritativeOperations": False,
             "validatedRowCount": 0,
             "domains": [],
+            "ownerMode": {
+                "schemaVersion": 1,
+                "status": "invalid",
+                "authoritativeDomains": [],
+                "invalidDomains": [],
+            },
         })
 
     async def __call__(self, scope, receive, send):
@@ -358,6 +366,7 @@ def _load_owner_registry_status(
     owner_registry_path: Path | None,
     owner_profile_rows: list[dict] | None,
     owner_profile_evidence: dict | None,
+    profile_id: str | None = None,
 ) -> dict:
     try:
         registry = owner_registry
@@ -378,7 +387,11 @@ def _load_owner_registry_status(
             ),
         )
     try:
-        return validate_owner_registry_profile_evidence(registry, owner_profile_evidence)
+        return validate_owner_registry_profile_evidence(
+            registry,
+            owner_profile_evidence,
+            profile_id=profile_id,
+        )
     except OwnerRegistryError as error:
         return owner_registry_profile_not_ready_status(contract, error)
 
@@ -404,6 +417,7 @@ def create_local_app_host(
     owner_registry_path: Path | None = None,
     owner_profile_rows: list[dict] | None = None,
     owner_profile_evidence: dict | None = None,
+    application_profile_lease_process=None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -417,6 +431,7 @@ def create_local_app_host(
         owner_registry_path=owner_registry_path,
         owner_profile_rows=owner_profile_rows,
         owner_profile_evidence=owner_profile_evidence,
+        profile_id=profile_id,
     )
     workflow = workflow_app or create_workflow_app(
         access_token=workflow_token,
@@ -442,9 +457,15 @@ def create_local_app_host(
         registry_valid = owner_registry_status.get("valid") is True
         contract_valid = owner_registry_status.get("contractValid") is True
         profile_evidence_ready = owner_registry_status.get("profileEvidenceReady") is True
+        profile_lease_ready = owner_registry_status.get("profileLeaseReady") is True
+        profile_lease_alive = (
+            application_profile_lease_process is None
+            or application_profile_lease_process.poll() is None
+        )
+        profile_lease_ready = profile_lease_ready and profile_lease_alive
         owner_api_ready = owner_registry_status.get("ownerApiReady") is True
         return {
-            "status": "ready" if dist_ready and registry_valid else "degraded",
+            "status": "ready" if dist_ready and registry_valid and profile_lease_ready else "degraded",
             "service": "read-web-local-app-host",
             "releaseId": str(release_id),
             "profileId": str(profile_id),
@@ -456,10 +477,14 @@ def create_local_app_host(
             "ownerRegistry": owner_registry_status,
             "contractValid": contract_valid,
             "profileEvidenceReady": profile_evidence_ready,
+            "profileLeaseReady": profile_lease_ready,
+            "profileLeaseAlive": profile_lease_alive,
+            "profileLease": owner_registry_status.get("profileLease"),
             "profileEvidenceMode": owner_registry_status.get("profileEvidenceMode"),
             "legacyBrowserData": owner_registry_status.get("legacyBrowserData"),
-            "durableOwnerReady": registry_valid and profile_evidence_ready and owner_api_ready,
-            "acceptingApiAuthoritativeOperations": registry_valid and profile_evidence_ready and owner_api_ready,
+            "ownerMode": owner_registry_status.get("ownerMode"),
+            "durableOwnerReady": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,
+            "acceptingApiAuthoritativeOperations": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,
             "applicationStartupRecovery": startup_recovery,
             "acceptingRequests": not drain_state["draining"],
             "inflightRequests": drain_state["inflight"],
@@ -505,6 +530,7 @@ def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
         "profileDir": str(args.application_profile_dir.resolve()),
         "pythonStateDir": str(args.application_python_state_dir.resolve()),
         "pythonOutputDir": str(args.application_python_output_dir.resolve()),
+        "profileId": str(args.profile_id),
     }
     command = [
         str(os.environ.get("READ_WEB_NODE", "node")),
@@ -648,6 +674,7 @@ def main(argv: list[str] | None = None) -> int:
             application_startup_recovery=startup_recovery,
             owner_profile_rows=owner_profile_rows,
             owner_profile_evidence=owner_profile_evidence,
+            application_profile_lease_process=profile_lock,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

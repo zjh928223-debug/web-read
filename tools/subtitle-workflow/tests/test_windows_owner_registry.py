@@ -57,6 +57,11 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 "status": "verified",
                 "source": "read-web-production-backup.composition",
             },
+            "applicationLease": {
+                "bound": True,
+                "status": "verified",
+                "source": "read-web-production-backup.application-profile-lease",
+            },
             "domains": {},
         }
         for domain in WINDOWS_OWNER_DOMAINS:
@@ -100,6 +105,21 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
             },
             "rows": rows,
             "bindings": bindings,
+            "profileLease": {
+                "schemaVersion": 1,
+                "status": "held",
+                "profileId": "fixture-profile",
+                "profileKeyHash": "sha256:" + "c" * 64,
+                "leaseIdHash": "sha256:" + "d" * 64,
+                "ownerTokenHash": "sha256:" + "e" * 64,
+                "pid": 1234,
+            },
+            "ownerMode": {
+                "schemaVersion": 1,
+                "status": "pre-cutover",
+                "authoritativeDomains": [],
+                "invalidDomains": [],
+            },
         }
 
     def test_registry_has_exactly_six_pre_cutover_domains_and_contract_evidence(self):
@@ -220,10 +240,37 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
 
     def test_real_profile_evidence_is_required_and_bindings_are_verified(self):
         evidence = self.make_profile_evidence()
-        result = validate_owner_registry_profile_evidence(self.registry, evidence)
+        result = validate_owner_registry_profile_evidence(self.registry, evidence, profile_id="fixture-profile")
         self.assertTrue(result["valid"])
         self.assertTrue(result["contractValid"])
         self.assertTrue(result["profileEvidenceReady"])
+        self.assertTrue(result["profileLeaseReady"])
+        self.assertEqual(result["ownerMode"]["status"], "pre-cutover")
+
+        missing_lease = copy.deepcopy(evidence)
+        missing_lease.pop("profileLease")
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, missing_lease)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_LEASE_MISSING")
+
+        foreign_lease = copy.deepcopy(evidence)
+        foreign_lease["profileLease"]["profileId"] = "other-profile"
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, foreign_lease, profile_id="fixture-profile")
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_LEASE_MISMATCH")
+
+        missing_lease_binding = copy.deepcopy(evidence)
+        missing_lease_binding["bindings"].pop("applicationLease")
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, missing_lease_binding)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_BINDING_MISSING")
+
+        invalid_owner_mode = copy.deepcopy(evidence)
+        invalid_owner_mode["ownerMode"]["status"] = "invalid"
+        invalid_owner_mode["ownerMode"]["invalidDomains"] = ["workflow"]
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, invalid_owner_mode)
+        self.assertEqual(context.exception.code, "OWNER_MODE_CHECKPOINT_INVALID")
 
         missing_inventory = copy.deepcopy(evidence)
         missing_inventory["inventory"]["present"] = False

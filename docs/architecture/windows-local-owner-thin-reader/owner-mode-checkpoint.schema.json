@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Windows owner-mode checkpoint",
+  "description": "The single authority switch for one domain. This contract is only a cutover seam; it does not migrate a writer.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profileId",
+    "domain",
+    "lease",
+    "oldWriterBlocked",
+    "compatibilityMode",
+    "inFlight",
+    "repository",
+    "authorityMode",
+    "committedAt",
+    "checksum"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "profileId": { "type": "string", "minLength": 1 },
+    "domain": {
+      "enum": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow"]
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "profileKeyHash", "leaseIdHash"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "profileKeyHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "leaseIdHash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "oldWriterBlocked": { "const": true },
+    "compatibilityMode": { "const": "read-only" },
+    "inFlight": { "const": 0 },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "type", "baseRevision", "revision", "baseEvidence", "revisionEvidence"],
+      "properties": {
+        "identity": { "type": "string", "minLength": 1 },
+        "type": { "const": "host-managed" },
+        "baseRevision": { "type": "integer", "minimum": 0 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "baseEvidence": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "revisionEvidence": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      }
+    },
+    "authorityMode": { "const": "host-api=authoritative" },
+    "committedAt": { "type": "string", "format": "date-time" },
+    "checksum": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

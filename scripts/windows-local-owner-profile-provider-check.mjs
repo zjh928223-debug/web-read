@@ -64,6 +64,9 @@ assert.deepEqual(
 assert.equal(complete.bindings.transaction.bound, true)
 assert.equal(complete.bindings.revision.bound, true)
 assert.equal(complete.bindings.recovery.bound, true)
+assert.equal(complete.bindings.applicationLease.bound, true)
+assert.equal(complete.profileLease.status, 'held')
+assert.equal(complete.ownerMode.status, 'pre-cutover')
 
 const missingInventory = await readEvidence()
 assert.equal(missingInventory.inventory.present, false, 'missing browser inventory must not become an empty ready profile')

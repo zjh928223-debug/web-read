@@ -1497,7 +1497,10 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       atomicRevisionCommit: options.atomicRevisionCommit === true,
       commitRevisionEvidence: true,
       verifyAppliedRevision: true,
+      applicationProfileLease: options.applicationLeaseRequired === true,
     }),
+    applicationLeaseRequired: options.applicationLeaseRequired === true,
+    applicationLeaseSource: options.applicationLeaseSource || null,
     captureRestoreOperation() {
       return Object.freeze({})
     },

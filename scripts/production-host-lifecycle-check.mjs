@@ -247,6 +247,25 @@ try {
         configSchemaVersion: runtimeConfig.schemaVersion,
       },
     )
+    assert.equal(health.profileLeaseReady, true)
+    assert.equal(health.profileLeaseAlive, true)
+    assert.equal(health.ownerMode?.status, 'pre-cutover')
+    assert.deepEqual(health.ownerMode?.authoritativeDomains, [])
+    assert.equal(health.durableOwnerReady, false)
+    assert.equal(health.acceptingApiAuthoritativeOperations, false)
+
+    const ownerCommand = await fetch(`${baseUrl}/api/app/owner/command`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-read-web-token': token },
+      body: JSON.stringify({ domain: 'reader-session', operation: 'query' }),
+    })
+    assert.equal(ownerCommand.status, 503)
+    const ownerPayload = await ownerCommand.json()
+    assert.equal(ownerPayload.contractVersion, 'windows-thin-reader-api.v1')
+    assert.equal(ownerPayload.outcome, 'not-ready')
+    assert.equal(ownerPayload.commitStatus, 'not-ready')
+    assert.deepEqual(ownerPayload.payload, {})
+    assert.equal(ownerPayload.error?.details?.reason, 'pre-cutover')
 
     const index = await fetch(`${baseUrl}/`)
     assert.equal(index.status, 200)
