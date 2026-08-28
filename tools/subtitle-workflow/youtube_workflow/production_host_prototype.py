@@ -26,7 +26,9 @@ from .windows_owner_registry import (
     OwnerRegistryError,
     load_owner_registry,
     owner_registry_error_status,
+    owner_registry_profile_not_ready_status,
     validate_owner_registry_profile,
+    validate_owner_registry_profile_evidence,
 )
 
 
@@ -115,6 +117,9 @@ class PathPreservingAsgiDispatch:
         }
         self.owner_registry_status = dict(owner_registry_status or {
             "valid": False,
+            "contractValid": False,
+            "profileEvidenceReady": False,
+            "profileEvidenceSource": None,
             "status": "invalid",
             "code": "OWNER_REGISTRY_NOT_CONFIGURED",
             "message": "Windows owner registry is not configured",
@@ -194,11 +199,18 @@ class PathPreservingAsgiDispatch:
     async def _handle_owner_operation_guard(self, scope, receive, send):
         registry_valid = self.owner_registry_status.get("valid") is True
         owner_api_ready = self.owner_registry_status.get("ownerApiReady") is True
-        reason = "pre-cutover" if registry_valid else "owner-registry-invalid"
+        contract_valid = self.owner_registry_status.get("contractValid") is True
+        reason = "pre-cutover" if registry_valid else (
+            "profile-evidence-not-ready" if contract_valid else "owner-registry-invalid"
+        )
         message = (
             "Windows Host owner API is not authoritative in this milestone"
             if registry_valid
-            else "Windows Host owner registry profile is invalid"
+            else (
+                "Windows Host owner profile evidence is not ready"
+                if contract_valid
+                else "Windows Host owner registry profile is invalid"
+            )
         )
         request_id = f"windows-owner-request-{secrets.token_urlsafe(12)}"
         correlation_id = f"windows-owner-correlation-{secrets.token_urlsafe(12)}"
@@ -213,6 +225,7 @@ class PathPreservingAsgiDispatch:
                 "commitStatus": "not-ready",
                 "revision": None,
                 "receipt": None,
+                "payload": {},
                 "error": {
                     "type": "windows-thin-reader-error.v1",
                     "code": "not-ready",
@@ -342,14 +355,30 @@ def _load_owner_registry_status(
     owner_registry: dict | None,
     owner_registry_path: Path | None,
     owner_profile_rows: list[dict] | None,
+    owner_profile_evidence: dict | None,
 ) -> dict:
     try:
         registry = owner_registry
         if registry is None:
             registry = load_owner_registry(owner_registry_path or _default_owner_registry_path())
-        return validate_owner_registry_profile(registry, rows=owner_profile_rows)
+        profile_rows = owner_profile_rows
+        if profile_rows is None and isinstance(owner_profile_evidence, dict):
+            profile_rows = owner_profile_evidence.get("rows")
+        contract = validate_owner_registry_profile(registry, rows=profile_rows)
     except OwnerRegistryError as error:
         return owner_registry_error_status(error)
+    if owner_profile_evidence is None:
+        return owner_registry_profile_not_ready_status(
+            contract,
+            OwnerRegistryError(
+                "OWNER_PROFILE_EVIDENCE_MISSING",
+                "Windows owner profile evidence is required for durable readiness",
+            ),
+        )
+    try:
+        return validate_owner_registry_profile_evidence(registry, owner_profile_evidence)
+    except OwnerRegistryError as error:
+        return owner_registry_profile_not_ready_status(contract, error)
 
 
 def create_local_app_host(
@@ -372,6 +401,7 @@ def create_local_app_host(
     owner_registry: dict | None = None,
     owner_registry_path: Path | None = None,
     owner_profile_rows: list[dict] | None = None,
+    owner_profile_evidence: dict | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -384,6 +414,7 @@ def create_local_app_host(
         owner_registry=owner_registry,
         owner_registry_path=owner_registry_path,
         owner_profile_rows=owner_profile_rows,
+        owner_profile_evidence=owner_profile_evidence,
     )
     workflow = workflow_app or create_workflow_app(
         access_token=workflow_token,
@@ -407,6 +438,8 @@ def create_local_app_host(
     def app_health():
         dist_ready = (root / "index.html").is_file()
         registry_valid = owner_registry_status.get("valid") is True
+        contract_valid = owner_registry_status.get("contractValid") is True
+        profile_evidence_ready = owner_registry_status.get("profileEvidenceReady") is True
         owner_api_ready = owner_registry_status.get("ownerApiReady") is True
         return {
             "status": "ready" if dist_ready and registry_valid else "degraded",
@@ -419,8 +452,10 @@ def create_local_app_host(
             "configCompatibility": compatible_config,
             "distReady": dist_ready,
             "ownerRegistry": owner_registry_status,
-            "durableOwnerReady": registry_valid and owner_api_ready,
-            "acceptingApiAuthoritativeOperations": registry_valid and owner_api_ready,
+            "contractValid": contract_valid,
+            "profileEvidenceReady": profile_evidence_ready,
+            "durableOwnerReady": registry_valid and profile_evidence_ready and owner_api_ready,
+            "acceptingApiAuthoritativeOperations": registry_valid and profile_evidence_ready and owner_api_ready,
             "applicationStartupRecovery": startup_recovery,
             "acceptingRequests": not drain_state["draining"],
             "inflightRequests": drain_state["inflight"],
@@ -500,7 +535,7 @@ def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
         process.kill()
         process.wait(timeout=5)
         parser.error("application restore startup recovery did not become ready")
-    return process, ready.get("startupRecovery")
+    return process, ready.get("startupRecovery"), ready.get("ownerProfileEvidence")
 
 
 def _stop_application_profile_lock(process) -> None:
@@ -584,8 +619,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"valid release manifest is required: {error}")
     if args.config_schema_version < 1:
         parser.error("config schema version must be positive")
-    profile_lock, startup_recovery = _start_application_profile_lock(args, parser)
+    profile_lock, startup_recovery, owner_profile_evidence = _start_application_profile_lock(args, parser)
     try:
+        owner_profile_rows = (
+            owner_profile_evidence.get("rows")
+            if isinstance(owner_profile_evidence, dict)
+            else None
+        )
         app = create_local_app_host(
             dist_dir=dist,
             capability_base_url=args.capability_base_url,
@@ -602,6 +642,8 @@ def main(argv: list[str] | None = None) -> int:
                 "maximum": args.config_schema_version,
             },
             application_startup_recovery=startup_recovery,
+            owner_profile_rows=owner_profile_rows,
+            owner_profile_evidence=owner_profile_evidence,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

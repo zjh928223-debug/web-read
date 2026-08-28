@@ -17,6 +17,8 @@ from typing import Any
 
 OWNER_REGISTRY_SCHEMA_VERSION = 1
 OWNER_REGISTRY_VERSION = "windows-owner-registry.v1"
+OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION = 1
+OWNER_PROFILE_EVIDENCE_SOURCE = "read-web-production-backup.composition"
 WINDOWS_OWNER_DOMAINS = (
     "reader-session",
     "vocabulary-srs",
@@ -27,6 +29,7 @@ WINDOWS_OWNER_DOMAINS = (
 )
 _DOMAIN_SET = set(WINDOWS_OWNER_DOMAINS)
 _OPERATION_PATTERN = re.compile(r"^[a-z][a-z0-9.-]*$")
+_CHECKSUM_PATTERN = re.compile(r"^sha256:[a-f0-9]{64}$")
 
 
 class OwnerRegistryError(ValueError):
@@ -98,6 +101,21 @@ def _claim_pattern(claim: dict[str, Any]) -> str:
 
 def _matches_pattern(pattern: str, key: str) -> bool:
     return fnmatchcase(key, pattern) if "*" in pattern else key == pattern
+
+
+def _claim_specificity(pattern: str) -> tuple[int, int, int]:
+    """Prefer an exact/specific claim over an intentional domain wildcard.
+
+    The real adapters own a few dynamic key namespaces (for example
+    ``vocabulary.*``).  A specific inventory claim and that adapter-wide
+    fallback are not ambiguous: the specific claim is the authoritative
+    match.  Two equally specific claims remain ambiguous and still fail
+    closed below.
+    """
+
+    literal_length = len(pattern.replace("*", ""))
+    wildcard_count = pattern.count("*")
+    return (1 if wildcard_count == 0 else 0, literal_length, -wildcard_count)
 
 
 def _claim_schema_versions(claim: dict[str, Any]) -> list[str]:
@@ -423,6 +441,8 @@ def _validate_profile_rows(registrations: list[dict[str, Any]], rows: list[dict[
                 "Owner profile row has no claimed key",
                 details={"domain": domain, "key": key},
             )
+        most_specific = max(_claim_specificity(claim["pattern"]) for claim in matches)
+        matches = [claim for claim in matches if _claim_specificity(claim["pattern"]) == most_specific]
         if len(matches) != 1:
             raise OwnerRegistryError(
                 "OWNER_REGISTRY_AMBIGUOUS_ROW",
@@ -443,7 +463,12 @@ def validate_owner_registry_profile(
     *,
     rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Validate the registry and optional profile rows, failing closed."""
+    """Validate the static registry and explicitly supplied profile rows.
+
+    This is the contract-only validator.  A Local App Host must use
+    :func:`validate_owner_registry_profile_evidence` for durable readiness;
+    omitted rows are never interpreted as a real empty profile there.
+    """
 
     if not isinstance(registry, dict):
         raise OwnerRegistryError("OWNER_REGISTRY_INVALID", "Windows owner registry must be an object")
@@ -506,13 +531,16 @@ def validate_owner_registry_profile(
     for registration in registrations:
         summaries.append(_validate_registration(registration, owner_ids, repository_ids))
     if rows is None:
-        rows = registry.get("profileRows", [])
+        rows = []
     if not isinstance(rows, list):
         raise OwnerRegistryError("OWNER_REGISTRY_PROFILE_INVALID", "Owner profile rows must be a list")
     _validate_profile_rows(registrations, rows)
     summaries.sort(key=lambda item: WINDOWS_OWNER_DOMAINS.index(item["domain"]))
     return {
         "valid": True,
+        "contractValid": True,
+        "profileEvidenceReady": False,
+        "profileEvidenceSource": None,
         "status": "contract-ready-pre-cutover",
         "schemaVersion": OWNER_REGISTRY_SCHEMA_VERSION,
         "registryVersion": OWNER_REGISTRY_VERSION,
@@ -524,11 +552,214 @@ def validate_owner_registry_profile(
     }
 
 
+def _require_verified_binding(value: Any, label: str) -> dict[str, Any]:
+    item = _require_object(value, "OWNER_PROFILE_BINDING_MISSING", f"{label} binding is missing")
+    if item.get("bound") is not True or item.get("status") != "verified":
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_BINDING_MISSING",
+            f"{label} binding is not verified",
+        )
+    _required_text(item.get("source"), "OWNER_PROFILE_BINDING_MISSING", f"{label} binding needs a source")
+    return item
+
+
+def _validate_profile_evidence_bindings(registrations: list[dict[str, Any]], evidence: dict[str, Any]) -> None:
+    bindings = _require_object(
+        evidence.get("bindings"),
+        "OWNER_PROFILE_BINDING_MISSING",
+        "Owner profile bindings are required",
+    )
+    registry_binding = _require_verified_binding(
+        bindings.get("backupAdapterRegistry"),
+        "backup adapter registry",
+    )
+    required_domains = registry_binding.get("requiredDomains")
+    if required_domains != list(WINDOWS_OWNER_DOMAINS):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_BINDING_MISSING",
+            "Backup adapter registry does not bind the exact six domains",
+        )
+
+    for binding_name in ("transaction", "revision", "recovery"):
+        _require_verified_binding(bindings.get(binding_name), binding_name)
+
+    domain_bindings = bindings.get("domains")
+    if not isinstance(domain_bindings, dict) or set(domain_bindings) != set(WINDOWS_OWNER_DOMAINS):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_BINDING_MISSING",
+            "Owner profile bindings must cover exactly six domains",
+        )
+    for registration in registrations:
+        domain = registration["domain"]
+        item = _require_object(
+            domain_bindings.get(domain),
+            "OWNER_PROFILE_BINDING_MISSING",
+            f"Owner profile binding is missing for {domain}",
+        )
+        adapter = _require_verified_binding(item.get("backupAdapter"), f"{domain} backup adapter")
+        if adapter.get("key") != domain:
+            raise OwnerRegistryError(
+                "OWNER_PROFILE_BINDING_MISSING",
+                f"{domain} backup adapter is bound to the wrong domain",
+            )
+        supported = adapter.get("supportedSchemaVersions")
+        if not isinstance(supported, list) or not supported or adapter.get("schemaVersion") not in supported:
+            raise OwnerRegistryError(
+                "OWNER_PROFILE_BINDING_MISSING",
+                f"{domain} backup adapter schema binding is incomplete",
+            )
+        for binding_name in ("recovery", "revision"):
+            _require_verified_binding(item.get(binding_name), f"{domain} {binding_name}")
+
+
+def validate_owner_registry_profile_evidence(
+    registry: dict[str, Any],
+    evidence: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Validate real, read-only profile/provider evidence for Host readiness."""
+
+    if not isinstance(evidence, dict):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_EVIDENCE_MISSING",
+            "Windows owner profile evidence is required for durable readiness",
+        )
+    if evidence.get("schemaVersion") != OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_EVIDENCE_UNSUPPORTED_SCHEMA",
+            "Windows owner profile evidence schema is unsupported",
+        )
+    if evidence.get("source") != OWNER_PROFILE_EVIDENCE_SOURCE:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_EVIDENCE_SOURCE_INVALID",
+            "Windows owner profile evidence source is not the production composition",
+        )
+
+    contract = validate_owner_registry_profile(registry, rows=evidence.get("rows"))
+    inventory = _require_object(
+        evidence.get("inventory"),
+        "OWNER_PROFILE_INVENTORY_MISSING",
+        "Windows owner profile inventory is missing",
+    )
+    if inventory.get("present") is not True or inventory.get("status") != "verified":
+        inventory_error = (
+            "OWNER_PROFILE_INVENTORY_READ_FAILED"
+            if inventory.get("status") == "failed"
+            else "OWNER_PROFILE_INVENTORY_MISSING"
+        )
+        raise OwnerRegistryError(
+            inventory_error,
+            "Windows owner profile inventory is not present and verified",
+            details={
+                "sourceError": inventory.get("errorCode")
+                if isinstance(inventory.get("errorCode"), str)
+                else "unknown",
+            },
+        )
+    _required_text(
+        inventory.get("source"),
+        "OWNER_PROFILE_INVENTORY_MISSING",
+        "Windows owner profile inventory needs a source",
+    )
+    for count_name in ("indexedDbRowCount", "localStorageKeyCount", "pythonSourceCount"):
+        count = inventory.get(count_name)
+        if not isinstance(count, int) or count < 0:
+            raise OwnerRegistryError(
+                "OWNER_PROFILE_INVENTORY_INVALID",
+                f"Windows owner profile inventory has an invalid {count_name}",
+            )
+
+    collection = _require_object(
+        evidence.get("collection"),
+        "OWNER_PROFILE_COLLECTION_UNVERIFIED",
+        "Windows owner profile collection evidence is missing",
+    )
+    if collection.get("status") != "verified":
+        error_code = collection.get("errorCode")
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_COLLECTION_UNVERIFIED",
+            "Windows owner profile collection did not verify all application adapters",
+            details={"sourceError": error_code if isinstance(error_code, str) else "unknown"},
+        )
+    _required_text(
+        collection.get("source"),
+        "OWNER_PROFILE_COLLECTION_UNVERIFIED",
+        "Windows owner profile collection needs a source",
+    )
+    artifact_checksum = collection.get("artifactChecksum")
+    if not isinstance(artifact_checksum, str) or not _CHECKSUM_PATTERN.fullmatch(artifact_checksum):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_CHECKSUM_MISSING",
+            "Windows owner profile collection needs a verified backup checksum",
+        )
+    profile_checksum = evidence.get("profileChecksum")
+    if not isinstance(profile_checksum, str) or not _CHECKSUM_PATTERN.fullmatch(profile_checksum):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_CHECKSUM_MISSING",
+            "Windows owner profile inventory needs a verified profile checksum",
+        )
+    if evidence.get("ready") is not True:
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_EVIDENCE_UNBOUND",
+            "Windows owner profile evidence did not declare a verified ready result",
+        )
+
+    _validate_profile_evidence_bindings(registry["registrations"], evidence)
+    rows = evidence.get("rows")
+    if not isinstance(rows, list):
+        raise OwnerRegistryError(
+            "OWNER_PROFILE_INVENTORY_MISSING",
+            "Windows owner profile evidence must include an explicit rows list",
+        )
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("source"), str) or not row["source"].strip():
+            raise OwnerRegistryError(
+                "OWNER_PROFILE_INVENTORY_INVALID",
+                "Every owner profile row needs source evidence",
+            )
+
+    return {
+        **contract,
+        "valid": True,
+        "contractValid": True,
+        "profileEvidenceReady": True,
+        "profileEvidenceSource": OWNER_PROFILE_EVIDENCE_SOURCE,
+        "profileChecksum": profile_checksum,
+        "backupArtifactChecksum": artifact_checksum,
+    }
+
+
+def owner_registry_profile_not_ready_status(
+    contract: dict[str, Any],
+    error: OwnerRegistryError,
+) -> dict[str, Any]:
+    """Keep a valid contract visible while making missing profile evidence non-ready."""
+
+    status = dict(contract)
+    status.update(
+        {
+            "valid": False,
+            "contractValid": True,
+            "profileEvidenceReady": False,
+            "profileEvidenceSource": None,
+            "status": "profile-not-ready",
+            "code": error.code,
+            "message": str(error),
+            "details": dict(error.details),
+            "ownerApiReady": False,
+            "acceptingApiAuthoritativeOperations": False,
+        }
+    )
+    return status
+
+
 def owner_registry_error_status(error: OwnerRegistryError) -> dict[str, Any]:
     """Return safe health/readiness data for an invalid profile."""
 
     return {
         "valid": False,
+        "contractValid": False,
+        "profileEvidenceReady": False,
+        "profileEvidenceSource": None,
         "status": "invalid",
         "code": error.code,
         "message": str(error),

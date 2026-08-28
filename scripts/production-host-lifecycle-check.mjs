@@ -9,7 +9,10 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
-import { createReadWebProductionBackupComposition } from './lib/read-web-production-backup.mjs'
+import {
+  createReadWebProductionBackupComposition,
+  writeIsolatedBrowserProfile,
+} from './lib/read-web-production-backup.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
@@ -221,6 +224,7 @@ try {
       pythonOutputDir: path.join(tempRoot, `application-${cycle}`, 'python-output'),
     }
     await Promise.all(Object.values(applicationProfile).map((directory) => mkdir(directory, { recursive: true })))
+    await writeIsolatedBrowserProfile(applicationProfile.profileDir, { localStorage: {}, indexedDbRows: [] })
     host = startHost({ port, instanceId, dataRoot: path.join(tempRoot, `data-${cycle}`), applicationProfile })
     const health = await waitForHealth(baseUrl, instanceId)
     assert.deepEqual(

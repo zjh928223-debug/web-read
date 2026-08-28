@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
-    "architecture": 112,
+    "architecture": 113,
     "behavior": 99,
     "browser": 27,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 249,
-  "executableScriptCount": 273,
+  "packageScriptCount": 250,
+  "executableScriptCount": 274,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -3019,6 +3019,19 @@
         "scripts/windows-local-owner-non-goals-self-test.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-non-goals-self-test"
+    },
+    {
+      "name": "verify:windows-owner-profile-provider",
+      "command": "node scripts/windows-local-owner-profile-provider-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-local-owner-profile-provider-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-profile-provider"
     },
     {
       "name": "verify:windows-owner-registry",
@@ -10082,6 +10095,38 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-local-owner-profile-provider-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
+      "architectureEvidence": [
+        "source-shape"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner",
+      "owners": [
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-profile-provider"
+      ],
+      "invocation": "transitive",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
         "executesModule": false,
         "startsBrowser": false
       }

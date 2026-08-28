@@ -25,8 +25,9 @@ without treating the compatibility path as authoritative by accident.
 - `api-contract.json` — versioned typed envelope, domain/operation registry, identity/revision/idempotency,
   commit receipt, and typed error schema. It is a contract-only artifact; it is not a capability claim.
 - `owner-registry.json` — exactly six Host-managed repository contracts with key/schema claims, query/
-  command surfaces, revision/backup/recovery evidence, and explicit pre-cutover authority state. It is
-  validated at Local App Host startup; invalid profiles are degraded and owner operations remain rejected.
+  command surfaces, revision/backup/recovery evidence, and explicit pre-cutover authority state. The
+  static contract and the explicit read-only profile evidence are validated at Local App Host startup;
+  missing or invalid profile evidence is degraded and owner operations remain rejected.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -36,10 +37,10 @@ shell-free Node runner and leaves `not-run` items untouched; its output includes
 `scripts/windows-local-owner-determinism-check.mjs` repeats canonicalization and source-map checks.
 
 The owner registry validator is behavior-oriented: it rejects missing or duplicate domains/owners, unknown
-or unsupported profile rows, missing backup/recovery or transaction/revision/recovery evidence, browser-only
-repositories, and canonical browser bridge claims. A valid registry still reports `ownerApiReady: false` and
-`acceptingApiAuthoritativeOperations: false` until a later migration task implements the repository and
-cutover contract.
+or unsupported profile rows, missing inventory/read evidence, missing backup/recovery or
+transaction/revision/recovery bindings, browser-only repositories, and canonical browser bridge claims. A
+valid profile still reports `ownerApiReady: false` and `acceptingApiAuthoritativeOperations: false` until a
+later migration task implements the repository and cutover contract.
 
 ## Evidence semantics
 
@@ -61,6 +62,9 @@ self-tests exercise both negative boundaries: an unstaged protected-file fixture
 or staged protected path, omission of any required Reader Session caller, or omission of its matrix reference
 is rejected.
 
-The inventory reads source text and the existing backup registry only. It does not open `E:\read-web-next`,
-`E:\read-web`, the daily data root, or a real browser profile. Any later live rehearsal must use
-`config/runtime.optimization.json`, ports `5184/8776`, and `E:\ReadWebData\SubtitleWorkflow-Optimization`.
+The baseline inventory reads source text and the existing backup registry only. The Local App Host profile
+readiness path separately consumes the explicit isolated `browser-profile.json` plus the existing
+application-backup composition and Python adapters; it never treats a missing profile as an empty ready
+profile. Neither path opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a real browser
+profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`, and
+`E:\ReadWebData\SubtitleWorkflow-Optimization`.

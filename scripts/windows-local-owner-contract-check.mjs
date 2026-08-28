@@ -151,6 +151,8 @@ assert(api.requestEnvelopeSchema.required.includes('domain'), 'request envelope 
 assert(api.requestEnvelopeSchema.required.includes('operation'), 'request envelope must require operation')
 assert(api.responseEnvelopeSchema.required.includes('commitStatus'), 'response envelope must require commitStatus')
 assert(api.responseEnvelopeSchema.required.includes('receipt'), 'response envelope must require receipt')
+assert(api.responseEnvelopeSchema.required.includes('payload'), 'response envelope must require payload')
+assert(api.responseEnvelopeSchema.properties.payload?.type === 'object', 'response envelope payload must be a typed object')
 assert(api.receiptSchema.$ref === '#/$defs/receipt', 'receipt schema must be typed')
 assert(api.typedErrorSchema.$ref === '#/$defs/typedError', 'typed error schema must be typed')
 for (const field of ['requestId', 'correlationId', 'expectedRevision', 'idempotencyKey', 'commitStatus', 'receipt']) {

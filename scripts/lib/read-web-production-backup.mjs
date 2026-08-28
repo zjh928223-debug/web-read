@@ -22,6 +22,21 @@ const PATH_LOCK_TIMEOUT_MS = 30_000
 const PATH_LOCK_STALE_AFTER_MS = 15_000
 const PATH_LOCK_RETRY_MS = 15
 const PATH_LOCK_HEARTBEAT_MS = 1_000
+const OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION = 1
+const OWNER_PROFILE_EVIDENCE_SOURCE = 'read-web-production-backup.composition'
+const OWNER_PROFILE_DOMAINS = Object.freeze([
+  'reader-session',
+  'vocabulary-srs',
+  'passage-preview',
+  'annotation',
+  'marks-activity',
+  'workflow',
+])
+const OWNER_PROFILE_READER_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
+const OWNER_PROFILE_WORKFLOW_RECEIPT_PREFIXES = Object.freeze([
+  'read-web.workflow-operation-receipt.v1.',
+  'read-web.workflow-operation-receipt-quarantine.v1.',
+])
 
 let backupModulesPromise
 const applicationPathLockContext = new AsyncLocalStorage()
@@ -732,6 +747,7 @@ export async function writeIsolatedBrowserProfile(profileDir, profile) {
 
 async function openBrowserProfile(profileDir) {
   const filePath = path.join(profileDir, BROWSER_PROFILE_FILE)
+  const profilePresent = await pathExists(filePath)
   const state = assertProfileState(
     await readJsonIfPresent(filePath, 'PROFILE_CORRUPT') || {
       schemaVersion: PROFILE_SCHEMA_VERSION,
@@ -786,7 +802,7 @@ async function openBrowserProfile(profileDir) {
       return clone(rows)
     },
   }
-  return { state, storage, persistence, filePath }
+  return { state, storage, persistence, filePath, profilePresent }
 }
 
 function runPythonBackup({ pythonCommand, stateDir, outputDir }) {
@@ -1314,6 +1330,317 @@ export async function createIsolatedProfileRestoreTarget(options = {}) {
   return target
 }
 
+function ownerProfileError(code, message, details = {}) {
+  const error = new Error(message)
+  error.code = code
+  error.details = details
+  return error
+}
+
+function ownerProfileChecksum(state) {
+  return `sha256:${createHash('sha256').update(canonicalJson({
+    schemaVersion: state?.schemaVersion ?? null,
+    localStorage: state?.localStorage || {},
+    indexedDbRows: Array.isArray(state?.indexedDbRows) ? state.indexedDbRows : [],
+  })).digest('hex')}`
+}
+
+function ownerProfileRow(rows, { domain, key, schemaVersion, source, sourceKey = key }) {
+  if (!domain || !key || schemaVersion === undefined || schemaVersion === null) {
+    throw ownerProfileError(
+      'OWNER_PROFILE_INVENTORY_INVALID',
+      'Owner profile source row is missing domain, key, or schema version',
+      { domain, key, sourceKey },
+    )
+  }
+  rows.push({ domain, key: String(key), schemaVersion, source, sourceKey: String(sourceKey || key) })
+}
+
+function ownerProfileWorkflowKey(recordId) {
+  if (recordId === 'config') return 'config.json'
+  if (recordId.startsWith('jobs:')) return 'jobs.json'
+  if (recordId.startsWith('items:')) return 'history.json'
+  if (recordId.startsWith('reader-index:')) return 'reader-index.json'
+  if (recordId.startsWith('output:')) return recordId
+  return null
+}
+
+function ownerProfileMarksKey(recordId) {
+  for (const filename of ['reader-marks.json', 'reader-activity.json', 'reader-marks-commit-journal.json']) {
+    if (recordId.startsWith(`${filename}:`)) return `_workflow/${filename}`
+  }
+  return null
+}
+
+function assertOwnerProfileIndexedDbRows(state) {
+  for (const row of state?.indexedDbRows || []) {
+    const key = String(row?.id || '')
+    const recognized = OWNER_PROFILE_READER_ROW_IDS.has(key)
+      || key.startsWith('readerSessionQuarantine:')
+      || key.startsWith('vocabulary.')
+      || key.startsWith('vocabulary-article-srs-settlement-progress:')
+    if (!recognized) {
+      throw ownerProfileError(
+        'OWNER_PROFILE_UNCLAIMED_ROW',
+        `IndexedDB profile row ${key || '[missing-id]'} is outside the registered application adapters`,
+        { key },
+      )
+    }
+    const sourceSchemaVersion = row?.schemaVersion ?? 1
+    if (sourceSchemaVersion !== 1) {
+      throw ownerProfileError(
+        'OWNER_PROFILE_UNSUPPORTED_SCHEMA',
+        `IndexedDB profile row ${key} uses an unsupported source schema`,
+        { key, schemaVersion: sourceSchemaVersion },
+      )
+    }
+  }
+}
+
+function assertOwnerProfileWorkflowReceipt(key, rawValue) {
+  let value
+  try {
+    value = JSON.parse(rawValue)
+  } catch {
+    throw ownerProfileError(
+      'OWNER_PROFILE_UNSUPPORTED_SCHEMA',
+      `Workflow receipt ${key} is not valid JSON`,
+      { key },
+    )
+  }
+  if (value && typeof value === 'object' && value.schemaVersion !== undefined && value.schemaVersion !== 1) {
+    throw ownerProfileError(
+      'OWNER_PROFILE_UNSUPPORTED_SCHEMA',
+      `Workflow receipt ${key} uses an unsupported source schema`,
+      { key, schemaVersion: value.schemaVersion },
+    )
+  }
+}
+
+function ownerProfileRowsFromArtifact(browser, artifact) {
+  assertOwnerProfileIndexedDbRows(browser.state)
+  const rows = []
+  for (const [domain, snapshot] of Object.entries(artifact?.domains || {})) {
+    for (const record of snapshot?.records || []) {
+      const recordId = String(record?.id || '')
+      if (!recordId) throw ownerProfileError('OWNER_PROFILE_INVENTORY_INVALID', `Backup record in ${domain} has no id`)
+      if (domain === 'reader-session') {
+        if (recordId.startsWith('reader-save-outbox:')) continue
+        ownerProfileRow(rows, {
+          domain,
+          key: recordId,
+          schemaVersion: record.schemaVersion,
+          source: recordId.startsWith('readerSession')
+            ? 'browser-profile.indexedDbRows'
+            : 'browser-profile.indexedDbRows',
+          sourceKey: recordId,
+        })
+        continue
+      }
+      if (domain === 'marks-activity') {
+        const key = ownerProfileMarksKey(recordId)
+        if (!key) throw ownerProfileError('OWNER_PROFILE_UNCLAIMED_ROW', `Marks/activity record ${recordId} is not registered`, { key: recordId })
+        ownerProfileRow(rows, {
+          domain,
+          key,
+          schemaVersion: record.schemaVersion,
+          source: 'python.application_backup.marks-activity',
+          sourceKey: recordId,
+        })
+        continue
+      }
+      if (domain === 'workflow') {
+        const key = ownerProfileWorkflowKey(recordId)
+        if (!key) throw ownerProfileError('OWNER_PROFILE_UNCLAIMED_ROW', `Workflow record ${recordId} is not registered`, { key: recordId })
+        ownerProfileRow(rows, {
+          domain,
+          key,
+          schemaVersion: record.schemaVersion,
+          source: 'python.application_backup.workflow',
+          sourceKey: recordId,
+        })
+        continue
+      }
+      ownerProfileRow(rows, {
+        domain,
+        key: recordId,
+        schemaVersion: record.schemaVersion,
+        source: domain === 'vocabulary-srs' || domain === 'reader-session'
+          ? 'browser-profile.indexedDbRows'
+          : 'browser-profile.localStorage',
+        sourceKey: recordId,
+      })
+    }
+    if (domain === 'workflow' && (snapshot?.mediaReferences || []).length) {
+      ownerProfileRow(rows, {
+        domain,
+        key: 'mediaReferences[]',
+        schemaVersion: 'identity-metadata-rebind',
+        source: 'python.application_backup.workflow.mediaReferences',
+      })
+    }
+  }
+
+  const storage = browser.storage.toJSON()
+  for (const [key, rawValue] of Object.entries(storage)) {
+    if (key === 'read-web.reader-save-outbox.v1') {
+      ownerProfileRow(rows, {
+        domain: 'reader-session',
+        key,
+        schemaVersion: 'reader-save-outbox.v1',
+        source: 'browser-profile.localStorage',
+      })
+      continue
+    }
+    if (key.startsWith('read-web.reader-save-outbox.v2.')) {
+      ownerProfileRow(rows, {
+        domain: 'reader-session',
+        key,
+        schemaVersion: 'reader-save-outbox.v2',
+        source: 'browser-profile.localStorage',
+      })
+      continue
+    }
+    if (key.startsWith('read-web.reader-save-outbox-quarantine.v1.')) {
+      ownerProfileRow(rows, {
+        domain: 'reader-session',
+        key,
+        schemaVersion: 'reader-save-outbox-quarantine.v1',
+        source: 'browser-profile.localStorage',
+      })
+      continue
+    }
+    if (OWNER_PROFILE_WORKFLOW_RECEIPT_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+      assertOwnerProfileWorkflowReceipt(key, rawValue)
+      ownerProfileRow(rows, {
+        domain: 'workflow',
+        key,
+        schemaVersion: 1,
+        source: 'browser-profile.localStorage',
+      })
+    }
+  }
+  return rows
+}
+
+function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
+  const targetCapabilities = restoreTarget?.restoreCapabilities || {}
+  const transactionBound = targetCapabilities.atomicRevisionCommit === true
+    && typeof restoreTarget?.beginTransaction === 'function'
+  const revisionBound = !!artifact
+    && OWNER_PROFILE_DOMAINS.every((domain) => {
+      const snapshot = artifact.domains?.[domain]
+      return snapshot && snapshot.revision !== undefined
+        && typeof artifact.manifest?.domainChecksums?.[domain] === 'string'
+    })
+  const recoveryBound = typeof restoreTarget?.recoverPendingRestore === 'function'
+    && typeof restoreTarget?.readJournal === 'function'
+    && typeof restoreTarget?.rollbackStore?.read === 'function'
+    && typeof restoreTarget?.rollbackStore?.write === 'function'
+    && typeof restoreTarget?.quarantine?.write === 'function'
+    && targetCapabilities.commitRevisionEvidence === true
+    && targetCapabilities.verifyAppliedRevision === true
+  const adapterRegistryBound = OWNER_PROFILE_DOMAINS.every((domain) => {
+    const adapter = adapters?.[domain]
+    const targetAdapter = restoreTarget?.adapters?.[domain]
+    return !!adapter
+      && adapter.key === domain
+      && typeof adapter.collect === 'function'
+      && Array.isArray(adapter.supportedSchemaVersions)
+      && adapter.supportedSchemaVersions.includes(adapter.schemaVersion)
+      && !!targetAdapter
+      && typeof targetAdapter.collect === 'function'
+  })
+  const verified = (bound) => ({
+    bound,
+    status: bound ? 'verified' : 'failed',
+    source: 'read-web-production-backup.composition',
+  })
+  const domains = Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => {
+    const adapter = adapters?.[domain]
+    const targetAdapter = restoreTarget?.adapters?.[domain]
+    const domainRevisionBound = revisionBound && artifact?.domains?.[domain]?.revision !== undefined
+    return [domain, {
+      backupAdapter: {
+        ...verified(adapterRegistryBound && adapter?.key === domain && typeof adapter?.collect === 'function'),
+        key: adapter?.key || null,
+        schemaVersion: adapter?.schemaVersion ?? null,
+        supportedSchemaVersions: Array.isArray(adapter?.supportedSchemaVersions)
+          ? [...adapter.supportedSchemaVersions]
+          : [],
+      },
+      revision: verified(domainRevisionBound),
+      recovery: verified(recoveryBound && !!targetAdapter && typeof targetAdapter.collect === 'function'),
+    }]
+  }))
+  return {
+    backupAdapterRegistry: {
+      ...verified(adapterRegistryBound),
+      requiredDomains: [...OWNER_PROFILE_DOMAINS],
+    },
+    transaction: verified(transactionBound),
+    revision: verified(revisionBound),
+    recovery: verified(recoveryBound),
+    domains,
+  }
+}
+
+async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery }) {
+  let artifact = null
+  let collectionError = null
+  let rows = []
+  try {
+    artifact = await service.createBackup({ now: () => 0 })
+    rows = ownerProfileRowsFromArtifact(browser, artifact)
+  } catch (error) {
+    collectionError = error
+  }
+  const bindings = ownerProfileBindingEvidence({ adapters, restoreTarget, artifact })
+  const allBindingsBound = [
+    bindings.backupAdapterRegistry,
+    bindings.transaction,
+    bindings.revision,
+    bindings.recovery,
+    ...Object.values(bindings.domains).flatMap((binding) => [
+      binding.backupAdapter,
+      binding.revision,
+      binding.recovery,
+    ]),
+  ].every((binding) => binding?.bound === true && binding?.status === 'verified')
+  const inventoryPresent = browser.profilePresent === true
+  const ready = inventoryPresent && !collectionError && allBindingsBound
+  return {
+    schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
+    source: OWNER_PROFILE_EVIDENCE_SOURCE,
+    ready,
+    profileChecksum: ownerProfileChecksum(browser.state),
+    inventory: {
+      present: inventoryPresent,
+      status: inventoryPresent ? 'verified' : 'missing',
+      source: 'browser-profile.json + application_backup.py',
+      indexedDbRowCount: Array.isArray(browser.state?.indexedDbRows) ? browser.state.indexedDbRows.length : 0,
+      localStorageKeyCount: Object.keys(browser.storage.toJSON()).length,
+      pythonSourceCount: Object.keys(pythonAdapters || {}).length,
+    },
+    collection: collectionError
+      ? {
+        status: 'failed',
+        source: 'createReadWebApplicationBackupService.createBackup',
+        errorCode: collectionError.code || 'OWNER_PROFILE_COLLECTION_FAILED',
+      }
+      : {
+        status: 'verified',
+        source: 'createReadWebApplicationBackupService.createBackup',
+        artifactChecksum: artifact.artifactChecksum,
+        domainChecksums: Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => [domain, artifact.manifest?.domainChecksums?.[domain] || null])),
+        recordCounts: Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => [domain, artifact.domains[domain]?.records?.length || 0])),
+      },
+    rows,
+    bindings,
+    startupRecovery: startupRecovery || { status: 'none' },
+  }
+}
+
 export async function createReadWebProductionBackupComposition(options = {}) {
   if (!options.profileDir || !options.pythonStateDir || !options.pythonOutputDir || !options.isolationRoot) {
     const error = new Error('Production backup composition requires isolated browser profile, Python state, and Python output directories')
@@ -1416,6 +1743,14 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       manifestSha: null,
     },
   })
+  const ownerProfileEvidence = await createOwnerProfileEvidence({
+    browser,
+    adapters,
+    restoreTarget,
+    service,
+    pythonAdapters,
+    startupRecovery,
+  })
   return Object.freeze({
     kind: 'read-web-isolated-application-restore-target',
     requiredDomains: [...service.requiredDomains],
@@ -1425,6 +1760,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     startupRecovery: startupRecovery ? Object.freeze(clone(startupRecovery)) : null,
     browserProfile: browser,
     pythonAdapters,
+    ownerProfileEvidence: Object.freeze(clone(ownerProfileEvidence)),
     async createBackup(backupOptions = {}) {
       return service.createBackup(backupOptions)
     },
@@ -1493,13 +1829,69 @@ export async function withReadWebApplicationStartupLock(options = {}, operation)
   })
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)
-  && process.argv[2] === '--hold-application-profile') {
-  const options = JSON.parse(process.argv[3] || '{}')
-  await withReadWebApplicationStartupLock(options, async ({ startupRecovery }) => {
+function ownerProfileReadFailureEvidence(error) {
+  const sourceError = typeof error?.code === 'string' && error.code
+    ? error.code
+    : 'OWNER_PROFILE_INVENTORY_READ_FAILED'
+  const failedBinding = () => ({
+    bound: false,
+    status: 'failed',
+    source: OWNER_PROFILE_EVIDENCE_SOURCE,
+  })
+  return {
+    schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
+    source: OWNER_PROFILE_EVIDENCE_SOURCE,
+    ready: false,
+    profileChecksum: null,
+    inventory: {
+      present: false,
+      status: 'failed',
+      source: 'browser-profile.json',
+      errorCode: sourceError,
+      indexedDbRowCount: 0,
+      localStorageKeyCount: 0,
+      pythonSourceCount: 0,
+    },
+    collection: {
+      status: 'failed',
+      source: 'openBrowserProfile',
+      errorCode: sourceError,
+    },
+    rows: [],
+    bindings: {
+      backupAdapterRegistry: { ...failedBinding(), requiredDomains: [...OWNER_PROFILE_DOMAINS] },
+      transaction: failedBinding(),
+      revision: failedBinding(),
+      recovery: failedBinding(),
+      domains: Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => [domain, {
+        backupAdapter: failedBinding(),
+        revision: failedBinding(),
+        recovery: failedBinding(),
+      }])),
+    },
+    startupRecovery: { status: 'not-run', reason: 'profile-inventory-read-failed' },
+  }
+}
+
+async function holdApplicationProfileAfterReadFailure(options, error) {
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot: options.isolationRoot,
+    paths: {
+      profileDir: options.profileDir,
+      pythonStateDir: options.pythonStateDir,
+      pythonOutputDir: options.pythonOutputDir,
+    },
+    forbiddenRoots: options.forbiddenRoots,
+  })
+  return withApplicationPathMutex(validatedLayout.isolationRoot, async () => {
+    const ownerProfileEvidence = ownerProfileReadFailureEvidence(error)
     await new Promise((resolve, reject) => {
-      process.stdout.write(`${JSON.stringify({ status: 'ready', startupRecovery })}\n`, (error) => {
-        if (error) reject(error)
+      process.stdout.write(`${JSON.stringify({
+        status: 'ready',
+        startupRecovery: null,
+        ownerProfileEvidence,
+      })}\n`, (writeError) => {
+        if (writeError) reject(writeError)
         else resolve()
       })
     })
@@ -1511,4 +1903,35 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
       process.stdin.once('close', done)
     })
   })
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)
+  && process.argv[2] === '--hold-application-profile') {
+  const options = JSON.parse(process.argv[3] || '{}')
+  try {
+    await withReadWebApplicationStartupLock(options, async ({ composition, startupRecovery }) => {
+      await new Promise((resolve, reject) => {
+          process.stdout.write(`${JSON.stringify({
+            status: 'ready',
+            startupRecovery,
+            ownerProfileEvidence: composition.ownerProfileEvidence,
+          })}\n`, (error) => {
+          if (error) reject(error)
+          else resolve()
+        })
+      })
+      if (process.stdin.readableEnded || process.stdin.destroyed) return
+      process.stdin.resume()
+      await new Promise((resolve) => {
+        const done = () => resolve()
+        process.stdin.once('end', done)
+        process.stdin.once('close', done)
+      })
+    })
+  } catch (error) {
+    const profileReadFailure = typeof error?.code === 'string'
+      && (error.code.startsWith('PROFILE_') || ['EACCES', 'EIO', 'ENOTDIR', 'EPERM'].includes(error.code))
+    if (!profileReadFailure) throw error
+    await holdApplicationProfileAfterReadFailure(options, error)
+  }
 }

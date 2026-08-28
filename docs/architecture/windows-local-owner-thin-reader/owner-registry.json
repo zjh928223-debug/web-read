@@ -27,11 +27,11 @@
         "facade": "windowsHost.readerSessionOwner"
       },
       "canonicalRecords": [
-        {"key": "audioMeta", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
-        {"key": "transcript", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
-        {"key": "chunkData", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1"]},
-        {"key": "marks", "schemaVersions": ["reader-session.v3 payload; reader-marks.v1 projection"]},
-        {"key": "readerSession", "schemaVersions": ["3"]},
+        {"key": "audioMeta", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1", "1"]},
+        {"key": "transcript", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1", "1"]},
+        {"key": "chunkData", "schemaVersions": ["reader-session.v3 payload; backup adapter schema 1", "1"]},
+        {"key": "marks", "schemaVersions": ["reader-session.v3 payload; reader-marks.v1 projection", "1"]},
+        {"key": "readerSession", "schemaVersions": ["3", "1"]},
         {"keyPattern": "readerSessionQuarantine:*", "schemaVersions": ["1"]}
       ],
       "compatibilityRecords": [
@@ -91,17 +91,18 @@
       },
       "canonicalRecords": [
         {"key": "vocabulary.srs.store.v1", "schemaVersions": ["1"]},
-        {"key": "vocabulary.acquisition.store.v1", "schemaVersions": ["acquisition-store.v1"]},
-        {"key": "vocabulary.review.store.v2", "schemaVersions": ["review-store.v2; review-state.v2", "review-store.v2", "review-state.v2"]},
-        {"key": "vocabulary.review-session-ledgers.v1", "schemaVersions": ["review-session-ledger-store.v1; session-ledger.v1", "review-session-ledger-store.v1", "session-ledger.v1"]},
-        {"key": "vocabulary.learning-events.manifest.v1", "schemaVersions": ["learning-event-manifest.v1"]},
-        {"keyPattern": "vocabulary.learning-events.v1.*", "schemaVersions": ["learning-event-shard.v1"]},
-        {"key": "vocabulary.context-evidence.store.v1", "schemaVersions": ["context-evidence-store.v1; context-evidence.v1", "context-evidence-store.v1", "context-evidence.v1"]},
-        {"key": "vocabulary.personalization.shadow-reports.v1", "schemaVersions": ["personalization-shadow-report-store.v1; personalization-shadow-model-snapshot.v1", "personalization-shadow-report-store.v1", "personalization-shadow-model-snapshot.v1"]},
+        {"key": "vocabulary.acquisition.store.v1", "schemaVersions": ["acquisition-store.v1", "1"]},
+        {"key": "vocabulary.review.store.v2", "schemaVersions": ["review-store.v2; review-state.v2", "review-store.v2", "review-state.v2", "1"]},
+        {"key": "vocabulary.review-session-ledgers.v1", "schemaVersions": ["review-session-ledger-store.v1; session-ledger.v1", "review-session-ledger-store.v1", "session-ledger.v1", "1"]},
+        {"key": "vocabulary.learning-events.manifest.v1", "schemaVersions": ["learning-event-manifest.v1", "1"]},
+        {"keyPattern": "vocabulary.learning-events.v1.*", "schemaVersions": ["learning-event-shard.v1", "1"]},
+        {"key": "vocabulary.context-evidence.store.v1", "schemaVersions": ["context-evidence-store.v1; context-evidence.v1", "context-evidence-store.v1", "context-evidence.v1", "1"]},
+        {"key": "vocabulary.personalization.shadow-reports.v1", "schemaVersions": ["personalization-shadow-report-store.v1; personalization-shadow-model-snapshot.v1", "personalization-shadow-report-store.v1", "personalization-shadow-model-snapshot.v1", "1"]},
         {"key": "vocabulary-srs-pending-candidates", "schemaVersions": ["1"]},
         {"keyPattern": "vocabulary-article-srs-settlement-progress:*", "schemaVersions": ["1"]},
-        {"key": "vocabulary.revision-watermark.v1", "schemaVersions": ["vocabulary-revision-watermark.v1"]},
-        {"keyPattern": "vocabulary.learning-command-receipt.v1:*", "schemaVersions": ["command-receipt.v1"]}
+        {"key": "vocabulary.revision-watermark.v1", "schemaVersions": ["vocabulary-revision-watermark.v1", "1"]},
+        {"keyPattern": "vocabulary.learning-command-receipt.v1:*", "schemaVersions": ["command-receipt.v1", "1"]},
+        {"keyPattern": "vocabulary.*", "schemaVersions": ["1", "acquisition-store.v1", "review-store.v2", "review-state.v2", "review-session-ledger-store.v1", "session-ledger.v1", "learning-event-manifest.v1", "learning-event-shard.v1", "context-evidence-store.v1", "context-evidence.v1", "personalization-shadow-report-store.v1", "personalization-shadow-model-snapshot.v1", "vocabulary-revision-watermark.v1", "command-receipt.v1"]}
       ],
       "compatibilityRecords": [
         {"keyPattern": "legacy-migration:*", "schemaVersions": ["legacy-migration.v1"]}
@@ -223,9 +224,10 @@
         "facade": "windowsHost.annotationOwner"
       },
       "canonicalRecords": [
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.bundle.v2.json", "schemaVersions": ["annotation-bundle.v2"]},
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.generated.json", "schemaVersions": ["1"]},
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.status.json", "schemaVersions": ["1"]}
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.bundle.v2.json", "schemaVersions": ["annotation-bundle.v2", "1"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.generated.json", "schemaVersions": ["1", "annotation-bundle.v2"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.status.json", "schemaVersions": ["1", "annotation-bundle.v2"]},
+        {"keyPattern": "AnnotationGenerationStorage::*", "schemaVersions": ["1", "annotation-bundle.v2"]}
       ],
       "compatibilityRecords": [
         {"key": "annotation-full-export.json", "schemaVersions": ["export payload not a canonical bundle"]},
@@ -390,5 +392,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:76666ac8b63491dc379df562f2eca2d5c1b9113d06a3e1bb2f5598eef4b4400d"
+  "artifactChecksum": "sha256:e9cebac5fe01eef8119312ade60bd7dfed7644320e0b0330cd5f3fa1dacccca7"
 }

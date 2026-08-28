@@ -13,6 +13,7 @@ from youtube_workflow.windows_owner_registry import (
     WINDOWS_OWNER_DOMAINS,
     load_owner_registry,
     validate_owner_registry_profile,
+    validate_owner_registry_profile_evidence,
 )
 
 
@@ -31,6 +32,75 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
         with self.assertRaises(OwnerRegistryError) as context:
             validate_owner_registry_profile(registry)
         self.assertEqual(context.exception.code, expected_code)
+
+    def make_profile_evidence(self, rows=None):
+        rows = list(rows or [])
+        bindings = {
+            "backupAdapterRegistry": {
+                "bound": True,
+                "status": "verified",
+                "source": "read-web-production-backup.composition",
+                "requiredDomains": list(WINDOWS_OWNER_DOMAINS),
+            },
+            "transaction": {
+                "bound": True,
+                "status": "verified",
+                "source": "read-web-production-backup.composition",
+            },
+            "revision": {
+                "bound": True,
+                "status": "verified",
+                "source": "read-web-production-backup.composition",
+            },
+            "recovery": {
+                "bound": True,
+                "status": "verified",
+                "source": "read-web-production-backup.composition",
+            },
+            "domains": {},
+        }
+        for domain in WINDOWS_OWNER_DOMAINS:
+            bindings["domains"][domain] = {
+                "backupAdapter": {
+                    "bound": True,
+                    "status": "verified",
+                    "source": "read-web-production-backup.composition",
+                    "key": domain,
+                    "schemaVersion": 1,
+                    "supportedSchemaVersions": [1],
+                },
+                "revision": {
+                    "bound": True,
+                    "status": "verified",
+                    "source": "read-web-production-backup.composition",
+                },
+                "recovery": {
+                    "bound": True,
+                    "status": "verified",
+                    "source": "read-web-production-backup.composition",
+                },
+            }
+        return {
+            "schemaVersion": 1,
+            "source": "read-web-production-backup.composition",
+            "ready": True,
+            "profileChecksum": "sha256:" + "a" * 64,
+            "inventory": {
+                "present": True,
+                "status": "verified",
+                "source": "browser-profile.json + application_backup.py",
+                "indexedDbRowCount": 0,
+                "localStorageKeyCount": 0,
+                "pythonSourceCount": 2,
+            },
+            "collection": {
+                "status": "verified",
+                "source": "createReadWebApplicationBackupService.createBackup",
+                "artifactChecksum": "sha256:" + "b" * 64,
+            },
+            "rows": rows,
+            "bindings": bindings,
+        }
 
     def test_registry_has_exactly_six_pre_cutover_domains_and_contract_evidence(self):
         result = validate_owner_registry_profile(self.registry)
@@ -148,6 +218,57 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 "OWNER_REGISTRY_EVIDENCE_MISSING",
             )
 
+    def test_real_profile_evidence_is_required_and_bindings_are_verified(self):
+        evidence = self.make_profile_evidence()
+        result = validate_owner_registry_profile_evidence(self.registry, evidence)
+        self.assertTrue(result["valid"])
+        self.assertTrue(result["contractValid"])
+        self.assertTrue(result["profileEvidenceReady"])
+
+        missing_inventory = copy.deepcopy(evidence)
+        missing_inventory["inventory"]["present"] = False
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, missing_inventory)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_INVENTORY_MISSING")
+
+        failed_inventory = copy.deepcopy(evidence)
+        failed_inventory["inventory"].update(
+            {"present": False, "status": "failed", "errorCode": "PROFILE_CORRUPT"}
+        )
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, failed_inventory)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_INVENTORY_READ_FAILED")
+
+        failed_collection = copy.deepcopy(evidence)
+        failed_collection["collection"] = {
+            "status": "failed",
+            "source": "createReadWebApplicationBackupService.createBackup",
+            "errorCode": "BACKUP_UNCLAIMED_PERSISTENCE_ROW",
+        }
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, failed_collection)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_COLLECTION_UNVERIFIED")
+
+        missing_binding = copy.deepcopy(evidence)
+        missing_binding["bindings"]["domains"]["workflow"]["backupAdapter"]["bound"] = False
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, missing_binding)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_BINDING_MISSING")
+
+    def test_profile_evidence_rows_are_explicitly_source_bound(self):
+        evidence = self.make_profile_evidence([
+            {"domain": "workflow", "key": "jobs.json", "schemaVersion": 1, "source": "python.application_backup.workflow"},
+        ])
+        self.assertEqual(
+            validate_owner_registry_profile_evidence(self.registry, evidence)["validatedRowCount"],
+            1,
+        )
+        missing_source = copy.deepcopy(evidence)
+        missing_source["rows"][0].pop("source")
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, missing_source)
+        self.assertEqual(context.exception.code, "OWNER_PROFILE_INVENTORY_INVALID")
+
     def test_browser_repository_or_bridge_cannot_be_canonical(self):
         self.assert_registry_rejected(
             lambda registry: registry["registrations"][0]["repository"].update(
@@ -195,8 +316,21 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 )
                 payload = response.json()
                 self.assertEqual(response.status_code, 503)
+                api_required = json.loads(
+                    (REPOSITORY_ROOT / "docs/architecture/windows-local-owner-thin-reader/api-contract.json").read_text(
+                        encoding="utf-8"
+                    )
+                )["responseEnvelopeSchema"]["required"]
+                self.assertEqual(set(payload), set(api_required) | {"error"})
+                self.assertEqual(payload["payload"], {})
                 self.assertEqual(payload["outcome"], "not-ready")
                 self.assertEqual(payload["commitStatus"], "not-ready")
+                self.assertIsNone(payload["revision"])
+                self.assertIsNone(payload["receipt"])
+                self.assertEqual(
+                    set(payload["error"]),
+                    {"type", "code", "category", "message", "retryable", "correlationId", "details"},
+                )
                 self.assertEqual(payload["error"]["details"]["reason"], "owner-registry-invalid")
 
     def test_valid_profile_remains_service_ready_but_owner_api_is_pre_cutover(self):
@@ -208,11 +342,14 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 workflow_app=FastAPI(),
                 access_token="instance-token",
                 owner_registry=self.registry,
+                owner_profile_evidence=self.make_profile_evidence(),
             )
             with TestClient(app, base_url="http://127.0.0.1") as client:
                 health = client.get("/api/app/health").json()
                 self.assertEqual(health["status"], "ready")
                 self.assertTrue(health["ownerRegistry"]["valid"])
+                self.assertTrue(health["ownerRegistry"]["profileEvidenceReady"])
+                self.assertTrue(health["profileEvidenceReady"])
                 self.assertFalse(health["durableOwnerReady"])
                 response = client.post(
                     "/api/app/owner/command",

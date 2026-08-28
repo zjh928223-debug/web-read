@@ -256,11 +256,42 @@ class ProductionHostPrototypeTests(unittest.TestCase):
             app = run_server.call_args.args[0]
             with TestClient(app, base_url="http://127.0.0.1") as client:
                 health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "degraded")
+                self.assertTrue(health["contractValid"])
+                self.assertFalse(health["profileEvidenceReady"])
+                self.assertFalse(health["ownerRegistry"]["valid"])
+                self.assertEqual(health["ownerRegistry"]["code"], "OWNER_PROFILE_INVENTORY_MISSING")
                 self.assertEqual(health["manifest"]["sha256"], sha256(manifest_bytes).hexdigest())
                 self.assertEqual(health["manifest"]["gitSha"], "manifest-git-sha")
                 self.assertEqual(health["manifest"]["toolchainSha256"], "b" * 64)
                 self.assertEqual(health["manifest"]["pythonPackageSetSha256"], "c" * 64)
                 self.assertEqual(health["configCompatibility"]["schemaVersion"], 1)
+                owner = client.post(
+                    "/api/app/owner/command",
+                    headers={"X-Read-Web-Token": "environment-token"},
+                )
+                self.assertEqual(owner.status_code, 503)
+                self.assertEqual(owner.json()["payload"], {})
+            profile_state = application_root / "profile" / "browser-profile.json"
+            profile_state.parent.mkdir(parents=True, exist_ok=True)
+            profile_state.write_text("{", encoding="utf-8")
+            with patch.dict(os.environ, {"READ_WEB_SERVICE_TOKEN": "environment-token"}), patch(
+                "youtube_workflow.production_host_prototype.uvicorn.run"
+            ) as corrupt_run_server:
+                self.assertEqual(main(arguments), 0)
+            corrupt_app = corrupt_run_server.call_args.args[0]
+            with TestClient(corrupt_app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "degraded")
+                self.assertTrue(health["contractValid"])
+                self.assertFalse(health["profileEvidenceReady"])
+                self.assertEqual(health["ownerRegistry"]["code"], "OWNER_PROFILE_INVENTORY_READ_FAILED")
+                owner = client.post(
+                    "/api/app/owner/command",
+                    headers={"X-Read-Web-Token": "environment-token"},
+                )
+                self.assertEqual(owner.status_code, 503)
+                self.assertEqual(owner.json()["payload"], {})
             mismatched_manifest = json.loads(manifest.read_text(encoding="utf-8"))
             mismatched_manifest["runtime"]["pythonIdentity"]["executable"] = str(root / "other-python.exe")
             manifest.write_text(json.dumps(mismatched_manifest), encoding="utf-8")
