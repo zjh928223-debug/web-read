@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { spawn } from 'node:child_process'
+import { resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repositoryRoot = path.resolve(import.meta.dirname, '..')
 const cleanRoot = await mkdtemp(path.join(tmpdir(), 'read-web-clean-room-'))
@@ -10,9 +11,10 @@ const archivePath = path.join(cleanRoot, 'source.zip')
 const sourceRoot = path.join(cleanRoot, 'source')
 const pythonRoot = path.join(cleanRoot, 'python')
 const keep = process.env.READ_WEB_KEEP_CLEAN_ROOM === '1'
-const python = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+let selectedPython
 
 try {
+  selectedPython = await resolveSelectedPython({ repoRoot: repositoryRoot, configPath: 'config/runtime.optimization.json' })
   console.log(`clean-room source: git HEAD -> ${sourceRoot}`)
   await run('git', ['archive', '--format=zip', '-o', archivePath, 'HEAD'], { cwd: repositoryRoot })
   await runPowerShell(`Expand-Archive -LiteralPath '${escapePowerShell(archivePath)}' -DestinationPath '${escapePowerShell(sourceRoot)}'`)
@@ -21,7 +23,7 @@ try {
   await runNpm(['audit', '--audit-level=moderate'], sourceRoot)
   await runNpm(['run', 'build'], sourceRoot)
 
-  await run(python, ['-m', 'venv', pythonRoot], { cwd: sourceRoot })
+  await run(selectedPython.executable, ['-m', 'venv', pythonRoot], { cwd: sourceRoot })
   const cleanPython = process.platform === 'win32'
     ? path.join(pythonRoot, 'Scripts', 'python.exe')
     : path.join(pythonRoot, 'bin', 'python')
@@ -29,9 +31,27 @@ try {
     '-m', 'pip', 'install', '--disable-pip-version-check', '--require-hashes',
     '--only-binary=:all:', '-r', 'tools/subtitle-workflow/requirements-service.lock',
   ], { cwd: sourceRoot })
-  await run(cleanPython, ['tools/subtitle-workflow/scripts/verify_runtime_dependencies.py', '--profile', 'service'], { cwd: sourceRoot })
+  const cleanPythonEnvironment = {
+    ...process.env,
+    READ_WEB_PYTHON: cleanPython,
+    READ_WEB_PYTHON_PATH: cleanPython,
+    READ_WEB_RUNTIME_CONFIG: path.join(sourceRoot, 'config', 'runtime.optimization.json'),
+  }
+  await run(cleanPython, [
+    'tools/subtitle-workflow/scripts/verify_python_dependency_health.py',
+    '--config', 'config/runtime.optimization.json',
+    '--expected-executable', cleanPython,
+    '--json',
+  ], { cwd: sourceRoot, env: cleanPythonEnvironment })
+  await run(cleanPython, [
+    'tools/subtitle-workflow/scripts/verify_runtime_dependencies.py',
+    '--profile', 'service',
+    '--config', 'config/runtime.optimization.json',
+    '--expected-executable', cleanPython,
+  ], { cwd: sourceRoot, env: cleanPythonEnvironment })
   await run(cleanPython, ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'], {
     cwd: path.join(sourceRoot, 'tools', 'subtitle-workflow'),
+    env: cleanPythonEnvironment,
   })
 
   for (const relativePath of ['dist/index.html', 'dist/srs-review.html']) {
@@ -58,7 +78,7 @@ function run(command, args, options = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, {
       cwd: options.cwd || repositoryRoot,
-      env: process.env,
+      env: options.env || process.env,
       stdio: 'inherit',
       windowsHide: true,
       shell: options.shell === true,

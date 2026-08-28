@@ -6,10 +6,15 @@ import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
+import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
 const distDir = path.join(repoRoot, 'dist')
+const selectedPython = await resolveSelectedPython({
+  repoRoot,
+  configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+})
 const token = 'reader-recovery-browser-test-token'
 const outboxKey = 'read-web.reader-save-outbox.v1'
 const outboxEntryPrefix = 'read-web.reader-save-outbox.v2.'
@@ -776,7 +781,7 @@ async function randomPort() {
 }
 
 function startBackend(port, tempRoot) {
-  const python = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+  const python = selectedPython.executable
   const code = [
     'import os, uvicorn',
     'from pathlib import Path',
@@ -796,7 +801,7 @@ function startBackend(port, tempRoot) {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...process.env,
+      ...gateEnvironment(selectedPython),
       READ_WEB_TEST_DIST: distDir,
       READ_WEB_TEST_PORT: String(port),
       READ_WEB_TEST_ROOT: tempRoot,

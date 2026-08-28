@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { readFile, rename, writeFile } from 'node:fs/promises'
+import { readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -26,10 +26,127 @@ export async function readReleaseManifest(manifestPath) {
     const semanticFailure = validateExternalToolDescriptorSemantics(descriptor)
     if (semanticFailure) failures.push(`$.externalTools.${name}: ${semanticFailure}`)
   }
+  failures.push(...validateReleaseManifestSemantics(manifest))
   if (failures.length) {
     throw new Error(`release manifest schema validation failed: ${manifestPath}: ${failures.join('; ')}`)
   }
-  return { manifest, sha256: createHash('sha256').update(bytes).digest('hex') }
+  return { manifest, bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
+}
+
+export function validateReleaseManifestSemantics(manifest) {
+  const failures = []
+  const source = manifest?.source
+  if (source?.readOnly === true && source.kind === 'working-tree') failures.push('$.source: a read-only source cannot be a working tree')
+  if (source?.kind === 'manifest' && source.readOnly !== true) failures.push('$.source: manifest inputs must be read-only')
+
+  const identity = manifest?.runtime?.pythonIdentity
+  const pythonLock = manifest?.dependencyLocks?.python
+  if (source?.kind === 'manifest' || source?.kind === 'immutable-release') {
+    if (source.readOnly !== true) failures.push('$.source: immutable manifest inputs must be read-only')
+    if (identity?.status !== 'verified') failures.push('$.runtime.pythonIdentity: immutable previous releases require a verified Python environment')
+    if (pythonLock?.status !== 'verified') failures.push('$.dependencyLocks.python: immutable previous releases require a verified Python lock')
+    const requiredArtifacts = new Set((manifest?.artifacts || []).map((item) => String(item?.path || '').replaceAll('\\', '/')))
+    for (const required of ['index.html', 'package-lock.json', 'requirements-service.lock']) {
+      if (!requiredArtifacts.has(required)) failures.push(`$.artifacts: immutable previous release is missing ${required}`)
+    }
+  }
+  if (identity?.status === 'verified') {
+    for (const [name, value] of Object.entries({
+      executable: identity.executable,
+      version: identity.version,
+      packageSetSha256: identity.packageSetSha256,
+      environmentSha256: identity.environmentSha256,
+    })) {
+      if (typeof value !== 'string' || !value) failures.push(`$.runtime.pythonIdentity.${name}: verified identity is incomplete`)
+    }
+    if (pythonLock?.status !== 'verified' || typeof pythonLock.sha256 !== 'string') {
+      failures.push('$.dependencyLocks.python: verified Python identity requires a verified Python lock')
+    }
+  }
+  if (pythonLock?.status === 'verified' && typeof pythonLock.sha256 !== 'string') failures.push('$.dependencyLocks.python: verified lock must include sha256')
+  if (pythonLock?.status === 'missing' && pythonLock.sha256 !== null) failures.push('$.dependencyLocks.python: missing lock must use null sha256')
+
+  for (const [name, lock] of Object.entries(manifest?.dependencyLocks || {})) {
+    if (lock?.status !== 'verified') continue
+    const artifact = (manifest.artifacts || []).find((item) => typeof item?.path === 'string' && item.path.replaceAll('\\', '/') === String(lock.path).replaceAll('\\', '/'))
+    if (!artifact) failures.push(`$.dependencyLocks.${name}: verified lock is not covered by an artifact checksum`)
+    else if (artifact.sha256 !== lock.sha256) failures.push(`$.dependencyLocks.${name}: lock checksum does not match its artifact`)
+  }
+
+  if (manifest?.role === 'optimization-local') {
+    if (source?.readOnly !== false) failures.push('$.source: release candidates must identify a writable build source')
+    if (identity?.status !== 'verified') failures.push('$.runtime.pythonIdentity: release candidates require a verified Python environment')
+    if (pythonLock?.status !== 'verified') failures.push('$.dependencyLocks.python: release candidates require a verified Python lock')
+  }
+  return failures
+}
+
+export function releaseSourceError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+export async function resolvePreviousReleaseSource({ previousRoot = '', previousManifest = '' } = {}) {
+  if (!previousManifest && !previousRoot) {
+    throw releaseSourceError(
+      'RELEASE_PREVIOUS_SOURCE_NOT_CONFIGURED',
+      'no previous release source configured; provide --previous-manifest or --previous-root (or READ_WEB_PREVIOUS_RELEASE_MANIFEST/READ_WEB_PREVIOUS_RELEASE_ROOT)',
+    )
+  }
+  if (previousManifest) {
+    const manifestPath = path.resolve(previousManifest)
+    let verified
+    try {
+      verified = await readReleaseManifest(manifestPath)
+    } catch (error) {
+      throw releaseSourceError('RELEASE_PREVIOUS_MANIFEST_INVALID', `previous release manifest is invalid: ${manifestPath}: ${error.message}`)
+    }
+    if (verified.manifest.source.manifestSha256 && verified.manifest.source.manifestSha256 !== verified.sha256) {
+      throw releaseSourceError(
+        'RELEASE_PREVIOUS_MANIFEST_IDENTITY_MISMATCH',
+        `previous release manifest source identity does not match its bytes: ${manifestPath}`,
+      )
+    }
+    const root = resolveManifestRoot(manifestPath, verified.manifest, previousRoot)
+    const integrity = await verifyReleaseManifest(manifestPath, root)
+    if (!integrity.passed) {
+      throw releaseSourceError('RELEASE_PREVIOUS_MANIFEST_UNVERIFIED', `previous release manifest failed read-only artifact verification: ${integrity.failures.join('; ')}`)
+    }
+    if (verified.manifest.source.readOnly !== true) {
+      throw releaseSourceError('RELEASE_PREVIOUS_SOURCE_NOT_READ_ONLY', `previous release manifest source is not marked read-only: ${manifestPath}`)
+    }
+    if (!['manifest', 'immutable-release'].includes(verified.manifest.source.kind)) {
+      throw releaseSourceError(
+        'RELEASE_PREVIOUS_SOURCE_NOT_IMMUTABLE',
+        `formal previous release input must declare source.kind=manifest or immutable-release: ${manifestPath}`,
+      )
+    }
+    return {
+      kind: 'manifest',
+      readOnly: true,
+      manifestPath,
+      root,
+      manifest: verified.manifest,
+      manifestBytes: verified.bytes,
+      manifestSha256: verified.sha256,
+    }
+  }
+
+  const root = path.resolve(previousRoot)
+  try {
+    await stat(path.join(root, 'index.html'))
+  } catch {
+    throw releaseSourceError('RELEASE_PREVIOUS_SOURCE_NOT_FOUND', `previous release root is not readable: ${root}`)
+  }
+  const pythonLock = path.join(root, 'tools', 'subtitle-workflow', 'requirements-service.lock')
+  if (!existsSync(pythonLock)) {
+    throw releaseSourceError(
+      'RELEASE_PREVIOUS_SOURCE_INCOMPLETE',
+      `legacy previous release has no Python lock: ${pythonLock}; provide a version-controlled previous-release manifest with auditable lock/identity metadata`,
+    )
+  }
+  return { kind: 'legacy-root', readOnly: true, manifestPath: null, root, manifest: null, manifestSha256: null }
 }
 
 export async function loadReleaseManifestSchema() {
@@ -169,7 +286,7 @@ function externalToolDateInRange(value, minimumYear, maximumYear, separator) {
 
 export async function verifyReleaseManifest(manifestPath, rootOverride = '') {
   const { manifest, sha256 } = await readReleaseManifest(manifestPath)
-  const root = path.resolve(rootOverride || manifest.release.root || path.dirname(manifestPath))
+  const root = resolveManifestRoot(manifestPath, manifest, rootOverride)
   const failures = []
   for (const artifact of manifest.artifacts) {
     const filename = path.resolve(root, artifact.path)
@@ -185,6 +302,13 @@ export async function verifyReleaseManifest(manifestPath, rootOverride = '') {
     }
   }
   return { manifest, manifestSha256: sha256, root, failures, passed: failures.length === 0 }
+}
+
+function resolveManifestRoot(manifestPath, manifest, rootOverride = '') {
+  if (rootOverride) return path.resolve(rootOverride)
+  const configuredRoot = manifest.release.root || '.'
+  if (path.isAbsolute(configuredRoot)) return path.normalize(configuredRoot)
+  return path.resolve(path.dirname(path.resolve(manifestPath)), configuredRoot)
 }
 
 export async function writeJsonAtomic(filename, value) {

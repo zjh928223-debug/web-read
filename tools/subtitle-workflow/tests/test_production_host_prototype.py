@@ -5,6 +5,7 @@ import threading
 import json
 import subprocess
 import os
+import sys
 import urllib.error
 import urllib.request
 from hashlib import sha256
@@ -224,6 +225,16 @@ class ProductionHostPrototypeTests(unittest.TestCase):
             manifest_bytes = json.dumps({
                 "schemaVersion": 1,
                 "release": {"gitSha": "manifest-git-sha", "frontendVersion": "1.0.0"},
+                "runtime": {
+                    "toolchainSha256": "b" * 64,
+                    "pythonIdentity": {
+                        "status": "verified",
+                        "executable": str(Path(sys.executable).resolve()),
+                        "version": "3.10.10",
+                        "packageSetSha256": "c" * 64,
+                        "environmentSha256": "d" * 64,
+                    },
+                },
             }, sort_keys=True).encode("utf-8")
             manifest.write_bytes(manifest_bytes)
             application_root = root / "application-profile"
@@ -247,7 +258,15 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 health = client.get("/api/app/health").json()
                 self.assertEqual(health["manifest"]["sha256"], sha256(manifest_bytes).hexdigest())
                 self.assertEqual(health["manifest"]["gitSha"], "manifest-git-sha")
+                self.assertEqual(health["manifest"]["toolchainSha256"], "b" * 64)
+                self.assertEqual(health["manifest"]["pythonPackageSetSha256"], "c" * 64)
                 self.assertEqual(health["configCompatibility"]["schemaVersion"], 1)
+            mismatched_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+            mismatched_manifest["runtime"]["pythonIdentity"]["executable"] = str(root / "other-python.exe")
+            manifest.write_text(json.dumps(mismatched_manifest), encoding="utf-8")
+            with patch.dict(os.environ, {"READ_WEB_SERVICE_TOKEN": "environment-token"}):
+                with self.assertRaises(SystemExit):
+                    main(arguments)
 
     def test_capability_routes_are_owned_separately_from_workflow_and_static(self):
         with tempfile.TemporaryDirectory() as tmp:

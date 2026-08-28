@@ -5,10 +5,15 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
+import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
-const python = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+const selectedPython = await resolveSelectedPython({
+  repoRoot,
+  configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+})
+const python = selectedPython.executable
 const outputRoot = process.env.READ_WEB_RELEASE_STABILITY_OUTPUT
   ? path.resolve(process.env.READ_WEB_RELEASE_STABILITY_OUTPUT)
   : await mkdtemp(path.join(os.tmpdir(), 'read-web-release-stability-12.4-'))
@@ -29,6 +34,7 @@ try {
   await runStage('production-host-cold-start-restart-and-playback', process.execPath, ['scripts/production-host-lifecycle-check.mjs'], {
     cwd: repoRoot,
     env: {
+      ...gateEnvironment(selectedPython),
       READ_WEB_PRODUCTION_HOST_OUTPUT: path.join(outputRoot, 'production-host'),
       READ_WEB_PRODUCTION_HOST_EVIDENCE: path.join(outputRoot, 'production-host-lifecycle.json'),
       READ_WEB_PRODUCTION_HOST_ENDURANCE: '1',
@@ -37,17 +43,17 @@ try {
   })
   await runStage('quota-corruption-recovery-matrix', process.execPath, ['scripts/persistence-fault-matrix.mjs', '--require-complete'], {
     cwd: repoRoot,
-    env: { PERSISTENCE_FAULT_MATRIX_OUTPUT: path.join(outputRoot, 'persistence-fault-matrix.json') },
+    env: { ...gateEnvironment(selectedPython), PERSISTENCE_FAULT_MATRIX_OUTPUT: path.join(outputRoot, 'persistence-fault-matrix.json') },
   })
   await runStage('owned-external-process-cancellation', python, ['scripts/release-process-cancellation.py'], {
     cwd: repoRoot,
-    env: { READ_WEB_PROCESS_CANCELLATION_OUTPUT: path.join(outputRoot, 'process-cancellation.json') },
+    env: { ...gateEnvironment(selectedPython), READ_WEB_PROCESS_CANCELLATION_OUTPUT: path.join(outputRoot, 'process-cancellation.json') },
   })
   await runStage(
     'cancel-50-jobs-and-restart',
     python,
     ['-m', 'unittest', 'tests.test_workflow_stress.WorkflowStressTests.test_restart_after_canceling_50_jobs_has_no_phantom_active_job'],
-    { cwd: workflowRoot },
+    { cwd: workflowRoot, env: gateEnvironment(selectedPython) },
   )
 
   const lifecycle = await readJson(path.join(outputRoot, 'production-host-lifecycle.json'))
@@ -125,7 +131,7 @@ async function runStage(label, executable, args, options) {
   const result = await new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd: options.cwd,
-      env: { ...process.env, ...(options.env || {}) },
+      env: { ...gateEnvironment(selectedPython), ...(options.env || {}) },
       stdio: 'inherit',
       windowsHide: true,
       shell: process.platform === 'win32' && executable.endsWith('.cmd'),

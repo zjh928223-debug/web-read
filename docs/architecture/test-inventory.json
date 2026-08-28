@@ -1,16 +1,16 @@
 {
   "schemaVersion": 2,
   "generatedBy": "scripts/test-inventory.mjs",
-  "scope": "Package verification/test/release commands and every transitive Node script under scripts/.",
+  "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 110,
-    "behavior": 87,
+    "behavior": 93,
     "browser": 27,
-    "performance": 17,
-    "release": 15
+    "performance": 18,
+    "release": 17
   },
-  "packageScriptCount": 235,
-  "executableScriptCount": 256,
+  "packageScriptCount": 240,
+  "executableScriptCount": 265,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -26,12 +26,14 @@
     },
     {
       "name": "dictionary:build",
-      "command": "python src/dictionary/ecdict/scripts/build-ecdict-database.py",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json -- src/dictionary/ecdict/scripts/build-ecdict-database.py",
       "category": "behavior",
       "layers": [
         "behavior"
       ],
-      "invokes": [],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
       "owner": "package.json#scripts.dictionary:build"
     },
     {
@@ -354,12 +356,13 @@
     },
     {
       "name": "verify:atomic-sentence-warehouse",
-      "command": "python scripts/tests/test_atomic_sentence_warehouse_builder.py",
-      "category": "behavior",
+      "command": "node scripts/run-python-gate.mjs scripts/tests/test_atomic_sentence_warehouse_builder.py --config config/runtime.optimization.json",
+      "category": "performance",
       "layers": [
-        "behavior"
+        "performance"
       ],
       "invokes": [
+        "scripts/run-python-gate.mjs",
         "scripts/tests/test_atomic_sentence_warehouse_builder.py"
       ],
       "owner": "package.json#scripts.verify:atomic-sentence-warehouse"
@@ -1322,13 +1325,14 @@
     },
     {
       "name": "verify:performance:backend",
-      "command": "python scripts/perf/backend-http-benchmark.py",
+      "command": "node scripts/run-python-gate.mjs scripts/perf/backend-http-benchmark.py --config config/runtime.optimization.json",
       "category": "performance",
       "layers": [
         "performance"
       ],
       "invokes": [
-        "scripts/perf/backend-http-benchmark.py"
+        "scripts/perf/backend-http-benchmark.py",
+        "scripts/run-python-gate.mjs"
       ],
       "owner": "package.json#scripts.verify:performance:backend"
     },
@@ -1589,14 +1593,74 @@
       "owner": "package.json#scripts.verify:production-preview"
     },
     {
-      "name": "verify:python-lock",
-      "command": "python tools/subtitle-workflow/scripts/verify_python_lock.py",
-      "category": "behavior",
+      "name": "verify:python-health",
+      "command": "node scripts/run-python-gate.mjs tools/subtitle-workflow/scripts/verify_python_dependency_health.py --config config/runtime.optimization.json --json",
+      "category": "performance",
       "layers": [
+        "performance",
         "behavior"
       ],
-      "invokes": [],
+      "invokes": [
+        "scripts/run-python-gate.mjs",
+        "tools/subtitle-workflow/scripts/verify_python_dependency_health.py"
+      ],
+      "owner": "package.json#scripts.verify:python-health"
+    },
+    {
+      "name": "verify:python-lock",
+      "command": "node scripts/run-python-gate.mjs tools/subtitle-workflow/scripts/verify_python_lock.py --config config/runtime.optimization.json",
+      "category": "performance",
+      "layers": [
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-gate.mjs",
+        "tools/subtitle-workflow/scripts/verify_python_lock.py"
+      ],
       "owner": "package.json#scripts.verify:python-lock"
+    },
+    {
+      "name": "verify:python-osv",
+      "command": "node scripts/run-python-gate.mjs tools/subtitle-workflow/scripts/audit_python_dependencies.py --lock tools/subtitle-workflow/requirements-service.lock --config config/runtime.optimization.json --json",
+      "category": "performance",
+      "layers": [
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-gate.mjs",
+        "tools/subtitle-workflow/scripts/audit_python_dependencies.py"
+      ],
+      "owner": "package.json#scripts.verify:python-osv"
+    },
+    {
+      "name": "verify:python-osv:test",
+      "command": "node scripts/run-python-gate.mjs tools/subtitle-workflow/scripts/audit_python_dependencies.py --lock tools/subtitle-workflow/requirements-service-test.lock --config config/runtime.optimization.json --json",
+      "category": "performance",
+      "layers": [
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-gate.mjs",
+        "tools/subtitle-workflow/scripts/audit_python_dependencies.py"
+      ],
+      "owner": "package.json#scripts.verify:python-osv:test"
+    },
+    {
+      "name": "verify:python-runtime-inventory",
+      "command": "node scripts/run-python-gate.mjs tools/subtitle-workflow/scripts/verify_runtime_dependencies.py --profile service --config config/runtime.optimization.json",
+      "category": "performance",
+      "layers": [
+        "performance",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-gate.mjs",
+        "tools/subtitle-workflow/scripts/verify_runtime_dependencies.py"
+      ],
+      "owner": "package.json#scripts.verify:python-runtime-inventory"
     },
     {
       "name": "verify:reader-app-runtime",
@@ -1912,6 +1976,20 @@
       "owner": "package.json#scripts.verify:release-differential"
     },
     {
+      "name": "verify:release-python-gates",
+      "command": "node scripts/release-python-gates-check.mjs",
+      "category": "release",
+      "layers": [
+        "architecture",
+        "release",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/release-python-gates-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:release-python-gates"
+    },
+    {
       "name": "verify:release-shortcut-rollback",
       "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-rollback-rehearsal.ps1",
       "category": "release",
@@ -1989,13 +2067,14 @@
     },
     {
       "name": "verify:runtime-config",
-      "command": "node scripts/runtime-config-integration-check.mjs && cd tools/subtitle-workflow && python -m unittest tests/test_runtime_config.py",
+      "command": "node scripts/runtime-config-integration-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests/test_runtime_config.py",
       "category": "architecture",
       "layers": [
-        "architecture",
-        "behavior"
+        "behavior",
+        "architecture"
       ],
       "invokes": [
+        "scripts/run-python-command.mjs",
         "scripts/runtime-config-integration-check.mjs"
       ],
       "owner": "package.json#scripts.verify:runtime-config"
@@ -2848,22 +2927,26 @@
     },
     {
       "name": "verify:workflow-application-backup",
-      "command": "cd tools/subtitle-workflow && python -m unittest tests.test_application_backup",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_application_backup",
       "category": "behavior",
       "layers": [
         "behavior"
       ],
-      "invokes": [],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
       "owner": "package.json#scripts.verify:workflow-application-backup"
     },
     {
       "name": "verify:workflow-application-backup-restore",
-      "command": "cd tools/subtitle-workflow && python -m unittest tests.test_application_backup_restore",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_application_backup_restore",
       "category": "behavior",
       "layers": [
         "behavior"
       ],
-      "invokes": [],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
       "owner": "package.json#scripts.verify:workflow-application-backup-restore"
     },
     {
@@ -5138,6 +5221,30 @@
       }
     },
     {
+      "path": "scripts/lib/python-runtime.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#releaseGate",
+      "owners": [
+        "docs/architecture/script-inventory.json#releaseGate"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/lib/read-web-production-backup.mjs",
       "category": "behavior",
       "layers": [
@@ -7111,6 +7218,58 @@
       }
     },
     {
+      "path": "scripts/release-preflight.mjs",
+      "category": "release",
+      "layers": [
+        "release"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#releaseGate",
+      "owners": [
+        "docs/architecture/script-inventory.json#releaseGate"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/release-python-gates-check.mjs",
+      "category": "release",
+      "layers": [
+        "architecture",
+        "release",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:release-python-gates",
+      "owners": [
+        "package.json#scripts.verify:release-python-gates"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": true,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/release-rollback.mjs",
       "category": "release",
       "layers": [
@@ -7325,6 +7484,64 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/run-python-command.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.dictionary:build",
+      "owners": [
+        "package.json#scripts.dictionary:build",
+        "package.json#scripts.sentences:build",
+        "package.json#scripts.verify:runtime-config",
+        "package.json#scripts.verify:workflow-application-backup",
+        "package.json#scripts.verify:workflow-application-backup-restore"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/run-python-gate.mjs",
+      "category": "performance",
+      "layers": [
+        "performance"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:atomic-sentence-warehouse",
+      "owners": [
+        "package.json#scripts.verify:atomic-sentence-warehouse",
+        "package.json#scripts.verify:performance:backend",
+        "package.json#scripts.verify:python-health",
+        "package.json#scripts.verify:python-lock",
+        "package.json#scripts.verify:python-osv",
+        "package.json#scripts.verify:python-osv:test",
+        "package.json#scripts.verify:python-runtime-inventory"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
       }
@@ -9954,6 +10171,103 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "tools/subtitle-workflow/scripts/audit_python_dependencies.py",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:python-osv",
+      "owners": [
+        "package.json#scripts.verify:python-osv",
+        "package.json#scripts.verify:python-osv:test"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "tools/subtitle-workflow/scripts/verify_python_dependency_health.py",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:python-health",
+      "owners": [
+        "package.json#scripts.verify:python-health"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "tools/subtitle-workflow/scripts/verify_python_lock.py",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:python-lock",
+      "owners": [
+        "package.json#scripts.verify:python-lock"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "tools/subtitle-workflow/scripts/verify_runtime_dependencies.py",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:python-runtime-inventory",
+      "owners": [
+        "package.json#scripts.verify:python-runtime-inventory"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
         "startsBrowser": false
       }
     }

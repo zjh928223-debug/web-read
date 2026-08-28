@@ -9,6 +9,7 @@ import {
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const scriptsRoot = path.join(repositoryRoot, 'scripts')
+const pythonScriptsRoot = path.join(repositoryRoot, 'tools', 'subtitle-workflow', 'scripts')
 const packagePath = path.join(repositoryRoot, 'package.json')
 const inventoryPath = path.join(repositoryRoot, 'docs', 'architecture', 'test-inventory.json')
 const executableExtensions = new Set(['.js', '.cjs', '.mjs'])
@@ -39,8 +40,9 @@ const packageScripts = allPackageScripts
   .filter(([name]) => /^(verify|test|release|dictionary:)/.test(name))
   .sort(([left], [right]) => compareCodePoint(left, right))
 
-const scriptPaths = (await walk(scriptsRoot))
-  .filter((absolutePath) => executableExtensions.has(path.extname(absolutePath)))
+const scriptPaths = (await Promise.all([scriptsRoot, pythonScriptsRoot].map((root) => walk(root))))
+  .flat()
+  .filter((absolutePath) => executableExtensions.has(path.extname(absolutePath)) || (absolutePath.startsWith(pythonScriptsRoot) && path.extname(absolutePath) === '.py'))
   .filter((absolutePath) => !absolutePath.split(path.sep).includes('fixtures'))
   .map(toRelative)
   .sort()
@@ -143,7 +145,7 @@ function resolveCommandLayers(name, visiting = new Set()) {
 const result = {
   schemaVersion: 2,
   generatedBy: 'scripts/test-inventory.mjs',
-  scope: 'Package verification/test/release commands and every transitive Node script under scripts/.',
+  scope: 'Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.',
   categories: Object.fromEntries(['architecture', 'behavior', 'browser', 'performance', 'release'].map((category) => [
     category,
     tests.filter((test) => test.category === category).length,
@@ -184,7 +186,7 @@ function collectCommandPaths(command) {
   const paths = []
   for (const match of command.replaceAll('\\', '/').matchAll(pathPattern)) {
     const relativePath = match[1]
-    if (relativePath.startsWith('scripts/')) paths.push(relativePath)
+    paths.push(relativePath)
   }
   return [...new Set(paths)].sort()
 }

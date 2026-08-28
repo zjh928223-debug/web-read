@@ -8,7 +8,9 @@ from ipaddress import ip_address
 import json
 import os
 from pathlib import Path
+import re
 import secrets
+import shutil
 import subprocess
 import sys
 from time import perf_counter
@@ -454,11 +456,34 @@ def main(argv: list[str] | None = None) -> int:
         manifest_bytes = manifest_path.read_bytes()
         manifest = json.loads(manifest_bytes.decode("utf-8"))
         release = manifest["release"]
+        runtime = manifest.get("runtime", {})
+        python_identity = runtime.get("pythonIdentity", {})
+        if (
+            python_identity.get("status") != "verified"
+            or not python_identity.get("executable")
+            or not python_identity.get("version")
+            or not re.fullmatch(r"[0-9a-f]{64}", str(python_identity.get("packageSetSha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(python_identity.get("environmentSha256", "")))
+            or not re.fullmatch(r"[0-9a-f]{64}", str(runtime.get("toolchainSha256", "")))
+        ):
+            parser.error("release manifest must contain a verified Python identity and toolchain hash")
+        manifest_python = Path(str(python_identity["executable"])).expanduser()
+        if not manifest_python.is_absolute():
+            manifest_python = Path(shutil.which(str(manifest_python)) or manifest_python)
+        if manifest_python.resolve() != Path(sys.executable).resolve():
+            parser.error(
+                "release manifest Python executable does not match the Production Host interpreter: "
+                f"manifest={manifest_python.resolve()} actual={Path(sys.executable).resolve()}"
+            )
         manifest_identity = {
             "sha256": sha256(manifest_bytes).hexdigest(),
             "schemaVersion": int(manifest["schemaVersion"]),
             "gitSha": str(release["gitSha"]),
             "frontendVersion": str(release["frontendVersion"]),
+            "toolchainSha256": str(runtime.get("toolchainSha256", "")),
+            "pythonIdentitySha256": str(python_identity.get("environmentSha256", "")),
+            "pythonPackageSetSha256": str(python_identity.get("packageSetSha256", "")),
+            "pythonExecutable": str(python_identity.get("executable", "")),
         }
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         parser.error(f"valid release manifest is required: {error}")

@@ -4,7 +4,15 @@
 from __future__ import annotations
 
 import re
+import shutil
+import sys
+import argparse
 from pathlib import Path
+
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from youtube_workflow.runtime_config import RuntimeConfigError, load_runtime_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +40,38 @@ def entries(path: Path, require_hash: bool) -> dict[str, tuple[str, str | None]]
     return found
 
 
-def main() -> int:
+def selected_python(config: Path | None, expected: str | None) -> Path:
+    try:
+        runtime = load_runtime_config(config)
+    except RuntimeConfigError as exc:
+        raise AssertionError(f"runtime config could not select Python: {exc}") from exc
+    selected_raw = runtime.python_executable
+    candidate = Path(str(selected_raw)).expanduser()
+    if not candidate.is_absolute():
+        resolved = shutil.which(str(selected_raw))
+        if resolved:
+            candidate = Path(resolved)
+    if not candidate.is_file():
+        raise AssertionError(f"selected Python executable was not found: {selected_raw}")
+    selected = candidate.resolve()
+    actual = Path(sys.executable).resolve()
+    if expected:
+        expected_path = Path(expected).expanduser()
+        if not expected_path.is_absolute():
+            expected_path = Path(shutil.which(expected) or expected_path)
+        if selected != expected_path.resolve():
+            raise AssertionError(f"lock verifier RuntimeConfig selection mismatch: selected={selected} expected={expected_path.resolve()}")
+    if selected != actual:
+        raise AssertionError(f"lock verifier interpreter mismatch: selected={selected} actual={actual}")
+    return actual
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, help="RuntimeConfig used to select the interpreter")
+    parser.add_argument("--expected-executable", help="explicit executable identity expected by the caller")
+    args = parser.parse_args(argv)
+    selected_python(args.config, args.expected_executable)
     baseline = entries(BASELINE, require_hash=False)
     locked = entries(LOCK, require_hash=True)
     for name, (version, _) in baseline.items():

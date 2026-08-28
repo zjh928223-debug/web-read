@@ -3,6 +3,7 @@
   "scope": "Executable files under scripts/ that are not referenced directly by package.json scripts",
   "releaseGate": [
     "scripts/aria-edge-tts-live-check.cjs",
+    "scripts/lib/python-runtime.mjs",
     "scripts/lib/read-web-production-backup.mjs",
     "scripts/lib/read-web-real-profile-rehearsal.mjs",
     "scripts/lib/release-manifest.mjs",
@@ -13,6 +14,7 @@
     "scripts/read-web-load-check.cjs",
     "scripts/reader-marks-activity-conflict-check.mjs",
     "scripts/release-playback-endurance.mjs",
+    "scripts/release-preflight.mjs",
     "scripts/release-process-cancellation.py",
     "scripts/release-shortcut-migration.ps1",
     "scripts/srs-review-service-v2-check.cjs",
@@ -41,6 +43,12 @@
     "scripts/vocabulary-repository-browser-reopen-check.cjs",
     "scripts/youtube-workflow-panel-behavior-check.cjs",
     "scripts/youtube-workflow-panel-check.cjs"
+  ],
+  "pythonGate": [
+    "tools/subtitle-workflow/scripts/audit_python_dependencies.py",
+    "tools/subtitle-workflow/scripts/verify_python_dependency_health.py",
+    "tools/subtitle-workflow/scripts/verify_python_lock.py",
+    "tools/subtitle-workflow/scripts/verify_runtime_dependencies.py"
   ],
   "archiveDelete": [
     ".codex/actions/check-read26-load.sh",

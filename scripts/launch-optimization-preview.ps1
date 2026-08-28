@@ -50,6 +50,7 @@ $environmentNames = @(
   'READ_WEB_BACKEND_HOST',
   'READ_WEB_BACKEND_PORT',
   'READ_WEB_PYTHON_PATH',
+  'READ_WEB_PYTHON',
   'READ_WEB_RELEASE_ID',
   'READ_WEB_PROFILE_ID',
   'READ_WEB_INSTANCE_ID',
@@ -763,12 +764,22 @@ try {
   $workflowRoot = Resolve-OptimizationExistingPath -Value $workflowRoot -Label 'Workflow'
   $runtimeConfigPath = Resolve-OptimizationExistingPath -Value $runtimeConfigPath -Label 'Runtime config'
   $frontDoorScript = Resolve-OptimizationExistingPath -Value $frontDoorScript -Label 'Optimization front door'
-  $bootstrapValue = if ($BootstrapPython) { $BootstrapPython } else { 'python' }
+  try {
+    $runtimeConfigPayload = Get-Content -LiteralPath $runtimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch {
+    throw "Optimization RuntimeConfig file is invalid: $runtimeConfigPath"
+  }
+  $configuredPython = if ($null -ne $runtimeConfigPayload.python) { [string]$runtimeConfigPayload.python.executable } else { '' }
+  if ($configuredPython -and -not [IO.Path]::IsPathRooted($configuredPython)) {
+    $configCandidate = Join-Path (Split-Path -Parent $runtimeConfigPath) $configuredPython
+    if (Test-Path -LiteralPath $configCandidate -PathType Leaf) { $configuredPython = $configCandidate }
+  }
+  $bootstrapValue = if ($BootstrapPython) { $BootstrapPython } elseif ($env:READ_WEB_PYTHON) { $env:READ_WEB_PYTHON } elseif ($env:READ_WEB_PYTHON_PATH) { $env:READ_WEB_PYTHON_PATH } elseif ($configuredPython) { $configuredPython } else { 'python' }
   $bootstrapPath = Resolve-OptimizationExecutablePath -Value $bootstrapValue -Label 'Bootstrap Python'
 
   foreach ($name in @(
     'READ_WEB_FRONTEND_HOST', 'READ_WEB_FRONTEND_PORT', 'READ_WEB_BACKEND_HOST',
-    'READ_WEB_BACKEND_PORT', 'READ_WEB_SUBTITLE_DATA_ROOT', 'READ_WEB_PYTHON_PATH',
+    'READ_WEB_BACKEND_PORT', 'READ_WEB_SUBTITLE_DATA_ROOT', 'READ_WEB_PYTHON_PATH', 'READ_WEB_PYTHON',
     'READ_WEB_RELEASE_ID', 'READ_WEB_PROFILE_ID', 'READ_WEB_INSTANCE_ID',
     'READ_WEB_SERVICE_TOKEN', 'READ_WEB_ALLOWED_ORIGIN', 'READ_WEB_CAPABILITY_HOST',
     'READ_WEB_CAPABILITY_PORT', 'READ_WEB_PROXY_URL', 'YOUTUBE_COOKIES_PATH',
@@ -777,6 +788,8 @@ try {
     Set-OptimizationProcessEnvironmentValue -Name $name -Value $null
   }
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_RUNTIME_CONFIG' -Value $runtimeConfigPath
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PYTHON' -Value $bootstrapPath
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PYTHON_PATH' -Value $bootstrapPath
 
   Push-Location $workflowRoot
   try {
@@ -821,6 +834,16 @@ try {
   $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
   if ($null -eq $npmCommand) { $npmCommand = Get-Command npm -ErrorAction Stop }
   $pythonPath = Resolve-OptimizationExecutablePath -Value ([string]$runtime.python.executable) -Label 'Runtime Python'
+  # This is the launcher preflight: the exact executable that will later be
+  # passed to the production Host must prove the complete lock/package-set
+  # contract before any release BuildAction or Host process can run.
+  $pythonPreflight = Assert-OptimizationReleaseToolchain `
+    -ProjectRoot $projectRoot `
+    -WorkflowRoot $workflowRoot `
+    -RuntimeConfigPath $runtimeConfigPath `
+    -NodePath $nodePath `
+    -NpmPath $npmCommand.Source `
+    -PythonPath $pythonPath
   $runtimeTools = Get-OptimizationObjectValue -Object $runtime -Name 'tools'
   $configuredFfmpegPath = Get-OptimizationObjectText -Object $runtimeTools -Name 'ffmpeg'
   $configuredYtDlpPath = Get-OptimizationObjectText -Object $runtimeTools -Name 'ytDlp'

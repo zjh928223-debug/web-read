@@ -1,8 +1,8 @@
 """Read-only dependency inventory for the local subtitle workflow.
 
 The verifier does not import project modules, inspect credential stores, read
-cookie files, or print environment values and executable paths.  It reports
-only interpreter/package versions and whether configured executables can run.
+cookie files, or print environment values. It reports the selected interpreter
+identity, package versions, and whether configured executables can run.
 """
 
 from __future__ import annotations
@@ -18,6 +18,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+WORKFLOW_ROOT = Path(__file__).resolve().parents[1]
+if str(WORKFLOW_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKFLOW_ROOT))
+
+from youtube_workflow.runtime_config import RuntimeConfigError, load_runtime_config
 
 
 MINIMUM_PYTHON = (3, 10)
@@ -106,8 +112,36 @@ def resolve_executable(dependency: ExecutableDependency, override: str | None) -
     candidate = override or os.environ.get(dependency.environment_variable, "")
     if candidate:
         path = Path(candidate).expanduser()
-        return str(path) if path.is_file() else None
+        if path.is_file():
+            return str(path.resolve())
+        return shutil.which(str(candidate))
     return shutil.which(dependency.name)
+
+
+def verify_selected_python(config_path: Path | None, expected_executable: str | None):
+    try:
+        runtime = load_runtime_config(config_path)
+    except RuntimeConfigError as exc:
+        raise RuntimeConfigError(f"runtime config could not select Python: {exc}") from exc
+    selected_raw = runtime.python_executable
+    selected = Path(str(selected_raw)).expanduser()
+    if not selected.is_absolute():
+        resolved = shutil.which(str(selected_raw))
+        if resolved:
+            selected = Path(resolved)
+    if not selected.is_file():
+        raise RuntimeConfigError(f"selected Python executable was not found: {selected_raw}")
+    selected = selected.resolve()
+    if expected_executable:
+        expected = Path(str(expected_executable)).expanduser()
+        if not expected.is_absolute():
+            expected = Path(shutil.which(str(expected_executable)) or expected)
+        if selected != expected.resolve():
+            raise RuntimeConfigError(f"RuntimeConfig Python selection mismatch: selected={selected} expected={expected.resolve()}")
+    actual = Path(sys.executable).resolve()
+    if selected != actual:
+        raise RuntimeConfigError(f"runtime Python mismatch: selected={selected} actual={actual}")
+    return runtime, selected
 
 
 def first_output_line(value: str) -> str:
@@ -172,6 +206,7 @@ def executable_status(
 
 def collect_inventory(args: argparse.Namespace) -> dict:
     profile = PROFILES[args.profile]
+    runtime, selected_python = verify_selected_python(args.config, args.expected_executable)
     items = []
 
     for name in profile["required_python"]:
@@ -180,9 +215,9 @@ def collect_inventory(args: argparse.Namespace) -> dict:
         items.append(python_status(name, required=False))
 
     overrides = {
-        "yt-dlp": args.yt_dlp,
-        "whisperx": args.whisperx,
-        "ffmpeg": args.ffmpeg,
+        "yt-dlp": args.yt_dlp or str(runtime.yt_dlp_path),
+        "whisperx": args.whisperx or str(runtime.whisperx_path),
+        "ffmpeg": args.ffmpeg or str(runtime.ffmpeg_path),
     }
     for name in profile["required_executables"]:
         items.append(executable_status(name, True, overrides[name], args.timeout))
@@ -209,6 +244,7 @@ def collect_inventory(args: argparse.Namespace) -> dict:
             "available": True,
             "supported": python_supported,
             "version": platform_python_version(),
+            "executable": str(selected_python),
             "minimum": ".".join(map(str, MINIMUM_PYTHON)),
         },
         "dependencies": items,
@@ -245,6 +281,8 @@ def print_human(inventory: dict) -> None:
 def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=tuple(PROFILES), default="service")
+    parser.add_argument("--config", type=Path, help="RuntimeConfig used to select the interpreter and tools")
+    parser.add_argument("--expected-executable", help="explicit executable identity expected by the caller")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument(
         "--strict-optional",
@@ -263,7 +301,11 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
-    inventory = collect_inventory(args)
+    try:
+        inventory = collect_inventory(args)
+    except RuntimeConfigError as exc:
+        print(f"[ERROR] PYTHON_RUNTIME_INVENTORY_FAILED: {exc}")
+        return 2
     if args.json:
         print(json.dumps(inventory, ensure_ascii=False, indent=2, sort_keys=True))
     else:

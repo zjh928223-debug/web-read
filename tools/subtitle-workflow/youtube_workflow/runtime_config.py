@@ -186,7 +186,13 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
         backend_host=backend_host,
         backend_port=_port(env_or("READ_WEB_BACKEND_PORT", _value(payload, "backend", "port", 8765)), "backend.port"),
         data_root=data_root,
-        python_executable=_path(env_or("READ_WEB_PYTHON_PATH", _value(payload, "python", "executable", sys.executable)), base_dir),
+        python_executable=_path(
+            env_or(
+                "READ_WEB_PYTHON",
+                env_or("READ_WEB_PYTHON_PATH", _value(payload, "python", "executable", sys.executable)),
+            ),
+            base_dir,
+        ),
         yt_dlp_path=_path(env_or("YT_DLP_PATH", _value(payload, "tools", "ytDlp", "yt-dlp")), base_dir),
         whisperx_path=_path(env_or("WHISPERX_PATH", _value(payload, "tools", "whisperx", "whisperx")), base_dir),
         ffmpeg_path=_path(env_or("FFMPEG_PATH", _value(payload, "tools", "ffmpeg", "ffmpeg")), base_dir),

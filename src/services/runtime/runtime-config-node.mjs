@@ -61,7 +61,7 @@ export function loadRuntimeConfig(options = {}) {
     frontend,
     backend,
     dataRoot: resolvePath(env.READ_WEB_SUBTITLE_DATA_ROOT || payload.dataRoot || DEFAULTS.dataRoot),
-    python: { executable: resolvePath(value('READ_WEB_PYTHON_PATH', 'python', 'executable', DEFAULTS.python.executable)) },
+    python: { executable: resolvePath(env.READ_WEB_PYTHON || value('READ_WEB_PYTHON_PATH', 'python', 'executable', DEFAULTS.python.executable)) },
     tools: {
       ytDlp: resolvePath(value('YT_DLP_PATH', 'tools', 'ytDlp', DEFAULTS.tools.ytDlp)),
       whisperx: resolvePath(value('WHISPERX_PATH', 'tools', 'whisperx', DEFAULTS.tools.whisperx)),

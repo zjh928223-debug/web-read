@@ -8,10 +8,15 @@ This directory contains the local FastAPI material-processing service used by Re
 - Default output directory: `E:\ReadWebData\SubtitleWorkflow\output`
 - Default state directory: `E:\ReadWebData\SubtitleWorkflow\.workflow_state`
 
-Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch; install Python dependencies manually when needed:
+Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch. For a reproducible local run, create the venv outside the repository and select it explicitly:
 
 ```powershell
-python -m pip install --require-hashes -r .\tools\subtitle-workflow\requirements-service.lock
+$venv = Join-Path $env:TEMP ('read-web-python-' + [Guid]::NewGuid().ToString('N'))
+python -m venv $venv
+$env:READ_WEB_PYTHON = Join-Path $venv 'Scripts\python.exe'
+$env:READ_WEB_PYTHON_PATH = $env:READ_WEB_PYTHON
+$env:READ_WEB_RUNTIME_CONFIG = (Resolve-Path .\config\runtime.optimization.json).Path
+& $env:READ_WEB_PYTHON -m pip install --require-hashes --only-binary=:all: -r .\tools\subtitle-workflow\requirements-service.lock
 ```
 
 For the Python test suite, install the separate hashed test lock so Starlette's
@@ -19,8 +24,8 @@ For the Python test suite, install the separate hashed test lock so Starlette's
 warning-free WebSocket implementation:
 
 ```powershell
-python -m pip install --require-hashes -r .\tools\subtitle-workflow\requirements-service-test.lock
-python .\tools\subtitle-workflow\scripts\verify_python_dependency_health.py
+& $env:READ_WEB_PYTHON -m pip install --require-hashes --only-binary=:all: -r .\tools\subtitle-workflow\requirements-service-test.lock
+npm run verify:python-health
 ```
 
 The lock-first vulnerability gate does not install packages or depend on a
@@ -29,11 +34,19 @@ batch API and fails closed on a malformed lock, network failure, or known
 finding:
 
 ```powershell
-python .\tools\subtitle-workflow\scripts\audit_python_dependencies.py
+& $env:READ_WEB_PYTHON .\tools\subtitle-workflow\scripts\audit_python_dependencies.py --config .\config\runtime.optimization.json
 ```
 
 Use `--lock .\tools\subtitle-workflow\requirements-service-test.lock` to
 audit the test-only additions as well.
+
+The health gate compares the complete installed distribution set with the
+production hashed lock and never installs packages. `READ_WEB_PYTHON` is the
+canonical interpreter selector; `READ_WEB_PYTHON_PATH` is a compatibility alias.
+The release/launcher gates pass the same executable identity to health, OSV,
+the Production Host, and the release reuse key. `verify:fast` deliberately
+remains offline and checks lock structure only; OSV is a release/supply-chain
+gate and fails closed on findings, malformed responses, or network errors.
 
 在 Next 隔离工作区中，端口、data root 和工具路径由根目录的
 `config/runtime.next.json` 与 `RuntimeConfig` 解析。默认 `8765` 仅描述未提供

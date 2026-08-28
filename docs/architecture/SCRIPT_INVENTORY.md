@@ -1,11 +1,15 @@
 # Script inventory
 
 The machine-readable inventory is `script-inventory.json`. It covers executable files below
-`scripts/` that are not named directly by a `package.json` command.
+`scripts/` that are not named directly by a `package.json` command, plus the Python gate scripts
+under `tools/subtitle-workflow/scripts/`.
 
 - `releaseGate` contains checks reached transitively by an npm verification command.
 - `devTool` contains intentional manual helpers. The current desktop launcher chain is represented
   by `launch-learning-page.ps1` and `start-latest-reader.ps1`; this cleanup does not change it.
+- `pythonGate` contains the dependency lock, exact package-health, runtime inventory, and OSV
+  audit entry points. Each item has a direct package-script owner and runs through the selected
+  `READ_WEB_PYTHON`/RuntimeConfig interpreter.
 - `archiveDelete` records retired hard-coded startup scripts, duplicate runners, and `read26`
   compatibility names. These paths must remain absent.
 

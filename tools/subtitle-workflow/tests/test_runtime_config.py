@@ -37,6 +37,15 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertEqual(runtime.ffmpeg_path, Path("ffmpeg"))
             self.assertEqual(runtime.model, "gemini-env-model")
 
+            selected = load_runtime_config(
+                config_path,
+                env={
+                    "READ_WEB_PYTHON": "./python/canonical.exe",
+                    "READ_WEB_PYTHON_PATH": "./python/compatibility-alias.exe",
+                },
+            )
+            self.assertEqual(selected.python_executable, (root / "python/canonical.exe").resolve())
+
     def test_unknown_schema_version_and_unknown_fields_fail_closed(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

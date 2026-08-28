@@ -6,10 +6,15 @@ import net from 'node:net'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const backendRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
-const python = process.env.PYTHON || 'python'
+const selectedPython = await resolveSelectedPython({
+  repoRoot,
+  configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+})
+const python = selectedPython.executable
 const token = 'workflow-ui-test-token'
 
 function reservePort() {
@@ -120,7 +125,7 @@ manager = JobManager(
 uvicorn.run(create_app(manager, access_token=${JSON.stringify(token)}), host="127.0.0.1", port=port, log_level="warning")
 `
   const environment = {
-    ...process.env,
+    ...gateEnvironment(selectedPython),
     PYTHONPATH: `${backendRoot}${path.delimiter}${process.env.PYTHONPATH || ''}`,
     READ_WEB_ALLOWED_ORIGIN: appUrl.slice(0, -1),
   }

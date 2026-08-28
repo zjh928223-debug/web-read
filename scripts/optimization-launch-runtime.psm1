@@ -372,6 +372,13 @@ function Test-OptimizationPairReady {
   $instanceId = Get-OptimizationObjectText -Object $HostState -Name 'instanceId'
   $hostManifest = Get-OptimizationObjectValue -Object $HostHealth -Name 'manifest'
   if (-not $instanceId -or $null -eq $hostManifest) { return $false }
+  $releaseRuntime = Get-OptimizationObjectValue -Object $Release.manifest -Name 'runtime'
+  $releasePythonIdentity = Get-OptimizationObjectValue -Object $releaseRuntime -Name 'pythonIdentity'
+  $hostRuntimeIdentityMatches = (Get-OptimizationObjectText -Object $hostManifest -Name 'toolchainSha256') -eq $Release.toolchainSha256 `
+    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonIdentitySha256') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'environmentSha256') `
+    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonPackageSetSha256') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'packageSetSha256') `
+    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonExecutable') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'executable')
+  if (-not $hostRuntimeIdentityMatches) { return $false }
   $capabilityInstanceId = Get-OptimizationObjectText -Object $CapabilityState -Name 'instanceId'
   $capabilityReleaseId = Get-OptimizationObjectText -Object $CapabilityState -Name 'releaseId'
   if (-not $capabilityInstanceId -or -not $capabilityReleaseId) { return $false }

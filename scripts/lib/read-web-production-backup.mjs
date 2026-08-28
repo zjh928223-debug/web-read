@@ -6,6 +6,8 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
 
+import { resolveSelectedPython } from './python-runtime.mjs'
+
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
 const PROFILE_SCHEMA_VERSION = 1
@@ -1329,6 +1331,10 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   const isolationRoot = validatedLayout.isolationRoot
   const canonicalPaths = validatedLayout.paths
+  const pythonCommand = options.pythonCommand || (await resolveSelectedPython({
+    repoRoot,
+    configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+  })).executable
   return withApplicationPathMutex(isolationRoot, async () => {
   const isolationLayout = Object.freeze({
     isolationRoot,
@@ -1350,7 +1356,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   const pythonAdapters = createPythonDomainAdapters({
     stateDir: canonicalPaths.pythonStateDir,
     outputDir: canonicalPaths.pythonOutputDir,
-    pythonCommand: options.pythonCommand,
+    pythonCommand,
   })
   const adapters = readWebBackup.createReadWebApplicationBackupAdapters({
     applicationPersistence: browser.persistence,
@@ -1431,7 +1437,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
         if (!declaresSeparatePaths) return restoreTarget
         const targetComposition = await createReadWebProductionBackupComposition({
           ...targetOptions,
-          pythonCommand: targetOptions.pythonCommand || options.pythonCommand,
+          pythonCommand: targetOptions.pythonCommand || pythonCommand,
           readerSaveOutboxQuarantineProtector: targetOptions.readerSaveOutboxQuarantineProtector
             || options.readerSaveOutboxQuarantineProtector,
           release: targetOptions.release || options.release,

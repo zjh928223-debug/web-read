@@ -9,6 +9,7 @@ import {
   createReadWebProductionBackupComposition,
   writeIsolatedBrowserProfile,
 } from './read-web-production-backup.mjs'
+import { resolveExecutable, resolveSelectedPython } from './python-runtime.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const READER_SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
@@ -379,12 +380,18 @@ export async function collectReadOnlyWorkflowDomains({
   workflowStateDir,
   workflowOutputDir,
   additionalOutputRoots = [],
-  pythonCommand = 'python',
+  pythonCommand = '',
 }) {
   const stateDir = await existingDirectory(workflowStateDir, 'workflowStateDir')
   const outputDir = await existingDirectory(workflowOutputDir, 'workflowOutputDir')
   const additionalRoots = await resolveAdditionalOutputRoots(additionalOutputRoots)
-  const result = await runProcess(pythonCommand, [
+  const selectedPython = pythonCommand
+    ? await resolveExecutable(repositoryRoot, pythonCommand, repositoryRoot)
+    : (await resolveSelectedPython({
+      repoRoot: repositoryRoot,
+      configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+    })).executable
+  const result = await runProcess(selectedPython, [
     '-m', 'youtube_workflow.application_backup',
     '--state-dir', stateDir,
     '--output-dir', outputDir,
@@ -461,6 +468,10 @@ export function validateRestoredDomainJourneys(artifact) {
 
 export async function rehearseRealProfileCopy(options = {}) {
   const layout = await validateRealProfileRehearsalLayout(options)
+  const pythonCommand = options.pythonCommand || (await resolveSelectedPython({
+    repoRoot: repositoryRoot,
+    configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+  })).executable
   const workflowStateDir = await existingDirectory(
     options.workflowStateDir || path.join(layout.workflowDataRoot, '.workflow_state'),
     'workflowStateDir',
@@ -503,7 +514,7 @@ export async function rehearseRealProfileCopy(options = {}) {
       workflowStateDir,
       workflowOutputDir,
       additionalOutputRoots,
-      pythonCommand: options.pythonCommand,
+      pythonCommand,
     }),
   ])
   before.browserLogical = browserSnapshotChecksum(browserSnapshot)
@@ -539,6 +550,7 @@ export async function rehearseRealProfileCopy(options = {}) {
     profileDir: sourceProfileDir,
     pythonStateDir: sourceStateDir,
     pythonOutputDir: sourceOutputDir,
+    pythonCommand,
     release,
     maxRecordBytes: REAL_PROFILE_MAX_RECORD_BYTES,
     maxBackupBytes: REAL_PROFILE_MAX_BACKUP_BYTES,
@@ -565,6 +577,7 @@ export async function rehearseRealProfileCopy(options = {}) {
     profileDir: targetProfileDir,
     pythonStateDir: targetStateDir,
     pythonOutputDir: targetOutputDir,
+    pythonCommand,
     release,
     maxRecordBytes: REAL_PROFILE_MAX_RECORD_BYTES,
     maxBackupBytes: REAL_PROFILE_MAX_BACKUP_BYTES,

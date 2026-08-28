@@ -8,15 +8,17 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json
 const inventoryPath = path.join(repoRoot, 'docs', 'architecture', 'script-inventory.json')
 const inventory = JSON.parse(fs.readFileSync(inventoryPath, 'utf8'))
 const executableExtensions = new Set(['.js', '.cjs', '.mjs', '.py', '.ps1', '.sh'])
+const pythonGateRoot = path.join(repoRoot, 'tools', 'subtitle-workflow', 'scripts')
 
 assert.equal(inventory.schemaVersion, 1)
-for (const category of ['releaseGate', 'devTool', 'archiveDelete']) {
+for (const category of ['releaseGate', 'devTool', 'pythonGate', 'archiveDelete']) {
   assert.ok(Array.isArray(inventory[category]), `${category} must be an array`)
   assert.deepEqual(inventory[category], [...inventory[category]].sort(), `${category} must stay sorted`)
 }
 
 const liveInventory = [...inventory.releaseGate, ...inventory.devTool]
-const everyInventoryPath = [...liveInventory, ...inventory.archiveDelete]
+const pythonGateInventory = [...inventory.pythonGate]
+const everyInventoryPath = [...liveInventory, ...pythonGateInventory, ...inventory.archiveDelete]
 assert.equal(new Set(everyInventoryPath).size, everyInventoryPath.length, 'inventory paths must be unique')
 
 for (const relativePath of liveInventory) {
@@ -25,6 +27,12 @@ for (const relativePath of liveInventory) {
 for (const relativePath of inventory.archiveDelete) {
   assert.ok(!fs.existsSync(path.join(repoRoot, relativePath)), `${relativePath} is retired and must remain absent`)
 }
+
+const pythonGateScripts = walk(pythonGateRoot)
+  .filter((absolutePath) => path.extname(absolutePath) === '.py')
+  .map(relative)
+  .sort()
+assert.deepEqual(pythonGateScripts, pythonGateInventory, 'every Python gate script must be classified in pythonGate')
 
 const packageCommands = Object.values(packageJson.scripts || {}).join('\n').replaceAll('\\', '/')
 const executableScripts = walk(path.join(repoRoot, 'scripts'))
@@ -48,6 +56,9 @@ for (const relativePath of inventory.releaseGate) {
     return source.includes(basename)
   })
   assert.ok(owners.length > 0, `${relativePath} is labeled releaseGate but has no directly named package owner`)
+}
+for (const relativePath of inventory.pythonGate) {
+  assert.ok(packageCommands.includes(relativePath), `${relativePath} must have a directly named package owner`)
 }
 
 for (const retiredName of ['verify:read26', 'verify:youtube-workflow-startup']) {

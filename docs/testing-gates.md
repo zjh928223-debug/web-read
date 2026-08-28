@@ -58,6 +58,9 @@ Fast 明确执行：
 
 Fast 明确排除：browser journeys、build、Python integration suite、实时网络/
 AI/TTS/词典/YouTube、performance、clean-room、发布秘密扫描和恢复/回滚。
+其中 Python fast owner 只做离线 lock 格式、direct dependency 和 RuntimeConfig
+interpreter-selection 检查；完整 package-set health 属于 full/launcher preflight，
+OSV 属于 release/supply-chain owner，因此 fast 不依赖网络。
 终端会输出层摘要：
 
 ```text
@@ -120,6 +123,10 @@ source-shape 通过写成 browser/full 行为通过。
 
 Full 不启动真实 Material Workflow service，也不包含实时外部 API。长时间性能
 和发布恢复属于 release gate。
+Full 的 Python health 会在 backend suite 前使用与 Production Host 相同的
+`READ_WEB_PYTHON`/RuntimeConfig executable，精确比较 production hashed lock 的完整
+distribution set；缺包、版本漂移、额外非 bootstrap 包或 warning-sensitive import 失败都会
+阻断。CI 与本机都应使用仓库外的临时 venv，不把 venv 纳入 Git。
 
 ## Release gate（当前明确阻断）
 
@@ -128,8 +135,9 @@ performance、clean-room、release manifest、backup/restore 和 rollback stages
 `verify-full` 的 behavior/browser 结果只是其中一个 stage，architecture green
 绝不能替代 behavior、performance 或 recovery evidence。
 
-12.8 已在用户于 2026-08-17 明确确认后完成；`--list` 现在列出完整 stage 并报告
-READY，默认执行完整 release gate。`verify:backup-restore-rehearsal`
+12.8 的实现 stage 已保留；但正式 gate 只有在显式 previous-release manifest、候选输入、
+Python health 和 OSV preflight 全部通过后才可执行。缺少这些前置时 `--list` 必须阻断，
+不能报告 READY。`verify:backup-restore-rehearsal`
 的产物只是 isolated application-state foundation，不证明真实
 IndexedDB/localStorage/workflow profile 的全应用恢复。12.2 的真实六域组合通过
 跨进程 application-profile lease 在完整 owner commit 和 Local App Host 生命周期
@@ -155,11 +163,16 @@ fixture 分别构建旧版和 Next，在隔离临时目录与随机安全端口�
 当前证据为两版各 21/21 journeys、零浏览器/网络错误、六项改善，总体比率 1.055；
 旧版源目录只读，运行前后 git 状态必须完全一致。
 
-12.6 的 `npm run release:manifest` 只接受 clean release candidate，生成 current、
-previous 两份 manifest 和 staged release-state；manifest 包含 Git/版本/工具链/lock、
-配置与数据兼容范围及逐 artifact SHA-256。`npm run release:health` 验证文件哈希并可
-核对运行中 host identity；`npm run release:rollback` 在 previous 完整性通过后原子
-切回 previous target。快捷方式和进程切换由 12.7 隔离演练消费，不在本阶段触碰日用版。
+12.6 的 `npm run release:manifest` 只接受 clean release candidate，并要求显式提供受版本
+控制/可审计的 previous-release manifest（`--previous-manifest` 或
+`READ_WEB_PREVIOUS_RELEASE_MANIFEST`）。它生成 current、previous 两份 manifest 和 staged
+release-state；manifest 包含 Git/版本/工具链/lock、配置与数据兼容范围及逐 artifact SHA-256。
+`npm run release:health` 验证文件哈希并可核对运行中 host identity；`npm run release:rollback`
+要求 active/previous 的 releaseId 和 manifest SHA 与实际文件一致，并在 previous 完整性通过
+后原子切回 previous target。缺少 previous source、旧 live root 缺 Python lock、manifest 不完整
+或 OSV 网络错误都会在长 release stages 前 typed fail-closed；`verify:release --list` 只有
+preflight 真正通过才会报告 READY。快捷方式和进程切换由 12.7 隔离演练消费，不在本阶段触碰
+日用版。
 
 12.7 由 `npm run verify:release-shortcut-rollback` 执行。它只读并哈希当前桌面学习
 快捷方式，将副本放到系统临时目录，再对副本执行原子 Next 切换、正常 rollback 和

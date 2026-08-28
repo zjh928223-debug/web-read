@@ -37,6 +37,14 @@ try {
   assert.equal(runtime.dataRoot, path.join(root, 'workflow-data'))
   assert.equal(runtime.python.executable, path.join(root, 'python', 'python.exe'))
   assert.equal(runtime.ai.model, 'fixture-model')
+  const selectedByCanonicalEnv = loadRuntimeConfig({
+    configPath,
+    env: {
+      READ_WEB_PYTHON: './python/canonical.exe',
+      READ_WEB_PYTHON_PATH: './python/compatibility-alias.exe',
+    },
+  })
+  assert.equal(selectedByCanonicalEnv.python.executable, path.join(root, 'python', 'canonical.exe'))
 } finally {
   await fs.rm(root, { recursive: true, force: true })
 }

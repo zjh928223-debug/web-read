@@ -5,11 +5,10 @@ import { fileURLToPath } from 'node:url'
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(scriptDirectory, '..')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
 
 const included = [
   command('toolchain contract', npmCommand, ['run', 'verify:toolchain']),
-  command('Python dependency lock', pythonCommand, ['tools/subtitle-workflow/scripts/verify_python_lock.py']),
+  command('Python dependency lock (selected RuntimeConfig interpreter)', process.execPath, ['scripts/run-python-gate.mjs', 'tools/subtitle-workflow/scripts/verify_python_lock.py', '--config', 'config/runtime.optimization.json']),
   command('test inventory freshness and ownership', npmCommand, ['run', 'verify:test-inventory']),
   command('test inventory classifier self-test (canonical)', npmCommand, ['run', 'verify:architecture:test-inventory']),
   command('architecture source-shape guards (canonical)', npmCommand, ['run', 'verify:architecture:source-shape']),
@@ -42,8 +41,8 @@ const included = [
   command('workflow secret boundary', process.execPath, ['scripts/youtube-workflow-secret-check.cjs']),
   command(
     'Python service dependency inventory',
-    pythonCommand,
-    ['tools/subtitle-workflow/scripts/verify_runtime_dependencies.py', '--profile', 'service'],
+    process.execPath,
+    ['scripts/run-python-gate.mjs', 'tools/subtitle-workflow/scripts/verify_runtime_dependencies.py', '--profile', 'service', '--config', 'config/runtime.optimization.json'],
   ),
 ]
 

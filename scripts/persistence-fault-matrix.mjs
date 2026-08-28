@@ -3,8 +3,13 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
+import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const selectedPython = await resolveSelectedPython({
+  repoRoot: root,
+  configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+})
 const outputPath = path.resolve(root, process.env.PERSISTENCE_FAULT_MATRIX_OUTPUT || 'output/verification/persistence-fault-matrix.json')
 const requireComplete = process.argv.includes('--require-complete')
 const conditions = ['multi-tab', 'quota', 'corrupt', 'unknown-version', 'page-close', 'recovery']
@@ -114,7 +119,7 @@ function domain(name, executable, args, coverage, cwd = root, commands = null) {
 }
 
 function pythonCommand() {
-  return process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+  return selectedPython.executable
 }
 
 async function run(item) {
@@ -132,7 +137,7 @@ async function run(item) {
 function runCommand(entry) {
   const began = Date.now()
   return new Promise((resolve, reject) => {
-    const child = spawn(entry.executable, entry.args, { cwd: entry.cwd, env: process.env, windowsHide: true, stdio: 'inherit' })
+    const child = spawn(entry.executable, entry.args, { cwd: entry.cwd, env: gateEnvironment(selectedPython), windowsHide: true, stdio: 'inherit' })
     child.once('error', reject)
     child.once('exit', (code, signal) => resolve({
       command: [entry.executable, ...entry.args],

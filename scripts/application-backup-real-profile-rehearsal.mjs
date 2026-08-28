@@ -2,9 +2,16 @@ import { mkdir, realpath, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 
+import { resolveSelectedPython } from './lib/python-runtime.mjs'
 import { rehearseRealProfileCopy } from './lib/read-web-real-profile-rehearsal.mjs'
 
 const options = parseArguments(process.argv.slice(2))
+if (!options.pythonCommand) {
+  options.pythonCommand = (await resolveSelectedPython({
+    repoRoot: path.resolve(import.meta.dirname, '..'),
+    configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+  })).executable
+}
 await mkdir(options.isolatedRoot, { recursive: true })
 options.isolatedRoot = await realpath(options.isolatedRoot)
 const result = await rehearseRealProfileCopy(options)
@@ -53,7 +60,7 @@ function parseArguments(args) {
     workflowDataRoot: values['workflow-data-root'],
     isolatedRoot: path.resolve(values['isolated-root']),
     additionalOutputRoots,
-    pythonCommand: values['python-command'] || 'python',
+    pythonCommand: values['python-command'] || process.env.READ_WEB_PYTHON || process.env.READ_WEB_PYTHON_PATH || null,
   }
 }
 

@@ -11,20 +11,33 @@ const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-release-control-'))
 const currentRoot = path.join(root, 'current')
 const previousRoot = path.join(root, 'previous')
 await Promise.all([mkdir(currentRoot), mkdir(previousRoot)])
-await Promise.all([writeFile(path.join(currentRoot, 'index.html'), 'current'), writeFile(path.join(previousRoot, 'index.html'), 'previous')])
+await Promise.all([
+  writeFile(path.join(currentRoot, 'index.html'), 'current'),
+  writeFile(path.join(previousRoot, 'index.html'), 'previous'),
+  writeFile(path.join(currentRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
+  writeFile(path.join(previousRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
+  writeFile(path.join(currentRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
+  writeFile(path.join(previousRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
+])
 const currentManifest = await manifest(currentRoot, 'current')
 const previousManifest = await manifest(previousRoot, 'previous')
+const currentManifestBytes = Buffer.from(JSON.stringify(currentManifest))
+const previousManifestBytes = Buffer.from(JSON.stringify(previousManifest))
 await Promise.all([
-  writeFile(path.join(root, 'current.json'), JSON.stringify(currentManifest)),
-  writeFile(path.join(root, 'previous.json'), JSON.stringify(previousManifest)),
+  writeFile(path.join(root, 'current.json'), currentManifestBytes),
+  writeFile(path.join(root, 'previous.json'), previousManifestBytes),
   writeFile(path.join(root, 'state.json'), JSON.stringify({
     schema: 'read-web.release-state', schemaVersion: 1, status: 'active',
-    active: { manifest: 'current.json', root: currentRoot, releaseId: 'current' },
-    previous: { manifest: 'previous.json', root: previousRoot, releaseId: 'previous' },
+    active: { manifest: 'current.json', root: currentRoot, releaseId: 'current', manifestSha256: createHash('sha256').update(currentManifestBytes).digest('hex') },
+    previous: { manifest: 'previous.json', root: previousRoot, releaseId: 'previous', manifestSha256: createHash('sha256').update(previousManifestBytes).digest('hex') },
   })),
 ])
 
-run('scripts/release-health-check.mjs', ['--manifest', path.join(root, 'current.json')])
+const initialHealth = JSON.parse(execFileSync(process.execPath, ['scripts/release-health-check.mjs', '--manifest', path.join(root, 'current.json')], { cwd: process.cwd(), encoding: 'utf8' }))
+const initialState = JSON.parse(await readFile(path.join(root, 'state.json'), 'utf8'))
+assert.equal(initialHealth.status, 'passed')
+assert.equal(initialHealth.manifestSha256, initialState.active.manifestSha256, 'health and active rollback identity must use the same manifest SHA')
+assert.equal(currentManifest.release.releaseId, initialState.active.releaseId, 'health and active rollback identity must use the same releaseId')
 const arbitraryOutput = classifyExternalToolProbe('ffmpeg', { exitCode: 0, stdout: 'command completed successfully', stderr: '' })
 assert.equal(arbitraryOutput.status, 'degraded')
 assert.equal(arbitraryOutput.compatibility.status, 'invalid-output')
@@ -52,6 +65,9 @@ run('scripts/release-rollback.mjs', ['--state', path.join(root, 'state.json'), '
 const rolledBack = JSON.parse(await readFile(path.join(root, 'state.json'), 'utf8'))
 assert.equal(rolledBack.status, 'rolled-back')
 assert.equal(rolledBack.active.releaseId, 'previous')
+const rollbackHealth = JSON.parse(execFileSync(process.execPath, ['scripts/release-health-check.mjs', '--manifest', path.join(root, 'previous.json')], { cwd: process.cwd(), encoding: 'utf8' }))
+assert.equal(rollbackHealth.status, 'passed')
+assert.equal(rollbackHealth.manifestSha256, rolledBack.active.manifestSha256, 'rollback target health and active identity must use the same manifest SHA')
 
 await writeFile(path.join(previousRoot, 'index.html'), 'corrupt')
 const rejected = spawnSync(process.execPath, ['scripts/release-health-check.mjs', '--manifest', path.join(root, 'previous.json')], { cwd: process.cwd(), encoding: 'utf8' })
@@ -60,10 +76,14 @@ console.log('release manifest health and rollback checks passed')
 
 async function manifest(releaseRoot, gitSha) {
   const bytes = await readFile(path.join(releaseRoot, 'index.html'))
+  const packageLock = await readFile(path.join(releaseRoot, 'package-lock.json'))
+  const pythonLock = await readFile(path.join(releaseRoot, 'requirements-service.lock'))
+  const hash = (value) => createHash('sha256').update(value).digest('hex')
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     role: 'fixture',
+    source: { kind: 'manifest', readOnly: true, provenance: 'release-control fixture capture' },
     release: {
       releaseId: gitSha,
       formatVersion: 2,
@@ -83,10 +103,18 @@ async function manifest(releaseRoot, gitSha) {
       dataRoot: null,
       sourceSha256: 'a'.repeat(64),
       distSha256: 'b'.repeat(64),
+      toolchainSha256: 'e'.repeat(64),
+      pythonIdentity: {
+        status: 'verified',
+        executable: 'C:/fixture/python.exe',
+        version: '3.10.10',
+        packageSetSha256: 'f'.repeat(64),
+        environmentSha256: '1'.repeat(64),
+      },
     },
     dependencyLocks: {
-      node: { path: 'package-lock.json', sha256: 'c'.repeat(64), kind: 'npm', lockfileVersion: 3 },
-      python: { path: 'requirements-service.lock', sha256: 'd'.repeat(64), kind: 'pip-require-hashes', requireHashLines: 1 },
+      node: { path: 'package-lock.json', sha256: hash(packageLock), kind: 'npm', lockfileVersion: 3, status: 'verified' },
+      python: { path: 'requirements-service.lock', sha256: hash(pythonLock), kind: 'pip-require-hashes', requireHashLines: 1, pythonPolicy: '3.10', status: 'verified' },
     },
     externalTools: Object.fromEntries(['ffmpeg', 'ytDlp', 'whisperx'].map((name) => [name, {
       executable: name,
@@ -116,7 +144,11 @@ async function manifest(releaseRoot, gitSha) {
       migration: { fromSchemaVersion: 1, toSchemaVersion: 1, dryRun: true, reversible: true },
       rollback: { minimumReleaseFormatVersion: 2, maximumReleaseFormatVersion: 2, compatible: true, dataPreserving: true, reversible: true },
     },
-    artifacts: [{ path: 'index.html', bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }],
+    artifacts: [
+      { path: 'index.html', bytes: bytes.length, sha256: hash(bytes) },
+      { path: 'package-lock.json', bytes: packageLock.length, sha256: hash(packageLock) },
+      { path: 'requirements-service.lock', bytes: pythonLock.length, sha256: hash(pythonLock) },
+    ],
   }
 }
 

@@ -162,7 +162,8 @@ function Invoke-OptimizationProcessCapture {
     [Parameter(Mandatory)][string]$FilePath,
     [Parameter(Mandatory)][string[]]$ArgumentList,
     [Parameter(Mandatory)][string]$WorkingDirectory,
-    [AllowNull()][string]$StandardInput = $null
+    [AllowNull()][string]$StandardInput = $null,
+    [hashtable]$Environment = @{}
   )
   $captureRoot = Join-Path ([IO.Path]::GetTempPath()) ('read-web-optimization-process-' + [Guid]::NewGuid().ToString('N'))
   $stdoutPath = Join-Path $captureRoot 'stdout.log'
@@ -176,6 +177,10 @@ function Invoke-OptimizationProcessCapture {
     $startInfo.WorkingDirectory = $WorkingDirectory
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    foreach ($name in $Environment.Keys) {
+      if ($null -eq $Environment[$name]) { $startInfo.EnvironmentVariables.Remove([string]$name) }
+      else { $startInfo.EnvironmentVariables[[string]$name] = [string]$Environment[$name] }
+    }
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     if ($PSBoundParameters.ContainsKey('StandardInput')) {
@@ -433,13 +438,51 @@ function Get-OptimizationCommandPath {
   return [string]$command.Source
 }
 
+function Resolve-OptimizationSelectedPython {
+  param(
+    [Parameter(Mandatory)][string]$RuntimeConfigPath,
+    [string]$RequestedPath = ''
+  )
+  if ($RequestedPath) {
+    $resolvedRequested = Get-OptimizationCommandPath -Name 'python' -RequestedPath $RequestedPath
+    if (-not $resolvedRequested) { throw "Optimization RuntimeConfig Python executable was not found: $RequestedPath" }
+    return $resolvedRequested
+  }
+  if (-not (Test-Path -LiteralPath $RuntimeConfigPath -PathType Leaf)) {
+    throw "Optimization RuntimeConfig file is missing: $RuntimeConfigPath"
+  }
+  try {
+    $payload = Get-Content -LiteralPath $RuntimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  } catch {
+    throw "Optimization RuntimeConfig file is invalid: $RuntimeConfigPath"
+  }
+  $configured = if ($env:READ_WEB_PYTHON) {
+    [string]$env:READ_WEB_PYTHON
+  } elseif ($env:READ_WEB_PYTHON_PATH) {
+    [string]$env:READ_WEB_PYTHON_PATH
+  } elseif ($null -ne $payload.python -and $payload.python.executable) {
+    [string]$payload.python.executable
+  } else {
+    'python'
+  }
+  if (-not [IO.Path]::IsPathRooted($configured)) {
+    $configCandidate = Join-Path (Split-Path -Parent $RuntimeConfigPath) $configured
+    if (Test-Path -LiteralPath $configCandidate -PathType Leaf) { $configured = $configCandidate }
+  }
+  $resolved = Get-OptimizationCommandPath -Name 'python' -RequestedPath $configured
+  if (-not $resolved) { throw "Optimization RuntimeConfig Python executable was not found: $configured" }
+  return $resolved
+}
+
 function Get-OptimizationToolchainIdentity {
   param(
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$WorkflowRoot,
+    [string]$RuntimeConfigPath = '',
     [string]$NodePath = '',
     [string]$NpmPath = '',
     [string]$PythonPath = '',
+    [AllowNull()][object]$PythonHealth = $null,
     [string]$FfmpegPath = '',
     [string]$YtDlpPath = '',
     [string]$WhisperxPath = ''
@@ -449,7 +492,11 @@ function Get-OptimizationToolchainIdentity {
   if (-not $npmExecutable -and -not $NpmPath) {
     $npmExecutable = Get-OptimizationCommandPath -Name 'npm'
   }
-  $pythonExecutable = Get-OptimizationCommandPath -Name 'python' -RequestedPath $PythonPath
+  $pythonExecutable = if ($RuntimeConfigPath) {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $RuntimeConfigPath -RequestedPath $PythonPath
+  } else {
+    Get-OptimizationCommandPath -Name 'python' -RequestedPath $PythonPath
+  }
   $packagePath = Join-Path $ProjectRoot 'package.json'
   $package = $null
   if (Test-Path -LiteralPath $packagePath -PathType Leaf) {
@@ -465,7 +512,14 @@ function Get-OptimizationToolchainIdentity {
   $pythonVersion = if ($pythonExecutable) { Get-OptimizationCommandVersion -FilePath $pythonExecutable -Arguments @('--version') } else { '' }
   $node = [ordered]@{ executable = $nodeExecutable; version = if ($nodeVersion) { $nodeVersion } else { $null }; status = if ($nodeVersion) { 'verified' } else { 'missing' } }
   $npm = [ordered]@{ executable = $npmExecutable; version = if ($npmVersion) { $npmVersion } else { $null }; status = if ($npmVersion) { 'verified' } else { 'missing' } }
-  $python = [ordered]@{ executable = $pythonExecutable; version = if ($pythonVersion) { $pythonVersion } else { $null }; status = if ($pythonVersion) { 'verified' } else { 'missing' } }
+  $python = [ordered]@{
+    executable = $pythonExecutable
+    version = if ($pythonVersion) { $pythonVersion } else { $null }
+    status = if ($pythonVersion) { 'verified' } else { 'missing' }
+    packageSetSha256 = if ($null -ne $PythonHealth) { [string]$PythonHealth.python.packageSetSha256 } else { $null }
+    environmentSha256 = if ($null -ne $PythonHealth) { [string]$PythonHealth.python.environmentSha256 } else { $null }
+    healthStatus = if ($null -ne $PythonHealth) { [string]$PythonHealth.status } else { 'unverified' }
+  }
   $externalTools = [ordered]@{
     ffmpeg = Get-OptimizationExternalToolDescriptor -Name 'ffmpeg' -VersionArguments @('-version') -ExecutablePath $FfmpegPath
     ytDlp = Get-OptimizationExternalToolDescriptor -Name 'yt-dlp' -VersionArguments @('--version') -ExecutablePath $YtDlpPath
@@ -523,13 +577,45 @@ function Get-OptimizationVersionToken {
   return $match.Groups[1].Value
 }
 
+function Invoke-OptimizationPythonDependencyHealth {
+  param(
+    [Parameter(Mandatory)][string]$ProjectRoot,
+    [Parameter(Mandatory)][string]$WorkflowRoot,
+    [Parameter(Mandatory)][string]$RuntimeConfigPath,
+    [Parameter(Mandatory)][string]$PythonPath
+  )
+  $healthScript = Join-Path $ProjectRoot 'tools\subtitle-workflow\scripts\verify_python_dependency_health.py'
+  $lockPath = Join-Path $WorkflowRoot 'requirements-service.lock'
+  if (-not (Test-Path -LiteralPath $healthScript -PathType Leaf)) {
+    throw "Optimization Python dependency health script is missing: $healthScript"
+  }
+  if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+    throw "Optimization Python production lock is missing: $lockPath"
+  }
+  $process = Invoke-OptimizationProcessCapture `
+    -FilePath $PythonPath `
+    -ArgumentList @($healthScript, '--config', $RuntimeConfigPath, '--expected-executable', $PythonPath, '--lock', $lockPath, '--json') `
+    -WorkingDirectory $ProjectRoot `
+    -Environment @{ READ_WEB_PYTHON = $PythonPath; READ_WEB_PYTHON_PATH = $PythonPath; READ_WEB_RUNTIME_CONFIG = $RuntimeConfigPath }
+  $details = ($process.stderr + "`n" + $process.stdout).Trim()
+  if ($process.exitCode -ne 0) {
+    throw "Optimization Python dependency health blocked the release before BuildAction: exit $($process.exitCode); $details"
+  }
+  try { $report = $process.stdout | ConvertFrom-Json } catch { throw "Optimization Python dependency health returned invalid JSON: $details" }
+  if ([string]$report.status -ne 'passed') {
+    throw "Optimization Python dependency health did not pass: $details"
+  }
+  return $report
+}
+
 function Assert-OptimizationReleaseToolchain {
   param(
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$WorkflowRoot,
     [Parameter(Mandatory)][string]$NodePath,
     [Parameter(Mandatory)][string]$NpmPath,
-    [string]$PythonPath = ''
+    [string]$PythonPath = '',
+    [string]$RuntimeConfigPath = ''
   )
   $packagePath = Join-Path $ProjectRoot 'package.json'
   if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) { throw "Optimization release package.json is missing: $packagePath" }
@@ -546,8 +632,11 @@ function Assert-OptimizationReleaseToolchain {
   }
   $nodeVersion = Get-OptimizationCommandVersion -FilePath $NodePath -Arguments @('--version')
   $npmVersion = Get-OptimizationCommandVersion -FilePath $NpmPath -Arguments @('--version')
-  $pythonExecutable = $PythonPath
-  if (-not $pythonExecutable) { $pythonExecutable = Get-OptimizationCommandPath -Name 'python' }
+  if ($RuntimeConfigPath) {
+    $pythonExecutable = Resolve-OptimizationSelectedPython -RuntimeConfigPath $RuntimeConfigPath -RequestedPath $PythonPath
+  } else {
+    $pythonExecutable = Get-OptimizationCommandPath -Name 'python' -RequestedPath $PythonPath
+  }
   $pythonVersion = if ($pythonExecutable) { Get-OptimizationCommandVersion -FilePath $pythonExecutable -Arguments @('--version') } else { '' }
   $nodeToken = Get-OptimizationVersionToken -Value $nodeVersion
   $npmToken = Get-OptimizationVersionToken -Value $npmVersion
@@ -566,6 +655,14 @@ function Assert-OptimizationReleaseToolchain {
   if (-not $pythonToken.StartsWith("$pythonPolicy.", [StringComparison]::Ordinal)) {
     throw "Unsupported Python version for optimization release: $pythonToken; expected CPython $pythonPolicy.x."
   }
+  $pythonHealth = $null
+  if ($RuntimeConfigPath) {
+    $pythonHealth = Invoke-OptimizationPythonDependencyHealth `
+      -ProjectRoot $ProjectRoot `
+      -WorkflowRoot $WorkflowRoot `
+      -RuntimeConfigPath $RuntimeConfigPath `
+      -PythonPath $pythonExecutable
+  }
   return [pscustomobject]@{
     node = $nodeVersion
     npm = $npmVersion
@@ -577,6 +674,7 @@ function Assert-OptimizationReleaseToolchain {
     nodePath = $NodePath
     npmPath = $NpmPath
     pythonPath = $pythonExecutable
+    pythonHealth = $pythonHealth
   }
 }
 
@@ -601,6 +699,7 @@ function Get-OptimizationReleaseReuseKey {
         node = [string]$runtime.node
         npm = [string]$runtime.npm
         python = [string]$runtime.python
+        pythonIdentity = $runtime.pythonIdentity
         dataRoot = [string]$runtime.dataRoot
         sourceSha256 = [string]$runtime.sourceSha256
         distSha256 = [string]$runtime.distSha256
@@ -633,6 +732,7 @@ function Get-OptimizationLockSummary {
     path = $relative
     sha256 = Get-OptimizationFileSha256 -Path $Path
     kind = $Kind
+    status = 'verified'
   }
   if ($Kind -eq 'npm') {
     try { $summary.lockfileVersion = [int]((Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json).lockfileVersion) } catch { $summary.lockfileVersion = $null }
@@ -653,6 +753,7 @@ function Get-OptimizationSourceFingerprint {
     [string]$NodePath = '',
     [string]$NpmPath = '',
     [string]$PythonPath = '',
+    [AllowNull()][object]$PythonHealth = $null,
     [string]$FfmpegPath = '',
     [string]$YtDlpPath = '',
     [string]$WhisperxPath = ''
@@ -687,12 +788,26 @@ function Get-OptimizationSourceFingerprint {
   } else {
     "requirements-service.lock:missing"
   }
+  $selectedPython = if ($RuntimeConfigPath) {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $RuntimeConfigPath -RequestedPath $PythonPath
+  } else {
+    Get-OptimizationCommandPath -Name 'python' -RequestedPath $PythonPath
+  }
+  if ($null -eq $PythonHealth) {
+    $PythonHealth = Invoke-OptimizationPythonDependencyHealth `
+      -ProjectRoot $ProjectRoot `
+      -WorkflowRoot $WorkflowRoot `
+      -RuntimeConfigPath $RuntimeConfigPath `
+      -PythonPath $selectedPython
+  }
   $toolchain = Get-OptimizationToolchainIdentity `
     -ProjectRoot $ProjectRoot `
     -WorkflowRoot $WorkflowRoot `
+    -RuntimeConfigPath $RuntimeConfigPath `
     -NodePath $NodePath `
     -NpmPath $NpmPath `
-    -PythonPath $PythonPath `
+    -PythonPath $selectedPython `
+    -PythonHealth $PythonHealth `
     -FfmpegPath $FfmpegPath `
     -YtDlpPath $YtDlpPath `
     -WhisperxPath $WhisperxPath
@@ -810,6 +925,8 @@ function Test-OptimizationReleaseCompatibility {
     $tools = $Release.manifest.externalTools
     $configuration = $Release.manifest.configuration
     $compatibility = $Release.manifest.compatibility
+    $source = $Release.manifest.source
+    $pythonIdentity = $runtime.pythonIdentity
     $manifestRoot = [IO.Path]::GetFullPath([string]$Release.manifest.release.root).TrimEnd('\', '/')
     $descriptorRoot = [IO.Path]::GetFullPath([string]$Release.releaseRoot).TrimEnd('\', '/')
     $externalToolDescriptors = @($tools.ffmpeg, $tools.ytDlp, $tools.whisperx)
@@ -827,7 +944,18 @@ function Test-OptimizationReleaseCompatibility {
       if ([string]$tool.status -eq 'degraded' -and [string]$tool.compatibility.status -eq 'supported') { return $false }
       if ($null -ne $tool.sha256 -and [string]$tool.sha256 -notmatch '^[0-9a-f]{64}$') { return $false }
     }
-    return [int]$Release.manifest.release.formatVersion -eq 2 `
+    return $null -ne $source `
+      -and [string]$source.kind -in @('working-tree', 'immutable-release') `
+      -and ($source.PSObject.Properties.Name -contains 'readOnly') `
+      -and (-not [bool]$source.readOnly) `
+      -and [string]$pythonIdentity.status -eq 'verified' `
+      -and [string]$pythonIdentity.executable `
+      -and [string]$pythonIdentity.version `
+      -and [string]$pythonIdentity.packageSetSha256 -match '^[0-9a-f]{64}$' `
+      -and [string]$pythonIdentity.environmentSha256 -match '^[0-9a-f]{64}$' `
+      -and [string]$locks.node.status -eq 'verified' `
+      -and [string]$locks.python.status -eq 'verified' `
+      -and [int]$Release.manifest.release.formatVersion -eq 2 `
       -and $manifestRoot -ieq $descriptorRoot `
       -and -not [string]::IsNullOrWhiteSpace([string]$runtime.node) `
       -and -not [string]::IsNullOrWhiteSpace([string]$runtime.npm) `
@@ -911,7 +1039,8 @@ function New-OptimizationReleaseStaging {
       -WorkflowRoot $WorkflowRoot `
       -NodePath $NodePath `
       -NpmPath $NpmPath `
-      -PythonPath $PythonPath
+      -PythonPath $PythonPath `
+      -RuntimeConfigPath $RuntimeConfigPath
     $sourceBefore = Get-OptimizationSourceFingerprint `
       -ProjectRoot $ProjectRoot `
       -WorkflowRoot $WorkflowRoot `
@@ -922,6 +1051,7 @@ function New-OptimizationReleaseStaging {
       -NodePath $NodePath `
       -NpmPath $NpmPath `
       -PythonPath $toolchainCheck.pythonPath `
+      -PythonHealth $toolchainCheck.pythonHealth `
       -FfmpegPath $FfmpegPath `
       -YtDlpPath $YtDlpPath `
       -WhisperxPath $WhisperxPath
@@ -949,6 +1079,7 @@ function New-OptimizationReleaseStaging {
       -NodePath $NodePath `
       -NpmPath $NpmPath `
       -PythonPath $toolchainCheck.pythonPath `
+      -PythonHealth $toolchainCheck.pythonHealth `
       -FfmpegPath $FfmpegPath `
       -YtDlpPath $YtDlpPath `
       -WhisperxPath $WhisperxPath
@@ -956,8 +1087,29 @@ function New-OptimizationReleaseStaging {
       throw 'Optimization release sources changed during the staging build; release was not published.'
     }
 
-    $artifacts = Get-OptimizationDistArtifacts -ReleaseRoot $stageRoot -DistRoot $stagingDist
-    $distDigest = Get-OptimizationDigest -Artifacts $artifacts
+    $distArtifacts = @(Get-OptimizationDistArtifacts -ReleaseRoot $stageRoot -DistRoot $stagingDist)
+    $packageLockPath = Join-Path $ProjectRoot 'package-lock.json'
+    $pythonLockPath = Join-Path $WorkflowRoot 'requirements-service.lock'
+    $lockArtifacts = @()
+    foreach ($lockPath in @($packageLockPath, $pythonLockPath)) {
+      if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+        throw "Optimization release lock disappeared during staging: $lockPath"
+      }
+      $relativeLock = Get-OptimizationRelativePath `
+        -Root ((Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\', '/')) `
+        -Path ((Resolve-Path -LiteralPath $lockPath).Path)
+      $stagedLock = Join-Path $stageRoot $relativeLock
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stagedLock) | Out-Null
+      Copy-Item -LiteralPath $lockPath -Destination $stagedLock -Force
+      $stagedLockItem = Get-Item -LiteralPath $stagedLock
+      $lockArtifacts += [ordered]@{
+        path = $relativeLock.Replace('\', '/')
+        bytes = [int64]$stagedLockItem.Length
+        sha256 = Get-OptimizationFileSha256 -Path $stagedLock
+      }
+    }
+    $artifacts = @($distArtifacts + $lockArtifacts)
+    $distDigest = Get-OptimizationDigest -Artifacts $distArtifacts
     $gitSha = Get-OptimizationGitText -ProjectRoot $ProjectRoot -Arguments @('rev-parse', 'HEAD')
     if (-not $gitSha) { $gitSha = 'working-tree' }
     $gitShort = if ($gitSha.Length -gt 12) { $gitSha.Substring(0, 12) } else { $gitSha }
@@ -968,12 +1120,11 @@ function New-OptimizationReleaseStaging {
     $package = Get-Content -LiteralPath $packagePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $gitBranch = Get-OptimizationGitText -ProjectRoot $ProjectRoot -Arguments @('branch', '--show-current')
     $dirty = [bool]$gitStatus
-    $packageLockPath = Join-Path $ProjectRoot 'package-lock.json'
-    $pythonLockPath = Join-Path $WorkflowRoot 'requirements-service.lock'
     $manifest = [ordered]@{
       schemaVersion = 1
       generatedAt = ([DateTime]::UtcNow).ToString('O')
       role = 'optimization-local'
+      source = [ordered]@{ kind = 'working-tree'; readOnly = $false; provenance = 'optimization release staging from current Git worktree' }
       release = [ordered]@{
         releaseId = $releaseId
         formatVersion = $releaseFormatVersion
@@ -990,6 +1141,13 @@ function New-OptimizationReleaseStaging {
         node = [string]$sourceBefore.toolchain.node.version
         npm = [string]$sourceBefore.toolchain.npm.version
         python = [string]$sourceBefore.toolchain.python.version
+        pythonIdentity = [ordered]@{
+          status = 'verified'
+          executable = [string]$sourceBefore.toolchain.python.executable
+          version = [string]$sourceBefore.toolchain.python.version
+          packageSetSha256 = [string]$sourceBefore.toolchain.python.packageSetSha256
+          environmentSha256 = [string]$sourceBefore.toolchain.python.environmentSha256
+        }
         frontend = [ordered]@{ host = $FrontendHost; port = $FrontendPort }
         backend = [ordered]@{ host = $BackendHost; port = $BackendPort }
         dataRoot = $DataRoot
@@ -1160,6 +1318,7 @@ Export-ModuleMember -Function `
   Get-OptimizationReleaseDescriptor, `
   Test-OptimizationReleaseIntegrity, `
   Test-OptimizationReleaseCompatibility, `
+  Assert-OptimizationReleaseToolchain, `
   Get-OptimizationToolchainIdentity, `
   Get-OptimizationReleaseReuseKey, `
   Get-OptimizationExternalToolDescriptor, `

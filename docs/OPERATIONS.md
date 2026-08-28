@@ -94,10 +94,50 @@ Remove-Item Env:READ_WEB_PRODUCTION_HOST_BROWSER
 Set-Location E:\read-web-next-optimization
 npm ci
 npm run verify:toolchain
-python tools/subtitle-workflow/scripts/verify_runtime_dependencies.py --profile service --config config/runtime.optimization.json
+$venv = Join-Path $env:TEMP ('read-web-python-' + [Guid]::NewGuid().ToString('N'))
+python -m venv $venv
+$env:READ_WEB_PYTHON = Join-Path $venv 'Scripts\python.exe'
+$env:READ_WEB_PYTHON_PATH = $env:READ_WEB_PYTHON
+$env:READ_WEB_RUNTIME_CONFIG = (Resolve-Path config\runtime.optimization.json).Path
+& $env:READ_WEB_PYTHON -m pip install --disable-pip-version-check --require-hashes --only-binary=:all: -r tools\subtitle-workflow\requirements-service.lock
+npm run verify:python-health
+npm run verify:python-runtime-inventory
 ```
 
-Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失会报告，但只有使用对应能力时才阻塞。
+venv 必须放在仓库外（这里使用系统临时目录），不提交也不复用于其他 release。`READ_WEB_PYTHON`
+是 canonical 选择；`READ_WEB_PYTHON_PATH` 仅为兼容别名，launcher、full/release gate 和
+Production Host 都使用同一个解析后的 executable。若不设置环境变量，optimization
+RuntimeConfig 的 `python.executable` 仍会被解析，但全局解释器只适合运行离线 lock 格式检查，
+不应通过 health/release 门禁。
+
+`verify:fast` 只执行离线、确定性的 lock 格式和 RuntimeConfig 选择检查；`verify:full` 还会
+执行完整 package-set health。Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失
+会报告，但只有使用对应能力时才阻塞；Production Host 的 Python lock/package 漂移、缺包和
+解释器不一致则在 launcher 的 BuildAction 前 fail-closed。
+
+OSV 是 release/supply-chain owner，不是 fast owner：
+
+```powershell
+npm run verify:python-osv
+npm run verify:python-osv:test
+```
+
+OSV finding、坏响应或网络错误均 fail-closed；普通离线 fast gate 不依赖网络。CI 使用
+`$env:RUNNER_TEMP` 下的同等临时 venv，见 `.github/workflows/windows-ci.yml`。
+
+Release manifest 的 previous source 必须显式提供。正式 release 使用受版本控制、只读且能通过
+artifact checksum verification 的 manifest 输入，不从默认个人路径重建：
+
+```powershell
+$env:READ_WEB_PREVIOUS_RELEASE_MANIFEST = 'E:\release-inputs\read-web-previous\release-manifest.json'
+npm run release:manifest
+npm run verify:release -- --list
+```
+
+也可把 `--previous-manifest <path>` 传给对应 Node 脚本。旧版 live root 只有在实际包含完整
+Python lock 时才能作为非正式 fixture source；缺 lock 会在长门禁前报告
+`RELEASE_PREVIOUS_SOURCE_INCOMPLETE`，不会伪造 previous lock、hash 或 identity。previous
+manifest 及其 release root 只读校验；health 与 rollback 使用同一 releaseId/manifest SHA。
 
 Release manifest 的外部工具 probe 是工具专属且可审计的：`ffmpeg` 接受 6--8 的稳定主版本
 或 2024--2026 的 dated git banner，`yt-dlp` 接受 2025--2026 的 `YYYY.MM.DD` release，
@@ -166,7 +206,7 @@ Get-NetTCPConnection -State Listen -LocalPort 4193,4194,5174,8766 -ErrorAction S
 
 ```powershell
 Set-Location E:\read-web-next-optimization\tools\subtitle-workflow
-python -m unittest discover -s tests -p 'test_*.py'
+& $env:READ_WEB_PYTHON -m unittest discover -s tests -p 'test_*.py'
 ```
 
 后端测试必须使用临时 data root 或 in-process adapter，不得读取或清理真实 `E:\ReadWebData\SubtitleWorkflow`。

@@ -1,6 +1,6 @@
 import path from 'node:path'
 import process from 'node:process'
-import { loadReleaseManifestSchema, validateReleaseManifestSchema, verifyReleaseManifest } from './lib/release-manifest.mjs'
+import { loadReleaseManifestSchema, validateReleaseManifestSchema, validateReleaseManifestSemantics, verifyReleaseManifest } from './lib/release-manifest.mjs'
 
 const args = parseArgs(process.argv.slice(2))
 const manifestPath = path.resolve(args.manifest || path.join('output', 'release', 'release-manifest.json'))
@@ -14,6 +14,7 @@ if (args.stdin) {
   }
   const schema = await loadReleaseManifestSchema()
   const failures = validateReleaseManifestSchema(manifest, schema)
+  failures.push(...validateReleaseManifestSemantics(manifest))
   result = {
     manifest,
     manifestSha256: null,
@@ -32,6 +33,14 @@ if (args.url) {
     if (!response.ok || !['ok', 'ready'].includes(health.status)) result.failures.push(`health endpoint is not ready (${response.status})`)
     if (health.manifest?.sha256 !== result.manifestSha256) result.failures.push('health manifest identity mismatch')
     if (health.manifest?.gitSha !== result.manifest.release.gitSha) result.failures.push('health git identity mismatch')
+    const expectedPython = result.manifest.runtime?.pythonIdentity || {}
+    for (const [healthKey, expected] of [
+      ['toolchainSha256', result.manifest.runtime?.toolchainSha256],
+      ['pythonIdentitySha256', expectedPython.environmentSha256],
+      ['pythonPackageSetSha256', expectedPython.packageSetSha256],
+    ]) {
+      if (expected && health.manifest?.[healthKey] !== expected) result.failures.push(`health ${healthKey} identity mismatch`)
+    }
   } catch (error) {
     result.failures.push(`health request failed: ${error.message}`)
   }

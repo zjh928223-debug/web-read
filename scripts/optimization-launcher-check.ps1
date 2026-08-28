@@ -16,7 +16,13 @@ $releaseHealthScript = Join-Path $projectRoot 'scripts\release-health-check.mjs'
 $launcher = Join-Path $projectRoot 'scripts\launch-optimization-preview.ps1'
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 $npmPath = if ($null -ne (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { (Get-Command npm.cmd -ErrorAction Stop).Source } else { (Get-Command npm -ErrorAction Stop).Source }
-$pythonPath = (Get-Command python -ErrorAction Stop).Source
+$runtimePayload = Get-Content -LiteralPath $runtimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$pythonSelection = if ($env:READ_WEB_PYTHON) { $env:READ_WEB_PYTHON } elseif ($env:READ_WEB_PYTHON_PATH) { $env:READ_WEB_PYTHON_PATH } else { [string]$runtimePayload.python.executable }
+if (-not [IO.Path]::IsPathRooted($pythonSelection)) {
+  $configPython = Join-Path (Split-Path -Parent $runtimeConfigPath) $pythonSelection
+  if (Test-Path -LiteralPath $configPython -PathType Leaf) { $pythonSelection = $configPython }
+}
+$pythonPath = if (Test-Path -LiteralPath $pythonSelection -PathType Leaf) { (Resolve-Path -LiteralPath $pythonSelection).Path } else { (Get-Command $pythonSelection -ErrorAction Stop).Source }
 $shellPath = switch ($PowerShellKind) {
   'powershell' { (Get-Command powershell -ErrorAction Stop).Source; break }
   'pwsh' { (Get-Command pwsh -ErrorAction Stop).Source; break }
@@ -318,11 +324,18 @@ function Assert-ModuleReleaseFailureSafety {
     $oldPointer = Read-OptimizationRuntimeText -Path $activePointerPath
     $oldReuseKey = Get-OptimizationReleaseReuseKey -Release $oldRelease
     Assert-True (-not [string]::IsNullOrWhiteSpace($oldReuseKey)) 'published release did not produce an immutable reuse key'
+    $oldPythonIdentity = $oldRelease.manifest.runtime.pythonIdentity
+    Assert-True ($oldPythonIdentity.status -eq 'verified' -and $oldPythonIdentity.executable -eq $pythonPath -and $oldPythonIdentity.packageSetSha256 -match '^[0-9a-f]{64}$' -and $oldPythonIdentity.environmentSha256 -match '^[0-9a-f]{64}$') `
+      'published release did not record the selected Python executable and package identity'
 
     $lockChangedManifest = $oldRelease.manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
     $lockChangedManifest.dependencyLocks.python.sha256 = ('e' * 64)
     $lockChangedKey = Get-OptimizationReleaseReuseKey -Release ([pscustomobject]@{ manifest = $lockChangedManifest })
     Assert-True ($lockChangedKey -and $lockChangedKey -ne $oldReuseKey) 'Python lock identity changed without changing the release reuse key'
+    $packageSetChangedManifest = $oldRelease.manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
+    $packageSetChangedManifest.runtime.pythonIdentity.packageSetSha256 = ('f' * 64)
+    $packageSetChangedKey = Get-OptimizationReleaseReuseKey -Release ([pscustomobject]@{ manifest = $packageSetChangedManifest })
+    Assert-True ($packageSetChangedKey -and $packageSetChangedKey -ne $oldReuseKey) 'Python package-set identity changed without changing the release reuse key'
     $toolchainChangedManifest = $oldRelease.manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
     $toolchainChangedManifest.externalTools.ffmpeg.version = 'synthetic-toolchain-version'
     $toolchainChangedKey = Get-OptimizationReleaseReuseKey -Release ([pscustomobject]@{ manifest = $toolchainChangedManifest })

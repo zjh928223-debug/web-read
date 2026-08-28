@@ -12,38 +12,69 @@ import {
   EXTERNAL_TOOL_SUPPORT_MATRIX,
   validateReleaseManifestSchema,
   writeJsonAtomic,
+  resolvePreviousReleaseSource,
+  validateReleaseManifestSemantics,
 } from './lib/release-manifest.mjs'
+import { resolveSelectedPython, runPythonHealth } from './lib/python-runtime.mjs'
+
+process.on('uncaughtException', reportFailure)
+process.on('unhandledRejection', reportFailure)
 
 const args = parseArgs(process.argv.slice(2))
 const repoRoot = path.resolve(args.root || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'))
 const outputDir = path.resolve(args.output || path.join(repoRoot, 'output', 'release'))
-const previousRoot = path.resolve(args['previous-root'] || process.env.READ_WEB_PREVIOUS_RELEASE_ROOT || 'E:\\read-web')
+const previousRootInput = args['previous-root'] || process.env.READ_WEB_PREVIOUS_RELEASE_ROOT || ''
+const previousManifestInput = args['previous-manifest'] || process.env.READ_WEB_PREVIOUS_RELEASE_MANIFEST || ''
+const previousSource = await resolvePreviousReleaseSource({ previousRoot: previousRootInput, previousManifest: previousManifestInput })
+assertOutputOutsideReadOnlySource(outputDir, previousSource.root)
+
+if (args['require-clean'] && previousSource.kind !== 'manifest') {
+  const error = new Error('formal release manifest generation requires an explicit, verified previous-release manifest; a legacy root is only accepted for non-formal fixture generation')
+  error.code = 'RELEASE_PREVIOUS_MANIFEST_REQUIRED'
+  throw error
+}
 
 if (args['require-clean'] && git(repoRoot, 'status', '--porcelain', '--untracked-files=all')) throw new Error('release candidate requires a clean Git worktree')
 await stat(path.join(repoRoot, 'dist', 'index.html'))
-await stat(path.join(previousRoot, 'index.html'))
 
-const current = await createManifest(repoRoot, 'candidate')
-const previous = await createManifest(previousRoot, 'previous')
+const selectedPython = args['require-clean'] ? await resolveSelectedPython({ repoRoot, configPath: args.config || '' }) : null
+const pythonHealth = args['require-clean']
+  ? runPythonHealth({ repoRoot, selected: selectedPython, lockPath: path.join('tools', 'subtitle-workflow', 'requirements-service.lock') })
+  : null
+const current = await createManifest(repoRoot, 'candidate', {
+  pythonHealth,
+  source: { kind: 'working-tree', readOnly: false, provenance: 'current Git worktree' },
+})
+const previous = previousSource.manifest || await createManifest(previousSource.root, 'previous', {
+  source: { kind: 'legacy-root', readOnly: true, provenance: 'explicit --previous-root input' },
+})
 const schema = await loadReleaseManifestSchema()
 validateManifestOrThrow(current, schema, 'candidate', repoRoot)
-validateManifestOrThrow(previous, schema, 'previous', previousRoot)
+validateManifestOrThrow(previous, schema, 'previous', previousSource.root)
 await mkdir(outputDir, { recursive: true })
-await writeJsonAtomic(path.join(outputDir, 'release-manifest.json'), current)
-await writeJsonAtomic(path.join(outputDir, 'previous-release-manifest.json'), previous)
+const currentManifestPath = path.join(outputDir, 'release-manifest.json')
+const previousManifestPath = path.join(outputDir, 'previous-release-manifest.json')
+await writeJsonAtomic(currentManifestPath, current)
+if (previousSource.manifestPath && previousSource.manifestBytes) {
+  await writeFile(previousManifestPath, previousSource.manifestBytes)
+} else {
+  await writeJsonAtomic(previousManifestPath, previous)
+}
+const currentManifestSha256 = await sha256File(currentManifestPath)
+const previousManifestSha256 = await sha256File(previousManifestPath)
 await writeJsonAtomic(path.join(outputDir, 'release-state.json'), {
   schema: 'read-web.release-state',
   schemaVersion: 1,
   status: 'staged',
   generatedAt: new Date().toISOString(),
-  active: { manifest: 'release-manifest.json', root: repoRoot, releaseId: current.release.gitSha },
-  previous: { manifest: 'previous-release-manifest.json', root: previousRoot, releaseId: previous.release.gitSha },
+  active: { manifest: 'release-manifest.json', root: repoRoot, releaseId: current.release.gitSha, manifestSha256: currentManifestSha256 },
+  previous: { manifest: 'previous-release-manifest.json', root: previousSource.root, releaseId: previous.release.gitSha, manifestSha256: previousManifestSha256 },
 })
 
 console.log(`Release manifests written: ${outputDir}`)
 console.log(`current=${current.release.gitSha} previous=${previous.release.gitSha}`)
 
-async function createManifest(root, role) {
+async function createManifest(root, role, { pythonHealth = null, source = null } = {}) {
   const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
   const artifactPaths = await collectArtifacts(root)
   const sourcePaths = artifactPaths.filter((relative) => !relative.replaceAll('\\', '/').startsWith('dist/'))
@@ -57,7 +88,11 @@ async function createManifest(root, role) {
       ? [path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js'), '--version']
       : ['--version'],
   )
-  const pythonVersion = resolveRuntimeVersion(root, 'python', process.platform === 'win32' ? 'python.exe' : 'python', ['--version'])
+  const pythonExecutable = pythonHealth?.python?.executable
+    || await resolveCommandPath(root, 'python', process.env.READ_WEB_RELEASE_PYTHON || (process.platform === 'win32' ? 'python.exe' : 'python'))
+  const pythonVersion = pythonHealth?.python?.version
+    ? 'Python ' + pythonHealth.python.version
+    : resolveRuntimeVersion(root, 'python', pythonExecutable, ['--version'])
   const nodeLock = await lockSummary(root, 'package-lock.json', 'npm')
   const pythonLock = await lockSummary(root, 'tools/subtitle-workflow/requirements-service.lock', 'pip-require-hashes')
   const externalTools = {
@@ -69,6 +104,19 @@ async function createManifest(root, role) {
     node: nodeVersion,
     npm: npmVersion,
     python: pythonVersion,
+    pythonIdentity: pythonHealth ? {
+      status: 'verified',
+      executable: pythonHealth.python.executable,
+      version: pythonHealth.python.version,
+      packageSetSha256: pythonHealth.python.packageSetSha256,
+      environmentSha256: pythonHealth.python.environmentSha256,
+    } : {
+      status: role === 'previous' ? 'not-declared' : 'unverified',
+      executable: pythonExecutable || null,
+      version: pythonVersion || null,
+      packageSetSha256: null,
+      environmentSha256: null,
+    },
     dataRoot: process.env.READ_WEB_SUBTITLE_DATA_ROOT || null,
     sourceSha256: await digestPaths(root, sourcePaths),
     distSha256: await digestPaths(root, distPaths),
@@ -80,13 +128,15 @@ async function createManifest(root, role) {
     packageManager: packageJson.packageManager || '',
     engines: packageJson.engines || {},
     dependencyLocks: { node: nodeLock, python: pythonLock },
+    pythonIdentity: runtime.pythonIdentity,
     externalTools,
   })
-  validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, Boolean(args['require-clean']))
+  validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, Boolean(args['require-clean']), pythonHealth)
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     role,
+    source: source || { kind: 'working-tree', readOnly: false, provenance: 'explicit release root input' },
     release: {
       releaseId: git(root, 'rev-parse', 'HEAD'),
       application: packageJson.name,
@@ -164,8 +214,8 @@ async function optionalHash(root, relative) {
 async function lockSummary(root, relative, kind) {
   const filename = path.join(root, relative)
   const sha256 = await optionalHash(root, relative)
-  if (!sha256) throw new Error(`required dependency lock missing: ${filename}`)
-  const summary = { path: relative.replaceAll('\\', '/'), sha256, kind }
+  if (!sha256) return { path: relative.replaceAll('\\', '/'), sha256: null, kind, status: 'missing' }
+  const summary = { path: relative.replaceAll('\\', '/'), sha256, kind, status: 'verified' }
   if (kind === 'npm') {
     try { summary.lockfileVersion = JSON.parse(await readFile(filename, 'utf8')).lockfileVersion ?? null } catch { summary.lockfileVersion = null }
   } else {
@@ -296,7 +346,7 @@ function toolchainDigest(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
 
-function validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, requirePackageManager = false) {
+function validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, requirePackageManager = false, pythonHealth = null) {
   const expectedNode = packageJson.engines?.node
   const expectedNpm = packageJson.engines?.npm
   const actualNode = versionToken(runtime.node)
@@ -329,6 +379,9 @@ function validateRuntimePolicy(packageJson, runtime, pythonLock, role, root, req
   if (pythonPolicy && (!actualPython || !actualPython.startsWith(`${pythonPolicy}.`))) {
     throw new Error(`release manifest Python version is unsupported: ${actualPython || runtime.python}; expected CPython ${pythonPolicy}.x: ${root}`)
   }
+  if (role === 'candidate' && requirePackageManager && (!pythonHealth || pythonHealth.status !== 'passed')) {
+    throw new Error('release manifest Python dependency health is not verified: ' + root)
+  }
 }
 
 function escapeRegExp(value) {
@@ -337,8 +390,18 @@ function escapeRegExp(value) {
 
 function validateManifestOrThrow(manifest, schema, role, root) {
   const failures = validateReleaseManifestSchema(manifest, schema)
+  failures.push(...validateReleaseManifestSemantics(manifest))
   if (failures.length) {
     throw new Error(`release manifest schema validation failed before write (${role}, ${root}): ${failures.join('; ')}`)
+  }
+}
+
+function assertOutputOutsideReadOnlySource(output, sourceRoot) {
+  const relative = path.relative(path.resolve(sourceRoot), path.resolve(output))
+  if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))) {
+    const error = new Error(`release output must be outside the read-only previous source: output=${path.resolve(output)} source=${path.resolve(sourceRoot)}`)
+    error.code = 'RELEASE_OUTPUT_INSIDE_PREVIOUS_SOURCE'
+    throw error
   }
 }
 
@@ -351,4 +414,10 @@ function parseArgs(values) {
     else result[name.slice(2)] = values[++index]
   }
   return result
+}
+
+function reportFailure(error) {
+  const code = error?.code || 'RELEASE_MANIFEST_FAILED'
+  console.error(`release manifest BLOCKED[${code}]: ${error?.message || error}`)
+  process.exitCode = 2
 }

@@ -24,7 +24,7 @@ if (-not $WorkflowRoot) {
   $WorkflowRoot = Join-Path $ReaderRoot 'tools\subtitle-workflow'
 }
 $RuntimeConfigPath = if ($RuntimeConfigPath) { $RuntimeConfigPath } elseif ($env:READ_WEB_RUNTIME_CONFIG) { $env:READ_WEB_RUNTIME_CONFIG } else { Join-Path $ReaderRoot 'config\runtime.legacy.json' }
-$bootstrapPython = if ($PythonPath) { $PythonPath } else { (Get-Command python -ErrorAction Stop).Source }
+$bootstrapPython = if ($PythonPath) { $PythonPath } elseif ($env:READ_WEB_PYTHON) { $env:READ_WEB_PYTHON } elseif ($env:READ_WEB_PYTHON_PATH) { $env:READ_WEB_PYTHON_PATH } else { (Get-Command python -ErrorAction Stop).Source }
 $runtimeArguments = @('-m', 'youtube_workflow.runtime_config')
 $runtimeArguments += @('--config', $RuntimeConfigPath)
 Push-Location $WorkflowRoot

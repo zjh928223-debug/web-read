@@ -8,12 +8,17 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
+import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 import { createReadWebProductionBackupComposition } from './lib/read-web-production-backup.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
 const distDir = path.join(repoRoot, 'dist')
-const python = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+const selectedPython = await resolveSelectedPython({
+  repoRoot,
+  configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+})
+const python = selectedPython.executable
 const token = 'isolated-production-host-test-token'
 const releaseId = 'isolated-production-host-test'
 const profileId = 'isolated-random-port'
@@ -88,7 +93,7 @@ function startHost({ port, instanceId, dataRoot, applicationProfile }) {
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
-      ...process.env,
+      ...gateEnvironment(selectedPython),
       READ_WEB_SUBTITLE_DATA_ROOT: dataRoot,
       READ_WEB_RELEASE_ID: releaseId,
       READ_WEB_PROFILE_ID: profileId,
@@ -181,7 +186,16 @@ const manifestBytes = Buffer.from(`${JSON.stringify({
   schemaVersion: 1,
   generatedAt: new Date().toISOString(),
   release: { application: 'read-final', frontendVersion: '1.0.0', backendVersion: '0.2.3', gitSha: releaseId, gitBranch: 'isolated', dirty: false },
-  runtime: {},
+  runtime: {
+    toolchainSha256: 'b'.repeat(64),
+    pythonIdentity: {
+      status: 'verified',
+      executable: python,
+      version: '3.10.10',
+      packageSetSha256: 'c'.repeat(64),
+      environmentSha256: 'd'.repeat(64),
+    },
+  },
   dataCompatibility: {
     indexedDb: { name: 'SeekPlayerDB', version: 1, objectStore: 'files', keyPath: 'id' },
     workflowServiceVersion: '0.2.3',

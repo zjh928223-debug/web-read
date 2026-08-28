@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -37,6 +39,42 @@ EXIT_ERROR = 2
 
 class AuditError(RuntimeError):
     """Raised when the audit cannot produce a trustworthy result."""
+
+
+def resolve_executable(value: str | Path) -> Path:
+    raw = str(value)
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        resolved = shutil.which(raw)
+        if resolved:
+            return Path(resolved).resolve()
+    if candidate.is_file():
+        return candidate.resolve()
+    raise AuditError(f"selected Python executable was not found: {raw}")
+
+
+def verify_selected_interpreter(config_path: Path | None, expected_executable: str | None) -> str:
+    workflow_root = ROOT
+    if str(workflow_root) not in sys.path:
+        sys.path.insert(0, str(workflow_root))
+    try:
+        from youtube_workflow.runtime_config import load_runtime_config
+
+        runtime = load_runtime_config(config_path)
+    except Exception as exc:  # RuntimeConfigError is intentionally reported as a gate error.
+        raise AuditError(f"runtime config could not select Python: {exc}") from exc
+    selected = resolve_executable(runtime.python_executable)
+    expected = resolve_executable(expected_executable) if expected_executable else selected
+    actual = Path(sys.executable).resolve()
+    if selected != expected:
+        raise AuditError(
+            f"RuntimeConfig selected Python {selected}, but caller supplied {expected}; use one interpreter identity for selection and startup"
+        )
+    if selected != actual:
+        raise AuditError(
+            f"selected Python mismatch: gate is running under {actual}, RuntimeConfig selected {selected}"
+        )
+    return str(actual)
 
 
 @dataclass(frozen=True)
@@ -209,6 +247,8 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_LOCK,
         help="hashed lock file to audit (default: requirements-service.lock)",
     )
+    parser.add_argument("--config", type=Path, help="RuntimeConfig used to select the interpreter")
+    parser.add_argument("--expected-executable", help="explicit executable identity expected by the caller")
     parser.add_argument("--endpoint", default=OSV_ENDPOINT, help=argparse.SUPPRESS)
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
@@ -236,10 +276,11 @@ def emit(value: dict[str, Any], as_json: bool) -> None:
 def main(argv: Iterable[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        executable = verify_selected_interpreter(args.config, args.expected_executable)
         packages = parse_lock(args.lock)
         findings = query_osv(packages, endpoint=args.endpoint, timeout=args.timeout)
     except (AuditError, OSError, UnicodeError) as exc:
-        value = {"status": "error", "lock": str(args.lock), "error": str(exc)}
+        value = {"status": "error", "lock": str(args.lock), "errorCode": "OSV_AUDIT_ERROR", "error": str(exc)}
         emit(value, args.json)
         return EXIT_ERROR
 
@@ -248,6 +289,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             {
                 "status": "findings",
                 "lock": str(args.lock),
+                "pythonExecutable": executable,
                 "packageCount": len(packages),
                 "findings": findings,
             },
@@ -256,10 +298,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         return EXIT_FINDINGS
 
     emit(
-        {
-            "status": "ok",
-            "lock": str(args.lock),
-            "packageCount": len(packages),
+            {
+                "status": "ok",
+                "lock": str(args.lock),
+                "pythonExecutable": executable,
+                "packageCount": len(packages),
             "findings": [],
         },
         args.json,

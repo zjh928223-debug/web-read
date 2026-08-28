@@ -6,7 +6,6 @@ const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(scriptDirectory, '..')
 const workflowRoot = resolve(projectRoot, 'tools', 'subtitle-workflow')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const pythonCommand = process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
 
 const isolatedPorts = Object.freeze({
   dev: '4193',
@@ -15,12 +14,11 @@ const isolatedPorts = Object.freeze({
 
 const included = [
   command('fast gate (canonical architecture + behavior)', npmCommand, ['run', 'verify:fast']),
+  command('Python dependency health (selected Production Host interpreter)', process.execPath, ['scripts/run-python-gate.mjs', 'tools/subtitle-workflow/scripts/verify_python_dependency_health.py', '--config', 'config/runtime.optimization.json', '--json']),
   command('persistence fault matrix evidence', process.execPath, ['scripts/persistence-fault-matrix.mjs']),
   command('real application backup/restore round trip', process.execPath, ['scripts/application-backup-real-restore-check.mjs']),
   command('real application backup/restore fault matrix', process.execPath, ['scripts/application-backup-restore-fault-matrix.mjs']),
-  command('workflow application restore tests', pythonCommand, ['-m', 'unittest', 'tests.test_application_backup_restore'], {
-    cwd: workflowRoot,
-  }),
+  command('workflow application restore tests', process.execPath, ['scripts/run-python-command.mjs', '--config', 'config/runtime.optimization.json', '--cwd', 'tools/subtitle-workflow', '--', '-m', 'unittest', 'tests.test_application_backup_restore']),
   command('frontend production build', npmCommand, ['run', 'build']),
   command('optimization built launcher lifecycle and release safety', npmCommand, ['run', 'verify:optimization-launcher']),
   command('optimization built launcher lifecycle and release safety (pwsh)', npmCommand, ['run', 'verify:optimization-launcher:pwsh']),
@@ -42,9 +40,7 @@ const included = [
   command('UI compatibility store browser behavior', process.execPath, ['scripts/ui-compatibility-store-check.cjs']),
   command('compatibility consumer map browser capture', process.execPath, ['scripts/compatibility-consumer-map.mjs']),
   command('compatibility consumer map determinism', process.execPath, ['scripts/compatibility-consumer-map-determinism-check.mjs']),
-  command('Python backend suite', pythonCommand, ['-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py'], {
-    cwd: workflowRoot,
-  }),
+  command('Python backend suite', process.execPath, ['scripts/run-python-command.mjs', '--config', 'config/runtime.optimization.json', '--cwd', 'tools/subtitle-workflow', '--', '-m', 'unittest', 'discover', '-s', 'tests', '-p', 'test_*.py']),
 ]
 
 const excluded = [
