@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
-import { classifyExternalToolProbe } from './lib/release-manifest.mjs'
+import { classifyExternalToolProbe, isReusablePublishedRelease, verifyReleaseManifest } from './lib/release-manifest.mjs'
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-release-control-'))
 const currentRoot = path.join(root, 'current')
@@ -37,6 +37,32 @@ await Promise.all([
     previous: { manifest: 'previous.json', root: previousRoot, releaseId: 'previous', manifestSha256: createHash('sha256').update(previousManifestBytes).digest('hex') },
   })),
 ])
+
+const stagedCandidate = structuredClone(currentManifest)
+stagedCandidate.role = 'candidate'
+stagedCandidate.source = { kind: 'working-tree', readOnly: false, provenance: 'current Git worktree' }
+stagedCandidate.release.root = path.join(root, 'staged-candidate')
+const publishedRoot = currentRoot
+const publishedCandidate = structuredClone(stagedCandidate)
+publishedCandidate.generatedAt = '2030-01-01T00:00:00.000Z'
+publishedCandidate.role = 'published-release'
+publishedCandidate.source = { kind: 'immutable-release', readOnly: true, provenance: 'published release snapshot' }
+publishedCandidate.release.root = publishedRoot
+const publishedManifestPath = path.join(root, 'published.json')
+await writeFile(publishedManifestPath, JSON.stringify(publishedCandidate))
+const verifiedPublished = await verifyReleaseManifest(publishedManifestPath)
+assert.equal(verifiedPublished.passed, true, 'published release fixture must pass integrity verification')
+assert.equal(isReusablePublishedRelease(verifiedPublished, stagedCandidate, publishedRoot), true, 'an identical candidate must reuse its verified published release')
+
+const artifactChangedCandidate = structuredClone(stagedCandidate)
+artifactChangedCandidate.artifacts[0].sha256 = 'c'.repeat(64)
+assert.equal(isReusablePublishedRelease(verifiedPublished, artifactChangedCandidate, publishedRoot), false, 'an artifact identity change must reject published release reuse')
+const toolchainChangedCandidate = structuredClone(stagedCandidate)
+toolchainChangedCandidate.runtime.toolchainSha256 = 'd'.repeat(64)
+assert.equal(isReusablePublishedRelease(verifiedPublished, toolchainChangedCandidate, publishedRoot), false, 'a toolchain identity change must reject published release reuse')
+const lockChangedCandidate = structuredClone(stagedCandidate)
+lockChangedCandidate.dependencyLocks.python.sha256 = 'e'.repeat(64)
+assert.equal(isReusablePublishedRelease(verifiedPublished, lockChangedCandidate, publishedRoot), false, 'a dependency lock identity change must reject published release reuse')
 
 const initialHealth = JSON.parse(execFileSync(process.execPath, ['scripts/release-health-check.mjs', '--manifest', path.join(root, 'current.json')], { cwd: process.cwd(), encoding: 'utf8' }))
 const initialState = JSON.parse(await readFile(path.join(root, 'state.json'), 'utf8'))

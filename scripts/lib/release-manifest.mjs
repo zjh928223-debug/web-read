@@ -95,6 +95,39 @@ export function releaseSourceError(code, message) {
   return error
 }
 
+export function releasePublicationReuseKey(manifest) {
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return ''
+  try {
+    const identity = { ...manifest }
+    delete identity.generatedAt
+    delete identity.role
+    delete identity.source
+    if (identity.release && typeof identity.release === 'object' && !Array.isArray(identity.release)) {
+      identity.release = { ...identity.release }
+      delete identity.release.root
+    }
+    return createHash('sha256').update(stableSerialize(identity)).digest('hex')
+  } catch {
+    return ''
+  }
+}
+
+export function isReusablePublishedRelease(existing, stagedManifest, publishedRoot) {
+  const existingManifest = existing?.manifest
+  const stagedRelease = stagedManifest?.release
+  const existingRelease = existingManifest?.release
+  const existingKey = releasePublicationReuseKey(existingManifest)
+  const stagedKey = releasePublicationReuseKey(stagedManifest)
+  return existing?.passed === true
+    && existingRelease?.releaseId === stagedRelease?.releaseId
+    && existingManifest?.source?.kind === 'immutable-release'
+    && existingManifest?.source?.readOnly === true
+    && typeof existing.root === 'string'
+    && path.resolve(existing.root) === path.resolve(publishedRoot)
+    && existingKey !== ''
+    && existingKey === stagedKey
+}
+
 export async function resolvePreviousReleaseSource({ previousRoot = '', previousManifest = '' } = {}) {
   if (!previousManifest && !previousRoot) {
     throw releaseSourceError(
@@ -323,6 +356,14 @@ export async function writeJsonAtomic(filename, value) {
   const temporary = `${filename}.${process.pid}.${Date.now()}.tmp`
   await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
   await rename(temporary, filename)
+}
+
+function stableSerialize(value) {
+  if (Array.isArray(value)) return `[${value.map((item) => stableSerialize(item)).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`
+  }
+  return JSON.stringify(value)
 }
 
 function validateSchemaNode(value, schema, location, rootSchema, failures) {

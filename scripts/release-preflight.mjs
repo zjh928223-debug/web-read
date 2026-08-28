@@ -14,6 +14,19 @@ const previousManifest = args['previous-manifest'] || process.env.READ_WEB_PREVI
 try {
   const source = await resolvePreviousReleaseSource({ previousRoot, previousManifest })
   if (source.kind !== 'manifest') throw typed('RELEASE_PREVIOUS_MANIFEST_REQUIRED', 'formal release gates require an explicit verified previous-release manifest')
+  if (args['previous-source-only']) {
+    console.log(JSON.stringify({
+      status: 'passed',
+      previous: {
+        kind: source.kind,
+        root: source.root,
+        manifestPath: source.manifestPath,
+        manifestSha256: source.manifestSha256,
+        releaseId: source.manifest?.release?.releaseId || null,
+      },
+    }, null, 2))
+    process.exit(0)
+  }
   await assertCandidatePreconditions(repoRoot)
   const selected = await resolveSelectedPython({ repoRoot, configPath: args.config || '' })
   const health = runPythonHealth({ repoRoot, selected, lockPath: RELEASE_PYTHON_LOCK_PATH })
@@ -69,6 +82,10 @@ function parseArgs(values) {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index]
     if (!value.startsWith('--')) throw typed('RELEASE_PREFLIGHT_ARGUMENT', `unexpected argument: ${value}`)
+    if (value === '--previous-source-only') {
+      result['previous-source-only'] = true
+      continue
+    }
     result[value.slice(2)] = values[++index]
   }
   return result

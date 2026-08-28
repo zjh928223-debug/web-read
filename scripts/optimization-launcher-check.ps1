@@ -333,29 +333,15 @@ function Assert-ModuleReleaseFailureSafety {
       'published release manifest root does not point to the published release directory'
     Assert-True ([string]$oldRelease.manifest.dependencyLocks.python.path -eq 'tools/subtitle-workflow/requirements-service.lock') `
       'published release manifest did not use the canonical Python lock artifact path'
-    $publishedManifestRoundTripScript = Join-Path $testRoot 'published-manifest-round-trip.mjs'
-    $releaseManifestModulePath = (Resolve-Path (Join-Path $projectRoot 'scripts\lib\release-manifest.mjs')).Path
-    [IO.File]::WriteAllText($publishedManifestRoundTripScript, @'
-import { pathToFileURL } from 'node:url'
-
-const modulePath = process.argv[2]
-const manifestPath = process.argv[3]
-const { resolvePreviousReleaseSource } = await import(pathToFileURL(modulePath))
-const source = await resolvePreviousReleaseSource({ previousManifest: manifestPath })
-if (source.manifest.source.kind !== 'immutable-release' || source.manifest.source.readOnly !== true) {
-  throw new Error('published manifest was not accepted as immutable previous source')
-}
-if (source.root !== source.manifest.release.root) {
-  throw new Error(`previous source root mismatch: ${source.root} !== ${source.manifest.release.root}`)
-}
-if (source.manifest.dependencyLocks.python.path !== 'tools/subtitle-workflow/requirements-service.lock') {
-  throw new Error('published manifest Python lock path is not canonical')
-}
-console.log(`published manifest round-trip passed: ${source.manifest.release.releaseId}`)
-'@, [Text.UTF8Encoding]::new($false))
-    $roundTripOutput = & $nodePath $publishedManifestRoundTripScript $releaseManifestModulePath $oldRelease.manifestPath 2>&1
-    $roundTripExitCode = $LASTEXITCODE
-    Assert-True ($roundTripExitCode -eq 0) "published release manifest could not be resolved as a formal previous source: $(($roundTripOutput -join '`n'))"
+    $preflightScriptPath = Join-Path $projectRoot 'scripts\release-preflight.mjs'
+    $preflightOutput = & $nodePath $preflightScriptPath '--previous-manifest' $oldRelease.manifestPath '--previous-source-only' 2>&1
+    $preflightExitCode = $LASTEXITCODE
+    Assert-True ($preflightExitCode -eq 0) "published release manifest could not pass the previous-source preflight stage: $(($preflightOutput -join '`n'))"
+    $preflightResult = $null
+    try { $preflightResult = (($preflightOutput -join "`n") | ConvertFrom-Json) } catch {}
+    Assert-True ($null -ne $preflightResult -and $preflightResult.status -eq 'passed' -and $preflightResult.previous.kind -eq 'manifest') 'published release manifest preflight output was not a passing manifest source result'
+    Assert-True ([IO.Path]::GetFullPath([string]$preflightResult.previous.root) -ieq [IO.Path]::GetFullPath([string]$oldRelease.releaseRoot)) 'preflight resolved the published manifest to the wrong release root'
+    Assert-True ([string]$preflightResult.previous.releaseId -eq [string]$oldRelease.releaseId) 'preflight resolved the published manifest to the wrong release identity'
 
     $lockChangedManifest = $oldRelease.manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
     $lockChangedManifest.dependencyLocks.python.sha256 = ('e' * 64)

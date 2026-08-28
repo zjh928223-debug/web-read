@@ -15,6 +15,7 @@ import {
   resolvePreviousReleaseSource,
   validateReleaseManifestSemantics,
   verifyReleaseManifest,
+  isReusablePublishedRelease,
   RELEASE_PYTHON_LOCK_PATH,
 } from './lib/release-manifest.mjs'
 import { resolveSelectedPython, runPythonHealth } from './lib/python-runtime.mjs'
@@ -98,11 +99,7 @@ async function publishCurrentRelease(sourceRoot, stagedManifest, targetRoot, sch
     if ((await stat(publishedRoot)).isDirectory()) {
       try {
         const existing = await verifyReleaseManifest(publishedManifestPath)
-        if (existing.passed
-          && existing.manifest.release.releaseId === stagedManifest.release.releaseId
-          && existing.manifest.source.kind === 'immutable-release'
-          && existing.manifest.source.readOnly === true
-          && path.resolve(existing.root) === publishedRoot) return existing.manifest
+        if (isReusablePublishedRelease(existing, stagedManifest, publishedRoot)) return existing.manifest
       } catch {}
       const error = new Error(`published release target already exists and is not a verified match: ${publishedRoot}`)
       error.code = 'RELEASE_PUBLISHED_TARGET_EXISTS'
