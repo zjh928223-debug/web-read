@@ -17,12 +17,14 @@
       "readCallers": [
         { "file": "src/services/persistence/reader-session-persistence.js", "lines": "180-253", "symbols": ["loadCommitted", "loadCurrentRevision"], "access": "read", "boundary": "IndexedDB/files compatibility repository" },
         { "file": "src/composables/session-restore-runtime.js", "lines": "63-77", "symbols": ["loadFromDB"], "access": "read", "boundary": "session restore facade" },
+        { "file": "src/composables/reader-bootstrap-runtime.js", "lines": "18-30", "symbols": ["audioStore", "loadFromDB"], "access": "read", "boundary": "runtime adapter over Pinia audio store" },
         { "file": "src/composables/youtube-workflow-loader.js", "lines": "288-410", "symbols": ["prepareExpectedRevision", "loadJobIntoReader"], "access": "read", "boundary": "loader and session identity" },
         { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "937-972,1448-1485", "symbols": ["createReaderSessionLoader", "loadJob"], "access": "read", "boundary": "reader UI orchestration" },
         { "file": "src/services/persistence/read-web-application-backup.js", "lines": "126-180,880-1015", "symbols": ["createReadWebApplicationBackupAdapters", "reader-session adapter"], "access": "read", "boundary": "inventory/backup/restore only" }
       ],
       "writeCallers": [
         { "file": "src/pinia-stores/audio.js", "lines": "7-88", "symbols": ["initDB", "saveToDB", "deleteFromDB", "clearDBStore"], "access": "write/delete", "boundary": "legacy direct IDB writer" },
+        { "file": "src/composables/reader-bootstrap-runtime.js", "lines": "18-30", "symbols": ["requirePiniaRuntimeStores", "audioStore", "saveToDB"], "access": "write adapter", "boundary": "runtime wrapper exposes direct Pinia audioStore persistence" },
         { "file": "src/services/persistence/reader-session-persistence.js", "lines": "137-178", "symbols": ["commit", "quarantine"], "access": "write", "boundary": "session row batch/CAS" },
         { "file": "src/composables/import-module.js", "lines": "320-321,343", "symbols": ["saveToDB", "audio", "audioMeta", "transcript"], "access": "write", "boundary": "legacy import caller for audio, metadata, and transcript rows" },
         { "file": "src/pinia-stores/marks.js", "lines": "12-29", "symbols": ["toggle", "saveToDB", "marks"], "access": "write", "boundary": "legacy Pinia mark toggle writer" },
@@ -35,7 +37,7 @@
         { "file": "src/composables/youtube-workflow-loader.js", "lines": "330-470", "symbols": ["commitLatestSession", "loadJobIntoReader"], "access": "write", "boundary": "mixed local session commit and workflow loader path" },
         { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "2345-2350,2472-2605", "symbols": ["applyReaderMarks", "writeReaderOutboxEntry", "reader outbox"], "access": "write", "boundary": "marks row plus local retry bridge" }
       ],
-      "browserDirectWritersRef": ["reader.idb.audio-store", "reader.import-module", "reader.marks-store-toggle", "reader.startup-cleanup", "reader.app-handlers-mark-import", "reader.panel-mark-save", "reader.visual-vocab", "reader.session-persistence", "reader.session-mark-facade", "reader.local-outbox"],
+      "browserDirectWritersRef": ["reader.idb.audio-store", "reader.bootstrap-audio-adapter", "reader.import-module", "reader.marks-store-toggle", "reader.startup-cleanup", "reader.app-handlers-mark-import", "reader.panel-mark-save", "reader.visual-vocab", "reader.session-persistence", "reader.session-mark-facade", "reader.local-outbox", "reader.workflow-loader"],
       "backupAdapter": "read-web-application-backup reader-session adapter (IDB rows + reader save outbox)",
       "revisionSource": "readerSession manifest/contentId/revision/checksum; session commit uses compareAndSwapMany when expectedRevision is present",
       "mediaReferences": "audioMeta identity/authorized URL metadata only; no media bytes",
@@ -208,5 +210,5 @@
       "milestoneStatus": "inventory-only; current Python service remains owner"
     }
   ],
-  "artifactChecksum": "sha256:7e835b4b389c701a4928ed6a4d338845afc6a0d30719320a28e579c650fd7483"
+  "artifactChecksum": "sha256:d8ebff0f58c99c194eafd9c578c5a0af018ee01e2b3995d2cee1c38c9875307a"
 }

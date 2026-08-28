@@ -9,9 +9,9 @@
     "directWriterMeaning": "A caller that can mutate a current canonical or compatibility durable record without a future Windows owner API receipt",
     "zeroGateMeaning": "A future cutover gate must prove the listed canonical writer is blocked or read-only; this milestone records non-zero current writers"
   },
-  "consumerCount": 47,
+  "consumerCount": 48,
   "surfaceCoverage": {
-    "IndexedDB": ["reader.idb.audio-store", "reader.session-persistence", "reader.import-module", "reader.marks-store-toggle", "reader.startup-cleanup", "reader.app-handlers-mark-import", "reader.panel-mark-save", "reader.visual-vocab", "reader.session-restore", "vocabulary.idb-repositories", "vocabulary.learning-uow", "vocabulary.review-session-ledger", "vocabulary.context-evidence", "vocabulary.learning-events", "vocabulary.personalization-shadow", "vocabulary.pending-candidates", "vocabulary.settlement-progress", "vocabulary.legacy-migration", "vocabulary.preview-acquisition"],
+    "IndexedDB": ["reader.idb.audio-store", "reader.bootstrap-audio-adapter", "reader.session-persistence", "reader.import-module", "reader.marks-store-toggle", "reader.startup-cleanup", "reader.app-handlers-mark-import", "reader.panel-mark-save", "reader.visual-vocab", "reader.session-restore", "vocabulary.idb-repositories", "vocabulary.learning-uow", "vocabulary.review-session-ledger", "vocabulary.context-evidence", "vocabulary.learning-events", "vocabulary.personalization-shadow", "vocabulary.pending-candidates", "vocabulary.settlement-progress", "vocabulary.legacy-migration", "vocabulary.preview-acquisition"],
     "localStorage": ["reader.startup-cleanup", "reader.local-outbox", "preview.local-storage", "preview.durable-envelope", "preview.daily-continuation", "preview.preference-storage", "annotation.storage", "workflow.local-receipt-hint"],
     "rawJson": ["marks.python-json-owner", "workflow.raw-json-owner", "annotation.audio-folder-json"],
     "sqliteReadOnly": ["ecdict.sqlite-read-only", "local-sentence.sqlite-read-only"],
@@ -48,6 +48,20 @@
       "writerStatus": "active legacy browser writer; audio is media payload risk and visual is outside canonical session rows",
       "migrationWave": "wave-1-reader-session",
       "zeroGate": "Static: no saveToDB/deleteFromDB/clearDBStore call remains for canonical session IDs; runtime: write attempt is rejected/quarantined before state changes"
+    },
+    {
+      "id": "reader.bootstrap-audio-adapter",
+      "domain": "reader-session",
+      "surface": "IndexedDB",
+      "file": "src/composables/reader-bootstrap-runtime.js",
+      "symbols": ["requirePiniaRuntimeStores", "audioStore", "saveToDB", "loadFromDB"],
+      "lines": "18-30",
+      "access": ["read", "write"],
+      "keys": ["audio", "audioMeta", "transcript", "chunkData", "marks", "visual"],
+      "directWriter": true,
+      "writerStatus": "active runtime adapter exposes Pinia audioStore save/load wrappers to legacy reader modules",
+      "migrationWave": "wave-1-reader-session",
+      "zeroGate": "Bootstrap injects a future owner facade or read-only compatibility adapter; saveToDB must not remain a canonical browser writer after checkpoint"
     },
     {
       "id": "reader.import-module",
@@ -705,5 +719,5 @@
     { "key": "annotationBubbleFrame", "file": "src/composables/annotation-bubble.js:66", "reason": "annotation bubble layout preference; not annotation content" },
     { "key": "st.* / theme / visualStyles / media-source / review shortcut preferences", "file": "src/composables/session-startup-runtime.js and UI modules", "reason": "ephemeral or UI preferences; not canonical six-domain records" }
   ],
-  "artifactChecksum": "sha256:f48ca7cd276bc3b1401e4de3f0325e730b4e72e467a2231563e981acb9d0a6f7"
+  "artifactChecksum": "sha256:afa61d6f5c8bc330aaa766a9452843f8a1c5905950eb89a378bbd391cc192b33"
 }

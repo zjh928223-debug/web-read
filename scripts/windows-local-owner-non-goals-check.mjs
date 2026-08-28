@@ -52,19 +52,18 @@ const pathViolations = protectedPathViolations({
 })
 assert(pathViolations.length === 0, `protected user paths entered milestone commits or index: ${pathViolations.join(', ')}`)
 
-const schemaFingerprints = []
+const capturedSchemaFingerprints = []
+const currentSchemaFingerprints = []
 for (const file of nonGoals.frozenSourceFiles) {
-  const currentSource = await readFile(path.join(REPOSITORY_ROOT, file.path), 'utf8')
+  const currentSource = await readCurrentSource(file.path)
   const capturedSource = gitShow(milestoneBaseCommit, file.path)
-  const capturedFingerprint = indexedDbSchemaSemanticFingerprint(capturedSource)
-  const currentFingerprint = indexedDbSchemaSemanticFingerprint(currentSource)
-  assert(
-    indexedDbSchemaSemanticDiff(capturedFingerprint, currentFingerprint).length === 0,
-    `frozen IndexedDB schema semantics changed: ${file.path}`,
-  )
-  schemaFingerprints.push(currentFingerprint)
+  capturedSchemaFingerprints.push(indexedDbSchemaSemanticFingerprint(capturedSource))
+  currentSchemaFingerprints.push(indexedDbSchemaSemanticFingerprint(currentSource))
 }
-const schemaSemantics = aggregateIndexedDbSchemaSemantics(schemaFingerprints)
+const capturedSchemaSemantics = aggregateIndexedDbSchemaSemantics(capturedSchemaFingerprints)
+const schemaSemantics = aggregateIndexedDbSchemaSemantics(currentSchemaFingerprints)
+const schemaDifferences = indexedDbSchemaSemanticDiff(capturedSchemaSemantics, schemaSemantics)
+assert(schemaDifferences.length === 0, `frozen IndexedDB schema semantics changed: ${schemaDifferences.join('; ')}`)
 assert(schemaSemantics.databaseNames.includes(FROZEN_IDB_SCHEMA.databaseName), 'SeekPlayerDB semantic identity missing')
 assert(schemaSemantics.versions.includes(String(FROZEN_IDB_SCHEMA.version)), 'SeekPlayerDB version 1 semantic identity missing')
 assert(schemaSemantics.storeNames.includes(FROZEN_IDB_SCHEMA.objectStore), 'files object store semantic identity missing')
@@ -105,5 +104,14 @@ function assertGitAncestor(commit) {
     })
   } catch {
     assert(false, `milestone base commit is not an ancestor of HEAD: ${commit}`)
+  }
+}
+
+async function readCurrentSource(relativePath) {
+  try {
+    return await readFile(path.join(REPOSITORY_ROOT, relativePath), 'utf8')
+  } catch (error) {
+    if (error.code === 'ENOENT') return ''
+    throw error
   }
 }

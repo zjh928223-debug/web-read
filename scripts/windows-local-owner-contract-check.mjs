@@ -6,6 +6,7 @@ import {
   assert,
   loadOwnerArtifacts,
   missingConsumerEvidenceTokens,
+  missingMatrixConsumerRefs,
   missingRequiredConsumerIds,
   readJson,
 } from './lib/windows-local-owner-artifacts.mjs'
@@ -78,6 +79,15 @@ for (const consumer of consumers.consumers) {
 assert(consumers.consumerCount === consumers.consumers.length, 'consumerCount does not match mapped consumers')
 const missingRequiredConsumers = missingRequiredConsumerIds(consumerIds)
 assert(missingRequiredConsumers.length === 0, `Reader Session consumer inventory is missing: ${missingRequiredConsumers.join(', ')}`)
+const readerSessionMatrix = matrixByDomain.get('reader-session')
+const missingReaderSessionMatrixRefs = missingMatrixConsumerRefs(
+  consumers.consumers.filter((consumer) => consumer.domain === 'reader-session'),
+  readerSessionMatrix.browserDirectWritersRef,
+)
+assert(
+  missingReaderSessionMatrixRefs.length === 0,
+  `Reader Session matrix is missing required consumer reference(s): ${missingReaderSessionMatrixRefs.join(', ')}`,
+)
 for (const [surface, ids] of Object.entries(consumers.surfaceCoverage)) {
   for (const id of ids) assert(consumerIds.has(id), `${surface} coverage references unknown consumer: ${id}`)
 }

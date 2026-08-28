@@ -34,6 +34,8 @@ export const REQUIRED_READER_SESSION_CONSUMERS = Object.freeze([
   'reader.import-module',
   'reader.marks-store-toggle',
   'reader.startup-cleanup',
+  'reader.bootstrap-audio-adapter',
+  'reader.workflow-loader',
 ])
 
 export const FROZEN_IDB_SCHEMA = Object.freeze({
@@ -134,6 +136,16 @@ export function missingRequiredConsumerIds(consumerIds, requiredIds = REQUIRED_R
   return requiredIds.filter((id) => !knownIds.has(id))
 }
 
+export function missingMatrixConsumerRefs(consumerRecords, matrixRefs, requiredIds = REQUIRED_READER_SESSION_CONSUMERS) {
+  const records = Array.isArray(consumerRecords) ? consumerRecords : []
+  const refs = new Set(Array.isArray(matrixRefs) ? matrixRefs : [])
+  const required = new Set(requiredIds)
+  return records
+    .filter((consumer) => required.has(consumer?.id))
+    .map((consumer) => consumer.id)
+    .filter((id) => !refs.has(id))
+}
+
 const SOURCE_TOKEN_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/u
 
 export function consumerEvidenceTokens(consumer) {
@@ -163,56 +175,92 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort(compareCodePoint)
 }
 
-function captureValues(source, pattern, group = 1) {
-  return [...String(source).matchAll(pattern)]
-    .map((match) => match[group])
-    .filter((value) => value !== undefined)
-}
-
-function countMatches(source, pattern) {
-  return [...String(source).matchAll(pattern)].length
-}
-
 export function indexedDbSchemaSemanticFingerprint(source) {
-  const sourceText = String(source)
+  const tokens = tokenizeJavaScript(source)
+  const bindings = collectLiteralBindings(tokens)
+  const openCalls = findCalls(tokens, 'open')
+    .filter((call) => {
+      const receiver = tokens[call.index - 2]
+      return tokens[call.index - 1]?.value === '.'
+        && (receiver?.value === 'indexedDB' || receiver?.value === 'indexedDBApi')
+    })
+  const objectStoreCalls = findCalls(tokens, 'objectStore')
+    .filter((call) => isIndexedDbObjectStoreCall(tokens, call))
+  const transactionCalls = findCalls(tokens, 'transaction')
+  const createObjectStoreCalls = findCalls(tokens, 'createObjectStore')
+  const deleteObjectStoreCalls = findCalls(tokens, 'deleteObjectStore')
+  const deleteDatabaseCalls = findCalls(tokens, 'deleteDatabase')
+    .filter((call) => isIndexedDbApiMethodCall(tokens, call))
+  const objectStoreAliases = collectObjectStoreAliases(tokens, objectStoreCalls, bindings)
+
   const databaseNames = [
-    ...captureValues(sourceText, /\b(?:DATABASE_NAME|DB_NAME)\s*=\s*['"]([^'"]+)['"]/gu),
-    ...captureValues(sourceText, /\b(?:indexedDB|indexedDBApi)\.open\(\s*['"]([^'"]+)['"]\s*,/gu),
+    ...literalBindingsByName(bindings, /^(?:DATABASE_NAME|DB_NAME)$/u),
+    ...openCalls.map((call) => firstResolvedLiteral(call.args[0], bindings)).filter(Boolean),
   ]
   const versions = [
-    ...captureValues(sourceText, /\b(?:DATABASE_VERSION|DB_VERSION)\s*=\s*(\d+)/gu),
-    ...captureValues(sourceText, /\b(?:indexedDB|indexedDBApi)\.open\(\s*[^,]+,\s*(\d+)/gu),
+    ...literalBindingsByName(bindings, /^(?:DATABASE_VERSION|DB_VERSION)$/u),
+    ...openCalls.map((call) => firstResolvedLiteral(call.args[1], bindings)).filter(Boolean),
   ]
   const storeNames = [
-    ...captureValues(sourceText, /\b(?:STORE_NAME|storeName)\s*=\s*['"]([^'"]+)['"]/gu),
-    ...captureValues(sourceText, /\b(?:objectStore|createObjectStore|deleteObjectStore)\(\s*['"]([^'"]+)['"]/gu),
-    ...captureValues(sourceText, /\btransaction\(\s*\[\s*['"]([^'"]+)['"]/gu),
+    ...literalBindingsByName(bindings, /^(?:STORE_NAME|storeName)$/u),
+    ...objectStoreCalls.map((call) => firstResolvedLiteral(call.args[0], bindings)).filter(Boolean),
+    ...createObjectStoreCalls.map((call) => firstResolvedLiteral(call.args[0], bindings)).filter(Boolean),
+    ...deleteObjectStoreCalls.map((call) => firstResolvedLiteral(call.args[0], bindings)).filter(Boolean),
+    ...transactionCalls.map((call) => firstResolvedLiteral(call.args[0], bindings)).filter(Boolean),
   ]
-  const keyPaths = captureValues(
-    sourceText,
-    /\bkeyPath\s*(?::|===?|!==?)\s*['"]([^'"]+)['"]/gu,
-  )
+  const keyPaths = [
+    ...createObjectStoreCalls.map((call) => keyPathFromArgument(call.args[1], bindings)).filter(Boolean),
+    ...objectStoreCalls
+      .map((call) => keyPathAfterObjectStoreCall(tokens, call, bindings))
+      .filter(Boolean),
+    ...tokens
+      .map((token, index) => tokens[index - 1]?.value === '.'
+        && token.value === 'keyPath'
+        && objectStoreAliases.has(tokens[index - 2]?.value)
+        ? literalAfterProperty(tokens, index, bindings)
+        : null)
+      .filter(Boolean),
+  ]
 
   return {
     databaseNames: uniqueSorted(databaseNames),
     versions: uniqueSorted(versions),
     storeNames: uniqueSorted(storeNames),
     keyPaths: uniqueSorted(keyPaths),
-    operationCounts: {
-      onupgradeneeded: countMatches(sourceText, /\bonupgradeneeded\b/gu),
-      createObjectStore: countMatches(sourceText, /\bcreateObjectStore\s*\(/gu),
-      deleteObjectStore: countMatches(sourceText, /\bdeleteObjectStore\s*\(/gu),
-      deleteDatabase: countMatches(sourceText, /\bdeleteDatabase\s*\(/gu),
-      clearStore: countMatches(sourceText, /\.\s*clear\s*\(/gu),
-      schemaRebuild: countMatches(sourceText, /\b(?:rebuild|recreate)(?:Database|Store|Schema)\b/giu),
-    },
+    schemaOperations: [
+      ...createObjectStoreCalls.map((call) => operationSignature('createObjectStore', call, bindings, true)),
+      ...deleteObjectStoreCalls.map((call) => operationSignature('deleteObjectStore', call, bindings)),
+      ...deleteDatabaseCalls.map((call) => operationSignature('deleteDatabase', call, bindings)),
+      ...rebuildOperations(tokens, bindings),
+      ...objectStoreClearOperations(tokens, objectStoreCalls, bindings),
+    ].sort(compareCodePoint),
   }
 }
 
 export function indexedDbSchemaSemanticDiff(expected, actual) {
-  return canonicalJson(expected) === canonicalJson(actual)
-    ? []
-    : ['semantic fingerprint changed']
+  const differences = []
+  for (const field of ['databaseNames', 'versions', 'storeNames', 'keyPaths']) {
+    if (canonicalJson(expected?.[field] || []) !== canonicalJson(actual?.[field] || [])) {
+      differences.push(`${field} changed`)
+    }
+  }
+  const expectedOperationCounts = frequencyMap(expected?.schemaOperations || [])
+  const actualOperationCounts = frequencyMap(actual?.schemaOperations || [])
+  const introducedOperations = []
+  for (const [operation, actualCount] of actualOperationCounts) {
+    const introducedCount = actualCount - (expectedOperationCounts.get(operation) || 0)
+    if (introducedCount > 0) introducedOperations.push(`${operation} (+${introducedCount})`)
+  }
+  if (introducedOperations.length > 0) {
+    differences.push(`introduced schema operation(s): ${introducedOperations.join(', ')}`)
+  }
+  return differences
+}
+
+function frequencyMap(values) {
+  const frequencies = new Map()
+  for (const value of values) frequencies.set(value, (frequencies.get(value) || 0) + 1)
+  return frequencies
 }
 
 export function aggregateIndexedDbSchemaSemantics(fingerprints) {
@@ -222,7 +270,248 @@ export function aggregateIndexedDbSchemaSemantics(fingerprints) {
     versions: uniqueSorted(list.flatMap((value) => value.versions || [])),
     storeNames: uniqueSorted(list.flatMap((value) => value.storeNames || [])),
     keyPaths: uniqueSorted(list.flatMap((value) => value.keyPaths || [])),
+    schemaOperations: list.flatMap((value) => value.schemaOperations || []).sort(compareCodePoint),
   }
+}
+
+function tokenizeJavaScript(source) {
+  const text = String(source)
+  const tokens = []
+  let index = 0
+  while (index < text.length) {
+    const char = text[index]
+    const next = text[index + 1]
+    if (/\s/u.test(char)) {
+      index += 1
+      continue
+    }
+    if (char === '/' && next === '/') {
+      index += 2
+      while (index < text.length && text[index] !== '\n') index += 1
+      continue
+    }
+    if (char === '/' && next === '*') {
+      index += 2
+      while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index += 1
+      index = Math.min(text.length, index + 2)
+      continue
+    }
+    if (char === "'" || char === '"' || char === '`') {
+      const quote = char
+      let value = ''
+      let interpolated = false
+      index += 1
+      while (index < text.length) {
+        const current = text[index]
+        const escaped = text[index + 1]
+        if (current === '\\') {
+          value += decodeEscapedCharacter(escaped)
+          index += 2
+          continue
+        }
+        if (quote === '`' && current === '$' && escaped === '{') interpolated = true
+        if (current === quote) {
+          index += 1
+          break
+        }
+        value += current
+        index += 1
+      }
+      tokens.push({ type: 'literal', value: interpolated ? null : value })
+      continue
+    }
+    if (/[A-Za-z_$]/u.test(char)) {
+      const start = index
+      index += 1
+      while (index < text.length && /[A-Za-z0-9_$]/u.test(text[index])) index += 1
+      tokens.push({ type: 'identifier', value: text.slice(start, index) })
+      continue
+    }
+    if (/[0-9]/u.test(char)) {
+      const start = index
+      index += 1
+      while (index < text.length && /[0-9.]/u.test(text[index])) index += 1
+      tokens.push({ type: 'literal', value: text.slice(start, index) })
+      continue
+    }
+    tokens.push({ type: 'punctuation', value: char })
+    index += 1
+  }
+  return tokens
+}
+
+function decodeEscapedCharacter(value) {
+  if (value === undefined) return ''
+  return ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v' }[value] || value)
+}
+
+function collectLiteralBindings(tokens) {
+  const bindings = new Map()
+  for (let index = 0; index < tokens.length - 3; index += 1) {
+    if (!['const', 'let', 'var'].includes(tokens[index].value)) continue
+    const name = tokens[index + 1]
+    if (name?.type !== 'identifier' || tokens[index + 2]?.value !== '=') continue
+    const value = resolveLiteralToken(tokens[index + 3], bindings)
+    if (value !== null) bindings.set(name.value, value)
+  }
+  return bindings
+}
+
+function literalBindingsByName(bindings, pattern) {
+  return [...bindings.entries()]
+    .filter(([name]) => pattern.test(name))
+    .map(([, value]) => value)
+}
+
+function findCalls(tokens, method) {
+  const calls = []
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    if (tokens[index].value !== method || tokens[index + 1].value !== '(') continue
+    const close = matchingDelimiter(tokens, index + 1, '(', ')')
+    if (close === null) continue
+    calls.push({ index, open: index + 1, close, args: splitArguments(tokens, index + 1, close) })
+    index = close
+  }
+  return calls
+}
+
+function matchingDelimiter(tokens, open, opening, closing) {
+  let depth = 0
+  for (let index = open; index < tokens.length; index += 1) {
+    if (tokens[index].value === opening) depth += 1
+    if (tokens[index].value === closing) {
+      depth -= 1
+      if (depth === 0) return index
+    }
+  }
+  return null
+}
+
+function splitArguments(tokens, open, close) {
+  const args = []
+  let start = open + 1
+  let depth = 0
+  for (let index = start; index < close; index += 1) {
+    if (['(', '[', '{'].includes(tokens[index].value)) depth += 1
+    if ([')', ']', '}'].includes(tokens[index].value)) depth -= 1
+    if (tokens[index].value === ',' && depth === 0) {
+      args.push(tokens.slice(start, index))
+      start = index + 1
+    }
+  }
+  if (start < close) args.push(tokens.slice(start, close))
+  return args
+}
+
+function resolveLiteralToken(token, bindings) {
+  if (!token) return null
+  if (token.type === 'literal') return token.value
+  if (token.type === 'identifier' && bindings.has(token.value)) return bindings.get(token.value)
+  return null
+}
+
+function firstResolvedLiteral(argument, bindings) {
+  if (!Array.isArray(argument)) return null
+  for (const token of argument) {
+    const value = resolveLiteralToken(token, bindings)
+    if (value !== null) return value
+  }
+  return null
+}
+
+function keyPathFromArgument(argument, bindings) {
+  if (!Array.isArray(argument)) return null
+  for (let index = 0; index < argument.length; index += 1) {
+    if (argument[index].value !== 'keyPath') continue
+    return literalAfterProperty(argument, index, bindings)
+  }
+  return null
+}
+
+function keyPathAfterObjectStoreCall(tokens, call, bindings) {
+  const propertyIndex = call.close + 2
+  if (tokens[call.close + 1]?.value !== '.' || tokens[propertyIndex]?.value !== 'keyPath') return null
+  return literalAfterProperty(tokens, propertyIndex, bindings)
+}
+
+function literalAfterProperty(tokens, index, bindings) {
+  for (let offset = 1; offset <= 5 && index + offset < tokens.length; offset += 1) {
+    const token = tokens[index + offset]
+    if (token.value === ';' || token.value === ',' || token.value === '}') break
+    const value = resolveLiteralToken(token, bindings)
+    if (value !== null) return value
+  }
+  return null
+}
+
+function operationSignature(method, call, bindings, includeKeyPath = false) {
+  const target = firstResolvedLiteral(call.args[0], bindings) || '<dynamic>'
+  const keyPath = includeKeyPath ? keyPathFromArgument(call.args[1], bindings) : null
+  return `${method}:${target}${keyPath ? `:keyPath=${keyPath}` : ''}`
+}
+
+function rebuildOperations(tokens, bindings) {
+  const operations = []
+  for (const method of ['rebuildDatabase', 'recreateDatabase', 'rebuildStore', 'recreateStore', 'rebuildSchema', 'recreateSchema']) {
+    for (const call of findCalls(tokens, method)) {
+      operations.push(operationSignature(method, call, bindings))
+    }
+  }
+  return operations
+}
+
+function objectStoreClearOperations(tokens, objectStoreCalls, bindings) {
+  const aliases = collectObjectStoreAliases(tokens, objectStoreCalls, bindings)
+  const operations = []
+  for (const call of objectStoreCalls) {
+    const target = firstResolvedLiteral(call.args[0], bindings) || '<dynamic>'
+    if (tokens[call.close + 1]?.value === '.' && tokens[call.close + 2]?.value === 'clear') {
+      operations.push(`clearObjectStore:${target}`)
+    }
+  }
+  for (const call of findCalls(tokens, 'clear')) {
+    const receiver = tokens[call.index - 2]
+    if (tokens[call.index - 1]?.value !== '.' || receiver?.type !== 'identifier') continue
+    const target = aliases.get(receiver.value)
+    if (target) operations.push(`clearObjectStore:${target}`)
+  }
+  return operations
+}
+
+function collectObjectStoreAliases(tokens, objectStoreCalls, bindings) {
+  const aliases = new Map()
+  for (const call of objectStoreCalls) {
+    const alias = assignedIdentifierBefore(tokens, call.index)
+    if (alias) aliases.set(alias, firstResolvedLiteral(call.args[0], bindings) || '<dynamic>')
+  }
+  return aliases
+}
+
+function isIndexedDbObjectStoreCall(tokens, call) {
+  const receiver = tokens[call.index - 2]
+  if (receiver?.type === 'identifier' && /transaction$/iu.test(receiver.value)) return true
+  if (receiver?.value !== ')') return false
+  for (let cursor = call.index - 3; cursor >= 0 && call.index - cursor <= 20; cursor -= 1) {
+    if ([';', '{', '}'].includes(tokens[cursor].value)) break
+    if (tokens[cursor].value === 'transaction' && tokens[cursor + 1]?.value === '(') return true
+  }
+  return false
+}
+
+function isIndexedDbApiMethodCall(tokens, call) {
+  const receiver = tokens[call.index - 2]
+  return tokens[call.index - 1]?.value === '.'
+    && (receiver?.value === 'indexedDB' || receiver?.value === 'indexedDBApi')
+}
+
+function assignedIdentifierBefore(tokens, index) {
+  for (let cursor = index - 1; cursor >= 0 && index - cursor <= 12; cursor -= 1) {
+    if ([';', '{', '}'].includes(tokens[cursor].value)) break
+    if (tokens[cursor].value === '=' && tokens[cursor - 1]?.type === 'identifier') {
+      return tokens[cursor - 1].value
+    }
+  }
+  return null
 }
 
 export function relativeRepositoryPath(value) {

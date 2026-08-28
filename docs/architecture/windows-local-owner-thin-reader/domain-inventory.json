@@ -87,7 +87,7 @@
         }
       ],
       "compatibilityKeys": [
-        { "key": "audio", "storage": "SeekPlayerDB/files", "schemaVersion": "legacy-media-row.unversioned", "classification": "legacy raw media payload; not a canonical reader-session record", "checksum": "not a canonical content checksum; complete Blob/ArrayBuffer must be rejected", "sourceEvidence": ["src/pinia-stores/audio.js:33-35", "src/composables/import-module.js:320"] },
+        { "key": "audio", "storage": "SeekPlayerDB/files", "schemaVersion": "legacy-media-row.unversioned", "classification": "legacy raw media payload; not a canonical reader-session record", "checksum": "not a canonical content checksum; complete Blob/ArrayBuffer must be rejected", "sourceEvidence": ["src/pinia-stores/audio.js:33-35", "src/composables/import-module.js:320", "src/composables/reader-bootstrap-runtime.js:18-30"] },
         { "key": "visual", "storage": "SeekPlayerDB/files", "schemaVersion": "legacy-visual-row.unversioned", "classification": "legacy visual vocabulary payload; outside canonical reader-session rows", "checksum": "legacy row checksum only; not a canonical reader-session checksum", "sourceEvidence": ["src/pinia-stores/audio.js:33-35", "src/composables/visual-vocab-module.js:64-82"] },
         { "key": "read-web.reader-save-outbox.v1", "storage": "localStorage", "schemaVersion": "reader-save-outbox.v1", "classification": "retry/outbox, not canonical", "checksum": "backup record SHA-256" },
         { "key": "read-web.reader-save-outbox.v2.<job>.<kind>.<operation>", "storage": "localStorage", "schemaVersion": "reader-save-outbox.v2", "classification": "retry/outbox, not canonical", "checksum": "backup record SHA-256" },
@@ -103,7 +103,7 @@
       "revisionSource": "readerSession row revision string and shared contentId/checksum; reader marks/activity uses per-job integer revision and expectedRevision",
       "mediaReferences": "audioMeta may carry media identity/authorized URL metadata; full Blob/ArrayBuffer is not a valid durable record",
       "rollbackTarget": "Pre-cutover reader-session IDB rows plus application-backup artifact and quarantined rows",
-      "sourceEvidence": ["src/services/persistence/application-persistence.js:1-3", "src/services/persistence/reader-session-persistence.js:95-178", "src/components/YouTubeWorkflowPanel.vue:451-972", "src/composables/import-module.js:320-343", "src/pinia-stores/marks.js:12-29", "src/composables/session-startup-cleanup.js:9-47", "src/composables/session-restore-runtime.js:50-77", "src/composables/visual-vocab-module.js:64-82"]
+      "sourceEvidence": ["src/services/persistence/application-persistence.js:1-3", "src/services/persistence/reader-session-persistence.js:95-178", "src/components/YouTubeWorkflowPanel.vue:451-972", "src/composables/import-module.js:320-343", "src/composables/reader-bootstrap-runtime.js:18-30", "src/pinia-stores/marks.js:12-29", "src/composables/session-startup-cleanup.js:9-47", "src/composables/session-restore-runtime.js:50-77", "src/composables/visual-vocab-module.js:64-82"]
     },
     {
       "domain": "marks-activity",
@@ -352,5 +352,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520"]
     }
   ],
-  "artifactChecksum": "sha256:c375751f291f99acb19a1c118f160eee3ec81e3eaf55ecf48d1ae66fbc0db450"
+  "artifactChecksum": "sha256:dabc878947b9b29a43fc584bf7185fa856ef91f1f3f79065e6727af6966d4acb"
 }

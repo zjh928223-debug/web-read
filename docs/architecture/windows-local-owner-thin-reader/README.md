@@ -42,11 +42,14 @@ The six protected WhisperX/language-processing paths retain `sha256AtCapture` as
 The non-goal gate checks that `491bd8a718a82faf9659a460b9b817c69c18eeb0...HEAD` and the staged index do not
 contain those paths, so later unstaged user edits are allowed. The twelve historical source captures use
 semantic IndexedDB fingerprints instead of full-file hashes: `SeekPlayerDB`, version `1`, `files`, `id`, and
-schema-operation semantics remain guarded while unrelated persistence/repository code may evolve.
+introduced destructive schema operations remain guarded while legacy writer/adapter calls may be removed or
+moved. The focused check structurally recognizes IDB object-store operations; comments, strings, cache clears,
+and repository-level `clear()` methods are not treated as schema changes.
 
 The consumer gate reads every mapped source and verifies its declared symbol/token evidence. The two small
 self-tests exercise both negative boundaries: an unstaged protected-file fixture is allowed, while a committed
-or staged protected path and omission of any required Reader Session caller are rejected.
+or staged protected path, omission of any required Reader Session caller, or omission of its matrix reference
+is rejected.
 
 The inventory reads source text and the existing backup registry only. It does not open `E:\read-web-next`,
 `E:\read-web`, the daily data root, or a real browser profile. Any later live rehearsal must use

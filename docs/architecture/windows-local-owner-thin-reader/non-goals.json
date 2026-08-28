@@ -24,7 +24,7 @@
     "version": 1,
     "objectStore": "files",
     "keyPath": "id",
-    "policy": "No upgrade, clear, rebuild, object-store creation, deletion, or key-path change is part of this milestone",
+    "policy": "No schema upgrade, store creation/deletion/rename/rebuild, or IDB object-store clear operation targeting the frozen files store is introduced in this milestone; legacy writer and adapter calls may be removed or moved",
     "futureChange": "Any schema migration requires a separate explicitly authorized change"
   },
   "scriptLoadOrder": {
@@ -130,8 +130,10 @@
       "database version 1",
       "object store files",
       "key path id",
-      "no introduced schema upgrade, clear, rebuild, create, delete, or replacement operation"
+      "no introduced real IDB schema create/delete/rebuild or object-store clear operation"
     ],
+    "operationComparison": "Aggregate source semantics; only operations introduced relative to the milestone baseline are rejected, while removed or moved legacy calls are allowed",
+    "commentAndCachePolicy": "Comments, strings, cache.clear(), repository.clear(), and unrelated business code are not IDB object-store schema operations",
     "historicalCapture": "sha256AtCapture remains an audit snapshot and is not a continuous working-tree gate"
   },
   "dataPolicy": {
@@ -142,12 +144,12 @@
     "policy": "No reads or writes outside the optimization workspace/config/data-root boundary are allowed for this milestone"
   },
   "architectureGuardChecks": [
-    "frozen IndexedDB identity and source semantic fingerprints",
+    "frozen IndexedDB identity and introduced destructive schema-operation semantics",
     "exact index.html script order",
     "optimization loopback ports and data root",
     "protected path exclusion from milestone commits and staged index",
     "all six domain registrations and typed API schema",
     "no owner-mode or domain writer migration claim"
   ],
-  "artifactChecksum": "sha256:cf37891cd3225f4bc5287439b2c48b7b9e09790f9b5d101372a45f4692222480"
+  "artifactChecksum": "sha256:35cbe508b439e16b25f7554ff09f1b0ff02e8a6a39d914ffda22fefcbf2ca126"
 }
