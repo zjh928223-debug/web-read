@@ -745,6 +745,86 @@ export async function writeIsolatedBrowserProfile(profileDir, profile) {
   return state
 }
 
+async function assertExistingBrowserProfilePathIsContained(profileDir, filePath) {
+  let canonicalFilePath
+  try {
+    canonicalFilePath = await resolveCanonicalPath(filePath)
+  } catch (error) {
+    throw unsafeIsolationPath('Existing browser profile could not be canonicalized safely', {
+      profileDir,
+      filePath,
+      cause: error,
+    })
+  }
+  if (!isStrictDescendant(profileDir, canonicalFilePath)) {
+    throw unsafeIsolationPath('Existing browser profile must remain inside its isolated profile directory', {
+      profileDir,
+      filePath,
+      canonicalFilePath,
+    })
+  }
+}
+
+export async function initializeIsolatedBrowserProfileIfMissing({
+  isolationRoot,
+  profileDir,
+  forbiddenRoots,
+} = {}) {
+  const validatedLayout = await validateIsolationLayout({
+    isolationRoot,
+    paths: { profileDir },
+    forbiddenRoots,
+  })
+  const canonicalIsolationRoot = validatedLayout.isolationRoot
+  const canonicalProfileDir = validatedLayout.paths.profileDir
+  const filePath = path.join(canonicalProfileDir, BROWSER_PROFILE_FILE)
+
+  return withApplicationPathMutex(canonicalIsolationRoot, async () => {
+    if (await pathExists(filePath)) {
+      await assertExistingBrowserProfilePathIsContained(canonicalProfileDir, filePath)
+      return Object.freeze({
+        created: false,
+        status: 'existing',
+        profilePath: filePath,
+        schemaVersion: PROFILE_SCHEMA_VERSION,
+      })
+    }
+
+    let entries
+    try {
+      entries = await readdir(canonicalProfileDir)
+    } catch (error) {
+      if (error?.code === 'ENOENT') {
+        entries = []
+      } else {
+        throw error
+      }
+    }
+    if (entries.length > 0) {
+      const initializationError = new Error(
+        'Cannot initialize a browser profile that already contains candidate state',
+      )
+      initializationError.code = 'BACKUP_PROFILE_INITIALIZATION_NOT_EMPTY'
+      initializationError.details = {
+        profileDir: canonicalProfileDir,
+        entryCount: entries.length,
+      }
+      throw initializationError
+    }
+
+    await writeIsolatedBrowserProfile(canonicalProfileDir, {
+      localStorage: {},
+      indexedDbRows: [],
+    })
+    return Object.freeze({
+      created: true,
+      status: 'initialized-empty-candidate',
+      profilePath: filePath,
+      schemaVersion: PROFILE_SCHEMA_VERSION,
+    })
+  })
+}
+
 async function openBrowserProfile(profileDir) {
   const filePath = path.join(profileDir, BROWSER_PROFILE_FILE)
   const profilePresent = await pathExists(filePath)
@@ -1608,6 +1688,7 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
     ]),
   ].every((binding) => binding?.bound === true && binding?.status === 'verified')
   const inventoryPresent = browser.profilePresent === true
+  const profileMode = process.env.READ_WEB_APPLICATION_PROFILE_MODE || 'explicit-isolated-profile'
   const ready = inventoryPresent && !collectionError && allBindingsBound
   return {
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
@@ -1618,6 +1699,8 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
       present: inventoryPresent,
       status: inventoryPresent ? 'verified' : 'missing',
       source: 'browser-profile.json + application_backup.py',
+      profileMode,
+      legacyBrowserData: 'not-read',
       indexedDbRowCount: Array.isArray(browser.state?.indexedDbRows) ? browser.state.indexedDbRows.length : 0,
       localStorageKeyCount: Object.keys(browser.storage.toJSON()).length,
       pythonSourceCount: Object.keys(pythonAdapters || {}).length,

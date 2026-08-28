@@ -31,6 +31,7 @@
     "scripts/capture-next-baseline.ps1",
     "scripts/complete-local-dictionary-downloads.ps1",
     "scripts/download-mdict-supplements.ps1",
+    "scripts/initialize-optimization-application-profile.mjs",
     "scripts/launch-learning-page.ps1",
     "scripts/launch-next-preview.ps1",
     "scripts/launch-optimization-preview.ps1",

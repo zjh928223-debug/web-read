@@ -64,7 +64,16 @@ is rejected.
 
 The baseline inventory reads source text and the existing backup registry only. The Local App Host profile
 readiness path separately consumes the explicit isolated `browser-profile.json` plus the existing
-application-backup composition and Python adapters; it never treats a missing profile as an empty ready
-profile. Neither path opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a real browser
-profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`, and
-`E:\ReadWebData\SubtitleWorkflow-Optimization`.
+application-backup composition and Python adapters. On a brand-new optimization launcher instance,
+`Start-OptimizationOwnedPair` first asks the controlled Node initializer to create an empty schema-version-1
+Host-candidate profile (`localStorage: {}`, `indexedDbRows: []`) only after isolation validation and only when
+the profile directory is empty. It never imports or copies legacy browser data. An existing, corrupt, unknown,
+or non-empty candidate is never replaced; the normal profile evidence path keeps startup degraded and owner
+operations at 503. `profileEvidenceReady: true` for the empty candidate means the isolated evidence source and
+bindings are readable, not that a durable owner or API authority exists: `durableOwnerReady` and
+`acceptingApiAuthoritativeOperations` remain false until later cutover work, while the real browser
+IndexedDB/localStorage remains old-owner pending task 3.3's read-only inventory/import bridge.
+
+Neither the baseline nor the initializer opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a
+real browser profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`,
+and `E:\ReadWebData\SubtitleWorkflow-Optimization`.

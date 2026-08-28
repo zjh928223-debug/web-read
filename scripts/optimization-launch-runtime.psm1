@@ -472,6 +472,39 @@ function Invoke-OptimizationHostDrain {
   return [pscustomobject]@{ status = 'deadline'; drained = $false; forced = $true; inflight = $inflight }
 }
 
+function Initialize-OptimizationApplicationProfile {
+  param(
+    [Parameter(Mandatory)][string]$NodePath,
+    [Parameter(Mandatory)][string]$ProjectRoot,
+    [Parameter(Mandatory)][string]$ApplicationIsolationRoot,
+    [Parameter(Mandatory)][string]$ApplicationProfileDir
+  )
+  $initializer = Join-Path $ProjectRoot 'scripts\initialize-optimization-application-profile.mjs'
+  if (-not (Test-Path -LiteralPath $initializer -PathType Leaf)) {
+    throw "Optimization application profile initializer is missing: $initializer"
+  }
+  $output = & $NodePath $initializer `
+    '--isolation-root' $ApplicationIsolationRoot `
+    '--profile-dir' $ApplicationProfileDir 2>&1
+  $exitCode = $LASTEXITCODE
+  $outputText = ($output -join "`n").Trim()
+  if ($exitCode -ne 0) {
+    throw "Optimization application profile initialization failed with exit code ${exitCode}: $outputText"
+  }
+  try {
+    $result = $outputText | ConvertFrom-Json
+  } catch {
+    throw "Optimization application profile initializer returned invalid JSON: $outputText"
+  }
+  if ($null -eq $result -or [int]$result.schemaVersion -ne 1 -or [string]$result.status -notin @('existing', 'initialized-empty-candidate')) {
+    throw 'Optimization application profile initializer returned an invalid result.'
+  }
+  if ([IO.Path]::GetFullPath([string]$result.profilePath) -ne [IO.Path]::GetFullPath((Join-Path $ApplicationProfileDir 'browser-profile.json'))) {
+    throw 'Optimization application profile initializer returned an unexpected profile path.'
+  }
+  return $result
+}
+
 function Start-OptimizationOwnedPair {
   param(
     [Parameter(Mandatory)]$Release,
@@ -512,6 +545,22 @@ function Start-OptimizationOwnedPair {
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_ALLOWED_ORIGIN' -Value "http://$(Format-OptimizationUrlHost -HostName $FrontendHost):$FrontendPort"
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_HOST' -Value $BackendHost
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_PORT' -Value ([string]$BackendPort)
+
+    # A brand-new optimization instance owns an empty Host-candidate profile
+    # only so the 2.2 profile evidence path can start.  The Node helper
+    # validates the isolation boundary and refuses to replace any existing
+    # candidate state before the capability or production Host is started.
+    $profileInitialization = Initialize-OptimizationApplicationProfile `
+      -NodePath $NodePath `
+      -ProjectRoot $ProjectRoot `
+      -ApplicationIsolationRoot $ApplicationIsolationRoot `
+      -ApplicationProfileDir $ApplicationProfileDir
+    $profileMode = if ([string]$profileInitialization.status -eq 'initialized-empty-candidate') {
+      'empty-host-candidate'
+    } else {
+      'existing-candidate'
+    }
+    Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_APPLICATION_PROFILE_MODE' -Value $profileMode
 
     $existingCapabilityState = Read-OptimizationJsonFile -Path $CapabilityStatePath
     $existingCapabilityHealth = Get-OptimizationHttpJson -Url $CapabilityHealthUrl
@@ -682,5 +731,6 @@ Export-ModuleMember -Function `
   Write-OptimizationActiveHostState, `
   Test-OptimizationPairReady, `
   Invoke-OptimizationHostDrain, `
+  Initialize-OptimizationApplicationProfile, `
   Stop-OptimizationOwnedState, `
   Start-OptimizationOwnedPair

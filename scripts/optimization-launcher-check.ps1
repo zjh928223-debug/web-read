@@ -673,11 +673,35 @@ function Assert-RealLauncherLifecycle {
     Assert-True ($active.distRoot -ne (Join-Path $projectRoot 'dist')) 'active host still points at projectRoot dist'
     $profileLeasePath = [string]$hostState.applicationIsolationRoot + '.read-web-path.lock'
     Assert-True (Test-Path -LiteralPath $profileLeasePath -PathType Container) 'active Host did not receive an application profile lease'
+    $applicationProfileDir = [string]$hostState.applicationProfileDir
+    $applicationProfilePath = Join-Path $applicationProfileDir 'browser-profile.json'
+    Assert-True ($applicationProfileDir -eq (Join-Path ([string]$hostState.applicationIsolationRoot) 'profile')) 'active Host profile directory is not under its owned isolation root'
+    Assert-True ($applicationProfileDir.StartsWith($applicationInstancesRoot + '\', [StringComparison]::OrdinalIgnoreCase)) 'active Host profile directory escaped the optimization application root'
+    Assert-True (Test-Path -LiteralPath $applicationProfilePath -PathType Leaf) 'real launcher did not initialize the new instance browser profile'
+    $applicationProfile = Read-OptimizationJsonFile -Path $applicationProfilePath
+    Assert-True ([int]$applicationProfile.schemaVersion -eq 1 -and @($applicationProfile.indexedDbRows).Count -eq 0 -and @($applicationProfile.localStorage.PSObject.Properties).Count -eq 0) 'real launcher initialized a non-empty or unsupported Host candidate profile'
     $baselineIsolationInstanceIds = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
     $hostHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
     $workflowHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/health' -TimeoutSec 5
     $capabilityHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:8776/api/app/health' -TimeoutSec 5
     Assert-True ($hostHealth.status -eq 'ready' -and $hostHealth.distReady) 'real production host is not ready'
+    Assert-True ($hostHealth.profileEvidenceReady -eq $true) 'real launcher profile evidence is not ready after empty candidate initialization'
+    Assert-True ($hostHealth.profileEvidenceMode -eq 'empty-host-candidate' -and $hostHealth.legacyBrowserData -eq 'not-read') 'real launcher health did not distinguish the empty Host candidate from legacy browser data'
+    Assert-True ($hostHealth.durableOwnerReady -eq $false -and $hostHealth.acceptingApiAuthoritativeOperations -eq $false) 'pre-cutover Host candidate advertised durable owner authority'
+    $ownerStatus = 0
+    try {
+      $ownerResponse = Invoke-WebRequest `
+        -Method Post `
+        -Uri "http://127.0.0.1:$($hostState.port)/api/app/owner/command" `
+        -Headers @{ 'X-Read-Web-Token' = (Read-OptimizationRuntimeText -Path $tokenPath).Trim() } `
+        -UseBasicParsing `
+        -TimeoutSec 5
+      $ownerStatus = [int]$ownerResponse.StatusCode
+    } catch {
+      if ($null -ne $_.Exception.Response) { $ownerStatus = [int]$_.Exception.Response.StatusCode.value__ }
+      else { throw }
+    }
+    Assert-True ($ownerStatus -eq 503) 'pre-cutover owner command was not rejected with 503'
     Assert-True ($workflowHealth.status -eq 'ok' -and $workflowHealth.dataRoot -eq 'E:\ReadWebData\SubtitleWorkflow-Optimization') 'workflow health does not use optimization data root'
     Assert-True ($capabilityHealth.status -eq 'ready') 'capability sidecar is not ready'
     Assert-True ($hostHealth.releaseId -eq $hostState.releaseId -and $hostHealth.instanceId -eq $hostState.instanceId) 'host health identity does not match owned state'

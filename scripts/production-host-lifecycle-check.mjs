@@ -11,7 +11,7 @@ import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 import { gateEnvironment, resolveSelectedPython } from './lib/python-runtime.mjs'
 import {
   createReadWebProductionBackupComposition,
-  writeIsolatedBrowserProfile,
+  initializeIsolatedBrowserProfileIfMissing,
 } from './lib/read-web-production-backup.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -224,7 +224,7 @@ try {
       pythonOutputDir: path.join(tempRoot, `application-${cycle}`, 'python-output'),
     }
     await Promise.all(Object.values(applicationProfile).map((directory) => mkdir(directory, { recursive: true })))
-    await writeIsolatedBrowserProfile(applicationProfile.profileDir, { localStorage: {}, indexedDbRows: [] })
+    await initializeIsolatedBrowserProfileIfMissing(applicationProfile)
     host = startHost({ port, instanceId, dataRoot: path.join(tempRoot, `data-${cycle}`), applicationProfile })
     const health = await waitForHealth(baseUrl, instanceId)
     assert.deepEqual(

@@ -723,6 +723,8 @@ def validate_owner_registry_profile_evidence(
         "contractValid": True,
         "profileEvidenceReady": True,
         "profileEvidenceSource": OWNER_PROFILE_EVIDENCE_SOURCE,
+        "profileEvidenceMode": inventory.get("profileMode", "unspecified"),
+        "legacyBrowserData": inventory.get("legacyBrowserData", "unspecified"),
         "profileChecksum": profile_checksum,
         "backupArtifactChecksum": artifact_checksum,
     }
