@@ -5,6 +5,8 @@ import {
   WINDOWS_OWNER_DOMAINS,
   assert,
   loadOwnerArtifacts,
+  missingConsumerEvidenceTokens,
+  missingRequiredConsumerIds,
   readJson,
 } from './lib/windows-local-owner-artifacts.mjs'
 
@@ -69,8 +71,13 @@ for (const consumer of consumers.consumers) {
   assert(typeof consumer.directWriter === 'boolean', `consumer ${consumer.id} lacks directWriter flag`)
   assert(consumer.migrationWave, `consumer ${consumer.id} lacks migration wave`)
   assert(consumer.zeroGate, `consumer ${consumer.id} lacks zero gate`)
-  await assertSourceExists(consumer.file)
+  const source = await readSource(consumer.file)
+  const missingTokens = missingConsumerEvidenceTokens(consumer, source)
+  assert(missingTokens.length === 0, `${consumer.id} lacks source evidence token(s): ${missingTokens.join(', ')}`)
 }
+assert(consumers.consumerCount === consumers.consumers.length, 'consumerCount does not match mapped consumers')
+const missingRequiredConsumers = missingRequiredConsumerIds(consumerIds)
+assert(missingRequiredConsumers.length === 0, `Reader Session consumer inventory is missing: ${missingRequiredConsumers.join(', ')}`)
 for (const [surface, ids] of Object.entries(consumers.surfaceCoverage)) {
   for (const id of ids) assert(consumerIds.has(id), `${surface} coverage references unknown consumer: ${id}`)
 }
@@ -128,9 +135,13 @@ for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
 console.log(`windows local owner contract passed (${WINDOWS_OWNER_DOMAINS.length} domains, ${consumers.consumers.length} mapped consumers)`)
 
 async function assertSourceExists(relativePath) {
+  await readSource(relativePath)
+}
+
+async function readSource(relativePath) {
   const cleanPath = relativePath.split(':')[0].replaceAll('\\', '/')
   try {
-    await readFile(path.join(REPOSITORY_ROOT, cleanPath), 'utf8')
+    return await readFile(path.join(REPOSITORY_ROOT, cleanPath), 'utf8')
   } catch (error) {
     throw new Error(`consumer source is missing: ${relativePath} (${error.code || error.message})`)
   }

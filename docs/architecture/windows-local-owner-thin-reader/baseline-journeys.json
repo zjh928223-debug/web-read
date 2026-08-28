@@ -12,6 +12,13 @@
     "network": "No external network call is part of these evidence checks",
     "browserServicePolicy": "A live browser/host journey is not run here when its existing harness allocates a non-optimization port; it is recorded as blocked rather than silently using daily ports"
   },
+  "runtimeVerification": {
+    "mode": "execute-pass-commands",
+    "runner": "scripts/windows-local-owner-baseline-check.mjs",
+    "commandPolicy": "Only node scripts/<file> evidence commands are executed without a shell; not-run evidence is never executed",
+    "resultPolicy": "The declared status and captured exitCode are historical metadata; a pass is valid only when the command exits 0 during this gate",
+    "outputDigest": "The runner emits an output checksum set for the commands executed in the current run"
+  },
   "statusSemantics": {
     "pass": "The named focused check or static contract assertion ran with exitCode 0",
     "blocked": "The API-first journey is required but cannot be exercised because task 2.1 defines a contract only; no owner API/capability is implemented",
@@ -138,5 +145,5 @@
     "domainWritersMigrated": false,
     "reviewDecision": "stop after tasks 1.1-1.6 and 2.1"
   },
-  "artifactChecksum": "sha256:fb35a33a505eef58d1154f4f5eaac5b405e23c8a1dce7f11c6a6db8f40e742e7"
+  "artifactChecksum": "sha256:6bff5f84957466f04cabaeb22fdf69976cfb312afe51e33efb15aa12d7ab5479"
 }

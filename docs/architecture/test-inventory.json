@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
-    "architecture": 111,
-    "behavior": 98,
+    "architecture": 112,
+    "behavior": 99,
     "browser": 27,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 246,
-  "executableScriptCount": 271,
+  "packageScriptCount": 248,
+  "executableScriptCount": 273,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -2959,6 +2959,18 @@
         "scripts/windows-local-owner-baseline-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-baseline"
+    },
+    {
+      "name": "verify:windows-owner-consumer-self-test",
+      "command": "node scripts/windows-local-owner-consumer-self-test.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-local-owner-consumer-self-test.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-consumer-self-test"
     },
     {
       "name": "verify:windows-owner-contract",
@@ -2995,6 +3007,18 @@
         "scripts/windows-local-owner-non-goals-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-non-goals"
+    },
+    {
+      "name": "verify:windows-owner-non-goals-self-test",
+      "command": "node scripts/windows-local-owner-non-goals-self-test.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-local-owner-non-goals-self-test.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-non-goals-self-test"
     },
     {
       "name": "verify:workflow-application-backup",
@@ -5392,9 +5416,9 @@
     },
     {
       "path": "scripts/lib/windows-local-owner-artifacts.mjs",
-      "category": "behavior",
+      "category": "architecture",
       "layers": [
-        "behavior"
+        "architecture"
       ],
       "aggregates": [],
       "architectureEvidence": [],
@@ -5404,7 +5428,9 @@
       ],
       "invocation": "inventory-only",
       "evidence": {
-        "sourceShape": [],
+        "sourceShape": [
+          "includes-source-text"
+        ],
         "sourceRead": false,
         "browser": false,
         "performance": false,
@@ -9916,6 +9942,31 @@
       }
     },
     {
+      "path": "scripts/windows-local-owner-consumer-self-test.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner",
+      "owners": [
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-consumer-self-test"
+      ],
+      "invocation": "transitive",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/windows-local-owner-contract-check.mjs",
       "category": "behavior",
       "layers": [
@@ -9988,6 +10039,31 @@
           "matches-source-text"
         ],
         "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-local-owner-non-goals-self-test.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner",
+      "owners": [
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-non-goals-self-test"
+      ],
+      "invocation": "transitive",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
         "browser": false,
         "performance": false,
         "release": false,

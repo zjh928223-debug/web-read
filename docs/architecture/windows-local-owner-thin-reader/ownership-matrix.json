@@ -24,11 +24,18 @@
       "writeCallers": [
         { "file": "src/pinia-stores/audio.js", "lines": "7-88", "symbols": ["initDB", "saveToDB", "deleteFromDB", "clearDBStore"], "access": "write/delete", "boundary": "legacy direct IDB writer" },
         { "file": "src/services/persistence/reader-session-persistence.js", "lines": "137-178", "symbols": ["commit", "quarantine"], "access": "write", "boundary": "session row batch/CAS" },
+        { "file": "src/composables/import-module.js", "lines": "320-321,343", "symbols": ["saveToDB", "audio", "audioMeta", "transcript"], "access": "write", "boundary": "legacy import caller for audio, metadata, and transcript rows" },
+        { "file": "src/pinia-stores/marks.js", "lines": "12-29", "symbols": ["toggle", "saveToDB", "marks"], "access": "write", "boundary": "legacy Pinia mark toggle writer" },
         { "file": "src/composables/session-annotation-marks.js", "lines": "140-157", "symbols": ["saveToDB('marks')"], "access": "write", "boundary": "legacy mark row writer" },
+        { "file": "src/composables/session-startup-cleanup.js", "lines": "9-27,34-47", "symbols": ["clearPersistedChunkSession", "deleteFromDB", "removeItem"], "access": "delete/remove", "boundary": "legacy startup cleanup for chunkData, marks, and local preferences" },
+        { "file": "src/composables/app-handlers.js", "lines": "47-90", "symbols": ["initMarksImport", "saveToDB", "marks"], "access": "write", "boundary": "legacy marks import writer" },
+        { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "2335-2348", "symbols": ["applyReaderMarks", "audioStore.saveToDB", "marks"], "access": "write", "boundary": "workflow-panel legacy marks replacement writer" },
+        { "file": "src/composables/visual-vocab-module.js", "lines": "64-82", "symbols": ["processVisual", "saveToDB", "visual"], "access": "write", "boundary": "legacy visual compatibility row writer outside canonical session rows" },
         { "file": "src/composables/reader-import-runtime.js", "lines": "1-80", "symbols": ["saveToDB dependency wiring"], "access": "write", "boundary": "import compatibility path" },
+        { "file": "src/composables/youtube-workflow-loader.js", "lines": "330-470", "symbols": ["commitLatestSession", "loadJobIntoReader"], "access": "write", "boundary": "mixed local session commit and workflow loader path" },
         { "file": "src/components/YouTubeWorkflowPanel.vue", "lines": "2345-2350,2472-2605", "symbols": ["applyReaderMarks", "writeReaderOutboxEntry", "reader outbox"], "access": "write", "boundary": "marks row plus local retry bridge" }
       ],
-      "browserDirectWritersRef": ["reader.idb.audio-store", "reader.session-persistence", "reader.session-mark-facade", "reader.local-outbox"],
+      "browserDirectWritersRef": ["reader.idb.audio-store", "reader.import-module", "reader.marks-store-toggle", "reader.startup-cleanup", "reader.app-handlers-mark-import", "reader.panel-mark-save", "reader.visual-vocab", "reader.session-persistence", "reader.session-mark-facade", "reader.local-outbox"],
       "backupAdapter": "read-web-application-backup reader-session adapter (IDB rows + reader save outbox)",
       "revisionSource": "readerSession manifest/contentId/revision/checksum; session commit uses compareAndSwapMany when expectedRevision is present",
       "mediaReferences": "audioMeta identity/authorized URL metadata only; no media bytes",
@@ -201,5 +208,5 @@
       "milestoneStatus": "inventory-only; current Python service remains owner"
     }
   ],
-  "artifactChecksum": "sha256:2a59a9afcb81f0635d68d15db70ee5e50fb7fe13f1bf40aa67f84a15c911af81"
+  "artifactChecksum": "sha256:7e835b4b389c701a4928ed6a4d338845afc6a0d30719320a28e579c650fd7483"
 }

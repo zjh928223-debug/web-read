@@ -27,7 +27,8 @@ one boundary at a time without treating the compatibility path as authoritative 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
 whitespace. `scripts/windows-local-owner-contract-check.mjs` validates the bundle without launching a
-service. `scripts/windows-local-owner-baseline-check.mjs` validates the explicit pass/blocked evidence, and
+service. `scripts/windows-local-owner-baseline-check.mjs` executes every evidence item marked `pass` with a
+shell-free Node runner and leaves `not-run` items untouched; its output includes a checksum of the real run.
 `scripts/windows-local-owner-determinism-check.mjs` repeats canonicalization and source-map checks.
 
 ## Evidence semantics
@@ -36,6 +37,16 @@ service. `scripts/windows-local-owner-baseline-check.mjs` validates the explicit
 not mean the future Windows owner API exists. `blocked` means the journey is a required baseline but cannot
 be honestly exercised in this milestone because its API-authoritative capability belongs to task 2.2 or a
 later task. No blocked journey is used as evidence for an owner-mode cutover.
+
+The six protected WhisperX/language-processing paths retain `sha256AtCapture` as historical evidence only.
+The non-goal gate checks that `491bd8a718a82faf9659a460b9b817c69c18eeb0...HEAD` and the staged index do not
+contain those paths, so later unstaged user edits are allowed. The twelve historical source captures use
+semantic IndexedDB fingerprints instead of full-file hashes: `SeekPlayerDB`, version `1`, `files`, `id`, and
+schema-operation semantics remain guarded while unrelated persistence/repository code may evolve.
+
+The consumer gate reads every mapped source and verifies its declared symbol/token evidence. The two small
+self-tests exercise both negative boundaries: an unstaged protected-file fixture is allowed, while a committed
+or staged protected path and omission of any required Reader Session caller are rejected.
 
 The inventory reads source text and the existing backup registry only. It does not open `E:\read-web-next`,
 `E:\read-web`, the daily data root, or a real browser profile. Any later live rehearsal must use

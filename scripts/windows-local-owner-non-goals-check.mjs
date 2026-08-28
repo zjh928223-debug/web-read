@@ -4,10 +4,14 @@ import path from 'node:path'
 import {
   FROZEN_IDB_SCHEMA,
   REPOSITORY_ROOT,
+  aggregateIndexedDbSchemaSemantics,
   assert,
+  indexedDbSchemaSemanticDiff,
+  indexedDbSchemaSemanticFingerprint,
+  normalizeRepositoryPath,
   readArtifact,
   readJson,
-  sha256File,
+  protectedPathViolations,
 } from './lib/windows-local-owner-artifacts.mjs'
 
 const nonGoals = await readArtifact('non-goals.json')
@@ -18,6 +22,7 @@ assert(JSON.stringify(nonGoals.frozenIndexedDbSchema.databaseName) === JSON.stri
 assert(nonGoals.frozenIndexedDbSchema.version === FROZEN_IDB_SCHEMA.version, 'IndexedDB version changed')
 assert(nonGoals.frozenIndexedDbSchema.objectStore === FROZEN_IDB_SCHEMA.objectStore, 'IndexedDB object store changed')
 assert(nonGoals.frozenIndexedDbSchema.keyPath === FROZEN_IDB_SCHEMA.keyPath, 'IndexedDB key path changed')
+assert(nonGoals.frozenSchemaSourcePolicy?.comparison === 'semantic-fingerprint-only', 'schema source guard must remain semantic-only')
 
 const runtimeConfig = await readJson('config/runtime.optimization.json')
 assert(runtimeConfig.frontend?.host === '127.0.0.1', 'optimization frontend must remain loopback')
@@ -32,13 +37,38 @@ const scriptSequence = [...indexSource.matchAll(/<script\b[^>]*\bsrc=["']([^"']+
   .map((match) => match[1])
 assert(JSON.stringify(scriptSequence) === JSON.stringify(nonGoals.scriptLoadOrder.sequence), 'index.html script load order changed')
 
-for (const file of nonGoals.protectedWorkingTreeFiles) {
-  assert(await sha256File(file.path) === file.sha256AtCapture, `protected user file changed: ${file.path}`)
-  assert(!stagedFiles().includes(file.path), `protected user file is staged: ${file.path}`)
-}
+const milestoneBaseCommit = environment.workspace?.head
+assert(milestoneBaseCommit === '491bd8a718a82faf9659a460b9b817c69c18eeb0', 'milestone base commit changed')
+assertGitAncestor(milestoneBaseCommit)
+
+const protectedPaths = nonGoals.protectedWorkingTreeFiles.map((file) => {
+  assert(/^sha256:[0-9a-f]{64}$/u.test(file.sha256AtCapture), `invalid historical capture checksum: ${file.path}`)
+  return normalizeRepositoryPath(file.path)
+})
+const pathViolations = protectedPathViolations({
+  milestonePaths: gitNameOnly(['diff', '--name-only', `${milestoneBaseCommit}...HEAD`]),
+  stagedPaths: gitNameOnly(['diff', '--cached', '--name-only']),
+  protectedPaths,
+})
+assert(pathViolations.length === 0, `protected user paths entered milestone commits or index: ${pathViolations.join(', ')}`)
+
+const schemaFingerprints = []
 for (const file of nonGoals.frozenSourceFiles) {
-  assert(await sha256File(file.path) === file.sha256AtCapture, `frozen schema source changed: ${file.path}`)
+  const currentSource = await readFile(path.join(REPOSITORY_ROOT, file.path), 'utf8')
+  const capturedSource = gitShow(milestoneBaseCommit, file.path)
+  const capturedFingerprint = indexedDbSchemaSemanticFingerprint(capturedSource)
+  const currentFingerprint = indexedDbSchemaSemanticFingerprint(currentSource)
+  assert(
+    indexedDbSchemaSemanticDiff(capturedFingerprint, currentFingerprint).length === 0,
+    `frozen IndexedDB schema semantics changed: ${file.path}`,
+  )
+  schemaFingerprints.push(currentFingerprint)
 }
+const schemaSemantics = aggregateIndexedDbSchemaSemantics(schemaFingerprints)
+assert(schemaSemantics.databaseNames.includes(FROZEN_IDB_SCHEMA.databaseName), 'SeekPlayerDB semantic identity missing')
+assert(schemaSemantics.versions.includes(String(FROZEN_IDB_SCHEMA.version)), 'SeekPlayerDB version 1 semantic identity missing')
+assert(schemaSemantics.storeNames.includes(FROZEN_IDB_SCHEMA.objectStore), 'files object store semantic identity missing')
+assert(schemaSemantics.keyPaths.includes(FROZEN_IDB_SCHEMA.keyPath), 'files keyPath id semantic identity missing')
 
 const forbiddenText = JSON.stringify(nonGoals.forbiddenCapabilities)
 assert(forbiddenText.includes('Mac owner implementation'), 'Mac non-goal missing')
@@ -48,14 +78,32 @@ assert(nonGoals.dataPolicy.dailyDataRoot === 'E:\\ReadWebData\\SubtitleWorkflow'
 assert(nonGoals.dataPolicy.protectedTrees.includes('E:\\read-web-next'), 'protected daily reader guard missing')
 assert(nonGoals.dataPolicy.protectedTrees.includes('E:\\read-web'), 'protected historical tree guard missing')
 
-console.log('windows local owner non-goal/schema guard passed')
+console.log('windows local owner non-goal/schema guard passed (path exclusion + semantic IndexedDB freeze)')
 
-function stagedFiles() {
-  return execFileSync('git', ['diff', '--cached', '--name-only'], {
+function gitNameOnly(args) {
+  return execFileSync('git', args, {
     cwd: REPOSITORY_ROOT,
     encoding: 'utf8',
   })
     .split(/\r?\n/u)
     .map((value) => value.trim())
     .filter(Boolean)
+}
+
+function gitShow(commit, relativePath) {
+  return execFileSync('git', ['show', `${commit}:${normalizeRepositoryPath(relativePath)}`], {
+    cwd: REPOSITORY_ROOT,
+    encoding: 'utf8',
+  })
+}
+
+function assertGitAncestor(commit) {
+  try {
+    execFileSync('git', ['merge-base', '--is-ancestor', commit, 'HEAD'], {
+      cwd: REPOSITORY_ROOT,
+      stdio: 'ignore',
+    })
+  } catch {
+    assert(false, `milestone base commit is not an ancestor of HEAD: ${commit}`)
+  }
 }
