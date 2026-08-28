@@ -75,7 +75,7 @@ async function waitForPortClosed(port, timeoutMs = 5_000) {
   throw new Error(`owned production host port ${port} remained open`)
 }
 
-function startHost({ port, instanceId, dataRoot, applicationProfile, leaseMode = 'authoritative' }) {
+function startHost({ port, instanceId, dataRoot, applicationProfile, leaseMode = 'authoritative', allowStandbyReadiness = false }) {
   const argumentsList = [
     '-m', 'youtube_workflow.production_host_prototype',
     '--dist', distDir,
@@ -101,6 +101,7 @@ function startHost({ port, instanceId, dataRoot, applicationProfile, leaseMode =
   if (leaseMode !== 'authoritative') {
     argumentsList.push('--application-profile-lease-mode', leaseMode)
   }
+  if (allowStandbyReadiness) argumentsList.push('--allow-standby-readiness')
   const child = spawn(python, argumentsList, {
     cwd: workflowRoot,
     windowsHide: true,
@@ -277,14 +278,45 @@ try {
       dataRoot: path.join(tempRoot, 'overlap-data-b'),
       applicationProfile: overlapProfileB,
       leaseMode: 'standby-if-busy',
+      allowStandbyReadiness: true,
     })
     const overlapHealthB = await waitForHealth(`http://127.0.0.1:${overlapPortB}`, overlapInstanceB)
     assert.equal(overlapHealthB.profileLeaseMode, 'standby')
+    assert.equal(overlapHealthB.standbyPreflight, true)
     assert.equal(overlapHealthB.profileLeaseReady, false)
     assert.equal(overlapHealthB.profileLease, null)
     assert.equal(overlapHealthB.durableOwnerReady, false)
     assert.equal(overlapHealthB.acceptingApiAuthoritativeOperations, false)
     assert.equal((await (await fetch(`http://127.0.0.1:${overlapPortA}/api/app/health`)).json()).profileLeaseMode, 'authoritative')
+
+    await stopOwned(overlapHostB, 'SIGTERM')
+    overlapHostB = null
+    await waitForPortClosed(overlapPortB)
+    await stopOwned(overlapHostA, 'SIGTERM')
+    overlapHostA = null
+    await waitForPortClosed(overlapPortA)
+
+    overlapHostB = startHost({
+      port: overlapPortB,
+      instanceId: overlapInstanceB,
+      dataRoot: path.join(tempRoot, 'overlap-data-b'),
+      applicationProfile: overlapProfileB,
+      leaseMode: 'authoritative',
+    })
+    const promotedHealthB = await waitForHealth(`http://127.0.0.1:${overlapPortB}`, overlapInstanceB)
+    assert.equal(promotedHealthB.profileLeaseMode, 'authoritative')
+    assert.equal(promotedHealthB.profileLeaseReady, true)
+    assert.equal(promotedHealthB.profileLeaseAlive, true)
+    assert.equal(promotedHealthB.durableOwnerReady, false)
+    assert.equal(promotedHealthB.acceptingApiAuthoritativeOperations, false)
+    assert.equal(promotedHealthB.ownerMode.status, 'pre-cutover')
+    const promotedOwnerCommand = await fetch(`http://127.0.0.1:${overlapPortB}/api/app/owner/command`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-read-web-token': token },
+      body: JSON.stringify({ domain: 'reader-session', operation: 'query' }),
+    })
+    assert.equal(promotedOwnerCommand.status, 503)
+    assert.equal((await promotedOwnerCommand.json()).commitStatus, 'not-ready')
   } finally {
     if (overlapHostB) await stopOwned(overlapHostB, 'SIGTERM').catch(() => {})
     if (overlapHostA) await stopOwned(overlapHostA, 'SIGTERM').catch(() => {})
@@ -464,6 +496,10 @@ try {
       sameProfileDifferentInstanceRoots: true,
       firstHostAuthoritative: true,
       replacementStandby: true,
+      replacementPromotedAuthoritative: true,
+      promotionLeaseReadyBeforeCommit: true,
+      promotionRemainsPreCutover: true,
+      promotionOwnerCommandNotReady: true,
       noDualAuthority: true,
       portsReleased: true,
     },

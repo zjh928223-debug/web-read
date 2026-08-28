@@ -369,6 +369,12 @@ function Test-OptimizationPairReady {
   $hostStatus = Get-OptimizationObjectText -Object $HostHealth -Name 'status'
   $capabilityStatus = Get-OptimizationObjectText -Object $CapabilityHealth -Name 'status'
   if ($hostStatus -ne 'ready' -or $capabilityStatus -ne 'ready') { return $false }
+  # A committed/reused pair must hold the stable profile authority lease.
+  # Standby is only an internal replacement preflight state and is never a
+  # valid front-door/readiness result.
+  if ((Get-OptimizationObjectText -Object $HostHealth -Name 'profileLeaseMode') -ne 'authoritative' `
+    -or -not [bool](Get-OptimizationObjectValue -Object $HostHealth -Name 'profileLeaseReady') `
+    -or -not [bool](Get-OptimizationObjectValue -Object $HostHealth -Name 'profileLeaseAlive')) { return $false }
   $instanceId = Get-OptimizationObjectText -Object $HostState -Name 'instanceId'
   $hostManifest = Get-OptimizationObjectValue -Object $HostHealth -Name 'manifest'
   if (-not $instanceId -or $null -eq $hostManifest) { return $false }
@@ -535,7 +541,10 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][string]$CapabilityBaseUrl,
     [Parameter(Mandatory)][int]$StartupTimeoutSeconds,
     [Parameter(Mandatory)][int[]]$ReservedPorts,
-    [string]$ExpectedDataRoot = ''
+    [string]$ExpectedDataRoot = '',
+    [ValidateSet('authoritative', 'standby-if-busy')]
+    [string]$ApplicationProfileLeaseMode = 'authoritative',
+    [switch]$AllowStandbyReadiness
   )
   $capabilityStarted = $false
   $hostStarted = $false
@@ -615,6 +624,26 @@ function Start-OptimizationOwnedPair {
       $capabilityStarted = $true
     }
 
+    $hostArgumentList = @(
+      '-m', 'youtube_workflow.production_host_prototype',
+      '--dist', $Release.distRoot,
+      '--host', $FrontendHost,
+      '--port', '{port}',
+      '--release-id', '{releaseId}',
+      '--profile-id', '{profileId}',
+      '--instance-id', '{instanceId}',
+      '--release-manifest', $Release.manifestPath,
+      '--config-schema-version', [string]$Release.manifest.configuration.schemaVersion,
+      '--capability-base-url', $CapabilityBaseUrl,
+      '--application-isolation-root', $ApplicationIsolationRoot,
+      '--application-profile-dir', $ApplicationProfileDir,
+      '--application-profile-authority-root', $ApplicationProfileAuthorityRoot,
+      '--application-profile-authority-isolation-root', $ApplicationProfileAuthorityIsolationRoot,
+      '--application-profile-lease-mode', $ApplicationProfileLeaseMode,
+      '--application-python-state-dir', $ApplicationPythonStateDir,
+      '--application-python-output-dir', $ApplicationPythonOutputDir
+    )
+    if ($AllowStandbyReadiness) { $hostArgumentList += '--allow-standby-readiness' }
     $hostResult = Start-ManagedRuntimeInstance `
       -ReleaseId ([string]$Release.releaseId) `
       -ProfileId $ProfileId `
@@ -623,25 +652,7 @@ function Start-OptimizationOwnedPair {
       -HealthUrl $HostHealthUrl `
       -StatePath $HostStatePath `
       -FilePath $PythonPath `
-      -ArgumentList @(
-        '-m', 'youtube_workflow.production_host_prototype',
-        '--dist', $Release.distRoot,
-        '--host', $FrontendHost,
-        '--port', '{port}',
-        '--release-id', '{releaseId}',
-        '--profile-id', '{profileId}',
-        '--instance-id', '{instanceId}',
-        '--release-manifest', $Release.manifestPath,
-        '--config-schema-version', [string]$Release.manifest.configuration.schemaVersion,
-        '--capability-base-url', $CapabilityBaseUrl,
-        '--application-isolation-root', $ApplicationIsolationRoot,
-        '--application-profile-dir', $ApplicationProfileDir,
-        '--application-profile-authority-root', $ApplicationProfileAuthorityRoot,
-        '--application-profile-authority-isolation-root', $ApplicationProfileAuthorityIsolationRoot,
-        '--application-profile-lease-mode', 'standby-if-busy',
-        '--application-python-state-dir', $ApplicationPythonStateDir,
-        '--application-python-output-dir', $ApplicationPythonOutputDir
-      ) `
+      -ArgumentList $hostArgumentList `
       -WorkingDirectory $WorkflowRoot `
       -ReadyTimeoutSeconds $StartupTimeoutSeconds `
       -ReservedDailyPorts $ReservedPorts `
@@ -653,6 +664,8 @@ function Start-OptimizationOwnedPair {
         applicationProfileDir = $ApplicationProfileDir
         applicationProfileAuthorityRoot = $ApplicationProfileAuthorityRoot
         applicationProfileAuthorityIsolationRoot = $ApplicationProfileAuthorityIsolationRoot
+        applicationProfileLeaseMode = $ApplicationProfileLeaseMode
+        standbyPreflight = [bool]$AllowStandbyReadiness
         applicationPythonStateDir = $ApplicationPythonStateDir
         applicationPythonOutputDir = $ApplicationPythonOutputDir
       }
@@ -667,6 +680,16 @@ function Start-OptimizationOwnedPair {
     $hostHealth = Wait-OptimizationHttpJson -Url $HostHealthUrl -TimeoutSeconds $StartupTimeoutSeconds -Predicate {
       param($value)
       if ($null -eq $value -or (Get-OptimizationObjectText -Object $value -Name 'status') -ne 'ready') { return $false }
+      $reportedLeaseMode = Get-OptimizationObjectText -Object $value -Name 'profileLeaseMode'
+      $profileLeaseReady = [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseReady')
+      $profileLeaseAlive = [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseAlive')
+      $leaseReadinessValid = if ($ApplicationProfileLeaseMode -eq 'authoritative') {
+        $reportedLeaseMode -eq 'authoritative' -and $profileLeaseReady -and $profileLeaseAlive
+      } else {
+        $reportedLeaseMode -eq 'authoritative' -and $profileLeaseReady -and $profileLeaseAlive `
+          -or ($reportedLeaseMode -eq 'standby' -and $AllowStandbyReadiness -and [bool](Get-OptimizationObjectValue -Object $value -Name 'standbyPreflight'))
+      }
+      if (-not $leaseReadinessValid) { return $false }
       $manifest = Get-OptimizationObjectValue -Object $value -Name 'manifest'
       if ($null -eq $manifest) { return $false }
       return (Get-OptimizationObjectText -Object $value -Name 'releaseId') -eq ([string]$Release.releaseId) `

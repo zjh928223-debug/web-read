@@ -48,6 +48,7 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 workflow_app=FastAPI(),
                 owner_profile_evidence=standby_evidence,
                 application_profile_lease_mode="standby",
+                application_profile_standby_preflight=True,
             )
             with TestClient(safe_app, base_url="http://127.0.0.1") as client:
                 health = client.get("/api/app/health").json()
@@ -56,12 +57,25 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 self.assertFalse(health["durableOwnerReady"])
                 self.assertFalse(health["acceptingApiAuthoritativeOperations"])
 
+            ordinary_standby_app = create_local_app_host(
+                dist_dir=dist,
+                workflow_app=FastAPI(),
+                owner_profile_evidence=standby_evidence,
+                application_profile_lease_mode="standby",
+            )
+            with TestClient(ordinary_standby_app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "degraded")
+                self.assertFalse(health["standbyPreflight"])
+                self.assertTrue(health["standbyEvidenceReady"])
+
             unsafe_evidence = {**standby_evidence, "collection": {"status": "failed"}}
             unsafe_app = create_local_app_host(
                 dist_dir=dist,
                 workflow_app=FastAPI(),
                 owner_profile_evidence=unsafe_evidence,
                 application_profile_lease_mode="standby",
+                application_profile_standby_preflight=True,
             )
             with TestClient(unsafe_app, base_url="http://127.0.0.1") as client:
                 health = client.get("/api/app/health").json()

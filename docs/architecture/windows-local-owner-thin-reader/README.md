@@ -105,14 +105,24 @@ under the same lease and never falls back to browser storage.
 `restoreTarget` and the cutover checkpoint helper acquire and verify the stable profile authority lease
 before touching authoritative state; the instance-lifetime lock is an additional local state guard, not a
 substitute for that profile lease. The optimization launcher passes `standby-if-busy` for an overlapping
-replacement, so the new Host can serve the pre-cutover static/compatibility surface while its health
-reports `profileLeaseMode: standby`, `durableOwnerReady: false`, and typed owner-command `503` responses.
+replacement, but marks that readiness only as an internal candidate preflight. A standby Host is never a
+committed active target: the launcher drains/stops the candidate, drains/stops the old Host, then restarts
+the same candidate instance in authoritative mode and waits for `profileLeaseMode: authoritative`,
+`profileLeaseReady: true`, and a live stable lease before writing the front-door target. Thus the old and
+replacement Host never hold two stable profile leases at once. If promotion fails, the activation journal
+restores the old Host from its captured manager receipt before restoring the old pointers; a standby result
+is never committed. A normal/committed Host without the stable lease is degraded, while the temporary
+candidate may report ready only with the explicit preflight flag. The current boolean drain/freeze inputs
+are only a contract/test seam for the future 7.1 coordinator; they do not claim that real browser freeze
+or drain has been verified.
 
 The current optimization candidate therefore reports `profileLeaseReady: true` and
 `ownerMode.status: pre-cutover`, while `durableOwnerReady` and
 `acceptingApiAuthoritativeOperations` remain false and owner commands remain typed `503`. The checkpoint
 helper is a contract/test seam for later cutover; it does not migrate writers or make the static six-domain
-registry authoritative. Focused behavior evidence is `npm run verify:windows-owner-lease`, and the
+registry authoritative. Focused lease evidence is `npm run verify:windows-owner-lease`; handoff evidence is
+`npm run verify:windows-owner-handoff`, which runs two real isolated Python Hosts through standby,
+stable-lease release, authoritative promotion, and a failed promotion with no active-pointer commit. The
 production lifecycle check also proves the running Host holds the lease and keeps the owner API in
 pre-cutover mode.
 

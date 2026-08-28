@@ -118,6 +118,94 @@ function Get-HostHealthUrl {
   return "http://127.0.0.1:$port/api/app/health"
 }
 
+function Get-OptimizationHostRestartSpec {
+  param(
+    [Parameter(Mandatory)]$State,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][int]$ReadyTimeoutSeconds
+  )
+  if ($null -eq $State) { return $null }
+  $requiredFields = @('releaseId', 'profileId', 'instanceId', 'port', 'healthUrl', 'filePath', 'workingDirectory')
+  foreach ($field in $requiredFields) {
+    if ([string]::IsNullOrWhiteSpace((Get-OptimizationObjectText -Object $State -Name $field))) { return $null }
+  }
+  $authorityRoot = Get-OptimizationObjectText -Object $State -Name 'applicationProfileAuthorityRoot'
+  $authorityIsolationRoot = Get-OptimizationObjectText -Object $State -Name 'applicationProfileAuthorityIsolationRoot'
+  if (-not $authorityRoot -or -not $authorityIsolationRoot) { return $null }
+  $rawArguments = @((Get-OptimizationObjectValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
+  if ($rawArguments.Count -eq 0) { return $null }
+  $arguments = @()
+  $modePresent = $false
+  for ($index = 0; $index -lt $rawArguments.Count; $index++) {
+    $argument = $rawArguments[$index]
+    if ($argument -eq '--application-profile-lease-mode') {
+      $arguments += @('--application-profile-lease-mode', 'authoritative')
+      $modePresent = $true
+      if ($index + 1 -lt $rawArguments.Count) { $index++ }
+      continue
+    }
+    if ($argument -eq '--allow-standby-readiness') { continue }
+    $arguments += $argument
+  }
+  if (-not $modePresent) { $arguments += @('--application-profile-lease-mode', 'authoritative') }
+  $metadata = @{
+    runtimeRole = 'production-host'
+    applicationProfileAuthorityRoot = $authorityRoot
+    applicationProfileAuthorityIsolationRoot = $authorityIsolationRoot
+    applicationProfileLeaseMode = 'authoritative'
+    standbyPreflight = $false
+  }
+  foreach ($metadataName in @(
+      'applicationIsolationRoot', 'applicationProfileDir',
+      'applicationPythonStateDir', 'applicationPythonOutputDir'
+    )) {
+    $metadataValue = Get-OptimizationObjectText -Object $State -Name $metadataName
+    if ($metadataValue) { $metadata[$metadataName] = $metadataValue }
+  }
+  return @{
+    ReleaseId = Get-OptimizationObjectText -Object $State -Name 'releaseId'
+    ProfileId = Get-OptimizationObjectText -Object $State -Name 'profileId'
+    InstanceId = Get-OptimizationObjectText -Object $State -Name 'instanceId'
+    Port = [int](Get-OptimizationObjectText -Object $State -Name 'port')
+    HealthUrl = Get-OptimizationObjectText -Object $State -Name 'healthUrl'
+    StatePath = $StatePath
+    FilePath = Get-OptimizationObjectText -Object $State -Name 'filePath'
+    ArgumentList = $arguments
+    WorkingDirectory = Get-OptimizationObjectText -Object $State -Name 'workingDirectory'
+    ReadyTimeoutSeconds = [Math]::Max(1, $ReadyTimeoutSeconds)
+    ReservedDailyPorts = $reservedDailyPorts
+    StandardOutputPath = Get-OptimizationObjectText -Object $State -Name 'standardOutputPath'
+    StandardErrorPath = Get-OptimizationObjectText -Object $State -Name 'standardErrorPath'
+    ExecutableIdentity = Get-OptimizationObjectText -Object $State -Name 'executableIdentity'
+    Metadata = $metadata
+    LaunchIntentPath = "$StatePath.intent.json"
+  }
+}
+
+function Start-OptimizationHostFromSnapshot {
+  param(
+    [Parameter(Mandatory)]$State,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][int]$ReadyTimeoutSeconds
+  )
+  $spec = Get-OptimizationHostRestartSpec -State $State -StatePath $StatePath -ReadyTimeoutSeconds $ReadyTimeoutSeconds
+  if ($null -eq $spec) {
+    throw 'Previous optimization Host has no stable profile authority restart receipt; refusing rollback.'
+  }
+  Start-ManagedRuntimeInstance @spec | Out-Null
+  $health = Wait-OptimizationHttpJson -Url $spec.HealthUrl -TimeoutSeconds $ReadyTimeoutSeconds -Predicate {
+    param($value)
+    (Get-OptimizationObjectText -Object $value -Name 'status') -eq 'ready' `
+      -and (Get-OptimizationObjectText -Object $value -Name 'profileLeaseMode') -eq 'authoritative' `
+      -and [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseReady') `
+      -and [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseAlive') `
+      -and (Get-OptimizationObjectText -Object $value -Name 'profileId') -eq $spec.ProfileId `
+      -and (Get-OptimizationObjectText -Object $value -Name 'instanceId') -eq $spec.InstanceId
+  }
+  if ($null -eq $health) { throw 'Previous optimization Host restarted without authoritative profile readiness.' }
+  return $health
+}
+
 function Get-HostWorkflowHealthUrl {
   param([Parameter(Mandatory)][string]$HostHealthUrl)
   return $HostHealthUrl.Replace('/api/app/health', '/api/health')
@@ -219,6 +307,9 @@ function Test-OptimizationActivationPairReady {
       param($value)
       $manifest = Get-OptimizationObjectValue -Object $value -Name 'manifest'
       (Get-OptimizationObjectText -Object $value -Name 'status') -eq 'ready' `
+        -and (Get-OptimizationObjectText -Object $value -Name 'profileLeaseMode') -eq 'authoritative' `
+        -and [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseReady') `
+        -and [bool](Get-OptimizationObjectValue -Object $value -Name 'profileLeaseAlive') `
         -and (Get-OptimizationObjectText -Object $value -Name 'releaseId') -eq [string]$release.releaseId `
         -and (Get-OptimizationObjectText -Object $value -Name 'profileId') -eq $profileId `
         -and (Get-OptimizationObjectText -Object $value -Name 'instanceId') -eq $newInstanceId `
@@ -519,6 +610,54 @@ function Invoke-OptimizationLaunchIntentRecovery {
   return $allComplete
 }
 
+function Restore-OptimizationOldHostFromJournal {
+  param([Parameter(Mandatory)]$Journal)
+  $releaseStarted = (Get-OptimizationObjectText -Object $Journal -Name 'oldHostReleasedForPromotion') -eq 'True' `
+    -or (Get-OptimizationObjectText -Object $Journal -Name 'oldHostReleaseInProgress') -eq 'True'
+  if (-not $releaseStarted) { return $null }
+  $oldHostPath = Get-OptimizationObjectText -Object $Journal -Name 'oldHostManagerStatePath'
+  $oldHostSnapshot = Get-OptimizationObjectValue -Object $Journal -Name 'oldHostStateSnapshot'
+  if (-not $oldHostPath -or $null -eq $oldHostSnapshot) {
+    throw 'Optimization activation journal cannot restore the previous Host after promotion release.'
+  }
+  if (Test-Path -LiteralPath $oldHostPath -PathType Leaf) {
+    $existingOldState = Read-OptimizationJsonFile -Path $oldHostPath
+    if ($null -eq $existingOldState -or [string](Get-OptimizationObjectText -Object $existingOldState -Name 'instanceId') -ne [string](Get-OptimizationObjectText -Object $Journal -Name 'oldHostInstanceId')) {
+      throw 'Optimization previous Host state is ambiguous; refusing promotion rollback.'
+    }
+    $existingHealthUrl = Get-HostHealthUrl -State $existingOldState
+    $existingArguments = @((Get-OptimizationObjectValue -Object $existingOldState -Name 'argumentList') | ForEach-Object { [string]$_ })
+    $existingProcess = Find-ManagedProcessByReceipt `
+      -Pid ([int](Get-OptimizationObjectText -Object $existingOldState -Name 'pid')) `
+      -ProcessStartUtc (Get-OptimizationObjectText -Object $existingOldState -Name 'processStartUtc') `
+      -ExpectedFilePath (Get-OptimizationObjectText -Object $existingOldState -Name 'filePath') `
+      -ExpectedArgumentFragments $existingArguments
+    $existingHealth = if ($existingHealthUrl) { Get-OptimizationHttpJson -Url $existingHealthUrl } else { $null }
+    if ($null -ne $existingProcess -and (Get-OptimizationObjectText -Object $existingHealth -Name 'status') -eq 'ready') {
+      # A crash before the destructive stop was recorded leaves the old Host
+      # safely serving.  Keep it and roll back the pointers; never launch a
+      # second copy on its port.
+      if ((Get-OptimizationObjectText -Object $Journal -Name 'oldHostReleasedForPromotion') -ne 'True') {
+        return $existingHealth
+      }
+      throw 'Optimization promotion journal says the old Host was released, but its owned process is still serving.'
+    }
+    $oldPort = 0
+    [int]::TryParse((Get-OptimizationObjectText -Object $existingOldState -Name 'port'), [ref]$oldPort) | Out-Null
+    if ($oldPort -gt 0 -and (Test-OptimizationTcpPortOccupied -Port $oldPort)) {
+      throw 'Optimization previous Host state is stale while its port is occupied; refusing promotion rollback.'
+    }
+    Remove-Item -LiteralPath $oldHostPath -Force -ErrorAction SilentlyContinue
+  }
+  Set-OptimizationActivationJournal -Journal $Journal -Status 'rolling-back' -Phase 'old-host-restore-starting'
+  $health = Start-OptimizationHostFromSnapshot `
+    -State $oldHostSnapshot `
+    -StatePath $oldHostPath `
+    -ReadyTimeoutSeconds $StartupTimeoutSeconds
+  Set-OptimizationActivationJournal -Journal $Journal -Status 'rolling-back' -Phase 'old-host-restored'
+  return $health
+}
+
 function Invoke-OptimizationActivationRecovery {
   $journal = Read-OptimizationActivationJournal -Path $activationJournalPath
   if (-not (Invoke-OptimizationLaunchIntentRecovery -Journal $journal)) {
@@ -572,6 +711,10 @@ function Invoke-OptimizationActivationRecovery {
   $newInstanceId = Get-OptimizationObjectText -Object $journal -Name 'newInstanceId'
   $newHostPath = Get-OptimizationObjectText -Object $journal -Name 'newHostManagerStatePath'
   $recoveryCleanupComplete = $true
+  if ((Get-OptimizationObjectText -Object $journal -Name 'oldHostReleasedForPromotion') -eq 'True' `
+    -or (Get-OptimizationObjectText -Object $journal -Name 'oldHostReleaseInProgress') -eq 'True') {
+    Restore-OptimizationOldHostFromJournal -Journal $journal | Out-Null
+  }
   Restore-JsonSnapshot -Path $frontDoorTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldTargetSnapshot')
   Restore-JsonSnapshot -Path $frontDoorCommittedTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldCommittedTargetSnapshot')
   Restore-JsonSnapshot -Path $activeReleasePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveReleaseSnapshot')
@@ -672,6 +815,7 @@ $frontDoorTargetSwitched = $false
 $frontDoorCommittedTargetSwitched = $false
 $activeReleaseSwitched = $false
 $activeHostStateSwitched = $false
+$oldHostStoppedForHandoff = $false
 $oldRelease = $null
 $oldToken = ''
 $newToken = ''
@@ -916,7 +1060,7 @@ try {
   $testFailure = [string]$env:READ_WEB_OPTIMIZATION_TEST_FAILURE
   $testKillPhase = [string]$env:READ_WEB_OPTIMIZATION_TEST_KILL_PHASE
   $requireCleanCandidate = [string]$env:READ_WEB_OPTIMIZATION_RELEASE_CANDIDATE -eq '1'
-  if ($testFailure -in @('capability', 'host', 'readiness', 'active-pointer', 'host-state', 'switch', 'front-door', 'front-door-health-identity') -or $testKillPhase -in @('target', 'active-release', 'active-host', 'commit-pointer', 'host-process-started')) {
+  if ($testFailure -in @('capability', 'host', 'readiness', 'promotion', 'active-pointer', 'host-state', 'switch', 'front-door', 'front-door-health-identity') -or $testKillPhase -in @('target', 'active-release', 'active-host', 'commit-pointer', 'host-process-started')) {
     $activeReusable = $false
   }
 
@@ -1097,11 +1241,14 @@ try {
     oldCommittedTargetSnapshot = $oldCommittedTargetSnapshot
     oldActiveReleaseSnapshot = $oldActiveReleaseSnapshot
     oldActiveHostSnapshot = $oldActiveHostSnapshot
+    oldHostStateSnapshot = $existingHostState
     oldHostManagerStatePath = [string]$existingHostManagerStatePath
     oldHostInstanceId = Get-OptimizationObjectText -Object $existingHostState -Name 'instanceId'
     oldApplicationIsolationRoot = Get-OptimizationObjectText -Object $existingHostState -Name 'applicationIsolationRoot'
     oldCapabilityInstanceId = Get-OptimizationObjectText -Object $existingCapabilityState -Name 'instanceId'
     oldTokenPresent = [bool]$oldToken
+    oldHostReleaseInProgress = $false
+    oldHostReleasedForPromotion = $false
     newReleaseId = ''
     newReleaseRoot = ''
     newHostManagerStatePath = $newHostManagerStatePath
@@ -1188,7 +1335,9 @@ try {
     -CapabilityBaseUrl ("http://$(Format-OptimizationUrlHost -HostName $backendHost):$backendPort") `
     -StartupTimeoutSeconds $StartupTimeoutSeconds `
     -ReservedPorts $reservedDailyPorts `
-    -ExpectedDataRoot $defaultOptimizationDataRoot
+    -ExpectedDataRoot $defaultOptimizationDataRoot `
+    -ApplicationProfileLeaseMode 'standby-if-busy' `
+    -AllowStandbyReadiness
   $newPairStarted = $true
   $newCapabilityStarted = [string]$newPair.capability.status -eq 'started'
   $activationJournal.newCapabilityStarted = $newCapabilityStarted
@@ -1196,6 +1345,83 @@ try {
 
   $newHostState = Read-OptimizationJsonFile -Path $newHostManagerStatePath
   if ($null -eq $newHostState) { throw 'New production host returned ready without an owned state file.' }
+  $candidateProfileLeaseMode = Get-OptimizationObjectText -Object $newPair.health -Name 'profileLeaseMode'
+  if ($candidateProfileLeaseMode -eq 'standby' -and $null -eq $existingHostState) {
+    throw 'Optimization candidate is standby without an owned previous Host; refusing activation.'
+  }
+  if ($candidateProfileLeaseMode -eq 'standby') {
+    $activationJournal.candidatePreflightMode = 'standby'
+    $activationJournal.promotionRequired = $true
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'candidate-standby-ready'
+    Invoke-OptimizationHostDrain -StatePath $newHostManagerStatePath -TokenPath $tokenPath -DeadlineSeconds 10 | Out-Null
+    Stop-OptimizationOwnedState -StatePath $newHostManagerStatePath -ProfileId $profileId | Out-Null
+    if (-not (Wait-OptimizationTcpPortFree -Port $newHostPort -TimeoutSeconds 5)) {
+      throw 'Standby optimization candidate did not release its host port before promotion.'
+    }
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'candidate-standby-stopped'
+
+    $oldIsolationRoot = Get-OptimizationObjectText -Object $existingHostState -Name 'applicationIsolationRoot'
+    $activationJournal.oldHostReleaseInProgress = $true
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'old-host-release-starting'
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'old-host-draining'
+    Invoke-OptimizationHostDrain -StatePath $existingHostManagerStatePath -TokenPath $tokenPath -DeadlineSeconds 10 | Out-Null
+    Stop-OptimizationOwnedState -StatePath $existingHostManagerStatePath -ProfileId $profileId | Out-Null
+    if (-not (Wait-OptimizationTcpPortFree -Port $existingHostPort -TimeoutSeconds 5)) {
+      throw 'Previous optimization Host did not release its host port before promotion.'
+    }
+    $oldHostStoppedForHandoff = $true
+    $activationJournal.oldHostReleaseInProgress = $false
+    $activationJournal.oldHostReleasedForPromotion = $true
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'old-host-released'
+    if ([string]$env:READ_WEB_OPTIMIZATION_TEST_FAILURE -eq 'promotion') {
+      throw 'Synthetic optimization promotion failure.'
+    }
+
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'promotion-starting'
+    $newPair = Start-OptimizationOwnedPair `
+      -Release $newRelease `
+      -ProfileId $profileId `
+      -InstanceId $newInstanceId `
+      -ServiceToken $newToken `
+      -FrontendHost $frontendHost `
+      -FrontendPort $newHostPort `
+      -BackendHost $backendHost `
+      -BackendPort $backendPort `
+      -PythonPath $pythonPath `
+      -NodePath $nodePath `
+      -CapabilityScript $capabilityScript `
+      -WorkflowRoot $workflowRoot `
+      -ProjectRoot $projectRoot `
+      -ApplicationIsolationRoot $newApplicationIsolationRoot `
+      -ApplicationProfileDir $newApplicationProfileDir `
+      -ApplicationProfileAuthorityRoot $applicationProfileAuthorityRoot `
+      -ApplicationProfileAuthorityIsolationRoot $applicationProfileAuthorityIsolationRoot `
+      -ApplicationPythonStateDir $newApplicationPythonStateDir `
+      -ApplicationPythonOutputDir $newApplicationPythonOutputDir `
+      -HostStatePath $newHostManagerStatePath `
+      -CapabilityStatePath $capabilityStatePath `
+      -LogRoot $logRoot `
+      -HostHealthUrl $newHostHealthUrl `
+      -WorkflowHealthUrl $newWorkflowHealthUrl `
+      -CapabilityHealthUrl $newCapabilityHealthUrl `
+      -CapabilityBaseUrl ("http://$(Format-OptimizationUrlHost -HostName $backendHost):$backendPort") `
+      -StartupTimeoutSeconds $StartupTimeoutSeconds `
+      -ReservedPorts $reservedDailyPorts `
+      -ExpectedDataRoot $defaultOptimizationDataRoot `
+      -ApplicationProfileLeaseMode 'authoritative'
+    $newHostState = Read-OptimizationJsonFile -Path $newHostManagerStatePath
+    if ($null -eq $newHostState) { throw 'Promoted optimization Host returned ready without an owned state file.' }
+    if ((Get-OptimizationObjectText -Object $newPair.health -Name 'profileLeaseMode') -ne 'authoritative' `
+      -or -not [bool](Get-OptimizationObjectValue -Object $newPair.health -Name 'profileLeaseReady')) {
+      throw 'Optimization Host promotion did not acquire the stable profile authority lease.'
+    }
+    Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'promotion-ready'
+  }
+  if ((Get-OptimizationObjectText -Object $newPair.health -Name 'profileLeaseMode') -ne 'authoritative' `
+    -or -not [bool](Get-OptimizationObjectValue -Object $newPair.health -Name 'profileLeaseReady') `
+    -or -not [bool](Get-OptimizationObjectValue -Object $newPair.health -Name 'profileLeaseAlive')) {
+    throw 'Optimization activation requires an authoritative stable profile lease before target publication.'
+  }
   Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'target-pending'
   Write-OptimizationFrontDoorTarget `
     -Path $frontDoorTargetPath `
@@ -1242,13 +1468,21 @@ try {
   $frontDoorCommittedTargetSwitched = $true
   Set-OptimizationActivationJournal -Journal $activationJournal -Status 'switching' -Phase 'commit-pointer-switched'
   Invoke-OptimizationCrashPoint -Phase 'commit-pointer'
+
+  # Once the committed front-door pointer is published, recovery must finish
+  # old-instance cleanup in place instead of rolling back a committed target.
   Set-OptimizationActivationJournal -Journal $activationJournal -Status 'committed' -Phase 'committed'
 
   if ($null -ne $existingHostState -and $existingHostManagerStatePath -ne $newHostManagerStatePath) {
     $oldIsolationRoot = Get-OptimizationObjectText -Object $existingHostState -Name 'applicationIsolationRoot'
-    $drain = Invoke-OptimizationHostDrain -StatePath $existingHostManagerStatePath -TokenPath $tokenPath -DeadlineSeconds 10
-    Write-Host "Drained old optimization Host before stop: status=$($drain.status) inflight=$($drain.inflight) forced=$($drain.forced)."
-    Stop-OptimizationOwnedState -StatePath $existingHostManagerStatePath -ProfileId $profileId | Out-Null
+    if (-not $oldHostStoppedForHandoff) {
+      $drain = Invoke-OptimizationHostDrain -StatePath $existingHostManagerStatePath -TokenPath $tokenPath -DeadlineSeconds 10
+      Write-Host "Drained old optimization Host before stop: status=$($drain.status) inflight=$($drain.inflight) forced=$($drain.forced)."
+      Stop-OptimizationOwnedState -StatePath $existingHostManagerStatePath -ProfileId $profileId | Out-Null
+      if (-not (Wait-OptimizationTcpPortFree -Port $existingHostPort -TimeoutSeconds 5)) {
+        throw 'Previous optimization Host did not release its host port after activation.'
+      }
+    }
     if (-not (Remove-OptimizationApplicationIsolation `
         -Root (Join-Path $defaultOptimizationDataRoot '.read-web-application\instances') `
         -Path $oldIsolationRoot)) {

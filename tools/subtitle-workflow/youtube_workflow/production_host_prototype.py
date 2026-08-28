@@ -442,6 +442,7 @@ def create_local_app_host(
     owner_profile_evidence: dict | None = None,
     application_profile_lease_process=None,
     application_profile_lease_mode: str = "authoritative",
+    application_profile_standby_preflight: bool = False,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -490,6 +491,7 @@ def create_local_app_host(
         standby_evidence_ready = _standby_profile_evidence_is_safe(owner_profile_evidence)
         standby_ready = (
             application_profile_lease_mode == "standby"
+            and application_profile_standby_preflight
             and contract_valid
             and standby_evidence_ready
             and profile_lease_alive
@@ -514,6 +516,7 @@ def create_local_app_host(
             "profileLeaseReady": profile_lease_ready,
             "profileLeaseAlive": profile_lease_alive,
             "profileLeaseMode": application_profile_lease_mode,
+            "standbyPreflight": application_profile_standby_preflight,
             "standbyEvidenceReady": standby_evidence_ready,
             "profileLease": owner_registry_status.get("profileLease"),
             "profileEvidenceMode": owner_registry_status.get("profileEvidenceMode"),
@@ -656,6 +659,11 @@ def main(argv: list[str] | None = None) -> int:
         choices=("authoritative", "standby-if-busy", "standby"),
         default="authoritative",
     )
+    parser.add_argument(
+        "--allow-standby-readiness",
+        action="store_true",
+        help="allow a verified standby profile to report ready for internal candidate preflight only",
+    )
     args = parser.parse_args(argv)
     if not _is_loopback_host(args.host):
         parser.error("production host only supports an explicit loopback bind")
@@ -705,6 +713,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"valid release manifest is required: {error}")
     if args.config_schema_version < 1:
         parser.error("config schema version must be positive")
+    if args.allow_standby_readiness and args.application_profile_lease_mode == "authoritative":
+        parser.error("standby readiness is only valid for a standby candidate mode")
     profile_lock, startup_recovery, owner_profile_evidence, profile_lease_mode = _start_application_profile_lock(args, parser)
     try:
         owner_profile_rows = (
@@ -732,6 +742,7 @@ def main(argv: list[str] | None = None) -> int:
             owner_profile_evidence=owner_profile_evidence,
             application_profile_lease_process=profile_lock,
             application_profile_lease_mode=profile_lease_mode,
+            application_profile_standby_preflight=args.allow_standby_readiness,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:
