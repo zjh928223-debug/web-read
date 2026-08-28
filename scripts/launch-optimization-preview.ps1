@@ -819,6 +819,12 @@ try {
   New-Item -ItemType Directory -Force -Path $workflowDataRoot | Out-Null
   $applicationIsolationRoot = Join-Path $workflowDataRoot '.read-web-application'
   New-Item -ItemType Directory -Force -Path $applicationIsolationRoot | Out-Null
+  # The instance directory is disposable lifecycle state.  Authority lease,
+  # owner-mode checkpoints, and any future cutover identity live at this
+  # stable profile-level location so an overlapping replacement cannot create
+  # a second authoritative writer for the same profile.
+  $applicationProfileAuthorityIsolationRoot = $applicationIsolationRoot
+  $applicationProfileAuthorityRoot = Join-Path $applicationProfileAuthorityIsolationRoot "profiles\$profileId"
 
   if ($DevFallback) {
     Write-Warning 'Using the explicit Vite development fallback; this is not the default optimization launch path.'
@@ -1106,6 +1112,8 @@ try {
     newHostExecutablePath = $pythonPath
     newHostArgumentFragments = @('-m', 'youtube_workflow.production_host_prototype', '--port', [string]$newHostPort, '--instance-id', $newInstanceId)
     newApplicationIsolationRoot = $newApplicationIsolationRoot
+    newApplicationProfileAuthorityRoot = $applicationProfileAuthorityRoot
+    newApplicationProfileAuthorityIsolationRoot = $applicationProfileAuthorityIsolationRoot
   }
   Set-OptimizationActivationJournal -Journal $activationJournal -Status 'prepared' -Phase 'prepared'
 
@@ -1167,6 +1175,8 @@ try {
     -ProjectRoot $projectRoot `
     -ApplicationIsolationRoot $newApplicationIsolationRoot `
     -ApplicationProfileDir $newApplicationProfileDir `
+    -ApplicationProfileAuthorityRoot $applicationProfileAuthorityRoot `
+    -ApplicationProfileAuthorityIsolationRoot $applicationProfileAuthorityIsolationRoot `
     -ApplicationPythonStateDir $newApplicationPythonStateDir `
     -ApplicationPythonOutputDir $newApplicationPythonOutputDir `
     -HostStatePath $newHostManagerStatePath `

@@ -29,6 +29,8 @@ const OWNER_MODE_CHECKPOINT_DIR = 'owner-mode'
 const OWNER_MODE_CHECKPOINT_SUBDIR = 'checkpoints'
 const OWNER_MODE_AUTHORITY = 'host-api=authoritative'
 const OWNER_MODE_LEASE_SCHEMA_VERSION = 1
+const PROFILE_LEASE_MODE_AUTHORITATIVE = 'authoritative'
+const PROFILE_LEASE_MODE_STANDBY = 'standby'
 const OWNER_PROFILE_DOMAINS = Object.freeze([
   'reader-session',
   'vocabulary-srs',
@@ -172,6 +174,44 @@ async function validateIsolationLayout({ isolationRoot, paths, forbiddenRoots = 
   return Object.freeze({
     isolationRoot: canonicalIsolationRoot,
     paths: Object.freeze(canonicalPaths),
+  })
+}
+
+async function validateProfileAuthorityLayout(options, instanceLayout) {
+  const authorityRootValue = options?.profileAuthorityRoot
+  if (typeof authorityRootValue !== 'string' || !authorityRootValue.trim()) {
+    return Object.freeze({
+      profileAuthorityIsolationRoot: instanceLayout.isolationRoot,
+      profileAuthorityRoot: instanceLayout.isolationRoot,
+      explicit: false,
+    })
+  }
+  const authorityIsolationRootValue = options?.profileAuthorityIsolationRoot
+  if (typeof authorityIsolationRootValue !== 'string' || !authorityIsolationRootValue.trim()) {
+    throw unsafeIsolationPath(
+      'Stable profile authority lease requires profileAuthorityIsolationRoot',
+      { profileAuthorityRoot: authorityRootValue },
+    )
+  }
+  const authorityLayout = await validateIsolationLayout({
+    isolationRoot: authorityIsolationRootValue,
+    paths: { profileAuthorityRoot: authorityRootValue },
+    forbiddenRoots: options?.forbiddenRoots,
+  })
+  const instanceRoot = instanceLayout.isolationRoot
+  const profileAuthorityRoot = authorityLayout.paths.profileAuthorityRoot
+  if (comparablePath(instanceRoot) === comparablePath(profileAuthorityRoot)
+    || isStrictDescendant(instanceRoot, profileAuthorityRoot)
+    || isStrictDescendant(profileAuthorityRoot, instanceRoot)) {
+    throw unsafeIsolationPath(
+      'Instance isolation root and stable profile authority root must not overlap',
+      { instanceRoot, profileAuthorityRoot },
+    )
+  }
+  return Object.freeze({
+    profileAuthorityIsolationRoot: authorityLayout.isolationRoot,
+    profileAuthorityRoot,
+    explicit: true,
   })
 }
 
@@ -547,7 +587,7 @@ async function withPathMutex(filePath, operation, options = {}) {
   }
 }
 
-async function withApplicationPathMutex(filePath, operation) {
+async function withApplicationPathMutex(filePath, operation, options = {}) {
   const key = pathMutexKey(filePath)
   const held = applicationPathLockContext.getStore()
   const heldLeases = applicationPathLeaseContext.getStore()
@@ -560,7 +600,7 @@ async function withApplicationPathMutex(filePath, operation) {
     return applicationPathLockContext.run(next, () => (
       applicationPathLeaseContext.run(nextLeases, () => operation(lease))
     ))
-  })
+  }, options)
 }
 
 async function delay(milliseconds) {
@@ -600,23 +640,55 @@ async function renameWithRetry(temporary, absolute) {
   throw lastError
 }
 
-async function writeJsonAtomic(filePath, value) {
+async function writeJsonAtomic(filePath, value, { containmentRoot = null } = {}) {
   const absolute = path.resolve(filePath)
+  const assertContained = async (temporary = null) => {
+    if (!containmentRoot) return
+    await assertPathContainedBeforeWrite(containmentRoot, absolute)
+    if (temporary) await assertPathContainedBeforeWrite(containmentRoot, temporary)
+  }
+  await assertContained()
   await mkdir(path.dirname(absolute), { recursive: true })
+  await assertContained()
   const temporary = `${absolute}.tmp-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   let handle
   try {
+    await assertContained(temporary)
     handle = await open(temporary, 'wx')
     await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8')
     await handle.sync()
     await handle.close()
     handle = null
+    await assertContained(temporary)
     await renameWithRetry(temporary, absolute)
   } catch (error) {
     await handle?.close().catch(() => {})
     await rm(temporary, { force: true }).catch(() => {})
     throw error
   }
+}
+
+async function assertPathContainedBeforeWrite(root, filePath) {
+  let canonicalRoot
+  let canonicalFilePath
+  try {
+    canonicalRoot = await resolveCanonicalPath(root)
+    canonicalFilePath = await resolveCanonicalPath(filePath)
+  } catch (error) {
+    throw unsafeIsolationPath('Path could not be canonicalized safely before write', {
+      root,
+      filePath,
+      cause: error,
+    })
+  }
+  if (!isStrictDescendant(canonicalRoot, canonicalFilePath)) {
+    throw unsafeIsolationPath('Path must remain inside its isolated profile authority directory', {
+      root: canonicalRoot,
+      filePath,
+      canonicalFilePath,
+    })
+  }
+  return canonicalFilePath
 }
 
 function ownerModeError(code, message, details = {}) {
@@ -652,16 +724,17 @@ function resolveProfileId(options, profileDir) {
   return `isolated-profile-${createHash('sha256').update(pathMutexKey(profileDir)).digest('hex').slice(0, 16)}`
 }
 
-function profileLeaseEvidence(lease, { isolationRoot, profileId } = {}) {
+function profileLeaseEvidence(lease, { profileAuthorityRoot, isolationRoot, profileId } = {}) {
+  const leaseRoot = profileAuthorityRoot || isolationRoot
   if (!lease || typeof lease !== 'object' || typeof lease.ownerToken !== 'string' || !lease.ownerToken
     || typeof lease.profileKey !== 'string' || !lease.profileKey
-    || typeof isolationRoot !== 'string' || !isolationRoot.trim()) {
+    || typeof leaseRoot !== 'string' || !leaseRoot.trim()) {
     throw ownerModeError(
       'OWNER_MODE_PROFILE_LEASE_REQUIRED',
       'Owner-mode operation requires the active application profile lease',
     )
   }
-  const expectedKey = pathMutexKey(isolationRoot)
+  const expectedKey = pathMutexKey(leaseRoot)
   if (lease.profileKey !== expectedKey) {
     throw ownerModeError(
       'OWNER_MODE_PROFILE_LEASE_MISMATCH',
@@ -688,8 +761,8 @@ function assertActiveProfileLease(lease, context) {
   return profileLeaseEvidence(lease, context)
 }
 
-function ownerModeCheckpointPath(profileDir, domain) {
-  return path.join(profileDir, OWNER_MODE_CHECKPOINT_DIR, OWNER_MODE_CHECKPOINT_SUBDIR, `${ownerModeDomain(domain)}.json`)
+function ownerModeCheckpointPath(profileAuthorityRoot, domain) {
+  return path.join(profileAuthorityRoot, OWNER_MODE_CHECKPOINT_DIR, OWNER_MODE_CHECKPOINT_SUBDIR, `${ownerModeDomain(domain)}.json`)
 }
 
 function ownerModeCheckpointChecksum(value) {
@@ -731,7 +804,7 @@ function normalizedOwnerRepository(repository) {
   }
 }
 
-function validateOwnerModeCheckpoint(value, { isolationRoot, profileId, lease, domain } = {}) {
+function validateOwnerModeCheckpoint(value, { profileAuthorityRoot, isolationRoot, profileId, lease, domain } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw ownerModeError('OWNER_MODE_CHECKPOINT_CORRUPT', 'Owner-mode checkpoint is not an object')
   }
@@ -754,7 +827,10 @@ function validateOwnerModeCheckpoint(value, { isolationRoot, profileId, lease, d
       { expectedProfileId: expectedProfileId || null, actualProfileId: value.profileId || null },
     )
   }
-  const currentLease = assertActiveProfileLease(lease, { isolationRoot, profileId: expectedProfileId })
+  const currentLease = assertActiveProfileLease(lease, {
+    profileAuthorityRoot: profileAuthorityRoot || isolationRoot,
+    profileId: expectedProfileId,
+  })
   const checkpointLease = value.lease
   if (!checkpointLease || typeof checkpointLease !== 'object'
     || checkpointLease.schemaVersion !== OWNER_MODE_LEASE_SCHEMA_VERSION
@@ -817,29 +893,36 @@ async function withOwnerProfileLease(options, operation) {
     paths: { profileDir: options.profileDir },
     forbiddenRoots: options.forbiddenRoots,
   })
+  const authorityLayout = await validateProfileAuthorityLayout(options, validatedLayout)
   const isolationRoot = validatedLayout.isolationRoot
   const profileDir = validatedLayout.paths.profileDir
+  const profileAuthorityIsolationRoot = authorityLayout.profileAuthorityIsolationRoot
+  const profileAuthorityRoot = authorityLayout.profileAuthorityRoot
   const profileId = resolveProfileId(options, profileDir)
-  return withApplicationPathMutex(isolationRoot, async (lease) => {
-    const evidence = assertActiveProfileLease(lease, { isolationRoot, profileId })
+  return withApplicationPathMutex(profileAuthorityRoot, async (lease) => {
+    const evidence = assertActiveProfileLease(lease, { profileAuthorityRoot, profileId })
     return operation(Object.freeze({
       isolationRoot,
       profileDir,
       profileId,
+      profileAuthorityIsolationRoot,
+      profileAuthorityRoot,
       lease,
       profileLease: evidence,
     }))
   })
 }
 
-async function readOwnerModeCheckpointUnlocked({ profileDir, isolationRoot, profileId, lease, domain }) {
+async function readOwnerModeCheckpointUnlocked({ profileAuthorityRoot, profileDir, isolationRoot, profileId, lease, domain }) {
   const checkpointDomain = ownerModeDomain(domain)
-  const filePath = ownerModeCheckpointPath(profileDir, checkpointDomain)
+  const authorityRoot = profileAuthorityRoot || profileDir
+  const filePath = ownerModeCheckpointPath(authorityRoot, checkpointDomain)
   if (!await pathExists(filePath)) return null
-  await assertExistingBrowserProfilePathIsContained(profileDir, filePath)
+  await assertPathContainedBeforeWrite(authorityRoot, filePath)
   const value = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
   if (!value) return null
   return validateOwnerModeCheckpoint(value, {
+    profileAuthorityRoot: authorityRoot,
     isolationRoot,
     profileId,
     lease,
@@ -848,7 +931,7 @@ async function readOwnerModeCheckpointUnlocked({ profileDir, isolationRoot, prof
 }
 
 async function writeOwnerModeCheckpointUnlocked(context, options) {
-  const { isolationRoot, profileDir, profileId, lease, profileLease } = context
+  const { isolationRoot, profileAuthorityRoot, profileId, lease, profileLease } = context
   if (options.oldWriterBlocked !== true
     || options.compatibilityMode !== 'read-only'
     || options.inFlight !== 0) {
@@ -878,11 +961,12 @@ async function writeOwnerModeCheckpointUnlocked(context, options) {
       : new Date().toISOString(),
   }
   const candidate = { ...core, checksum: ownerModeCheckpointChecksum(core) }
-  const filePath = ownerModeCheckpointPath(profileDir, domain)
+  const filePath = ownerModeCheckpointPath(profileAuthorityRoot, domain)
   if (await pathExists(filePath)) {
-    await assertExistingBrowserProfilePathIsContained(profileDir, filePath)
+    await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
     const existing = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
     const verified = validateOwnerModeCheckpoint(existing, {
+      profileAuthorityRoot,
       isolationRoot,
       profileId,
       lease,
@@ -897,9 +981,11 @@ async function writeOwnerModeCheckpointUnlocked(context, options) {
       { domain, path: filePath },
     )
   }
-  await writeJsonAtomic(filePath, candidate)
+  await writeJsonAtomic(filePath, candidate, { containmentRoot: profileAuthorityRoot })
+  await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
   const reread = await readJsonIfPresent(filePath, 'OWNER_MODE_CHECKPOINT_CORRUPT')
   const checkpoint = validateOwnerModeCheckpoint(reread, {
+    profileAuthorityRoot,
     isolationRoot,
     profileId,
     lease,
@@ -1143,23 +1229,7 @@ export async function writeIsolatedBrowserProfile(profileDir, profile) {
 }
 
 async function assertExistingBrowserProfilePathIsContained(profileDir, filePath) {
-  let canonicalFilePath
-  try {
-    canonicalFilePath = await resolveCanonicalPath(filePath)
-  } catch (error) {
-    throw unsafeIsolationPath('Existing browser profile could not be canonicalized safely', {
-      profileDir,
-      filePath,
-      cause: error,
-    })
-  }
-  if (!isStrictDescendant(profileDir, canonicalFilePath)) {
-    throw unsafeIsolationPath('Existing browser profile must remain inside its isolated profile directory', {
-      profileDir,
-      filePath,
-      canonicalFilePath,
-    })
-  }
+  await assertPathContainedBeforeWrite(profileDir, filePath)
 }
 
 export async function initializeIsolatedBrowserProfileIfMissing({
@@ -2070,7 +2140,7 @@ function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
   }
 }
 
-async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery, profileLease, profileId, isolationRoot }) {
+async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery, profileLease, profileLeaseMode, profileId, isolationRoot, profileAuthorityRoot }) {
   let artifact = null
   let collectionError = null
   let rows = []
@@ -2095,19 +2165,34 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
   ].every((binding) => binding?.bound === true && binding?.status === 'verified')
   const inventoryPresent = browser.profilePresent === true
   const profileMode = process.env.READ_WEB_APPLICATION_PROFILE_MODE || 'explicit-isolated-profile'
-  const ownerMode = await inspectOwnerModeCheckpointsUnlocked({
-    profileDir: browser.filePath ? path.dirname(browser.filePath) : null,
-    isolationRoot,
-    profileId,
-    lease: profileLease,
-    profileLease: profileLeaseEvidence(profileLease, { isolationRoot, profileId }),
-  })
-  const ready = inventoryPresent && !collectionError && allBindingsBound && ownerMode.status !== 'invalid'
+  const currentProfileLease = profileLease
+    ? profileLeaseEvidence(profileLease, { profileAuthorityRoot, isolationRoot, profileId })
+    : null
+  const ownerMode = profileLease
+    ? await inspectOwnerModeCheckpointsUnlocked({
+      profileDir: browser.filePath ? path.dirname(browser.filePath) : null,
+      profileAuthorityRoot,
+      isolationRoot,
+      profileId,
+      lease: profileLease,
+      profileLease: currentProfileLease,
+    })
+    : {
+      schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+      status: 'not-ready',
+      profileId,
+      profileLease: null,
+      authoritativeDomains: [],
+      invalidDomains: [],
+      reason: 'profile-authority-lease-busy',
+    }
+  const ready = inventoryPresent && !collectionError && allBindingsBound && Boolean(profileLease) && ownerMode.status !== 'invalid'
   return {
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
     source: OWNER_PROFILE_EVIDENCE_SOURCE,
     ready,
-    profileLease: profileLeaseEvidence(profileLease, { isolationRoot, profileId }),
+    profileLease: currentProfileLease,
+    profileLeaseMode,
     profileChecksum: ownerProfileChecksum(browser.state),
     inventory: {
       present: inventoryPresent,
@@ -2156,13 +2241,18 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   })
   const isolationRoot = validatedLayout.isolationRoot
   const canonicalPaths = validatedLayout.paths
+  const authorityLayout = await validateProfileAuthorityLayout(options, validatedLayout)
+  const profileAuthorityIsolationRoot = authorityLayout.profileAuthorityIsolationRoot
+  const profileAuthorityRoot = authorityLayout.profileAuthorityRoot
   const pythonCommand = options.pythonCommand || (await resolveSelectedPython({
     repoRoot,
     configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
   })).executable
   const profileId = resolveProfileId(options, canonicalPaths.profileDir)
-  return withApplicationPathMutex(isolationRoot, async (profileLease) => {
-  const currentProfileLease = assertActiveProfileLease(profileLease, { isolationRoot, profileId })
+  const buildComposition = async ({ profileLease = null, profileLeaseMode = PROFILE_LEASE_MODE_AUTHORITATIVE } = {}) => {
+  const currentProfileLease = profileLease
+    ? assertActiveProfileLease(profileLease, { profileAuthorityRoot, isolationRoot, profileId })
+    : null
   const isolationLayout = Object.freeze({
     isolationRoot,
     paths: canonicalPaths,
@@ -2213,10 +2303,19 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       atomicRevisionCommit: true,
       applicationLeaseRequired: true,
       applicationLeaseSource: 'read-web-production-backup.application-profile-lease',
-      withApplicationLock: (operation) => withApplicationPathMutex(isolationRoot, async (lease) => {
-        assertActiveProfileLease(lease, { isolationRoot, profileId })
-        return operation()
-      }),
+      withApplicationLock: (operation) => {
+        if (!profileLease) {
+          throw ownerModeError(
+            'OWNER_MODE_PROFILE_LEASE_REQUIRED',
+            'Restore and migration cutover require the stable profile authority lease',
+            { profileId },
+          )
+        }
+        return withApplicationPathMutex(profileAuthorityRoot, async (lease) => {
+          assertActiveProfileLease(lease, { profileAuthorityRoot, isolationRoot, profileId })
+          return withApplicationPathMutex(isolationRoot, () => operation())
+        })
+      },
       capacityBytes: targetOptions.capacityBytes,
       faults: targetOptions.faults,
       rollbackStore: targetOptions.rollbackStore,
@@ -2236,7 +2335,9 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     revisionStore: options.revisionStore,
   })
   registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target: restoreTarget })
-  const startupRecovery = await restoreTarget.recoverPendingRestore()
+  const startupRecovery = profileLease
+    ? await restoreTarget.recoverPendingRestore()
+    : { status: 'not-run', reason: 'profile-authority-lease-busy' }
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,
     adapters,
@@ -2256,8 +2357,10 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     pythonAdapters,
     startupRecovery,
     profileLease,
+    profileLeaseMode,
     profileId,
     isolationRoot,
+    profileAuthorityRoot,
   })
   return Object.freeze({
     kind: 'read-web-isolated-application-restore-target',
@@ -2269,7 +2372,10 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     browserProfile: browser,
     pythonAdapters,
     profileId,
-    profileLease: Object.freeze(clone(currentProfileLease)),
+    profileAuthorityIsolationRoot,
+    profileAuthorityRoot,
+    profileLease: currentProfileLease ? Object.freeze(clone(currentProfileLease)) : null,
+    profileLeaseMode,
     ownerMode: Object.freeze(clone(ownerProfileEvidence.ownerMode)),
     ownerProfileEvidence: Object.freeze(clone(ownerProfileEvidence)),
     async createBackup(backupOptions = {}) {
@@ -2294,7 +2400,19 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       return createIsolatedProfileRestoreTarget(targetOptions)
     },
   })
-  })
+  }
+  if (options.profileLeaseMode === PROFILE_LEASE_MODE_STANDBY) {
+    return withApplicationPathMutex(isolationRoot, () => buildComposition({
+      profileLease: null,
+      profileLeaseMode: PROFILE_LEASE_MODE_STANDBY,
+    }))
+  }
+  return withApplicationPathMutex(profileAuthorityRoot, async (profileLease) => (
+    withApplicationPathMutex(isolationRoot, () => buildComposition({
+      profileLease,
+      profileLeaseMode: PROFILE_LEASE_MODE_AUTHORITATIVE,
+    }))
+  ))
 }
 
 export async function readArtifactFromFile(filePath) {
@@ -2331,17 +2449,67 @@ export async function withReadWebApplicationStartupLock(options = {}, operation)
     },
     forbiddenRoots: options.forbiddenRoots,
   })
-  return withApplicationPathMutex(validatedLayout.isolationRoot, async (profileLease) => {
-    const composition = await createReadWebProductionBackupComposition(options)
-    return operation(Object.freeze({
-      composition,
-      startupRecovery: composition.startupRecovery,
-      profileLease: composition.profileLease,
-    }))
-  })
+  const authorityLayout = await validateProfileAuthorityLayout(options, validatedLayout)
+  const startupOptions = {
+    ...options,
+    ...(authorityLayout.explicit
+      ? {
+        profileAuthorityIsolationRoot: authorityLayout.profileAuthorityIsolationRoot,
+        profileAuthorityRoot: authorityLayout.profileAuthorityRoot,
+      }
+      : {}),
+  }
+  const profileAuthorityMode = options.profileLeaseMode === PROFILE_LEASE_MODE_STANDBY
+    ? PROFILE_LEASE_MODE_STANDBY
+    : PROFILE_LEASE_MODE_AUTHORITATIVE
+  const authorityLockOptions = options.allowStandby === true
+    ? {
+      timeoutMs: Number.isFinite(options.profileAuthorityLeaseTimeoutMs)
+        ? options.profileAuthorityLeaseTimeoutMs
+        : 1_000,
+    }
+    : {}
+  const run = (profileLeaseMode) => withApplicationPathMutex(
+    profileLeaseMode === PROFILE_LEASE_MODE_STANDBY
+      ? validatedLayout.isolationRoot
+      : authorityLayout.profileAuthorityRoot,
+    async (profileLease) => {
+      const composition = await createReadWebProductionBackupComposition({
+        ...startupOptions,
+        ...(profileLeaseMode === PROFILE_LEASE_MODE_STANDBY
+          ? { profileLeaseMode: PROFILE_LEASE_MODE_STANDBY }
+          : {}),
+      })
+      return operation(Object.freeze({
+        composition,
+        startupRecovery: composition.startupRecovery,
+        profileLease: composition.profileLease,
+        profileLeaseMode: composition.profileLeaseMode,
+      }))
+    },
+    profileLeaseMode === PROFILE_LEASE_MODE_STANDBY ? {} : authorityLockOptions,
+  )
+  if (profileAuthorityMode === PROFILE_LEASE_MODE_STANDBY) return run(PROFILE_LEASE_MODE_STANDBY)
+  try {
+    return await run(PROFILE_LEASE_MODE_AUTHORITATIVE)
+  } catch (error) {
+    if (options.allowStandby !== true || error?.code !== 'BACKUP_PATH_LOCK_TIMEOUT') throw error
+    return withApplicationPathMutex(validatedLayout.isolationRoot, async () => {
+      const composition = await createReadWebProductionBackupComposition({
+        ...startupOptions,
+        profileLeaseMode: PROFILE_LEASE_MODE_STANDBY,
+      })
+      return operation(Object.freeze({
+        composition,
+        startupRecovery: composition.startupRecovery,
+        profileLease: null,
+        profileLeaseMode: composition.profileLeaseMode,
+      }))
+    })
+  }
 }
 
-function ownerProfileReadFailureEvidence(error, { isolationRoot, profileId, lease } = {}) {
+function ownerProfileReadFailureEvidence(error, { isolationRoot, profileAuthorityRoot, profileId, lease, profileLeaseMode = PROFILE_LEASE_MODE_AUTHORITATIVE } = {}) {
   const sourceError = typeof error?.code === 'string' && error.code
     ? error.code
     : 'OWNER_PROFILE_INVENTORY_READ_FAILED'
@@ -2354,9 +2522,10 @@ function ownerProfileReadFailureEvidence(error, { isolationRoot, profileId, leas
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
     source: OWNER_PROFILE_EVIDENCE_SOURCE,
     ready: false,
-    profileLease: lease && isolationRoot && profileId
-      ? profileLeaseEvidence(lease, { isolationRoot, profileId })
+    profileLease: lease && profileId
+      ? profileLeaseEvidence(lease, { profileAuthorityRoot, isolationRoot, profileId })
       : null,
+    profileLeaseMode,
     profileChecksum: null,
     inventory: {
       present: false,
@@ -2388,6 +2557,8 @@ function ownerProfileReadFailureEvidence(error, { isolationRoot, profileId, leas
     ownerMode: {
       schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
       status: 'not-ready',
+      profileId,
+      profileLease: null,
       authoritativeDomains: [],
       invalidDomains: [],
     },
@@ -2406,16 +2577,20 @@ async function holdApplicationProfileAfterReadFailure(options, error) {
     forbiddenRoots: options.forbiddenRoots,
   })
   const profileId = resolveProfileId(options, validatedLayout.paths.profileDir)
-  return withApplicationPathMutex(validatedLayout.isolationRoot, async (lease) => {
+  const authorityLayout = await validateProfileAuthorityLayout(options, validatedLayout)
+  const emitFailureEvidence = async (lease, profileLeaseMode) => {
     const ownerProfileEvidence = ownerProfileReadFailureEvidence(error, {
       isolationRoot: validatedLayout.isolationRoot,
+      profileAuthorityRoot: authorityLayout.profileAuthorityRoot,
       profileId,
       lease,
+      profileLeaseMode,
     })
     await new Promise((resolve, reject) => {
       process.stdout.write(`${JSON.stringify({
         status: 'ready',
         startupRecovery: null,
+        profileLeaseMode,
         ownerProfileEvidence,
       })}\n`, (writeError) => {
         if (writeError) reject(writeError)
@@ -2429,18 +2604,40 @@ async function holdApplicationProfileAfterReadFailure(options, error) {
       process.stdin.once('end', done)
       process.stdin.once('close', done)
     })
-  })
+  }
+  const runAuthoritative = () => withApplicationPathMutex(
+    authorityLayout.profileAuthorityRoot,
+    async (lease) => withApplicationPathMutex(
+      validatedLayout.isolationRoot,
+      () => emitFailureEvidence(lease, PROFILE_LEASE_MODE_AUTHORITATIVE),
+    ),
+    options.allowStandby === true ? {
+      timeoutMs: Number.isFinite(options.profileAuthorityLeaseTimeoutMs)
+        ? options.profileAuthorityLeaseTimeoutMs
+        : 1_000,
+    } : {},
+  )
+  try {
+    return await runAuthoritative()
+  } catch (failure) {
+    if (options.allowStandby !== true || failure?.code !== 'BACKUP_PATH_LOCK_TIMEOUT') throw failure
+    return withApplicationPathMutex(
+      validatedLayout.isolationRoot,
+      () => emitFailureEvidence(null, PROFILE_LEASE_MODE_STANDBY),
+    )
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)
   && process.argv[2] === '--hold-application-profile') {
   const options = JSON.parse(process.argv[3] || '{}')
   try {
-    await withReadWebApplicationStartupLock(options, async ({ composition, startupRecovery }) => {
+    await withReadWebApplicationStartupLock(options, async ({ composition, startupRecovery, profileLeaseMode }) => {
       await new Promise((resolve, reject) => {
           process.stdout.write(`${JSON.stringify({
             status: 'ready',
             startupRecovery,
+            profileLeaseMode,
             ownerProfileEvidence: composition.ownerProfileEvidence,
           })}\n`, (error) => {
           if (error) reject(error)

@@ -182,6 +182,11 @@
     "leaseSource": "read-web-production-backup.application-profile-lease",
     "scope": "one isolated Windows application profile",
     "lifetime": "held by the Local App Host lock-holder from startup evidence through stop or startup failure",
+    "instanceLifetimeLockTarget": ".read-web-application/instances/<instanceId>",
+    "authorityLeaseTarget": ".read-web-application/profiles/<profileId>",
+    "authorityLeaseIdentity": "canonical pathMutexKey(authorityLeaseTarget), independent of instanceId",
+    "authorityLeaseIsolation": "authorityLeaseTarget must be a strict descendant of the configured optimization application isolation root and must not overlap an instance root",
+    "overlapPolicy": "An overlapping replacement may hold its own instance-lifetime lock as standby, but must not acquire or infer the stable profile authority lease",
     "checkpointPath": "owner-mode/checkpoints/<domain>.json",
     "checkpointSchema": "owner-mode-checkpoint.schema.json",
     "checkpointRequiredFields": [
@@ -317,5 +322,5 @@
     "nextAllowedTask": "2.4 pending journal and recovery evidence",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:60a9ab67fc2cefe62e24f148c646a06fbd8333e31735e859571e71d83937350c"
+  "artifactChecksum": "sha256:db207d881cd202da59a1665c4cf0044c97b35bcb15dd1ff90c08b8274ada0148"
 }

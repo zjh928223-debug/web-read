@@ -75,8 +75,8 @@ async function waitForPortClosed(port, timeoutMs = 5_000) {
   throw new Error(`owned production host port ${port} remained open`)
 }
 
-function startHost({ port, instanceId, dataRoot, applicationProfile }) {
-  const child = spawn(python, [
+function startHost({ port, instanceId, dataRoot, applicationProfile, leaseMode = 'authoritative' }) {
+  const argumentsList = [
     '-m', 'youtube_workflow.production_host_prototype',
     '--dist', distDir,
     '--host', '127.0.0.1',
@@ -91,7 +91,17 @@ function startHost({ port, instanceId, dataRoot, applicationProfile }) {
     '--application-python-state-dir', applicationProfile.pythonStateDir,
     '--application-python-output-dir', applicationProfile.pythonOutputDir,
     '--capability-base-url', capabilityBaseUrl,
-  ], {
+  ]
+  if (applicationProfile.profileAuthorityRoot) {
+    argumentsList.push(
+      '--application-profile-authority-root', applicationProfile.profileAuthorityRoot,
+      '--application-profile-authority-isolation-root', applicationProfile.profileAuthorityIsolationRoot,
+    )
+  }
+  if (leaseMode !== 'authoritative') {
+    argumentsList.push('--application-profile-lease-mode', leaseMode)
+  }
+  const child = spawn(python, argumentsList, {
     cwd: workflowRoot,
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -215,6 +225,72 @@ try {
   const capabilityHealth = await waitForCapability(capabilityBaseUrl)
   assert.equal(capabilityHealth.status, 'ok')
   assert.equal(capabilityHealth.endpoints.length, 9)
+  const profileAuthorityIsolationRoot = path.join(tempRoot, 'application-authority')
+  const profileAuthorityRoot = path.join(profileAuthorityIsolationRoot, 'profiles', profileId)
+  await mkdir(profileAuthorityRoot, { recursive: true })
+  const overlapPortA = await randomPort()
+  const overlapPortB = await randomPort()
+  assert.notEqual(overlapPortA, overlapPortB)
+  const overlapAuthorityProfile = {
+    profileAuthorityIsolationRoot,
+    profileAuthorityRoot,
+  }
+  const overlapProfileA = {
+    isolationRoot: path.join(tempRoot, 'overlap-instance-a'),
+    profileDir: path.join(tempRoot, 'overlap-instance-a', 'profile'),
+    pythonStateDir: path.join(tempRoot, 'overlap-instance-a', 'python-state'),
+    pythonOutputDir: path.join(tempRoot, 'overlap-instance-a', 'python-output'),
+    ...overlapAuthorityProfile,
+  }
+  const overlapProfileB = {
+    isolationRoot: path.join(tempRoot, 'overlap-instance-b'),
+    profileDir: path.join(tempRoot, 'overlap-instance-b', 'profile'),
+    pythonStateDir: path.join(tempRoot, 'overlap-instance-b', 'python-state'),
+    pythonOutputDir: path.join(tempRoot, 'overlap-instance-b', 'python-output'),
+    ...overlapAuthorityProfile,
+  }
+  await Promise.all([
+    ...Object.values(overlapProfileA).map((directory) => mkdir(directory, { recursive: true })),
+    ...Object.values(overlapProfileB).map((directory) => mkdir(directory, { recursive: true })),
+  ])
+  await initializeIsolatedBrowserProfileIfMissing(overlapProfileA)
+  await initializeIsolatedBrowserProfileIfMissing(overlapProfileB)
+  const overlapInstanceA = `${executionId}:overlap-a`
+  const overlapInstanceB = `${executionId}:overlap-b`
+  let overlapHostA = null
+  let overlapHostB = null
+  try {
+    overlapHostA = startHost({
+      port: overlapPortA,
+      instanceId: overlapInstanceA,
+      dataRoot: path.join(tempRoot, 'overlap-data-a'),
+      applicationProfile: overlapProfileA,
+    })
+    const overlapHealthA = await waitForHealth(`http://127.0.0.1:${overlapPortA}`, overlapInstanceA)
+    assert.equal(overlapHealthA.profileLeaseMode, 'authoritative')
+    assert.equal(overlapHealthA.profileLeaseReady, true)
+    assert.equal(overlapHealthA.durableOwnerReady, false)
+
+    overlapHostB = startHost({
+      port: overlapPortB,
+      instanceId: overlapInstanceB,
+      dataRoot: path.join(tempRoot, 'overlap-data-b'),
+      applicationProfile: overlapProfileB,
+      leaseMode: 'standby-if-busy',
+    })
+    const overlapHealthB = await waitForHealth(`http://127.0.0.1:${overlapPortB}`, overlapInstanceB)
+    assert.equal(overlapHealthB.profileLeaseMode, 'standby')
+    assert.equal(overlapHealthB.profileLeaseReady, false)
+    assert.equal(overlapHealthB.profileLease, null)
+    assert.equal(overlapHealthB.durableOwnerReady, false)
+    assert.equal(overlapHealthB.acceptingApiAuthoritativeOperations, false)
+    assert.equal((await (await fetch(`http://127.0.0.1:${overlapPortA}/api/app/health`)).json()).profileLeaseMode, 'authoritative')
+  } finally {
+    if (overlapHostB) await stopOwned(overlapHostB, 'SIGTERM').catch(() => {})
+    if (overlapHostA) await stopOwned(overlapHostA, 'SIGTERM').catch(() => {})
+    await waitForPortClosed(overlapPortA)
+    await waitForPortClosed(overlapPortB)
+  }
   for (let cycle = 1; cycle <= 3; cycle += 1) {
     const instanceId = `${executionId}:production-cycle-${cycle}`
     const applicationProfile = {
@@ -222,6 +298,8 @@ try {
       profileDir: path.join(tempRoot, `application-${cycle}`, 'profile'),
       pythonStateDir: path.join(tempRoot, `application-${cycle}`, 'python-state'),
       pythonOutputDir: path.join(tempRoot, `application-${cycle}`, 'python-output'),
+      profileAuthorityIsolationRoot,
+      profileAuthorityRoot,
     }
     await Promise.all(Object.values(applicationProfile).map((directory) => mkdir(directory, { recursive: true })))
     await initializeIsolatedBrowserProfileIfMissing(applicationProfile)
@@ -249,6 +327,7 @@ try {
     )
     assert.equal(health.profileLeaseReady, true)
     assert.equal(health.profileLeaseAlive, true)
+    assert.equal(health.profileLeaseMode, 'authoritative')
     assert.equal(health.ownerMode?.status, 'pre-cutover')
     assert.deepEqual(health.ownerMode?.authoritativeDomains, [])
     assert.equal(health.durableOwnerReady, false)
@@ -380,6 +459,13 @@ try {
     browserJourneys: {
       status: runBrowserJourneys ? 'passed' : 'skipped',
       reason: runBrowserJourneys ? null : 'non-browser production-host lifecycle evidence requested',
+    },
+    overlappingHosts: {
+      sameProfileDifferentInstanceRoots: true,
+      firstHostAuthoritative: true,
+      replacementStandby: true,
+      noDualAuthority: true,
+      portsReleased: true,
     },
     enduranceEvidence: runEndurance && runBrowserJourneys ? path.resolve(process.env.READ_WEB_STABILITY_OUTPUT || path.join(outputRoot, 'release-playback-endurance.json')) : null,
     viteProcessStarted: false,

@@ -22,6 +22,52 @@ from youtube_workflow.service import JobManager, create_app as create_service_ap
 
 
 class ProductionHostPrototypeTests(unittest.TestCase):
+    def test_standby_health_requires_verified_pre_cutover_profile_evidence(self):
+        standby_evidence = {
+            "schemaVersion": 1,
+            "source": "read-web-production-backup.composition",
+            "ready": False,
+            "profileLease": None,
+            "profileLeaseMode": "standby",
+            "inventory": {"present": True, "status": "verified"},
+            "collection": {"status": "verified"},
+            "ownerMode": {
+                "schemaVersion": 1,
+                "status": "not-ready",
+                "reason": "profile-authority-lease-busy",
+                "authoritativeDomains": [],
+                "invalidDomains": [],
+            },
+            "rows": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            dist = Path(tmp)
+            (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+            safe_app = create_local_app_host(
+                dist_dir=dist,
+                workflow_app=FastAPI(),
+                owner_profile_evidence=standby_evidence,
+                application_profile_lease_mode="standby",
+            )
+            with TestClient(safe_app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "ready")
+                self.assertTrue(health["standbyEvidenceReady"])
+                self.assertFalse(health["durableOwnerReady"])
+                self.assertFalse(health["acceptingApiAuthoritativeOperations"])
+
+            unsafe_evidence = {**standby_evidence, "collection": {"status": "failed"}}
+            unsafe_app = create_local_app_host(
+                dist_dir=dist,
+                workflow_app=FastAPI(),
+                owner_profile_evidence=unsafe_evidence,
+                application_profile_lease_mode="standby",
+            )
+            with TestClient(unsafe_app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "degraded")
+                self.assertFalse(health["standbyEvidenceReady"])
+
     def test_local_app_host_rejects_untrusted_host_origin_and_missing_token(self):
         with tempfile.TemporaryDirectory() as tmp:
             dist = Path(tmp)

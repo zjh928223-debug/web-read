@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Windows owner-mode checkpoint",
-  "description": "The single authority switch for one domain. This contract is only a cutover seam; it does not migrate a writer.",
+  "description": "The single authority switch for one domain under the stable profile authority lease target. The instance-lifetime lock is a separate state guard; this contract is only a cutover seam and does not migrate a writer.",
   "type": "object",
   "additionalProperties": false,
   "required": [

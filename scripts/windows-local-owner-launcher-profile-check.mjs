@@ -31,11 +31,25 @@ const firstChildStartOffset = optimizationLauncherSource.indexOf(
   'Start-ManagedRuntimeInstance',
   startPairOffset,
 )
+const authorityRootParameterOffset = optimizationLauncherSource.indexOf(
+  '[Parameter(Mandatory)][string]$ApplicationProfileAuthorityRoot',
+  startPairOffset,
+)
+const authorityRootArgumentOffset = optimizationLauncherSource.indexOf(
+  "'--application-profile-authority-root', $ApplicationProfileAuthorityRoot",
+  startPairOffset,
+)
 assert.ok(startPairOffset >= 0, 'owned-pair launcher function is missing')
 assert.ok(profileInitializationOffset > startPairOffset, 'owned-pair launcher does not initialize the application profile')
 assert.ok(profileInitializationOffset < firstChildStartOffset, 'profile initialization must precede owned child startup')
+assert.ok(authorityRootParameterOffset > startPairOffset, 'owned-pair launcher must accept a stable profile authority root')
+assert.ok(authorityRootArgumentOffset > firstChildStartOffset, 'production Host must receive the stable profile authority root')
+assert.match(optimizationLauncherSource, /'--application-profile-lease-mode', 'standby-if-busy'/)
 assert.match(previewLauncherSource, /Start-OptimizationOwnedPair/)
 assert.match(previewLauncherSource, /-ApplicationProfileDir \$newApplicationProfileDir/)
+assert.match(previewLauncherSource, /\$applicationProfileAuthorityRoot = Join-Path \$applicationProfileAuthorityIsolationRoot "profiles\\\$profileId"/)
+assert.match(previewLauncherSource, /-ApplicationProfileAuthorityRoot \$applicationProfileAuthorityRoot/)
+assert.match(previewLauncherSource, /-ApplicationProfileAuthorityIsolationRoot \$applicationProfileAuthorityIsolationRoot/)
 
 function fixtureOptions(root) {
   const instanceRoot = path.join(root, 'instances', 'fixture-instance')

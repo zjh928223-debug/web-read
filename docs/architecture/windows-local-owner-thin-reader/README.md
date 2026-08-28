@@ -85,8 +85,13 @@ IndexedDB/localStorage remains old-owner pending task 3.3's read-only inventory/
 `read-web-production-backup.mjs` is the single lease implementation for the optimization application
 profile. Its atomic claim directory, canonical lock, heartbeat, PID/stale recovery, and release-on-error
 behavior are reused by the Local App Host lock-holder, production restore target, owner read helper, and
-the migration-cutover checkpoint helper. The lock-holder keeps the lease for the Host lifetime; a second
-process receives `BACKUP_PATH_LOCK_TIMEOUT`, and a failed or stopped Host releases it before the next
+the migration-cutover checkpoint helper. The per-instance directory under
+`.read-web-application/instances/<instanceId>` still has an instance-lifetime lock for profile/Python
+state isolation; it is not the authority identity. The authority lease and checkpoint tree are instead
+under the stable `.read-web-application/profiles/<profileId>` target, which is validated inside the same
+optimization application isolation root. The lock-holder keeps that stable lease for the Host lifetime; a
+second overlapping Host may hold only its own instance lock as `standby`, receives no authority lease, and
+does not become an authoritative writer. A failed or stopped Host releases its locks before the next
 startup.
 
 `owner-mode/checkpoints/<domain>.json` is the only authority-switch record. It is created atomically while
@@ -96,6 +101,12 @@ Host-managed repository identity/type, base/current revision evidence, and `host
 missing checkpoint keeps the domain `pre-cutover`; corrupt, foreign, partial, or unsupported checkpoints
 are rejected. `readOwnerCanonicalDomain` calls only an explicitly matching Host-managed repository reader
 under the same lease and never falls back to browser storage.
+
+`restoreTarget` and the cutover checkpoint helper acquire and verify the stable profile authority lease
+before touching authoritative state; the instance-lifetime lock is an additional local state guard, not a
+substitute for that profile lease. The optimization launcher passes `standby-if-busy` for an overlapping
+replacement, so the new Host can serve the pre-cutover static/compatibility surface while its health
+reports `profileLeaseMode: standby`, `durableOwnerReady: false`, and typed owner-command `503` responses.
 
 The current optimization candidate therefore reports `profileLeaseReady: true` and
 `ownerMode.status: pre-cutover`, while `durableOwnerReady` and

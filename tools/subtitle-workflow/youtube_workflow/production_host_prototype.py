@@ -396,6 +396,29 @@ def _load_owner_registry_status(
         return owner_registry_profile_not_ready_status(contract, error)
 
 
+def _standby_profile_evidence_is_safe(evidence: dict | None) -> bool:
+    """Allow a standby Host only for a verified, pre-cutover profile read."""
+
+    if not isinstance(evidence, dict):
+        return False
+    inventory = evidence.get("inventory")
+    collection = evidence.get("collection")
+    owner_mode = evidence.get("ownerMode")
+    return (
+        evidence.get("profileLeaseMode") == "standby"
+        and evidence.get("profileLease") is None
+        and evidence.get("ready") is False
+        and isinstance(inventory, dict)
+        and inventory.get("present") is True
+        and inventory.get("status") == "verified"
+        and isinstance(collection, dict)
+        and collection.get("status") == "verified"
+        and isinstance(owner_mode, dict)
+        and owner_mode.get("status") == "not-ready"
+        and owner_mode.get("reason") == "profile-authority-lease-busy"
+    )
+
+
 def create_local_app_host(
     *,
     dist_dir: Path,
@@ -418,6 +441,7 @@ def create_local_app_host(
     owner_profile_rows: list[dict] | None = None,
     owner_profile_evidence: dict | None = None,
     application_profile_lease_process=None,
+    application_profile_lease_mode: str = "authoritative",
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     if not _is_loopback_host(bind_host):
@@ -463,9 +487,19 @@ def create_local_app_host(
             or application_profile_lease_process.poll() is None
         )
         profile_lease_ready = profile_lease_ready and profile_lease_alive
+        standby_evidence_ready = _standby_profile_evidence_is_safe(owner_profile_evidence)
+        standby_ready = (
+            application_profile_lease_mode == "standby"
+            and contract_valid
+            and standby_evidence_ready
+            and profile_lease_alive
+        )
         owner_api_ready = owner_registry_status.get("ownerApiReady") is True
         return {
-            "status": "ready" if dist_ready and registry_valid and profile_lease_ready else "degraded",
+            "status": "ready" if dist_ready and (
+                registry_valid and profile_lease_ready
+                or standby_ready
+            ) else "degraded",
             "service": "read-web-local-app-host",
             "releaseId": str(release_id),
             "profileId": str(profile_id),
@@ -479,6 +513,8 @@ def create_local_app_host(
             "profileEvidenceReady": profile_evidence_ready,
             "profileLeaseReady": profile_lease_ready,
             "profileLeaseAlive": profile_lease_alive,
+            "profileLeaseMode": application_profile_lease_mode,
+            "standbyEvidenceReady": standby_evidence_ready,
             "profileLease": owner_registry_status.get("profileLease"),
             "profileEvidenceMode": owner_registry_status.get("profileEvidenceMode"),
             "legacyBrowserData": owner_registry_status.get("legacyBrowserData"),
@@ -532,6 +568,15 @@ def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
         "pythonOutputDir": str(args.application_python_output_dir.resolve()),
         "profileId": str(args.profile_id),
     }
+    if args.application_profile_authority_root:
+        options["profileAuthorityRoot"] = str(args.application_profile_authority_root.resolve())
+        options["profileAuthorityIsolationRoot"] = str(
+            (args.application_profile_authority_isolation_root or args.application_isolation_root).resolve()
+        )
+    if args.application_profile_lease_mode == "standby":
+        options["profileLeaseMode"] = "standby"
+    elif args.application_profile_lease_mode == "standby-if-busy":
+        options["allowStandby"] = True
     command = [
         str(os.environ.get("READ_WEB_NODE", "node")),
         str(lock_module),
@@ -565,7 +610,11 @@ def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
         process.kill()
         process.wait(timeout=5)
         parser.error("application restore startup recovery did not become ready")
-    return process, ready.get("startupRecovery"), ready.get("ownerProfileEvidence")
+    evidence = ready.get("ownerProfileEvidence")
+    return process, ready.get("startupRecovery"), evidence, ready.get(
+        "profileLeaseMode",
+        evidence.get("profileLeaseMode", "authoritative") if isinstance(evidence, dict) else "authoritative",
+    )
 
 
 def _stop_application_profile_lock(process) -> None:
@@ -600,6 +649,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--application-profile-dir", type=Path, required=True)
     parser.add_argument("--application-python-state-dir", type=Path, required=True)
     parser.add_argument("--application-python-output-dir", type=Path, required=True)
+    parser.add_argument("--application-profile-authority-root", type=Path)
+    parser.add_argument("--application-profile-authority-isolation-root", type=Path)
+    parser.add_argument(
+        "--application-profile-lease-mode",
+        choices=("authoritative", "standby-if-busy", "standby"),
+        default="authoritative",
+    )
     args = parser.parse_args(argv)
     if not _is_loopback_host(args.host):
         parser.error("production host only supports an explicit loopback bind")
@@ -649,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"valid release manifest is required: {error}")
     if args.config_schema_version < 1:
         parser.error("config schema version must be positive")
-    profile_lock, startup_recovery, owner_profile_evidence = _start_application_profile_lock(args, parser)
+    profile_lock, startup_recovery, owner_profile_evidence, profile_lease_mode = _start_application_profile_lock(args, parser)
     try:
         owner_profile_rows = (
             owner_profile_evidence.get("rows")
@@ -675,6 +731,7 @@ def main(argv: list[str] | None = None) -> int:
             owner_profile_rows=owner_profile_rows,
             owner_profile_evidence=owner_profile_evidence,
             application_profile_lease_process=profile_lock,
+            application_profile_lease_mode=profile_lease_mode,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

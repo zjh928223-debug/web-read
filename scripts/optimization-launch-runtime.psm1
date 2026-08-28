@@ -522,6 +522,8 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$ApplicationIsolationRoot,
     [Parameter(Mandatory)][string]$ApplicationProfileDir,
+    [Parameter(Mandatory)][string]$ApplicationProfileAuthorityRoot,
+    [Parameter(Mandatory)][string]$ApplicationProfileAuthorityIsolationRoot,
     [Parameter(Mandatory)][string]$ApplicationPythonStateDir,
     [Parameter(Mandatory)][string]$ApplicationPythonOutputDir,
     [Parameter(Mandatory)][string]$HostStatePath,
@@ -634,6 +636,9 @@ function Start-OptimizationOwnedPair {
         '--capability-base-url', $CapabilityBaseUrl,
         '--application-isolation-root', $ApplicationIsolationRoot,
         '--application-profile-dir', $ApplicationProfileDir,
+        '--application-profile-authority-root', $ApplicationProfileAuthorityRoot,
+        '--application-profile-authority-isolation-root', $ApplicationProfileAuthorityIsolationRoot,
+        '--application-profile-lease-mode', 'standby-if-busy',
         '--application-python-state-dir', $ApplicationPythonStateDir,
         '--application-python-output-dir', $ApplicationPythonOutputDir
       ) `
@@ -646,6 +651,8 @@ function Start-OptimizationOwnedPair {
         runtimeRole = 'production-host'
         applicationIsolationRoot = $ApplicationIsolationRoot
         applicationProfileDir = $ApplicationProfileDir
+        applicationProfileAuthorityRoot = $ApplicationProfileAuthorityRoot
+        applicationProfileAuthorityIsolationRoot = $ApplicationProfileAuthorityIsolationRoot
         applicationPythonStateDir = $ApplicationPythonStateDir
         applicationPythonOutputDir = $ApplicationPythonOutputDir
       }
