@@ -6,6 +6,14 @@ import { fileURLToPath } from 'node:url'
 
 const releaseManifestSchemaPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../config/release-manifest.schema.json')
 
+export const RELEASE_FRONTEND_ENTRY_PATH = 'dist/index.html'
+export const RELEASE_PYTHON_LOCK_PATH = 'tools/subtitle-workflow/requirements-service.lock'
+export const RELEASE_REQUIRED_ARTIFACTS = Object.freeze([
+  RELEASE_FRONTEND_ENTRY_PATH,
+  'package-lock.json',
+  RELEASE_PYTHON_LOCK_PATH,
+])
+
 export async function sha256File(filename) {
   return createHash('sha256').update(await readFile(filename)).digest('hex')
 }
@@ -46,7 +54,7 @@ export function validateReleaseManifestSemantics(manifest) {
     if (identity?.status !== 'verified') failures.push('$.runtime.pythonIdentity: immutable previous releases require a verified Python environment')
     if (pythonLock?.status !== 'verified') failures.push('$.dependencyLocks.python: immutable previous releases require a verified Python lock')
     const requiredArtifacts = new Set((manifest?.artifacts || []).map((item) => String(item?.path || '').replaceAll('\\', '/')))
-    for (const required of ['index.html', 'package-lock.json', 'requirements-service.lock']) {
+    for (const required of RELEASE_REQUIRED_ARTIFACTS) {
       if (!requiredArtifacts.has(required)) failures.push(`$.artifacts: immutable previous release is missing ${required}`)
     }
   }
@@ -139,7 +147,7 @@ export async function resolvePreviousReleaseSource({ previousRoot = '', previous
   } catch {
     throw releaseSourceError('RELEASE_PREVIOUS_SOURCE_NOT_FOUND', `previous release root is not readable: ${root}`)
   }
-  const pythonLock = path.join(root, 'tools', 'subtitle-workflow', 'requirements-service.lock')
+  const pythonLock = path.join(root, RELEASE_PYTHON_LOCK_PATH)
   if (!existsSync(pythonLock)) {
     throw releaseSourceError(
       'RELEASE_PREVIOUS_SOURCE_INCOMPLETE',

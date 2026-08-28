@@ -35,14 +35,15 @@ await assert.rejects(
 )
 
 const previousRoot = path.join(tempRoot, 'previous')
-await mkdir(previousRoot, { recursive: true })
-await writeFile(path.join(previousRoot, 'index.html'), 'previous')
+await mkdir(path.join(previousRoot, 'dist'), { recursive: true })
+await mkdir(path.join(previousRoot, 'tools', 'subtitle-workflow'), { recursive: true })
+await writeFile(path.join(previousRoot, 'dist', 'index.html'), 'previous')
 await writeFile(path.join(previousRoot, 'package-lock.json'), '{"lockfileVersion":3}')
-await writeFile(path.join(previousRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))
+await writeFile(path.join(previousRoot, 'tools', 'subtitle-workflow', 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))
 const previousManifest = fixtureManifest(previousRoot, 'previous-release')
 await writeFile(legacyManifestPath, `${JSON.stringify(previousManifest, null, 2)}\n`)
 const before = await readFile(legacyManifestPath)
-const protectedFiles = ['index.html', 'package-lock.json', 'requirements-service.lock']
+const protectedFiles = ['dist/index.html', 'package-lock.json', 'tools/subtitle-workflow/requirements-service.lock']
 const protectedBefore = new Map(await Promise.all(protectedFiles.map(async (name) => [name, await readFile(path.join(previousRoot, name))])))
 const source = await resolvePreviousReleaseSource({ previousManifest: legacyManifestPath })
 assert.equal(source.kind, 'manifest')
@@ -92,10 +93,11 @@ await assert.rejects(
 
 const statePath = path.join(tempRoot, 'state.json')
 const currentRoot = path.join(tempRoot, 'current')
-await mkdir(currentRoot, { recursive: true })
-await writeFile(path.join(currentRoot, 'index.html'), 'current')
+await mkdir(path.join(currentRoot, 'dist'), { recursive: true })
+await mkdir(path.join(currentRoot, 'tools', 'subtitle-workflow'), { recursive: true })
+await writeFile(path.join(currentRoot, 'dist', 'index.html'), 'current')
 await writeFile(path.join(currentRoot, 'package-lock.json'), '{"lockfileVersion":3}')
-await writeFile(path.join(currentRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))
+await writeFile(path.join(currentRoot, 'tools', 'subtitle-workflow', 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))
 const currentManifest = fixtureManifest(currentRoot, 'current-release')
 await writeFile(path.join(tempRoot, 'current.json'), `${JSON.stringify(currentManifest, null, 2)}\n`)
 await writeFile(statePath, JSON.stringify({
@@ -165,7 +167,7 @@ function fixtureManifest(root, releaseId) {
     },
     dependencyLocks: {
       node: { path: 'package-lock.json', sha256: sha256(Buffer.from('{"lockfileVersion":3}')), kind: 'npm', lockfileVersion: 3, status: 'verified' },
-      python: { path: 'requirements-service.lock', sha256: sha256(Buffer.from('fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))), kind: 'pip-require-hashes', requireHashLines: 1, pythonPolicy: '3.10', status: 'verified' },
+      python: { path: 'tools/subtitle-workflow/requirements-service.lock', sha256: sha256(Buffer.from('fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))), kind: 'pip-require-hashes', requireHashLines: 1, pythonPolicy: '3.10', status: 'verified' },
     },
     externalTools: Object.fromEntries(['ffmpeg', 'ytDlp', 'whisperx'].map((name) => [name, {
       executable: name,
@@ -196,9 +198,9 @@ function fixtureManifest(root, releaseId) {
       rollback: { minimumReleaseFormatVersion: 2, maximumReleaseFormatVersion: 2, compatible: true, dataPreserving: true, reversible: true },
     },
     artifacts: [
-      { path: 'index.html', bytes: root.endsWith('previous') ? 8 : 7, sha256: sha256(Buffer.from(root.endsWith('previous') ? 'previous' : 'current')) },
+      { path: 'dist/index.html', bytes: root.endsWith('previous') ? 8 : 7, sha256: sha256(Buffer.from(root.endsWith('previous') ? 'previous' : 'current')) },
       { path: 'package-lock.json', bytes: 22, sha256: sha256(Buffer.from('{"lockfileVersion":3}')) },
-      { path: 'requirements-service.lock', bytes: 84, sha256: sha256(Buffer.from('fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))) },
+      { path: 'tools/subtitle-workflow/requirements-service.lock', bytes: 93, sha256: sha256(Buffer.from('fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64))) },
     ],
   }
 }

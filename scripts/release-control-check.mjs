@@ -10,14 +10,19 @@ import { classifyExternalToolProbe } from './lib/release-manifest.mjs'
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-release-control-'))
 const currentRoot = path.join(root, 'current')
 const previousRoot = path.join(root, 'previous')
-await Promise.all([mkdir(currentRoot), mkdir(previousRoot)])
 await Promise.all([
-  writeFile(path.join(currentRoot, 'index.html'), 'current'),
-  writeFile(path.join(previousRoot, 'index.html'), 'previous'),
+  mkdir(path.join(currentRoot, 'dist'), { recursive: true }),
+  mkdir(path.join(currentRoot, 'tools', 'subtitle-workflow'), { recursive: true }),
+  mkdir(path.join(previousRoot, 'dist'), { recursive: true }),
+  mkdir(path.join(previousRoot, 'tools', 'subtitle-workflow'), { recursive: true }),
+])
+await Promise.all([
+  writeFile(path.join(currentRoot, 'dist', 'index.html'), 'current'),
+  writeFile(path.join(previousRoot, 'dist', 'index.html'), 'previous'),
   writeFile(path.join(currentRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
   writeFile(path.join(previousRoot, 'package-lock.json'), '{"lockfileVersion":3}'),
-  writeFile(path.join(currentRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
-  writeFile(path.join(previousRoot, 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
+  writeFile(path.join(currentRoot, 'tools', 'subtitle-workflow', 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
+  writeFile(path.join(previousRoot, 'tools', 'subtitle-workflow', 'requirements-service.lock'), 'fastapi==0.1.0 --hash=sha256:' + '0'.repeat(64)),
 ])
 const currentManifest = await manifest(currentRoot, 'current')
 const previousManifest = await manifest(previousRoot, 'previous')
@@ -69,15 +74,15 @@ const rollbackHealth = JSON.parse(execFileSync(process.execPath, ['scripts/relea
 assert.equal(rollbackHealth.status, 'passed')
 assert.equal(rollbackHealth.manifestSha256, rolledBack.active.manifestSha256, 'rollback target health and active identity must use the same manifest SHA')
 
-await writeFile(path.join(previousRoot, 'index.html'), 'corrupt')
+await writeFile(path.join(previousRoot, 'dist', 'index.html'), 'corrupt')
 const rejected = spawnSync(process.execPath, ['scripts/release-health-check.mjs', '--manifest', path.join(root, 'previous.json')], { cwd: process.cwd(), encoding: 'utf8' })
 assert.notEqual(rejected.status, 0, 'checksum mismatch must fail health check')
 console.log('release manifest health and rollback checks passed')
 
 async function manifest(releaseRoot, gitSha) {
-  const bytes = await readFile(path.join(releaseRoot, 'index.html'))
+  const bytes = await readFile(path.join(releaseRoot, 'dist', 'index.html'))
   const packageLock = await readFile(path.join(releaseRoot, 'package-lock.json'))
-  const pythonLock = await readFile(path.join(releaseRoot, 'requirements-service.lock'))
+  const pythonLock = await readFile(path.join(releaseRoot, 'tools', 'subtitle-workflow', 'requirements-service.lock'))
   const hash = (value) => createHash('sha256').update(value).digest('hex')
   return {
     schemaVersion: 1,
@@ -114,7 +119,7 @@ async function manifest(releaseRoot, gitSha) {
     },
     dependencyLocks: {
       node: { path: 'package-lock.json', sha256: hash(packageLock), kind: 'npm', lockfileVersion: 3, status: 'verified' },
-      python: { path: 'requirements-service.lock', sha256: hash(pythonLock), kind: 'pip-require-hashes', requireHashLines: 1, pythonPolicy: '3.10', status: 'verified' },
+      python: { path: 'tools/subtitle-workflow/requirements-service.lock', sha256: hash(pythonLock), kind: 'pip-require-hashes', requireHashLines: 1, pythonPolicy: '3.10', status: 'verified' },
     },
     externalTools: Object.fromEntries(['ffmpeg', 'ytDlp', 'whisperx'].map((name) => [name, {
       executable: name,
@@ -145,9 +150,9 @@ async function manifest(releaseRoot, gitSha) {
       rollback: { minimumReleaseFormatVersion: 2, maximumReleaseFormatVersion: 2, compatible: true, dataPreserving: true, reversible: true },
     },
     artifacts: [
-      { path: 'index.html', bytes: bytes.length, sha256: hash(bytes) },
+      { path: 'dist/index.html', bytes: bytes.length, sha256: hash(bytes) },
       { path: 'package-lock.json', bytes: packageLock.length, sha256: hash(packageLock) },
-      { path: 'requirements-service.lock', bytes: pythonLock.length, sha256: hash(pythonLock) },
+      { path: 'tools/subtitle-workflow/requirements-service.lock', bytes: pythonLock.length, sha256: hash(pythonLock) },
     ],
   }
 }

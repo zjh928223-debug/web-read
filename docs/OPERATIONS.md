@@ -134,6 +134,12 @@ npm run release:manifest
 npm run verify:release -- --list
 ```
 
+正式 manifest 会先把 clean candidate 的 artifacts 复制到
+`output/release/published/<releaseId>/`，在那里写入并校验
+`source.kind=immutable-release`、`source.readOnly=true` 的 manifest；顶层
+`output/release/release-manifest.json` 是同一份已发布 manifest 的便捷副本，
+下一轮可直接将发布目录中的 manifest 作为 `--previous-manifest` 输入。
+
 也可把 `--previous-manifest <path>` 传给对应 Node 脚本。旧版 live root 只有在实际包含完整
 Python lock 时才能作为非正式 fixture source；缺 lock 会在长门禁前报告
 `RELEASE_PREVIOUS_SOURCE_INCOMPLETE`，不会伪造 previous lock、hash 或 identity。previous

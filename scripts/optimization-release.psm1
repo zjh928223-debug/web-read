@@ -22,6 +22,8 @@ $script:OptimizationExternalToolSupportMatrix = [ordered]@{
     outputPattern = '(?i)^\s*(?:whisperx(?:\s+version)?\s+)?v?(?<version>\d+\.\d+\.\d+)\s*$'
   }
 }
+$script:OptimizationFrontendEntryArtifactPath = 'dist/index.html'
+$script:OptimizationPythonLockArtifactPath = 'tools/subtitle-workflow/requirements-service.lock'
 
 function Get-OptimizationRelativePath {
   param(
@@ -725,9 +727,14 @@ function Get-OptimizationLockSummary {
   param(
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][string]$ProjectRoot,
-    [string]$Kind = 'text'
+    [string]$Kind = 'text',
+    [string]$ArtifactPath = ''
   )
-  $relative = Get-OptimizationRelativePath -Root ((Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\', '/')) -Path ((Resolve-Path -LiteralPath $Path).Path)
+  $relative = if ($ArtifactPath) {
+    $ArtifactPath.Replace('\', '/')
+  } else {
+    Get-OptimizationRelativePath -Root ((Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\', '/')) -Path ((Resolve-Path -LiteralPath $Path).Path)
+  }
   $summary = [ordered]@{
     path = $relative
     sha256 = Get-OptimizationFileSha256 -Path $Path
@@ -929,6 +936,7 @@ function Test-OptimizationReleaseCompatibility {
     $pythonIdentity = $runtime.pythonIdentity
     $manifestRoot = [IO.Path]::GetFullPath([string]$Release.manifest.release.root).TrimEnd('\', '/')
     $descriptorRoot = [IO.Path]::GetFullPath([string]$Release.releaseRoot).TrimEnd('\', '/')
+    $artifactPaths = @($Release.manifest.artifacts | ForEach-Object { [string]$_.path.Replace('\', '/') })
     $externalToolDescriptors = @($tools.ffmpeg, $tools.ytDlp, $tools.whisperx)
     if ($externalToolDescriptors.Count -ne 3) { return $false }
     foreach ($tool in $externalToolDescriptors) {
@@ -945,9 +953,8 @@ function Test-OptimizationReleaseCompatibility {
       if ($null -ne $tool.sha256 -and [string]$tool.sha256 -notmatch '^[0-9a-f]{64}$') { return $false }
     }
     return $null -ne $source `
-      -and [string]$source.kind -in @('working-tree', 'immutable-release') `
       -and ($source.PSObject.Properties.Name -contains 'readOnly') `
-      -and (-not [bool]$source.readOnly) `
+      -and (([string]$source.kind -eq 'immutable-release' -and [bool]$source.readOnly) -or ([string]$source.kind -eq 'working-tree' -and -not [bool]$source.readOnly -and [string]$Release.manifest.role -eq 'optimization-local')) `
       -and [string]$pythonIdentity.status -eq 'verified' `
       -and [string]$pythonIdentity.executable `
       -and [string]$pythonIdentity.version `
@@ -963,6 +970,11 @@ function Test-OptimizationReleaseCompatibility {
       -and [string]$runtime.toolchainSha256 -match '^[0-9a-f]{64}$' `
       -and -not [string]::IsNullOrWhiteSpace([string]$locks.node.sha256) `
       -and -not [string]::IsNullOrWhiteSpace([string]$locks.python.sha256) `
+      -and [string]$locks.node.path -eq 'package-lock.json' `
+      -and [string]$locks.python.path -eq $script:OptimizationPythonLockArtifactPath `
+      -and $artifactPaths -contains $script:OptimizationFrontendEntryArtifactPath `
+      -and $artifactPaths -contains 'package-lock.json' `
+      -and $artifactPaths -contains $script:OptimizationPythonLockArtifactPath `
       -and [int]$configuration.schemaVersion -eq 1 `
       -and [int]$configuration.minimumCompatible -le 1 `
       -and [int]$configuration.maximumCompatible -ge 1 `
@@ -1090,15 +1102,27 @@ function New-OptimizationReleaseStaging {
     $distArtifacts = @(Get-OptimizationDistArtifacts -ReleaseRoot $stageRoot -DistRoot $stagingDist)
     $packageLockPath = Join-Path $ProjectRoot 'package-lock.json'
     $pythonLockPath = Join-Path $WorkflowRoot 'requirements-service.lock'
+    $projectRootPath = (Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\', '/')
+    if (-not (Test-Path -LiteralPath $pythonLockPath -PathType Leaf)) {
+      throw "Optimization release lock disappeared during staging: $pythonLockPath"
+    }
+    $expectedPythonLockPath = Join-Path $projectRootPath ($script:OptimizationPythonLockArtifactPath.Replace('/', '\'))
+    $resolvedPythonLockPath = (Resolve-Path -LiteralPath $pythonLockPath).Path
+    if ([IO.Path]::GetFullPath($resolvedPythonLockPath) -ine [IO.Path]::GetFullPath($expectedPythonLockPath)) {
+      throw "Optimization release Python lock must be rooted at $script:OptimizationPythonLockArtifactPath; received $resolvedPythonLockPath"
+    }
     $lockArtifacts = @()
-    foreach ($lockPath in @($packageLockPath, $pythonLockPath)) {
+    $lockInputs = @(
+      @{ path = $packageLockPath; artifactPath = 'package-lock.json' },
+      @{ path = $pythonLockPath; artifactPath = $script:OptimizationPythonLockArtifactPath }
+    )
+    foreach ($lockInput in $lockInputs) {
+      $lockPath = [string]$lockInput.path
+      $relativeLock = [string]$lockInput.artifactPath
       if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
         throw "Optimization release lock disappeared during staging: $lockPath"
       }
-      $relativeLock = Get-OptimizationRelativePath `
-        -Root ((Resolve-Path -LiteralPath $ProjectRoot).Path.TrimEnd('\', '/')) `
-        -Path ((Resolve-Path -LiteralPath $lockPath).Path)
-      $stagedLock = Join-Path $stageRoot $relativeLock
+      $stagedLock = Join-Path $stageRoot ($relativeLock.Replace('/', '\'))
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $stagedLock) | Out-Null
       Copy-Item -LiteralPath $lockPath -Destination $stagedLock -Force
       $stagedLockItem = Get-Item -LiteralPath $stagedLock
@@ -1156,8 +1180,8 @@ function New-OptimizationReleaseStaging {
         toolchainSha256 = [string]$sourceBefore.toolchainSha256
       }
       dependencyLocks = [ordered]@{
-        node = Get-OptimizationLockSummary -Path $packageLockPath -ProjectRoot $ProjectRoot -Kind 'npm'
-        python = Get-OptimizationLockSummary -Path $pythonLockPath -ProjectRoot $ProjectRoot -Kind 'pip-require-hashes'
+        node = Get-OptimizationLockSummary -Path $packageLockPath -ProjectRoot $ProjectRoot -Kind 'npm' -ArtifactPath 'package-lock.json'
+        python = Get-OptimizationLockSummary -Path $pythonLockPath -ProjectRoot $ProjectRoot -Kind 'pip-require-hashes' -ArtifactPath $script:OptimizationPythonLockArtifactPath
       }
       externalTools = $sourceBefore.toolchain.externalTools
       configuration = [ordered]@{ schemaVersion = 1; minimumCompatible = 1; maximumCompatible = 1 }
@@ -1211,6 +1235,40 @@ function New-OptimizationReleaseStaging {
   }
 }
 
+function Convert-OptimizationReleaseStagingManifestToImmutable {
+  param(
+    [Parameter(Mandatory)][string]$ManifestPath,
+    [Parameter(Mandatory)][string]$TargetRoot,
+    [Parameter(Mandatory)][string]$NodePath,
+    [Parameter(Mandatory)][string]$ReleaseHealthScript
+  )
+  $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  $source = $manifest.source
+  if ($null -eq $source -or [string]$source.kind -ne 'working-tree' -or [bool]$source.readOnly) {
+    throw 'Optimization release publish requires a writable working-tree staging manifest.'
+  }
+  if ([string]$manifest.dependencyLocks.python.path -ne $script:OptimizationPythonLockArtifactPath) {
+    throw "Optimization release publish requires the canonical Python lock artifact path: $script:OptimizationPythonLockArtifactPath"
+  }
+  $artifactPaths = @($manifest.artifacts | ForEach-Object { [string]$_.path.Replace('\', '/') })
+  foreach ($required in @($script:OptimizationFrontendEntryArtifactPath, 'package-lock.json', $script:OptimizationPythonLockArtifactPath)) {
+    if ($artifactPaths -notcontains $required) {
+      throw "Optimization release publish is missing the required artifact: $required"
+    }
+  }
+  $manifest.role = 'published-release'
+  $manifest.source.kind = 'immutable-release'
+  $manifest.source.readOnly = $true
+  $manifest.source.provenance = 'published optimization release'
+  $manifest.release.root = [IO.Path]::GetFullPath($TargetRoot)
+  Invoke-OptimizationManifestSchemaHealth `
+    -NodePath $NodePath `
+    -ReleaseHealthScript $ReleaseHealthScript `
+    -Manifest $manifest | Out-Null
+  Write-OptimizationJsonAtomic -Path $ManifestPath -Value $manifest
+  return $manifest
+}
+
 function Publish-OptimizationRelease {
   param(
     [Parameter(Mandatory)]$Candidate,
@@ -1246,6 +1304,11 @@ function Publish-OptimizationRelease {
   }
   $moved = $false
   try {
+    Convert-OptimizationReleaseStagingManifestToImmutable `
+      -ManifestPath (Join-Path $Candidate.stagingRoot 'release-manifest.json') `
+      -TargetRoot $targetRoot `
+      -NodePath $NodePath `
+      -ReleaseHealthScript $ReleaseHealthScript | Out-Null
     Move-Item -LiteralPath $Candidate.stagingRoot -Destination $targetRoot
     $moved = $true
     $published = Get-OptimizationReleaseDescriptor -ReleaseRoot $targetRoot

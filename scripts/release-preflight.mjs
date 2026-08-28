@@ -3,7 +3,7 @@ import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { resolvePreviousReleaseSource } from './lib/release-manifest.mjs'
+import { RELEASE_FRONTEND_ENTRY_PATH, RELEASE_PYTHON_LOCK_PATH, resolvePreviousReleaseSource } from './lib/release-manifest.mjs'
 import { PythonRuntimeError, resolveSelectedPython, runPythonHealth, runPythonOsv } from './lib/python-runtime.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -16,8 +16,8 @@ try {
   if (source.kind !== 'manifest') throw typed('RELEASE_PREVIOUS_MANIFEST_REQUIRED', 'formal release gates require an explicit verified previous-release manifest')
   await assertCandidatePreconditions(repoRoot)
   const selected = await resolveSelectedPython({ repoRoot, configPath: args.config || '' })
-  const health = runPythonHealth({ repoRoot, selected, lockPath: path.join('tools', 'subtitle-workflow', 'requirements-service.lock') })
-  const osvProduction = runPythonOsv({ repoRoot, selected, lockPath: path.join('tools', 'subtitle-workflow', 'requirements-service.lock') })
+  const health = runPythonHealth({ repoRoot, selected, lockPath: RELEASE_PYTHON_LOCK_PATH })
+  const osvProduction = runPythonOsv({ repoRoot, selected, lockPath: RELEASE_PYTHON_LOCK_PATH })
   const osvTest = runPythonOsv({ repoRoot, selected, lockPath: path.join('tools', 'subtitle-workflow', 'requirements-service-test.lock') })
   const result = {
     status: 'passed',
@@ -53,7 +53,7 @@ async function assertCandidatePreconditions(root) {
     throw typed('RELEASE_CANDIDATE_GIT_UNAVAILABLE', `cannot inspect the release candidate Git state: ${error.message}`)
   }
   if (status) throw typed('RELEASE_CANDIDATE_NOT_CLEAN', 'formal release gates require a clean Git worktree before health/rollback stages')
-  for (const relative of ['dist/index.html', 'package-lock.json', 'tools/subtitle-workflow/requirements-service.lock']) {
+  for (const relative of [RELEASE_FRONTEND_ENTRY_PATH, 'package-lock.json', RELEASE_PYTHON_LOCK_PATH]) {
     try {
       const candidate = path.join(root, relative)
       const info = await stat(candidate)

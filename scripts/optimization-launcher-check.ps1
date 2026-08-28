@@ -327,6 +327,35 @@ function Assert-ModuleReleaseFailureSafety {
     $oldPythonIdentity = $oldRelease.manifest.runtime.pythonIdentity
     Assert-True ($oldPythonIdentity.status -eq 'verified' -and $oldPythonIdentity.executable -eq $pythonPath -and $oldPythonIdentity.packageSetSha256 -match '^[0-9a-f]{64}$' -and $oldPythonIdentity.environmentSha256 -match '^[0-9a-f]{64}$') `
       'published release did not record the selected Python executable and package identity'
+    Assert-True ($oldRelease.manifest.role -eq 'published-release' -and $oldRelease.manifest.source.kind -eq 'immutable-release' -and $oldRelease.manifest.source.readOnly -eq $true) `
+      'published release manifest did not transition to published-release immutable-release/readOnly=true'
+    Assert-True ([IO.Path]::GetFullPath([string]$oldRelease.manifest.release.root) -ieq [IO.Path]::GetFullPath([string]$oldRelease.releaseRoot)) `
+      'published release manifest root does not point to the published release directory'
+    Assert-True ([string]$oldRelease.manifest.dependencyLocks.python.path -eq 'tools/subtitle-workflow/requirements-service.lock') `
+      'published release manifest did not use the canonical Python lock artifact path'
+    $publishedManifestRoundTripScript = Join-Path $testRoot 'published-manifest-round-trip.mjs'
+    $releaseManifestModulePath = (Resolve-Path (Join-Path $projectRoot 'scripts\lib\release-manifest.mjs')).Path
+    [IO.File]::WriteAllText($publishedManifestRoundTripScript, @'
+import { pathToFileURL } from 'node:url'
+
+const modulePath = process.argv[2]
+const manifestPath = process.argv[3]
+const { resolvePreviousReleaseSource } = await import(pathToFileURL(modulePath))
+const source = await resolvePreviousReleaseSource({ previousManifest: manifestPath })
+if (source.manifest.source.kind !== 'immutable-release' || source.manifest.source.readOnly !== true) {
+  throw new Error('published manifest was not accepted as immutable previous source')
+}
+if (source.root !== source.manifest.release.root) {
+  throw new Error(`previous source root mismatch: ${source.root} !== ${source.manifest.release.root}`)
+}
+if (source.manifest.dependencyLocks.python.path !== 'tools/subtitle-workflow/requirements-service.lock') {
+  throw new Error('published manifest Python lock path is not canonical')
+}
+console.log(`published manifest round-trip passed: ${source.manifest.release.releaseId}`)
+'@, [Text.UTF8Encoding]::new($false))
+    $roundTripOutput = & $nodePath $publishedManifestRoundTripScript $releaseManifestModulePath $oldRelease.manifestPath 2>&1
+    $roundTripExitCode = $LASTEXITCODE
+    Assert-True ($roundTripExitCode -eq 0) "published release manifest could not be resolved as a formal previous source: $(($roundTripOutput -join '`n'))"
 
     $lockChangedManifest = $oldRelease.manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
     $lockChangedManifest.dependencyLocks.python.sha256 = ('e' * 64)

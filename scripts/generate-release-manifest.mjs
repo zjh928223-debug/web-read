@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readdir, readFile, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,8 @@ import {
   writeJsonAtomic,
   resolvePreviousReleaseSource,
   validateReleaseManifestSemantics,
+  verifyReleaseManifest,
+  RELEASE_PYTHON_LOCK_PATH,
 } from './lib/release-manifest.mjs'
 import { resolveSelectedPython, runPythonHealth } from './lib/python-runtime.mjs'
 
@@ -39,22 +41,30 @@ await stat(path.join(repoRoot, 'dist', 'index.html'))
 
 const selectedPython = args['require-clean'] ? await resolveSelectedPython({ repoRoot, configPath: args.config || '' }) : null
 const pythonHealth = args['require-clean']
-  ? runPythonHealth({ repoRoot, selected: selectedPython, lockPath: path.join('tools', 'subtitle-workflow', 'requirements-service.lock') })
+  ? runPythonHealth({ repoRoot, selected: selectedPython, lockPath: RELEASE_PYTHON_LOCK_PATH })
   : null
-const current = await createManifest(repoRoot, 'candidate', {
+const currentStage = await createManifest(repoRoot, 'candidate', {
   pythonHealth,
   source: { kind: 'working-tree', readOnly: false, provenance: 'current Git worktree' },
 })
+const schema = await loadReleaseManifestSchema()
+await mkdir(outputDir, { recursive: true })
+const current = args['require-clean']
+  ? await publishCurrentRelease(repoRoot, currentStage, path.join(outputDir, 'published', currentStage.release.releaseId), schema)
+  : currentStage
 const previous = previousSource.manifest || await createManifest(previousSource.root, 'previous', {
   source: { kind: 'legacy-root', readOnly: true, provenance: 'explicit --previous-root input' },
 })
-const schema = await loadReleaseManifestSchema()
 validateManifestOrThrow(current, schema, 'candidate', repoRoot)
 validateManifestOrThrow(previous, schema, 'previous', previousSource.root)
-await mkdir(outputDir, { recursive: true })
 const currentManifestPath = path.join(outputDir, 'release-manifest.json')
 const previousManifestPath = path.join(outputDir, 'previous-release-manifest.json')
-await writeJsonAtomic(currentManifestPath, current)
+if (args['require-clean']) {
+  const publishedManifestPath = path.join(current.release.root, 'release-manifest.json')
+  await writeFile(currentManifestPath, await readFile(publishedManifestPath))
+} else {
+  await writeJsonAtomic(currentManifestPath, current)
+}
 if (previousSource.manifestPath && previousSource.manifestBytes) {
   await writeFile(previousManifestPath, previousSource.manifestBytes)
 } else {
@@ -67,12 +77,74 @@ await writeJsonAtomic(path.join(outputDir, 'release-state.json'), {
   schemaVersion: 1,
   status: 'staged',
   generatedAt: new Date().toISOString(),
-  active: { manifest: 'release-manifest.json', root: repoRoot, releaseId: current.release.gitSha, manifestSha256: currentManifestSha256 },
+  active: {
+    manifest: args['require-clean']
+      ? path.relative(outputDir, path.join(current.release.root, 'release-manifest.json')).replaceAll('\\', '/')
+      : 'release-manifest.json',
+    root: current.release.root,
+    releaseId: current.release.gitSha,
+    manifestSha256: currentManifestSha256,
+  },
   previous: { manifest: 'previous-release-manifest.json', root: previousSource.root, releaseId: previous.release.gitSha, manifestSha256: previousManifestSha256 },
 })
 
 console.log(`Release manifests written: ${outputDir}`)
 console.log(`current=${current.release.gitSha} previous=${previous.release.gitSha}`)
+
+async function publishCurrentRelease(sourceRoot, stagedManifest, targetRoot, schema) {
+  const publishedRoot = path.resolve(targetRoot)
+  const publishedManifestPath = path.join(publishedRoot, 'release-manifest.json')
+  try {
+    if ((await stat(publishedRoot)).isDirectory()) {
+      try {
+        const existing = await verifyReleaseManifest(publishedManifestPath)
+        if (existing.passed
+          && existing.manifest.release.releaseId === stagedManifest.release.releaseId
+          && existing.manifest.source.kind === 'immutable-release'
+          && existing.manifest.source.readOnly === true
+          && path.resolve(existing.root) === publishedRoot) return existing.manifest
+      } catch {}
+      const error = new Error(`published release target already exists and is not a verified match: ${publishedRoot}`)
+      error.code = 'RELEASE_PUBLISHED_TARGET_EXISTS'
+      throw error
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+
+  let created = false
+  try {
+    await mkdir(publishedRoot, { recursive: true })
+    created = true
+    for (const artifact of stagedManifest.artifacts) {
+      const sourcePath = path.resolve(sourceRoot, artifact.path)
+      const targetPath = path.resolve(publishedRoot, artifact.path)
+      await mkdir(path.dirname(targetPath), { recursive: true })
+      await copyFile(sourcePath, targetPath)
+    }
+    const publishedManifest = {
+      ...stagedManifest,
+      role: 'published-release',
+      source: {
+        kind: 'immutable-release',
+        readOnly: true,
+        provenance: 'published release snapshot from clean candidate',
+      },
+      release: {
+        ...stagedManifest.release,
+        root: publishedRoot,
+      },
+    }
+    validateManifestOrThrow(publishedManifest, schema, 'published', publishedRoot)
+    await writeJsonAtomic(publishedManifestPath, publishedManifest)
+    const verified = await verifyReleaseManifest(publishedManifestPath)
+    if (!verified.passed) throw new Error(`published release failed artifact verification: ${verified.failures.join('; ')}`)
+    return publishedManifest
+  } catch (error) {
+    if (created) await rm(publishedRoot, { recursive: true, force: true })
+    throw error
+  }
+}
 
 async function createManifest(root, role, { pythonHealth = null, source = null } = {}) {
   const packageJson = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
@@ -94,7 +166,7 @@ async function createManifest(root, role, { pythonHealth = null, source = null }
     ? 'Python ' + pythonHealth.python.version
     : resolveRuntimeVersion(root, 'python', pythonExecutable, ['--version'])
   const nodeLock = await lockSummary(root, 'package-lock.json', 'npm')
-  const pythonLock = await lockSummary(root, 'tools/subtitle-workflow/requirements-service.lock', 'pip-require-hashes')
+  const pythonLock = await lockSummary(root, RELEASE_PYTHON_LOCK_PATH, 'pip-require-hashes')
   const externalTools = {
     ffmpeg: await toolDescriptor(root, 'ffmpeg', ['-version']),
     ytDlp: await toolDescriptor(root, 'yt-dlp', ['--version']),
@@ -179,7 +251,7 @@ async function collectArtifacts(root) {
   const optional = [
     'scripts/launch-next-preview.ps1',
     'tools/subtitle-workflow/requirements-service.txt',
-    'tools/subtitle-workflow/requirements-service.lock',
+    RELEASE_PYTHON_LOCK_PATH,
     'tools/subtitle-workflow/youtube_workflow/service.py',
     'tools/subtitle-workflow/youtube_workflow/production_host_prototype.py',
   ]

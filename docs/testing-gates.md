@@ -166,7 +166,10 @@ fixture 分别构建旧版和 Next，在隔离临时目录与随机安全端口�
 12.6 的 `npm run release:manifest` 只接受 clean release candidate，并要求显式提供受版本
 控制/可审计的 previous-release manifest（`--previous-manifest` 或
 `READ_WEB_PREVIOUS_RELEASE_MANIFEST`）。它生成 current、previous 两份 manifest 和 staged
-release-state；manifest 包含 Git/版本/工具链/lock、配置与数据兼容范围及逐 artifact SHA-256。
+release-state；clean candidate 会同时物化到 `output/release/published/<releaseId>/`，并将
+已校验的 published manifest 标记为 `immutable-release`/`readOnly=true`，因此该发布目录内的
+manifest 可直接作为下一轮 previous source。manifest 包含 Git/版本/工具链/lock、配置与数据
+兼容范围及逐 artifact SHA-256。
 `npm run release:health` 验证文件哈希并可核对运行中 host identity；`npm run release:rollback`
 要求 active/previous 的 releaseId 和 manifest SHA 与实际文件一致，并在 previous 完整性通过
 后原子切回 previous target。缺少 previous source、旧 live root 缺 Python lock、manifest 不完整

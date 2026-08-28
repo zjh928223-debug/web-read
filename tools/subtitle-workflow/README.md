@@ -19,13 +19,20 @@ $env:READ_WEB_RUNTIME_CONFIG = (Resolve-Path .\config\runtime.optimization.json)
 & $env:READ_WEB_PYTHON -m pip install --require-hashes --only-binary=:all: -r .\tools\subtitle-workflow\requirements-service.lock
 ```
 
-For the Python test suite, install the separate hashed test lock so Starlette's
-`TestClient` uses its supported `httpx2` client and Uvicorn selects its
-warning-free WebSocket implementation:
+Run the production health check before adding test-only packages. The health
+gate compares the complete environment with the production lock, so it must
+run while this venv still contains only production dependencies:
+
+```powershell
+npm run verify:python-health
+```
+
+For the Python test suite, then install the separate hashed test lock so
+Starlette's `TestClient` uses its supported `httpx2` client and Uvicorn selects
+its warning-free WebSocket implementation:
 
 ```powershell
 & $env:READ_WEB_PYTHON -m pip install --require-hashes --only-binary=:all: -r .\tools\subtitle-workflow\requirements-service-test.lock
-npm run verify:python-health
 ```
 
 The lock-first vulnerability gate does not install packages or depend on a
