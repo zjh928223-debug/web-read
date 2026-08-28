@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 110,
-    "behavior": 93,
+    "behavior": 94,
     "browser": 27,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 240,
-  "executableScriptCount": 265,
+  "packageScriptCount": 241,
+  "executableScriptCount": 266,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1591,6 +1591,18 @@
         "scripts/production-preview-load-check.cjs"
       ],
       "owner": "package.json#scripts.verify:production-preview"
+    },
+    {
+      "name": "verify:python-gate-wrapper",
+      "command": "node scripts/python-gate-wrapper-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/python-gate-wrapper-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:python-gate-wrapper"
     },
     {
       "name": "verify:python-health",
@@ -6434,6 +6446,30 @@
         "release": false,
         "behaviorAssertions": false,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/python-gate-wrapper-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:python-gate-wrapper",
+      "owners": [
+        "package.json#scripts.verify:python-gate-wrapper"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

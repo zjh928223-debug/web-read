@@ -13,13 +13,33 @@ if (scriptIndex < 0) {
 }
 
 const script = path.resolve(repoRoot, args[scriptIndex])
-const scriptArgs = args.slice(scriptIndex + 1)
-const configIndex = scriptArgs.indexOf('--config')
-const configPath = configIndex >= 0 ? scriptArgs[configIndex + 1] || '' : ''
+
+function splitWrapperArguments(values) {
+  const targetArgs = []
+  let configPath = ''
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index]
+    if (value !== '--config') {
+      targetArgs.push(value)
+      continue
+    }
+    const next = values[index + 1]
+    if (!next || next === '--config') {
+      throw new PythonRuntimeError('RUNTIME_CONFIG_ARGUMENT_INVALID', '--config requires a RuntimeConfig path')
+    }
+    if (configPath) {
+      throw new PythonRuntimeError('RUNTIME_CONFIG_ARGUMENT_DUPLICATE', 'run-python-gate accepts only one wrapper --config option')
+    }
+    configPath = next
+    index += 1
+  }
+  return { configPath, targetArgs }
+}
 
 try {
+  const { configPath, targetArgs } = splitWrapperArguments(args.slice(scriptIndex + 1))
   const selected = await resolveSelectedPython({ repoRoot, configPath })
-  const child = spawn(selected.executable, [script, ...scriptArgs], {
+  const child = spawn(selected.executable, [script, ...targetArgs], {
     cwd: repoRoot,
     env: gateEnvironment(selected),
     stdio: 'inherit',
