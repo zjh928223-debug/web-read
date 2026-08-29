@@ -61,6 +61,21 @@ CAPABILITY_ROUTE_PREFIXES = (
     "/api/dev/dictionary/ecdict",
 )
 
+OWNER_MIGRATION_MODE = "optimization"
+OWNER_MIGRATION_HEADER = "x-read-web-owner-migration"
+OWNER_MIGRATION_HEADER_VALUE = "optimization"
+OWNER_MIGRATION_DOMAINS = frozenset({"reader-session", "marks-activity"})
+OWNER_MIGRATION_OPERATIONS = {
+    "reader-session": {
+        "query": frozenset({"snapshot"}),
+        "command": frozenset({"prepare", "commit", "restore"}),
+    },
+    "marks-activity": {
+        "query": frozenset({"marks"}),
+        "command": frozenset({"marks-commit"}),
+    },
+}
+
 
 class LocalCapabilityProxy:
     def __init__(self, base_url: str, access_token: str, client_factory=None, health_status_callback=None):
@@ -140,6 +155,8 @@ class PathPreservingAsgiDispatch:
         owner_domain_handlers: dict | None = None,
         owner_freeze_root: Path | None = None,
         owner_profile_id: str = "",
+        owner_migration_mode: str | None = None,
+        owner_migration_domains=None,
         application_profile_lease_process=None,
         application_profile_lease_mode: str = "authoritative",
         capability_snapshot_provider=None,
@@ -154,6 +171,8 @@ class PathPreservingAsgiDispatch:
         self.owner_domain_handlers = dict(owner_domain_handlers or {})
         self.owner_freeze_root = Path(owner_freeze_root).resolve() if owner_freeze_root is not None else None
         self.owner_profile_id = str(owner_profile_id or "")
+        self.owner_migration_mode = owner_migration_mode
+        self.owner_migration_domains = frozenset(owner_migration_domains or ())
         self.application_profile_lease_process = application_profile_lease_process
         self.application_profile_lease_mode = application_profile_lease_mode
         self.capability_snapshot_provider = capability_snapshot_provider
@@ -326,10 +345,26 @@ class PathPreservingAsgiDispatch:
     def _domain_is_authoritative(self, domain: str) -> bool:
         owner_mode = self.owner_registry_status.get("ownerMode")
         authoritative = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
+        if domain in authoritative and domain in self.owner_domain_handlers:
+            return True
+        checkpointed, _invalid = _read_owner_mode_checkpoint_state(
+            self.owner_freeze_root,
+            self.owner_profile_id,
+        )
         return (
-            domain in authoritative
+            domain in checkpointed
             and domain in self.owner_domain_handlers
         )
+
+    def _migration_owner_request_allowed(self, scope, owner_request) -> bool:
+        if self.owner_migration_mode != OWNER_MIGRATION_MODE:
+            return False
+        if owner_request.domain not in self.owner_migration_domains:
+            return False
+        if _headers(scope).get(OWNER_MIGRATION_HEADER) != OWNER_MIGRATION_HEADER_VALUE:
+            return False
+        operations = OWNER_MIGRATION_OPERATIONS.get(owner_request.domain, {})
+        return owner_request.operation in operations.get(owner_request.kind, ())
 
     def _domain_is_frozen(self, domain: str) -> bool:
         if self.owner_freeze_root is not None and domain in WINDOWS_OWNER_DOMAINS:
@@ -508,7 +543,10 @@ class PathPreservingAsgiDispatch:
             )(scope, receive, send)
             return
 
-        if self._domain_is_authoritative(owner_request.domain):
+        if (
+            self._domain_is_authoritative(owner_request.domain)
+            or self._migration_owner_request_allowed(scope, owner_request)
+        ):
             await self._handle_domain_owner_request(scope, receive, send, owner_request)
             return
 
@@ -838,16 +876,65 @@ def _read_owner_freeze_state(authority_root: Path | None, profile_id: str) -> tu
     return frozen, invalid
 
 
+def _owner_mode_checkpoint_checksum(value: dict) -> str:
+    core = {key: nested for key, nested in value.items() if key != "checksum"}
+    encoded = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return f"sha256:{sha256(encoded.encode('utf-8')).hexdigest()}"
+
+
+def _read_owner_mode_checkpoint_state(
+    authority_root: Path | None,
+    profile_id: str,
+) -> tuple[set[str], set[str]]:
+    """Read the small persisted authority markers written by the cutover seam."""
+
+    if authority_root is None:
+        return set(), set()
+    marker_root = Path(authority_root).resolve() / "owner-mode" / "checkpoints"
+    authoritative: set[str] = set()
+    invalid: set[str] = set()
+    for domain in WINDOWS_OWNER_DOMAINS:
+        marker = marker_root / f"{domain}.json"
+        try:
+            value = json.loads(marker.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            invalid.add(domain)
+            continue
+        if (
+            isinstance(value, dict)
+            and value.get("schemaVersion") == 1
+            and value.get("profileId") == profile_id
+            and value.get("domain") == domain
+            and value.get("oldWriterBlocked") is True
+            and value.get("compatibilityMode") == "read-only"
+            and value.get("inFlight") == 0
+            and value.get("authorityMode") == "host-api=authoritative"
+            and value.get("checksum") == _owner_mode_checkpoint_checksum(value)
+        ):
+            authoritative.add(domain)
+        else:
+            invalid.add(domain)
+    return authoritative, invalid
+
+
 def _merge_owner_freeze_state(owner_status: dict, authority_root: Path | None, profile_id: str) -> dict:
     frozen, invalid = _read_owner_freeze_state(authority_root, profile_id)
+    checkpointed, checkpoint_invalid = _read_owner_mode_checkpoint_state(authority_root, profile_id)
+    invalid |= checkpoint_invalid
     owner_mode = dict(owner_status.get("ownerMode") or {})
     existing_invalid = set(owner_mode.get("invalidDomains", []))
+    existing_authoritative = set(owner_mode.get("authoritativeDomains", []))
+    owner_mode["authoritativeDomains"] = sorted(existing_authoritative | checkpointed)
     owner_mode["frozenDomains"] = sorted(
         frozen if authority_root is not None else set(owner_mode.get("frozenDomains", []))
     )
     owner_mode["invalidDomains"] = sorted(existing_invalid | invalid)
     if invalid:
         owner_mode["status"] = "invalid"
+    elif checkpointed and owner_mode.get("status") in {"pre-cutover", "read-only"}:
+        owner_mode["status"] = "authoritative"
     return {**owner_status, "ownerMode": owner_mode}
 
 
@@ -884,6 +971,8 @@ def create_local_app_host(
     owner_receipt_revision_reader=None,
     owner_receipt_evidence_resolvers=None,
     owner_domain_handlers: dict | None = None,
+    owner_migration_mode: str | None = None,
+    owner_migration_domains=None,
     health_dependency_status: dict | None = None,
     health_range_status: dict | None = None,
     health_schema_status: dict | None = None,
@@ -897,6 +986,16 @@ def create_local_app_host(
     workflow_token = str(workflow_access_token or instance_token).strip()
     capability_token = str(capability_access_token or instance_token).strip()
     root = Path(dist_dir).resolve()
+    migration_mode = str(owner_migration_mode or "").strip() or None
+    migration_domains = frozenset(str(domain).strip() for domain in (owner_migration_domains or ()) if str(domain).strip())
+    if migration_mode is not None and migration_mode != OWNER_MIGRATION_MODE:
+        raise ValueError("Local App Host migration mode is limited to optimization")
+    if migration_domains - OWNER_MIGRATION_DOMAINS:
+        raise ValueError("Local App Host migration access is limited to the first two C2 domains")
+    if migration_domains and migration_mode != OWNER_MIGRATION_MODE:
+        raise ValueError("Local App Host migration domains require explicit optimization mode")
+    if migration_mode is not None and not str(profile_id or "").strip():
+        raise ValueError("Local App Host migration mode requires a profile id")
     configured_allowed_origin = str(os.environ.get("READ_WEB_ALLOWED_ORIGIN") or "").strip()
     policy_roots = {"dist": root}
     configured_data_root = str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT") or "").strip()
@@ -930,7 +1029,7 @@ def create_local_app_host(
     if owner_domain_handlers is None and owner_repository_root is not None:
         owner_mode = owner_registry_status.get("ownerMode")
         authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
-        if authoritative_domains:
+        if authoritative_domains or migration_domains:
             owner_domain_handlers = create_profile_owner_handlers(
                 owner_repository_root,
                 profile_id,
@@ -1060,6 +1159,8 @@ def create_local_app_host(
         owner_domain_handlers=owner_domain_handlers,
         owner_freeze_root=freeze_root,
         owner_profile_id=profile_id,
+        owner_migration_mode=migration_mode,
+        owner_migration_domains=migration_domains,
         application_profile_lease_process=application_profile_lease_process,
         application_profile_lease_mode=application_profile_lease_mode,
         capability_snapshot_provider=lambda: build_capability_snapshot(current_health_snapshot()),

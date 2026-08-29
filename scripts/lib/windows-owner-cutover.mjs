@@ -262,7 +262,7 @@ function productionHostError(code, message) {
   return error
 }
 
-function createProductionHostFetch({ baseUrl, accessToken, fetchImpl = globalThis.fetch } = {}) {
+function createProductionHostFetch({ baseUrl, accessToken, fetchImpl = globalThis.fetch, migrationOnly = false } = {}) {
   if (typeof fetchImpl !== 'function') throw productionHostError('OWNER_CUTOVER_HOST_FETCH_UNAVAILABLE', 'Production Host fetch is unavailable')
   let root
   try { root = new URL(String(baseUrl || '')) } catch {
@@ -280,6 +280,7 @@ function createProductionHostFetch({ baseUrl, accessToken, fetchImpl = globalThi
       throw productionHostError('OWNER_CUTOVER_HOST_URL_INVALID', 'Production Host request must remain on the configured loopback origin')
     }
     const headers = { ...(init.headers || {}), 'X-Read-Web-Token': token }
+    if (migrationOnly === true) headers['X-Read-Web-Owner-Migration'] = 'optimization'
     return fetchImpl(target, { ...init, headers })
   }
 }
@@ -528,6 +529,13 @@ function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {
 
 export async function createWindowsOwnerProductionHostClient(options = {}) {
   if (options.client && typeof options.client.query === 'function') return options.client
+  const migrationOnly = options.migrationOnly === true
+  if (migrationOnly && (options.mode !== 'optimization' || options.explicitOptIn !== true)) {
+    throw productionHostError(
+      'OWNER_CUTOVER_MIGRATION_OPT_IN_REQUIRED',
+      'Production Host migration access requires explicit optimization opt-in',
+    )
+  }
   const { createWindowsOwnerApiClient } = await loadProductionModules()
   return createWindowsOwnerApiClient({
     profileId: options.profileId,
@@ -536,6 +544,7 @@ export async function createWindowsOwnerProductionHostClient(options = {}) {
       baseUrl: options.baseUrl,
       accessToken: options.accessToken,
       fetchImpl: options.fetchImpl,
+      migrationOnly,
     }),
     timeoutMs: options.timeoutMs,
   })
@@ -650,6 +659,9 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     instanceId: options.hostInstanceId || profileId,
     fetchImpl: options.hostFetchImpl,
     timeoutMs: options.hostTimeoutMs,
+    migrationOnly: true,
+    mode: options.mode,
+    explicitOptIn: options.explicitOptIn,
   })
   const hostAdapters = createProductionHostAdapters({
     client: hostClient,

@@ -146,8 +146,8 @@ function ownerProfileEvidence(profileId) {
     },
     ownerMode: {
       schemaVersion: 1,
-      status: 'authoritative',
-      authoritativeDomains: [...PRODUCTION_DOMAINS],
+      status: 'pre-cutover',
+      authoritativeDomains: [],
       invalidDomains: [],
     },
   }
@@ -197,6 +197,8 @@ app = create_local_app_host(
     owner_repository_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
     owner_receipt_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
     owner_freeze_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
+    owner_migration_mode='optimization',
+    owner_migration_domains=['reader-session', 'marks-activity'],
     config_compatibility={'schemaVersion': 1, 'minimum': 1, 'maximum': 1},
 )
 uvicorn.run(app, host='127.0.0.1', port=int(os.environ['C2A_PORT']), log_level='warning', access_log=False)
@@ -342,14 +344,20 @@ try {
   await seedProfile(source, { reader: true, marks: true })
   await seedProfile(target)
   host = await startLocalAppHost(target)
-  assert.deepEqual(host.health.ownerMode?.authoritativeDomains, PRODUCTION_DOMAINS)
-  assert.equal(host.health.domains?.find((domain) => domain.domain === 'reader-session')?.authority, 'authoritative')
-  const hostClient = await createWindowsOwnerProductionHostClient({
+  assert.deepEqual(host.health.ownerMode?.authoritativeDomains, [])
+  assert.equal(host.health.domains?.find((domain) => domain.domain === 'reader-session')?.authority, 'pre-cutover')
+  const ordinaryHostClient = await createWindowsOwnerProductionHostClient({
     baseUrl: host.baseUrl,
     accessToken: host.accessToken,
     profileId: host.profileId,
     instanceId: host.instanceId,
   })
+  const ordinaryPreCutoverQuery = await ordinaryHostClient.query({
+    domain: 'reader-session',
+    operation: 'snapshot',
+    payload: {},
+  })
+  assert.equal(ordinaryPreCutoverQuery.outcome, 'not-ready')
 
   const frozenDomains = new Set()
   const windowObject = {}
@@ -381,7 +389,9 @@ try {
       'reader-session': 0,
       'marks-activity': 0,
     },
-    hostClient,
+    hostBaseUrl: host.baseUrl,
+    hostAccessToken: host.accessToken,
+    hostInstanceId: host.instanceId,
     hostScopeByDomain: {
       'marks-activity': { jobId: 'c2a-marks', contentId: 'c2a-marks' },
     },
@@ -430,6 +440,11 @@ try {
   await stopLocalAppHost(host)
   host = null
   reopenedHost = await startLocalAppHost(target)
+  assert.deepEqual(
+    [...(reopenedHost.health.ownerMode?.authoritativeDomains || [])].sort(),
+    [...PRODUCTION_DOMAINS].sort(),
+  )
+  assert.equal(reopenedHost.health.domains?.find((domain) => domain.domain === 'reader-session')?.authority, 'authoritative')
   const reopenedClient = await createWindowsOwnerProductionHostClient({
     baseUrl: reopenedHost.baseUrl,
     accessToken: reopenedHost.accessToken,
