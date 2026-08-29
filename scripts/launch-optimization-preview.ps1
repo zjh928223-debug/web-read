@@ -827,6 +827,22 @@ function Invoke-OptimizationActivationRecovery {
   Restore-JsonSnapshot -Path $frontDoorCommittedTargetPath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldCommittedTargetSnapshot')
   Restore-JsonSnapshot -Path $activeReleasePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveReleaseSnapshot')
   Restore-JsonSnapshot -Path $hostStatePath -Snapshot (Get-OptimizationObjectText -Object $journal -Name 'oldActiveHostSnapshot')
+  if ($promotionRecovery) {
+    # Restore-OptimizationOldHostFromJournal may have restarted the old Host,
+    # which gives it a new PID and receipt timestamps.  The active descriptor
+    # is a pointer, not a historical snapshot: rewrite it from the current
+    # ownership-checked manager receipt after restoring the old pointers so
+    # it cannot advertise a dead process as active.
+    $currentOldHostManagerPath = Get-OptimizationObjectText -Object $journal -Name 'oldHostManagerStatePath'
+    $currentOldHostManagerState = if ($currentOldHostManagerPath) { Read-OptimizationJsonFile -Path $currentOldHostManagerPath } else { $null }
+    if (-not $currentOldHostManagerPath -or $null -eq $currentOldHostManagerState) {
+      throw 'Promotion recovery restored old pointers without a current old Host manager receipt.'
+    }
+    Write-OptimizationActiveHostState `
+      -Path $hostStatePath `
+      -ManagerStatePath $currentOldHostManagerPath `
+      -ProfileId $profileId
+  }
   if (-not (Test-Path -LiteralPath $newHostPath -PathType Leaf)) {
     if (-not (Remove-OptimizationApplicationIsolation -Root (Join-Path $defaultOptimizationDataRoot '.read-web-application\instances') -Path (Get-OptimizationObjectText -Object $journal -Name 'newApplicationIsolationRoot'))) {
       $recoveryCleanupComplete = $false

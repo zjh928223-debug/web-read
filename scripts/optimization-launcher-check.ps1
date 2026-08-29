@@ -906,6 +906,10 @@ function Assert-RealLauncherLifecycle {
         -and $preservedManagerState.profileId -eq 'optimization' `
         -and $preservedManagerState.instanceId -eq $firstInstance `
         -and [int]$preservedManagerState.pid -gt 0) "$failureKind failure did not restore a live old Host manager state"
+      Assert-True ([IO.Path]::GetFullPath([string]$preservedHost.managerStatePath) -eq [IO.Path]::GetFullPath($preservedManagerPath) `
+        -and [int]$preservedHost.pid -eq [int]$preservedManagerState.pid `
+        -and [string]$preservedHost.processStartUtc -eq [string]$preservedManagerState.processStartUtc `
+        -and [string]$preservedHost.startedAtUtc -eq [string]$preservedManagerState.startedAtUtc) "$failureKind failure left an active Host descriptor inconsistent with its current manager receipt"
       $preservedAuthorityRoot = Get-OptimizationObjectText -Object $preservedManagerState -Name 'applicationProfileAuthorityRoot'
       Assert-True ($preservedAuthorityRoot -and (Test-Path -LiteralPath "$preservedAuthorityRoot.read-web-path.lock" -PathType Container)) "$failureKind failure did not restore the stable profile lease"
       $preservedFrontDoorHealthStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/front-door-process-health'
@@ -1012,6 +1016,10 @@ function Assert-RealLauncherLifecycle {
       $recoveredManagerPath = [string]$recoveredHost.managerStatePath
       Assert-True ($recoveredManagerPath -and (Test-Path -LiteralPath $recoveredManagerPath -PathType Leaf)) "$crashPhase recovery did not publish a managed Host state path"
       $recoveredManagerState = Read-OptimizationJsonFile -Path $recoveredManagerPath
+      Assert-True ([IO.Path]::GetFullPath([string]$recoveredHost.managerStatePath) -eq [IO.Path]::GetFullPath($recoveredManagerPath) `
+        -and [int]$recoveredHost.pid -eq [int]$recoveredManagerState.pid `
+        -and [string]$recoveredHost.processStartUtc -eq [string]$recoveredManagerState.processStartUtc `
+        -and [string]$recoveredHost.startedAtUtc -eq [string]$recoveredManagerState.startedAtUtc) "$crashPhase recovery left an active Host descriptor inconsistent with its current manager receipt"
       if ($crashPhase -eq 'commit-pointer') {
         Assert-True ($recoveredHealth.status -eq 'ready' -and $recoveredHealth.releaseId -eq $commitPointerTarget.releaseId -and $recoveredHealth.instanceId -eq $commitPointerTarget.instanceId) 'commit-pointer recovery rolled back a committed replacement'
         Assert-True ($recoveredHost.instanceId -eq $commitPointerTarget.instanceId -and $recoveredHost.releaseId -eq $commitPointerTarget.releaseId) 'commit-pointer recovery did not retain the committed Host'
@@ -1057,8 +1065,21 @@ function Assert-RealLauncherLifecycle {
       if ($crashPhase -eq 'host-process-started' -and $interruptedCandidatePort -gt 0) {
         Assert-True (Wait-OptimizationTcpPortFree -Port $interruptedCandidatePort -TimeoutSeconds 5) 'process-start boundary recovery left an orphan Host port occupied'
       }
-      $newIsolationRoots = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Force -ErrorAction SilentlyContinue | Where-Object { $baselineIsolationInstanceIds -notcontains $_.Name })
-      Assert-True ($newIsolationRoots.Count -eq 0) "$crashPhase recovery left a pending application profile lease (baseline=$($baselineIsolationInstanceIds.Count), new=$(($newIsolationRoots | ForEach-Object { $_.Name }) -join ','))"
+      $currentActiveIsolationRoot = Get-OptimizationObjectText -Object $recoveredManagerState -Name 'applicationIsolationRoot'
+      Assert-True ($currentActiveIsolationRoot) "$crashPhase recovery did not publish the active application isolation root"
+      $resolvedApplicationInstancesRoot = [IO.Path]::GetFullPath($applicationInstancesRoot).TrimEnd('\', '/')
+      $resolvedCurrentActiveIsolationRoot = [IO.Path]::GetFullPath($currentActiveIsolationRoot).TrimEnd('\', '/')
+      Assert-True ($resolvedCurrentActiveIsolationRoot.StartsWith("$resolvedApplicationInstancesRoot\", [StringComparison]::OrdinalIgnoreCase)) "$crashPhase recovery published an active application root outside the optimization instances root"
+      $currentActiveInstanceName = Split-Path -Leaf $resolvedCurrentActiveIsolationRoot
+      Assert-True ($currentActiveInstanceName) "$crashPhase recovery published an empty active application instance identity"
+      # The recovered manager receipt identifies the sole active instance:
+      # rollback points back to the old baseline, while committed
+      # forward-recovery points to the new committed instance.  Permit only
+      # that one directory so an uncleared old/candidate/orphan instance is
+      # observable rather than hidden by a historical baseline allow-list.
+      $allowedIsolationInstanceIds = @($currentActiveInstanceName)
+      $newIsolationRoots = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Force -ErrorAction SilentlyContinue | Where-Object { $allowedIsolationInstanceIds -notcontains $_.Name })
+      Assert-True ($newIsolationRoots.Count -eq 0) "$crashPhase recovery left a pending application profile lease (allowed=$($allowedIsolationInstanceIds -join ','), new=$(($newIsolationRoots | ForEach-Object { $_.Name }) -join ','))"
     }
 
     $reuseOutput = Invoke-Launcher -Arguments @('-NoOpen')

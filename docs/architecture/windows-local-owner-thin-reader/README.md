@@ -132,9 +132,12 @@ registry authoritative. Focused lease evidence is `npm run verify:windows-owner-
 stable-lease release, authoritative promotion, and a failed promotion with no active-pointer commit, then
 invokes the real `scripts/optimization-launcher-check.ps1` journal/snapshot recovery gate. If the selected
 optimization Python is blocked by the known duplicate `networkx`/`torchaudio` distribution check, the JSON
-result reports `launcherRecovery.status: blocked` and does not claim launcher rollback passed. The
+result reports `status: blocked`, `launcherRecovery.status: blocked`, exits non-zero, and does not claim
+launcher rollback passed; consequently `verify:windows-owner` remains blocked until that environment gate is
+fixed. The
 production lifecycle check also proves the running Host holds the lease and keeps the owner API in
-pre-cutover mode.
+pre-cutover mode. The crash gate permits the rollback baseline instance or the committed forward-recovery
+instance, as identified by the recovered active manager state, and rejects every other leftover instance.
 
 Neither the baseline nor the initializer opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a
 real browser profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`,

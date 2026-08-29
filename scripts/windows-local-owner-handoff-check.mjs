@@ -523,10 +523,12 @@ try {
     throw new Error(`real optimization launcher recovery gate failed with exit ${launcherResult.code}: ${launcherOutput.slice(-4_000)}`)
   }
 
+  const launcherBlocked = launcherRecovery.status === 'blocked'
   console.log(JSON.stringify({
     schema: 'read-web.windows-local-owner-handoff-check',
     schemaVersion: 1,
-    status: launcherRecovery.status === 'passed' ? 'passed' : 'passed-with-blocked-real-launcher',
+    status: launcherBlocked ? 'blocked' : 'passed',
+    exitCode: launcherBlocked ? 1 : 0,
     isolation: {
       tempRoot,
       sourceDataRead: false,
@@ -550,6 +552,7 @@ try {
     },
     launcherRecovery,
   }, null, 2))
+  if (launcherBlocked) process.exitCode = 1
 } finally {
   if (hostB) await stopOwned(hostB, 'SIGKILL').catch(() => {})
   if (hostA) await stopOwned(hostA, 'SIGKILL').catch(() => {})
