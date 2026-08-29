@@ -574,6 +574,8 @@ def create_local_app_host(
     application_profile_standby_preflight: bool = False,
     owner_receipt_root: Path | None = None,
     owner_receipt_store: OwnerCommitReceiptStore | None = None,
+    owner_receipt_revision_reader=None,
+    owner_receipt_evidence_resolvers=None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     try:
@@ -617,6 +619,8 @@ def create_local_app_host(
             owner_receipt_root,
             profile_id,
             instance_id,
+            revision_reader=owner_receipt_revision_reader,
+            authoritative_evidence_resolvers=owner_receipt_evidence_resolvers,
         )
     if receipt_store is not None and receipt_store.profile_id != profile_id:
         raise ValueError("owner receipt store profile does not match Local App Host profile")

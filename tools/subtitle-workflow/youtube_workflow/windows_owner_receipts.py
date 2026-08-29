@@ -279,6 +279,11 @@ class OwnerCommitReceiptStore:
         repository: DurableJsonRepository | None = None,
         clock: Callable[[], str] = _utc_now,
         before_write: Callable[[str, Mapping[str, Any]], None] | None = None,
+        authoritative_evidence_resolvers: (
+            Mapping[str, Callable[[Mapping[str, Any]], Mapping[str, Any] | None]]
+            | Callable[[Mapping[str, Any]], Mapping[str, Any] | None]
+            | None
+        ) = None,
     ):
         self.root = Path(root).expanduser().resolve(strict=False)
         self.path = self.root / OWNER_RECEIPT_FILE
@@ -288,6 +293,22 @@ class OwnerCommitReceiptStore:
         self.repository = repository or DurableJsonRepository()
         self.clock = clock
         self.before_write = before_write
+        if authoritative_evidence_resolvers is None:
+            self.authoritative_evidence_resolvers = {}
+        elif callable(authoritative_evidence_resolvers):
+            self.authoritative_evidence_resolvers = {
+                domain: authoritative_evidence_resolvers
+                for domain in OWNER_RECEIPT_DOMAINS
+            }
+        elif isinstance(authoritative_evidence_resolvers, Mapping):
+            unknown_domains = set(authoritative_evidence_resolvers) - set(OWNER_RECEIPT_DOMAINS)
+            if unknown_domains:
+                raise OwnerReceiptInputError("authoritative evidence resolver domain is invalid")
+            if any(not callable(resolver) for resolver in authoritative_evidence_resolvers.values()):
+                raise OwnerReceiptInputError("authoritative evidence resolver is invalid")
+            self.authoritative_evidence_resolvers = dict(authoritative_evidence_resolvers)
+        else:
+            raise OwnerReceiptInputError("authoritative evidence resolver is invalid")
 
     @property
     def receipt_path(self) -> Path:
@@ -406,6 +427,7 @@ class OwnerCommitReceiptStore:
         effect_fingerprint: str,
         record_checksums: list[str],
         evidence_source: str,
+        instance_id: str | None = None,
         created_at: str | None = None,
         committed_at: str | None = None,
         receipt_id: str | None = None,
@@ -419,7 +441,7 @@ class OwnerCommitReceiptStore:
             "receiptId": receipt_id or f"receipt-{uuid.uuid4().hex}",
             "contractVersion": "windows-thin-reader-api.v1",
             "profileId": self.profile_id,
-            "instanceId": self.instance_id,
+            "instanceId": instance_id if instance_id is not None else self.instance_id,
             "requestId": request_id,
             "correlationId": correlation_id,
             "domain": domain,
@@ -505,11 +527,12 @@ class OwnerCommitReceiptStore:
         return result
 
     @staticmethod
-    def _status_error(status: str) -> dict[str, Any] | None:
+    def _status_error(status: str, revision: int | str | None = None) -> dict[str, Any] | None:
         if status == "committed":
             return None
         if status == "conflict":
-            return _error("conflict", "owner mutation conflicts with current revision")
+            details = {"currentRevision": revision} if revision is not None else {}
+            return _error("conflict", "owner mutation conflicts with current revision", **details)
         if status == "rejected":
             return _error("not-ready", "owner transaction was rejected")
         if status in {"pending", "commit-unknown"}:
@@ -520,10 +543,158 @@ class OwnerCommitReceiptStore:
 
     def _result_for_receipt(self, receipt: Mapping[str, Any]) -> dict[str, Any]:
         status = str(receipt["commitStatus"])
-        return self._result(status, receipt, self._status_error(status))
+        return self._result(status, receipt, self._status_error(status, receipt.get("revision")))
 
     def _unknown_result(self, receipt: Mapping[str, Any] | None, message: str = "owner commit result is not yet known") -> dict[str, Any]:
         return self._result("commit-unknown", receipt, _error("commit-unknown", message, retryable=True))
+
+    @staticmethod
+    def _pending_context(pending: Mapping[str, Any]) -> OwnerCommitContext:
+        return OwnerCommitContext(
+            profile_id=pending["profileId"],
+            instance_id=pending["instanceId"],
+            domain=pending["domain"],
+            operation=pending["operation"],
+            capability="",
+            idempotency_key=pending["idempotencyKey"],
+            expected_revision=pending["expectedRevision"],
+            request_fingerprint=pending["requestFingerprint"],
+            payload={},
+        )
+
+    def _manual_pending_result(
+        self,
+        document: dict[str, Any],
+        pending: Mapping[str, Any],
+        *,
+        revision: int | str | None,
+        message: str,
+        stage: str,
+    ) -> dict[str, Any]:
+        manual = self._transition_pending(
+            pending,
+            status="manual-recovery",
+            revision=revision,
+            evidence_source="owner.recovery",
+        )
+        try:
+            self._replace_receipt(document, manual, stage)
+        except Exception:
+            return self._unknown_result(pending, message)
+        return self._result_for_receipt(manual)
+
+    def _reconcile_pending_evidence_unlocked(
+        self,
+        document: dict[str, Any],
+        pending: Mapping[str, Any],
+        evidence: Mapping[str, Any] | None,
+        *,
+        stage: str,
+    ) -> dict[str, Any]:
+        if evidence is None:
+            return self._unknown_result(pending)
+        context = self._pending_context(pending)
+        try:
+            checked = self._validate_adapter_evidence(evidence, context)
+            current = self._read_revision(pending["domain"])
+        except OwnerReceiptInputError:
+            return self._manual_pending_result(
+                document,
+                pending,
+                revision=pending["revision"],
+                message="authoritative receipt evidence is invalid",
+                stage=stage,
+            )
+        except OwnerReceiptStoreError as error:
+            return self._result(
+                "manual-recovery",
+                error=_error(error.code, str(error), retryable=error.retryable),
+            )
+
+        status = checked["status"]
+        if status == "committed":
+            if (
+                checked["revision"] is None
+                or not _same_revision(current, checked["revision"])
+                or _same_revision(current, pending["expectedRevision"])
+            ):
+                return self._manual_pending_result(
+                    document,
+                    pending,
+                    revision=current,
+                    message="authoritative evidence does not match current revision",
+                    stage=stage,
+                )
+            committed = self._receipt_from_evidence(pending, checked, status="committed")
+            try:
+                self._replace_receipt(document, committed, stage)
+            except Exception:
+                return self._unknown_result(pending, "reconciled receipt could not be stored")
+            return self._result_for_receipt(committed)
+
+        if status == "rejected":
+            if not _same_revision(current, pending["expectedRevision"]) or not _same_revision(current, checked["revision"]):
+                return self._manual_pending_result(
+                    document,
+                    pending,
+                    revision=current,
+                    message="rejection evidence conflicts with current revision",
+                    stage=stage,
+                )
+            rejected = self._receipt_from_evidence(pending, checked, status="rejected")
+            try:
+                self._replace_receipt(document, rejected, stage)
+            except Exception:
+                return self._unknown_result(pending, "reconciled rejection could not be stored")
+            return self._result_for_receipt(rejected)
+
+        if status == "conflict":
+            if checked["revision"] is None or not _same_revision(current, checked["revision"]):
+                return self._manual_pending_result(
+                    document,
+                    pending,
+                    revision=current,
+                    message="conflict evidence does not match current revision",
+                    stage=stage,
+                )
+            conflict = self._receipt_from_evidence(pending, checked, status="conflict")
+            try:
+                self._replace_receipt(document, conflict, stage)
+            except Exception:
+                return self._unknown_result(pending, "reconciled conflict could not be stored")
+            return self._result_for_receipt(conflict)
+
+        unknown = self._receipt_from_evidence(pending, checked, status="commit-unknown")
+        try:
+            self._replace_receipt(document, unknown, stage)
+        except Exception:
+            return self._unknown_result(pending, "reconciled unknown result could not be stored")
+        return self._result_for_receipt(unknown)
+
+    def _resolve_pending_unlocked(self, document: dict[str, Any], pending: Mapping[str, Any]) -> dict[str, Any]:
+        resolver = self.authoritative_evidence_resolvers.get(pending["domain"])
+        if resolver is None:
+            return self._result_for_receipt(pending)
+        try:
+            evidence = resolver(deepcopy(dict(pending)))
+        except (FileNotFoundError, TimeoutError, ConnectionError):
+            return self._unknown_result(pending, "authoritative commit evidence is not available")
+        except OwnerReceiptStoreError as error:
+            return self._result(
+                "manual-recovery",
+                error=_error(error.code, str(error), retryable=error.retryable),
+            )
+        except Exception:
+            return self._result(
+                "manual-recovery",
+                error=_error("manual-recovery", "authoritative evidence resolver failed", retryable=True),
+            )
+        return self._reconcile_pending_evidence_unlocked(
+            document,
+            pending,
+            evidence,
+            stage="resolver-reconcile",
+        )
 
     def _transition_pending(
         self,
@@ -548,6 +719,7 @@ class OwnerCommitReceiptStore:
             effect_fingerprint=effect_fingerprint or pending["effectFingerprint"],
             record_checksums=record_checksums or [],
             evidence_source=evidence_source,
+            instance_id=pending["instanceId"],
             receipt_id=pending["receiptId"],
             created_at=pending["createdAt"],
             committed_at=self.clock() if status == "committed" else None,
@@ -677,6 +849,8 @@ class OwnerCommitReceiptStore:
                     except Exception:
                         return self._unknown_result(pending, "transaction abort receipt could not be durably recorded")
                     return self._result_for_receipt(rejected)
+                except (TimeoutError, ConnectionError):
+                    return self._unknown_result(pending, "owner response timed out before commit evidence")
                 except Exception:
                     manual = self._transition_pending(
                         pending, status="manual-recovery", revision=baseline, evidence_source="owner.adapter"
@@ -729,8 +903,23 @@ class OwnerCommitReceiptStore:
 
                 if evidence_status in {"rejected", "conflict"}:
                     current_after = self._read_revision(domain)
-                    if not _same_revision(current_after, baseline) and evidence_status == "rejected":
-                        return self._result("manual-recovery", error=_error("manual-recovery", "rejection evidence conflicts with current revision"))
+                    if evidence_status == "conflict":
+                        if checked["revision"] is None or not _same_revision(current_after, checked["revision"]):
+                            return self._manual_pending_result(
+                                document,
+                                pending,
+                                revision=current_after,
+                                message="conflict evidence does not match current revision",
+                                stage="manual-recovery",
+                            )
+                    elif not _same_revision(current_after, baseline) or not _same_revision(current_after, checked["revision"]):
+                        return self._manual_pending_result(
+                            document,
+                            pending,
+                            revision=current_after,
+                            message="rejection evidence conflicts with current revision",
+                            stage="manual-recovery",
+                        )
                     terminal = self._receipt_from_evidence(pending, checked, status=evidence_status)
                     try:
                         self._replace_receipt(document, terminal, evidence_status)
@@ -768,7 +957,9 @@ class OwnerCommitReceiptStore:
             raise OwnerReceiptInputError("adapter evidence domain does not match request")
         if not _same_revision(evidence.get("expectedRevision"), context.expected_revision):
             raise OwnerReceiptInputError("adapter evidence expectedRevision does not match request")
-        _safe_revision(evidence.get("revision"), "adapter revision", allow_none=True)
+        revision = _safe_revision(evidence.get("revision"), "adapter revision", allow_none=True)
+        if status == "conflict" and revision is None:
+            raise OwnerReceiptInputError("conflict evidence lacks current revision")
         if evidence.get("requestFingerprint") != context.request_fingerprint:
             raise OwnerReceiptInputError("adapter evidence request fingerprint does not match request")
         _validate_checksum(evidence.get("effectFingerprint"), "adapter effectFingerprint")
@@ -794,6 +985,7 @@ class OwnerCommitReceiptStore:
             effect_fingerprint=evidence["effectFingerprint"],
             record_checksums=list(evidence["recordChecksums"]),
             evidence_source=evidence["source"],
+            instance_id=pending["instanceId"],
             created_at=pending["createdAt"],
             committed_at=self.clock() if status == "committed" else None,
             receipt_id=pending["receiptId"],
@@ -821,6 +1013,8 @@ class OwnerCommitReceiptStore:
                     return self._unknown_result(None, "receipt has not been observed")
                 if domain is not None and receipt["domain"] != domain:
                     return self._result("conflict", error=_error("conflict", "receipt is bound to another domain"))
+                if receipt["commitStatus"] in {"pending", "commit-unknown"}:
+                    return self._resolve_pending_unlocked(document, receipt)
                 return self._result_for_receipt(receipt)
         except OwnerReceiptStoreError as error:
             return self._result("manual-recovery", error=_error(error.code, str(error), retryable=error.retryable))
@@ -834,50 +1028,12 @@ class OwnerCommitReceiptStore:
                     return self._unknown_result(None, "receipt has not been observed")
                 if pending["commitStatus"] in {"committed", "rejected", "conflict", "manual-recovery"}:
                     return self._result_for_receipt(pending)
-                context = OwnerCommitContext(
-                    profile_id=self.profile_id,
-                    instance_id=pending["instanceId"],
-                    domain=pending["domain"],
-                    operation=pending["operation"],
-                    capability="",
-                    idempotency_key=pending["idempotencyKey"],
-                    expected_revision=pending["expectedRevision"],
-                    request_fingerprint=pending["requestFingerprint"],
-                    payload={},
+                return self._reconcile_pending_evidence_unlocked(
+                    document,
+                    pending,
+                    evidence,
+                    stage="reconciled",
                 )
-                try:
-                    checked = self._validate_adapter_evidence(evidence, context)
-                    current = self._read_revision(pending["domain"])
-                except (OwnerReceiptInputError, OwnerReceiptStoreError):
-                    manual = self._transition_pending(
-                        pending,
-                        status="manual-recovery",
-                        revision=pending["revision"],
-                        evidence_source="owner.recovery",
-                    )
-                    try:
-                        self._replace_receipt(document, manual, "manual-recovery")
-                    except Exception:
-                        return self._unknown_result(pending, "recovery evidence is invalid")
-                    return self._result_for_receipt(manual)
-                if checked["status"] == "committed":
-                    if checked["revision"] is None or not _same_revision(current, checked["revision"]) or _same_revision(current, pending["expectedRevision"]):
-                        return self._result("manual-recovery", error=_error("manual-recovery", "authoritative evidence does not match current revision"))
-                    committed = self._receipt_from_evidence(pending, checked, status="committed")
-                    try:
-                        self._replace_receipt(document, committed, "reconciled-committed")
-                    except Exception:
-                        return self._result("manual-recovery", error=_error("manual-recovery", "reconciled receipt could not be stored"))
-                    return self._result_for_receipt(committed)
-                if checked["status"] == "rejected" and _same_revision(current, pending["expectedRevision"]):
-                    rejected = self._receipt_from_evidence(pending, checked, status="rejected")
-                    self._replace_receipt(document, rejected, "reconciled-rejected")
-                    return self._result_for_receipt(rejected)
-                if checked["status"] == "commit-unknown":
-                    unknown = self._receipt_from_evidence(pending, checked, status="commit-unknown")
-                    self._replace_receipt(document, unknown, "reconciled-unknown")
-                    return self._result_for_receipt(unknown)
-                return self._result("manual-recovery", error=_error("manual-recovery", "recovery evidence conflicts with current revision"))
         except OwnerReceiptStoreError as error:
             return self._result("manual-recovery", error=_error(error.code, str(error), retryable=error.retryable))
 

@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,14 +27,114 @@ class OwnerReceiptTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def make_store(self, *, instance_id="instance-a", before_write=None):
+    def make_store(
+        self,
+        *,
+        instance_id="instance-a",
+        before_write=None,
+        revision_reader=None,
+        authoritative_evidence_resolvers=None,
+    ):
         return OwnerCommitReceiptStore(
             self.root,
             "profile-fixture",
             instance_id,
-            revision_reader=lambda domain: self.revisions[domain],
+            revision_reader=revision_reader or (lambda domain: self.revisions[domain]),
             before_write=before_write,
+            authoritative_evidence_resolvers=authoritative_evidence_resolvers,
         )
+
+    def disk_revision_reader(self, evidence_root):
+        def read(domain):
+            path = evidence_root / "revisions" / f"{domain}.json"
+            if not path.is_file():
+                return 0
+            return json.loads(path.read_text(encoding="utf-8"))["revision"]
+
+        return read
+
+    def disk_evidence_resolvers(self, evidence_root):
+        def resolve(pending):
+            path = evidence_root / "receipts" / f"{pending['idempotencyKey']}.json"
+            if not path.is_file():
+                return None
+            return json.loads(path.read_text(encoding="utf-8"))
+
+        return {domain: resolve for domain in OWNER_RECEIPT_DOMAINS}
+
+    def run_restarted_query(self, *, evidence_root, key, instance_id="instance-new"):
+        child = r'''
+import json
+import sys
+from pathlib import Path
+
+from youtube_workflow.windows_owner_receipts import OwnerCommitReceiptStore
+
+evidence_root = Path(sys.argv[1])
+key = sys.argv[2]
+instance_id = sys.argv[3]
+
+def read_revision(domain):
+    path = evidence_root / "revisions" / f"{domain}.json"
+    if not path.is_file():
+        return 0
+    return json.loads(path.read_text(encoding="utf-8"))["revision"]
+
+def resolve(pending):
+    path = evidence_root / "receipts" / f"{pending['idempotencyKey']}.json"
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+store = OwnerCommitReceiptStore(
+    evidence_root.parent,
+    "profile-fixture",
+    instance_id,
+    revision_reader=read_revision,
+    authoritative_evidence_resolvers={"workflow": resolve},
+)
+print(json.dumps(store.query(idempotency_key=key, domain="workflow"), sort_keys=True))
+'''
+        completed = subprocess.run(
+            [sys.executable, "-c", child, str(evidence_root), key, instance_id],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(completed.stdout)
+
+    def disk_commit_then_timeout(self, evidence_root, *, crash_after=False):
+        def run(context):
+            revisions_dir = evidence_root / "revisions"
+            receipts_dir = evidence_root / "receipts"
+            revisions_dir.mkdir(parents=True, exist_ok=True)
+            receipts_dir.mkdir(parents=True, exist_ok=True)
+            next_revision = context.expected_revision + 1
+            evidence = {
+                "status": "committed",
+                "domain": context.domain,
+                "expectedRevision": context.expected_revision,
+                "revision": next_revision,
+                "requestFingerprint": context.request_fingerprint,
+                "effectFingerprint": "sha256:" + ("d" * 64),
+                "recordChecksums": ["sha256:" + ("e" * 64)],
+                "source": "fixture.disk-authoritative-repository",
+            }
+            evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)
+            (revisions_dir / f"{context.domain}.json").write_text(
+                json.dumps({"revision": next_revision}),
+                encoding="utf-8",
+            )
+            (receipts_dir / f"{context.idempotency_key}.json").write_text(
+                json.dumps(evidence),
+                encoding="utf-8",
+            )
+            if crash_after:
+                raise OwnerProcessDeath("process ended after durable commit")
+            raise TimeoutError("response timed out after durable commit")
+
+        return run
 
     def request(self, *, domain="workflow", key="key-1", payload=None, expected=0, request_id=None, correlation_id=None):
         return {
@@ -145,6 +247,81 @@ class OwnerReceiptTests(unittest.TestCase):
         self.assertIsNotNone(result["receipt"])
         self.assertEqual(result["receipt"]["commitStatus"], "commit-unknown")
 
+    def test_restarted_store_resolves_persisted_commit_after_process_death(self):
+        evidence_root = self.root / "authoritative-fixture"
+        old_store = self.make_store(
+            instance_id="instance-old",
+            revision_reader=self.disk_revision_reader(evidence_root),
+        )
+        with self.assertRaises(OwnerProcessDeath):
+            old_store.commit(
+                **self.request(key="disk-death-before"),
+                fault="crash-before-execute",
+                adapter=self.adapter(),
+            )
+        before = self.run_restarted_query(
+            evidence_root=evidence_root,
+            key="disk-death-before",
+            instance_id="instance-new",
+        )
+        self.assertEqual(before["outcome"], "commit-unknown")
+        self.assertEqual(before["receipt"]["instanceId"], "instance-old")
+
+        with self.assertRaises(OwnerProcessDeath):
+            old_store.commit(
+                **self.request(key="disk-death-after"),
+                adapter=self.disk_commit_then_timeout(evidence_root, crash_after=True),
+            )
+        after = self.run_restarted_query(
+            evidence_root=evidence_root,
+            key="disk-death-after",
+            instance_id="instance-new",
+        )
+        self.assertEqual(after["outcome"], "committed")
+        self.assertEqual(after["revision"], 1)
+        receipt = after["receipt"]
+        self.assertEqual(receipt["instanceId"], "instance-old")
+        self.assertEqual(receipt["requestId"], "request-disk-death-after")
+        self.assertEqual(receipt["correlationId"], "correlation-disk-death-after")
+        self.assertEqual(receipt["createdAt"], json.loads(old_store.path.read_text(encoding="utf-8"))["receipts"][1]["createdAt"])
+
+    def test_adapter_timeout_without_side_effect_stays_unknown(self):
+        def timeout(_context):
+            raise TimeoutError("adapter response timed out before the write")
+
+        result = self.commit(key="adapter-timeout-no-write", adapter=timeout)
+        self.assertEqual(result["outcome"], "commit-unknown")
+        self.assertEqual(self.revisions["workflow"], 0)
+        queried = self.store.query(idempotency_key="adapter-timeout-no-write", domain="workflow")
+        self.assertEqual(queried["outcome"], "commit-unknown")
+        self.assertEqual(queried["receipt"]["instanceId"], "instance-a")
+
+    def test_adapter_timeout_after_disk_commit_is_resolved_without_replay(self):
+        evidence_root = self.root / "authoritative-timeout-fixture"
+        old_store = self.make_store(
+            instance_id="instance-old",
+            revision_reader=self.disk_revision_reader(evidence_root),
+        )
+        timed_out = old_store.commit(
+            **self.request(key="adapter-timeout-after-write"),
+            adapter=self.disk_commit_then_timeout(evidence_root),
+        )
+        self.assertEqual(timed_out["outcome"], "commit-unknown")
+        restarted = self.make_store(
+            instance_id="instance-new",
+            revision_reader=self.disk_revision_reader(evidence_root),
+            authoritative_evidence_resolvers=self.disk_evidence_resolvers(evidence_root),
+        )
+        resolved = restarted.query(idempotency_key="adapter-timeout-after-write", domain="workflow")
+        self.assertEqual(resolved["outcome"], "committed")
+        self.assertEqual(resolved["receipt"]["instanceId"], "instance-old")
+        retry = restarted.commit(
+            **self.request(key="adapter-timeout-after-write", expected=0),
+            adapter=lambda _context: self.fail("resolver must prevent a duplicate adapter call"),
+        )
+        self.assertEqual(retry["outcome"], "committed")
+        self.assertEqual(retry["receipt"]["receiptId"], resolved["receipt"]["receiptId"])
+
     def test_process_death_after_domain_commit_reconciles_to_committed(self):
         evidence_box = {}
 
@@ -224,6 +401,46 @@ class OwnerReceiptTests(unittest.TestCase):
         self.assertEqual(wrong["outcome"], "manual-recovery")
         self.assertEqual(self.revisions["workflow"], 1)
 
+    def test_conflict_evidence_requires_current_authoritative_revision(self):
+        self.revisions["workflow"] = 2
+
+        missing_revision = self.adapter(domain="workflow", increment=False, status="conflict")
+
+        def missing_conflict_revision(context):
+            evidence = missing_revision(context)
+            evidence["revision"] = None
+            evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)
+            return evidence
+
+        missing = self.commit(
+            key="conflict-without-current-revision",
+            expected=2,
+            adapter=missing_conflict_revision,
+        )
+        self.assertEqual(missing["outcome"], "manual-recovery")
+        self.assertEqual(self.revisions["workflow"], 2)
+
+        wrong_revision = self.adapter(domain="workflow", increment=False, status="conflict")
+
+        def wrong_conflict_revision(context):
+            evidence = wrong_revision(context)
+            evidence["revision"] = 1
+            evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)
+            return evidence
+
+        wrong = self.commit(
+            key="conflict-with-wrong-current-revision",
+            expected=2,
+            adapter=wrong_conflict_revision,
+        )
+        self.assertEqual(wrong["outcome"], "manual-recovery")
+        queried = self.store.query(
+            idempotency_key="conflict-with-wrong-current-revision",
+            domain="workflow",
+        )
+        self.assertEqual(queried["outcome"], "manual-recovery")
+        self.assertEqual(self.revisions["workflow"], 2)
+
     def test_atomic_write_failure_after_adapter_commit_stays_unknown(self):
         def fail_final(stage, _document):
             if stage == "committed":
@@ -244,6 +461,54 @@ class OwnerReceiptTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "manual-recovery")
         self.assertEqual(result["error"]["code"], "manual-recovery")
         self.assertNotIn(str(self.root), json.dumps(result))
+
+    def test_production_host_query_recovers_disk_evidence_after_new_host(self):
+        evidence_root = self.root / "authoritative-host-fixture"
+        old_store = self.make_store(
+            instance_id="instance-old",
+            revision_reader=self.disk_revision_reader(evidence_root),
+        )
+        timed_out = old_store.commit(
+            **self.request(key="host-recovery-key"),
+            adapter=self.disk_commit_then_timeout(evidence_root),
+        )
+        self.assertEqual(timed_out["outcome"], "commit-unknown")
+
+        dist = self.root / "dist-host-recovery"
+        dist.mkdir()
+        (dist / "index.html").write_text("<main>fixture</main>", encoding="utf-8")
+        app = create_local_app_host(
+            dist_dir=dist,
+            workflow_app=FastAPI(),
+            access_token="instance-token",
+            profile_id="profile-fixture",
+            instance_id="instance-new",
+            owner_receipt_root=self.root,
+            owner_receipt_revision_reader=self.disk_revision_reader(evidence_root),
+            owner_receipt_evidence_resolvers=self.disk_evidence_resolvers(evidence_root),
+        )
+        with TestClient(app, base_url="http://127.0.0.1", headers={"X-Read-Web-Token": "instance-token"}) as client:
+            response = client.post(
+                "/api/app/owner/receipt",
+                json={
+                    "contractVersion": "windows-thin-reader-api.v1",
+                    "requestId": "host-recovery-request",
+                    "correlationId": "host-recovery-correlation",
+                    "kind": "receipt-query",
+                    "domain": "workflow",
+                    "operation": "receipt-query",
+                    "capability": "workflow.receipt",
+                    "idempotencyKey": "host-recovery-key",
+                    "payload": {"profileId": "profile-fixture", "instanceId": "instance-new"},
+                },
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["outcome"], "committed")
+        self.assertEqual(body["commitStatus"], "committed")
+        self.assertEqual(body["revision"], 1)
+        self.assertEqual(body["receipt"]["instanceId"], "instance-old")
+        self.assertEqual(body["receipt"]["receiptId"], json.loads(old_store.path.read_text(encoding="utf-8"))["receipts"][0]["receiptId"])
 
     def test_production_host_receipt_query_is_typed_and_mutation_stays_pre_cutover(self):
         self.commit(key="route-key")

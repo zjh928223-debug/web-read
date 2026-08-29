@@ -217,15 +217,21 @@ constructs a committed receipt from a request alone. A same-key/same-fingerprint
 original receipt without invoking the adapter; a same-key/different-request retry is a conflict.
 Abort and stale-CAS paths are non-committed, while a process death, timeout, response loss, or
 receipt replace failure leaves `commit-unknown` evidence available for a later authoritative
-`reconcile` call. Only matching revision/evidence can resolve it to committed or rejected; otherwise
-the profile remains unresolved/manual-recovery and no second side effect is started.
+reconciliation. A caller may inject one resolver per domain (or one resolver for all domains); it
+receives the persisted pending receipt and reads the domain repository's own durable revision,
+effect fingerprint and record checksums. `receipt-query` invokes that resolver after a Host restart,
+so a new Host process can resolve a commit without sharing the old adapter's memory. No resolver or
+no matching evidence keeps the result `commit-unknown`; corrupt or contradictory evidence is
+`manual-recovery`, and no second side effect is started. The explicit `reconcile` seam remains
+available for a caller that already has the same authoritative evidence.
 
 The Local App Host exposes the `receipt-query` owner route through the existing transport and
-operation/capability policy. A query can recover a receipt after a new Host instance starts, but it
-still requires the stable authoritative profile lease when a real lease process is present. Other
-owner commands remain typed `503 not-ready`: the current six domains stay pre-cutover, browser
-writers are unchanged, and no production repository mutation or authority switch is claimed. The
-focused behavior gate is `npm run verify:windows-owner-receipt`; it uses isolated synthetic adapters
-and a real `Production Host` dispatch to exercise abort, process death, timeout/response loss,
-duplicate retry, CAS conflict, corrupt evidence, atomic-write failure, six-domain persistence and
-receipt query.
+operation/capability policy. A query can recover a receipt after a new Host instance starts when a
+configured authoritative resolver can verify the domain evidence; it still requires the stable
+authoritative profile lease when a real lease process is present. Other owner commands remain typed
+`503 not-ready`: the current six domains stay pre-cutover, browser writers are unchanged, and no
+production repository mutation or authority switch is claimed. The focused behavior gate is
+`npm run verify:windows-owner-receipt`; it uses isolated synthetic adapters, disk-backed evidence,
+new-process recovery and a real `Production Host` dispatch to exercise abort, process death,
+timeout/response loss, duplicate retry, CAS conflict, corrupt evidence, atomic-write failure,
+six-domain persistence and receipt query.
