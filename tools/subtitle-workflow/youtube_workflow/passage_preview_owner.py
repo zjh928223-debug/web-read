@@ -378,7 +378,6 @@ def _typed_error(
     *,
     retryable: bool = False,
     current_revision: int | None = None,
-    durable_state_revision: int | None = None,
 ) -> dict[str, Any]:
     categories = {
         "invalid-request": "validation",
@@ -395,8 +394,6 @@ def _typed_error(
     details = {}
     if current_revision is not None:
         details["currentRevision"] = current_revision
-    if durable_state_revision is not None:
-        details["durableStateRevision"] = durable_state_revision
     return {
         "type": "windows-thin-reader-error.v1",
         "code": code if code in categories else "invalid-request",
@@ -647,28 +644,6 @@ class PassagePreviewOwner:
                 _typed_error("manual-recovery", correlation_id),
             )
 
-        if current_revision == expected_revision and document is not None:
-            durable_state_revision = _durable_state_conflict(document, updates)
-            if durable_state_revision is not None:
-                return self._envelope(
-                    operation,
-                    request_id,
-                    correlation_id,
-                    "conflict",
-                    "conflict",
-                    current_revision,
-                    {
-                        "recordKeys": sorted(updates),
-                        "recordChecksums": sorted({_checksum(record["content"]) for record in updates.values()}),
-                    },
-                    _typed_error(
-                        "conflict",
-                        correlation_id,
-                        current_revision=current_revision,
-                        durable_state_revision=durable_state_revision,
-                    ),
-                )
-
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
             document = self._read_for_command()
             if document["revision"] != context.expected_revision:
@@ -678,7 +653,7 @@ class PassagePreviewOwner:
                     revision=document["revision"],
                     record_checksums=[],
                 )
-            if (durable_state_revision := _durable_state_conflict(document, updates)) is not None:
+            if _durable_state_conflict(document, updates) is not None:
                 return self._evidence(
                     context,
                     status="conflict",

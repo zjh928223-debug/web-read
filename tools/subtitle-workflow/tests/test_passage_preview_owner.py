@@ -287,34 +287,11 @@ class PassagePreviewOwnerTests(unittest.TestCase):
 
         changed_progress = self.progress()
         changed_progress["currentIndex"] = 1
-        for inner_revision, batch_id, request_key in (
-            (7, "lower", "inner-lower"),
-            (8, "different", "inner-same-revision-different"),
-        ):
-            conflict = owner.command(
-                "transition-apply",
-                payload={"records": {
-                    durable_key: self.row(
-                        durable_key,
-                        self.durable(revision=inner_revision, batch_id=batch_id),
-                    ),
-                    data_key: self.row(data_key, self.data("changed")),
-                    progress_key: self.row(progress_key, changed_progress),
-                }},
-                expected_revision=1,
-                idempotency_key=request_key,
-                **self.ids(request_key),
-            )
-            self.assertEqual(conflict["outcome"], "conflict")
-            self.assertEqual(conflict["commitStatus"], "conflict")
-            self.assertEqual(conflict["error"]["code"], "conflict")
-            self.assertEqual(conflict["error"]["details"]["currentRevision"], 1)
-            self.assertEqual(conflict["error"]["details"]["durableStateRevision"], 8)
-            self.assertIsNone(conflict["receipt"])
 
-            durable_result = owner.query("durable-state", **self.ids(f"durable-{request_key}"))
-            data_result = owner.query("preview-batch", **self.ids(f"data-{request_key}"))
-            progress_result = owner.query("progress", **self.ids(f"progress-{request_key}"))
+        def assert_original_snapshot(label):
+            durable_result = owner.query("durable-state", **self.ids(f"durable-{label}"))
+            data_result = owner.query("preview-batch", **self.ids(f"data-{label}"))
+            progress_result = owner.query("progress", **self.ids(f"progress-{label}"))
             self.assertEqual(
                 durable_result["payload"]["records"][durable_key]["content"],
                 high_durable,
@@ -327,6 +304,71 @@ class PassagePreviewOwnerTests(unittest.TestCase):
                 progress_result["payload"]["records"][progress_key]["content"]["currentIndex"],
                 0,
             )
+
+        lower_payload = {"records": {
+            durable_key: self.row(
+                durable_key,
+                self.durable(revision=7, batch_id="lower"),
+            ),
+            data_key: self.row(data_key, self.data("changed")),
+            progress_key: self.row(progress_key, changed_progress),
+        }}
+        first_conflict = owner.command(
+            "transition-apply",
+            payload=lower_payload,
+            expected_revision=1,
+            idempotency_key="inner-lower",
+            **self.ids("inner-lower"),
+        )
+        self.assertEqual(first_conflict["outcome"], "conflict")
+        self.assertEqual(first_conflict["commitStatus"], "conflict")
+        self.assertEqual(first_conflict["error"]["code"], "conflict")
+        self.assertEqual(first_conflict["receipt"]["commitStatus"], "conflict")
+        first_receipt_id = first_conflict["receipt"]["receiptId"]
+
+        retry = owner.command(
+            "transition-apply",
+            payload=copy.deepcopy(lower_payload),
+            expected_revision=1,
+            idempotency_key="inner-lower",
+            request_id="request-inner-lower-retry",
+            correlation_id="correlation-inner-lower-retry",
+        )
+        self.assertEqual(retry["outcome"], "conflict")
+        self.assertEqual(retry["commitStatus"], "conflict")
+        self.assertEqual(retry["receipt"]["commitStatus"], "conflict")
+        self.assertEqual(retry["receipt"]["receiptId"], first_receipt_id)
+        self.assertEqual(retry["receipt"], first_conflict["receipt"])
+        assert_original_snapshot("after-inner-lower-retry")
+
+        same_revision_conflict = owner.command(
+            "transition-apply",
+            payload={"records": {
+                durable_key: self.row(
+                    durable_key,
+                    self.durable(revision=8, batch_id="different"),
+                ),
+                data_key: self.row(data_key, self.data("changed")),
+                progress_key: self.row(progress_key, changed_progress),
+            }},
+            expected_revision=1,
+            idempotency_key="inner-same-revision-different",
+            **self.ids("inner-same-revision-different"),
+        )
+        self.assertEqual(same_revision_conflict["outcome"], "conflict")
+        self.assertEqual(same_revision_conflict["commitStatus"], "conflict")
+        self.assertEqual(same_revision_conflict["error"]["code"], "conflict")
+        self.assertEqual(same_revision_conflict["receipt"]["commitStatus"], "conflict")
+        self.assertNotEqual(same_revision_conflict["receipt"]["commitStatus"], "committed")
+        assert_original_snapshot("after-inner-same-revision")
+
+        receipt_query = owner.receipt(
+            idempotency_key="inner-lower",
+            **self.ids("inner-lower-receipt"),
+        )
+        self.assertEqual(receipt_query["outcome"], "conflict")
+        self.assertEqual(receipt_query["receipt"]["receiptId"], first_receipt_id)
+        self.assertEqual(receipt_query["receipt"]["commitStatus"], "conflict")
 
         same_inner = owner.command(
             "transition-apply",
