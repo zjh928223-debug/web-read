@@ -6,7 +6,6 @@ import math
 import os
 import platform
 import random
-import secrets
 import subprocess
 import sys
 import threading
@@ -23,7 +22,6 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import urlopen
-from ipaddress import ip_address
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,6 +54,7 @@ from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
 from .process_supervisor import ProcessSupervisor
 from .reader_marks_activity import ReaderPersistenceError
+from .windows_owner_request_policy import WindowsOwnerRequestPolicy, require_loopback_bind
 
 
 SERVICE_VERSION = "0.2.3"
@@ -3584,39 +3583,6 @@ class JobManager:
             self._record_changed(record)
 
 
-def _is_loopback_host(value: str) -> bool:
-    host = str(value or "").strip().lower()
-    if host.startswith("[") and "]" in host:
-        host = host[1:host.index("]")]
-    elif ":" in host:
-        host = host.rsplit(":", 1)[0]
-    if host == "localhost":
-        return True
-    try:
-        return ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def _is_allowed_loopback_origin(value: str, extra_origins: set[str] | None = None) -> bool:
-    if not value:
-        return True
-    parsed = urlsplit(value)
-    allowed_origins = {
-        "localhost:5173",
-        "127.0.0.1:5173",
-        "localhost:5174",
-        "127.0.0.1:5174",
-        "localhost:4173",
-        "127.0.0.1:4173",
-    }
-    for origin in extra_origins or set():
-        parsed_origin = urlsplit(str(origin).strip())
-        if parsed_origin.scheme in {"http", "https"} and parsed_origin.netloc:
-            allowed_origins.add(parsed_origin.netloc.lower())
-    return parsed.scheme in {"http", "https"} and parsed.netloc.lower() in allowed_origins
-
-
 def _expected_revision_from_request(request: Request) -> int | None:
     raw = request.headers.get("x-expected-revision") or request.headers.get("if-match")
     if raw is None or not str(raw).strip():
@@ -3634,16 +3600,32 @@ def create_app(
     manager: JobManager | None = None,
     access_token: str | None = None,
     bind_host: str | None = None,
+    profile_id: str | None = None,
+    request_policy: WindowsOwnerRequestPolicy | None = None,
 ) -> FastAPI:
     configured_bind_host = str(bind_host or os.getenv("READ_WEB_BACKEND_HOST") or "127.0.0.1").strip()
-    if not _is_loopback_host(configured_bind_host):
+    try:
+        require_loopback_bind(configured_bind_host)
+    except ValueError:
         if manager is not None:
             manager.close()
-        raise ValueError("Workflow service requires a loopback bind host")
+        raise ValueError("Workflow service requires a loopback bind host") from None
     manager = manager or JobManager()
     access_token = str(access_token or os.getenv("READ_WEB_SERVICE_TOKEN") or "").strip()
     configured_allowed_origin = str(os.getenv("READ_WEB_ALLOWED_ORIGIN") or "").strip()
-    extra_origins = {configured_allowed_origin} if configured_allowed_origin else set()
+    policy = request_policy or WindowsOwnerRequestPolicy(
+        access_token=access_token,
+        bind_host=configured_bind_host,
+        profile_id=str(profile_id or os.getenv("READ_WEB_PROFILE_ID") or "").strip(),
+        allowed_origins={configured_allowed_origin} if configured_allowed_origin else (),
+        path_roots={
+            "data": DEFAULT_DATA_ROOT,
+            "media": manager.config.output_dir,
+            "repository": manager.config.output_dir,
+            "credentials": DEFAULT_DATA_ROOT,
+            "capability": SCRIPT_DIR,
+        },
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -3653,6 +3635,7 @@ def create_app(
             manager.close()
 
     app = FastAPI(title="SubtitleWorkflow Local Service", lifespan=lifespan)
+    app.state.windows_owner_request_policy = policy
 
     @app.middleware("http")
     async def observe_request_metrics(request, call_next):
@@ -3679,30 +3662,23 @@ def create_app(
 
     @app.middleware("http")
     async def enforce_loopback_security(request, call_next):
-        if not _is_loopback_host(request.headers.get("host", "")):
-            return Response(status_code=400, content="invalid host")
-        if not _is_allowed_loopback_origin(request.headers.get("origin", ""), extra_origins):
-            return Response(status_code=403, content="origin not allowed")
-        is_health = request.url.path == "/api/health"
-        supplied_token = request.headers.get("x-read-web-token", "")
-        if request.method in {"GET", "HEAD"} and not supplied_token:
-            supplied_token = request.query_params.get("access_token", "")
-        if access_token and not is_health and not secrets.compare_digest(supplied_token, access_token):
-            return Response(status_code=401, content="access token required")
+        error = policy.authorize_transport(
+            headers=request.headers,
+            method=request.method,
+            path=request.url.path,
+            query_string=request.scope.get("query_string", b""),
+            public_paths=("/api/health",),
+        )
+        if error is not None:
+            messages = {
+                "unauthorized": "invalid host" if error.details.get("boundary") == "loopback-host" else "access token required",
+                "forbidden": "origin not allowed",
+            }
+            return Response(status_code=error.status_code, content=messages.get(error.code, "request rejected"))
         return await call_next(request)
-    allowed_cors_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:4173",
-        "http://127.0.0.1:4173",
-    ]
-    if configured_allowed_origin and configured_allowed_origin not in allowed_cors_origins:
-        allowed_cors_origins.append(configured_allowed_origin)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_cors_origins,
+        allow_origins=policy.cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision", "if-match"],

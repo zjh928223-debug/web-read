@@ -690,12 +690,24 @@ function Assert-RealLauncherLifecycle {
     Assert-True ($hostHealth.profileEvidenceReady -eq $true) 'real launcher profile evidence is not ready after empty candidate initialization'
     Assert-True ($hostHealth.profileEvidenceMode -eq 'empty-host-candidate' -and $hostHealth.legacyBrowserData -eq 'not-read') 'real launcher health did not distinguish the empty Host candidate from legacy browser data'
     Assert-True ($hostHealth.durableOwnerReady -eq $false -and $hostHealth.acceptingApiAuthoritativeOperations -eq $false) 'pre-cutover Host candidate advertised durable owner authority'
+    $ownerEnvelope = @{
+      contractVersion = 'windows-thin-reader-api.v1'
+      requestId = 'optimization-launcher-owner-request'
+      correlationId = 'optimization-launcher-owner-correlation'
+      kind = 'query'
+      domain = 'reader-session'
+      operation = 'snapshot'
+      capability = 'reader-session.query'
+      payload = @{ profileId = [string]$hostState.profileId; instanceId = [string]$hostState.instanceId }
+    } | ConvertTo-Json -Compress -Depth 10
     $ownerStatus = 0
     try {
       $ownerResponse = Invoke-WebRequest `
         -Method Post `
         -Uri "http://127.0.0.1:$($hostState.port)/api/app/owner/command" `
         -Headers @{ 'X-Read-Web-Token' = (Read-OptimizationRuntimeText -Path $tokenPath).Trim() } `
+        -ContentType 'application/json' `
+        -Body $ownerEnvelope `
         -UseBasicParsing `
         -TimeoutSec 5
       $ownerStatus = [int]$ownerResponse.StatusCode

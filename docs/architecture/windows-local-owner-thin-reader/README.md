@@ -180,3 +180,23 @@ exposes this diagnostic through `ownerPendingRecovery`, but remains pre-cutover;
 browser writer or canonical domain authority is migrated. `npm run verify:windows-owner-journal` runs the
 isolated adapters through ordered commit, process-death baseline/staged recovery, missing/corrupt evidence,
 atomic-write failure, lease contention, concurrent recovery, and recovery-before-ready composition cases.
+
+## Task 2.5 request policy middleware
+
+`youtube_workflow.windows_owner_request_policy` is the shared, small request-policy seam used by the Local
+App Host and workflow service. It validates explicit loopback Host/Origin and instance-token rules before
+dispatch. Query-string tokens remain a narrowly scoped compatibility path for GET/HEAD media URLs only;
+formal owner routes require the instance token in a header or the existing cookie and never treat CORS as
+authorization. Owner envelopes are checked against `api-contract.json`, the six-domain operation/capability
+registry, the current profile/instance, and mutation-only `expectedRevision`/`idempotencyKey` requirements.
+
+Payload paths are resolved under configured roots before a future handler can access a repository, media,
+credential, or capability file; traversal and symlink/junction escapes are rejected without echoing the
+token or full personal path. Existing workflow routes keep their established route behavior and only share
+the common transport checks. A valid owner request still receives the existing typed `503 not-ready` in
+this pre-cutover stage: this task does not add receipt persistence, health expansion, browser clients,
+repositories, or authority/cutover.
+
+The focused behavior gate is `npm run verify:windows-owner-request-policy`; it covers the accepted
+loopback/media compatibility cases and the fail-closed owner/path cases without starting a production
+server or touching canonical profile data.

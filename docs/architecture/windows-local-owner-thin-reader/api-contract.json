@@ -311,16 +311,16 @@
     { "code": "revision-required", "category": "validation", "retryable": false }
   ],
   "securityAndMediaBoundary": {
-    "hostOriginTokenCapability": "Required for future owner mutation middleware; CORS alone is insufficient",
+    "hostOriginTokenCapability": "Required at the shared owner request-policy boundary; CORS alone is insufficient",
     "tokenPersistence": "Never in URL, durable browser storage, or ordinary diagnostics",
     "pathPolicy": "Only configured optimization profile/data root; reject path escape before path read",
     "mediaPolicy": "Authorized URL/capability plus Range/ETag metadata only; complete Blob/ArrayBuffer/data URI is rejected",
     "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
   },
   "futureImplementationBoundary": {
-    "notDefinedHere": ["repository implementation", "pending journal", "receipt persistence", "auth middleware", "API client", "production mutation"],
-    "nextAllowedTask": "2.4 pending journal and recovery evidence",
+    "notDefinedHere": ["repository implementation", "pending journal", "receipt persistence", "API client", "production mutation"],
+    "nextAllowedTask": "2.6 receipt persistence and commit-unknown API",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:db207d881cd202da59a1665c4cf0044c97b35bcb15dd1ff90c08b8274ada0148"
+  "artifactChecksum": "sha256:1ccf571db2b89101f7410ad0cd3db51cebe6bcaad3a3273272d196ea30b8bf6c"
 }

@@ -329,6 +329,18 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 owner = client.post(
                     "/api/app/owner/command",
                     headers={"X-Read-Web-Token": "environment-token"},
+                    json={
+                        "contractVersion": "windows-thin-reader-api.v1",
+                        "requestId": "invalid-registry-request",
+                        "correlationId": "invalid-registry-correlation",
+                        "kind": "command",
+                        "domain": "workflow",
+                        "operation": "job-start",
+                        "capability": "workflow.job-command",
+                        "expectedRevision": 0,
+                        "idempotencyKey": "invalid-registry-command",
+                        "payload": {"profileId": "profile-fixture"},
+                    },
                 )
                 self.assertEqual(owner.status_code, 503)
                 self.assertEqual(owner.json()["payload"], {})
@@ -349,6 +361,18 @@ class ProductionHostPrototypeTests(unittest.TestCase):
                 owner = client.post(
                     "/api/app/owner/command",
                     headers={"X-Read-Web-Token": "environment-token"},
+                    json={
+                        "contractVersion": "windows-thin-reader-api.v1",
+                        "requestId": "corrupt-profile-request",
+                        "correlationId": "corrupt-profile-correlation",
+                        "kind": "command",
+                        "domain": "workflow",
+                        "operation": "job-start",
+                        "capability": "workflow.job-command",
+                        "expectedRevision": 0,
+                        "idempotencyKey": "corrupt-profile-command",
+                        "payload": {"profileId": "profile-fixture"},
+                    },
                 )
                 self.assertEqual(owner.status_code, 503)
                 self.assertEqual(owner.json()["payload"], {})

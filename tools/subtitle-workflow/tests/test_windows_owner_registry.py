@@ -353,6 +353,7 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 dist_dir=dist,
                 workflow_app=FastAPI(),
                 access_token="instance-token",
+                profile_id="fixture-profile",
                 owner_registry=self.registry,
                 owner_profile_evidence=evidence,
             )
@@ -365,6 +366,18 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 response = client.post(
                     "/api/app/owner/command",
                     headers={"X-Read-Web-Token": "instance-token"},
+                    json={
+                        "contractVersion": "windows-thin-reader-api.v1",
+                        "requestId": "pending-recovery-request",
+                        "correlationId": "pending-recovery-correlation",
+                        "kind": "command",
+                        "domain": "workflow",
+                        "operation": "job-start",
+                        "capability": "workflow.job-command",
+                        "expectedRevision": 0,
+                        "idempotencyKey": "pending-recovery-command",
+                        "payload": {"profileId": "fixture-profile"},
+                    },
                 )
                 self.assertEqual(response.status_code, 503)
                 self.assertEqual(response.json()["error"]["details"]["reason"], "profile-evidence-not-ready")
@@ -399,6 +412,7 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 dist_dir=dist,
                 workflow_app=FastAPI(),
                 access_token="instance-token",
+                profile_id="fixture-profile",
                 owner_registry=invalid_registry,
             )
             with TestClient(app, base_url="http://127.0.0.1") as client:
@@ -412,7 +426,18 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 response = client.post(
                     "/api/app/owner/command",
                     headers={"X-Read-Web-Token": "instance-token"},
-                    content=json.dumps({"domain": "workflow", "operation": "write-output"}),
+                    json={
+                        "contractVersion": "windows-thin-reader-api.v1",
+                        "requestId": "invalid-registry-request",
+                        "correlationId": "invalid-registry-correlation",
+                        "kind": "command",
+                        "domain": "workflow",
+                        "operation": "job-start",
+                        "capability": "workflow.job-command",
+                        "expectedRevision": 0,
+                        "idempotencyKey": "invalid-registry-command",
+                        "payload": {"profileId": "fixture-profile"},
+                    },
                 )
                 payload = response.json()
                 self.assertEqual(response.status_code, 503)
@@ -441,6 +466,7 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 dist_dir=dist,
                 workflow_app=FastAPI(),
                 access_token="instance-token",
+                profile_id="fixture-profile",
                 owner_registry=self.registry,
                 owner_profile_evidence=self.make_profile_evidence(),
             )
@@ -454,6 +480,18 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
                 response = client.post(
                     "/api/app/owner/command",
                     headers={"X-Read-Web-Token": "instance-token"},
+                    json={
+                        "contractVersion": "windows-thin-reader-api.v1",
+                        "requestId": "pre-cutover-request",
+                        "correlationId": "pre-cutover-correlation",
+                        "kind": "command",
+                        "domain": "workflow",
+                        "operation": "job-start",
+                        "capability": "workflow.job-command",
+                        "expectedRevision": 0,
+                        "idempotencyKey": "pre-cutover-command",
+                        "payload": {"profileId": "fixture-profile"},
+                    },
                 )
                 self.assertEqual(response.status_code, 503)
                 self.assertEqual(response.json()["error"]["details"]["reason"], "pre-cutover")

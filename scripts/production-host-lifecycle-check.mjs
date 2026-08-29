@@ -313,7 +313,16 @@ try {
     const promotedOwnerCommand = await fetch(`http://127.0.0.1:${overlapPortB}/api/app/owner/command`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-read-web-token': token },
-      body: JSON.stringify({ domain: 'reader-session', operation: 'query' }),
+      body: JSON.stringify({
+        contractVersion: 'windows-thin-reader-api.v1',
+        requestId: 'promoted-owner-request',
+        correlationId: 'promoted-owner-correlation',
+        kind: 'query',
+        domain: 'reader-session',
+        operation: 'snapshot',
+        capability: 'reader-session.query',
+        payload: { profileId, instanceId: overlapInstanceB },
+      }),
     })
     assert.equal(promotedOwnerCommand.status, 503)
     assert.equal((await promotedOwnerCommand.json()).commitStatus, 'not-ready')
@@ -368,7 +377,16 @@ try {
     const ownerCommand = await fetch(`${baseUrl}/api/app/owner/command`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-read-web-token': token },
-      body: JSON.stringify({ domain: 'reader-session', operation: 'query' }),
+      body: JSON.stringify({
+        contractVersion: 'windows-thin-reader-api.v1',
+        requestId: `owner-request-${cycle}`,
+        correlationId: `owner-correlation-${cycle}`,
+        kind: 'query',
+        domain: 'reader-session',
+        operation: 'snapshot',
+        capability: 'reader-session.query',
+        payload: { profileId, instanceId },
+      }),
     })
     assert.equal(ownerCommand.status, 503)
     const ownerPayload = await ownerCommand.json()

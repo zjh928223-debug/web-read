@@ -3,8 +3,6 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 from hashlib import sha256
-from http.cookies import SimpleCookie
-from ipaddress import ip_address
 import json
 import os
 from pathlib import Path
@@ -14,7 +12,6 @@ import shutil
 import subprocess
 import sys
 from time import perf_counter
-from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import uvicorn
@@ -29,6 +26,13 @@ from .windows_owner_registry import (
     owner_registry_profile_not_ready_status,
     validate_owner_registry_profile,
     validate_owner_registry_profile_evidence,
+)
+from .windows_owner_request_policy import (
+    OwnerRequestPolicyError,
+    WindowsOwnerRequestPolicy,
+    is_loopback_host as _is_loopback_host,
+    is_owner_path,
+    require_loopback_bind,
 )
 
 
@@ -103,6 +107,7 @@ class PathPreservingAsgiDispatch:
         capability_access_token: str,
         drain_state: dict | None = None,
         owner_registry_status: dict | None = None,
+        request_policy: WindowsOwnerRequestPolicy | None = None,
     ):
         self.host_app = host_app
         self.workflow_app = workflow_app
@@ -110,6 +115,10 @@ class PathPreservingAsgiDispatch:
         self.access_token = access_token
         self.workflow_access_token = workflow_access_token
         self.capability_access_token = capability_access_token
+        self.request_policy = request_policy or WindowsOwnerRequestPolicy(
+            access_token=access_token,
+            bind_host="127.0.0.1",
+        )
         self.drain_state = drain_state if drain_state is not None else {
             "draining": False,
             "inflight": 0,
@@ -204,9 +213,36 @@ class PathPreservingAsgiDispatch:
 
     @staticmethod
     def _is_owner_api_path(path: str) -> bool:
-        return path.startswith("/api/app/owner/") or path.startswith("/api/owner/")
+        return is_owner_path(path)
 
     async def _handle_owner_operation_guard(self, scope, receive, send):
+        request = Request(scope, receive=receive)
+        raw_envelope = None
+        try:
+            raw_body = await request.body()
+            if raw_body:
+                raw_envelope = json.loads(raw_body.decode("utf-8"))
+            owner_request = self.request_policy.validate_owner_envelope(raw_envelope)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            error = OwnerRequestPolicyError(
+                "invalid-request",
+                "owner request body is not valid JSON",
+                status_code=400,
+                category="validation",
+                details={"field": "payload"},
+            )
+            await JSONResponse(
+                self.request_policy.error_envelope(error, raw_envelope),
+                status_code=error.status_code,
+            )(scope, receive, send)
+            return
+        except OwnerRequestPolicyError as error:
+            await JSONResponse(
+                self.request_policy.error_envelope(error, raw_envelope),
+                status_code=error.status_code,
+            )(scope, receive, send)
+            return
+
         registry_valid = self.owner_registry_status.get("valid") is True
         owner_api_ready = self.owner_registry_status.get("ownerApiReady") is True
         contract_valid = self.owner_registry_status.get("contractValid") is True
@@ -222,15 +258,13 @@ class PathPreservingAsgiDispatch:
                 else "Windows Host owner registry profile is invalid"
             )
         )
-        request_id = f"windows-owner-request-{secrets.token_urlsafe(12)}"
-        correlation_id = f"windows-owner-correlation-{secrets.token_urlsafe(12)}"
         await JSONResponse(
             {
                 "contractVersion": "windows-thin-reader-api.v1",
-                "requestId": request_id,
-                "correlationId": correlation_id,
-                "domain": "profile",
-                "operation": "owner-command",
+                "requestId": owner_request.request_id,
+                "correlationId": owner_request.correlation_id,
+                "domain": owner_request.domain,
+                "operation": owner_request.operation,
                 "outcome": "not-ready",
                 "commitStatus": "not-ready",
                 "revision": None,
@@ -242,7 +276,7 @@ class PathPreservingAsgiDispatch:
                     "category": "readiness",
                     "message": message,
                     "retryable": not owner_api_ready,
-                    "correlationId": correlation_id,
+                    "correlationId": owner_request.correlation_id,
                     "details": {"reason": reason},
                 },
             },
@@ -269,20 +303,24 @@ class PathPreservingAsgiDispatch:
 
     def _security_rejection(self, scope, path: str):
         headers = _headers(scope)
-        if not _is_loopback_host(headers.get("host", "")):
-            return Response(status_code=400, content="invalid host")
-        if not _is_allowed_loopback_origin(headers.get("origin", ""), headers.get("host", "")):
-            return Response(status_code=403, content="origin not allowed")
-        if not path.startswith("/api/") or path in {"/api/health", "/api/app/health", "/api/app/capabilities"}:
+        error = self.request_policy.authorize_transport(
+            headers=headers,
+            method=str(scope.get("method", "GET")),
+            path=path,
+            query_string=scope.get("query_string", b""),
+        )
+        if error is None:
             return None
-        supplied = headers.get("x-read-web-token", "") or _cookie_token(headers.get("cookie", ""))
-        if not supplied and _allows_query_token(scope.get("method", "GET"), path):
-            supplied = parse_qs(scope.get("query_string", b"").decode("ascii", errors="ignore")).get(
-                "access_token", [""]
-            )[0]
-        if not secrets.compare_digest(str(supplied), self.access_token):
-            return Response(status_code=401, content="access token required")
-        return None
+        if is_owner_path(path):
+            return JSONResponse(
+                self.request_policy.error_envelope(error),
+                status_code=error.status_code,
+            )
+        messages = {
+            "unauthorized": "invalid host" if error.details.get("boundary") == "loopback-host" else "access token required",
+            "forbidden": "origin not allowed",
+        }
+        return Response(status_code=error.status_code, content=messages.get(error.code, "request rejected"))
 
     def _cookie_send(self, send):
         async def wrapped(message):
@@ -314,46 +352,6 @@ def _scope_with_token(scope, token: str):
     ]
     headers.append((b"x-read-web-token", token.encode("ascii")))
     return {**scope, "headers": headers}
-
-
-def _cookie_token(value: str) -> str:
-    cookie = SimpleCookie()
-    try:
-        cookie.load(value)
-    except ValueError:
-        return ""
-    morsel = cookie.get("read_web_instance")
-    return morsel.value if morsel else ""
-
-
-def _allows_query_token(method: str, path: str) -> bool:
-    if str(method).upper() not in {"GET", "HEAD"}:
-        return False
-    return (
-        path.startswith("/api/tts/edge/audio/")
-        or "/media/" in path and path.startswith("/api/jobs/")
-        or "/file/" in path and path.startswith("/api/jobs/")
-    )
-
-
-def _is_loopback_host(value: str) -> bool:
-    parsed = urlsplit(f"//{str(value or '').strip()}")
-    try:
-        host = (parsed.hostname or "").lower()
-        return host == "localhost" or ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def _is_allowed_loopback_origin(value: str, request_host: str) -> bool:
-    if not value:
-        return True
-    parsed = urlsplit(value)
-    return (
-        parsed.scheme in {"http", "https"}
-        and _is_loopback_host(parsed.netloc)
-        and parsed.netloc.lower() == str(request_host or "").lower()
-    )
 
 
 def _default_owner_registry_path() -> Path:
@@ -451,12 +449,34 @@ def create_local_app_host(
     application_profile_standby_preflight: bool = False,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
-    if not _is_loopback_host(bind_host):
-        raise ValueError("Local App Host requires a loopback bind host")
+    try:
+        require_loopback_bind(bind_host)
+    except ValueError:
+        raise ValueError("Local App Host requires a loopback bind host") from None
     instance_token = str(access_token or secrets.token_urlsafe(32)).strip()
     workflow_token = str(workflow_access_token or instance_token).strip()
     capability_token = str(capability_access_token or instance_token).strip()
     root = Path(dist_dir).resolve()
+    configured_allowed_origin = str(os.environ.get("READ_WEB_ALLOWED_ORIGIN") or "").strip()
+    policy_roots = {"dist": root}
+    configured_data_root = str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT") or "").strip()
+    if configured_data_root:
+        data_root = Path(configured_data_root).resolve()
+        policy_roots.update({
+            "data": data_root,
+            "media": data_root,
+            "repository": data_root,
+            "credentials": data_root,
+            "capability": data_root,
+        })
+    request_policy = WindowsOwnerRequestPolicy(
+        access_token=instance_token,
+        bind_host=bind_host,
+        profile_id=profile_id,
+        instance_id=instance_id,
+        allowed_origins={configured_allowed_origin} if configured_allowed_origin else (),
+        path_roots=policy_roots,
+    )
     owner_registry_status = _load_owner_registry_status(
         owner_registry=owner_registry,
         owner_registry_path=owner_registry_path,
@@ -467,6 +487,7 @@ def create_local_app_host(
     workflow = workflow_app or create_workflow_app(
         access_token=workflow_token,
         bind_host=bind_host,
+        profile_id=profile_id,
     )
     capabilities = capability_app or (
         LocalCapabilityProxy(capability_base_url, capability_token) if capability_base_url else None
@@ -562,6 +583,7 @@ def create_local_app_host(
         capability_access_token=capability_token,
         drain_state=drain_state,
         owner_registry_status=owner_registry_status,
+        request_policy=request_policy,
     )
 
 
