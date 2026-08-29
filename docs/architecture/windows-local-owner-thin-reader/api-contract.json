@@ -237,6 +237,14 @@
       "revisionSource": "vocabulary revision watermark plus repository/UoW CAS",
       "backupAdapter": "IndexedDB vocabulary-srs prefix adapter",
       "recoveryHandler": "vocabulary quarantine/revision-watermark recovery handler, future host-owned",
+      "internalSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/vocabulary_srs_owner.py",
+        "status": "isolated-pre-cutover",
+        "recordBoundary": "existing versioned JSON row envelopes only; no second vocabulary schema",
+        "durability": ["DurableJsonRepository atomic replace", "OwnerCommitReceiptStore CAS/idempotency"],
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false
+      },
       "authorityReadyInThisMilestone": false
     },
     {
@@ -647,5 +655,5 @@
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:11e825f694322fa12688118da4147cca9b160fe6783ada69141ca2a30ddd6a23"
+  "artifactChecksum": "sha256:e5829fb876b43f6aafc8dc7689611ba78934214748e22f8482e4f20f15b7b7a2"
 }

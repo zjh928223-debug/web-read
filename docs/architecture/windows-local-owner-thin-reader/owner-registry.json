@@ -128,7 +128,13 @@
         "type": "host-managed",
         "implementation": "contract-only",
         "canonicalWhenApiAuthoritative": true,
-        "availableForCanonicalCommit": false
+        "availableForCanonicalCommit": false,
+        "internalSeam": {
+          "module": "tools/subtitle-workflow/youtube_workflow/vocabulary_srs_owner.py",
+          "status": "isolated-pre-cutover",
+          "productionApiAuthoritative": false,
+          "browserWriterConnected": false
+        }
       },
       "evidence": {
         "transaction": {"required": true, "status": "declared-contract", "source": "ApplicationPersistence typed transaction boundary"},
@@ -392,5 +398,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:e9cebac5fe01eef8119312ade60bd7dfed7644320e0b0330cd5f3fa1dacccca7"
+  "artifactChecksum": "sha256:b8556c50788637ce2511ec6bc54cc81c1d2491f125f003520a3697db3d4dbd38"
 }

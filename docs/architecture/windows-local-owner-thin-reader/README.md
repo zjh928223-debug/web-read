@@ -54,6 +54,20 @@ transaction/revision/recovery/application-lease bindings, browser-only repositor
 valid profile still reports `ownerApiReady: false` and `acceptingApiAuthoritativeOperations: false` until a
 later migration task implements the repository and cutover contract.
 
+## Vocabulary/SRS internal seam
+
+The first small domain slice is now exercised in
+`tools/subtitle-workflow/youtube_workflow/vocabulary_srs_owner.py`. It stores the existing vocabulary/SRS
+row envelopes under the inventoried keys in a profile-scoped `DurableJsonRepository`, and uses the existing
+`OwnerCommitReceiptStore` for expected-revision CAS and idempotent command receipts. Its focused gate is
+`npm run verify:windows-owner-vocabulary-srs`.
+
+This is an isolated pre-cutover seam only: the browser vocabulary repositories remain the current writer,
+no data migration or UI wiring has occurred, and `/api/app/owner` still returns the existing pre-cutover
+`not-ready` result. The seam does not persist ECDICT suggestions, tokens, absolute paths, UI-only state, or
+complete media; media-related content remains outside this small JSON record boundary. The aggregate A task
+is intentionally still unchecked until the other four domain seams exist.
+
 ## Evidence semantics
 
 `pass` means the named existing focused check or static source assertion actually ran successfully. It does

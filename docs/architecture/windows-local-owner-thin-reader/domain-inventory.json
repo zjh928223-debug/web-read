@@ -263,6 +263,15 @@
       "revisionSource": "per-repository revision/CAS plus vocabulary.revision-watermark.v1; event manifest revision is event-count based; some pending rows remain timestamp-only",
       "mediaReferences": "source locator/context references and optional sentence metadata only; ECDICT/local sentence SQLite is read-only transient assistance",
       "rollbackTarget": "Pre-command vocabulary rows, watermark, and learning command receipt records in application-backup artifact",
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/vocabulary_srs_owner.py",
+        "status": "isolated-pre-cutover",
+        "storage": "profile-scoped vocabulary-srs-owner.json via DurableJsonRepository",
+        "recordShape": "existing SeekPlayerDB/files row envelope under inventoried keys; no second domain model",
+        "commands": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report"],
+        "durability": "owner revision/CAS, OwnerCommitReceiptStore idempotency, atomic replace with existing backup",
+        "boundary": "not wired to /api/app/owner, browser writer, migration, or authority cutover; ECDICT remains transient"
+      },
       "sourceEvidence": ["src/services/vocabulary/vocabulary-service.js:18-46", "src/services/vocabulary/vocabulary-learning-uow.js:1-18", "src/features/srs-review/srs-review-ui-service.js:1-220"]
     },
     {
@@ -352,5 +361,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520"]
     }
   ],
-  "artifactChecksum": "sha256:dabc878947b9b29a43fc584bf7185fa856ef91f1f3f79065e6727af6966d4acb"
+  "artifactChecksum": "sha256:bb7cf46af83b042c9a43a7302d5152a41df9704fc24e17d8e951be8445a6c739"
 }
