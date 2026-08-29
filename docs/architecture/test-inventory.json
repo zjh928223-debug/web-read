@@ -9,7 +9,7 @@
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 255,
+  "packageScriptCount": 256,
   "executableScriptCount": 280,
   "packageCommands": [
     {
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -3080,6 +3080,18 @@
         "scripts/windows-local-owner-profile-provider-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-profile-provider"
+    },
+    {
+      "name": "verify:windows-owner-receipt",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_receipts",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-receipt"
     },
     {
       "name": "verify:windows-owner-registry",
@@ -7780,6 +7792,7 @@
         "package.json#scripts.sentences:build",
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-receipt",
         "package.json#scripts.verify:windows-owner-registry",
         "package.json#scripts.verify:windows-owner-request-policy",
         "package.json#scripts.verify:workflow-application-backup",

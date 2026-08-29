@@ -195,9 +195,37 @@ Payload paths are resolved under configured roots before a future handler can ac
 credential, or capability file; traversal and symlink/junction escapes are rejected without echoing the
 token or full personal path. Existing workflow routes keep their established route behavior and only share
 the common transport checks. A valid owner request still receives the existing typed `503 not-ready` in
-this pre-cutover stage: this task does not add receipt persistence, health expansion, browser clients,
-repositories, or authority/cutover.
+this pre-cutover stage: this task does not add domain repositories, browser clients, or authority/cutover.
 
 The focused behavior gate is `npm run verify:windows-owner-request-policy`; it covers the accepted
 loopback/media compatibility cases and the fail-closed owner/path cases without starting a production
 server or touching canonical profile data.
+
+## Task 2.6 commit receipts and commit-unknown recovery
+
+`youtube_workflow.windows_owner_receipts.OwnerCommitReceiptStore` is the small Host-owned receipt
+store for the stable application-profile authority root. It reuses the existing cross-process JSON
+lock and atomic replace helper, stores only profile/instance/request identity, revision, fingerprints,
+checksums and evidence metadata, and rejects a missing, corrupt, unsupported, or partially written
+receipt document instead of guessing a result. The store covers the fixed six-domain contract and
+does not make any domain repository authoritative.
+
+Mutation adapters receive the baseline/current revision for CAS and must return a complete explicit
+evidence record: status, matching domain and expected revision, new revision, request/effect
+fingerprints, sorted record checksums, evidence checksum, and a safe source. The coordinator never
+constructs a committed receipt from a request alone. A same-key/same-fingerprint retry replays the
+original receipt without invoking the adapter; a same-key/different-request retry is a conflict.
+Abort and stale-CAS paths are non-committed, while a process death, timeout, response loss, or
+receipt replace failure leaves `commit-unknown` evidence available for a later authoritative
+`reconcile` call. Only matching revision/evidence can resolve it to committed or rejected; otherwise
+the profile remains unresolved/manual-recovery and no second side effect is started.
+
+The Local App Host exposes the `receipt-query` owner route through the existing transport and
+operation/capability policy. A query can recover a receipt after a new Host instance starts, but it
+still requires the stable authoritative profile lease when a real lease process is present. Other
+owner commands remain typed `503 not-ready`: the current six domains stay pre-cutover, browser
+writers are unchanged, and no production repository mutation or authority switch is claimed. The
+focused behavior gate is `npm run verify:windows-owner-receipt`; it uses isolated synthetic adapters
+and a real `Production Host` dispatch to exercise abort, process death, timeout/response loss,
+duplicate retry, CAS conflict, corrupt evidence, atomic-write failure, six-domain persistence and
+receipt query.

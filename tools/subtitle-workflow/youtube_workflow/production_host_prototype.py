@@ -33,6 +33,11 @@ from .windows_owner_request_policy import (
     is_loopback_host as _is_loopback_host,
     is_owner_path,
     require_loopback_bind,
+    typed_error,
+)
+from .windows_owner_receipts import (
+    OwnerCommitReceiptStore,
+    OwnerReceiptInputError,
 )
 
 
@@ -108,6 +113,9 @@ class PathPreservingAsgiDispatch:
         drain_state: dict | None = None,
         owner_registry_status: dict | None = None,
         request_policy: WindowsOwnerRequestPolicy | None = None,
+        owner_receipt_store: OwnerCommitReceiptStore | None = None,
+        application_profile_lease_process=None,
+        application_profile_lease_mode: str = "authoritative",
     ):
         self.host_app = host_app
         self.workflow_app = workflow_app
@@ -115,6 +123,9 @@ class PathPreservingAsgiDispatch:
         self.access_token = access_token
         self.workflow_access_token = workflow_access_token
         self.capability_access_token = capability_access_token
+        self.owner_receipt_store = owner_receipt_store
+        self.application_profile_lease_process = application_profile_lease_process
+        self.application_profile_lease_mode = application_profile_lease_mode
         self.request_policy = request_policy or WindowsOwnerRequestPolicy(
             access_token=access_token,
             bind_host="127.0.0.1",
@@ -243,6 +254,10 @@ class PathPreservingAsgiDispatch:
             )(scope, receive, send)
             return
 
+        if owner_request.kind == "receipt-query":
+            await self._handle_receipt_query(scope, receive, send, owner_request)
+            return
+
         registry_valid = self.owner_registry_status.get("valid") is True
         owner_api_ready = self.owner_registry_status.get("ownerApiReady") is True
         contract_valid = self.owner_registry_status.get("contractValid") is True
@@ -282,6 +297,116 @@ class PathPreservingAsgiDispatch:
             },
             status_code=503,
         )(scope, receive, send)
+
+    async def _handle_receipt_query(self, scope, receive, send, owner_request):
+        """Read a durable receipt; no domain mutation is performed here."""
+
+        def rejected(error: OwnerRequestPolicyError):
+            return JSONResponse(
+                self.request_policy.error_envelope(error, owner_request.envelope),
+                status_code=error.status_code,
+            )
+
+        if self.owner_receipt_store is None:
+            error = OwnerRequestPolicyError(
+                "not-ready",
+                "owner receipt store is not configured",
+                status_code=503,
+                category="readiness",
+                retryable=True,
+                details={"reason": "receipt-store-not-configured"},
+            )
+            await rejected(error)(scope, receive, send)
+            return
+        if self.application_profile_lease_mode != "authoritative":
+            error = OwnerRequestPolicyError(
+                "not-ready",
+                "owner receipt store requires an authoritative profile lease",
+                status_code=503,
+                category="readiness",
+                retryable=True,
+                details={"reason": "profile-lease-not-authoritative"},
+            )
+            await rejected(error)(scope, receive, send)
+            return
+        lease_process = self.application_profile_lease_process
+        if lease_process is not None and lease_process.poll() is not None:
+            error = OwnerRequestPolicyError(
+                "not-ready",
+                "owner profile lease is no longer alive",
+                status_code=503,
+                category="readiness",
+                retryable=True,
+                details={"reason": "profile-lease-not-alive"},
+            )
+            await rejected(error)(scope, receive, send)
+            return
+
+        receipt_id = owner_request.payload.get("receiptId")
+        idempotency_key = owner_request.idempotency_key
+        if (receipt_id is None) == (idempotency_key is None):
+            error = OwnerRequestPolicyError(
+                "invalid-request",
+                "receipt query requires exactly one idempotencyKey or receiptId",
+                status_code=400,
+                category="validation",
+                details={"field": "idempotencyKey-or-receiptId"},
+            )
+            await rejected(error)(scope, receive, send)
+            return
+        try:
+            result = self.owner_receipt_store.query(
+                idempotency_key=idempotency_key,
+                receipt_id=receipt_id,
+                domain=owner_request.domain,
+            )
+        except OwnerReceiptInputError:
+            error = OwnerRequestPolicyError(
+                "invalid-request",
+                "receipt query identity is invalid",
+                status_code=400,
+                category="validation",
+                details={"field": "receipt identity"},
+            )
+            await rejected(error)(scope, receive, send)
+            return
+
+        result_error = result.get("error")
+        typed = None
+        status_code = 200
+        if result_error is not None:
+            code = str(result_error.get("code") or "manual-recovery")
+            category = {
+                "conflict": "conflict",
+                "commit-unknown": "recovery",
+                "manual-recovery": "recovery",
+                "not-ready": "readiness",
+                "not-found": "not-found",
+            }.get(code, "recovery")
+            policy_error = OwnerRequestPolicyError(
+                code,
+                str(result_error.get("message") or "owner receipt result is unresolved"),
+                status_code=503 if code in {"manual-recovery", "not-ready"} else 200,
+                category=category,
+                retryable=bool(result_error.get("retryable")),
+                details=result_error.get("details") if isinstance(result_error.get("details"), dict) else {},
+            )
+            typed = typed_error(policy_error, correlation_id=owner_request.correlation_id)
+            status_code = policy_error.status_code
+        response = {
+            "contractVersion": "windows-thin-reader-api.v1",
+            "requestId": owner_request.request_id,
+            "correlationId": owner_request.correlation_id,
+            "domain": owner_request.domain,
+            "operation": owner_request.operation,
+            "outcome": result["outcome"],
+            "commitStatus": result["commitStatus"],
+            "revision": result.get("revision"),
+            "receipt": result.get("receipt"),
+            "payload": {"found": result.get("receipt") is not None},
+            "error": typed,
+        }
+        await JSONResponse(response, status_code=status_code)(scope, receive, send)
 
     async def _handle_drain(self, scope, send):
         self.drain_state["draining"] = True
@@ -447,6 +572,8 @@ def create_local_app_host(
     application_profile_lease_process=None,
     application_profile_lease_mode: str = "authoritative",
     application_profile_standby_preflight: bool = False,
+    owner_receipt_root: Path | None = None,
+    owner_receipt_store: OwnerCommitReceiptStore | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     try:
@@ -484,6 +611,15 @@ def create_local_app_host(
         owner_profile_evidence=owner_profile_evidence,
         profile_id=profile_id,
     )
+    receipt_store = owner_receipt_store
+    if receipt_store is None and owner_receipt_root is not None:
+        receipt_store = OwnerCommitReceiptStore(
+            owner_receipt_root,
+            profile_id,
+            instance_id,
+        )
+    if receipt_store is not None and receipt_store.profile_id != profile_id:
+        raise ValueError("owner receipt store profile does not match Local App Host profile")
     workflow = workflow_app or create_workflow_app(
         access_token=workflow_token,
         bind_host=bind_host,
@@ -584,6 +720,9 @@ def create_local_app_host(
         drain_state=drain_state,
         owner_registry_status=owner_registry_status,
         request_policy=request_policy,
+        owner_receipt_store=receipt_store,
+        application_profile_lease_process=application_profile_lease_process,
+        application_profile_lease_mode=application_profile_lease_mode,
     )
 
 
@@ -772,6 +911,7 @@ def main(argv: list[str] | None = None) -> int:
             application_profile_lease_process=profile_lock,
             application_profile_lease_mode=profile_lease_mode,
             application_profile_standby_preflight=args.allow_standby_readiness,
+            owner_receipt_root=args.application_profile_authority_root,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

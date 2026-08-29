@@ -14,7 +14,7 @@
 - [x] 2.3 将现有 cross-process application-profile lease 接入 Local App Host lifetime、restore、migration cutover 和 owner read；证明同一 profile 不会出现两个 authoritative writer，并让 owner-mode checkpoint 成为唯一 authority switch。
 - [x] 2.4 建立 pending journal、per-domain prepare/commit evidence、baseline/staged recovery 和 recovery-before-ready 状态机；缺少 evidence 时返回 `manual-recovery`。
 - [x] 2.5 将 Host/Origin/loopback binding、instance token、profile capability、path root、revision/idempotency validation 收口到统一 middleware。
-- [ ] 2.6 实现 owner commit receipt 查询和 `commit-unknown` 恢复；为 transaction abort、process death、timeout、duplicate retry 和 CAS conflict 建立可重复测试。
+- [x] 2.6 实现 owner commit receipt 查询和 `commit-unknown` 恢复；为 transaction abort、process death、timeout、duplicate retry 和 CAS conflict 建立可重复测试。
 - [ ] 2.7 让 health/capability endpoint 区分 liveness、readiness、domain owner status、lease、pending recovery、schema compatibility、Range 和可选依赖，并脱敏 diagnostics。
 
 ## 3. 先接入薄 Reader API client 与媒体边界

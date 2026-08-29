@@ -128,19 +128,25 @@
     "receipt": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["receiptId", "contractVersion", "requestId", "correlationId", "domain", "operation", "idempotencyKey", "commitStatus", "revision", "effectFingerprint", "recordChecksums", "createdAt", "committedAt", "queryOperation"],
+      "required": ["receiptId", "contractVersion", "profileId", "instanceId", "requestId", "correlationId", "domain", "operation", "idempotencyKey", "expectedRevision", "requestFingerprint", "commitStatus", "revision", "effectFingerprint", "recordChecksums", "evidenceChecksum", "evidenceSource", "createdAt", "committedAt", "queryOperation"],
       "properties": {
         "receiptId": { "$ref": "#/$defs/safeIdentity" },
         "contractVersion": { "const": "windows-thin-reader-api.v1" },
+        "profileId": { "$ref": "#/$defs/safeIdentity" },
+        "instanceId": { "$ref": "#/$defs/safeIdentity" },
         "requestId": { "$ref": "#/$defs/safeIdentity" },
         "correlationId": { "$ref": "#/$defs/safeIdentity" },
         "domain": { "enum": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow"] },
         "operation": { "$ref": "#/$defs/safeOperation" },
         "idempotencyKey": { "$ref": "#/$defs/idempotencyToken" },
+        "expectedRevision": { "$ref": "#/$defs/revisionToken" },
+        "requestFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "commitStatus": { "enum": ["pending", "committed", "rejected", "conflict", "commit-unknown", "not-ready", "manual-recovery"] },
         "revision": { "$ref": "#/$defs/revisionToken" },
-        "effectFingerprint": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "effectFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "recordChecksums": { "type": "array", "items": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } },
+        "evidenceChecksum": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "evidenceSource": { "$ref": "#/$defs/safeIdentity" },
         "createdAt": { "type": "string", "format": "date-time" },
         "committedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
         "queryOperation": { "const": "receipt-query" }
@@ -173,7 +179,7 @@
   "operationRules": {
     "query": "Queries may omit expectedRevision and idempotencyKey, but must carry requestId/correlationId and return an authoritative revision when one exists",
     "command": "Mutable commands must carry expectedRevision and idempotencyKey according to the registered domain rule; owner returns receipt or typed non-commit result",
-    "receiptQuery": "Receipt lookup uses the original idempotencyKey/correlationId and never creates a second side effect",
+    "receiptQuery": "Receipt lookup uses the original idempotencyKey or receiptId with correlationId and never creates a second side effect",
     "backupRestore": "Cross-domain backup/restore is explicit; production restore entry points now require the application profile lease, while the pending journal remains a later task",
     "media": "Media query returns capability/identity/range metadata; complete media bytes are invalid payloads"
   },
@@ -468,9 +474,10 @@
     "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
   },
   "futureImplementationBoundary": {
-    "notDefinedHere": ["repository implementation", "pending journal", "receipt persistence", "API client", "production mutation"],
-    "nextAllowedTask": "2.6 receipt persistence and commit-unknown API",
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract"],
+    "notDefinedHere": ["six-domain repository implementation", "pending journal", "API client", "production mutation"],
+    "nextAllowedTask": "2.7 health and capability status expansion",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:7c6c1bbc007ac940fc7536f3934a47fcf1e844891e508f0d7213aac38b684b53"
+  "artifactChecksum": "sha256:8305fca8bb4acf75f05e79936ac7ecb348dd2e8398a68e7622a8f98d8a025c7b"
 }

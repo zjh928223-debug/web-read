@@ -161,6 +161,13 @@ for (const field of ['requestId', 'correlationId', 'expectedRevision', 'idempote
 assert(api.outcomeRules.some((item) => item.outcome === 'commit-unknown'), 'commit-unknown outcome is not registered')
 assert(api.typedErrorCodes.some((item) => item.code === 'manual-recovery'), 'manual-recovery error is not registered')
 assert(api.typedErrorCodes.some((item) => item.code === 'unsupported-schema'), 'unsupported-schema error is not registered')
+for (const field of ['profileId', 'instanceId', 'expectedRevision', 'requestFingerprint', 'evidenceChecksum', 'evidenceSource']) {
+  assert(api.$defs.receipt.required.includes(field), `receipt schema lacks ${field}`)
+  assert(api.$defs.receipt.properties[field], `receipt schema does not define ${field}`)
+}
+assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned profile-scoped receipt persistence/query'), 'receipt persistence implementation boundary is missing')
+assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
+assert(api.futureImplementationBoundary.nextAllowedTask === '2.7 health and capability status expansion', 'API contract next task must remain 2.7')
 assert(api.securityAndMediaBoundary.mediaPolicy.includes('complete Blob/ArrayBuffer'), 'media no-copy policy missing')
 assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('/api/jobs/{jobId}/events'), 'event-stream query-token compatibility boundary is missing')
 assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('owner durable API routes reject URL tokens'), 'owner URL-token prohibition is missing')
@@ -241,7 +248,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)
