@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { createServer as createViteServer } from 'vite'
+import vue from '@vitejs/plugin-vue'
 import { chromium } from 'playwright'
 
 import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
@@ -124,11 +125,15 @@ const state = {
   commandRequests: [],
   commandInFlight: 0,
   maxConcurrentCommands: 0,
+  pageFailure: null,
+  pageQueryDelayMs: 0,
+  pageCommandDelayMs: 5,
 }
 
 const vite = await createViteServer({
   root: process.cwd(),
   configFile: false,
+  plugins: [vue()],
   appType: 'custom',
   logLevel: 'error',
   server: { middlewareMode: true, hmr: false, fs: { allow: [process.cwd()] } },
@@ -308,6 +313,7 @@ try {
   assert.equal(state.ownerRequests.every((request) => request.body?.payload?.instanceId === INSTANCE_ID), true)
   assert.ok(state.ownerRequests.some((request) => request.body?.domain === 'passage-preview' && request.body?.kind === 'command'))
   assert.ok(state.ownerRequests.some((request) => request.body?.domain === 'annotation' && request.body?.kind === 'command'))
+  await runPassagePreviewPageCheck(origin, context)
   console.log('Windows owner C2b browser typed passage-preview/annotation checks passed.')
 } finally {
   await context.close()
@@ -325,6 +331,17 @@ async function handleOwnerRequest(request, response) {
   }
   const domain = body.domain
   if (body.kind === 'query') {
+    if (state.pageFailure === 'query' && domain === 'passage-preview') {
+      return sendJson(response, 503, ownerResponse(body, {
+        outcome: 'not-ready',
+        commitStatus: 'not-ready',
+        revision: state.revisions[domain],
+        error: typedError(body, 'not-ready', 'readiness'),
+      }))
+    }
+    if (state.pageQueryDelayMs > 0 && domain === 'passage-preview') {
+      await new Promise((resolve) => setTimeout(resolve, state.pageQueryDelayMs))
+    }
     const records = domain === 'passage-preview'
       ? state.passageRecords
       : state.annotationRecords
@@ -349,10 +366,18 @@ async function handleOwnerRequest(request, response) {
       return sendJson(response, 400, { error: 'records are required' })
     }
     state.commandRequests.push({ url: request.url, raw, body })
+    if (state.pageFailure === 'command' && domain === 'passage-preview') {
+      return sendJson(response, 409, ownerResponse(body, {
+        outcome: 'conflict',
+        commitStatus: 'conflict',
+        revision: state.revisions[domain],
+        error: typedError(body, 'conflict', 'conflict'),
+      }))
+    }
     state.commandInFlight += 1
     state.maxConcurrentCommands = Math.max(state.maxConcurrentCommands, state.commandInFlight)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 5))
+      await new Promise((resolve) => setTimeout(resolve, state.pageCommandDelayMs || 5))
       const target = domain === 'passage-preview' ? state.passageRecords : state.annotationRecords
       for (const [id, record] of Object.entries(incoming)) target[id] = record?.content ?? record
       state.revisions[domain] += 1
@@ -436,6 +461,253 @@ function committedReceipt(request, revision) {
     createdAt: '2026-08-30T00:00:00.000Z',
     committedAt: '2026-08-30T00:00:00.000Z',
     queryOperation: 'receipt-query',
+  }
+}
+
+async function runPassagePreviewPageCheck(origin, context) {
+  const pageItems = [
+    {
+      id: 'c2b-page-first',
+      lemma: 'first',
+      word: 'first',
+      primaryMeaningZh: '第一',
+      pos: 'adjective',
+      primarySenseStatus: 'resolved',
+    },
+    {
+      id: 'c2b-page-second',
+      lemma: 'second',
+      word: 'second',
+      primaryMeaningZh: '第二',
+      pos: 'adjective',
+      primarySenseStatus: 'resolved',
+    },
+  ]
+
+  state.passageRecords = createPassagePageRecords(pageItems)
+  state.revisions['passage-preview'] = 0
+  state.commandRequests = []
+  state.commandInFlight = 0
+  state.maxConcurrentCommands = 0
+  state.pageFailure = null
+  state.pageQueryDelayMs = 100
+  state.pageCommandDelayMs = 30
+
+  const page = await context.newPage()
+  const pageErrors = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+  await page.addInitScript(() => {
+    class PassagePreviewUtterance {
+      constructor(text) { this.text = text }
+    }
+    Object.defineProperty(window, 'SpeechSynthesisUtterance', {
+      configurable: true,
+      value: PassagePreviewUtterance,
+    })
+    Object.defineProperty(window, 'speechSynthesis', {
+      configurable: true,
+      value: {
+        getVoices: () => [],
+        cancel() {},
+        speak(utterance) { setTimeout(() => utterance.onend?.(), 0) },
+      },
+    })
+  })
+  try {
+    await mountPassagePreviewPage(page, origin, pageItems)
+    const loadingState = page.locator('.passage-preview-owner-state')
+    await loadingState.waitFor()
+    assert.equal(await page.locator('.passage-preview-content').count(), 0, 'Host progress must gate the real page before query')
+    assert.equal(await page.locator('.srs-review-reveal').count(), 0, 'Host progress must gate interaction before query')
+    await page.locator('.srs-review-reveal').waitFor()
+    assert.equal(await page.locator('.passage-preview-owner-state').count(), 0, 'Host progress query did not release the page')
+
+    await page.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await page.getByRole('button', { name: '下一词' }).click()
+    await page.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await page.getByRole('button', { name: '完成首次接触' }).click()
+    await page.locator('.passage-preview-complete').waitFor()
+    await waitForCondition(() => state.commandInFlight === 0 && state.revisions['passage-preview'] === 4, 2000)
+
+    const pageCounts = await page.evaluate(() => window.__passagePreviewPageTest.progressStorageCounts())
+    assert.equal(pageCounts.reads, 0, 'authoritative PassagePreviewPage must not read progress localStorage')
+    assert.equal(pageCounts.writes, 0, 'authoritative PassagePreviewPage must not write progress localStorage')
+    assert.equal(state.maxConcurrentCommands, 1, 'PassagePreviewPage progress commands must be serialized')
+    const committedProgress = state.passageRecords[PASSAGE_DURABLE_KEY].progress
+    assert.equal(committedProgress.status, 'completed')
+    assert.equal(committedProgress.currentIndex, 1)
+    assert.deepEqual(committedProgress.revealed, {
+      'c2b-page-first': true,
+      'c2b-page-second': true,
+    })
+
+    const reopenedPage = await context.newPage()
+    try {
+      await reopenedPage.goto(origin, { waitUntil: 'domcontentloaded' })
+      const reopened = await reopenedPage.evaluate(async ({ profileId, instanceId }) => {
+        const { createWindowsOwnerApiClient } = await import('/src/services/windows-owner-api-client.js')
+        const passage = await import('/src/features/passage-preview/passage-preview-storage.js')
+        const client = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
+        window.__windowsOwnerDomainCutover = {
+          isAuthoritative: (domain) => domain === 'passage-preview',
+          query: (request) => client.query(request),
+          command: (request) => client.command(request),
+        }
+        return passage.loadPassagePreviewProgressFromOwner()
+      }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID })
+      assert.equal(reopened.status, 'completed', 'reopened Host query lost final preview status')
+      assert.equal(reopened.currentIndex, 1, 'reopened Host query lost final preview index')
+      assert.deepEqual(reopened.revealed, committedProgress.revealed)
+    } finally {
+      await reopenedPage.close()
+    }
+  } finally {
+    await page.close()
+  }
+  assert.deepEqual(pageErrors, [], `PassagePreviewPage emitted browser errors: ${pageErrors.join('; ')}`)
+
+  state.passageRecords = createPassagePageRecords(pageItems)
+  state.revisions['passage-preview'] = 0
+  state.commandRequests = []
+  state.commandInFlight = 0
+  state.maxConcurrentCommands = 0
+  state.pageQueryDelayMs = 0
+  state.pageFailure = 'query'
+  const queryFailurePage = await context.newPage()
+  const queryFailureErrors = []
+  queryFailurePage.on('pageerror', (error) => queryFailureErrors.push(error.message))
+  try {
+    await mountPassagePreviewPage(queryFailurePage, origin, pageItems)
+    await queryFailurePage.getByText('首次接触进度暂不可用', { exact: true }).waitFor()
+    assert.equal(await queryFailurePage.locator('.passage-preview-content').count(), 0, 'query failure must not reveal stale progress')
+    assert.equal(await queryFailurePage.locator('.srs-review-reveal').count(), 0, 'query failure must not enable interaction')
+    const counts = await queryFailurePage.evaluate(() => window.__passagePreviewPageTest.progressStorageCounts())
+    assert.deepEqual(counts, { reads: 0, writes: 0 })
+    assert.equal(state.commandRequests.length, 0, 'query failure must not issue a progress command')
+  } finally {
+    await queryFailurePage.close()
+  }
+  assert.deepEqual(queryFailureErrors, [], `query failure emitted browser errors: ${queryFailureErrors.join('; ')}`)
+
+  state.pageFailure = 'command'
+  const writeFailurePage = await context.newPage()
+  const writeFailureErrors = []
+  writeFailurePage.on('pageerror', (error) => writeFailureErrors.push(error.message))
+  try {
+    await mountPassagePreviewPage(writeFailurePage, origin, pageItems)
+    await writeFailurePage.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await writeFailurePage.getByText('进度保存失败，请重新打开。', { exact: true }).waitFor()
+    assert.equal(await writeFailurePage.locator('.passage-preview-learning-content').count(), 0, 'write failure must restore unrevealed UI')
+    assert.equal(await writeFailurePage.locator('.srs-review-reveal').count(), 1, 'write failure must not report reveal success')
+    const counts = await writeFailurePage.evaluate(() => window.__passagePreviewPageTest.progressStorageCounts())
+    assert.deepEqual(counts, { reads: 0, writes: 0 })
+    assert.deepEqual(state.passageRecords[PASSAGE_DURABLE_KEY].progress.revealed, {})
+    assert.equal(state.revisions['passage-preview'], 0, 'failed Host progress write must not advance revision')
+  } finally {
+    await writeFailurePage.close()
+  }
+  assert.deepEqual(writeFailureErrors, [], `write failure emitted browser errors: ${writeFailureErrors.join('; ')}`)
+  state.pageFailure = null
+  state.pageQueryDelayMs = 0
+}
+
+async function mountPassagePreviewPage(page, origin, items) {
+  await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  await page.evaluate(({ profileId, instanceId, pageItems }) => {
+    const stale = {
+      schemaVersion: 'passage-preview.local-progress.v2',
+      status: 'completed',
+      currentIndex: 1,
+      revealed: { stale: true },
+      contextExpanded: {},
+      startedAt: '2026-08-30T00:00:00.000Z',
+      completedAt: '2026-08-30T00:00:01.000Z',
+    }
+    localStorage.setItem('vocabulary.passage-preview.progress.v2', JSON.stringify(stale))
+    let reads = 0
+    let writes = 0
+    const getItem = Storage.prototype.getItem
+    const setItem = Storage.prototype.setItem
+    Storage.prototype.getItem = function (key) {
+      if (key === 'vocabulary.passage-preview.progress.v2' || key === 'vocabulary.passage-preview.progress.v1') reads += 1
+      return getItem.call(this, key)
+    }
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'vocabulary.passage-preview.progress.v2' || key === 'vocabulary.passage-preview.progress.v1') writes += 1
+      return setItem.call(this, key, value)
+    }
+    window.__passagePreviewPageTest = {
+      progressStorageCounts: () => ({ reads, writes }),
+    }
+    window.__passagePreviewPageItems = pageItems
+    window.__passagePreviewPageOwnerArgs = { profileId, instanceId }
+  }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID, pageItems: items })
+  await page.evaluate(async ({ profileId, instanceId }) => {
+    const { createApp, h } = await import('/node_modules/.vite/deps/vue.js')
+    const { default: PassagePreviewPage } = await import('/src/features/passage-preview/PassagePreviewPage.vue')
+    const { createWindowsOwnerApiClient } = await import('/src/services/windows-owner-api-client.js')
+    const client = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
+    window.__windowsOwnerDomainCutover = {
+      isAuthoritative: (domain) => domain === 'passage-preview',
+      query: (request) => client.query(request),
+      command: (request) => client.command(request),
+    }
+    const root = document.createElement('div')
+    document.body.append(root)
+    createApp({
+      render: () => h(PassagePreviewPage, {
+        items: window.__passagePreviewPageItems,
+        preloadedSentences: {
+          'c2b-page-first': { sentence: 'The first example is ready.' },
+          'c2b-page-second': { sentence: 'The second example is ready.' },
+        },
+      }),
+    }).mount(root)
+  }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID })
+}
+
+function createPassagePageRecords(items) {
+  const progress = {
+    schemaVersion: 'passage-preview.local-progress.v2',
+    status: 'in_progress',
+    currentIndex: 0,
+    revealed: {},
+    contextExpanded: {},
+    startedAt: '2026-08-30T00:00:00.000Z',
+    completedAt: null,
+  }
+  return {
+    [PASSAGE_DURABLE_KEY]: {
+      schemaVersion: 'passage-preview.durable-state.v1',
+      revision: 1,
+      batchId: 'c2b-page-batch',
+      data: items,
+      progress,
+      allocations: null,
+      continuation: null,
+      archive: [],
+    },
+    [PASSAGE_PROGRESS_KEY]: { ...progress },
+  }
+}
+
+function typedError(request, code, category) {
+  return {
+    type: 'windows-thin-reader-error.v1',
+    code,
+    category,
+    message: 'isolated C2b fixture rejected the request',
+    retryable: category === 'readiness' || category === 'conflict',
+    correlationId: request.correlationId,
+    details: {},
+  }
+}
+
+async function waitForCondition(predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('timed out waiting for browser fixture state')
+    await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
 

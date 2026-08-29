@@ -9,7 +9,7 @@
         <p>{{ batchTitle }}</p>
       </div>
       <div class="passage-preview-header-meta">
-        <p class="srs-review-progress" aria-live="polite">预习 {{ currentIndex + 1 }} / {{ items.length }}</p>
+        <p v-if="progressReady" class="srs-review-progress" aria-live="polite">预习 {{ currentIndex + 1 }} / {{ items.length }}</p>
         <button
           class="passage-preview-shortcut-open"
           type="button"
@@ -19,13 +19,19 @@
       </div>
     </header>
 
-    <section v-if="progress.status === 'completed'" class="srs-review-state passage-preview-complete" aria-live="polite">
+    <section v-if="!progressReady" class="srs-review-state passage-preview-owner-state" aria-live="polite" role="status">
+      <h2>{{ progressLoadError ? '首次接触进度暂不可用' : '正在恢复首次接触进度…' }}</h2>
+      <p>{{ progressLoadError || '正在从本机 Host 恢复已保存的首次接触进度。' }}</p>
+    </section>
+
+    <section v-else-if="progress.status === 'completed'" class="srs-review-state passage-preview-complete" aria-live="polite">
       <h2>{{ items.length }}词首次接触完成</h2>
       <p>已记录首次接触；满足 24 小时延迟后会进入待考察，考察通过后自动进入复习队列。</p>
       <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
     <template v-else>
+      <p v-if="progressWriteError" class="srs-review-inline-notice" role="alert">{{ progressWriteError }}</p>
       <div :key="current.id" class="srs-review-content passage-preview-content">
         <article class="srs-review-word-panel passage-preview-word-panel" aria-label="预习单词">
           <div class="passage-preview-word-content">
@@ -200,6 +206,7 @@ import { createAriaAmericanPronunciationService } from '../../services/pronuncia
 import { findAiPreviewSentence } from './passage-preview-ai-sentence.js'
 import { findPreviewSentence, REAL_SENTENCE_STATUS, resolvePreviewContextSentence } from './preview-sentence-source.js'
 import {
+  createInitialPassagePreviewProgress,
   isPassagePreviewOwnerAuthoritative,
   loadPassagePreviewProgress,
   loadPassagePreviewProgressFromOwner,
@@ -231,7 +238,13 @@ const props = defineProps({
   preloadedTranslations: { type: Object, default: () => ({}) },
 })
 const emit = defineEmits(['close', 'item-enriched', 'item-revealed'])
-const progress = reactive(loadPassagePreviewProgress())
+const ownerAuthoritative = isPassagePreviewOwnerAuthoritative()
+const progress = reactive(ownerAuthoritative ? createInitialPassagePreviewProgress() : loadPassagePreviewProgress())
+const progressReady = ref(!ownerAuthoritative)
+const progressLoadError = ref('')
+const progressWriteError = ref('')
+let progressWriteChain = Promise.resolve()
+let progressMutationChain = Promise.resolve()
 const pronunciation = createAriaAmericanPronunciationService()
 const playbackPhase = ref('')
 const pronunciationNotice = ref('')
@@ -262,11 +275,8 @@ const translationQueue = createTranslationGenerationQueue({
 
 Object.assign(sentenceTranslations, props.preloadedTranslations)
 
-if (progress.status === 'not_started' || progress.currentIndex >= props.items.length) {
-  progress.status = 'in_progress'
-  progress.currentIndex = Math.min(progress.currentIndex, props.items.length - 1)
-  progress.startedAt ||= new Date().toISOString()
-  if (!isPassagePreviewOwnerAuthoritative()) persist()
+if (!ownerAuthoritative && normalizeInitialProgress()) {
+  void persist().catch(() => {})
 }
 
 const currentIndex = computed(() => Math.min(progress.currentIndex, props.items.length - 1))
@@ -301,11 +311,16 @@ const sentenceTranslationZh = computed(() => realSentence.value?.translationZh
   || sentenceTranslations[sentenceTranslationKey(realSentence.value?.sentence)]
   || '')
 
-function revealLearningContent() {
-  progress.revealed[current.value.id] = true
-  persist()
-  emit('item-revealed', { item: current.value })
-  void loadSentence()
+async function revealLearningContent() {
+  const item = current.value
+  const saved = await enqueueProgressMutation(() => {
+    if (!item.id || progress.revealed[item.id]) return false
+    progress.revealed[item.id] = true
+    return true
+  })
+  if (!saved) return
+  emit('item-revealed', { item })
+  if (current.value.id === item.id) void loadSentence()
 }
 
 async function loadSentence() {
@@ -373,21 +388,25 @@ async function speak(text, phase) {
   }
 }
 
-function move(offset) {
-  resetTransientState()
-  progress.currentIndex = Math.max(0, Math.min(props.items.length - 1, currentIndex.value + offset))
-  persist()
+async function move(offset) {
+  return enqueueProgressMutation(() => {
+    resetTransientState()
+    progress.currentIndex = Math.max(0, Math.min(props.items.length - 1, currentIndex.value + offset))
+    return true
+  })
 }
 
-function moveNext() {
-  if (currentIndex.value === props.items.length - 1) {
+async function moveNext() {
+  return enqueueProgressMutation(() => {
     resetTransientState()
-    progress.status = 'completed'
-    progress.completedAt = new Date().toISOString()
-    persist()
-    return
-  }
-  move(1)
+    if (currentIndex.value === props.items.length - 1) {
+      progress.status = 'completed'
+      progress.completedAt = new Date().toISOString()
+    } else {
+      progress.currentIndex = Math.max(0, Math.min(props.items.length - 1, currentIndex.value + 1))
+    }
+    return true
+  })
 }
 
 function openShortcutSettings() {
@@ -567,15 +586,63 @@ function close() {
   emit('close')
 }
 
-function persist() {
-  savePassagePreviewProgress({
+function snapshotProgress() {
+  return {
     status: progress.status,
     currentIndex: progress.currentIndex,
     revealed: { ...progress.revealed },
     contextExpanded: {},
     startedAt: progress.startedAt,
     completedAt: progress.completedAt,
+  }
+}
+
+function normalizeInitialProgress() {
+  if (progress.status !== 'not_started' && progress.currentIndex < props.items.length) return false
+  const nextIndex = props.items.length
+    ? Math.max(0, Math.min(progress.currentIndex, props.items.length - 1))
+    : 0
+  const nextStartedAt = progress.startedAt || new Date().toISOString()
+  const changed = progress.status !== 'in_progress'
+    || progress.currentIndex !== nextIndex
+    || progress.startedAt !== nextStartedAt
+  progress.status = 'in_progress'
+  progress.currentIndex = nextIndex
+  progress.startedAt = nextStartedAt
+  return changed
+}
+
+function canInteract() {
+  return progressReady.value && !progressWriteError.value
+}
+
+function enqueueProgressMutation(mutator) {
+  const operation = progressMutationChain.then(async () => {
+    if (!canInteract()) return false
+    const previous = snapshotProgress()
+    try {
+      if (mutator() === false) return false
+      await persist()
+      return true
+    } catch (_error) {
+      Object.assign(progress, previous)
+      return false
+    }
   })
+  progressMutationChain = operation.catch(() => false)
+  return operation
+}
+
+function persist({ allowBeforeReady = false } = {}) {
+  if ((ownerAuthoritative && !progressReady.value && !allowBeforeReady) || progressWriteError.value) {
+    return Promise.reject(new Error('passage preview progress is not writable'))
+  }
+  const write = progressWriteChain.then(() => savePassagePreviewProgress(snapshotProgress()))
+  progressWriteChain = write.catch((error) => {
+    progressWriteError.value = '进度保存失败，请重新打开。'
+    return undefined
+  })
+  return write
 }
 
 function splitTarget(sentence, target) {
@@ -600,16 +667,20 @@ onMounted(async () => {
   window.addEventListener('keyup', handleShortcutKeyup, true)
   window.addEventListener('blur', handlePreviewWindowBlur)
   document.addEventListener('visibilitychange', handlePreviewVisibilityChange)
-  if (!isPassagePreviewOwnerAuthoritative()) return
+  if (!ownerAuthoritative) return
   try {
     const ownerProgress = await loadPassagePreviewProgressFromOwner()
-    if (ownerProgress) Object.assign(progress, ownerProgress)
+    if (!ownerProgress) throw new Error('passage preview owner progress is unavailable')
+    Object.assign(progress, ownerProgress)
+    if (normalizeInitialProgress()) await persist({ allowBeforeReady: true })
+    progressReady.value = true
   } catch (_error) {
-    // The owner path stays fail-closed; the already rendered session remains visible.
+    progressLoadError.value = progressWriteError.value || 'Host 进度查询或保存失败，请重新打开。'
   }
 })
 
-watch(() => current.value.id, () => {
+watch([() => progressReady.value, () => current.value.id], ([ready]) => {
+  if (!ready) return
   resetTransientState()
   void speakWord()
   if (isRevealed.value) void loadSentence()
