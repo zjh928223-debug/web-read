@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 114,
     "behavior": 108,
-    "browser": 27,
+    "browser": 28,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 261,
-  "executableScriptCount": 284,
+  "packageScriptCount": 262,
+  "executableScriptCount": 285,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3021,6 +3021,28 @@
       "owner": "package.json#scripts.verify:windows-owner-durable-status"
     },
     {
+      "name": "verify:windows-owner-focused-boundaries",
+      "command": "node scripts/windows-local-owner-contract-check.mjs && node scripts/windows-owner-api-client-check.mjs && node scripts/windows-owner-durable-status-check.mjs && node scripts/windows-owner-legacy-bridge-check.mjs && node scripts/windows-owner-media-capability-check.mjs && node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_request_policy tests.test_windows_owner_receipts tests.test_production_host_prototype.ProductionHostPrototypeTests.test_local_app_host_rejects_untrusted_host_origin_and_missing_token tests.test_production_host_prototype.ProductionHostPrototypeTests.test_serves_dist_spa_health_and_workflow_range tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_supports_head_range_etag_and_rejects_non_media tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_never_accepts_a_caller_supplied_path && node scripts/windows-owner-focused-browser-check.mjs",
+      "category": "browser",
+      "layers": [
+        "behavior",
+        "architecture",
+        "browser"
+      ],
+      "invokes": [
+        "scripts/application-backup-check.mjs",
+        "scripts/application-backup-public-loader-boundary-check.mjs",
+        "scripts/run-python-command.mjs",
+        "scripts/windows-local-owner-contract-check.mjs",
+        "scripts/windows-owner-api-client-check.mjs",
+        "scripts/windows-owner-durable-status-check.mjs",
+        "scripts/windows-owner-focused-browser-check.mjs",
+        "scripts/windows-owner-legacy-bridge-check.mjs",
+        "scripts/windows-owner-media-capability-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-focused-boundaries"
+    },
+    {
       "name": "verify:windows-owner-handoff",
       "command": "node scripts/windows-local-owner-handoff-check.mjs",
       "category": "behavior",
@@ -3702,7 +3724,8 @@
       "architectureEvidence": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
-        "package.json#scripts.verify:application-backup"
+        "package.json#scripts.verify:application-backup",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
       ],
       "invocation": "direct",
       "evidence": {
@@ -3800,7 +3823,8 @@
       "architectureEvidence": [],
       "owner": "package.json#scripts.verify:application-backup",
       "owners": [
-        "package.json#scripts.verify:application-backup"
+        "package.json#scripts.verify:application-backup",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
       ],
       "invocation": "direct",
       "evidence": {
@@ -7853,6 +7877,7 @@
         "package.json#scripts.sentences:build",
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
         "package.json#scripts.verify:windows-owner-receipt",
         "package.json#scripts.verify:windows-owner-registry",
@@ -10188,9 +10213,10 @@
       "owner": "package.json#scripts.verify:windows-owner",
       "owners": [
         "package.json#scripts.verify:windows-owner",
-        "package.json#scripts.verify:windows-owner-contract"
+        "package.json#scripts.verify:windows-owner-contract",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -10426,9 +10452,10 @@
       "owner": "package.json#scripts.verify:windows-owner",
       "owners": [
         "package.json#scripts.verify:windows-owner",
-        "package.json#scripts.verify:windows-owner-api-client"
+        "package.json#scripts.verify:windows-owner-api-client",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -10451,9 +10478,10 @@
       "owner": "package.json#scripts.verify:windows-owner",
       "owners": [
         "package.json#scripts.verify:windows-owner",
-        "package.json#scripts.verify:windows-owner-durable-status"
+        "package.json#scripts.verify:windows-owner-durable-status",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -10463,6 +10491,34 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-focused-browser-check.mjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-focused-boundaries",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {
@@ -10481,9 +10537,10 @@
       "owner": "package.json#scripts.verify:windows-owner",
       "owners": [
         "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-legacy-bridge"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [
           "asserts-source-text"
@@ -10508,9 +10565,10 @@
       "owner": "package.json#scripts.verify:windows-owner",
       "owners": [
         "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-media-capability"
       ],
-      "invocation": "transitive",
+      "invocation": "direct",
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,

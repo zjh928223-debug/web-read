@@ -355,5 +355,21 @@ six domains are pre-cutover, so no writer, repository, or authority is changed h
 
 The focused behavior gate is `npm run verify:windows-owner-media-capability`; it covers the two contract mappings,
 descriptor and URL validation, no-copy values, Range/ETag/identity checks, direct element binding, replacement,
-disposal, and typed failure behavior. Task 3.5 is the next allowed implementation; no domain repository or UI
+disposal, and typed failure behavior. Task 3.5 adds the focused boundary slice below; no domain repository or UI
 cutover is introduced here.
+
+## Task 3.5 focused boundary slice
+
+`npm run verify:windows-owner-focused-boundaries` is the single reproducible 3.5 check. Its Node portion
+executes the existing contract/client/durable-status/media/legacy-bridge and application-backup public seams;
+its Python portion reuses the request-policy, receipt, Local App Host, and registered-media TestClient cases for
+loopback Host/Origin/token, profile/capability, CAS/idempotency, receipt retry/query, 206/416/ETag/identity, and
+path boundaries. The browser portion starts an isolated loopback HTTP fixture with Vite middleware and runs the
+real Chromium journey against the browser API client and `MediaResourceOwner`: it verifies same-origin typed
+requests, HttpOnly-only authorization, no durable token storage, direct authorized URL binding, byte-range-only
+media probes, ETag/identity rebind cleanup, and Blob/ArrayBuffer/typed-array rejection. The fixture owns no real
+profile, does not use the optimization service ports, and is closed before the command exits.
+
+The slice is included in `npm run verify:full` but not `npm run verify:fast`; it is focused evidence for the
+contract boundaries only. It does not claim owner authority, add repositories, migrate writers, or perform UI
+cutover.

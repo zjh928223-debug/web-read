@@ -23,7 +23,7 @@
 - [x] 3.2 将 browser durable status 映射为 `dirty/saving/saved/conflict/commit-unknown/not-ready`，禁止 request success 或本地 cache 直接产生 `saved`。
 - [x] 3.3 为 legacy `SeekPlayerDB/files`、localStorage 和 JSON source 建立只读 inventory/一次性 import/rollback-window compatibility bridge；bridge 不向 UI 暴露 raw store，不接受新 canonical write，不执行 Host repository commit，也不能作为最终 repository。
 - [x] 3.4 复用 `MediaResourceOwner` 与 Local App Host capability mapping，实现 URL/Range/ETag/identity 校验；禁止完整 Blob/ArrayBuffer 进入 API、backup 或 migration path。
-- [ ] 3.5 增加 API contract、auth、commit receipt、no-copy、Range 206 和 path/capability boundary 的 Node/Python/browser focused checks。
+- [x] 3.5 增加 API contract、auth、commit receipt、no-copy、Range 206 和 path/capability boundary 的 Node/Python/browser focused checks。
 
 ## 4. 并行建立六域 read/query 与 adapter seam
 
