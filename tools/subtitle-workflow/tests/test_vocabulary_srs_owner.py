@@ -32,11 +32,11 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         }
 
     @staticmethod
-    def row(key, content):
+    def row(key, content, timestamp="2026-08-29T00:00:00.000Z"):
         return {
             "id": key,
             "content": content,
-            "timestamp": "2026-08-29T00:00:00.000Z",
+            "timestamp": timestamp,
         }
 
     @staticmethod
@@ -223,6 +223,87 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         self.assertEqual(retry["outcome"], "committed")
         self.assertEqual(first["receipt"]["receiptId"], retry["receipt"]["receiptId"])
         self.assertEqual(replacements, 1)
+
+    def test_recovered_backup_is_read_only_and_cannot_replay_a_newer_receipt(self):
+        owner = self.make_owner()
+        old = self.row("vocabulary.srs.store.v1", self.srs_content("old"))
+        newer = self.row("vocabulary.srs.store.v1", self.srs_content("new"))
+
+        self.assertEqual(
+            self.command(owner, "entry-upsert", old["id"], old, 0, request_key="rev-1")["outcome"],
+            "committed",
+        )
+        newer_result = self.command(owner, "entry-upsert", newer["id"], newer, 1, request_key="rev-2")
+        self.assertEqual(newer_result["outcome"], "committed")
+        self.assertEqual(newer_result["revision"], 2)
+
+        owner.snapshot_path.write_text("{broken primary", encoding="utf-8")
+        recovered = owner.query("entry", **self.ids("recovered"))
+        self.assertEqual(recovered["outcome"], "read")
+        self.assertEqual(recovered["payload"]["revision"], 1)
+        self.assertEqual(
+            recovered["payload"]["records"][old["id"]]["content"]["words"][0]["word"],
+            "old",
+        )
+
+        retry = self.command(owner, "entry-upsert", newer["id"], newer, 1, request_key="rev-2")
+        self.assertEqual(retry["outcome"], "manual-recovery")
+        self.assertEqual(retry["commitStatus"], "manual-recovery")
+        self.assertEqual(retry["error"]["code"], "manual-recovery")
+        self.assertIsNone(retry["receipt"])
+        current = owner.query("entry", **self.ids("after-recovery"))
+        self.assertEqual(current["payload"]["revision"], 1)
+        self.assertEqual(
+            current["payload"]["records"][old["id"]]["content"]["words"][0]["word"],
+            "old",
+        )
+
+    def test_learning_command_writes_related_records_with_existing_numeric_timestamps(self):
+        replacements = 0
+
+        def after_replace(_temporary, target):
+            nonlocal replacements
+            if Path(target) == owner.snapshot_path:
+                replacements += 1
+
+        owner = self.make_owner(repository=DurableJsonRepository(after_replace=after_replace))
+        context_key = "vocabulary.context-evidence.store.v1"
+        settlement_key = "vocabulary-article-srs-settlement-progress:article-1"
+        watermark_key = "vocabulary.revision-watermark.v1"
+        timestamp = 1770000000000
+        result = owner.command(
+            "learning-event-append",
+            payload={
+                "records": {
+                    context_key: self.row(
+                        context_key,
+                        {"schema_version": "context-evidence-store.v1", "by_context_evidence_id": {}},
+                        timestamp,
+                    ),
+                    settlement_key: self.row(
+                        settlement_key,
+                        {"schemaVersion": 1, "articles": {}},
+                        timestamp,
+                    ),
+                    watermark_key: self.row(
+                        watermark_key,
+                        {"schema_version": "vocabulary-revision-watermark.v1", "revision": 0},
+                        timestamp,
+                    ),
+                },
+            },
+            expected_revision=0,
+            idempotency_key="related-records",
+            **self.ids("related-records"),
+        )
+
+        self.assertEqual(result["outcome"], "committed")
+        self.assertEqual(result["revision"], 1)
+        self.assertEqual(replacements, 1)
+        snapshot = owner.query("snapshot", **self.ids("related-snapshot"))
+        self.assertEqual(set(snapshot["payload"]["records"]), {context_key, settlement_key, watermark_key})
+        self.assertEqual(snapshot["payload"]["records"][settlement_key]["timestamp"], timestamp)
+        self.assertEqual(snapshot["payload"]["records"][watermark_key]["timestamp"], timestamp)
 
     def test_stale_revision_conflicts_and_keeps_the_previous_record(self):
         owner = self.make_owner()

@@ -90,7 +90,11 @@ _COMMAND_RECORD_RULES = {
         "vocabulary.review.store.v2",
         "vocabulary.review-session-ledgers.v1",
     }),
-    "learning-event-append": frozenset({"vocabulary.learning-events.manifest.v1"}),
+    "learning-event-append": frozenset({
+        "vocabulary.learning-events.manifest.v1",
+        "vocabulary.context-evidence.store.v1",
+        "vocabulary.revision-watermark.v1",
+    }),
     "pending-candidates-update": frozenset({"vocabulary-srs-pending-candidates"}),
     "personalization-report": frozenset({"vocabulary.personalization.shadow-reports.v1"}),
 }
@@ -244,8 +248,17 @@ def _validate_record(key: str, value: Any) -> dict[str, Any]:
     if value.get("id") != key or "content" not in value:
         raise VocabularySrsOwnerError("invalid-request")
     content = _validate_record_content(key, value["content"])
-    if "timestamp" in value and (not isinstance(value["timestamp"], str) or not value["timestamp"]):
-        raise VocabularySrsOwnerError("invalid-request")
+    if "timestamp" in value:
+        timestamp = value["timestamp"]
+        valid_timestamp = (
+            isinstance(timestamp, str) and bool(timestamp)
+        ) or (
+            isinstance(timestamp, (int, float))
+            and not isinstance(timestamp, bool)
+            and (isinstance(timestamp, int) or math.isfinite(timestamp))
+        )
+        if not valid_timestamp:
+            raise VocabularySrsOwnerError("invalid-request")
     if "revision" in value and (
         isinstance(value["revision"], bool) or not isinstance(value["revision"], int) or value["revision"] < 0
     ):
@@ -394,6 +407,9 @@ class VocabularySrsOwner:
         document, _ = self._read_document()
         return self._empty_document() if document is None else document
 
+    def _has_recovery_evidence(self) -> bool:
+        return any(self.snapshot_path.parent.glob(f"{self.snapshot_path.name}.corrupt-*"))
+
     @staticmethod
     def _validate_payload(payload: Any, operation: str) -> dict[str, dict[str, Any]]:
         if operation not in COMMAND_OPERATIONS:
@@ -415,7 +431,7 @@ class VocabularySrsOwner:
         for raw_key, raw_record in raw_records.items():
             key = _record_key(raw_key)
             if operation == "learning-event-append":
-                allowed_key = key == "vocabulary.learning-events.manifest.v1" or _EVENT_SHARD.fullmatch(key)
+                allowed_key = key in allowed or _EVENT_SHARD.fullmatch(key) or _SETTLEMENT.fullmatch(key)
             else:
                 allowed_key = key in allowed
             if not allowed_key:
@@ -502,6 +518,34 @@ class VocabularySrsOwner:
                 None,
                 {"recordKeys": []},
                 _typed_error(error.code, correlation_id),
+            )
+
+        try:
+            _, read_outcome = self._read_document()
+        except VocabularySrsOwnerStorageError as error:
+            return self._envelope(
+                operation,
+                request_id,
+                correlation_id,
+                "manual-recovery",
+                "manual-recovery",
+                None,
+                {"recordKeys": sorted(updates)},
+                _typed_error(error.code, correlation_id),
+            )
+        if read_outcome.status == "recovered" or self._has_recovery_evidence():
+            return self._envelope(
+                operation,
+                request_id,
+                correlation_id,
+                "manual-recovery",
+                "manual-recovery",
+                None,
+                {
+                    "recordKeys": sorted(updates),
+                    "recordChecksums": sorted({_checksum(record["content"]) for record in updates.values()}),
+                },
+                _typed_error("manual-recovery", correlation_id),
             )
 
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:

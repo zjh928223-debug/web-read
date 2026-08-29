@@ -107,8 +107,8 @@
       "compatibilityRecords": [
         {"keyPattern": "legacy-migration:*", "schemaVersions": ["legacy-migration.v1"]}
       ],
-      "queryOperations": ["get-entry", "get-review-state", "get-context-evidence", "get-learning-events"],
-      "commandOperations": ["upsert-entry", "record-review", "record-learning-event", "settle-article"],
+      "queryOperations": ["snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"],
+      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "receipt-query"],
       "revisionSource": {
         "identity": "vocabulary-srs.revision-watermark",
         "source": "vocabulary.revision-watermark.v1 and learning-event manifest"
@@ -398,5 +398,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:b8556c50788637ce2511ec6bc54cc81c1d2491f125f003520a3697db3d4dbd38"
+  "artifactChecksum": "sha256:336a1bd10d5c439f6b64ad01f4b277ae94dd19235a8aa6b1cedf5faee09a1508"
 }
