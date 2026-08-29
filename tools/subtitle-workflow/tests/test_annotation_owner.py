@@ -93,17 +93,19 @@ class AnnotationOwnerTests(unittest.TestCase):
             "timestamp": "2026-08-29T00:00:00.000Z",
         }
 
-    def records(self, *, revision=1, word="hello"):
-        bundle_key = annotation_record_key(self.scope, ANNOTATION_BUNDLE_FILE)
-        generated_key = annotation_record_key(self.scope, ANNOTATION_GENERATED_FILE)
-        status_key = annotation_record_key(self.scope, ANNOTATION_STATUS_FILE)
+    def records(self, *, scope=None, revision=1, word="hello"):
+        scope = self.scope if scope is None else scope
+        bundle_key = annotation_record_key(scope, ANNOTATION_BUNDLE_FILE)
+        generated_key = annotation_record_key(scope, ANNOTATION_GENERATED_FILE)
+        status_key = annotation_record_key(scope, ANNOTATION_STATUS_FILE)
         return {
-            bundle_key: self.row(bundle_key, self.bundle(self.scope, revision, word)),
-            generated_key: self.row(generated_key, self.generated(self.scope, word)),
-            status_key: self.row(status_key, self.status(self.scope)),
+            bundle_key: self.row(bundle_key, self.bundle(scope, revision, word)),
+            generated_key: self.row(generated_key, self.generated(scope, word)),
+            status_key: self.row(status_key, self.status(scope)),
         }
 
     def command(self, owner, operation, records, expected, *, request_key, scope=None):
+        scope = self.scope if scope is None else scope
         return owner.command(
             operation,
             scope=scope,
@@ -129,6 +131,87 @@ class AnnotationOwnerTests(unittest.TestCase):
         storage = owner.query("storage-mode", **self.ids("storage"))
         self.assertEqual(storage["payload"]["mode"], "host-managed")
         self.assertFalse(storage["payload"]["browserWriterConnected"])
+        self.assertFalse(owner.snapshot_path.exists())
+        self.assertFalse(owner.receipts.receipt_path.exists())
+
+    def test_real_storage_scopes_keep_workflow_delimiters_and_unicode_names(self):
+        workflow_scope = {
+            "audioKey": "youtube-workflow::job 42",
+            "documentId": "youtube-workflow::job 42::3__6__0.000__3.000__123",
+        }
+        local_scope = {
+            "audioKey": "我的 lecture notes 01.mp3__2048__1720000000000",
+            "documentId": "我的 lecture notes 01.mp3__2048__1720000000000::3__6__0.000__3.000__123",
+        }
+        owner = self.make_owner()
+
+        workflow_records = self.records(scope=workflow_scope, word="workflow")
+        workflow_key = annotation_record_key(workflow_scope, ANNOTATION_BUNDLE_FILE)
+        self.assertEqual(
+            workflow_key,
+            "AnnotationGenerationStorage::youtube-workflow::job 42::"
+            "youtube-workflow::job 42::3__6__0.000__3.000__123::annotation.bundle.v2.json",
+        )
+        committed = owner.command(
+            "bundle-commit",
+            payload={"records": workflow_records},
+            expected_revision=0,
+            idempotency_key="workflow-scope",
+            **self.ids("workflow-scope"),
+        )
+        self.assertEqual(committed["outcome"], "committed")
+        self.assertEqual(
+            owner.query("scope", scope=workflow_scope, **self.ids("workflow-query"))["payload"]["records"][workflow_key]["content"]["scope"],
+            workflow_scope,
+        )
+
+        local_records = self.records(scope=local_scope, word="local")
+        local_key = annotation_record_key(local_scope, ANNOTATION_GENERATED_FILE)
+        local_commit = self.command(
+            owner,
+            "lightweight-import",
+            local_records,
+            1,
+            request_key="local-scope",
+            scope=local_scope,
+        )
+        self.assertEqual(local_commit["outcome"], "committed")
+        self.assertEqual(
+            owner.query("generated", scope=local_scope, **self.ids("local-query"))["payload"]["records"][local_key]["content"]["audioKey"],
+            local_scope["audioKey"],
+        )
+
+    def test_scope_and_record_key_mismatch_is_rejected_without_write(self):
+        owner = self.make_owner()
+        workflow_scope = {
+            "audioKey": "youtube-workflow::job 42",
+            "documentId": "youtube-workflow::job 42::3__6__0.000__3.000__123",
+        }
+        other_scope = {
+            "audioKey": "youtube-workflow::other job",
+            "documentId": workflow_scope["documentId"],
+        }
+        for index, bad_scope in enumerate((
+            {"audioKey": "", "documentId": "article"},
+            {"audioKey": "job\n42", "documentId": "article"},
+            {"audioKey": "C:\\private\\audio.mp3", "documentId": "article"},
+            {"audioKey": "https://example.test/audio", "documentId": "article"},
+            {"audioKey": "../audio", "documentId": "article"},
+        )):
+            rejected_scope = owner.query("scope", scope=bad_scope, **self.ids(f"bad-scope-{index}"))
+            self.assertEqual(rejected_scope["outcome"], "rejected")
+            self.assertEqual(rejected_scope["error"]["code"], "invalid-request")
+        wrong_key = annotation_record_key(other_scope, ANNOTATION_BUNDLE_FILE)
+        rejected = owner.command(
+            "bundle-commit",
+            scope=workflow_scope,
+            payload={"records": {wrong_key: self.row(wrong_key, self.bundle(workflow_scope))}},
+            expected_revision=0,
+            idempotency_key="mismatched-scope",
+            **self.ids("mismatched-scope"),
+        )
+        self.assertEqual(rejected["outcome"], "rejected")
+        self.assertEqual(rejected["error"]["code"], "corrupt")
         self.assertFalse(owner.snapshot_path.exists())
         self.assertFalse(owner.receipts.receipt_path.exists())
 
@@ -274,6 +357,7 @@ class AnnotationOwnerTests(unittest.TestCase):
         for index, (payload, code) in enumerate(cases):
             result = owner.command(
                 "lightweight-import",
+                scope=self.scope,
                 payload=payload,
                 expected_revision=0,
                 idempotency_key=f"bad-{index}",

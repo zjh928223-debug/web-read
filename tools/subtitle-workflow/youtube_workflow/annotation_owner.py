@@ -15,6 +15,7 @@ import math
 from pathlib import Path
 import re
 from typing import Any, Mapping
+import unicodedata
 
 from .durable_json import DurableJsonRepository, JsonReadOutcome, JsonValidationError
 from .windows_owner_receipts import (
@@ -71,6 +72,7 @@ _RECORD_SUFFIXES = frozenset({
     ANNOTATION_STATUS_FILE,
 })
 _SAFE_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_SCOPE_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:(?!:)")
 _SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
 _FNV32 = re.compile(r"^[0-9a-f]{8}$")
 _RECORD_FIELDS = frozenset({"id", "content", "timestamp", "revision", "contentId", "checksum"})
@@ -123,6 +125,24 @@ def _is_absolute_path(value: str) -> bool:
         or bool(re.match(r"^[A-Za-z]:[\\/]", value))
         or value.startswith(("\\\\", "//", "/", "\\"))
     )
+
+
+def _scope_identity(value: Any, _field: str) -> str:
+    """Validate a real browser storage scope without treating it as a path."""
+
+    if not isinstance(value, str) or not value.strip():
+        raise AnnotationOwnerError("invalid-request")
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        raise AnnotationOwnerError("invalid-request")
+    if (
+        _is_absolute_path(value)
+        or "/" in value
+        or "\\" in value
+        or value in {".", ".."}
+        or _SCOPE_SCHEME.match(value)
+    ):
+        raise AnnotationOwnerError("invalid-request")
+    return value
 
 
 def _forbidden_key(key: str) -> bool:
@@ -183,10 +203,8 @@ def _validate_json_value(value: Any, *, key_hint: str = "") -> None:
 def _validate_scope(value: Any) -> dict[str, str]:
     if not isinstance(value, dict) or set(value) != {"audioKey", "documentId"}:
         raise AnnotationOwnerError("invalid-request")
-    audio_key = _identity(value["audioKey"], "audioKey")
-    document_id = _identity(value["documentId"], "documentId")
-    if "::" in audio_key or "::" in document_id:
-        raise AnnotationOwnerError("invalid-request")
+    audio_key = _scope_identity(value["audioKey"], "audioKey")
+    document_id = _scope_identity(value["documentId"], "documentId")
     return {"audioKey": audio_key, "documentId": document_id}
 
 
@@ -204,17 +222,20 @@ def annotation_record_key(scope: Mapping[str, Any], filename: str) -> str:
 make_annotation_record_key = annotation_record_key
 
 
-def _parse_record_key(value: Any) -> tuple[dict[str, str], str, str]:
+def _record_suffix(value: Any) -> str:
     if not isinstance(value, str) or not value.startswith(ANNOTATION_STORAGE_PREFIX):
         raise AnnotationOwnerError("invalid-request")
-    parts = value.split("::")
-    if len(parts) != 4 or parts[0] != ANNOTATION_STORAGE_PREFIX.rstrip(":"):
+    suffixes = [
+        suffix
+        for suffix in _RECORD_SUFFIXES
+        if value.endswith(f"::{suffix}")
+    ]
+    if len(suffixes) != 1:
         raise AnnotationOwnerError("invalid-request")
-    scope = _validate_scope({"audioKey": parts[1], "documentId": parts[2]})
-    suffix = parts[3]
-    if suffix not in _RECORD_SUFFIXES:
+    scope_text = value[len(ANNOTATION_STORAGE_PREFIX):-len(suffixes[0]) - 2]
+    if not scope_text or any(unicodedata.category(char) == "Cc" for char in scope_text):
         raise AnnotationOwnerError("invalid-request")
-    return scope, suffix, value
+    return suffixes[0]
 
 
 def _fnv1a_json_string(value: str) -> str:
@@ -301,6 +322,29 @@ def _validate_record_content(scope: Mapping[str, str], suffix: str, content: Any
     return _validate_status(scope, content)
 
 
+def _record_content(value: Any) -> Any:
+    if isinstance(value, dict) and ("id" in value or "content" in value):
+        if (
+            not set(value).issubset(_RECORD_FIELDS)
+            or "content" not in value
+        ):
+            raise AnnotationOwnerError("invalid-request")
+        return value["content"]
+    return value
+
+
+def _scope_from_record_content(suffix: str, value: Any) -> dict[str, str]:
+    content = _record_content(value)
+    if not isinstance(content, dict):
+        raise AnnotationOwnerError("invalid-request")
+    if suffix == ANNOTATION_BUNDLE_FILE:
+        return _validate_scope(content.get("scope"))
+    return _validate_scope({
+        "audioKey": content.get("audioKey"),
+        "documentId": content.get("documentId"),
+    })
+
+
 def _valid_timestamp(value: Any) -> bool:
     return (
         isinstance(value, str) and bool(value)
@@ -311,8 +355,17 @@ def _valid_timestamp(value: Any) -> bool:
     )
 
 
-def _validate_record(key: str, value: Any) -> dict[str, Any]:
-    scope, suffix, _ = _parse_record_key(key)
+def _validate_record(
+    key: str,
+    value: Any,
+    *,
+    scope: Mapping[str, str] | None = None,
+    suffix: str | None = None,
+) -> dict[str, Any]:
+    suffix = suffix or _record_suffix(key)
+    scope = dict(scope or _scope_from_record_content(suffix, value))
+    if key != annotation_record_key(scope, suffix):
+        raise AnnotationOwnerError("corrupt")
     is_wrapped = isinstance(value, dict) and ("id" in value or "content" in value)
     if is_wrapped:
         if (
@@ -361,10 +414,11 @@ def _validate_document(value: Any, *, profile_id: str) -> dict[str, Any]:
         raise AnnotationOwnerError("corrupt")
     if not isinstance(value["records"], dict):
         raise AnnotationOwnerError("corrupt")
-    records = {
-        _parse_record_key(key)[2]: _validate_record(key, record)
-        for key, record in value["records"].items()
-    }
+    records = {}
+    for key, record in value["records"].items():
+        suffix = _record_suffix(key)
+        scope = _scope_from_record_content(suffix, record)
+        records[key] = _validate_record(key, record, scope=scope, suffix=suffix)
     core = {
         "schemaVersion": ANNOTATION_OWNER_SCHEMA,
         "profileId": profile_id,
@@ -480,12 +534,19 @@ class AnnotationOwner:
         return self._empty_document() if document is None else document
 
     @staticmethod
-    def _records_from_payload(payload: Any) -> tuple[dict[str, str] | None, dict[str, Any]]:
+    def _records_from_payload(
+        payload: Any,
+        *,
+        explicit_scope: Mapping[str, Any] | None = None,
+    ) -> tuple[dict[str, str], dict[str, Any]]:
         if not isinstance(payload, dict):
             raise AnnotationOwnerError("invalid-request")
         _validate_json_value(payload)
         raw_scope = payload.get("scope")
-        scope = _validate_scope(raw_scope) if raw_scope is not None else None
+        payload_scope = _validate_scope(raw_scope) if raw_scope is not None else None
+        scope = _validate_scope(dict(explicit_scope)) if explicit_scope is not None else payload_scope
+        if payload_scope is not None and payload_scope != scope:
+            raise AnnotationOwnerError("corrupt")
         keys = set(payload) - ({"scope"} if raw_scope is not None else set())
         if keys == {"recordKey", "record"}:
             raw_records = {payload["recordKey"]: payload["record"]}
@@ -496,16 +557,20 @@ class AnnotationOwner:
         if not raw_records:
             raise AnnotationOwnerError("invalid-request")
         result = {}
-        parsed_scopes = []
+        record_scopes = []
         for raw_key, raw_record in raw_records.items():
-            parsed_scope, _, key = _parse_record_key(raw_key)
-            if scope is not None and parsed_scope != scope:
+            suffix = _record_suffix(raw_key)
+            record_scope = scope or _scope_from_record_content(suffix, raw_record)
+            key = annotation_record_key(record_scope, suffix)
+            if raw_key != key:
                 raise AnnotationOwnerError("corrupt")
-            parsed_scopes.append(parsed_scope)
-            result[key] = _validate_record(key, raw_record)
-        if any(item != parsed_scopes[0] for item in parsed_scopes[1:]):
-            raise AnnotationOwnerError("invalid-request")
-        return scope or parsed_scopes[0], dict(sorted(result.items()))
+            result[key] = _validate_record(key, raw_record, scope=record_scope, suffix=suffix)
+            record_scopes.append(record_scope)
+        if scope is None:
+            scope = record_scopes[0]
+            if any(item != scope for item in record_scopes[1:]):
+                raise AnnotationOwnerError("invalid-request")
+        return scope, dict(sorted(result.items()))
 
     @staticmethod
     def _record_scope_for_query(operation: str, scope: Mapping[str, Any] | None) -> dict[str, str] | None:
@@ -532,8 +597,8 @@ class AnnotationOwner:
         suffixes = suffix_by_operation[operation]
         selected = {}
         for key, record in records.items():
-            parsed_scope, suffix, _ = _parse_record_key(key)
-            if parsed_scope == dict(scope) and suffix in suffixes:
+            suffix = _record_suffix(key)
+            if suffix in suffixes and key == annotation_record_key(scope, suffix):
                 selected[key] = deepcopy(record)
         return selected
 
@@ -727,7 +792,7 @@ class AnnotationOwner:
     @staticmethod
     def _bundle_conflict(document: Mapping[str, Any], updates: Mapping[str, Any]) -> bool:
         incoming_key = next(
-            (key for key in updates if key.endswith(f"::{ANNOTATION_BUNDLE_FILE}")),
+            (key for key in updates if _record_suffix(key) == ANNOTATION_BUNDLE_FILE),
             None,
         )
         incoming = updates.get(incoming_key) if incoming_key is not None else None
@@ -774,10 +839,7 @@ class AnnotationOwner:
             if not isinstance(idempotency_key, str):
                 raise AnnotationOwnerError("invalid-request")
             _identity(idempotency_key, "idempotencyKey")
-            payload_scope, updates = self._records_from_payload(payload)
-            if scope is not None and _validate_scope(dict(scope)) != payload_scope:
-                raise AnnotationOwnerError("corrupt")
-            normalized_scope = payload_scope
+            normalized_scope, updates = self._records_from_payload(payload, explicit_scope=scope)
         except AnnotationOwnerError as error:
             return self._envelope(
                 operation,
