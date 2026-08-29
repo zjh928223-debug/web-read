@@ -377,7 +377,10 @@ def _load_owner_registry_status(
             profile_rows = owner_profile_evidence.get("rows")
         contract = validate_owner_registry_profile(registry, rows=profile_rows)
     except OwnerRegistryError as error:
-        return owner_registry_error_status(error)
+        status = owner_registry_error_status(error)
+        if isinstance(owner_profile_evidence, dict) and "ownerPendingRecovery" in owner_profile_evidence:
+            status["ownerPendingRecovery"] = owner_profile_evidence["ownerPendingRecovery"]
+        return status
     if owner_profile_evidence is None:
         return owner_registry_profile_not_ready_status(
             contract,
@@ -393,7 +396,10 @@ def _load_owner_registry_status(
             profile_id=profile_id,
         )
     except OwnerRegistryError as error:
-        return owner_registry_profile_not_ready_status(contract, error)
+        status = owner_registry_profile_not_ready_status(contract, error)
+        if isinstance(owner_profile_evidence, dict) and "ownerPendingRecovery" in owner_profile_evidence:
+            status["ownerPendingRecovery"] = owner_profile_evidence["ownerPendingRecovery"]
+        return status
 
 
 def _standby_profile_evidence_is_safe(evidence: dict | None) -> bool:
@@ -521,6 +527,7 @@ def create_local_app_host(
             "profileLease": owner_registry_status.get("profileLease"),
             "profileEvidenceMode": owner_registry_status.get("profileEvidenceMode"),
             "legacyBrowserData": owner_registry_status.get("legacyBrowserData"),
+            "ownerPendingRecovery": owner_registry_status.get("ownerPendingRecovery"),
             "ownerMode": owner_registry_status.get("ownerMode"),
             "durableOwnerReady": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,
             "acceptingApiAuthoritativeOperations": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,

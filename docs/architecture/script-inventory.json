@@ -41,6 +41,7 @@
     "scripts/lib/compatibility-isolation.mjs",
     "scripts/lib/compatibility-network-policy.mjs",
     "scripts/lib/windows-local-owner-artifacts.mjs",
+    "scripts/lib/windows-owner-pending-journal.mjs",
     "scripts/start-latest-reader.ps1",
     "scripts/vocabulary-repository-browser-reopen-check.cjs",
     "scripts/youtube-workflow-panel-behavior-check.cjs",

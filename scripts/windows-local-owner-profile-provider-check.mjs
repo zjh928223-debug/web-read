@@ -67,6 +67,8 @@ assert.equal(complete.bindings.recovery.bound, true)
 assert.equal(complete.bindings.applicationLease.bound, true)
 assert.equal(complete.profileLease.status, 'held')
 assert.equal(complete.ownerMode.status, 'pre-cutover')
+assert.equal(complete.ownerPendingRecovery.status, 'none')
+assert.equal(complete.ownerPendingRecovery.ready, true)
 
 const missingInventory = await readEvidence()
 assert.equal(missingInventory.inventory.present, false, 'missing browser inventory must not become an empty ready profile')

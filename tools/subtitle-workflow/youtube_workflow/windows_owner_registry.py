@@ -20,6 +20,7 @@ OWNER_REGISTRY_VERSION = "windows-owner-registry.v1"
 OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION = 1
 OWNER_PROFILE_EVIDENCE_SOURCE = "read-web-production-backup.composition"
 OWNER_MODE_CHECKPOINT_SCHEMA_VERSION = 1
+OWNER_PENDING_JOURNAL_SCHEMA_VERSION = 1
 WINDOWS_OWNER_DOMAINS = (
     "reader-session",
     "vocabulary-srs",
@@ -172,6 +173,86 @@ def _validate_owner_mode_evidence(value: Any) -> dict[str, Any]:
         "status": status,
         "authoritativeDomains": list(owner_mode["authoritativeDomains"]),
         "invalidDomains": list(owner_mode["invalidDomains"]),
+    }
+
+
+def _validate_owner_pending_recovery(value: Any) -> dict[str, Any]:
+    """Keep recovery-before-ready explicit without making journal recovery a Python concern."""
+
+    if value is None:
+        return {
+            "schemaVersion": OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+            "status": "none",
+            "ready": True,
+            "decision": None,
+            "result": None,
+        }
+    pending = _require_object(
+        value,
+        "OWNER_PENDING_RECOVERY_INVALID",
+        "Owner pending recovery evidence must be an object",
+    )
+    if pending.get("schemaVersion") != OWNER_PENDING_JOURNAL_SCHEMA_VERSION:
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_UNSUPPORTED_SCHEMA",
+            "Owner pending recovery evidence schema is unsupported",
+        )
+    status = pending.get("status")
+    allowed = {"none", "finalized", "manual-recovery", "not-run", "pending", "prepared", "committing", "committed"}
+    if status not in allowed:
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_INVALID",
+            "Owner pending recovery evidence has an invalid status",
+        )
+    if not isinstance(pending.get("ready"), bool):
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_INVALID",
+            "Owner pending recovery evidence needs a boolean ready field",
+        )
+    if status in {"none", "finalized"} and pending["ready"] is not True:
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_NOT_READY",
+            "Completed owner pending recovery must declare ready",
+        )
+    if status not in {"none", "finalized"} and pending["ready"] is not False:
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_NOT_READY",
+            "Unresolved owner pending recovery cannot declare ready",
+        )
+    if status == "manual-recovery":
+        if pending.get("decision") != "manual-recovery" or pending.get("result") != "blocked":
+            raise OwnerRegistryError(
+                "OWNER_PENDING_RECOVERY_INVALID",
+                "manual-recovery evidence must be an explicit blocked decision",
+            )
+        reason = pending.get("reason")
+        if not isinstance(reason, dict) or not isinstance(reason.get("code"), str) or not reason["code"].strip() \
+                or not isinstance(reason.get("message"), str) or not reason["message"].strip():
+            raise OwnerRegistryError(
+                "OWNER_PENDING_RECOVERY_EVIDENCE_MISSING",
+                "manual-recovery evidence needs a typed reason",
+            )
+        if pending.get("journalRetained") is not True:
+            raise OwnerRegistryError(
+                "OWNER_PENDING_RECOVERY_EVIDENCE_MISSING",
+                "manual-recovery evidence must retain the pending journal",
+            )
+    if status == "finalized" and (
+        pending.get("decision") not in {"baseline", "staged"}
+        or pending.get("result") not in {"baseline-recovered", "staged-recovered", "staged-committed"}
+    ):
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_INVALID",
+            "finalized recovery evidence needs a completed baseline or staged result",
+        )
+    return {
+        "schemaVersion": OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+        "status": status,
+        "ready": pending["ready"],
+        "decision": pending.get("decision"),
+        "result": pending.get("result"),
+        **({"reason": pending["reason"]} if isinstance(pending.get("reason"), dict) else {}),
+        **({"journalRetained": pending["journalRetained"]} if isinstance(pending.get("journalRetained"), bool) else {}),
     }
 
 
@@ -745,6 +826,12 @@ def validate_owner_registry_profile_evidence(
 
     profile_lease = _validate_profile_lease(evidence.get("profileLease"), profile_id)
     owner_mode = _validate_owner_mode_evidence(evidence.get("ownerMode"))
+    pending_recovery = _validate_owner_pending_recovery(evidence.get("ownerPendingRecovery"))
+    if pending_recovery["ready"] is not True and pending_recovery["status"] != "not-run":
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_NOT_READY",
+            "Windows owner profile evidence is blocked by pending journal recovery",
+        )
     if owner_mode["status"] == "invalid":
         raise OwnerRegistryError(
             "OWNER_MODE_CHECKPOINT_INVALID",
@@ -848,6 +935,7 @@ def validate_owner_registry_profile_evidence(
         "profileChecksum": profile_checksum,
         "backupArtifactChecksum": artifact_checksum,
         "ownerMode": owner_mode,
+        "ownerPendingRecovery": pending_recovery,
     }
 
 
@@ -878,6 +966,13 @@ def owner_registry_profile_not_ready_status(
                 "authoritativeDomains": [],
                 "invalidDomains": [],
             },
+            "ownerPendingRecovery": {
+                "schemaVersion": OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+                "status": "not-ready",
+                "ready": False,
+                "decision": "manual-recovery" if error.code == "OWNER_PENDING_RECOVERY_NOT_READY" else None,
+                "result": "blocked" if error.code == "OWNER_PENDING_RECOVERY_NOT_READY" else None,
+            },
         }
     )
     return status
@@ -907,5 +1002,12 @@ def owner_registry_error_status(error: OwnerRegistryError) -> dict[str, Any]:
             "status": "invalid",
             "authoritativeDomains": [],
             "invalidDomains": [],
+        },
+        "ownerPendingRecovery": {
+            "schemaVersion": OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+            "status": "not-ready",
+            "ready": False,
+            "decision": "manual-recovery",
+            "result": "blocked",
         },
     }

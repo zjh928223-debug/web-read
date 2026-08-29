@@ -12,7 +12,7 @@
 - [x] 2.1 定义 versioned API envelope、domain/operation registry、requestId/correlationId、expectedRevision、idempotencyKey、commitStatus、receipt 和 typed error schema。
 - [x] 2.2 实现六域 owner registry 与 Windows Host-managed repository contract，启动时拒绝缺失、重复、unknown schema、unclaimed row、无 backup/recovery adapter 或无 transaction/revision/recovery evidence 的 profile；browser bridge 不得作为最终 repository。
 - [x] 2.3 将现有 cross-process application-profile lease 接入 Local App Host lifetime、restore、migration cutover 和 owner read；证明同一 profile 不会出现两个 authoritative writer，并让 owner-mode checkpoint 成为唯一 authority switch。
-- [ ] 2.4 建立 pending journal、per-domain prepare/commit evidence、baseline/staged recovery 和 recovery-before-ready 状态机；缺少 evidence 时返回 `manual-recovery`。
+- [x] 2.4 建立 pending journal、per-domain prepare/commit evidence、baseline/staged recovery 和 recovery-before-ready 状态机；缺少 evidence 时返回 `manual-recovery`。
 - [ ] 2.5 将 Host/Origin/loopback binding、instance token、profile capability、path root、revision/idempotency validation 收口到统一 middleware。
 - [ ] 2.6 实现 owner commit receipt 查询和 `commit-unknown` 恢复；为 transaction abort、process death、timeout、duplicate retry 和 CAS conflict 建立可重复测试。
 - [ ] 2.7 让 health/capability endpoint 区分 liveness、readiness、domain owner status、lease、pending recovery、schema compatibility、Range 和可选依赖，并脱敏 diagnostics。

@@ -34,6 +34,8 @@ authoritative by accident.
 - `owner-mode-checkpoint.schema.json` — the small versioned schema for the single per-domain authority
   switch; it requires lease identity, old-writer drain evidence, Host-managed repository revision evidence,
   and a checksum.
+- `scripts/lib/windows-owner-pending-journal.mjs` — the focused profile-journal coordinator used by the
+  isolated behavior gate; the production composition only calls its lease-protected recovery seam.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -142,3 +144,31 @@ instance, as identified by the recovered active manager state, and rejects every
 Neither the baseline nor the initializer opens `E:\read-web-next`, `E:\read-web`, the daily data root, or a
 real browser profile. Any later live rehearsal must use `config/runtime.optimization.json`, ports `5184/8776`,
 and `E:\ReadWebData\SubtitleWorkflow-Optimization`.
+
+## Task 2.4 pending journal and recovery
+
+The profile-scoped pending journal lives under the stable profile authority root and uses the existing
+application-profile lease and atomic JSON replace helper. It records a versioned operation identity,
+release/instance metadata, the fixed domain order (`reader-session`, `vocabulary-srs`, `passage-preview`,
+`annotation`, `marks-activity`, `workflow`), complete baseline/staged profile revision checksums, and
+per-domain prepare/commit evidence. It accepts only the small operation set needed by this contract:
+restore, migration-cutover, and material-publish. No token, secret, media bytes, or unnecessary personal
+path is stored in the journal.
+
+An operation is `pending → prepared → committing → committed → finalized`; all six prepare records must be
+durable before the first commit, and every committed domain is recorded before the next visible profile
+revision. Startup checks this journal while holding the same stable profile lease before running the older
+application restore recovery. A resolved journal is finalized and retained as evidence. An unresolved
+journal is recovered only to one complete baseline or one complete staged revision. Missing/unknown/corrupt
+evidence, a revision conflict, missing adapter/recovery handler, failed atomic journal write, or a busy/non-
+authoritative profile lease yields `manual-recovery`/not-ready and leaves the journal available for review;
+it never publishes a partial cross-domain combination or falls back to a browser writer. Repeating recovery
+after finalization is idempotent, and two recovery processes are serialized by the stable lease.
+
+The production composition supplies no six-domain pending adapter yet, deliberately: an active journal is
+therefore retained as `manual-recovery` until later domain adapter work provides real evidence. The Host
+exposes this diagnostic through `ownerPendingRecovery`, but remains pre-cutover; `ownerMode` is still
+`pre-cutover`, `durableOwnerReady` and API-authoritative mutation acceptance remain false, and no current
+browser writer or canonical domain authority is migrated. `npm run verify:windows-owner-journal` runs the
+isolated adapters through ordered commit, process-death baseline/staged recovery, missing/corrupt evidence,
+atomic-write failure, lease contention, concurrent recovery, and recovery-before-ready composition cases.

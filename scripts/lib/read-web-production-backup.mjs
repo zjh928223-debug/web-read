@@ -7,6 +7,33 @@ import path from 'node:path'
 import process from 'node:process'
 
 import { resolveSelectedPython } from './python-runtime.mjs'
+import {
+  OWNER_PENDING_JOURNAL_FILE,
+  OWNER_PENDING_JOURNAL_OPERATION_KINDS,
+  OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+  OWNER_PROFILE_DOMAINS,
+  calculateOwnerPendingJournalChecksum,
+  createOwnerPendingCommitEvidence,
+  createOwnerPendingPrepareEvidence,
+  createOwnerPendingProfileIdentity,
+  readOwnerPendingJournalUnlocked,
+  recoverOwnerPendingJournalUnlocked,
+  runOwnerPendingJournalOperationUnlocked,
+  validateOwnerPendingJournal,
+  writeOwnerPendingJournalUnlocked,
+} from './windows-owner-pending-journal.mjs'
+
+export {
+  OWNER_PENDING_JOURNAL_FILE,
+  OWNER_PENDING_JOURNAL_OPERATION_KINDS,
+  OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+  OWNER_PROFILE_DOMAINS,
+  calculateOwnerPendingJournalChecksum,
+  createOwnerPendingCommitEvidence,
+  createOwnerPendingPrepareEvidence,
+  createOwnerPendingProfileIdentity,
+  validateOwnerPendingJournal,
+}
 
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const workflowRoot = path.join(repoRoot, 'tools', 'subtitle-workflow')
@@ -31,14 +58,6 @@ const OWNER_MODE_AUTHORITY = 'host-api=authoritative'
 const OWNER_MODE_LEASE_SCHEMA_VERSION = 1
 const PROFILE_LEASE_MODE_AUTHORITATIVE = 'authoritative'
 const PROFILE_LEASE_MODE_STANDBY = 'standby'
-const OWNER_PROFILE_DOMAINS = Object.freeze([
-  'reader-session',
-  'vocabulary-srs',
-  'passage-preview',
-  'annotation',
-  'marks-activity',
-  'workflow',
-])
 const OWNER_PROFILE_READER_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
 const OWNER_PROFILE_WORKFLOW_RECEIPT_PREFIXES = Object.freeze([
   'read-web.workflow-operation-receipt.v1.',
@@ -640,7 +659,7 @@ async function renameWithRetry(temporary, absolute) {
   throw lastError
 }
 
-async function writeJsonAtomic(filePath, value, { containmentRoot = null } = {}) {
+export async function writeJsonAtomic(filePath, value, { containmentRoot = null } = {}) {
   const absolute = path.resolve(filePath)
   const assertContained = async (temporary = null) => {
     if (!containmentRoot) return
@@ -668,7 +687,7 @@ async function writeJsonAtomic(filePath, value, { containmentRoot = null } = {})
   }
 }
 
-async function assertPathContainedBeforeWrite(root, filePath) {
+export async function assertPathContainedBeforeWrite(root, filePath) {
   let canonicalRoot
   let canonicalFilePath
   try {
@@ -996,6 +1015,39 @@ async function writeOwnerModeCheckpointUnlocked(context, options) {
 
 export async function withReadWebApplicationProfileLease(options = {}, operation) {
   return withOwnerProfileLease(options, operation)
+}
+
+function ownerPendingJournalIo() {
+  return { assertPathContainedBeforeWrite, writeJsonAtomic }
+}
+
+export async function readOwnerPendingJournal(options = {}) {
+  return withReadWebApplicationProfileLease(options, ({ profileAuthorityRoot }) => (
+    readOwnerPendingJournalUnlocked(profileAuthorityRoot, ownerPendingJournalIo())
+  ))
+}
+
+export async function writeOwnerPendingJournal(options = {}) {
+  return withReadWebApplicationProfileLease(options, ({ profileAuthorityRoot }) => (
+    writeOwnerPendingJournalUnlocked(
+      profileAuthorityRoot,
+      options.journal,
+      options.faults,
+      ownerPendingJournalIo(),
+    )
+  ))
+}
+
+export async function recoverOwnerPendingJournal(options = {}) {
+  return withReadWebApplicationProfileLease(options, (context) => (
+    recoverOwnerPendingJournalUnlocked(context, options, ownerPendingJournalIo())
+  ))
+}
+
+export async function runOwnerPendingJournalOperation(options = {}) {
+  return withReadWebApplicationProfileLease(options, (context) => (
+    runOwnerPendingJournalOperationUnlocked(context, options, ownerPendingJournalIo())
+  ))
 }
 
 export async function writeOwnerModeCheckpoint(options = {}) {
@@ -2140,7 +2192,7 @@ function ownerProfileBindingEvidence({ adapters, restoreTarget, artifact }) {
   }
 }
 
-async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery, profileLease, profileLeaseMode, profileId, isolationRoot, profileAuthorityRoot }) {
+async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, service, pythonAdapters, startupRecovery, ownerPendingRecovery = { status: 'none', ready: true }, profileLease, profileLeaseMode, profileId, isolationRoot, profileAuthorityRoot }) {
   let artifact = null
   let collectionError = null
   let rows = []
@@ -2186,7 +2238,8 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
       invalidDomains: [],
       reason: 'profile-authority-lease-busy',
     }
-  const ready = inventoryPresent && !collectionError && allBindingsBound && Boolean(profileLease) && ownerMode.status !== 'invalid'
+  const ready = inventoryPresent && !collectionError && allBindingsBound && Boolean(profileLease)
+    && ownerMode.status !== 'invalid' && ownerPendingRecovery?.ready === true
   return {
     schemaVersion: OWNER_PROFILE_EVIDENCE_SCHEMA_VERSION,
     source: OWNER_PROFILE_EVIDENCE_SOURCE,
@@ -2221,6 +2274,7 @@ async function createOwnerProfileEvidence({ browser, adapters, restoreTarget, se
     bindings,
     ownerMode,
     startupRecovery: startupRecovery || { status: 'none' },
+    ownerPendingRecovery: ownerPendingRecovery || { status: 'not-run', ready: false },
   }
 }
 
@@ -2335,9 +2389,32 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     revisionStore: options.revisionStore,
   })
   registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target: restoreTarget })
-  const startupRecovery = profileLease
+  const ownerPendingOptions = {
+    ...options,
+    isolationRoot,
+    profileDir: canonicalPaths.profileDir,
+    profileId,
+    adapters: options.ownerPendingJournalAdapters,
+    ...(authorityLayout.explicit
+      ? { profileAuthorityIsolationRoot, profileAuthorityRoot }
+      : {}),
+  }
+  const ownerPendingRecovery = profileLease
+    ? await recoverOwnerPendingJournal(ownerPendingOptions)
+    : {
+      status: 'not-run',
+      ready: false,
+      reason: 'profile-authority-lease-busy',
+      journalRetained: true,
+    }
+  const startupRecovery = profileLease && ownerPendingRecovery.ready === true
     ? await restoreTarget.recoverPendingRestore()
-    : { status: 'not-run', reason: 'profile-authority-lease-busy' }
+    : {
+      status: 'not-run',
+      reason: ownerPendingRecovery.ready === false
+        ? 'owner-pending-recovery-required'
+        : 'profile-authority-lease-busy',
+    }
   const service = readWebBackup.createReadWebApplicationBackupService({
     ...options,
     adapters,
@@ -2356,6 +2433,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     service,
     pythonAdapters,
     startupRecovery,
+    ownerPendingRecovery,
     profileLease,
     profileLeaseMode,
     profileId,
@@ -2369,6 +2447,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     service,
     restoreTarget,
     startupRecovery: startupRecovery ? Object.freeze(clone(startupRecovery)) : null,
+    ownerPendingRecovery: Object.freeze(clone(ownerPendingRecovery)),
     browserProfile: browser,
     pythonAdapters,
     profileId,
@@ -2483,6 +2562,7 @@ export async function withReadWebApplicationStartupLock(options = {}, operation)
       return operation(Object.freeze({
         composition,
         startupRecovery: composition.startupRecovery,
+        ownerPendingRecovery: composition.ownerPendingRecovery,
         profileLease: composition.profileLease,
         profileLeaseMode: composition.profileLeaseMode,
       }))
@@ -2502,6 +2582,7 @@ export async function withReadWebApplicationStartupLock(options = {}, operation)
       return operation(Object.freeze({
         composition,
         startupRecovery: composition.startupRecovery,
+        ownerPendingRecovery: composition.ownerPendingRecovery,
         profileLease: null,
         profileLeaseMode: composition.profileLeaseMode,
       }))
@@ -2563,6 +2644,13 @@ function ownerProfileReadFailureEvidence(error, { isolationRoot, profileAuthorit
       invalidDomains: [],
     },
     startupRecovery: { status: 'not-run', reason: 'profile-inventory-read-failed' },
+    ownerPendingRecovery: {
+      schemaVersion: OWNER_PENDING_JOURNAL_SCHEMA_VERSION,
+      status: 'not-run',
+      ready: false,
+      reason: 'profile-inventory-read-failed',
+      journalRetained: true,
+    },
   }
 }
 
@@ -2590,6 +2678,7 @@ async function holdApplicationProfileAfterReadFailure(options, error) {
       process.stdout.write(`${JSON.stringify({
         status: 'ready',
         startupRecovery: null,
+        ownerPendingRecovery: ownerProfileEvidence.ownerPendingRecovery,
         profileLeaseMode,
         ownerProfileEvidence,
       })}\n`, (writeError) => {
@@ -2637,6 +2726,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
           process.stdout.write(`${JSON.stringify({
             status: 'ready',
             startupRecovery,
+            ownerPendingRecovery: composition.ownerPendingRecovery,
             profileLeaseMode,
             ownerProfileEvidence: composition.ownerProfileEvidence,
           })}\n`, (error) => {

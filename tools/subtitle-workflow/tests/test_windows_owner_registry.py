@@ -316,6 +316,48 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
             validate_owner_registry_profile_evidence(self.registry, missing_source)
         self.assertEqual(context.exception.code, "OWNER_PROFILE_INVENTORY_INVALID")
 
+    def test_pending_recovery_blocks_host_readiness_and_owner_operations(self):
+        evidence = self.make_profile_evidence()
+        evidence["ready"] = False
+        evidence["ownerPendingRecovery"] = {
+            "schemaVersion": 1,
+            "status": "manual-recovery",
+            "ready": False,
+            "decision": "manual-recovery",
+            "result": "blocked",
+            "reason": {
+                "code": "OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_MISSING",
+                "message": "fixture is missing one committed domain evidence",
+            },
+            "journalRetained": True,
+        }
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, evidence, profile_id="fixture-profile")
+        self.assertEqual(context.exception.code, "OWNER_PENDING_RECOVERY_NOT_READY")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dist = Path(tmp)
+            (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+            app = create_local_app_host(
+                dist_dir=dist,
+                workflow_app=FastAPI(),
+                access_token="instance-token",
+                owner_registry=self.registry,
+                owner_profile_evidence=evidence,
+            )
+            with TestClient(app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                self.assertEqual(health["status"], "degraded")
+                self.assertFalse(health["profileEvidenceReady"])
+                self.assertEqual(health["ownerPendingRecovery"]["status"], "manual-recovery")
+                self.assertFalse(health["durableOwnerReady"])
+                response = client.post(
+                    "/api/app/owner/command",
+                    headers={"X-Read-Web-Token": "instance-token"},
+                )
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()["error"]["details"]["reason"], "profile-evidence-not-ready")
+
     def test_browser_repository_or_bridge_cannot_be_canonical(self):
         self.assert_registry_rejected(
             lambda registry: registry["registrations"][0]["repository"].update(
