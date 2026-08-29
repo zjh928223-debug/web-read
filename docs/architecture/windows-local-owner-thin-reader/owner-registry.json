@@ -181,8 +181,8 @@
         {"key": "vocabulary.passage-preview.shortcut.context.v1", "schemaVersions": ["passage-preview.shortcut.v1"]},
         {"key": "vocabulary.passage-preview.translation-display-mode.v1", "schemaVersions": ["passage-preview.display-mode.v1"]}
       ],
-      "queryOperations": ["get-preview", "get-preview-progress", "get-translation", "get-ielts-state"],
-      "commandOperations": ["save-preview", "save-preview-progress", "save-translation-preference"],
+      "queryOperations": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
+      "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
       "revisionSource": {
         "identity": "passage-preview.durable-state-revision",
         "source": "vocabulary.passage-preview.durable-state.v1 revision"
@@ -202,7 +202,13 @@
         "type": "host-managed",
         "implementation": "contract-only",
         "canonicalWhenApiAuthoritative": true,
-        "availableForCanonicalCommit": false
+        "availableForCanonicalCommit": false,
+        "internalSeam": {
+          "module": "tools/subtitle-workflow/youtube_workflow/passage_preview_owner.py",
+          "status": "isolated-pre-cutover",
+          "productionApiAuthoritative": false,
+          "browserWriterConnected": false
+        }
       },
       "evidence": {
         "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},
@@ -398,5 +404,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:336a1bd10d5c439f6b64ad01f4b277ae94dd19235a8aa6b1cedf5faee09a1508"
+  "artifactChecksum": "sha256:8d0dd18982c3f2d95ed09a19dd00aac59124ae32fd215cb35626c0450d17d308"
 }

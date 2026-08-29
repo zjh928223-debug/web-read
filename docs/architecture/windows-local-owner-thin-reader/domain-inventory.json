@@ -307,7 +307,17 @@
       "revisionSource": "passage-preview durable-state.v1 integer revision with expectedRevision check; legacy data/progress and preference keys have no independent CAS",
       "mediaReferences": "preview item/source locator and sentence metadata only; no media bytes",
       "rollbackTarget": "Pre-change localStorage key set and durable envelope revision, exported as application-backup preview domain",
-      "sourceEvidence": ["src/App.vue:114-552", "src/features/passage-preview/passage-preview-storage.js:1-100", "src/features/passage-preview/passage-preview-shortcuts.js:1-82"]
+      "sourceEvidence": ["src/App.vue:114-552", "src/features/passage-preview/passage-preview-storage.js:1-100", "src/features/passage-preview/passage-preview-shortcuts.js:1-82"],
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/passage_preview_owner.py",
+        "status": "isolated-pre-cutover",
+        "storage": "profile-scoped passage-preview-owner.json via DurableJsonRepository",
+        "recordShape": "existing passage-preview and IELTS JSON envelopes under inventoried keys; no second preview schema",
+        "queries": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
+        "commands": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
+        "durability": "owner revision/CAS, OwnerCommitReceiptStore idempotency, atomic replace with existing backup",
+        "boundary": "not wired to /api/app/owner, browser writer, migration, or authority cutover; session cache and preferences remain non-canonical"
+      }
     },
     {
       "domain": "annotation",
@@ -361,5 +371,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520"]
     }
   ],
-  "artifactChecksum": "sha256:bb7cf46af83b042c9a43a7302d5152a41df9704fc24e17d8e951be8445a6c739"
+  "artifactChecksum": "sha256:e0dadd069746eb5ec94d5283918e2e0137ed7aea07ec8abb1e61c99d4db99284"
 }

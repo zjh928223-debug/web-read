@@ -9,7 +9,7 @@
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 264,
+  "packageScriptCount": 265,
   "executableScriptCount": 285,
   "packageCommands": [
     {
@@ -3150,6 +3150,18 @@
         "scripts/windows-local-owner-non-goals-self-test.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-non-goals-self-test"
+    },
+    {
+      "name": "verify:windows-owner-passage-preview",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_passage_preview_owner",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-passage-preview"
     },
     {
       "name": "verify:windows-owner-profile-provider",
@@ -7903,6 +7915,7 @@
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
+        "package.json#scripts.verify:windows-owner-passage-preview",
         "package.json#scripts.verify:windows-owner-reader-session",
         "package.json#scripts.verify:windows-owner-receipt",
         "package.json#scripts.verify:windows-owner-registry",

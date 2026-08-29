@@ -153,10 +153,18 @@
       "rollbackTarget": "pre-change preview localStorage keys and durable envelope; application-backup preview domain",
       "futureOwnerFacade": "windowsHost.passagePreviewOwner",
       "querySurface": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
-      "commandSurface": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import"],
+      "commandSurface": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
       "migrationWave": "wave-3-passage-preview",
       "zeroGate": "No localStorage canonical preview write after checkpoint; preference/session-cache writes remain explicitly ephemeral or non-canonical; legacy keys become read-only/import evidence",
-      "milestoneStatus": "inventory-only; no localStorage writer migration"
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/passage_preview_owner.py",
+        "status": "isolated-pre-cutover",
+        "canonicalStorage": "profile-scoped Host JSON record envelope",
+        "uses": ["DurableJsonRepository", "OwnerCommitReceiptStore"],
+        "browserWriterConnected": false,
+        "productionApiAuthoritative": false
+      },
+      "milestoneStatus": "inventory plus isolated Host seam; browser remains current writer and no migration"
     },
     {
       "domain": "annotation",
@@ -218,5 +226,5 @@
       "milestoneStatus": "inventory-only; current Python service remains owner"
     }
   ],
-  "artifactChecksum": "sha256:df61076823c12719bfbf1fa512dff12783b26eb3fbc429679b0e745eb53aecbe"
+  "artifactChecksum": "sha256:af77b09ae1f0097cca52bb143291228813eabd82906bf48140c989b10cdcf947"
 }

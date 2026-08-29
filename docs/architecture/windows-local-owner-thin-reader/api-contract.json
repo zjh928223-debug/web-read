@@ -255,10 +255,19 @@
       "queryOperations": ["durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"],
       "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
       "capabilities": ["passage-preview.query", "passage-preview.commit", "passage-preview.batch", "passage-preview.receipt"],
-      "mutationRequirements": { "expectedRevision": "required for durable envelope/batch transitions", "idempotencyKey": "required for every state/rating/transition command" },
+      "mutationRequirements": { "expectedRevision": "required for durable envelope/batch transitions", "idempotencyKey": "required for every state/batch/rating/transition/legacy command" },
       "revisionSource": "passage-preview durable-state.v1 integer revision",
       "backupAdapter": "localStorage passage-preview key-spec adapter",
       "recoveryHandler": "preview key/schema/quota recovery handler, future host-owned",
+      "internalSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/passage_preview_owner.py",
+        "status": "isolated-pre-cutover",
+        "recordBoundary": "existing passage-preview localStorage JSON envelopes under inventoried keys; no second preview schema",
+        "durability": ["DurableJsonRepository atomic replace", "OwnerCommitReceiptStore CAS/idempotency"],
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false,
+        "migrationConnected": false
+      },
       "authorityReadyInThisMilestone": false
     },
     {
@@ -655,5 +664,5 @@
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:e5829fb876b43f6aafc8dc7689611ba78934214748e22f8482e4f20f15b7b7a2"
+  "artifactChecksum": "sha256:3e593b0b05da50476ba72cc77d16d3e6d75cf9e5784293ada0d293a576fb12f4"
 }

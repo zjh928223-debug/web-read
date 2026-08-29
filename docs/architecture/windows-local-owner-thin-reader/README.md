@@ -68,6 +68,20 @@ no data migration or UI wiring has occurred, and `/api/app/owner` still returns 
 complete media; media-related content remains outside this small JSON record boundary. The aggregate A task
 is intentionally still unchecked until the other four domain seams exist.
 
+## Passage-preview internal seam
+
+The second small domain slice is now exercised in
+`tools/subtitle-workflow/youtube_workflow/passage_preview_owner.py`. It keeps the existing
+passage-preview and IELTS localStorage envelopes as opaque JSON records in a profile-scoped
+`DurableJsonRepository`, with the frozen query/command surface and the existing
+`OwnerCommitReceiptStore` for revision CAS and idempotent receipts. Its focused gate is
+`npm run verify:windows-owner-passage-preview`.
+
+This remains an isolated pre-cutover seam: browser localStorage remains the current writer and
+`/api/app/owner` remains pre-cutover/not-ready, with no migration, backup/cutover, or UI wiring.
+Session cache, shortcuts, translation/context display preferences, ECDICT suggestions, tokens, paths,
+and complete media stay outside the canonical record boundary. The aggregate A task remains unchecked.
+
 ## Evidence semantics
 
 `pass` means the named existing focused check or static source assertion actually ran successfully. It does
