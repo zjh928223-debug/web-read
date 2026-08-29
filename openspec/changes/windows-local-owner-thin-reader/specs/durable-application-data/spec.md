@@ -19,12 +19,13 @@
 
 ### Requirement: 备份与逐域迁移必须可校验、可回退且不复制媒体
 
-系统 SHALL 先对六域执行 read-only inventory，再生成包含 format/schema、domain counts、checksums、revision 和 media reference metadata 的最小 backup manifest。一次性 import 和 restore MUST 在写入前校验 schema、checksum、content/reference 与明显 revision conflict；每个 domain 以自己的 backup、旧值和 rollback target 完成或停止，不要求跨异构存储的 global transaction。失败 MUST 保留旧 canonical value，且未知或损坏记录不得被静默丢弃。完整媒体 MUST 不进入 backup 或 migration。
+系统 SHALL 对每个 domain 按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 执行迁移。freeze 前只允许只读 inventory、预备 backup 或 dry-run；用于切换的 final backup/checksum 和唯一正式 copy/import MUST 在 freeze 后取得/执行。最小 backup manifest MUST 记录 format/schema、domain counts、checksums、revision 和 media reference metadata；一次性 final copy/import 和 restore MUST 在写入前校验 schema、checksum、content/reference 与明显 revision conflict。每个 domain 以自己的 backup、旧值和 rollback target 完成或停止，不要求跨异构存储的 global transaction。失败 MUST 保留旧 canonical value，且未知或损坏记录不得被静默丢弃。完整媒体 MUST 不进入 backup 或 migration。
 
-#### Scenario: 创建 cutover 前备份
+#### Scenario: 冻结后创建切换用 final backup
 
 - **WHEN** 某个 domain 准备从 browser writer 转移到 Host
-- **THEN** system MUST 保存该 domain 的 read-only inventory、checksum 和可回退 backup
+- **THEN** system MUST 先完成该 domain 的 read-only inventory 和 dry-run/容量与格式检查
+- **THEN** freeze old writer 后 system MUST 保存用于切换的 final checksum 和可回退 backup
 - **THEN** backup MUST 记录六域清单（空域也要列出）并排除 secret、temporary file 与完整 media bytes
 
 #### Scenario: 一次性 import 或 restore 发现问题

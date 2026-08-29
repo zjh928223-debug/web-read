@@ -9,7 +9,7 @@
 **目标：**
 
 - 为六个 durable domain 建立可理解的 Host owner、query/command/receipt 和 revision/CAS seam。
-- 安全迁移现有个人数据：先读取和校验，备份后导入，验证成功才切换 writer；失败保留旧值并可回退。
+- 安全迁移现有个人数据：按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 执行；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 与唯一正式 copy/import 必须在 freeze 后取得/执行。失败时恢复旧 writer 或保持 not-ready，不保留长期双写。
 - 保持 `SeekPlayerDB` database `version 1`、store `files`、key path `id`，以及六个 WhisperX/语言处理文件不变。
 - 让媒体只以 identity/reference metadata 进入 durable records；browser media element 继续使用 Host 授权 URL 和 Range，不整文件复制。
 - 保留基本 atomic write、checksum、幂等 retry、明显 CAS conflict、最小 backup/restore/rollback 和核心用户流程回归。
@@ -49,7 +49,7 @@ Typed loopback API 使用现有 versioned envelope、`requestId`/`correlationId`
 
 每个 domain 复用已有 repository/receipt 工具，采用小型 record envelope、checksum、monotonic revision、expected-revision CAS 和幂等 receipt。写入或 replace 失败时保留旧 canonical snapshot；结果不确定时通过 receipt query/recovery 处理，不盲目重做副作用。
 
-多个 domain 的 backup/import/cutover 按固定顺序逐个完成：当前域 inventory、backup、import/dry-run、verify、writer freeze、switch、smoke check；成功后才进入下一个域。任一域失败就停止后续步骤，保留原数据和已生成的 backup/receipt，并按该域的 rollback target 回退。这里不宣称六域 global transaction 或跨域一致性读取。
+多个 domain 的迁移按固定顺序逐个完成：每个 domain 执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`，成功后才进入下一个 domain。freeze 前只做只读 inventory、预备 backup 或 dry-run；用于切换的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行。任一 domain 失败就停止后续步骤，恢复旧 writer 或保持 not-ready，保留原数据和已生成的 backup/receipt；这里不宣称六域 global transaction 或跨域一致性读取。
 
 ### 4. 媒体只走 capability + Range
 
@@ -59,7 +59,7 @@ Reader Session 及其他 durable records 只保存 media identity、size、conte
 
 切换不使用长期双写。每个 domain 遵循：
 
-`inventory → backup → one-time import/dry-run → verify → freeze old writer → switch to Host → smoke check → rollback if needed`。
+`read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`。freeze 前只允许只读 inventory、预备 backup 或 dry-run；用于切换的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行。
 
 freeze 后旧 path 只可读；switch 前 Host API 不确认该域新的 canonical write；switch 后新的 durable mutation 只能经 Host receipt。回滚先停止 Host 新写入，再用该域 pre-switch backup 和 revision evidence 恢复旧值或保持 not-ready，确认后才恢复一个 writer。Reader Session 先于其余 domain 切换，其余五域逐域处理。
 
@@ -79,11 +79,11 @@ freeze 后旧 path 只可读；switch 前 Host API 不确认该域新的 canonic
 
 ### B. 最小备份、恢复与一次性迁移
 
-为六域提供 read-only inventory、六域 manifest/checksum、一次性 import、restore dry-run/execute 和 per-domain rollback。保留未知/损坏记录与旧值，完整媒体只保留 reference metadata；同时持续冻结 `SeekPlayerDB v1/files/id`。
+为六域提供 read-only inventory、dry-run/容量与格式检查，并在每域 freeze old writer 后生成 final manifest/checksum、执行一次性 final copy/import、verify、switch 和 rollback。保留未知/损坏记录与旧值，完整媒体只保留 reference metadata；同时持续冻结 `SeekPlayerDB v1/files/id`。
 
 ### C. 先 Reader Session，再逐域切换 writer
 
-先把 Reader Session loader/media 使用接到已完成的 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind 和旧 session 保留。随后按个人工具可控顺序逐域执行上述 freeze/copy/verify/switch/rollback 流程，切换后 compatibility path 只读，不允许长期双写。
+先把 Reader Session loader/media 使用接到已完成的 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind 和旧 session 保留。随后按个人工具可控顺序逐域执行上述 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 流程，切换后 compatibility path 只读，不允许长期双写。
 
 ### D. 核心验证、旧 writer 收敛与文档
 

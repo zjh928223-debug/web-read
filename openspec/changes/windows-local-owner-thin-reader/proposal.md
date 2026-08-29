@@ -9,7 +9,7 @@
 - **BREAKING**：Windows `Local App Host` 最终成为 `Reader Session`、`Vocabulary/SRS`、`Preview`、`Annotation`、`marks/activity`、`workflow` 六个 durable domain 的唯一 canonical owner；browser 通过 typed owner API 读写，完成切换后不再直接写 canonical `IndexedDB`、`localStorage` 或 JSON。
 - 保留已经完成的 1.x–3.x 与 4.1 基础：owner registry、loopback/auth、lease/receipt、typed API、media capability/no-copy 检查，以及 `ReaderSessionOwner` 的 query/prepare/commit/restore。它们不在本次范围精简中拆除或返工。
 - 为剩余五域建立必要的 query/command/receipt seam；每个 domain 使用可解释的 revision/CAS、幂等 key、atomic write、checksum、失败保留旧值和最小恢复状态。
-- 以逐域顺序完成 read-only inventory、备份、一次性迁移、验证、writer freeze、切换和 rollback；不建立长期双写，也不声称跨异构存储存在 global transaction。
+- 以逐域顺序完成 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前可以做只读 inventory、预备 backup 或 dry-run，但用于切换的最终 backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；不建立长期双写，也不声称跨异构存储存在 global transaction。
 - 保持媒体只保存 identity/reference metadata，浏览器直接使用 Host 授权 URL 和 HTTP `Range`/`ETag`；不把完整媒体 Blob/ArrayBuffer 放入 API、repository、backup 或 migration。
 - 保持 `SeekPlayerDB` database `version 1`、store `files`、key path `id` 不变；六个用户 WhisperX/语言处理文件继续不碰。
 - 将后续实施压缩为少量 A–D 阶段，并只保留正常使用、重复请求、明显 CAS 冲突、启动/恢复、核心播放切换和大媒体不整文件复制等直接影响个人数据与可用性的验证。

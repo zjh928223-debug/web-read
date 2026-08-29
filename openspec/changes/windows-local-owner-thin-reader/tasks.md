@@ -11,12 +11,12 @@
 
 ## B. 最小备份、恢复与一次性迁移
 
-- [ ] B 为六域实现 read-only inventory、manifest/checksum、一次性 import、restore dry-run/execute 和每域 pre-switch backup/rollback target；目标固定为 Host-managed repository，未知/损坏/冲突或写入失败保留旧值并阻止受影响域继续写入，完整媒体只保留 identity/reference metadata，`SeekPlayerDB v1/files/id` 不变。
+- [ ] B 为六域按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 实现一次性迁移、restore dry-run/execute 和每域 rollback target；freeze 前可做预备 backup/dry-run，但用于切换的最终 backup/checksum 与唯一正式 copy/import 必须在 freeze 后取得/执行。目标固定为 Host-managed repository，未知/损坏/冲突或写入失败保留旧值并阻止受影响域继续写入，完整媒体只保留 identity/reference metadata，`SeekPlayerDB v1/files/id` 不变。
 
 ## C. 先 Reader Session，再逐域切换 writer
 
 - [ ] C1 将 Reader Session loader 与 media 使用接到已完成 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind、Host restart/reopen 和旧 session 保留；继续保持薄入口、script order 和 no-copy。
-- [ ] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `freeze old writer → copy/import → verify → switch → smoke check → rollback if needed`；切换后 compatibility path 只读，不保留长期双写。
+- [ ] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；切换后 compatibility path 只读，不保留长期双写。
 
 ## D. 核心验证、旧 writer 收敛与文档
 

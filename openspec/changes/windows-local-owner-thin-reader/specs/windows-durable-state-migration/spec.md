@@ -1,13 +1,14 @@
 ## ADDED Requirements
 
-### Requirement: 迁移必须以逐域 inventory、backup、import 和 verify 执行
+### Requirement: 迁移必须按冻结后的逐域最终副本顺序执行
 
-Windows backup、import 和 owner migration SHALL 使用为六域注册的 adapter，并以 `inventory → backup/checksum → one-time import/dry-run → verify` 的顺序处理每个 domain。最小 manifest MUST 记录 format/schema、domain、record count、checksum、revision 和 media reference metadata；unknown key、unsupported schema、corrupt payload 或 unclaimed record MUST 阻止受影响 domain 继续写入，不能静默丢弃。
+Windows backup、import 和 owner migration SHALL 使用为六域注册的 adapter，并以 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify` 的顺序处理每个 domain。freeze 前只允许只读 inventory、预备 backup 或 dry-run；用于切换的 final backup/checksum 和唯一正式 copy/import MUST 在 freeze 后取得/执行。最小 manifest MUST 记录 format/schema、domain、record count、checksum、revision 和 media reference metadata；unknown key、unsupported schema、corrupt payload 或 unclaimed record MUST 阻止受影响 domain 继续写入，不能静默丢弃。
 
-#### Scenario: 创建切换前 backup
+#### Scenario: 冻结后创建切换用 final backup
 
 - **WHEN** domain 准备从 browser direct writer 转移到 Host
-- **THEN** system MUST 完成 read-only inventory 并保存该 domain 的 checksum/rollback backup
+- **THEN** system MUST 完成 read-only inventory 和 dry-run/容量与格式检查
+- **THEN** freeze old writer 后 system MUST 保存该 domain 的 final checksum/rollback backup
 - **THEN** backup MUST 列出六域（空域也列出），排除 secret、temporary file 和完整 media bytes
 
 #### Scenario: dry-run 发现无法迁移的 record
@@ -18,11 +19,11 @@ Windows backup、import 和 owner migration SHALL 使用为六域注册的 adapt
 
 ### Requirement: 每个 domain 的 writer switch 必须简单、单一且可回退
 
-每个 domain SHALL 在自己的 profile lease/必要 journal 下执行 `freeze old writer → copy/import → verify → switch to Host → smoke check`。freeze 后 compatibility path 只能 read-only/import-evidence；switch 后新的 durable mutation 只能由 Host-managed repository API 提交，不得保留长期双写。某个 domain 失败时 MUST 停止后续该域步骤，使用该域 pre-switch backup/ revision evidence 回退或保持 not-ready；本变更不要求六域 global transaction。
+每个 domain SHALL 在自己的 profile lease/必要 journal 下按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 执行。freeze 后 compatibility path 只能 read-only/import-evidence；switch 后新的 durable mutation 只能由 Host-managed repository API 提交，不得保留长期双写。某个 domain 失败时 MUST 停止后续该域步骤，恢复旧 writer 或保持 not-ready；本变更不要求六域 global transaction。
 
 #### Scenario: domain 切换成功
 
-- **WHEN** backup、import/dry-run、checksum 和核心 smoke check 通过，且旧 writer 已冻结
+- **WHEN** system 按既定顺序完成 read-only inventory、dry-run/容量与格式检查、freeze old writer、final backup/checksum、one-time final copy/import、verify、switch Host authoritative writer 和核心 smoke check
 - **THEN** Host-managed repository MUST 成为该 domain 的唯一 canonical writer
 - **THEN** legacy browser path MUST 保持 read-only，所有新的 mutation MUST 返回 Host receipt
 
