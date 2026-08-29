@@ -366,8 +366,12 @@
       },
       "canonicalRecords": [
         {"key": "jobs.json", "schemaVersions": ["1"]},
+        {"keyPattern": "jobs:*", "schemaVersions": ["1"]},
         {"key": "history.json", "schemaVersions": ["1"]},
+        {"keyPattern": "items:*", "schemaVersions": ["1"]},
         {"key": "reader-index.json", "schemaVersions": ["1"]},
+        {"keyPattern": "reader-index:*", "schemaVersions": ["1"]},
+        {"key": "config", "schemaVersions": ["1"]},
         {"key": "config.json", "schemaVersions": ["1"]},
         {"keyPattern": "output:*", "schemaVersions": ["1"]},
         {"key": "mediaReferences[]", "schemaVersions": ["identity-metadata-rebind"]}
@@ -377,7 +381,7 @@
         {"keyPattern": "read-web.workflow-operation-receipt-quarantine.v1.*", "schemaVersions": ["1"]}
       ],
       "queryOperations": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
-      "commandOperations": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
+      "commandOperations": ["job-start", "job-cancel", "job-retry", "snapshot-commit", "config-commit", "reader-index-commit", "receipt-query"],
       "revisionSource": {
         "identity": "workflow.history-and-job-revision",
         "source": "WorkflowHistoryStore jobs/history envelope revisions plus DurableJsonRepository config/reader-index checksums"
@@ -397,7 +401,7 @@
         "status": "isolated-pre-cutover",
         "repository": "existing WorkflowHistoryStore/DurableJsonRepository canonical files; no second workflow owner JSON",
         "receiptStore": "shared OwnerCommitReceiptStore evidence; browser local receipt hints are not authoritative",
-        "jobCommandBoundary": "validated durable job record mutation only; no queue, runner, or ProcessSupervisor side effect",
+        "jobCommandBoundary": "validated durable job record mutation and one-time jobs/history/config/reader-index snapshot import; no queue, runner, or ProcessSupervisor side effect",
         "mediaBoundary": "identity/reference/size/contentType/etag/authorized relative URL metadata only; no path or bytes",
         "productionApiAuthoritative": false,
         "browserWriterConnected": false

@@ -507,7 +507,7 @@ function requiresIdempotency(domain, operation) {
   if (domain === 'passage-preview') return operation !== 'legacy-import'
   if (domain === 'annotation') return ['bundle-commit', 'lightweight-import', 'backfill-result-import'].includes(operation)
   if (domain === 'marks-activity') return ['marks-commit', 'activity-append'].includes(operation)
-  if (domain === 'workflow') return ['job-start', 'job-cancel', 'job-retry', 'config-commit', 'reader-index-commit'].includes(operation) || operation.includes('config') || operation.includes('index')
+  if (domain === 'workflow') return ['job-start', 'job-cancel', 'job-retry', 'snapshot-commit', 'config-commit', 'reader-index-commit'].includes(operation) || operation.includes('config') || operation.includes('index')
   return false
 }
 

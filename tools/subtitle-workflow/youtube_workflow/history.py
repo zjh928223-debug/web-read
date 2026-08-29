@@ -875,6 +875,90 @@ class WorkflowHistoryStore:
             self.json_repository.write(self.config_path, safe_config)
         return safe_config
 
+    def replace_snapshot(
+        self,
+        jobs: list[dict],
+        history: list[dict],
+        reader_index: dict,
+        config: dict,
+    ) -> dict:
+        """Replace the four workflow documents as one owner-level import.
+
+        The individual files keep their existing envelopes and durable writer.
+        All inputs are validated by ``WorkflowOwner`` before this method is
+        called; this method only coordinates the one-time snapshot write and
+        compensates already-written files if a later file replacement fails.
+        """
+        with self.lock:
+            current = {}
+            for name, path, fallback, validator in (
+                ("jobs", self.jobs_path, {"jobs": []}, self._validator(JOBS_DOMAIN, "jobs")),
+                ("history", self.history_path, {"items": []}, self._validator(HISTORY_DOMAIN, "items")),
+                ("readerIndex", self.reader_index_path, {"items": []}, None),
+                ("config", self.config_path, {}, None),
+            ):
+                outcome = self.json_repository.read(path, fallback, validator=validator)
+                if outcome.status in {"permission", "io-error", "corrupt", "interrupted", "unsupported"}:
+                    if name in {"jobs", "history"}:
+                        self._record_outcome(name, outcome)
+                        self._require_recoverable(name, path, outcome)
+                    raise WorkflowStatePersistenceError(name, outcome)
+                current[name] = {
+                    "path": path,
+                    "value": deepcopy(outcome.value),
+                    "present": path.exists(),
+                }
+
+            jobs_document = _make_envelope(
+                JOBS_DOMAIN,
+                "jobs",
+                {"jobs": deepcopy(jobs)},
+                _document_revision(current["jobs"]["value"]) + 1,
+            )
+            history_document = _make_envelope(
+                HISTORY_DOMAIN,
+                "items",
+                {"items": deepcopy(history)},
+                _document_revision(current["history"]["value"]) + 1,
+            )
+            documents = (
+                ("jobs", jobs_document),
+                ("history", history_document),
+                ("readerIndex", deepcopy(reader_index)),
+                ("config", deepcopy(config)),
+            )
+            written: list[str] = []
+            try:
+                for name, document in documents:
+                    self.json_repository.write(current[name]["path"], document, preserve_backup=True)
+                    written.append(name)
+            except BaseException:
+                for name in reversed(written):
+                    previous = current[name]
+                    try:
+                        if previous["present"]:
+                            self.json_repository.write(previous["path"], previous["value"], preserve_backup=False)
+                        else:
+                            previous["path"].unlink(missing_ok=True)
+                    except BaseException:
+                        # The durable .bak files remain the recovery evidence
+                        # if compensation itself is unavailable.
+                        pass
+                raise
+
+            jobs_outcome = JsonReadOutcome(jobs_document, "primary", "primary")
+            history_outcome = JsonReadOutcome(history_document, "primary", "primary")
+            self._record_outcome("jobs", jobs_outcome)
+            self._record_outcome("history", history_outcome)
+            self._known_revisions["jobs"] = _document_revision(jobs_document)
+            self._known_revisions["history"] = _document_revision(history_document)
+            self._known_payloads["jobs"] = deepcopy(jobs_document["payload"])
+            self._known_payloads["history"] = deepcopy(history_document["payload"])
+            return {
+                "jobsRevision": jobs_document["revision"],
+                "historyRevision": history_document["revision"],
+            }
+
     def append_log(self, message: str, *, max_bytes: int = 1024 * 1024, backup_count: int = 3) -> None:
         line = f"{datetime.now(timezone.utc).isoformat()} {message}".strip() + "\n"
         with self.lock:

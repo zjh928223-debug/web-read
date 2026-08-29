@@ -92,7 +92,7 @@ OWNER_MIGRATION_OPERATIONS = {
     },
     "workflow": {
         "query": frozenset({"health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"}),
-        "command": frozenset({"job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit"}),
+        "command": frozenset({"job-start", "job-cancel", "job-retry", "snapshot-commit", "config-commit", "reader-index-commit"}),
         "receipt-query": frozenset({"receipt-query"}),
     },
 }

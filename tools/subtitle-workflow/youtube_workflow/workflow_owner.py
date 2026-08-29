@@ -56,6 +56,7 @@ COMMAND_OPERATIONS = (
     "job-start",
     "job-cancel",
     "job-retry",
+    "snapshot-commit",
     "config-commit",
     "reader-index-commit",
     "receipt-query",
@@ -65,6 +66,7 @@ _CAPABILITY_BY_OPERATION = {
     "job-start": "workflow.job-command",
     "job-cancel": "workflow.job-command",
     "job-retry": "workflow.job-command",
+    "snapshot-commit": "workflow.job-command",
     "config-commit": "workflow.config-command",
     "reader-index-commit": "workflow.config-command",
 }
@@ -811,6 +813,49 @@ class WorkflowOwner:
             if not self._pending_fingerprint_matches(pending, operation, candidate_mutation):
                 return None
             record_checksums = [_checksum(candidate_mutation["readerIndex"])]
+        elif operation == "snapshot-commit":
+            if current_parts["jobs"] != expected_parts["jobs"] + 1 or current_parts["history"] != expected_parts["history"] + 1:
+                return None
+            previous_documents = (
+                (self.jobs_path, {"jobs": []}, self.store._validator("workflow.jobs", "jobs"), "jobs"),
+                (self.history_path, {"items": []}, self.store._validator("workflow.history", "items"), "history"),
+                (self.reader_index_path, {"items": []}, _validate_reader_index_document, "readerIndex"),
+                (self.config_path, {}, _validate_config_document, "config"),
+            )
+            previous_values = {}
+            for path, fallback, validator, name in previous_documents:
+                try:
+                    previous, previous_missing = self._read_raw(
+                        self.repository.backup_path(path),
+                        fallback,
+                        validator,
+                    )
+                except WorkflowOwnerStorageError:
+                    return None
+                previous_values[name] = (previous, previous_missing)
+            if _revision_digest(previous_values["jobs"][0], missing=previous_values["jobs"][1]) != expected_parts["jobsDigest"]:
+                return None
+            if _revision_digest(previous_values["history"][0], missing=previous_values["history"][1]) != expected_parts["historyDigest"]:
+                return None
+            if _revision_digest(previous_values["config"][0], missing=previous_values["config"][1]) != expected_parts["configDigest"]:
+                return None
+            if _revision_digest(previous_values["readerIndex"][0], missing=previous_values["readerIndex"][1]) != expected_parts["indexDigest"]:
+                return None
+            try:
+                snapshot = self._snapshot_payload({
+                    "snapshot": {
+                        "jobs": state["jobs"],
+                        "history": state["history"],
+                        "readerIndex": state["readerIndex"],
+                        "config": state["config"],
+                    }
+                })["snapshot"]
+            except WorkflowOwnerError:
+                return None
+            candidate_mutation = {"snapshot": snapshot}
+            if not self._pending_fingerprint_matches(pending, operation, candidate_mutation):
+                return None
+            record_checksums = self._snapshot_record_checksums(snapshot)
         else:
             return None
 
@@ -929,6 +974,61 @@ class WorkflowOwner:
         return {"jobId": raw_job_id, "record": record, "operation": operation}
 
     @staticmethod
+    def _snapshot_record(value: Any) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise WorkflowOwnerError("invalid-request")
+        record = dict(value)
+        if set(record) - _SAFE_JOB_FIELDS:
+            raise WorkflowOwnerError("invalid-request")
+        _identity(record.get("jobId"), "jobId", pattern=_SAFE_JOB_ID)
+        if "status" in record and record["status"] not in _JOB_STATUSES:
+            raise WorkflowOwnerError("invalid-request")
+        _validate_safe_value(record)
+        return record
+
+    @classmethod
+    def _snapshot_payload(cls, payload: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, Mapping) or set(payload) != {"snapshot"}:
+            raise WorkflowOwnerError("invalid-request")
+        raw_snapshot = payload["snapshot"]
+        if not isinstance(raw_snapshot, Mapping) or set(raw_snapshot) != {"jobs", "history", "readerIndex", "config"}:
+            raise WorkflowOwnerError("invalid-request")
+        jobs = raw_snapshot["jobs"]
+        history = raw_snapshot["history"]
+        if not isinstance(jobs, list) or not isinstance(history, list) or len(jobs) > 4096 or len(history) > 4096:
+            raise WorkflowOwnerError("invalid-request")
+        normalized_jobs = [cls._snapshot_record(item) for item in jobs]
+        normalized_history = [cls._snapshot_record(item) for item in history]
+        if len({item["jobId"] for item in normalized_jobs}) != len(normalized_jobs):
+            raise WorkflowOwnerError("invalid-request")
+        if len({item["jobId"] for item in normalized_history}) != len(normalized_history):
+            raise WorkflowOwnerError("invalid-request")
+        index = cls._reader_index_payload(raw_snapshot["readerIndex"])["readerIndex"]
+        config_value = raw_snapshot["config"]
+        if not isinstance(config_value, Mapping):
+            raise WorkflowOwnerError("invalid-request")
+        config = {} if not config_value else cls._config_payload({"config": config_value})["config"]
+        return {
+            "snapshot": {
+                "jobs": normalized_jobs,
+                "history": normalized_history,
+                "readerIndex": index,
+                "config": config,
+            }
+        }
+
+    @staticmethod
+    def _snapshot_record_checksums(snapshot: Mapping[str, Any]) -> list[str]:
+        values = [
+            *snapshot.get("jobs", []),
+            *snapshot.get("history", []),
+            *snapshot.get("readerIndex", {}).get("items", []),
+        ]
+        if snapshot.get("config"):
+            values.append(snapshot["config"])
+        return sorted({_checksum(value) for value in values})
+
+    @staticmethod
     def _config_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
             raise WorkflowOwnerError("invalid-request")
@@ -993,6 +1093,17 @@ class WorkflowOwner:
         if operation.startswith("job-"):
             payload_result["jobId"] = mutation["jobId"]
             payload_result["recordChecksums"] = [_checksum(mutation["record"])]
+        elif operation == "snapshot-commit":
+            snapshot = mutation["snapshot"]
+            payload_result["durableMutation"] = "workflow-snapshot"
+            payload_result["recordCounts"] = {
+                "jobs": len(snapshot["jobs"]),
+                "history": len(snapshot["history"]),
+                "readerIndex": len(snapshot["readerIndex"]["items"]),
+                "config": 1 if snapshot["config"] else 0,
+            }
+            payload_result["recordCount"] = sum(payload_result["recordCounts"].values())
+            payload_result["recordChecksums"] = WorkflowOwner._snapshot_record_checksums(snapshot)
         elif operation == "config-commit":
             payload_result["fields"] = sorted(mutation["config"])
             payload_result["recordChecksums"] = [_checksum(mutation["config"])]
@@ -1141,6 +1252,7 @@ class WorkflowOwner:
                 "baseUrl": _redact_url(raw.get("baseUrl")),
                 "proxyUrl": _redact_url(raw.get("proxyUrl")),
                 "configured": bool(raw.get("model") or raw.get("baseUrl") or raw.get("proxyUrl")),
+                "present": not state["configMissing"],
             }
             return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", state["revision"], {"config": public})
         if operation == "media-capability":
@@ -1271,6 +1383,8 @@ class WorkflowOwner:
             _identity(idempotency_key, "idempotencyKey", pattern=_SAFE_IDEMPOTENCY)
             if operation in {"job-start", "job-cancel", "job-retry"}:
                 mutation = self._job_payload(payload, operation)
+            elif operation == "snapshot-commit":
+                mutation = self._snapshot_payload(payload)
             elif operation == "config-commit":
                 mutation = self._config_payload(payload)
             else:
@@ -1359,6 +1473,23 @@ class WorkflowOwner:
             current = self._read_state()
             if current["revision"] != context.expected_revision:
                 return self._evidence(context, status="conflict", revision=current["revision"], record_checksums=[])
+            if operation == "snapshot-commit":
+                snapshot = mutation["snapshot"]
+                self.store.replace_snapshot(
+                    snapshot["jobs"],
+                    snapshot["history"],
+                    snapshot["readerIndex"],
+                    snapshot["config"],
+                )
+                next_revision = self._read_state()["revision"]
+                record_checksums = self._snapshot_record_checksums(snapshot)
+                return self._evidence(
+                    context,
+                    status="committed",
+                    revision=next_revision,
+                    record_checksums=record_checksums,
+                    effect_fingerprint=_checksum({"operation": operation, "revision": next_revision, "recordChecksums": record_checksums}),
+                )
             if operation in {"job-start", "job-cancel", "job-retry"}:
                 job_id = mutation["jobId"]
                 jobs = deepcopy(current["jobs"])

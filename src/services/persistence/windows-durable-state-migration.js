@@ -299,7 +299,20 @@ function domainEquivalent(left, right, domain = null) {
       if (domain === 'vocabulary-srs') delete normalized.revision
       return normalized
     }
-    return canonicalize(comparable(left)) === canonicalize(comparable(right))
+    const leftComparable = comparable(left)
+    const rightComparable = comparable(right)
+    const leftRevision = leftComparable?.revision
+    const rightRevision = rightComparable?.revision
+    if ((Number.isInteger(leftRevision) && typeof rightRevision === 'string')
+      || (typeof leftRevision === 'string' && Number.isInteger(rightRevision))) {
+      // A source backup can carry a numeric file revision while a Host owner
+      // exposes an opaque composite CAS revision.  Compare the durable
+      // records/references across that coordinate boundary, but preserve
+      // exact revision checks wherever both sides use the same coordinate.
+      delete leftComparable.revision
+      delete rightComparable.revision
+    }
+    return canonicalize(leftComparable) === canonicalize(rightComparable)
   } catch {
     return false
   }

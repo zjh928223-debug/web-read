@@ -102,6 +102,55 @@ function activeMarksOwner() {
     : null
 }
 
+function activeWorkflowOwner() {
+  const cutover = globalThis.__windowsOwnerDomainCutover
+  return cutover
+    && typeof cutover.isAuthoritative === 'function'
+    && cutover.isAuthoritative('workflow')
+    && typeof cutover.query === 'function'
+    && typeof cutover.command === 'function'
+    ? cutover
+    : null
+}
+
+function workflowJobsRevision(revision) {
+  const match = /^w1:j([0-9]+):/u.exec(String(revision || ''))
+  return match ? Number(match[1]) : null
+}
+
+function workflowMutationError(response, fallbackCode = 'workflow-owner-mutation-not-committed') {
+  const outcome = response?.outcome
+  const error = new Error(response?.error?.message || 'Host workflow mutation was not committed')
+  error.code = response?.error?.code || fallbackCode
+  error.category = response?.error?.category
+    || (outcome === 'conflict' || response?.commitStatus === 'conflict' ? 'conflict' : 'recovery')
+  error.retryable = response?.error?.retryable !== false
+  const currentRevision = response?.error?.details?.currentRevision ?? response?.revision
+  const numericRevision = workflowJobsRevision(currentRevision)
+  if (numericRevision !== null) {
+    error.currentRevision = numericRevision
+    error.actualRevision = numericRevision
+  }
+  error.status = outcome === 'conflict' || response?.commitStatus === 'conflict' ? 409 : 503
+  return error
+}
+
+function requireWorkflowCommit(response) {
+  if (response?.outcome !== 'committed' || response?.commitStatus !== 'committed') {
+    throw workflowMutationError(response)
+  }
+  return response
+}
+
+function workflowUnsupportedError(operation) {
+  const error = new Error(`Host workflow operation is not registered: ${operation}`)
+  error.code = 'workflow-owner-operation-unsupported'
+  error.category = 'not-ready'
+  error.retryable = false
+  error.status = 503
+  return error
+}
+
 async function currentMarksRevision(cutover, jobId, contentId, signal) {
   const response = await cutover.query({
     domain: 'marks-activity',
@@ -174,6 +223,141 @@ export function createYoutubeWorkflowClient(options = {}) {
     return rawFetch(url, { ...init, headers })
   }
   const fetchImpl = authorizedFetch
+  let workflowOwnerRevisionToken = null
+  let workflowOwnerJobsRevision = null
+
+  function observeWorkflowResponse(response) {
+    if (response?.revision !== undefined && response?.revision !== null) {
+      workflowOwnerRevisionToken = response.revision
+      const parsed = workflowJobsRevision(response.revision)
+      if (parsed !== null) workflowOwnerJobsRevision = parsed
+    }
+    const sourceRevision = response?.payload?.sourceRevision
+    if (Number.isInteger(sourceRevision) && sourceRevision >= 0) workflowOwnerJobsRevision = sourceRevision
+    return response
+  }
+
+  async function workflowQuery(cutover, operation, payload = {}, signal) {
+    const response = observeWorkflowResponse(await cutover.query({
+      domain: 'workflow',
+      operation,
+      payload,
+      ...(signal ? { signal } : {}),
+    }))
+    if (response?.outcome !== 'read') throw workflowMutationError(response, 'workflow-owner-query-not-ready')
+    return response
+  }
+
+  async function workflowExpectedRevision(cutover, options = {}) {
+    const requested = options.expectedRevision
+    if (typeof requested === 'string' && requested) return requested
+    if (Number.isInteger(requested) && requested >= 0
+      && workflowOwnerRevisionToken !== null
+      && workflowOwnerJobsRevision === requested) {
+      return workflowOwnerRevisionToken
+    }
+    if (Number.isInteger(requested) && requested >= 0
+      && workflowOwnerJobsRevision !== null
+      && workflowOwnerJobsRevision !== requested) {
+      const error = new Error('Host workflow revision conflicts with the requested client revision')
+      error.code = 'WORKFLOW_STATE_CONFLICT'
+      error.category = 'conflict'
+      error.retryable = true
+      error.status = 409
+      error.actualRevision = workflowOwnerJobsRevision
+      error.currentRevision = workflowOwnerJobsRevision
+      throw error
+    }
+    if (workflowOwnerRevisionToken === null) {
+      await workflowQuery(cutover, 'job', {}, options.signal)
+    }
+    if (Number.isInteger(requested) && requested >= 0
+      && workflowOwnerJobsRevision !== null
+      && workflowOwnerJobsRevision !== requested) {
+      const error = new Error('Host workflow revision conflicts with the requested client revision')
+      error.code = 'WORKFLOW_STATE_CONFLICT'
+      error.category = 'conflict'
+      error.retryable = true
+      error.status = 409
+      error.actualRevision = workflowOwnerJobsRevision
+      error.currentRevision = workflowOwnerJobsRevision
+      throw error
+    }
+    if (workflowOwnerRevisionToken === null) {
+      throw workflowUnsupportedError('workflow-revision')
+    }
+    return workflowOwnerRevisionToken
+  }
+
+  function workflowResultRevision(response) {
+    const parsed = workflowJobsRevision(response?.revision)
+    return parsed !== null ? parsed : workflowOwnerJobsRevision ?? 0
+  }
+
+  async function workflowCommand(cutover, operation, payload, options = {}) {
+    const expectedRevision = await workflowExpectedRevision(cutover, options)
+    const response = observeWorkflowResponse(await cutover.command({
+      domain: 'workflow',
+      operation,
+      payload,
+      expectedRevision,
+      idempotencyKey: String(options.idempotencyKey || options.operationKey || createYoutubeWorkflowOperationKey(`workflow-${operation}`)),
+      ...(options.signal ? { signal: options.signal } : {}),
+    }))
+    return requireWorkflowCommit(response)
+  }
+
+  async function workflowJob(cutover, jobId, signal) {
+    const response = await workflowQuery(cutover, 'job', { jobId: String(jobId || '') }, signal)
+    const job = response?.payload?.job || response?.payload?.records?.[0]
+    if (!job) {
+      const error = new Error('Workflow job was not found')
+      error.code = 'JOB_NOT_FOUND'
+      error.status = 404
+      error.retryable = false
+      throw error
+    }
+    return job
+  }
+
+  function workflowJobRecord(payload, operationKey) {
+    const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
+    const jobId = String(input.jobId || `workflow-${operationKey}`)
+    const now = new Date().toISOString()
+    const request = {}
+    for (const key of ['url', 'geminiMode', 'model', 'baseUrl', 'videoPriority', 'autoOpenWhenReady', 'replacePolicy', 'forceReprocess']) {
+      if (input[key] !== undefined) request[key] = input[key]
+    }
+    return {
+      jobId,
+      status: 'queued',
+      stage: 'queued',
+      createdAt: now,
+      updatedAt: now,
+      title: String(input.title || input.url || jobId),
+      url: String(input.url || ''),
+      sourceType: 'youtube',
+      ...(input.videoPriority !== undefined ? { videoPriority: Boolean(input.videoPriority) } : {}),
+      request,
+    }
+  }
+
+  function workflowCommandResult(response, record) {
+    return {
+      ...(record || {}),
+      revision: workflowResultRevision(response),
+      ownerRevision: response.revision,
+    }
+  }
+
+  async function workflowIndex(cutover, signal) {
+    const response = await workflowQuery(cutover, 'reader-index', {}, signal)
+    return {
+      items: Array.isArray(response?.payload?.records) ? response.payload.records : [],
+      revision: workflowResultRevision(response),
+      ownerRevision: response.revision,
+    }
+  }
 
   function apiUrl(path) {
     return `${baseUrl}${path}`
@@ -280,9 +464,32 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async getConfig() {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'config')
+        return {
+          ...(response.payload?.config || {}),
+          revision: workflowResultRevision(response),
+          ownerRevision: response.revision,
+        }
+      }
       return readJsonResponse(await fetchImpl(apiUrl('/api/config')))
     },
-    async saveConfig(payload) {
+    async saveConfig(payload, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
+        const config = {}
+        for (const key of ['model', 'baseUrl', 'proxyUrl']) {
+          if (input[key] !== undefined) config[key] = String(input[key] || '').trim()
+        }
+        const response = await workflowCommand(cutover, 'config-commit', { config }, options)
+        return {
+          ...config,
+          revision: workflowResultRevision(response),
+          ownerRevision: response.revision,
+        }
+      }
       return readJsonResponse(await fetchImpl(apiUrl('/api/config'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -300,6 +507,16 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async createJob(payload, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const operationKey = String(options.idempotencyKey || options.operationKey || createYoutubeWorkflowOperationKey('workflow-job-start'))
+        const record = workflowJobRecord(payload, operationKey)
+        const response = await workflowCommand(cutover, 'job-start', { record }, {
+          ...options,
+          idempotencyKey: operationKey,
+        })
+        return workflowCommandResult(response, record)
+      }
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs'), {
         method: 'POST',
         headers: mutationHeaders(options, { json: true, idempotent: true, revision: true }),
@@ -307,10 +524,13 @@ export function createYoutubeWorkflowClient(options = {}) {
         ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
-    async getJob(jobId) {
+    async getJob(jobId, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) return workflowJob(cutover, jobId, options.signal)
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`)))
     },
     async deleteJob(jobId, options = {}) {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-delete')
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`), {
         method: 'DELETE',
         headers: mutationHeaders(options, { revision: true }),
@@ -321,6 +541,19 @@ export function createYoutubeWorkflowClient(options = {}) {
       const uniqueIds = [...new Set((Array.isArray(jobIds) ? jobIds : [])
         .map((jobId) => String(jobId || '').trim())
         .filter(Boolean))]
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'job', {}, options.signal)
+        const jobs = Array.isArray(response.payload?.records) ? response.payload.records : []
+        const selected = options.includeAll || uniqueIds.length === 0
+          ? jobs
+          : jobs.filter((job) => uniqueIds.includes(String(job?.jobId || '')))
+        return {
+          jobs: selected,
+          revision: workflowResultRevision(response),
+          ownerRevision: response.revision,
+        }
+      }
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/snapshot'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -328,7 +561,31 @@ export function createYoutubeWorkflowClient(options = {}) {
         ...(options.signal ? { signal: options.signal } : {}),
       }))
     },
+    async getReaderIndex(options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (!cutover) throw workflowUnsupportedError('reader-index-query')
+      return workflowIndex(cutover, options.signal)
+    },
+    async saveReaderIndex(items, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (!cutover) throw workflowUnsupportedError('reader-index-command')
+      const response = await workflowCommand(cutover, 'reader-index-commit', {
+        readerIndex: { items: Array.isArray(items) ? items : [] },
+      }, options)
+      return {
+        items: Array.isArray(items) ? items : [],
+        revision: workflowResultRevision(response),
+        ownerRevision: response.revision,
+      }
+    },
     async cancelJob(jobId, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const current = await workflowJob(cutover, jobId, options.signal)
+        const record = { ...current, status: 'canceled', stage: 'canceled', updatedAt: new Date().toISOString() }
+        const response = await workflowCommand(cutover, 'job-cancel', { record }, options)
+        return workflowCommandResult(response, record)
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
         method: 'POST',
         headers: mutationHeaders(options, { idempotent: true, revision: true }),
@@ -336,6 +593,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async prioritizeJob(jobId, options = {}) {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-prioritize')
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/prioritize`), {
         method: 'POST',
         headers: mutationHeaders(options, { idempotent: true, revision: true }),
@@ -343,11 +601,32 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async redoJob(jobId) {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-redo')
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/redo`), {
         method: 'POST'
       }))
     },
     async retryJob(jobId, payload = {}, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const current = await workflowJob(cutover, jobId, options.signal)
+        const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
+        const request = { ...(current.request && typeof current.request === 'object' ? current.request : {}) }
+        for (const key of ['model', 'baseUrl', 'videoPriority', 'stage']) {
+          if (input[key] !== undefined) request[key] = input[key]
+        }
+        const record = {
+          ...current,
+          status: 'queued',
+          stage: String(input.stage || 'queued'),
+          retryOf: current.jobId,
+          retryStage: String(input.stage || current.stage || 'queued'),
+          updatedAt: new Date().toISOString(),
+          request,
+        }
+        const response = await workflowCommand(cutover, 'job-retry', { record }, options)
+        return workflowCommandResult(response, record)
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/retry`), {
         method: 'POST',
         headers: mutationHeaders(options, { json: true, idempotent: true, revision: true }),
@@ -356,11 +635,13 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async clearCanceledJobs() {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-clear-canceled')
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-canceled'), {
         method: 'POST'
       }))
     },
     async clearFailedJobs(options = {}) {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-clear-failed')
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-failed'), {
         method: 'POST',
         headers: mutationHeaders(options, { revision: true }),
@@ -456,19 +737,36 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async recent(limit = 10) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'history', { limit: Math.min(200, Math.max(1, Number(limit) || 10)) })
+        return Array.isArray(response.payload?.records) ? response.payload.records : []
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/recent?limit=${encodeURIComponent(limit)}`)))
     },
     async history(options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'history', {
+          ...(options.query ? { query: String(options.query) } : {}),
+          ...(options.status ? { status: String(options.status) } : {}),
+          limit: Math.min(200, Math.max(1, Number(options.limit) || 50)),
+        }, options.signal)
+        return Array.isArray(response.payload?.records) ? response.payload.records : []
+      }
       const params = new URLSearchParams()
       if (options.query) params.set('query', options.query)
       if (options.status) params.set('status', options.status)
       params.set('limit', options.limit || 50)
       return readJsonResponse(await fetchImpl(apiUrl(`/api/history?${params.toString()}`)))
     },
-    async getHistory(jobId) {
+    async getHistory(jobId, options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) return workflowJob(cutover, jobId, options.signal)
       return readJsonResponse(await fetchImpl(apiUrl(`/api/history/${encodeURIComponent(jobId)}`)))
     },
     async deleteHistory(jobId, options = {}) {
+      if (activeWorkflowOwner()) throw workflowUnsupportedError('history-delete')
       const params = new URLSearchParams()
       if (options.deleteFiles) params.set('deleteFiles', 'true')
       const suffix = params.toString() ? `?${params.toString()}` : ''
@@ -477,6 +775,16 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async readerRecent(options = {}) {
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'history', {
+          ...(options.query ? { query: String(options.query) } : {}),
+          limit: 200,
+        }, options.signal)
+        const offset = Number.isInteger(options.offset) && options.offset > 0 ? options.offset : 0
+        const limit = Math.min(200, Math.max(1, Number(options.limit) || 50))
+        return (Array.isArray(response.payload?.records) ? response.payload.records : []).slice(offset, offset + limit)
+      }
       const params = new URLSearchParams()
       if (options.query) params.set('query', options.query)
       if (options.timeScope) params.set('timeScope', options.timeScope)

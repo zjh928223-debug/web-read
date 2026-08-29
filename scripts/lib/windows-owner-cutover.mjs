@@ -172,7 +172,19 @@ function equivalentDomain(left, right, domain = null) {
     if (domain === 'vocabulary-srs') delete normalized.revision
     return normalized
   }
-  return canonical(comparable(left)) === canonical(comparable(right))
+  const leftComparable = comparable(left)
+  const rightComparable = comparable(right)
+  const leftRevision = leftComparable?.revision
+  const rightRevision = rightComparable?.revision
+  if ((Number.isInteger(leftRevision) && typeof rightRevision === 'string')
+    || (typeof leftRevision === 'string' && Number.isInteger(rightRevision))) {
+    // Workflow backup revisions are numeric source-file versions, while the
+    // Host owner exposes the composite revision used for CAS.  The records,
+    // references, and payloads remain the equality evidence across domains.
+    delete leftComparable.revision
+    delete rightComparable.revision
+  }
+  return canonical(leftComparable) === canonical(rightComparable)
 }
 
 function containedPath(root, value, field) {
@@ -694,7 +706,44 @@ function createVocabularySrsHostAdapter({ client }) {
 }
 
 function workflowRecord(id, content, revision, contentId = null) {
-  return hostRecord(id, 1, revision, contentId, content)
+  return hostRecord(id, 1, revision, contentId, content, {
+    references: contentId ? [{ type: 'workflow-job', id: contentId }] : [],
+  })
+}
+
+function workflowSnapshotFromRecords(records) {
+  if (!Array.isArray(records)) {
+    throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration snapshot records are invalid')
+  }
+  const jobs = []
+  const history = []
+  const readerIndex = []
+  let config = {}
+  let configSeen = false
+  const ids = new Set()
+  for (const record of records) {
+    const id = String(record?.id || '')
+    if (!id || ids.has(id) || !record || typeof record.payload !== 'object' || Array.isArray(record.payload)) {
+      throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration record identity or payload is invalid')
+    }
+    ids.add(id)
+    if (id.startsWith('jobs:')) jobs.push(record.payload)
+    else if (id.startsWith('items:')) history.push(record.payload)
+    else if (id.startsWith('reader-index:')) readerIndex.push(record.payload)
+    else if (id === 'config') {
+      if (configSeen) throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration contains duplicate config records')
+      configSeen = true
+      config = record.payload
+    } else {
+      throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', `Workflow migration record is outside jobs/history/config/index: ${id}`)
+    }
+  }
+  return {
+    jobs,
+    history,
+    readerIndex: { items: readerIndex },
+    config,
+  }
 }
 
 function createWorkflowHostAdapter({ client }) {
@@ -724,12 +773,12 @@ function createWorkflowHostAdapter({ client }) {
         const jobId = String(item?.jobId || '')
         if (jobId) records.push(workflowRecord(`items:${jobId}`, item, responses[1].payload.sourceRevision ?? revision, jobId))
       }
-      for (const item of readerIndex) {
-        const jobId = String(item?.jobId || `reader-index-${records.length}`)
+      for (const [index, item] of readerIndex.entries()) {
+        const jobId = String(item?.jobId || `reader-index-${index}`)
         records.push(workflowRecord(`reader-index:${jobId}`, item, 0, jobId))
       }
       const config = responses[3]?.payload?.config
-      if (config?.configured) {
+      if (config?.configured || responses[3]?.payload?.present) {
         records.push(workflowRecord('config', {
           model: config.model || '',
           baseUrl: config.baseUrl || '',
@@ -743,39 +792,20 @@ function createWorkflowHostAdapter({ client }) {
         adapterVersion: 1,
         revision,
         records,
-        references: [],
-        mediaReferences: [],
+        references: records.flatMap((record) => Array.isArray(record.references) ? clone(record.references) : []),
+        mediaReferences: records.flatMap((record) => Array.isArray(record.mediaReferences) ? clone(record.mediaReferences) : []),
       }
     },
     async restoreRecords(snapshot, context = {}) {
       const records = Array.isArray(snapshot?.records) ? snapshot.records : []
       if (records.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
-      const nonConfig = records.filter((record) => record.id !== 'config' && !String(record.id).startsWith('reader-index:'))
-      if (nonConfig.length > 0) {
-        throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration fixture contains job/history records without a single-command import seam')
-      }
-      let result = { ok: true, status: 'committed', revision: context.expectedRevision }
-      const indexRecord = records.find((record) => String(record.id).startsWith('reader-index:'))
-      if (indexRecord) {
-        result = await client.command({
-          domain: 'workflow',
-          operation: 'reader-index-commit',
-          payload: { readerIndex: { items: [indexRecord.payload] } },
-          expectedRevision: context.expectedRevision,
-          idempotencyKey: context.idempotencyKey,
-        })
-      }
-      const configRecord = records.find((record) => record.id === 'config')
-      if (configRecord) {
-        result = await client.command({
-          domain: 'workflow',
-          operation: 'config-commit',
-          payload: { config: configRecord.payload },
-          expectedRevision: result.revision ?? context.expectedRevision,
-          idempotencyKey: `${context.idempotencyKey}-config`,
-        })
-      }
-      return result
+      return client.command({
+        domain: 'workflow',
+        operation: 'snapshot-commit',
+        payload: { snapshot: workflowSnapshotFromRecords(records) },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
     },
   }
 }

@@ -602,7 +602,7 @@ class WindowsOwnerRequestPolicy:
         if domain == "workflow":
             return operation in {
                 "job-start", "job-cancel", "job-retry", "submit-job", "cancel-job", "retry-job",
-                "config-commit", "reader-index-commit", "start", "cancel", "retry",
+                "snapshot-commit", "config-commit", "reader-index-commit", "start", "cancel", "retry",
             } or any(token in operation for token in ("config", "index"))
         return operation in BACKUP_COMMAND_OPERATIONS
 
