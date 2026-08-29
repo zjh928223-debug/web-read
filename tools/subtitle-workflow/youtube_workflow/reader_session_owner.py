@@ -478,9 +478,10 @@ class ReaderSessionOwner:
         current, previous = self._read_pair()
         if operation == "restore-status":
             current_ok = current.status == "valid"
+            history_ok = previous.status in {"missing", "valid"}
             if current.status == "missing" and previous.status == "missing":
                 status = "empty"
-            elif current_ok:
+            elif current_ok and history_ok:
                 status = "ready"
             else:
                 status = "manual-recovery"
@@ -493,7 +494,8 @@ class ReaderSessionOwner:
                 "mediaIdentity": current.snapshot["media"]["mediaId"] if current_ok else None,
             }
             if status == "manual-recovery":
-                code = current.error_code or "manual-recovery"
+                failure_state = current if not current_ok else previous
+                code = failure_state.error_code or "manual-recovery"
                 if code == "unsupported":
                     code = "unsupported-schema"
                 return self._failure(
@@ -692,8 +694,32 @@ class ReaderSessionOwner:
 
         prepared = self._prepared
         if prepared is None or prepared.prepare_id != prepare_id:
-            existing = self._existing_receipt(key, "commit", request_id, correlation_id)
-            if existing is not None and self._receipt_is_terminal(existing):
+            existing_result, existing = self._load_existing_receipt(key, "commit", request_id, correlation_id)
+            if existing is not None:
+                if existing_result is None:
+                    return existing
+                if self._receipt_is_terminal(existing_result):
+                    receipt = existing_result.get("receipt")
+                    if (
+                        prepared is None
+                        and isinstance(receipt, Mapping)
+                        and receipt.get("operation") == "commit"
+                        and type(receipt.get("expectedRevision")) is type(expected)
+                        and receipt.get("expectedRevision") == expected
+                    ):
+                        return existing
+                    if existing_result.get("receipt") is not None:
+                        return self._failure(
+                            "commit",
+                            request_id,
+                            correlation_id,
+                            "conflict",
+                            outcome="conflict",
+                            commit_status="conflict",
+                            revision=self._known_revision(),
+                            payload=self._current_summary_payload(self._read_pair()[0]),
+                            details={"baseRevision": expected},
+                        )
                 return existing
             return self._failure(
                 "commit",
@@ -777,10 +803,6 @@ class ReaderSessionOwner:
                 commit_status="rejected",
             )
 
-        existing = self._existing_receipt(key, "restore", request_id, correlation_id)
-        if existing is not None and self._receipt_is_terminal(existing):
-            return existing
-
         current, previous = self._read_pair()
         if current.status == "missing" and previous.status == "missing":
             current_revision = 0
@@ -804,18 +826,6 @@ class ReaderSessionOwner:
                 outcome="manual-recovery",
                 commit_status="manual-recovery",
             )
-        if expected != current_revision:
-            return self._failure(
-                "restore",
-                request_id,
-                correlation_id,
-                "revision-conflict",
-                outcome="conflict",
-                commit_status="conflict",
-                revision=current_revision,
-                payload=self._current_summary_payload(current),
-                details={"currentRevision": current_revision},
-            )
         if source == "previous":
             if previous.status != "valid" or previous.snapshot is None:
                 code = previous.error_code or "not-found"
@@ -831,7 +841,7 @@ class ReaderSessionOwner:
                     revision=current_revision,
                     payload=self._current_summary_payload(current),
                 )
-            candidate = self._candidate_from_snapshot(previous.snapshot, current_revision + 1)
+            candidate = self._candidate_from_snapshot(previous.snapshot, expected + 1)
         elif source == "snapshot":
             try:
                 if _is_json_object(snapshot) and set(snapshot) == _SNAPSHOT_FIELDS:
@@ -853,7 +863,7 @@ class ReaderSessionOwner:
                     revision=current_revision,
                     payload=self._current_summary_payload(current),
                 )
-            candidate = {**checked, "revision": current_revision + 1}
+            candidate = {**checked, "revision": expected + 1}
         else:
             return self._failure(
                 "restore",
@@ -867,6 +877,40 @@ class ReaderSessionOwner:
             )
 
         payload = self._receipt_payload(candidate, "restore", source=source)
+        existing_result, existing = self._load_existing_receipt(key, "restore", request_id, correlation_id)
+        if existing is not None:
+            if existing_result is None:
+                return existing
+            if self._receipt_is_terminal(existing_result):
+                if self._restore_retry_matches(existing_result, expected, source, candidate, current):
+                    return existing
+                if existing_result.get("receipt") is not None:
+                    return self._failure(
+                        "restore",
+                        request_id,
+                        correlation_id,
+                        "conflict",
+                        outcome="conflict",
+                        commit_status="conflict",
+                        revision=current_revision,
+                        payload=self._current_summary_payload(current),
+                        details={"currentRevision": current_revision},
+                    )
+            return existing
+
+        if expected != current_revision:
+            return self._failure(
+                "restore",
+                request_id,
+                correlation_id,
+                "revision-conflict",
+                outcome="conflict",
+                commit_status="conflict",
+                revision=current_revision,
+                payload=self._current_summary_payload(current),
+                details={"currentRevision": current_revision},
+            )
+
         try:
             result = self.receipts.commit(
                 request_id=request_id,
@@ -997,7 +1041,33 @@ class ReaderSessionOwner:
                 "effectFingerprint": effect,
             },
         }
-        self.repository.write(self.snapshot_path, snapshot, preserve_backup=True)
+        try:
+            self.repository.write(self.snapshot_path, snapshot, preserve_backup=True)
+        except Exception:
+            # DurableJsonRepository intentionally reports an after-replace
+            # callback failure even when a first write is already visible.
+            # Re-read the strict owner evidence before classifying that case
+            # as unknown; existing-primary writes still roll back in the
+            # repository and therefore do not match this snapshot.
+            current_after, _previous_after = self._read_pair()
+            if (
+                current_after.status == "valid"
+                and current_after.snapshot is not None
+                and current_after.snapshot["checksum"] == snapshot_checksum
+                and current_after.snapshot["revision"] == checked_candidate["revision"]
+                and current_after.snapshot["commit"]["operation"] == context.operation
+                and current_after.snapshot["commit"]["requestFingerprint"] == context.request_fingerprint
+                and current_after.snapshot["commit"]["expectedRevision"] == context.expected_revision
+                and current_after.snapshot["commit"]["effectFingerprint"] == effect
+            ):
+                return self._make_evidence(
+                    context,
+                    status="committed",
+                    revision=checked_candidate["revision"],
+                    snapshot_checksum=snapshot_checksum,
+                    effect_fingerprint=effect,
+                )
+            raise
         return self._make_evidence(
             context,
             status="committed",
@@ -1059,17 +1129,17 @@ class ReaderSessionOwner:
             effect_fingerprint=commit["effectFingerprint"],
         )
 
-    def _existing_receipt(
+    def _load_existing_receipt(
         self,
         idempotency_key: str,
         operation: str,
         request_id: str,
         correlation_id: str,
-    ) -> dict[str, Any] | None:
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         try:
             result = self.receipts.query(idempotency_key=idempotency_key, domain=READER_SESSION_DOMAIN)
         except OwnerReceiptInputError:
-            return self._failure(
+            return None, self._failure(
                 operation,
                 request_id,
                 correlation_id,
@@ -1078,10 +1148,64 @@ class ReaderSessionOwner:
                 commit_status="rejected",
             )
         if result.get("receipt") is not None:
-            return self._receipt_envelope(operation, request_id, correlation_id, result)
+            return result, self._receipt_envelope(operation, request_id, correlation_id, result)
         if result.get("error", {}).get("code") == "manual-recovery":
-            return self._receipt_envelope(operation, request_id, correlation_id, result)
-        return None
+            return result, self._receipt_envelope(operation, request_id, correlation_id, result)
+        return None, None
+
+    @staticmethod
+    def _receipt_matches_snapshot(
+        receipt: Mapping[str, Any] | None,
+        state: _ReadState,
+    ) -> bool:
+        if not isinstance(receipt, Mapping) or state.status != "valid" or state.snapshot is None:
+            return False
+        snapshot = state.snapshot
+        commit = snapshot["commit"]
+        return (
+            receipt.get("commitStatus") == "committed"
+            and receipt.get("operation") == commit["operation"]
+            and type(receipt.get("expectedRevision")) is type(commit["expectedRevision"])
+            and receipt.get("expectedRevision") == commit["expectedRevision"]
+            and receipt.get("revision") == snapshot["revision"]
+            and receipt.get("requestFingerprint") == commit["requestFingerprint"]
+            and receipt.get("effectFingerprint") == commit["effectFingerprint"]
+            and receipt.get("recordChecksums") == [snapshot["checksum"]]
+        )
+
+    def _restore_retry_matches(
+        self,
+        result: Mapping[str, Any],
+        expected_revision: int,
+        source: str,
+        candidate: Mapping[str, Any],
+        current: _ReadState,
+    ) -> bool:
+        receipt = result.get("receipt")
+        if not isinstance(receipt, Mapping) or receipt.get("operation") != "restore":
+            return False
+        if (
+            type(receipt.get("expectedRevision")) is not type(expected_revision)
+            or receipt.get("expectedRevision") != expected_revision
+        ):
+            return False
+        if result.get("outcome") != "committed":
+            return True
+        if not self._receipt_matches_snapshot(receipt, current):
+            # An older receipt may no longer have a matching current
+            # snapshot; operation, expected revision, and validated source
+            # are the available stable retry evidence in that case.
+            return True
+        if source == "previous":
+            return True
+        return receipt.get("recordChecksums") == [_snapshot_checksum(candidate)]
+
+    @staticmethod
+    def _current_receipt_context(state: _ReadState) -> dict[str, Any]:
+        return {
+            "state": _state_summary(state),
+            **ReaderSessionOwner._current_summary_payload(state),
+        }
 
     @staticmethod
     def _receipt_is_terminal(result: Mapping[str, Any]) -> bool:
@@ -1101,16 +1225,23 @@ class ReaderSessionOwner:
         result: Mapping[str, Any],
     ) -> dict[str, Any]:
         current, _previous = self._read_pair()
-        payload = self._current_summary_payload(current)
         receipt = result.get("receipt")
-        if result.get("outcome") == "committed" and current.status == "valid" and current.snapshot is not None:
+        receipt_matches = self._receipt_matches_snapshot(receipt, current)
+        payload = self._current_summary_payload(current)
+        if receipt is not None and not receipt_matches:
+            payload["current"] = self._current_receipt_context(current)
+            if result.get("outcome") == "committed":
+                # Do not let an old receipt look as if it describes the
+                # latest snapshot.  The nested current state is explicit.
+                payload = {"current": payload["current"]}
+        if result.get("outcome") == "committed" and receipt_matches:
             payload["snapshot"] = deepcopy(current.snapshot)
         if receipt is not None:
             payload["receipt"] = {
                 "receiptId": receipt.get("receiptId"),
-                "contentId": current.snapshot["contentId"] if current.status == "valid" and current.snapshot else None,
-                "sessionRevision": result.get("revision"),
-                "mediaIdentity": current.snapshot["media"]["mediaId"] if current.status == "valid" and current.snapshot else None,
+                "contentId": current.snapshot["contentId"] if receipt_matches else None,
+                "sessionRevision": receipt.get("revision"),
+                "mediaIdentity": current.snapshot["media"]["mediaId"] if receipt_matches else None,
             }
         raw_error = result.get("error")
         error = None
@@ -1136,7 +1267,12 @@ class ReaderSessionOwner:
         return _validate_candidate(candidate, profile_id=self.profile_id)
 
     @staticmethod
-    def _receipt_payload(candidate: Mapping[str, Any], operation: str, *, source: str | None = None) -> dict[str, Any]:
+    def _receipt_payload(
+        candidate: Mapping[str, Any],
+        operation: str,
+        *,
+        source: str | None = None,
+    ) -> dict[str, Any]:
         payload = {
             "candidateChecksum": _snapshot_checksum(candidate),
             "contentId": candidate["contentId"],

@@ -155,6 +155,47 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertEqual(receipt["payload"]["receipt"]["mediaIdentity"], "media-2")
         self.assertEqual(receipt["receipt"]["domain"], "reader-session")
 
+    def test_old_receipt_does_not_attach_newer_snapshot_metadata(self):
+        owner = self.make_owner()
+        first_candidate = self.candidate()
+        first_prepare = self.prepare(owner, first_candidate, key="old-receipt-prepare")
+        first = owner.commit(
+            first_prepare,
+            expected_revision=0,
+            idempotency_key="old-receipt",
+            **self.request_ids("old-receipt"),
+        )
+        self.assertEqual(first["outcome"], "committed")
+        self.commit(
+            owner,
+            self.candidate(2, content_id="content-2", media_id="media-2"),
+            key="new-receipt",
+        )
+
+        queried = owner.receipt(
+            idempotency_key="old-receipt",
+            **self.request_ids("old-receipt-query"),
+        )
+        self.assertEqual(queried["outcome"], "committed")
+        self.assertEqual(queried["revision"], 1)
+        self.assertNotIn("snapshot", queried["payload"])
+        self.assertIsNone(queried["payload"]["receipt"]["contentId"])
+        self.assertEqual(queried["payload"]["receipt"]["sessionRevision"], 1)
+        self.assertIsNone(queried["payload"]["receipt"]["mediaIdentity"])
+        self.assertEqual(queried["payload"]["current"]["contentId"], "content-2")
+        self.assertEqual(queried["payload"]["current"]["sessionRevision"], 2)
+
+        retried = owner.commit(
+            first_prepare,
+            expected_revision=0,
+            idempotency_key="old-receipt",
+            **self.request_ids("old-receipt-retry"),
+        )
+        self.assertEqual(retried["outcome"], "committed")
+        self.assertEqual(retried["receipt"]["receiptId"], first["receipt"]["receiptId"])
+        self.assertNotIn("snapshot", retried["payload"])
+        self.assertEqual(retried["payload"]["current"]["contentId"], "content-2")
+
     def test_duplicate_idempotency_replays_durable_receipt_without_second_write(self):
         replacements = 0
 
@@ -222,6 +263,88 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertEqual(stale_result["outcome"], "conflict")
         self.assertEqual(owner.snapshot_path.read_text(encoding="utf-8"), before)
         self.assertEqual(owner.query("current-revision")["payload"]["revision"], 1)
+
+    def test_idempotency_replay_checks_operation_revision_and_restore_payload(self):
+        owner = self.make_owner()
+        first_candidate = self.candidate()
+        first_prepare = self.prepare(owner, first_candidate, key="idempotency-collision-prepare")
+        first = owner.commit(
+            first_prepare,
+            expected_revision=0,
+            idempotency_key="idempotency-collision",
+            **self.request_ids("idempotency-collision"),
+        )
+        self.assertEqual(first["outcome"], "committed")
+
+        wrong_expected = owner.commit(
+            "prepare-not-the-original-request",
+            expected_revision=1,
+            idempotency_key="idempotency-collision",
+            **self.request_ids("idempotency-collision-wrong-revision"),
+        )
+        self.assertEqual(wrong_expected["outcome"], "conflict")
+        self.assertEqual(wrong_expected["error"]["code"], "conflict")
+        self.assertEqual(owner.query("current-revision")["payload"]["revision"], 1)
+
+        saved_snapshot = owner.query("snapshot")["payload"]["snapshot"]
+        replacement_candidate = self.candidate(2, content_id="content-2", media_id="media-2")
+        self.prepare(owner, replacement_candidate, key="idempotency-collision-replacement")
+        wrong_prepare = owner.commit(
+            first_prepare,
+            expected_revision=0,
+            idempotency_key="idempotency-collision",
+            **self.request_ids("idempotency-collision-wrong-prepare"),
+        )
+        self.assertEqual(wrong_prepare["outcome"], "conflict")
+        self.assertEqual(wrong_prepare["error"]["code"], "conflict")
+        self.commit(
+            owner,
+            replacement_candidate,
+            key="idempotency-collision-next",
+        )
+
+        wrong_operation = owner.restore(
+            source="previous",
+            expected_revision=2,
+            idempotency_key="idempotency-collision",
+            **self.request_ids("idempotency-collision-wrong-operation"),
+        )
+        self.assertEqual(wrong_operation["outcome"], "conflict")
+        self.assertEqual(wrong_operation["error"]["code"], "conflict")
+        self.assertEqual(owner.query("current-revision")["payload"]["revision"], 2)
+
+        restored = owner.restore(
+            source="snapshot",
+            snapshot=saved_snapshot,
+            expected_revision=2,
+            idempotency_key="restore-payload-key",
+            **self.request_ids("restore-payload"),
+        )
+        self.assertEqual(restored["outcome"], "committed")
+        self.assertEqual(restored["revision"], 3)
+
+        same_retry = owner.restore(
+            source="snapshot",
+            snapshot=saved_snapshot,
+            expected_revision=2,
+            idempotency_key="restore-payload-key",
+            **self.request_ids("restore-payload-retry"),
+        )
+        self.assertEqual(same_retry["outcome"], "committed")
+        self.assertEqual(same_retry["receipt"]["receiptId"], restored["receipt"]["receiptId"])
+
+        changed_snapshot = self.candidate(99, content_id="different-content", media_id="different-media")
+        different_payload = owner.restore(
+            source="snapshot",
+            snapshot=changed_snapshot,
+            expected_revision=2,
+            idempotency_key="restore-payload-key",
+            **self.request_ids("restore-payload-different"),
+        )
+        self.assertEqual(different_payload["outcome"], "conflict")
+        self.assertEqual(different_payload["error"]["code"], "conflict")
+        self.assertEqual(owner.query("snapshot")["payload"]["contentId"], "content-1")
+        self.assertEqual(owner.query("snapshot")["payload"]["sessionRevision"], 3)
 
     def test_invalid_content_resources_and_media_copies_are_rejected_but_text_is_allowed(self):
         owner = self.make_owner()
@@ -317,6 +440,38 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertFalse(list(self.root.glob("reader-session-owner.json.corrupt-*")))
         self.assertNotEqual(original, owner.snapshot_path.read_text(encoding="utf-8"))
 
+    def test_restore_status_requires_valid_previous_evidence(self):
+        for mode in ("corrupt", "unsupported"):
+            with self.subTest(mode=mode):
+                owner = ReaderSessionOwner(self.root / mode, "profile-1", "instance-1")
+                self.commit(owner, self.candidate(), key=f"status-{mode}-1")
+                self.commit(
+                    owner,
+                    self.candidate(2, content_id="content-2", media_id="media-2"),
+                    key=f"status-{mode}-2",
+                )
+                previous = json.loads(owner.previous_snapshot_path.read_text(encoding="utf-8"))
+                if mode == "corrupt":
+                    previous["checksum"] = "sha256:" + ("0" * 64)
+                else:
+                    previous["schemaVersion"] = "reader-session-owner.v999"
+                owner.previous_snapshot_path.write_text(json.dumps(previous), encoding="utf-8")
+
+                status = owner.query("restore-status", **self.request_ids(f"status-{mode}"))
+                self.assertEqual(status["outcome"], "manual-recovery")
+                self.assertEqual(status["payload"]["status"], "manual-recovery")
+                self.assertEqual(status["payload"]["current"]["contentId"], "content-2")
+                self.assertEqual(status["payload"]["previous"]["status"], mode)
+                expected_error = "corrupt" if mode == "corrupt" else "unsupported-schema"
+                self.assertEqual(status["error"]["code"], expected_error)
+
+                prepared = owner.prepare(
+                    self.candidate(3, content_id="content-3", media_id="media-3"),
+                    **self.request_ids(f"status-{mode}-prepare"),
+                )
+                self.assertEqual(prepared["outcome"], "manual-recovery")
+                self.assertEqual(prepared["error"]["code"], expected_error)
+
     def test_restore_previous_success_and_conflict_or_invalid_input_preserve_state(self):
         owner = self.make_owner()
         self.commit(owner, self.candidate(), key="restore-1")
@@ -399,7 +554,11 @@ class ReaderSessionOwnerTests(unittest.TestCase):
 
         repository = DurableJsonRepository(after_replace=fail_after_replace)
         owner = self.make_owner(repository=repository)
-        self.commit(owner, self.candidate(), key="fault-1")
+        first = self.commit(owner, self.candidate(), key="fault-1")
+        self.assertEqual(first["outcome"], "committed")
+        self.assertEqual(first["payload"]["receipt"]["sessionRevision"], 1)
+        first_receipt = owner.receipt(idempotency_key="fault-1", **self.request_ids("fault-1-receipt"))
+        self.assertEqual(first_receipt["outcome"], "committed")
         before = owner.snapshot_path.read_text(encoding="utf-8")
 
         result = self.commit(
