@@ -294,6 +294,8 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   if (!client) throw new Error('youtube workflow loader requires a client')
   const hasCurrentContent = deps.hasCurrentContent || defaultHasCurrentContent
   const readerSessionPersistence = deps.readerSessionPersistence
+  const readerSessionOwner = deps.readerSessionOwner || null
+  const ownerMode = !!readerSessionOwner
   const annotationLightweightModule = deps.annotationLightweightModule || (typeof window !== 'undefined' ? window.__annotationLightweightModule : null)
   const sessionPublisher = deps.sessionPublisher
   let generation = 0
@@ -348,6 +350,12 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   }
 
   async function prepareExpectedRevision() {
+    if (ownerMode) {
+      if (typeof readerSessionOwner.currentRevision !== 'function') {
+        throw new Error('reader session owner revision query is not available')
+      }
+      return readerSessionOwner.currentRevision()
+    }
     if (typeof readerSessionPersistence.loadCommitted !== 'function') return null
     const current = await readerSessionPersistence.loadCommitted()
     if (current?.status === 'committed' && typeof current.session?.revision === 'string') {
@@ -360,6 +368,25 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   }
 
   async function commitLatestSession(load, session, requestOptions) {
+    if (ownerMode) {
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      const expectedRevision = await prepareExpectedRevision()
+      if (!isCurrentLoad(load)) return supersededResult(load)
+      if (typeof readerSessionOwner.commitSession !== 'function') {
+        throw new Error('reader session owner commit is not available')
+      }
+      const result = await readerSessionOwner.commitSession(session, {
+        expectedRevision,
+        mediaDescriptor: session.mediaDescriptor,
+        idempotencyKey: `reader-session-load-${load.generation}`,
+        signal: requestOptions.signal,
+      })
+      if (result?.status === 'committed') return result
+      const error = new Error('reader session owner did not commit the loaded session')
+      error.code = result?.error?.code || result?.status || 'READER_SESSION_OWNER_COMMIT_FAILED'
+      error.ownerResult = result
+      throw error
+    }
     for (let attempt = 1; attempt <= READER_SESSION_COMMIT_ATTEMPTS; attempt += 1) {
       if (!isCurrentLoad(load)) return supersededResult(load)
       const expectedRevision = await prepareExpectedRevision()
@@ -402,7 +429,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     if (replacePolicy !== 'replace-current' && hasCurrentContent()) {
       return { status: 'conflict', jobId }
     }
-    if (!readerSessionPersistence || typeof readerSessionPersistence.commit !== 'function') {
+    if (!ownerMode && (!readerSessionPersistence || typeof readerSessionPersistence.commit !== 'function')) {
       throw new Error('readerSessionPersistence is not available')
     }
     if (!sessionPublisher
@@ -423,16 +450,20 @@ export function createYoutubeWorkflowLoader(deps = {}) {
 
     try {
       const requestOptions = { signal: load.controller.signal }
-      if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
-      if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
-      const audioUrl = client.mediaUrl(jobId, 'audio')
-      const [manifest, transcriptBlob, chunkBlob, marksPayload] = await Promise.all([
+      let audioUrl = ownerMode ? 'owner-media-pending' : ''
+      if (!ownerMode) {
+        if (typeof client.mediaUrl !== 'function') throw new Error('workflow Range media URL is not available')
+        if (typeof client.probeMediaRange !== 'function') throw new Error('workflow Range media probe is not available')
+        audioUrl = client.mediaUrl(jobId, 'audio')
+      }
+      const contentRequests = [
         client.getSession(jobId, requestOptions),
         client.getFile(jobId, 'transcript', requestOptions),
         client.getFile(jobId, 'chunkData', requestOptions),
         prepareReaderMarks(jobId, requestOptions),
-        client.probeMediaRange(jobId, 'audio', requestOptions),
-      ])
+      ]
+      if (!ownerMode) contentRequests.push(client.probeMediaRange(jobId, 'audio', requestOptions))
+      const [manifest, transcriptBlob, chunkBlob, marksPayload] = await Promise.all(contentRequests)
       if (!isCurrentLoad(load)) return supersededResult(load)
       const [transcriptPrepared, chunkPrepared] = await Promise.all([
         blobToJson(transcriptBlob, 'transcript'),
@@ -455,11 +486,23 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       const normalizedMarks = normalizePreparedMarks(marksPayload.marks, validated.transcript)
       if (!isCurrentLoad(load)) return supersededResult(load)
 
+      let mediaDescriptor = null
+      if (ownerMode) {
+        if (typeof readerSessionOwner.resolveMediaDescriptor !== 'function') {
+          throw new Error('reader session owner media query is not available')
+        }
+        mediaDescriptor = await readerSessionOwner.resolveMediaDescriptor({
+          contentId: identity.contentId,
+          kind: 'audio',
+        }, requestOptions)
+        audioUrl = mediaDescriptor.authorizedUrl
+      }
+
       const title = manifest.title || `youtube-${jobId}`
       const manifestFiles = manifest && manifest.files && typeof manifest.files === 'object' ? manifest.files : {}
       const manifestMedia = manifest && manifest.media && typeof manifest.media === 'object' ? manifest.media : {}
-      const hasVideo = !!manifestFiles.video
-      const videoUrl = hasVideo ? client.mediaUrl(jobId, 'video') : ''
+      const hasVideo = !ownerMode && !!manifestFiles.video
+      const videoUrl = !ownerMode && hasVideo ? client.mediaUrl(jobId, 'video') : ''
       const audioMeta = {
         name: `${title}.audio`,
         size: 0,
@@ -469,6 +512,19 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         jobId,
         streamUrl: audioUrl,
         readerSessionIdentity: identity.status,
+        ...(mediaDescriptor ? {
+          size: mediaDescriptor.size,
+          type: mediaDescriptor.contentType,
+          media: {
+            mediaId: mediaDescriptor.mediaId,
+            kind: mediaDescriptor.kind,
+            size: mediaDescriptor.size,
+            contentType: mediaDescriptor.contentType,
+            etag: mediaDescriptor.etag,
+            revision: mediaDescriptor.revision,
+            authorizedUrl: mediaDescriptor.authorizedUrl,
+          },
+        } : {}),
       }
 
       const { contentId, revision } = identity
@@ -487,13 +543,24 @@ export function createYoutubeWorkflowLoader(deps = {}) {
           videoUrl,
           videoSource: manifestMedia.videoSource || ''
         },
+        ...(mediaDescriptor ? { mediaDescriptor } : {}),
       }
       const visibleSnapshot = await sessionPublisher.captureVisibleSession()
+      const previousOwnerMedia = ownerMode && typeof readerSessionOwner.getDescriptor === 'function'
+        ? readerSessionOwner.getDescriptor()
+        : null
       let committed = false
       try {
+        if (ownerMode) {
+          if (typeof readerSessionOwner.bindMediaDescriptor !== 'function') {
+            throw new Error('reader session owner media binding is not available')
+          }
+          await readerSessionOwner.bindMediaDescriptor(mediaDescriptor, requestOptions)
+        }
         await sessionPublisher.publishPreparedSession(preparedSession)
         if (!isCurrentLoad(load)) {
           await sessionPublisher.restoreVisibleSession(visibleSnapshot)
+          if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
           return supersededResult(load)
         }
         const commitResult = await commitLatestSession(load, {
@@ -503,9 +570,11 @@ export function createYoutubeWorkflowLoader(deps = {}) {
           transcript: validated.transcript,
           chunkData: validated.chunkData,
           marks: normalizedMarks,
+          ...(mediaDescriptor ? { mediaDescriptor } : {}),
         }, requestOptions)
         if (commitResult.status === 'superseded') {
           await sessionPublisher.restoreVisibleSession(visibleSnapshot)
+          if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
           return commitResult
         }
         committed = true
@@ -513,6 +582,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         if (!committed && isCurrentLoad(load)) {
           try {
             await sessionPublisher.restoreVisibleSession(visibleSnapshot)
+            if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
           } catch (rollbackError) {
             const failure = new Error('reader session load failed and visible-session rollback failed', { cause: error })
             failure.name = 'ReaderSessionPublishRollbackError'
@@ -524,7 +594,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         throw error
       }
       if (!isCurrentLoad(load)) return supersededResult(load)
-      await restoreAnnotationBackfillResult(jobId)
+      if (!ownerMode) await restoreAnnotationBackfillResult(jobId)
       if (!isCurrentLoad(load)) return supersededResult(load)
       try {
         if (typeof deps.showToast === 'function') deps.showToast('YouTube result loaded', 'success')
@@ -546,6 +616,19 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       throw error
     } finally {
       if (activeLoad === load) activeLoad = null
+    }
+  }
+
+  async function restoreOwnerMedia(descriptor) {
+    if (!ownerMode) return
+    try {
+      if (descriptor && typeof readerSessionOwner.bindMediaDescriptor === 'function') {
+        await readerSessionOwner.bindMediaDescriptor(descriptor)
+      } else if (typeof readerSessionOwner.dispose === 'function') {
+        readerSessionOwner.dispose()
+      }
+    } catch (_error) {
+      if (typeof readerSessionOwner.dispose === 'function') readerSessionOwner.dispose()
     }
   }
 

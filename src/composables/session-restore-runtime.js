@@ -14,6 +14,28 @@ export function createSessionRestoreRuntime(deps = {}) {
   }
 
   async function readSessionCandidate() {
+    if (deps.readerSessionOwner && typeof deps.readerSessionOwner.load === 'function') {
+      try {
+        const result = await deps.readerSessionOwner.load({ fallbackSession: null });
+        if (result?.status === 'loaded' && result.session) {
+          return { status: 'committed', source: 'owner', session: result.session };
+        }
+        if (result?.status === 'empty') {
+          return { status: 'empty-owner', source: 'owner', session: null };
+        }
+        return {
+          status: 'rejected',
+          source: 'owner',
+          error: normalizeRestoreError(result?.error)
+        };
+      } catch (error) {
+        return {
+          status: 'rejected',
+          source: 'owner',
+          error: normalizeRestoreError(error)
+        };
+      }
+    }
     if (!deps.readerSessionPersistence
       || typeof deps.readerSessionPersistence.loadCommitted !== 'function') {
       return { status: 'legacy', session: null };
@@ -41,40 +63,55 @@ export function createSessionRestoreRuntime(deps = {}) {
       currentDocId: namespace.currentDocId
     });
     const candidate = await readSessionCandidate();
+    if (candidate.status === 'empty-owner') {
+      deps.emitAnnotationDiagnostics('app.restore_session_complete', {
+        scope: deps.getAnnotationGenerationScope(),
+        currentAudioKey: state.currentAudioKey,
+        currentDocId: namespace.currentDocId,
+        markedCount: state.markedMap.size,
+        source: 'owner',
+        contentId: null,
+        revision: null,
+        generatedItemCount: 0
+      });
+      return { status: 'empty', source: 'owner' };
+    }
     if (candidate.status === 'rejected') {
       deps.emitAnnotationDiagnostics('app.restore_session_rejected', {
         scope: deps.getAnnotationGenerationScope(),
         currentAudioKey: state.currentAudioKey,
         currentDocId: namespace.currentDocId,
-        source: 'committed',
+        source: candidate.source || 'committed',
         code: candidate.error.code
       });
       return {
         status: 'rejected',
-        source: 'committed',
+        source: candidate.source || 'committed',
         error: candidate.error
       };
     }
 
-    const source = candidate.status === 'committed' ? 'committed' : 'legacy';
+    const committedSource = candidate.status === 'committed';
+    const source = committedSource ? (candidate.source || 'committed') : 'legacy';
     const committedSession = candidate.session;
-    const audioMeta = source === 'committed'
+    const ownerSource = source === 'owner';
+    const audioMeta = committedSource
       ? committedSession.audioMeta
       : await deps.loadFromDB('audioMeta');
     const streamUrl = audioMeta && typeof audioMeta === 'object' && typeof audioMeta.streamUrl === 'string'
       ? audioMeta.streamUrl
       : '';
-    const audioBlob = streamUrl ? null : await deps.loadFromDB('audio');
-    const transcriptData = source === 'committed'
+    const audioBlob = ownerSource || streamUrl ? null : await deps.loadFromDB('audio');
+    const transcriptData = committedSource
       ? committedSession.transcript
       : await deps.loadFromDB('transcript');
-    const chunkData = source === 'committed'
+    const chunkData = committedSource
       ? committedSession.chunkData
       : await deps.loadFromDB('chunkData');
-    const visualData = await deps.loadFromDB('visual');
-    const marksData = source === 'committed' && Array.isArray(committedSession.marks)
+    const visualData = ownerSource ? null : await deps.loadFromDB('visual');
+    const marksData = committedSource && Array.isArray(committedSession.marks)
       ? committedSession.marks
-      : await deps.loadFromDB('marks');
+      : ownerSource ? null : await deps.loadFromDB('marks');
 
     if (streamUrl) {
       deps.audioPlayer.src = streamUrl;

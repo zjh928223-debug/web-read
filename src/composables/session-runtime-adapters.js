@@ -57,7 +57,8 @@ export function createSessionRuntimeAdapters(env = {}) {
       forceUpdateUI: windowObject.forceUpdateUI,
       showToast: windowObject.showToast,
       updateChunkCnHoldBtn: windowObject.updateChunkCnHoldBtn,
-      annotationLightweightModule: windowObject.__annotationLightweightModule
+      annotationLightweightModule: windowObject.__annotationLightweightModule,
+      readerSessionOwner: windowObject.__windowsOwnerReaderSessionConsumer || null
     }
   };
 
@@ -86,7 +87,8 @@ export function createSessionRuntimeAdapters(env = {}) {
           windowObject,
           domRefs: runtimeDeps.domRefs,
           globals: runtimeDeps.globals,
-          annotationRuntime
+          annotationRuntime,
+          readerSessionOwner: runtimeDeps.readerSessionOwner
         });
       }
     }

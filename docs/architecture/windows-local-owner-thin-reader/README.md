@@ -489,6 +489,27 @@ no-copy/path/media validation, strict corrupt/unknown handling, restore success/
 replace faults. It is registered in `verify:full` but is not part of `verify:fast`, and it does not implement
 4.2+, backup/migration aggregation, browser cutover, or owner-mode authority.
 
+## Task C1 Reader Session owner consumer
+
+`src/services/windows-owner-reader-session-consumer.js` is the small browser consumer seam for an injected,
+ready `ReaderSessionOwner` API client. It reads the Host snapshot and media-identity capability, normalizes the
+Python owner envelope into the existing reader session shape, and binds the authorized media descriptor through
+`MediaResourceOwner`. The workflow loader and session restore runtime accept this consumer as an optional owner
+path; without it they retain the existing browser persistence path for the later C2 cutover.
+
+The owner path publishes a material only after the Host media probe succeeds and the typed prepare/commit result
+is committed or can be reconciled from matching receipt/snapshot evidence. A failed, conflicting, not-ready, or
+unknown command restores the visible session and prior media binding without writing browser durable storage.
+Media is assigned directly to the element and probed with the existing `Range: bytes=0-0` seam; changed ETag,
+identity, revision, malformed snapshots, and failed probes stop the old resource and return a rebind/not-ready
+result while retaining the session. The production route remains pre-cutover/not-ready and the existing browser
+writer is unchanged.
+
+The isolated Chromium gate is `npm run verify:windows-owner-reader-session-c1`. It covers owner-backed startup,
+play/seek, material switch, commit-unknown and CAS/not-ready rollback, malformed snapshot retention, media
+Range/ETag rebind, Host reopen, and the no-browser-durable-fallback/no-copy boundary. It is included in
+`verify:full` but not `verify:fast`.
+
 ## Task B per-domain backup and migration seam
 
 `src/services/persistence/windows-durable-state-migration.js` is a small callable controller over the existing

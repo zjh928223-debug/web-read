@@ -33,6 +33,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
     const readerSessionPersistence = deps.readerSessionPersistence || createReaderSessionPersistence({
         indexedDBApi: windowObject.indexedDB
     });
+    const readerSessionOwner = deps.readerSessionOwner || windowObject.__windowsOwnerReaderSessionConsumer || null;
 
     const startupCleanupRuntime = createSessionStartupCleanupRuntime({
         state,
@@ -54,6 +55,7 @@ export function startSessionLifecycleRuntime(deps = {}) {
         lblTranscript: domRefs.lblTranscript,
         lblVisual: domRefs.lblVisual,
         readerSessionPersistence,
+        readerSessionOwner,
         loadFromDB: globals.loadFromDB,
         markFileLoaded: globals.markFileLoaded,
         applyCurrentAudioMeta: globals.applyCurrentAudioMeta,

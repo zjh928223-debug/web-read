@@ -955,6 +955,7 @@ function makeLoader() {
   readerSessionLoader = createYoutubeWorkflowLoader({
     client: youtubeWorkflowClient,
     readerSessionPersistence: readerSessionPersistence,
+    readerSessionOwner: window.__windowsOwnerReaderSessionConsumer || null,
     applyCurrentAudioMeta,
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,

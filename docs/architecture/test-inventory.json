@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 114,
     "behavior": 109,
-    "browser": 28,
+    "browser": 29,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 269,
-  "executableScriptCount": 286,
+  "packageScriptCount": 270,
+  "executableScriptCount": 287,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3223,6 +3223,19 @@
         "scripts/run-python-command.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-reader-session"
+    },
+    {
+      "name": "verify:windows-owner-reader-session-c1",
+      "command": "node scripts/windows-owner-reader-session-c1-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-reader-session-c1-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-reader-session-c1"
     },
     {
       "name": "verify:windows-owner-receipt",
@@ -10692,6 +10705,31 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-reader-session-c1-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-reader-session-c1",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-reader-session-c1"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {
