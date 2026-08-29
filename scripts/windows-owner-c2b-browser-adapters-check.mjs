@@ -12,6 +12,7 @@ const ACCESS_TOKEN = 'c2b-browser-token'
 const PASSAGE_DATA_KEY = 'vocabulary.passage-preview.data.v2'
 const PASSAGE_PROGRESS_KEY = 'vocabulary.passage-preview.progress.v2'
 const PASSAGE_DURABLE_KEY = 'vocabulary.passage-preview.durable-state.v1'
+const PASSAGE_ACQUISITION_KEY = 'vocabulary.passage-preview.acquisition.v1'
 const ANNOTATION_PREFIX = 'AnnotationGenerationStorage::'
 const ANNOTATION_SUFFIXES = ['annotation.bundle.v2.json', 'annotation.generated.json', 'annotation.status.json']
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`
@@ -31,6 +32,24 @@ const passageRecords = {
       startedAt: null,
       completedAt: null,
     },
+    allocations: {
+      schemaVersion: 'ielts-daily-preview.allocations.v1',
+      batches: {
+        '2026-08-29': { words: ['cword'] },
+      },
+      assignedLemmas: ['cword'],
+    },
+    continuation: {
+      schemaVersion: 'ielts-daily-preview.continuation.v1',
+      consumedBatchDates: [],
+      lastLoadedBatchDate: '2026-08-29',
+      updatedAt: '2026-08-29T00:00:00.000Z',
+    },
+    archive: [{
+      date: '2026-08-28',
+      items: [{ id: 'c2b-archived' }],
+      completedAt: '2026-08-28T00:00:00.000Z',
+    }],
   },
   [PASSAGE_DATA_KEY]: {
     schemaVersion: 'passage-preview.local-data.v2',
@@ -44,6 +63,24 @@ const passageRecords = {
     contextExpanded: {},
     startedAt: null,
     completedAt: null,
+  },
+  [PASSAGE_ACQUISITION_KEY]: {
+    schemaVersion: 'passage-preview.acquisition.v1',
+    records: [{
+      itemKey: 'persist\u001f持久',
+      previewItemId: 'c2b-acquisition-item',
+      lemma: 'persist',
+      word: 'persist',
+      primaryMeaningZh: '持久',
+      learningUnitId: 'c2b-learning-unit',
+      status: 'introduced',
+      item: {
+        id: 'c2b-acquisition-item',
+        lemma: 'persist',
+        word: 'persist',
+        primaryMeaningZh: '持久',
+      },
+    }],
   },
 }
 
@@ -84,6 +121,9 @@ const state = {
   annotationRecords: structuredClone(annotationRecords),
   revisions: { 'passage-preview': 0, annotation: 0 },
   ownerRequests: [],
+  commandRequests: [],
+  commandInFlight: 0,
+  maxConcurrentCommands: 0,
 }
 
 const vite = await createViteServer({
@@ -112,9 +152,15 @@ const context = await browser.newContext()
 const page = await context.newPage()
 try {
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
+  state.commandRequests = []
+  state.commandInFlight = 0
+  state.maxConcurrentCommands = 0
   const result = await page.evaluate(async ({ profileId, instanceId }) => {
     const { createWindowsOwnerApiClient } = await import('/src/services/windows-owner-api-client.js')
     const passage = await import('/src/features/passage-preview/passage-preview-storage.js')
+    const daily = await import('/src/features/passage-preview/passage-preview-daily-continuation.js')
+    const acquisition = await import('/src/features/passage-preview/passage-preview-acquisition.js')
+    const ownerFlow = daily
     const annotation = await import('/src/services/annotation/storage.js')
     const ownerClient = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
     window.__windowsOwnerDomainCutover = {
@@ -123,30 +169,99 @@ try {
       command: (request) => ownerClient.command(request),
     }
     localStorage.clear()
+    const originalGetItem = Storage.prototype.getItem
     const originalSetItem = Storage.prototype.setItem
+    let storageReads = 0
     let storageWrites = 0
+    Storage.prototype.getItem = function (...args) {
+      storageReads += 1
+      return originalGetItem.apply(this, args)
+    }
     Storage.prototype.setItem = function (...args) {
       storageWrites += 1
       return originalSetItem.apply(this, args)
     }
     try {
       const beforeData = await passage.loadPassagePreviewDataFromOwner()
-      if (beforeData?.[0]?.id !== 'c2b-before') throw new Error('passage Host query did not hydrate the existing data')
-      await passage.savePassagePreviewData([{ id: 'c2b-after', text: 'after' }])
-      await passage.savePassagePreviewProgress({
-        status: 'completed',
-        currentIndex: 1,
-        revealed: { c2b: true },
-        contextExpanded: {},
-        startedAt: null,
-        completedAt: null,
-      })
-      const afterData = await passage.loadPassagePreviewDataFromOwner()
-      const afterProgress = await passage.loadPassagePreviewProgressFromOwner()
-      if (afterData?.[0]?.id !== 'c2b-after' || afterProgress?.status !== 'completed') {
-        throw new Error('passage typed Host mutation did not become readable')
+      const beforeAllocations = await daily.loadIeltsDailyPreviewAllocations()
+      const beforeContinuation = await daily.loadIeltsDailyPreviewContinuation()
+      const beforeArchive = await daily.loadIeltsDailyPreviewArchive()
+      const beforeAcquisition = await acquisition.loadPassagePreviewAcquisitionRecords()
+      if (beforeData?.[0]?.id !== 'c2b-before'
+        || beforeAllocations.batches[0]?.words[0] !== 'cword'
+        || beforeContinuation.lastLoadedBatchDate !== '2026-08-29'
+        || beforeArchive[0]?.date !== '2026-08-28'
+        || beforeAcquisition[0]?.lemma !== 'persist') {
+        throw new Error('passage Host query did not hydrate all authoritative daily records')
       }
 
+      await ownerFlow.commitPassagePreviewBatchTransition({
+        archive: {
+          date: '2026-08-30',
+          items: [{ id: 'c2b-before', text: 'before' }],
+          completedAt: '2026-08-30T00:00:00.000Z',
+        },
+        nextItems: [{ id: 'c2b-after', text: 'after' }],
+        progress: {
+          status: 'completed',
+          currentIndex: 1,
+          revealed: { c2b: true },
+          contextExpanded: {},
+          startedAt: null,
+          completedAt: null,
+        },
+        continuation: {
+          ...beforeContinuation,
+          consumedBatchDates: ['2026-08-30'],
+          lastLoadedBatchDate: '2026-08-30',
+          updatedAt: '2026-08-30T00:00:00.000Z',
+        },
+        saveArchive: daily.saveIeltsDailyPreviewArchive,
+        saveData: passage.savePassagePreviewData,
+        saveProgress: passage.savePassagePreviewProgress,
+        saveContinuation: daily.saveIeltsDailyPreviewContinuation,
+      })
+
+      const afterData = await passage.loadPassagePreviewDataFromOwner()
+      const afterProgress = await passage.loadPassagePreviewProgressFromOwner()
+      const afterArchive = await daily.loadIeltsDailyPreviewArchive()
+      const afterContinuation = await daily.loadIeltsDailyPreviewContinuation()
+      const afterAcquisition = await acquisition.loadPassagePreviewAcquisitionRecords()
+      if (afterData?.[0]?.id !== 'c2b-after'
+        || afterProgress?.status !== 'completed'
+        || afterArchive[0]?.date !== '2026-08-30'
+        || afterContinuation.lastLoadedBatchDate !== '2026-08-30'
+        || afterAcquisition[0]?.lemma !== 'persist') {
+        throw new Error('passage typed Host mutation did not preserve all daily records')
+      }
+
+      const reopenedClient = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
+      window.__windowsOwnerDomainCutover = {
+        isAuthoritative: (domain) => domain === 'passage-preview' || domain === 'annotation',
+        query: (request) => reopenedClient.query(request),
+        command: (request) => reopenedClient.command(request),
+      }
+      const reopenedData = await passage.loadPassagePreviewDataFromOwner()
+      const reopenedProgress = await passage.loadPassagePreviewProgressFromOwner()
+      const reopenedAllocations = await daily.loadIeltsDailyPreviewAllocations()
+      const reopenedContinuation = await daily.loadIeltsDailyPreviewContinuation()
+      const reopenedArchive = await daily.loadIeltsDailyPreviewArchive()
+      const reopenedAcquisition = await acquisition.loadPassagePreviewAcquisitionRecords()
+      if (reopenedData?.[0]?.id !== 'c2b-after'
+        || reopenedProgress?.status !== 'completed'
+        || reopenedAllocations.batches[0]?.words[0] !== 'cword'
+        || reopenedContinuation.lastLoadedBatchDate !== '2026-08-30'
+        || reopenedArchive[0]?.date !== '2026-08-30'
+        || reopenedAcquisition[0]?.lemma !== 'persist') {
+        throw new Error('reopened passage Host query did not preserve authoritative daily state')
+      }
+
+      const annotationOwner = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
+      window.__windowsOwnerDomainCutover = {
+        isAuthoritative: (domain) => domain === 'passage-preview' || domain === 'annotation',
+        query: (request) => annotationOwner.query(request),
+        command: (request) => annotationOwner.command(request),
+      }
       const scope = { audioKey: 'youtube-workflow::c2b audio', documentId: 'document::一' }
       const beforeBundle = await annotation.loadBundle(scope)
       if (beforeBundle.generated.items[0]?.text !== 'before') throw new Error('annotation Host query did not hydrate the existing scope')
@@ -160,19 +275,32 @@ try {
       }
 
       return {
+        storageReads,
         storageWrites,
         localStorageKeys: Object.keys(localStorage),
-        passageRevision: afterProgress ? afterBundle.revision : null,
+        passageRevision: afterProgress?.status === 'completed' ? 4 : null,
         annotationRevision: afterBundle.revision,
       }
     } finally {
+      Storage.prototype.getItem = originalGetItem
       Storage.prototype.setItem = originalSetItem
     }
   }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID })
 
+  assert.equal(result.storageReads, 0, 'authoritative browser adapters must not read localStorage')
   assert.equal(result.storageWrites, 0, 'authoritative browser adapters must not write localStorage')
   assert.deepEqual(result.localStorageKeys, [])
-  assert.equal(state.revisions['passage-preview'], 2, 'passage data and progress used typed Host commands')
+  assert.equal(state.revisions['passage-preview'], 4, 'passage daily transition used four typed Host commands')
+  assert.equal(state.maxConcurrentCommands, 1, 'passage daily transition awaited each Host command')
+  assert.deepEqual(
+    state.commandRequests.slice(0, 4).map((request) => Object.keys(request.body.payload.records)),
+    [
+      [PASSAGE_DURABLE_KEY],
+      [PASSAGE_DURABLE_KEY, PASSAGE_DATA_KEY],
+      [PASSAGE_DURABLE_KEY, PASSAGE_PROGRESS_KEY],
+      [PASSAGE_DURABLE_KEY],
+    ],
+  )
   assert.equal(state.revisions.annotation, 1, 'annotation used one typed Host command')
   assert.equal(state.ownerRequests.every((request) => request.url === '/api/app/owner'), true)
   assert.equal(state.ownerRequests.every((request) => !request.raw.includes(ACCESS_TOKEN)), true)
@@ -220,16 +348,24 @@ async function handleOwnerRequest(request, response) {
     if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
       return sendJson(response, 400, { error: 'records are required' })
     }
-    const target = domain === 'passage-preview' ? state.passageRecords : state.annotationRecords
-    for (const [id, record] of Object.entries(incoming)) target[id] = record?.content ?? record
-    state.revisions[domain] += 1
-    return sendJson(response, 200, ownerResponse(body, {
-      outcome: 'committed',
-      commitStatus: 'committed',
-      revision: state.revisions[domain],
-      receipt: committedReceipt(body, state.revisions[domain]),
-      payload: { recordKeys: Object.keys(incoming) },
-    }))
+    state.commandRequests.push({ url: request.url, raw, body })
+    state.commandInFlight += 1
+    state.maxConcurrentCommands = Math.max(state.maxConcurrentCommands, state.commandInFlight)
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      const target = domain === 'passage-preview' ? state.passageRecords : state.annotationRecords
+      for (const [id, record] of Object.entries(incoming)) target[id] = record?.content ?? record
+      state.revisions[domain] += 1
+      return sendJson(response, 200, ownerResponse(body, {
+        outcome: 'committed',
+        commitStatus: 'committed',
+        revision: state.revisions[domain],
+        receipt: committedReceipt(body, state.revisions[domain]),
+        payload: { recordKeys: Object.keys(incoming) },
+      }))
+    } finally {
+      state.commandInFlight -= 1
+    }
   }
   return sendJson(response, 400, { error: 'unsupported owner fixture request' })
 }

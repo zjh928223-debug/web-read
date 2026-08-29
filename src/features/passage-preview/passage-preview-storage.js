@@ -129,6 +129,15 @@ export async function loadPassagePreviewProgressFromOwner(windowObject = globalT
   return normalizeProgress(current)
 }
 
+export async function loadPassagePreviewRecordsFromOwner(windowObject = globalThis) {
+  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
+  if (!snapshot) return null
+  return Object.fromEntries(Object.entries(snapshot.records).map(([key, record]) => [
+    key,
+    ownerRecordContent(record),
+  ]))
+}
+
 export async function commitPassagePreviewOwnerRecords(records, options = {}, windowObject = globalThis) {
   const snapshot = await readPassagePreviewOwnerRecords(windowObject)
   if (!snapshot) return null

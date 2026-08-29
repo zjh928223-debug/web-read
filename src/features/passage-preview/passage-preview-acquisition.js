@@ -5,6 +5,7 @@ import { createVocabularyService } from '../../services/vocabulary/vocabulary-se
 import {
   commitPassagePreviewOwnerRecords,
   isPassagePreviewOwnerAuthoritative,
+  loadPassagePreviewRecordsFromOwner,
 } from './passage-preview-storage.js'
 
 export const PASSAGE_PREVIEW_ACQUISITION_KEY = 'vocabulary.passage-preview.acquisition.v1'
@@ -12,13 +13,19 @@ export const PASSAGE_PREVIEW_ACQUISITION_SCHEMA = 'passage-preview.acquisition.v
 export const PASSAGE_PREVIEW_ACQUISITION_SOURCE = 'cambridge-04-21-reading'
 export const PASSAGE_PREVIEW_MINIMUM_DELAY_MS = 86_400_000
 
-export function loadPassagePreviewAcquisitionRecords(storage = globalThis.localStorage) {
+export async function loadPassagePreviewAcquisitionRecords(storage = globalThis.localStorage) {
+  const ownerRecords = await loadPassagePreviewRecordsFromOwner()
+  if (ownerRecords) {
+    const saved = ownerRecords[PASSAGE_PREVIEW_ACQUISITION_KEY]
+    if (saved?.schemaVersion !== PASSAGE_PREVIEW_ACQUISITION_SCHEMA || !Array.isArray(saved.records)) return []
+    return saved.records.map(normalizeRecord).filter(Boolean)
+  }
   const saved = readJson(storage, PASSAGE_PREVIEW_ACQUISITION_KEY, null)
   if (saved?.schemaVersion !== PASSAGE_PREVIEW_ACQUISITION_SCHEMA || !Array.isArray(saved.records)) return []
   return saved.records.map(normalizeRecord).filter(Boolean)
 }
 
-export function savePassagePreviewAcquisitionRecords(records = [], storage = globalThis.localStorage) {
+export async function savePassagePreviewAcquisitionRecords(records = [], storage = globalThis.localStorage) {
   const normalized = uniqueRecords(records)
   const envelope = {
     schemaVersion: PASSAGE_PREVIEW_ACQUISITION_SCHEMA,
@@ -120,7 +127,7 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
     if (typeof acquisitionRepository.loadSnapshot !== 'function') return []
     const now = Date.parse(normalizeIso(inputOptions.now) || nowIso(nowProvider))
     const snapshot = await acquisitionRepository.loadSnapshot()
-    const records = rebuildRecordsFromSnapshot(snapshot)
+    const records = await rebuildRecordsFromSnapshot(snapshot)
     return records.map((record) => {
         const pair = snapshot.by_learning_unit_id?.[record.learningUnitId]
         const state = pair?.acquisition_state
@@ -260,8 +267,9 @@ export function createPassagePreviewAcquisitionCoordinator(options = {}) {
     return rebuildRecordsFromSnapshot(await acquisitionRepository.loadSnapshot())
   }
 
-  function rebuildRecordsFromSnapshot(snapshot) {
-    const legacyByUnit = new Map(loadPassagePreviewAcquisitionRecords(storage).map((record) => [record.learningUnitId, record]))
+  async function rebuildRecordsFromSnapshot(snapshot) {
+    const legacyByUnit = new Map((await loadPassagePreviewAcquisitionRecords(storage))
+      .map((record) => [record.learningUnitId, record]))
     return Object.values(snapshot?.by_learning_unit_id || {})
       .filter((pair) => pair?.learning_unit?.extensions?.source === 'ielts-preview')
       .map((pair) => recordFromCanonicalPair(pair, legacyByUnit.get(pair.learning_unit.learning_unit_id)))

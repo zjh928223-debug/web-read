@@ -250,6 +250,12 @@ async function loadModules(repoRoot) {
     )
       .replace(/\.\.\/\.\.\/services\/vocabulary\/vocabulary-learning-models\.js/gu, './vocabulary-learning-models.mjs')
       .replace(/\.\.\/\.\.\/services\/vocabulary\/vocabulary-service\.js/gu, './vocabulary-service.mjs')
+      .replace("./passage-preview-storage.js", './passage-preview-storage.mjs')
+    fs.writeFileSync(path.join(tempDir, 'passage-preview-storage.mjs'), [
+      'export const commitPassagePreviewOwnerRecords = async () => null',
+      'export const isPassagePreviewOwnerAuthoritative = () => false',
+      'export const loadPassagePreviewRecordsFromOwner = async () => null',
+    ].join('\n'))
     const coordinatorPath = path.join(tempDir, 'passage-preview-acquisition.mjs')
     fs.writeFileSync(coordinatorPath, coordinatorSource)
     const coordinator = await import(`${pathToFileURL(coordinatorPath).href}?preview-coordinator=${Date.now()}`)

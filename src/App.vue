@@ -77,6 +77,7 @@ import {
   loadPassagePreviewDataFromOwner,
   loadPassagePreviewProgress,
   loadPassagePreviewProgressFromOwner,
+  isPassagePreviewOwnerAuthoritative,
   savePassagePreviewData,
   savePassagePreviewProgress,
 } from './features/passage-preview/passage-preview-storage.js'
@@ -84,6 +85,7 @@ import {
   generateIeltsDailyPreviewBatch,
   getPreviewBatchDate,
   excludePreviouslyIntroducedPreviewItems,
+  commitPassagePreviewBatchTransition,
   loadIeltsDailyPreviewAllocations,
   loadIeltsDailyPreviewContinuation,
   loadIeltsPreviewCandidateWords,
@@ -249,7 +251,7 @@ onBeforeUnmount(() => {
   if (articleReconciliationTimer !== null) window.clearTimeout(articleReconciliationTimer)
 })
 
-function openStoredPassagePreviewLegacy() {
+async function openStoredPassagePreviewLegacy() {
   if (validatePassagePreviewItems(passagePreviewItems.value)) {
     isPassagePreviewOpen.value = true
     return true
@@ -260,11 +262,13 @@ function openStoredPassagePreviewLegacy() {
         title: '首次接触',
         answers: passagePreviewItems.value,
       })
-      savePassagePreviewData(migrated)
+      await savePassagePreviewData(migrated)
       passagePreviewItems.value = migrated
       isPassagePreviewOpen.value = true
       return true
-    } catch (_error) {}
+    } catch (error) {
+      if (isPassagePreviewOwnerAuthoritative()) throw error
+    }
   }
   return false
 }
@@ -281,6 +285,7 @@ async function openStoredPassagePreview() {
         return true
       }
     } catch (error) {
+      if (isPassagePreviewOwnerAuthoritative()) throw error
       console.warn('[passage-preview] delayed-check probe unavailable', error)
     }
     passagePreviewItems.value = await loadPassagePreviewDataFromOwner() ?? loadPassagePreviewData()
@@ -300,16 +305,16 @@ async function openStoredPassagePreview() {
         })
         if (!advanced) {
           passagePreviewItems.value = []
-          savePassagePreviewData([])
-          savePassagePreviewProgress(createInitialPassagePreviewProgress())
+          await savePassagePreviewData([])
+          await savePassagePreviewProgress(createInitialPassagePreviewProgress())
           return false
         }
-        progress = loadPassagePreviewProgress()
+        progress = await loadPassagePreviewProgressFromOwner() ?? loadPassagePreviewProgress()
       } else {
         passagePreviewItems.value = reconciledItems.items
         progress = { ...progress, currentIndex: reconciledItems.currentIndex }
-        savePassagePreviewData(passagePreviewItems.value)
-        savePassagePreviewProgress(progress)
+        await savePassagePreviewData(passagePreviewItems.value)
+        await savePassagePreviewProgress(progress)
       }
     }
     if (validatePassagePreviewItems(passagePreviewItems.value)) {
@@ -318,11 +323,11 @@ async function openStoredPassagePreview() {
         await advanceCompletedIeltsPreviewBatch(currentBatchDate, progress)
       }
       passagePreviewItems.value = await preparePassagePreviewItems(passagePreviewItems.value)
-      savePassagePreviewData(passagePreviewItems.value)
+      await savePassagePreviewData(passagePreviewItems.value)
       isPassagePreviewOpen.value = true
       return true
     }
-    if (openStoredPassagePreviewLegacy()) return true
+    if (await openStoredPassagePreviewLegacy()) return true
     const started = await openFirstAvailableIeltsPreviewBatch()
     return started
   } finally {
@@ -339,8 +344,8 @@ async function openPassagePreview() {
 }
 
 async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
-  const continuation = loadIeltsDailyPreviewContinuation()
-  const allocations = loadIeltsDailyPreviewAllocations()
+  const continuation = await loadIeltsDailyPreviewContinuation()
+  const allocations = await loadIeltsDailyPreviewAllocations()
   const excludedLemmas = await loadPreviewExcludedLemmas()
   const nextBatch = selectNextIeltsDailyPreviewBatch({
     allocations,
@@ -355,12 +360,16 @@ async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
     if (generated?.date > currentBatchDate) resolvedNextBatch = generated
   }
   if (!resolvedNextBatch) {
-    saveIeltsDailyPreviewContinuation({
-      ...continuation,
-      consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
-      lastLoadedBatchDate: currentBatchDate,
-      updatedAt: new Date().toISOString(),
-    })
+    try {
+      await saveIeltsDailyPreviewContinuation({
+        ...continuation,
+        consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
+        lastLoadedBatchDate: currentBatchDate,
+        updatedAt: new Date().toISOString(),
+      })
+    } catch (error) {
+      console.warn('[passage-preview] daily continuation unavailable', error)
+    }
     return false
   }
 
@@ -369,20 +378,26 @@ async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
       batch: resolvedNextBatch,
       fallbackItems: passagePreviewItems.value,
     })
-    saveIeltsDailyPreviewArchive({
-      date: currentBatchDate,
-      items: passagePreviewItems.value,
-      completedAt: progress.completedAt,
+    await commitPassagePreviewBatchTransition({
+      archive: {
+        date: currentBatchDate,
+        items: passagePreviewItems.value,
+        completedAt: progress.completedAt,
+      },
+      nextItems,
+      progress: createInitialPassagePreviewProgress(),
+      continuation: {
+        ...continuation,
+        consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
+        lastLoadedBatchDate: resolvedNextBatch.date,
+        updatedAt: new Date().toISOString(),
+      },
+      saveArchive: saveIeltsDailyPreviewArchive,
+      saveData: savePassagePreviewData,
+      saveProgress: savePassagePreviewProgress,
+      saveContinuation: saveIeltsDailyPreviewContinuation,
     })
-    savePassagePreviewData(nextItems)
-    savePassagePreviewProgress(createInitialPassagePreviewProgress())
     passagePreviewItems.value = nextItems
-    saveIeltsDailyPreviewContinuation({
-      ...continuation,
-      consumedBatchDates: addDate(continuation.consumedBatchDates, currentBatchDate),
-      lastLoadedBatchDate: resolvedNextBatch.date,
-      updatedAt: new Date().toISOString(),
-    })
     return true
   } catch (error) {
     console.warn('[passage-preview] daily continuation unavailable', error)
@@ -391,8 +406,8 @@ async function advanceCompletedIeltsPreviewBatch(currentBatchDate, progress) {
 }
 
 async function openFirstAvailableIeltsPreviewBatch() {
-  const allocations = loadIeltsDailyPreviewAllocations()
-  const continuation = loadIeltsDailyPreviewContinuation()
+  const allocations = await loadIeltsDailyPreviewAllocations()
+  const continuation = await loadIeltsDailyPreviewContinuation()
   const excludedLemmas = await loadPreviewExcludedLemmas()
   const nextBatch = selectNextIeltsDailyPreviewBatch({
     allocations,
@@ -405,14 +420,14 @@ async function openFirstAvailableIeltsPreviewBatch() {
   try {
     const items = await materializeIeltsDailyPreviewBatch({ batch: resolvedNextBatch })
     const preparedItems = await preparePassagePreviewItems(items)
-    savePassagePreviewData(preparedItems)
-    savePassagePreviewProgress(createInitialPassagePreviewProgress())
-    passagePreviewItems.value = preparedItems
-    saveIeltsDailyPreviewContinuation({
+    await savePassagePreviewData(preparedItems)
+    await savePassagePreviewProgress(createInitialPassagePreviewProgress())
+    await saveIeltsDailyPreviewContinuation({
       ...continuation,
       lastLoadedBatchDate: resolvedNextBatch.date,
       updatedAt: new Date().toISOString(),
     })
+    passagePreviewItems.value = preparedItems
     isPassagePreviewOpen.value = true
     return true
   } catch (error) {
@@ -483,7 +498,7 @@ function closePassagePreviewCheck() {
 
 async function generateTodayIeltsPreviewBatch(excludedLemmas = []) {
   const date = formatLocalDate(new Date())
-  const allocations = loadIeltsDailyPreviewAllocations()
+  const allocations = await loadIeltsDailyPreviewAllocations()
   const candidateWords = await loadIeltsPreviewCandidateWords()
   const generated = generateIeltsDailyPreviewBatch({
     allocations,
@@ -492,7 +507,7 @@ async function generateTodayIeltsPreviewBatch(excludedLemmas = []) {
     excludedLemmas,
   })
   if (!generated.created) return null
-  saveIeltsDailyPreviewAllocations(generated.allocations)
+  await saveIeltsDailyPreviewAllocations(generated.allocations)
   return generated.batch
 }
 
@@ -500,6 +515,7 @@ async function loadPreviewExcludedLemmas() {
   try {
     return await passagePreviewAcquisition.getIntroducedLemmas()
   } catch (error) {
+    if (isPassagePreviewOwnerAuthoritative()) throw error
     console.warn('[passage-preview] introduced-word exclusion unavailable', error)
     return []
   }
@@ -509,6 +525,7 @@ async function loadPreviewIntroducedRecords() {
   try {
     return await passagePreviewAcquisition.loadRecords()
   } catch (error) {
+    if (isPassagePreviewOwnerAuthoritative()) throw error
     console.warn('[passage-preview] current-batch exclusion unavailable', error)
     return []
   }
@@ -520,8 +537,8 @@ async function importPassagePreviewFile(event) {
   if (!file) return
   try {
     const items = importVocabularyPreview(JSON.parse(await file.text()))
-    savePassagePreviewData(items)
-    savePassagePreviewProgress(createInitialPassagePreviewProgress())
+    await savePassagePreviewData(items)
+    await savePassagePreviewProgress(createInitialPassagePreviewProgress())
     passagePreviewItems.value = items
     isPassagePreviewOpen.value = true
   } catch (error) {
@@ -529,7 +546,7 @@ async function importPassagePreviewFile(event) {
   }
 }
 
-function saveEnrichedPreviewItem({
+async function saveEnrichedPreviewItem({
   id,
   realSentence,
   primaryMeaningZh,
@@ -539,7 +556,8 @@ function saveEnrichedPreviewItem({
   targetSenseKey,
 }) {
   if (!id || !realSentence) return
-  passagePreviewItems.value = passagePreviewItems.value.map((item) => (
+  const previousItems = passagePreviewItems.value
+  const nextItems = previousItems.map((item) => (
     item.id === id ? {
       ...item,
       realSentence,
@@ -550,7 +568,13 @@ function saveEnrichedPreviewItem({
       ...(targetSenseKey ? { targetSenseKey } : {}),
     } : item
   ))
-  savePassagePreviewData(passagePreviewItems.value)
+  try {
+    await savePassagePreviewData(nextItems)
+  } catch (error) {
+    console.warn('[passage-preview] enriched item save unavailable', error)
+    return
+  }
+  passagePreviewItems.value = nextItems
   savePassagePreviewSessionCache({
     items: passagePreviewItems.value,
     preloadedSentences: passagePreviewPreloaded.value.sentences,

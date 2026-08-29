@@ -27,7 +27,7 @@ const storage = createMemoryStorage({
   }),
 })
 
-const allocations = loadIeltsDailyPreviewAllocations(storage)
+const allocations = await loadIeltsDailyPreviewAllocations(storage)
 assert.deepEqual(
   allocations.batches.map((batch) => [batch.date, batch.words]),
   [
@@ -84,9 +84,9 @@ assert.deepEqual(
   }).batch.words,
   ['new-word-b', 'new-word-c'],
 )
-saveIeltsDailyPreviewAllocations(generated.allocations, storage)
+await saveIeltsDailyPreviewAllocations(generated.allocations, storage)
 assert.deepEqual(
-  loadIeltsDailyPreviewAllocations(storage).batches.at(-1),
+  (await loadIeltsDailyPreviewAllocations(storage)).batches.at(-1),
   { date: '2026-08-08', words: ['new-word-b', 'new-word-c'] },
 )
 
@@ -240,6 +240,7 @@ async function importDailyContinuation() {
   await writeFile(join(tempDir, 'passage-preview-storage.mjs'), [
     'export const isPassagePreviewOwnerAuthoritative = () => false',
     'export const commitPassagePreviewOwnerDurableUpdate = async () => null',
+    'export const loadPassagePreviewRecordsFromOwner = async () => null',
   ].join('\n'), 'utf8')
   const durableSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-durable-state.js'), 'utf8'))
     .replace(

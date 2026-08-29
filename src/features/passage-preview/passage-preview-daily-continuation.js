@@ -3,12 +3,14 @@ import {
   importVocabularyPreview,
 } from './passage-preview-import.js'
 import {
+  PASSAGE_PREVIEW_DURABLE_KEY,
   loadPassagePreviewDurableState,
   updatePassagePreviewDurableState,
 } from './passage-preview-durable-state.js'
 import {
   commitPassagePreviewOwnerDurableUpdate,
   isPassagePreviewOwnerAuthoritative,
+  loadPassagePreviewRecordsFromOwner,
 } from './passage-preview-storage.js'
 
 export const IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY = 'vocabulary.ielts-daily-preview.allocations.v1'
@@ -27,7 +29,15 @@ const DEFAULT_ECDICT_ENDPOINT = '/api/dev/dictionary/ecdict'
 const DEFAULT_BATCH_TITLE = '剑桥雅思阅读 · {date} · 首次接触'
 const FALLBACK_MEANING = '暂无本地中文释义'
 
-export function loadIeltsDailyPreviewAllocations(storage = globalThis.localStorage) {
+export async function loadIeltsDailyPreviewAllocations(storage = globalThis.localStorage) {
+  const ownerRecords = await loadPassagePreviewRecordsFromOwner()
+  if (ownerRecords) {
+    const durable = ownerRecords[PASSAGE_PREVIEW_DURABLE_KEY]
+    const envelope = durable?.allocations || ownerRecords[IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY]
+    return envelope?.schemaVersion === IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA
+      ? normalizeAllocations(envelope)
+      : emptyAllocations()
+  }
   const envelope = loadPassagePreviewDurableState(storage, {
     allocations: readJson(storage, IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, null),
   }).allocations
@@ -36,7 +46,7 @@ export function loadIeltsDailyPreviewAllocations(storage = globalThis.localStora
     : emptyAllocations()
 }
 
-export function saveIeltsDailyPreviewAllocations(allocations = {}, storage = globalThis.localStorage) {
+export async function saveIeltsDailyPreviewAllocations(allocations = {}, storage = globalThis.localStorage) {
   const normalized = normalizeAllocations(allocations)
   const envelope = {
     schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
@@ -155,14 +165,19 @@ export async function loadIeltsPreviewCandidateDetails({
   }
 }
 
-export function loadIeltsDailyPreviewContinuation(storage = globalThis.localStorage) {
+export async function loadIeltsDailyPreviewContinuation(storage = globalThis.localStorage) {
+  const ownerRecords = await loadPassagePreviewRecordsFromOwner()
+  if (ownerRecords) {
+    const durable = ownerRecords[PASSAGE_PREVIEW_DURABLE_KEY]
+    return normalizeContinuation(durable?.continuation || ownerRecords[IELTS_DAILY_PREVIEW_CONTINUATION_KEY])
+  }
   const saved = loadPassagePreviewDurableState(storage, {
     continuation: readJson(storage, IELTS_DAILY_PREVIEW_CONTINUATION_KEY, null),
   }).continuation
   return normalizeContinuation(saved)
 }
 
-export function saveIeltsDailyPreviewContinuation(state = {}, storage = globalThis.localStorage) {
+export async function saveIeltsDailyPreviewContinuation(state = {}, storage = globalThis.localStorage) {
   const normalized = normalizeContinuation(state)
   if (isPassagePreviewOwnerAuthoritative()) {
     return commitPassagePreviewOwnerDurableUpdate((current) => ({ ...current, continuation: normalized }))
@@ -176,12 +191,26 @@ export function saveIeltsDailyPreviewContinuation(state = {}, storage = globalTh
   return normalized
 }
 
-export function loadIeltsDailyPreviewArchive(storage = globalThis.localStorage) {
+export async function loadIeltsDailyPreviewArchive(storage = globalThis.localStorage) {
+  const ownerRecords = await loadPassagePreviewRecordsFromOwner()
+  if (ownerRecords) {
+    const durable = ownerRecords[PASSAGE_PREVIEW_DURABLE_KEY]
+    const entries = Array.isArray(durable?.archive)
+      ? durable.archive
+      : ownerRecords[IELTS_DAILY_PREVIEW_ARCHIVE_KEY]?.schemaVersion === IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA
+        ? ownerRecords[IELTS_DAILY_PREVIEW_ARCHIVE_KEY].entries
+        : []
+    return normalizeArchiveEntries(entries)
+  }
   const legacy = readJson(storage, IELTS_DAILY_PREVIEW_ARCHIVE_KEY, null)
   const entries = loadPassagePreviewDurableState(storage, {
     archive: legacy?.schemaVersion === IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA ? legacy.entries : [],
   }).archive
-  return entries
+  return normalizeArchiveEntries(entries)
+}
+
+function normalizeArchiveEntries(entries) {
+  return (Array.isArray(entries) ? entries : [])
     .filter((entry) => normalizeDate(entry?.date) && Array.isArray(entry?.items))
     .map((entry) => ({
       date: normalizeDate(entry.date),
@@ -190,7 +219,7 @@ export function loadIeltsDailyPreviewArchive(storage = globalThis.localStorage) 
     }))
 }
 
-export function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, storage = globalThis.localStorage) {
+export async function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, storage = globalThis.localStorage) {
   const normalizedDate = normalizeDate(date)
   if (!normalizedDate || !Array.isArray(items) || !items.length) return loadIeltsDailyPreviewArchive(storage)
   if (isPassagePreviewOwnerAuthoritative()) {
@@ -205,7 +234,7 @@ export function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, 
       return { ...state, archive: entries.slice(0, 30) }
     }).then(({ state }) => state.archive)
   }
-  const entries = loadIeltsDailyPreviewArchive(storage)
+  const entries = (await loadIeltsDailyPreviewArchive(storage))
     .filter((entry) => entry.date !== normalizedDate)
   entries.unshift({
     date: normalizedDate,
@@ -215,10 +244,27 @@ export function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, 
   const next = entries.slice(0, 30)
   if (typeof storage?.setItem === 'function') {
     updatePassagePreviewDurableState((state) => ({ ...state, archive: next }), storage, {
-      archive: loadIeltsDailyPreviewArchive(storage),
+      archive: await loadIeltsDailyPreviewArchive(storage),
     })
   }
   return next
+}
+
+export async function commitPassagePreviewBatchTransition({
+  archive,
+  nextItems,
+  progress,
+  continuation,
+  saveArchive,
+  saveData,
+  saveProgress,
+  saveContinuation,
+} = {}) {
+  await saveArchive(archive)
+  await saveData(nextItems)
+  await saveProgress(progress)
+  await saveContinuation(continuation)
+  return nextItems
 }
 
 export function getPreviewBatchDate(items) {
