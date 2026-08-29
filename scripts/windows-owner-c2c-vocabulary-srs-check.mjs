@@ -898,7 +898,10 @@ async function runBrowserCoreJourney(origin) {
       const { createVocabularyService } = await import('/src/services/vocabulary/vocabulary-service.js')
       const { createSrsReviewUiService } = await import('/src/features/srs-review/srs-review-ui-service.js')
       const { createIndexedDbSrsPendingCandidatesRepository } = await import('/src/services/vocabulary/srs-pending-candidates.js')
-      const { createWindowsOwnerDomainCutover } = await import('/src/services/windows-owner-domain-cutover.js')
+      const {
+        createWindowsOwnerDomainCutover,
+        initializeWindowsOwnerDomainCutoverComposition,
+      } = await import('/src/services/windows-owner-domain-cutover.js')
       const {
         createWindowsOwnerVocabularySrsIntegration,
         getWindowsOwnerVocabularySrsIntegration,
@@ -920,21 +923,6 @@ async function runBrowserCoreJourney(origin) {
       await setupDatabase()
       const preCutoverPendingRepository = createIndexedDbSrsPendingCandidatesRepository()
       await preCutoverPendingRepository.loadStore()
-      let vocabularyAuthoritative = false
-      const writerFrozenError = (operation) => {
-        const error = new Error(`The vocabulary-srs browser writer is frozen for ${operation}`)
-        error.name = 'WindowsOwnerWriterFrozenError'
-        error.code = 'windows-owner-writer-frozen'
-        return error
-      }
-      window.__windowsOwnerDomainCutover = {
-        isAuthoritative: (domain) => domain === 'vocabulary-srs' && vocabularyAuthoritative,
-        assertBrowserWriterAllowed: (domain, operation) => {
-          if (domain === 'vocabulary-srs' && vocabularyAuthoritative) throw writerFrozenError(operation)
-        },
-        query: (request) => ownerClient.query(request),
-        command: (request) => ownerClient.command(request),
-      }
 
       const originalOpen = IDBFactory.prototype.open
       const originalPut = IDBObjectStore.prototype.put
@@ -962,6 +950,116 @@ async function runBrowserCoreJourney(origin) {
       }
 
       try {
+        // This is a real first-load path: the old repository was created and
+        // loaded before the new window installed any owner guard.  Persisted
+        // authority is recognizable even while the Host is degraded, so the
+        // browser must retain the selection and fail closed.
+        if (window.__windowsOwnerDomainCutover !== undefined
+          && window.__windowsOwnerDomainCutover !== null) {
+          throw new Error('first-load fixture unexpectedly had a previous owner guard')
+        }
+        window.__windowsOwnerDomainCutover = null
+        const degradedPersistedAuthorityHealth = {
+          profileId,
+          instanceId,
+          status: 'degraded',
+          liveness: { status: 'degraded', ready: false },
+          contractValid: true,
+          profileEvidenceReady: true,
+          ownerRegistry: { valid: true },
+          ownerMode: {
+            status: 'authoritative',
+            authoritativeDomains: ['vocabulary-srs'],
+            frozenDomains: [],
+          },
+          domains: [
+            { domain: 'reader-session', authority: 'pre-cutover', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+            { domain: 'vocabulary-srs', authority: 'unavailable', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+            { domain: 'passage-preview', authority: 'pre-cutover', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+            { domain: 'annotation', authority: 'pre-cutover', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+            { domain: 'marks-activity', authority: 'pre-cutover', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+            { domain: 'workflow', authority: 'pre-cutover', queryCapability: 'unavailable', commandCapability: 'unavailable', writerFrozen: false },
+          ],
+        }
+        const firstLoadComposition = await initializeWindowsOwnerDomainCutoverComposition({
+          windowObject: window,
+          health: degradedPersistedAuthorityHealth,
+          fetchImpl: async () => ({ ok: false }),
+          healthPath: '/api/app/health',
+          healthTimeoutMs: 500,
+        })
+        if (!firstLoadComposition.cutover
+          || window.__windowsOwnerDomainCutover !== firstLoadComposition.cutover
+          || !firstLoadComposition.authoritativeDomains.includes('vocabulary-srs')
+          || firstLoadComposition.cutover.ownerReady !== false) {
+          throw new Error('first-load degraded persisted authority did not install an owner-not-ready guard')
+        }
+        let firstLoadQueryRejected = false
+        try {
+          await firstLoadComposition.cutover.query({ domain: 'vocabulary-srs', operation: 'snapshot', payload: {} })
+        } catch (error) {
+          firstLoadQueryRejected = error?.code === 'owner-not-ready'
+        }
+        let firstLoadCommandRejected = false
+        try {
+          await firstLoadComposition.cutover.command({ domain: 'vocabulary-srs', operation: 'mutation', payload: {} })
+        } catch (error) {
+          firstLoadCommandRejected = error?.code === 'owner-not-ready'
+        }
+        let firstLoadIntegrationRejected = false
+        try {
+          getWindowsOwnerVocabularySrsIntegration(window)
+        } catch (error) {
+          firstLoadIntegrationRejected = error?.code === 'owner-not-ready'
+        }
+        let firstLoadWriterBlocked = false
+        try {
+          await preCutoverPendingRepository.saveStore({ schemaVersion: 1, groups: {} })
+        } catch (error) {
+          firstLoadWriterBlocked = error?.code === 'windows-owner-writer-frozen'
+        }
+        if (!firstLoadQueryRejected
+          || !firstLoadCommandRejected
+          || !firstLoadIntegrationRejected
+          || !firstLoadWriterBlocked
+          || indexedDbWrites !== 0) {
+          throw new Error('first-load degraded persisted authority did not fail closed before IndexedDB write')
+        }
+
+        const ordinaryPreCutoverWindow = {}
+        const ordinaryPreCutoverHealth = {
+          ...degradedPersistedAuthorityHealth,
+          ownerMode: { status: 'pre-cutover', authoritativeDomains: [], frozenDomains: [] },
+          domains: degradedPersistedAuthorityHealth.domains.map((item) => ({
+            ...item,
+            authority: 'pre-cutover',
+          })),
+        }
+        const ordinaryPreCutoverComposition = await initializeWindowsOwnerDomainCutoverComposition({
+          windowObject: ordinaryPreCutoverWindow,
+          health: ordinaryPreCutoverHealth,
+          fetchImpl: async () => ({ ok: false }),
+        })
+        if (ordinaryPreCutoverComposition.cutover !== null
+          || ordinaryPreCutoverComposition.authoritativeDomains.length) {
+          throw new Error('ordinary degraded pre-cutover health was incorrectly frozen')
+        }
+
+        let vocabularyAuthoritative = false
+        const writerFrozenError = (operation) => {
+          const error = new Error(`The vocabulary-srs browser writer is frozen for ${operation}`)
+          error.name = 'WindowsOwnerWriterFrozenError'
+          error.code = 'windows-owner-writer-frozen'
+          return error
+        }
+        window.__windowsOwnerDomainCutover = {
+          isAuthoritative: (domain) => domain === 'vocabulary-srs' && vocabularyAuthoritative,
+          assertBrowserWriterAllowed: (domain, operation) => {
+            if (domain === 'vocabulary-srs' && vocabularyAuthoritative) throw writerFrozenError(operation)
+          },
+          query: (request) => ownerClient.query(request),
+          command: (request) => ownerClient.command(request),
+        }
         vocabularyAuthoritative = true
         const integration = getWindowsOwnerVocabularySrsIntegration(window)
         if (!integration) throw new Error('vocabulary Host integration was not selected')
@@ -1148,6 +1246,11 @@ async function runBrowserCoreJourney(origin) {
           failedClosed,
           existingWriterBlocked,
           unavailableRejected,
+          firstLoadQueryRejected,
+          firstLoadCommandRejected,
+          firstLoadIntegrationRejected,
+          firstLoadWriterBlocked,
+          ordinaryPreCutoverUnfrozen: ordinaryPreCutoverComposition.cutover === null,
         }
       } finally {
         IDBFactory.prototype.open = originalOpen
@@ -1277,6 +1380,11 @@ try {
   assert.equal(browserResult.existingWriterBlocked, true)
   assert.equal(browserResult.unavailableRejected, true)
   assert.equal(browserResult.indexedDbWrites, 0, 'authoritative browser vocabulary/SRS path must not write IndexedDB')
+  assert.equal(browserResult.firstLoadQueryRejected, true)
+  assert.equal(browserResult.firstLoadCommandRejected, true)
+  assert.equal(browserResult.firstLoadIntegrationRejected, true)
+  assert.equal(browserResult.firstLoadWriterBlocked, true)
+  assert.equal(browserResult.ordinaryPreCutoverUnfrozen, true)
   assert.ok(browserResult.queuedLearningUnitId)
 
   const finalResponse = await ownerClient.query({ domain: DOMAIN, operation: 'snapshot', payload: {} })
