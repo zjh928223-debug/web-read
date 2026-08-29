@@ -128,6 +128,47 @@ function waitForExit(child, timeoutMs = 8_000) {
   })
 }
 
+function runRealLauncherRecoveryGate(timeoutMs = 10 * 60_000) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', path.join(repositoryRoot, 'scripts', 'optimization-launcher-check.ps1'),
+      '-PowerShellKind', 'powershell',
+    ], {
+      cwd: repositoryRoot,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    })
+    let output = ''
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => { output += chunk })
+    child.stderr.on('data', (chunk) => { output += chunk })
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      reject(new Error(`real optimization launcher recovery gate timed out after ${timeoutMs}ms`))
+    }, timeoutMs)
+    child.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer)
+      resolve({ code: code ?? 1, signal, output })
+    })
+  })
+}
+
+function isKnownPythonDistributionBlock(result) {
+  const normalized = result.output.toLowerCase()
+  return result.code !== 0
+    && normalized.includes('duplicate_installed_distribution')
+    && normalized.includes('networkx')
+    && normalized.includes('torchaudio')
+}
+
 async function stopOwned(host, signal = 'SIGTERM') {
   if (!host || host.child.exitCode !== null) return
   host.child.kill(signal)
@@ -448,10 +489,44 @@ try {
   await waitForMissing(stableLockPath)
   assert.notEqual(committedBeforeFailure, activeBeforeFailedPromotion)
 
+  // The isolated Host lease exercise above proves the stable-profile
+  // contender behavior.  The launcher/journal/snapshot rollback contract is
+  // exercised by the real optimization launcher gate below, after the
+  // temporary capability process has released its port.  Keep a known local
+  // Python distribution-health blocker explicit instead of treating the
+  // Host-only exercise as launcher rollback evidence.
+  await stopOwned({ child: capability })
+  capability = null
+  await waitForPortClosed(capabilityPort)
+  const launcherResult = await runRealLauncherRecoveryGate()
+  const launcherOutput = launcherResult.output.trim()
+  const launcherOutputChecksum = `sha256:${createHash('sha256').update(launcherOutput).digest('hex')}`
+  let launcherRecovery
+  if (launcherResult.code === 0) {
+    launcherRecovery = {
+      status: 'passed',
+      command: 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell',
+      exitCode: launcherResult.code,
+      outputChecksum: launcherOutputChecksum,
+      evidence: 'real launcher crash phases, activation journal recovery, snapshot/pointer restoration, and cleanup',
+    }
+  } else if (isKnownPythonDistributionBlock(launcherResult)) {
+    launcherRecovery = {
+      status: 'blocked',
+      command: 'powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell',
+      exitCode: launcherResult.code,
+      outputChecksum: launcherOutputChecksum,
+      reason: 'DUPLICATE_INSTALLED_DISTRIBUTION(networkx,torchaudio) before BuildAction; no launcher lifecycle result claimed',
+      outputTail: launcherOutput.slice(-2_000),
+    }
+  } else {
+    throw new Error(`real optimization launcher recovery gate failed with exit ${launcherResult.code}: ${launcherOutput.slice(-4_000)}`)
+  }
+
   console.log(JSON.stringify({
     schema: 'read-web.windows-local-owner-handoff-check',
     schemaVersion: 1,
-    status: 'passed',
+    status: launcherRecovery.status === 'passed' ? 'passed' : 'passed-with-blocked-real-launcher',
     isolation: {
       tempRoot,
       sourceDataRead: false,
@@ -473,6 +548,7 @@ try {
       invalidCandidateNotReinitialized: true,
       portsReleased: true,
     },
+    launcherRecovery,
   }, null, 2))
 } finally {
   if (hostB) await stopOwned(hostB, 'SIGKILL').catch(() => {})

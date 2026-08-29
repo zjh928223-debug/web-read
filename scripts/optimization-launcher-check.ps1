@@ -671,7 +671,9 @@ function Assert-RealLauncherLifecycle {
     Assert-True ($frontDoorCommittedTarget.releaseId -eq $frontDoorTarget.releaseId -and $frontDoorCommittedTarget.instanceId -eq $frontDoorTarget.instanceId -and $frontDoorCommittedTarget.port -eq $frontDoorTarget.port) 'front door committed target does not identify the active host'
     Assert-True ($active.releaseRoot -like '*\.codex\releases\optimization\*') 'active release is not versioned under the optimization release root'
     Assert-True ($active.distRoot -ne (Join-Path $projectRoot 'dist')) 'active host still points at projectRoot dist'
-    $profileLeasePath = [string]$hostState.applicationIsolationRoot + '.read-web-path.lock'
+    # The instance directory is disposable; the stable profile authority
+    # lease is the one that gates Host lifetime and promotion.
+    $profileLeasePath = [string]$hostState.applicationProfileAuthorityRoot + '.read-web-path.lock'
     Assert-True (Test-Path -LiteralPath $profileLeasePath -PathType Container) 'active Host did not receive an application profile lease'
     $applicationProfileDir = [string]$hostState.applicationProfileDir
     $applicationProfilePath = Join-Path $applicationProfileDir 'browser-profile.json'
@@ -824,7 +826,6 @@ function Assert-RealLauncherLifecycle {
 
     $firstPid = $hostState.pid
     $firstCapabilityPid = $capabilityState.pid
-    $firstFrontDoorPid = $frontDoorState.pid
     $firstInstance = $hostState.instanceId
     $firstRelease = $hostState.releaseId
     $firstReleaseRoot = [string]$active.releaseRoot
@@ -868,23 +869,61 @@ function Assert-RealLauncherLifecycle {
           -EnvironmentOverrides @{ READ_WEB_OPTIMIZATION_TEST_FAILURE = $failureKind } | Out-Null
       } catch { $failureObserved = $true }
       Assert-True $failureObserved "synthetic $failureKind failure was not observable"
-      $preservedHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
+      # Promotion and active-pointer failures can stop the old Host before
+      # the recovery path restarts it.  The handoff window may therefore be
+      # briefly unavailable; wait for the durable old identity to return
+      # instead of requiring continuous readiness or the original PID.
+      $preservedHealthStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/health'
+      Assert-True ($preservedHealthStatus -in @(200, 503)) "$failureKind failure returned an unexpected Host status during recovery: $preservedHealthStatus"
+      $preservedHealth = Wait-OptimizationHttpJson `
+        -Url 'http://127.0.0.1:5184/api/app/health' `
+        -TimeoutSeconds 15 `
+        -Predicate {
+          param($value)
+          $value.status -eq 'ready' `
+            -and $value.releaseId -eq $firstRelease `
+            -and $value.profileId -eq 'optimization' `
+            -and $value.instanceId -eq $firstInstance `
+            -and $value.profileLeaseMode -eq 'authoritative' `
+            -and $value.profileLeaseReady -eq $true `
+            -and $value.profileLeaseAlive -eq $true
+        }
+      Assert-True ($null -ne $preservedHealth) "$failureKind failure did not restore the old stable service"
       $preservedHost = Read-OptimizationJsonFile -Path $hostStatePath
       $preservedFrontDoor = Read-OptimizationJsonFile -Path $frontDoorStatePath
       $preservedTarget = Read-OptimizationRuntimeText -Path $frontDoorTargetPath
       $preservedActive = Read-OptimizationRuntimeText -Path (Join-Path $stateRoot 'active-release.json')
-      Assert-True ($preservedHealth.status -eq 'ready' -and $preservedHealth.releaseId -eq $firstRelease -and $preservedHealth.instanceId -eq $firstInstance) "$failureKind failure interrupted the old stable service"
-      Assert-True ($preservedHost.pid -eq $firstPid -and $preservedHost.instanceId -eq $firstInstance) "$failureKind failure changed the active host state"
-      Assert-True ($preservedHealth.profileLeaseMode -eq 'authoritative' -and $preservedHealth.profileLeaseReady -eq $true -and $preservedHealth.profileLeaseAlive -eq $true) "$failureKind failure did not restore an authoritative stable profile lease"
-      $preservedFrontDoorHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/front-door-process-health' -TimeoutSec 5
-      Assert-True ($preservedFrontDoor.pid -eq $firstFrontDoorPid -and $preservedFrontDoorHealth.status -eq 'ready') "$failureKind failure interrupted the stable front door process"
+      Assert-True ($null -ne $preservedHost `
+        -and $preservedHost.releaseId -eq $firstRelease `
+        -and $preservedHost.profileId -eq 'optimization' `
+        -and $preservedHost.instanceId -eq $firstInstance `
+        -and [int]$preservedHost.port -ne 5184) "$failureKind failure changed the active Host identity"
+      $preservedManagerPath = [string]$preservedHost.managerStatePath
+      Assert-True ($preservedManagerPath -and (Test-Path -LiteralPath $preservedManagerPath -PathType Leaf)) "$failureKind failure did not restore the active Host manager path"
+      $preservedManagerState = Read-OptimizationJsonFile -Path $preservedManagerPath
+      Assert-True ($null -ne $preservedManagerState `
+        -and $preservedManagerState.releaseId -eq $firstRelease `
+        -and $preservedManagerState.profileId -eq 'optimization' `
+        -and $preservedManagerState.instanceId -eq $firstInstance `
+        -and [int]$preservedManagerState.pid -gt 0) "$failureKind failure did not restore a live old Host manager state"
+      $preservedAuthorityRoot = Get-OptimizationObjectText -Object $preservedManagerState -Name 'applicationProfileAuthorityRoot'
+      Assert-True ($preservedAuthorityRoot -and (Test-Path -LiteralPath "$preservedAuthorityRoot.read-web-path.lock" -PathType Container)) "$failureKind failure did not restore the stable profile lease"
+      $preservedFrontDoorHealthStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/front-door-process-health'
+      Assert-True ($preservedFrontDoorHealthStatus -in @(200, 503)) "$failureKind failure returned an unexpected front-door process status: $preservedFrontDoorHealthStatus"
+      $preservedFrontDoorHealth = Wait-OptimizationHttpJson `
+        -Url 'http://127.0.0.1:5184/api/app/front-door-process-health' `
+        -TimeoutSeconds 15 `
+        -Predicate { param($value) $value.status -eq 'ready' }
+      Assert-True ($null -ne $preservedFrontDoor -and $null -ne $preservedFrontDoorHealth -and [int]$preservedFrontDoor.pid -gt 0) "$failureKind failure interrupted the stable front door process"
       Assert-True ($preservedTarget -eq $targetSnapshot) "$failureKind failure changed the active front door target"
       Assert-True ((Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath) -eq $committedTargetSnapshot) "$failureKind failure changed the committed front door target"
       Assert-True ((Read-OptimizationRuntimeText -Path $tokenPath) -eq $tokenSnapshot) "$failureKind failure changed the existing Host service token"
       Assert-True ($preservedActive -eq $activeSnapshot) "$failureKind failure changed the active release pointer"
       Assert-True (Test-Path -LiteralPath $firstReleaseRoot -PathType Container) "$failureKind failure removed the old immutable release"
-      $pendingHostStates = @(Get-ChildItem -LiteralPath $stateRoot -Filter 'production-host-*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $hostManagerPath })
+      $currentActiveManagerPath = [IO.Path]::GetFullPath($preservedManagerPath)
+      $pendingHostStates = @(Get-ChildItem -LiteralPath $stateRoot -Filter 'production-host-*.json' -File -ErrorAction SilentlyContinue | Where-Object { [IO.Path]::GetFullPath($_.FullName) -ne $currentActiveManagerPath })
       Assert-True ($pendingHostStates.Count -eq 0) "$failureKind failure left a pending host state"
+      Assert-True (@(Get-ChildItem -LiteralPath $stateRoot -Filter '*.json.lock' -File -ErrorAction SilentlyContinue).Count -eq 0) "$failureKind failure left a stale launcher lock"
       $newIsolationRoots = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Force -ErrorAction SilentlyContinue | Where-Object { $baselineIsolationInstanceIds -notcontains $_.Name })
       Assert-True ($newIsolationRoots.Count -eq 0) "$failureKind failure left a pending application profile lease (baseline=$($baselineIsolationInstanceIds.Count), new=$(($newIsolationRoots | ForEach-Object { $_.Name }) -join ','))"
       if ($failureKind -eq 'active-pointer') { $activePointerRecoveryVerified = $true }
@@ -910,15 +949,24 @@ function Assert-RealLauncherLifecycle {
       } catch { $crashObserved = $true; $crashError = $_.Exception.Message }
       Assert-True $crashObserved "forced launcher termination at $crashPhase was not observable ($crashError)"
 
-      # The launcher is intentionally not invoked for recovery yet.  A
-      # pending journal must keep the last committed pair visible through the
-      # stable front door; it must never expose the candidate pointers or
-      # create a public outage while activation is undecidable.
-      $preRecoveryFrontDoorHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/front-door-health' -TimeoutSec 5
-      $preRecoveryHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
+      # Recovery is intentionally not invoked yet. A pending journal may
+      # leave the handoff window temporarily unavailable while the old pair
+      # is being drained, but it must never publish an uncommitted candidate.
+      # The old crash contract required continuous 200/ready responses and
+      # the old PID; that is incompatible with stop-old -> promote-new
+      # stable-profile leasing. Observe the allowed 200/503 boundary and
+      # validate identity only when an endpoint is actually ready.
+      $preRecoveryFrontDoorStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/front-door-health'
+      $preRecoveryFrontDoorHealth = $null
+      $preRecoveryHealthStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/health'
+      $preRecoveryHealth = $null
       if ($crashPhase -eq 'commit-pointer') {
         $commitPointerJournal = Read-OptimizationJsonFile -Path $activationJournalPath
         $commitPointerTarget = Read-OptimizationFrontDoorTarget -Path $frontDoorCommittedTargetPath
+        Assert-True ($preRecoveryFrontDoorStatus -eq 200) 'commit-pointer crash did not keep the durably committed front door available'
+        Assert-True ($preRecoveryHealthStatus -eq 200) 'commit-pointer crash did not keep the durably committed Host available'
+        $preRecoveryFrontDoorHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/front-door-health' -TimeoutSec 5
+        $preRecoveryHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
         Assert-True ($null -ne $commitPointerJournal -and $commitPointerJournal.status -eq 'committed') 'commit-pointer crash left a rollbackable activation journal'
         Assert-True ($null -ne $commitPointerTarget `
           -and $commitPointerTarget.releaseId -eq $commitPointerJournal.newReleaseId `
@@ -931,14 +979,22 @@ function Assert-RealLauncherLifecycle {
           -and $preRecoveryHealth.releaseId -eq $commitPointerTarget.releaseId `
           -and $preRecoveryHealth.instanceId -eq $commitPointerTarget.instanceId) 'commit-pointer crash did not expose the durably committed replacement'
       } else {
-        Assert-True ($preRecoveryFrontDoorHealth.status -eq 'ready' `
-          -and $preRecoveryFrontDoorHealth.target.releaseId -eq $firstRelease `
-          -and $preRecoveryFrontDoorHealth.target.instanceId -eq $firstInstance `
-          -and $preRecoveryFrontDoorHealth.commitVisibility.status -eq 'previous-release') "$crashPhase interrupted committed front-door visibility (old=$firstRelease/$firstInstance, status=$($preRecoveryFrontDoorHealth.status), target=$($preRecoveryFrontDoorHealth.target.releaseId)/$($preRecoveryFrontDoorHealth.target.instanceId), visibility=$($preRecoveryFrontDoorHealth.commitVisibility.status), journalPresent=$(Test-Path -LiteralPath $activationJournalPath), journal=$(Get-OptimizationObjectText -Object (Read-OptimizationJsonFile -Path $activationJournalPath) -Name 'phase'), launcherError=$crashError)"
-        Assert-True ($preRecoveryHealth.status -eq 'ready' -and $preRecoveryHealth.releaseId -eq $firstRelease -and $preRecoveryHealth.instanceId -eq $firstInstance) "$crashPhase exposed an uncommitted candidate through the front door"
+        Assert-True ($preRecoveryFrontDoorStatus -in @(200, 503)) "$crashPhase returned an unexpected front-door status during handoff: $preRecoveryFrontDoorStatus"
+        Assert-True ($preRecoveryHealthStatus -in @(200, 503)) "$crashPhase returned an unexpected Host status during handoff: $preRecoveryHealthStatus"
+        if ($preRecoveryFrontDoorStatus -eq 200) {
+          $preRecoveryFrontDoorHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/front-door-health' -TimeoutSec 5
+          Assert-True ($preRecoveryFrontDoorHealth.status -eq 'ready' `
+            -and $preRecoveryFrontDoorHealth.target.releaseId -eq $firstRelease `
+            -and $preRecoveryFrontDoorHealth.target.instanceId -eq $firstInstance `
+            -and $preRecoveryFrontDoorHealth.commitVisibility.status -eq 'previous-release') "$crashPhase exposed a non-committed target through a ready front door (old=$firstRelease/$firstInstance, target=$($preRecoveryFrontDoorHealth.target.releaseId)/$($preRecoveryFrontDoorHealth.target.instanceId), visibility=$($preRecoveryFrontDoorHealth.commitVisibility.status), journalPresent=$(Test-Path -LiteralPath $activationJournalPath), journal=$(Get-OptimizationObjectText -Object (Read-OptimizationJsonFile -Path $activationJournalPath) -Name 'phase'), launcherError=$crashError)"
+        }
+        if ($preRecoveryHealthStatus -eq 200) {
+          $preRecoveryHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
+          Assert-True ($preRecoveryHealth.status -eq 'ready' -and $preRecoveryHealth.releaseId -eq $firstRelease -and $preRecoveryHealth.instanceId -eq $firstInstance) "$crashPhase exposed an uncommitted candidate through the front door"
+        }
       }
-      $preRecoveryIndex = Invoke-WebRequest -Uri 'http://127.0.0.1:5184/' -UseBasicParsing -TimeoutSec 5
-      Assert-True ($preRecoveryIndex.StatusCode -eq 200) "$crashPhase interrupted the committed index service"
+      $preRecoveryIndexStatus = Get-HttpStatus -Url 'http://127.0.0.1:5184/'
+      Assert-True ($preRecoveryIndexStatus -in @(200, 503)) "$crashPhase returned an unexpected index status during handoff: $preRecoveryIndexStatus"
       $interruptedJournal = Read-OptimizationJsonFile -Path $activationJournalPath
       $interruptedCandidatePort = 0
       [int]::TryParse((Get-OptimizationObjectText -Object $interruptedJournal -Name 'newHostPort'), [ref]$interruptedCandidatePort) | Out-Null
@@ -953,29 +1009,50 @@ function Assert-RealLauncherLifecycle {
       Invoke-Launcher -Arguments @('-NoOpen') | Out-Null
       $recoveredHealth = Invoke-RestMethod -Uri 'http://127.0.0.1:5184/api/app/health' -TimeoutSec 5
       $recoveredHost = Read-OptimizationJsonFile -Path $hostStatePath
+      $recoveredManagerPath = [string]$recoveredHost.managerStatePath
+      Assert-True ($recoveredManagerPath -and (Test-Path -LiteralPath $recoveredManagerPath -PathType Leaf)) "$crashPhase recovery did not publish a managed Host state path"
+      $recoveredManagerState = Read-OptimizationJsonFile -Path $recoveredManagerPath
       if ($crashPhase -eq 'commit-pointer') {
         Assert-True ($recoveredHealth.status -eq 'ready' -and $recoveredHealth.releaseId -eq $commitPointerTarget.releaseId -and $recoveredHealth.instanceId -eq $commitPointerTarget.instanceId) 'commit-pointer recovery rolled back a committed replacement'
         Assert-True ($recoveredHost.instanceId -eq $commitPointerTarget.instanceId -and $recoveredHost.releaseId -eq $commitPointerTarget.releaseId) 'commit-pointer recovery did not retain the committed Host'
+        Assert-True ($recoveredManagerState.instanceId -eq $commitPointerTarget.instanceId -and $recoveredManagerState.releaseId -eq $commitPointerTarget.releaseId -and [int]$recoveredManagerState.pid -gt 0) 'commit-pointer recovery did not retain a live committed Host state'
         Assert-True ((Read-OptimizationRuntimeText -Path $frontDoorTargetPath) -eq (Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath)) 'commit-pointer recovery left target and committed target divergent'
         Assert-True ((Read-OptimizationRuntimeText -Path (Join-Path $stateRoot 'active-release.json')) -match [regex]::Escape([string]$commitPointerTarget.releaseId)) 'commit-pointer recovery rolled back the active release'
         $committedCapabilityState = Read-OptimizationJsonFile -Path $capabilityStatePath
         Assert-True ($null -ne $committedCapabilityState) 'commit-pointer recovery lost the capability Host state'
-        $expectedReuseHostPid = [int]$recoveredHost.pid
+        $expectedReuseHostPid = [int]$recoveredManagerState.pid
         $expectedReuseCapabilityPid = [int]$committedCapabilityState.pid
         $expectedReuseInstanceId = [string]$recoveredHost.instanceId
         $expectedReuseCapabilityInstanceId = [string]$committedCapabilityState.instanceId
         $expectedReuseReleaseId = [string]$recoveredHost.releaseId
       } else {
         Assert-True ($recoveredHealth.status -eq 'ready' -and $recoveredHealth.releaseId -eq $firstRelease -and $recoveredHealth.instanceId -eq $firstInstance) "$crashPhase recovery did not preserve the old service"
-        Assert-True ($recoveredHost.pid -eq $firstPid -and $recoveredHost.instanceId -eq $firstInstance) "$crashPhase recovery changed the old Host"
+        # Recovery may restart the old pair and therefore receive new PIDs.
+        # The durable contract is restoration of the old release/profile/
+        # instance identity and re-acquisition of the stable profile lease.
+        Assert-True ($recoveredHost.instanceId -eq $firstInstance -and $recoveredHost.releaseId -eq $firstRelease -and [int]$recoveredHost.port -ne 5184) "$crashPhase recovery changed the old Host identity"
+        Assert-True ($recoveredManagerState.instanceId -eq $firstInstance -and $recoveredManagerState.releaseId -eq $firstRelease -and [int]$recoveredManagerState.pid -gt 0) "$crashPhase recovery did not restore a live old Host manager state"
+        $recoveredAuthorityRoot = Get-OptimizationObjectText -Object $recoveredManagerState -Name 'applicationProfileAuthorityRoot'
+        Assert-True ($recoveredAuthorityRoot -and $recoveredAuthorityRoot -eq (Get-OptimizationObjectText -Object $hostState -Name 'applicationProfileAuthorityRoot')) "$crashPhase recovery changed the stable profile authority identity"
+        $recoveredLeasePath = "$recoveredAuthorityRoot.read-web-path.lock"
+        Assert-True (Test-Path -LiteralPath $recoveredLeasePath -PathType Container) "$crashPhase recovery did not re-acquire the stable profile lease"
         Assert-True ((Read-OptimizationRuntimeText -Path $frontDoorTargetPath) -eq $targetSnapshot) "$crashPhase recovery changed the target snapshot"
         Assert-True ((Read-OptimizationRuntimeText -Path (Join-Path $stateRoot 'active-release.json')) -eq $activeSnapshot) "$crashPhase recovery changed the active-release snapshot"
         Assert-True ((Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath) -eq $committedTargetSnapshot) "$crashPhase recovery changed the committed target snapshot"
         Assert-True ((Read-OptimizationRuntimeText -Path $tokenPath) -eq $tokenSnapshot) "$crashPhase recovery changed the existing Host service token"
-        Assert-True ((Read-OptimizationRuntimeText -Path $hostStatePath) -eq $hostSnapshot) "$crashPhase recovery changed the active-host snapshot"
+        Assert-True ($recoveredHost.profileId -eq 'optimization' -and $recoveredHost.instanceId -eq $firstInstance -and $recoveredHost.releaseId -eq $firstRelease) "$crashPhase recovery changed the active-host identity"
+        $recoveredCapabilityState = Read-OptimizationJsonFile -Path $capabilityStatePath
+        Assert-True ($null -ne $recoveredCapabilityState -and $recoveredCapabilityState.profileId -eq 'optimization' -and $recoveredCapabilityState.instanceId -eq $firstInstance -and $recoveredCapabilityState.releaseId -eq $firstRelease -and [int]$recoveredCapabilityState.pid -gt 0) "$crashPhase recovery did not restore the old capability identity"
+        $expectedReuseHostPid = [int]$recoveredManagerState.pid
+        $expectedReuseCapabilityPid = [int]$recoveredCapabilityState.pid
+        $expectedReuseInstanceId = [string]$recoveredHost.instanceId
+        $expectedReuseCapabilityInstanceId = [string]$recoveredCapabilityState.instanceId
+        $expectedReuseReleaseId = [string]$recoveredHost.releaseId
       }
       Assert-True (-not (Test-Path -LiteralPath (Join-Path $stateRoot 'activation-journal.json'))) "$crashPhase recovery left an activation journal"
-      Assert-True (@(Get-ChildItem -LiteralPath $stateRoot -Filter 'production-host-*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $hostManagerPath }).Count -eq 0) "$crashPhase recovery left a pending Host state"
+      $currentRecoveredManagerPath = [IO.Path]::GetFullPath($recoveredManagerPath)
+      $pendingRecoveredHostStates = @(Get-ChildItem -LiteralPath $stateRoot -Filter 'production-host-*.json' -File -ErrorAction SilentlyContinue | Where-Object { [IO.Path]::GetFullPath($_.FullName) -ne $currentRecoveredManagerPath })
+      Assert-True ($pendingRecoveredHostStates.Count -eq 0) "$crashPhase recovery left a pending Host state"
       Assert-True (@(Get-ChildItem -LiteralPath $stateRoot -Filter '*.json.lock' -File -ErrorAction SilentlyContinue).Count -eq 0) "$crashPhase recovery left a stale launcher lock"
       if ($crashPhase -eq 'host-process-started' -and $interruptedCandidatePort -gt 0) {
         Assert-True (Wait-OptimizationTcpPortFree -Port $interruptedCandidatePort -TimeoutSeconds 5) 'process-start boundary recovery left an orphan Host port occupied'

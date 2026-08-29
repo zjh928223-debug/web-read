@@ -129,7 +129,10 @@ The current optimization candidate therefore reports `profileLeaseReady: true` a
 helper is a contract/test seam for later cutover; it does not migrate writers or make the static six-domain
 registry authoritative. Focused lease evidence is `npm run verify:windows-owner-lease`; handoff evidence is
 `npm run verify:windows-owner-handoff`, which runs two real isolated Python Hosts through standby,
-stable-lease release, authoritative promotion, and a failed promotion with no active-pointer commit. The
+stable-lease release, authoritative promotion, and a failed promotion with no active-pointer commit, then
+invokes the real `scripts/optimization-launcher-check.ps1` journal/snapshot recovery gate. If the selected
+optimization Python is blocked by the known duplicate `networkx`/`torchaudio` distribution check, the JSON
+result reports `launcherRecovery.status: blocked` and does not claim launcher rollback passed. The
 production lifecycle check also proves the running Host holds the lease and keeps the owner API in
 pre-cutover mode.
 
