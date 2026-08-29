@@ -169,7 +169,7 @@ assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned pro
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
 assert(api.futureImplementationBoundary.implementedHere.includes('Browser typed owner API client boundary'), 'browser API client implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('API client'), 'API client is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '3.3 legacy compatibility bridge', 'API contract next task must advance to 3.3 after status mapping')
+assert(api.futureImplementationBoundary.nextAllowedTask === '3.4 media resource owner', 'API contract next task must advance to 3.4 after the legacy bridge')
 assert(api.browserClientContract?.module === 'src/services/windows-owner-api-client.js', 'browser API client module is missing')
 assert(api.browserClientContract?.route === '/api/app/owner', 'browser API client route is not frozen')
 assert(api.browserClientContract?.contractVersion === api.contractVersion, 'browser API client contract version is not aligned')
@@ -198,6 +198,18 @@ for (const field of ['domain', 'status', 'authoritativeRevision', 'generation', 
   assert(api.browserDurableStatusContract?.snapshotFields?.includes(field), `durable status snapshot lacks ${field}`)
 }
 await assertSourceExists(api.browserDurableStatusContract.module)
+assert(api.legacyCompatibilityBridgeContract?.module === 'src/services/windows-owner-legacy-compatibility-bridge.js', 'legacy compatibility bridge module is missing')
+assert(api.legacyCompatibilityBridgeContract?.schemaVersion === 1, 'legacy compatibility bridge schema changed')
+assert(JSON.stringify(api.legacyCompatibilityBridgeContract?.sourceKinds) === JSON.stringify(['indexeddb', 'localStorage', 'json']), 'legacy bridge source kinds changed')
+assert(JSON.stringify(api.legacyCompatibilityBridgeContract?.publicMethods) === JSON.stringify(['inventory', 'prepareImport', 'readRollbackWindow']), 'legacy bridge public methods changed')
+assert(api.legacyCompatibilityBridgeContract?.rawStorageHandles === false, 'legacy bridge cannot expose raw storage handles')
+assert(api.legacyCompatibilityBridgeContract?.hostRepositoryCommit === false, 'legacy bridge cannot commit to the Host repository')
+assert(api.legacyCompatibilityBridgeContract?.canonical === false, 'legacy bridge cannot be canonical')
+assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.databaseName === 'SeekPlayerDB', 'legacy bridge IndexedDB database changed')
+assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.version === 1, 'legacy bridge IndexedDB version changed')
+assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.objectStore === 'files', 'legacy bridge IndexedDB store changed')
+assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.keyPath === 'id', 'legacy bridge IndexedDB key path changed')
+await assertSourceExists(api.legacyCompatibilityBridgeContract.module)
 assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
 assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
 for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
@@ -289,7 +301,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '3.3'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

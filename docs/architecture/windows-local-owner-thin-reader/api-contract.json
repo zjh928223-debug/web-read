@@ -551,11 +551,30 @@
     "queryOrCacheMaySetSaved": false,
     "snapshotFields": ["domain", "status", "authoritativeRevision", "generation", "intent", "inFlight", "receiptLookup", "error", "reason"]
   },
+  "legacyCompatibilityBridgeContract": {
+    "module": "src/services/windows-owner-legacy-compatibility-bridge.js",
+    "schemaVersion": 1,
+    "sourceKinds": ["indexeddb", "localStorage", "json"],
+    "publicMethods": ["inventory", "prepareImport", "readRollbackWindow"],
+    "inventory": "read-only source metadata with domain/key/schema/revision/size/checksum or blocked reason",
+    "oneTimeImport": "deterministic legacy-import-input only; no browser write, host commit, or committed receipt",
+    "rollbackWindow": "explicit source/domain/key read returning a cloned serialized payload",
+    "frozenIndexedDbSchema": {
+      "databaseName": "SeekPlayerDB",
+      "version": 1,
+      "objectStore": "files",
+      "keyPath": "id"
+    },
+    "rawStorageHandles": false,
+    "hostRepositoryCommit": false,
+    "canonical": false,
+    "mediaPayloadPolicy": "complete Blob/ArrayBuffer/bytes are blocked; identity metadata only"
+  },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation"],
-    "nextAllowedTask": "3.3 legacy compatibility bridge",
+    "nextAllowedTask": "3.4 media resource owner",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:240e5b1126382b2b75b4d4ea6b813d2567686db4d48ef18fcb7ab1b3a22db28e"
+  "artifactChecksum": "sha256:b1cb70e641c16f44581f64ed248c6e276072abfc8744c811c98d6dcc75e48863"
 }

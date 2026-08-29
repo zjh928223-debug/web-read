@@ -38,6 +38,8 @@ authoritative by accident.
   isolated behavior gate; the production composition only calls its lease-protected recovery seam.
 - `tools/subtitle-workflow/youtube_workflow/windows_owner_health.py` — the focused health/capability snapshot
   and diagnostic-redaction seam used by the Local App Host.
+- `src/services/windows-owner-legacy-compatibility-bridge.js` — the read-only legacy source boundary for
+  inventory, deterministic one-time import input, and explicit rollback-window reads.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -300,3 +302,31 @@ pre-cutover and the Host continues to return typed `503 not-ready` for legal own
 The behavior gate is `npm run verify:windows-owner-durable-status`; it loads the real API operation registry and
 exercises all six domains, valid and invalid commit evidence, query/cache isolation, generation ordering,
 duplicate results, conflicts, unknown receipt resolution, not-ready preservation, and the memory-only boundary.
+
+## Task 3.3 legacy compatibility bridge
+
+`src/services/windows-owner-legacy-compatibility-bridge.js` is a browser-compatible, dependency-injected read
+boundary over the existing `ApplicationPersistence.getAllRows()` frozen `SeekPlayerDB/files` reader, an explicit
+read-only `localStorage` collector, and the existing backup adapter `collect()` seam for JSON-backed sources.
+The bridge closes over those sources and exposes exactly `inventory()`, `prepareImport()`, and
+`readRollbackWindow()`; it has no raw storage handle, `restore`, `commit`, or writer method and is not connected
+to the UI, Pinia, or the Production Host route.
+
+Inventory output is metadata-only and includes source kind/identity, six-domain claim classification, schema,
+revision, size, checksum, and a stable blocked reason for unknown, ambiguous, unsupported, corrupt, sensitive,
+or media-byte records. It always carries the frozen `SeekPlayerDB` / version `1` / `files` / keyPath `id`
+identity. A missing source or failed collector is blocked rather than treated as an empty profile, and source
+errors are not echoed.
+
+`prepareImport()` re-reads the source and produces a deterministic `legacy-import-input` only when every observed
+record is safely classified. It returns a source/import checksum and clones JSON-safe payloads; secrets, raw
+handles, complete Blob/ArrayBuffer/byte payloads, unknown records, and corrupt values cannot enter the plan.
+Known non-canonical preference records are reported as explicitly excluded. No Host request or repository
+commit is performed. `readRollbackWindow()` requires an exact source identity, domain, and registered record key,
+and returns a frozen clone for a rollback window; it never mutates the source or becomes an ordinary durable read
+fallback. The six browser sources remain old-owner/pre-cutover until later inventory and migration work.
+
+The behavior gate is `npm run verify:windows-owner-legacy-bridge`; it exercises IndexedDB, localStorage, and JSON
+collectors, all six domain classifications, deterministic inventory/import checksums, unknown/schema/corrupt and
+media blocking, source/path isolation, no-write counters, cloned rollback reads, and the frozen IndexedDB
+schema. Task 3.4 is the next allowed implementation; no media Range owner or domain cutover is introduced here.
