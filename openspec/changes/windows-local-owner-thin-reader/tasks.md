@@ -11,7 +11,7 @@
 
 ## B. 最小备份、恢复与一次性迁移
 
-- [ ] B 为六域按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 实现一次性迁移、restore dry-run/execute 和每域 rollback target；freeze 前可做预备 backup/dry-run，但用于切换的最终 backup/checksum 与唯一正式 copy/import 必须在 freeze 后取得/执行。目标固定为 Host-managed repository，未知/损坏/冲突或写入失败保留旧值并阻止受影响域继续写入，完整媒体只保留 identity/reference metadata，`SeekPlayerDB v1/files/id` 不变。
+- [x] B 为六域按 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed` 实现一次性迁移、restore dry-run/execute 和每域 rollback target；freeze 前可做预备 backup/dry-run，但用于切换的最终 backup/checksum 与唯一正式 copy/import 必须在 freeze 后取得/执行。目标固定为 Host-managed repository，未知/损坏/冲突或写入失败保留旧值并阻止受影响域继续写入，完整媒体只保留 identity/reference metadata，`SeekPlayerDB v1/files/id` 不变。已完成为隔离、pre-cutover seam；实际 production writer switch 留给 C2。
 
 ## C. 先 Reader Session，再逐域切换 writer
 

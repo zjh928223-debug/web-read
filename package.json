@@ -65,6 +65,7 @@
     "verify:windows-owner-launcher-profile": "node scripts/windows-local-owner-launcher-profile-check.mjs",
     "verify:windows-owner-lease": "node scripts/windows-local-owner-lease-check.mjs",
     "verify:windows-owner-handoff": "node scripts/windows-local-owner-handoff-check.mjs",
+    "verify:windows-durable-state-migration": "node scripts/windows-durable-state-migration-check.mjs",
     "verify:windows-owner-reader-session": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_reader_session_owner",
     "verify:windows-owner-vocabulary-srs": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_vocabulary_srs_owner",
     "verify:windows-owner-passage-preview": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_passage_preview_owner",

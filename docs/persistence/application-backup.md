@@ -196,3 +196,28 @@ record is written and synced in a unique claim directory before an atomic
 claim-to-canonical rename; only the canonical lease can block writers. Heartbeat
 and PID checks protect active owners, while bounded stale recovery handles
 dead canonical leases and abandoned claims without deleting an active lock.
+
+## Task B: minimal per-domain migration controller
+
+`src/services/persistence/windows-durable-state-migration.js` provides the
+isolated, pre-cutover migration seam. It reuses the read-only legacy bridge to
+build the standard six-domain application-backup artifact and the existing
+artifact verifier; it does not define a second backup format or connect the
+production owner API. A caller supplies the profile-scoped Host adapter and
+small state store used for the domain's final/rollback metadata.
+
+The controller enforces `read-only inventory → dry-run/容量与格式检查 →
+freeze old writer → final backup/checksum → one-time final copy/import → verify
+→ switch Host authoritative writer → smoke check → rollback if needed`. The
+final envelope includes all six domains, including empty domains, per-domain
+record count/checksum/revision and media-reference metadata, plus the captured
+rollback target. Final backup/import are unavailable before freeze; a matching
+retry is a no-op with the same saved result. Failed replace or verification
+leaves the old value available, and the one-domain failure stops the remaining
+sequence.
+
+This seam is only tested with isolated fixtures. It keeps the legacy sources
+read-only, preserves `SeekPlayerDB` version 1 / `files` / `id`, carries media
+identity/reference metadata instead of media bytes, and records rather than
+performs the future authority switch. Browser writer cutover remains a later
+task.

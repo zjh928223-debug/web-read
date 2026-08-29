@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 108,
+    "behavior": 109,
     "browser": 28,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 268,
-  "executableScriptCount": 285,
+  "packageScriptCount": 269,
+  "executableScriptCount": 286,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2936,6 +2936,18 @@
         "scripts/vocabulary-wave1-integration-check.cjs"
       ],
       "owner": "package.json#scripts.verify:vocabulary-wave1-integration"
+    },
+    {
+      "name": "verify:windows-durable-state-migration",
+      "command": "node scripts/windows-durable-state-migration-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-durable-state-migration-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-durable-state-migration"
     },
     {
       "name": "verify:windows-owner",
@@ -10222,6 +10234,30 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-durable-state-migration-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-durable-state-migration",
+      "owners": [
+        "package.json#scripts.verify:windows-durable-state-migration"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,

@@ -40,6 +40,8 @@ authoritative by accident.
   and diagnostic-redaction seam used by the Local App Host.
 - `src/services/windows-owner-legacy-compatibility-bridge.js` — the read-only legacy source boundary for
   inventory, deterministic one-time import input, and explicit rollback-window reads.
+- `src/services/persistence/windows-durable-state-migration.js` — the thin, injected per-domain migration/
+  restore controller for the isolated Task B slice; it does not claim production authority.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -486,3 +488,26 @@ valid query, prepare-without-write, commit/reopen, receipt idempotency and recov
 no-copy/path/media validation, strict corrupt/unknown handling, restore success/conflict/failure, and atomic
 replace faults. It is registered in `verify:full` but is not part of `verify:fast`, and it does not implement
 4.2+, backup/migration aggregation, browser cutover, or owner-mode authority.
+
+## Task B per-domain backup and migration seam
+
+`src/services/persistence/windows-durable-state-migration.js` is a small callable controller over the existing
+`createApplicationBackupService`/`verifyBackupArtifact` and the read-only
+`windows-owner-legacy-compatibility-bridge`. The caller supplies profile-scoped Host adapters and one small
+state store for the domain statuses; the controller does not create another repository, transaction framework, or production
+`/api/app/owner` path. The focused fixture supplies all six adapters and uses a reopenable in-memory state store
+only to exercise the same persisted metadata boundary without opening a real profile.
+
+Each domain follows the fixed sequence `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final
+backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback
+if needed`. The final envelope always lists all six domains, including empty ones, with record count/checksum/
+revision/media-reference metadata and a per-domain rollback target. Final backup and the sole import are rejected
+before freeze. A matching import retry replays its saved result without another adapter write; a failed replace keeps
+the old Host value, and rollback restores the captured pre-import value when verification permits.
+
+Only identity/reference media metadata is carried. Blob/ArrayBuffer/typed-array/bytes/data-URI/base64 media,
+credentials, arbitrary paths, and temporary UI state are excluded. `switchHostAuthoritative` records
+`ready-to-switch` with `cutover-deferred`; it does not change production writer authority, which remains a later C2
+operation. The focused gate is `npm run verify:windows-durable-state-migration`; it is standalone rather than part
+of `verify:fast` and covers representative six-domain inventory, dry-run, freeze ordering, final manifest, import/
+retry, restore, rollback, no-copy, failure retention, and reopen behavior.
