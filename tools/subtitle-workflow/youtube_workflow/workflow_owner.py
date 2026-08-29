@@ -404,13 +404,20 @@ def _revision_token(
     )
 
 
-def _revision_parts(value: Any) -> dict[str, int] | None:
+def _revision_parts(value: Any) -> dict[str, int | str] | None:
     if not isinstance(value, str):
         return None
     match = _WORKFLOW_REVISION.fullmatch(value)
     if match is None:
         return None
-    return {"jobs": int(match.group("jobs")), "history": int(match.group("history"))}
+    return {
+        "jobs": int(match.group("jobs")),
+        "jobsDigest": match.group("jobsDigest"),
+        "history": int(match.group("history")),
+        "historyDigest": match.group("historyDigest"),
+        "configDigest": match.group("config"),
+        "indexDigest": match.group("index"),
+    }
 
 
 def _receipt_is_ahead(receipt_revision: Any, current_revision: Any) -> bool:
@@ -419,10 +426,10 @@ def _receipt_is_ahead(receipt_revision: Any, current_revision: Any) -> bool:
     receipt_parts = _revision_parts(receipt_revision)
     current_parts = _revision_parts(current_revision)
     if receipt_parts is None or current_parts is None:
-        return True
+        return False
     if current_parts["jobs"] > receipt_parts["jobs"] or current_parts["history"] > receipt_parts["history"]:
         return False
-    return True
+    return current_parts["jobs"] < receipt_parts["jobs"] or current_parts["history"] < receipt_parts["history"]
 
 
 class WorkflowOwner:
@@ -481,6 +488,7 @@ class WorkflowOwner:
                 self.instance_id,
                 revision_reader=self._current_revision_for_receipt,
                 repository=self.repository,
+                authoritative_evidence_resolvers={WORKFLOW_DOMAIN: self._resolve_receipt_evidence},
             )
         else:
             self.receipts = receipt_store
@@ -496,6 +504,7 @@ class WorkflowOwner:
                 return previous_reader(domain)
 
             self.receipts.revision_reader = read_revision
+            self.receipts.authoritative_evidence_resolvers[WORKFLOW_DOMAIN] = self._resolve_receipt_evidence
 
     def _current_revision_for_receipt(self, domain: str) -> str:
         if domain != WORKFLOW_DOMAIN:
@@ -657,6 +666,183 @@ class WorkflowOwner:
         evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)
         return evidence
 
+    def _resolve_receipt_evidence(self, pending: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        """Resolve a pending receipt only when existing repository evidence matches it."""
+
+        if pending.get("domain") != WORKFLOW_DOMAIN:
+            return None
+        operation = pending.get("operation")
+        if operation not in _MUTATION_OPERATIONS:
+            return None
+        expected_revision = pending.get("expectedRevision")
+        expected_parts = _revision_parts(expected_revision)
+        if expected_parts is None:
+            return None
+        try:
+            state = self._read_state()
+        except WorkflowOwnerStorageError:
+            return None
+        current_revision = state["revision"]
+        current_parts = _revision_parts(current_revision)
+        if current_parts is None or current_revision == expected_revision:
+            return None
+
+        if operation in {"job-start", "job-cancel", "job-retry"}:
+            if current_parts["jobs"] != expected_parts["jobs"] + 1:
+                return None
+            try:
+                previous, previous_missing = self._read_raw(
+                    self.repository.backup_path(self.jobs_path),
+                    {"jobs": []},
+                    self.store._validator("workflow.jobs", "jobs"),
+                )
+            except WorkflowOwnerStorageError:
+                return None
+            if previous_missing:
+                if expected_parts["jobs"] != 0:
+                    return None
+                previous_jobs = []
+            elif isinstance(previous, Mapping):
+                if int(previous.get("revision") or 0) != expected_parts["jobs"]:
+                    return None
+                previous_payload = previous.get("payload")
+                previous_jobs = previous_payload.get("jobs") if isinstance(previous_payload, Mapping) else previous.get("jobs")
+                if not isinstance(previous_jobs, list):
+                    return None
+            else:
+                return None
+            if _revision_digest(previous_jobs) != expected_parts["jobsDigest"]:
+                return None
+            previous_by_id = {
+                item["jobId"]: item
+                for item in previous_jobs
+                if isinstance(item, Mapping) and isinstance(item.get("jobId"), str)
+            }
+            current_by_id = {
+                item["jobId"]: item
+                for item in state["jobs"]
+                if isinstance(item, Mapping) and isinstance(item.get("jobId"), str)
+            }
+            if len(previous_by_id) != len(previous_jobs) or len(current_by_id) != len(state["jobs"]):
+                return None
+            if set(previous_by_id) - set(current_by_id):
+                return None
+            added_ids = set(current_by_id) - set(previous_by_id)
+            changed_ids = {
+                job_id
+                for job_id in set(previous_by_id) & set(current_by_id)
+                if previous_by_id[job_id] != current_by_id[job_id]
+            }
+            if len(added_ids) + len(changed_ids) != 1:
+                return None
+            job_id = next(iter(added_ids or changed_ids))
+            current_job = current_by_id[job_id]
+            if job_id in added_ids:
+                candidate_record = dict(current_job)
+            else:
+                previous_job = previous_by_id[job_id]
+                if not set(previous_job).issubset(current_job):
+                    return None
+                candidate_record = {"jobId": job_id}
+                candidate_record.update({
+                    key: value
+                    for key, value in current_job.items()
+                    if key not in previous_job or previous_job[key] != value
+                })
+            candidate_mutation = {"jobId": job_id, "record": candidate_record, "operation": operation}
+            if not self._pending_fingerprint_matches(pending, operation, candidate_mutation):
+                full_mutation = {"jobId": job_id, "record": dict(current_job), "operation": operation}
+                if not self._pending_fingerprint_matches(pending, operation, full_mutation):
+                    return None
+                candidate_record = dict(current_job)
+            record_checksums = [_checksum(candidate_record)]
+        elif operation == "config-commit":
+            if current_parts["configDigest"] == expected_parts["configDigest"]:
+                return None
+            try:
+                previous, previous_missing = self._read_raw(
+                    self.repository.backup_path(self.config_path),
+                    {},
+                    _validate_config_document,
+                )
+            except WorkflowOwnerStorageError:
+                return None
+            if _revision_digest(previous, missing=previous_missing) != expected_parts["configDigest"]:
+                return None
+            previous_config = previous if isinstance(previous, Mapping) else {}
+            current_config = state["config"] if isinstance(state["config"], Mapping) else {}
+            candidate_config = {
+                key: current_config[key]
+                for key in _CONFIG_FIELDS
+                if key in current_config
+                and current_config.get(key) != previous_config.get(key)
+                and not (key not in previous_config and current_config.get(key) == "")
+            }
+            candidate_mutation = {"config": candidate_config}
+            if not candidate_config or not self._pending_fingerprint_matches(pending, operation, candidate_mutation):
+                return None
+            record_checksums = [_checksum(candidate_config)]
+        elif operation == "reader-index-commit":
+            if current_parts["indexDigest"] == expected_parts["indexDigest"]:
+                return None
+            try:
+                previous, previous_missing = self._read_raw(
+                    self.repository.backup_path(self.reader_index_path),
+                    {"items": []},
+                    _validate_reader_index_document,
+                )
+            except WorkflowOwnerStorageError:
+                return None
+            if _revision_digest(previous, missing=previous_missing) != expected_parts["indexDigest"]:
+                return None
+            candidate_mutation = {"readerIndex": state["readerIndex"]}
+            if not self._pending_fingerprint_matches(pending, operation, candidate_mutation):
+                return None
+            record_checksums = [_checksum(candidate_mutation["readerIndex"])]
+        else:
+            return None
+
+        context = OwnerCommitContext(
+            profile_id=self.profile_id,
+            instance_id=pending["instanceId"],
+            domain=WORKFLOW_DOMAIN,
+            operation=operation,
+            capability="",
+            idempotency_key=pending["idempotencyKey"],
+            expected_revision=expected_revision,
+            request_fingerprint=pending["requestFingerprint"],
+            payload={},
+        )
+        return self._evidence(
+            context,
+            status="committed",
+            revision=current_revision,
+            record_checksums=record_checksums,
+            effect_fingerprint=_checksum({
+                "operation": operation,
+                "revision": current_revision,
+                "recordChecksums": record_checksums,
+            }),
+        )
+
+    def _pending_fingerprint_matches(
+        self,
+        pending: Mapping[str, Any],
+        operation: str,
+        mutation: Mapping[str, Any],
+    ) -> bool:
+        try:
+            fingerprint = self.receipts._request_fingerprint(
+                WORKFLOW_DOMAIN,
+                operation,
+                _CAPABILITY_BY_OPERATION[operation],
+                pending["expectedRevision"],
+                {"operation": operation, "mutation": mutation},
+            )
+        except (KeyError, TypeError, ValueError):
+            return False
+        return fingerprint == pending.get("requestFingerprint")
+
     @staticmethod
     def _query_payload(operation: str, payload: Mapping[str, Any] | None) -> dict[str, Any]:
         if payload is None:
@@ -785,6 +971,25 @@ class WorkflowOwner:
             _validate_safe_value(item_copy)
         return {"readerIndex": {"items": deepcopy(record["items"])}
         }
+
+    @staticmethod
+    def _command_payload_result(operation: str, mutation: Mapping[str, Any]) -> dict[str, Any]:
+        payload_result: dict[str, Any] = {
+            "durableMutation": "job-record" if operation.startswith("job-") else "workflow-json-record",
+            "processSideEffect": "not-performed" if operation.startswith("job-") else None,
+        }
+        if operation.startswith("job-"):
+            payload_result["jobId"] = mutation["jobId"]
+            payload_result["recordChecksums"] = [_checksum(mutation["record"])]
+        elif operation == "config-commit":
+            payload_result["fields"] = sorted(mutation["config"])
+            payload_result["recordChecksums"] = [_checksum(mutation["config"])]
+        else:
+            payload_result["itemCount"] = len(mutation["readerIndex"]["items"])
+            payload_result["recordChecksums"] = [_checksum(mutation["readerIndex"])]
+        if payload_result.get("processSideEffect") is None:
+            payload_result.pop("processSideEffect", None)
+        return payload_result
 
     def query(
         self,
@@ -1097,6 +1302,47 @@ class WorkflowOwner:
                 _typed_error(error.code, correlation_id),
             )
 
+        payload_result = self._command_payload_result(operation, mutation)
+        receipt_payload = {"operation": operation, "mutation": mutation}
+        try:
+            existing = self.receipts.query(idempotency_key=idempotency_key, domain=WORKFLOW_DOMAIN)
+        except OwnerReceiptInputError:
+            existing = None
+        if existing is not None:
+            existing_receipt = existing.get("receipt")
+            existing_error = existing.get("error") or {}
+            if existing_receipt is not None:
+                request_fingerprint = self.receipts._request_fingerprint(
+                    WORKFLOW_DOMAIN,
+                    operation,
+                    _CAPABILITY_BY_OPERATION[operation],
+                    expected,
+                    receipt_payload,
+                )
+                if existing_receipt.get("requestFingerprint") == request_fingerprint:
+                    return self._envelope(
+                        operation,
+                        request_id,
+                        correlation_id,
+                        existing.get("outcome", "commit-unknown"),
+                        existing.get("commitStatus", "commit-unknown"),
+                        existing.get("revision"),
+                        payload_result,
+                        self._receipt_error(existing, correlation_id),
+                        receipt=existing_receipt,
+                    )
+            elif existing_error.get("code") == "manual-recovery":
+                return self._envelope(
+                    operation,
+                    request_id,
+                    correlation_id,
+                    "manual-recovery",
+                    "manual-recovery",
+                    None,
+                    payload_result,
+                    self._receipt_error(existing, correlation_id),
+                )
+
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
             current = self._read_state()
             if current["revision"] != context.expected_revision:
@@ -1146,7 +1392,6 @@ class WorkflowOwner:
                 effect_fingerprint=_checksum({"operation": operation, "revision": next_revision, "recordChecksums": record_checksums}),
             )
 
-        receipt_payload = {"operation": operation, "mutation": mutation}
         try:
             result = self.receipts.commit(
                 request_id=request_id,
@@ -1161,21 +1406,6 @@ class WorkflowOwner:
             )
         except OwnerReceiptInputError:
             result = {"outcome": "manual-recovery", "commitStatus": "manual-recovery", "revision": None, "receipt": None, "error": {"code": "manual-recovery"}}
-        payload_result: dict[str, Any] = {
-            "durableMutation": "job-record" if operation.startswith("job-") else "workflow-json-record",
-            "processSideEffect": "not-performed" if operation.startswith("job-") else None,
-        }
-        if operation.startswith("job-"):
-            payload_result["jobId"] = mutation["jobId"]
-            payload_result["recordChecksums"] = [_checksum(mutation["record"])]
-        elif operation == "config-commit":
-            payload_result["fields"] = sorted(mutation["config"])
-            payload_result["recordChecksums"] = [_checksum(mutation["config"])]
-        else:
-            payload_result["itemCount"] = len(mutation["readerIndex"]["items"])
-            payload_result["recordChecksums"] = [_checksum(mutation["readerIndex"])]
-        if payload_result.get("processSideEffect") is None:
-            payload_result.pop("processSideEffect", None)
         return self._envelope(
             operation,
             request_id,
