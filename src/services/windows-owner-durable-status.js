@@ -142,6 +142,7 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     const activeFlight = [...flights.values()].find((candidate) => candidate.phase === 'active')
     const changed = updateRevision(result.revision, {
       expectedRevision: activeFlight?.expectedRevision,
+      allowOpaqueObservation: flights.size === 0,
     })
     if (!intent && !flights.size) {
       reason = 'authoritative-query-observed'
@@ -338,7 +339,11 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
 
   function updateRevision(candidate, options = {}) {
     if (!isRevision(candidate)) return false
-    if (authoritativeRevision !== null && !canAdvanceRevision(candidate, options.expectedRevision)) return false
+    if (authoritativeRevision !== null && !canAdvanceRevision(
+      candidate,
+      options.expectedRevision,
+      options.allowOpaqueObservation,
+    )) return false
     const changed = !sameRevision(candidate, authoritativeRevision)
     authoritativeRevision = candidate
     return changed
@@ -350,9 +355,10 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     return sameRevision(authoritativeRevision, flight.expectedRevision)
   }
 
-  function canAdvanceRevision(candidate, expectedRevision) {
+  function canAdvanceRevision(candidate, expectedRevision, allowOpaqueObservation = false) {
     if (authoritativeRevision === null || sameRevision(candidate, authoritativeRevision)) return true
     if (typeof candidate === 'number' && typeof authoritativeRevision === 'number') return candidate >= authoritativeRevision
+    if (allowOpaqueObservation && typeof candidate === 'string' && typeof authoritativeRevision === 'string') return true
     return expectedRevision !== undefined && sameRevision(authoritativeRevision, expectedRevision)
   }
 }

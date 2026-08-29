@@ -204,11 +204,15 @@ opaqueRevisionTracker.recordIntent({ intentId: 'opaque-revision' })
 opaqueRevisionTracker.observeOwnerQuery({
   ...baseResult({ domain: 'workflow', operation: 'health', requestId: 'opaque-query', correlationId: 'opaque-correlation' }, 'read', 'not-applicable', 'rev-a'),
 })
-const opaqueRequest = requestFor('workflow', 'job-start', 'opaque-revision', { expectedRevision: 'rev-a' })
+opaqueRevisionTracker.observeOwnerQuery({
+  ...baseResult({ domain: 'workflow', operation: 'health', requestId: 'opaque-query-2', correlationId: 'opaque-correlation-2' }, 'read', 'not-applicable', 'rev-b'),
+})
+assert.equal(opaqueRevisionTracker.getSnapshot().authoritativeRevision, 'rev-b', 'sequential opaque query must update the received baseline')
+const opaqueRequest = requestFor('workflow', 'job-start', 'opaque-revision', { expectedRevision: 'rev-b' })
 opaqueRevisionTracker.beginMutation(opaqueRequest)
-opaqueRevisionTracker.applyOwnerResult(committedResult(opaqueRequest, 'rev-b'))
+opaqueRevisionTracker.applyOwnerResult(committedResult(opaqueRequest, 'rev-c'))
 assert.equal(opaqueRevisionTracker.getSnapshot().status, 'saved', 'opaque revision receipt may advance a matching CAS baseline')
-assert.equal(opaqueRevisionTracker.getSnapshot().authoritativeRevision, 'rev-b')
+assert.equal(opaqueRevisionTracker.getSnapshot().authoritativeRevision, 'rev-c')
 
 const outOfOrderOpaqueTracker = trackerFor('workflow')
 outOfOrderOpaqueTracker.recordIntent({ intentId: 'opaque-old' })
