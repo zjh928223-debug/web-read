@@ -155,6 +155,13 @@ per-domain prepare/commit evidence. It accepts only the small operation set need
 restore, migration-cutover, and material-publish. No token, secret, media bytes, or unnecessary personal
 path is stored in the journal.
 
+The coordinator never synthesizes adapter evidence from the request. Each adapter must return a complete,
+matching `verified` prepare record or `committed` commit record, including the requested baseline/staged
+revision and checksum, its evidence checksum, source, and timestamp. Each commit receives that domain's
+current baseline revision as `expectedRevision` for CAS. Before the journal can become `committed` or
+`finalized`, all six adapters are read again and every actual identity must equal the staged identity;
+no-op or incorrectly written adapters remain unresolved instead of producing `staged-committed` evidence.
+
 An operation is `pending → prepared → committing → committed → finalized`; all six prepare records must be
 durable before the first commit, and every committed domain is recorded before the next visible profile
 revision. Startup checks this journal while holding the same stable profile lease before running the older
@@ -163,7 +170,8 @@ journal is recovered only to one complete baseline or one complete staged revisi
 evidence, a revision conflict, missing adapter/recovery handler, failed atomic journal write, or a busy/non-
 authoritative profile lease yields `manual-recovery`/not-ready and leaves the journal available for review;
 it never publishes a partial cross-domain combination or falls back to a browser writer. Repeating recovery
-after finalization is idempotent, and two recovery processes are serialized by the stable lease.
+after finalization is idempotent, and two recovery processes are serialized by the stable lease. An explicit
+`not-run` result with `ready: false` is also blocking; it is a diagnostic state, not an empty or ready recovery.
 
 The production composition supplies no six-domain pending adapter yet, deliberately: an active journal is
 therefore retained as `manual-recovery` until later domain adapter work provides real evidence. The Host

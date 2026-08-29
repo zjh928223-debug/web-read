@@ -335,6 +335,17 @@ class WindowsOwnerRegistryTests(unittest.TestCase):
             validate_owner_registry_profile_evidence(self.registry, evidence, profile_id="fixture-profile")
         self.assertEqual(context.exception.code, "OWNER_PENDING_RECOVERY_NOT_READY")
 
+        not_run = self.make_profile_evidence()
+        not_run["ownerPendingRecovery"] = {
+            "schemaVersion": 1,
+            "status": "not-run",
+            "ready": False,
+            "reason": "profile-authority-lease-busy",
+        }
+        with self.assertRaises(OwnerRegistryError) as context:
+            validate_owner_registry_profile_evidence(self.registry, not_run, profile_id="fixture-profile")
+        self.assertEqual(context.exception.code, "OWNER_PENDING_RECOVERY_NOT_READY")
+
         with tempfile.TemporaryDirectory() as tmp:
             dist = Path(tmp)
             (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")

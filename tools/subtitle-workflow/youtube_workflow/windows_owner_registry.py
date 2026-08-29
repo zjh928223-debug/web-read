@@ -827,11 +827,6 @@ def validate_owner_registry_profile_evidence(
     profile_lease = _validate_profile_lease(evidence.get("profileLease"), profile_id)
     owner_mode = _validate_owner_mode_evidence(evidence.get("ownerMode"))
     pending_recovery = _validate_owner_pending_recovery(evidence.get("ownerPendingRecovery"))
-    if pending_recovery["ready"] is not True and pending_recovery["status"] != "not-run":
-        raise OwnerRegistryError(
-            "OWNER_PENDING_RECOVERY_NOT_READY",
-            "Windows owner profile evidence is blocked by pending journal recovery",
-        )
     if owner_mode["status"] == "invalid":
         raise OwnerRegistryError(
             "OWNER_MODE_CHECKPOINT_INVALID",
@@ -901,6 +896,11 @@ def validate_owner_registry_profile_evidence(
         raise OwnerRegistryError(
             "OWNER_PROFILE_CHECKSUM_MISSING",
             "Windows owner profile inventory needs a verified profile checksum",
+        )
+    if pending_recovery["ready"] is not True:
+        raise OwnerRegistryError(
+            "OWNER_PENDING_RECOVERY_NOT_READY",
+            "Windows owner profile evidence is blocked by pending journal recovery",
         )
     if evidence.get("ready") is not True:
         raise OwnerRegistryError(

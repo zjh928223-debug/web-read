@@ -18,6 +18,8 @@ import {
   OWNER_PENDING_JOURNAL_FILE,
   OWNER_PROFILE_DOMAINS,
   calculateOwnerPendingJournalChecksum,
+  createOwnerPendingCommitEvidence,
+  createOwnerPendingPrepareEvidence,
   createOwnerPendingProfileIdentity,
   createReadWebProductionBackupComposition,
   readOwnerPendingJournal,
@@ -76,19 +78,59 @@ async function appendEvent(eventsPath, event) {
   await appendFile(eventsPath, `${JSON.stringify(event)}\n`, 'utf8')
 }
 
-function createFileAdapters(stateDir, eventsPath) {
+function createFileAdapters(stateDir, eventsPath, {
+  missingPrepareDomain = null,
+  missingCommitDomain = null,
+  mismatchedPrepareDomain = null,
+  mismatchedCommitDomain = null,
+  noOpCommitDomain = null,
+  wrongCommitDomain = null,
+} = {}) {
   return Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => [domain, {
     async read() {
       return readState(stateDir, domain)
     },
-    async prepare({ domain: preparedDomain }) {
+    async prepare({ domain: preparedDomain, baseline, staged }) {
       await appendEvent(eventsPath, { kind: 'prepare', domain: preparedDomain })
-      return { source: `journal-fixture-prepare-${preparedDomain}` }
+      const evidence = createOwnerPendingPrepareEvidence({
+        domain: preparedDomain,
+        baseline,
+        staged,
+        source: `journal-fixture-prepare-${preparedDomain}`,
+      })
+      if (preparedDomain === missingPrepareDomain) return { source: evidence.source }
+      if (preparedDomain === mismatchedPrepareDomain) {
+        return { ...evidence, stagedChecksum: `sha256:${'0'.repeat(64)}` }
+      }
+      return evidence
     },
-    async commit({ domain: committedDomain, staged }) {
-      await writeState(stateDir, committedDomain, staged)
-      await appendEvent(eventsPath, { kind: 'commit', domain: committedDomain, revision: staged.revision })
-      return { source: `journal-fixture-commit-${committedDomain}` }
+    async commit({ domain: committedDomain, current, staged, expectedRevision }) {
+      if (expectedRevision !== current.revision) {
+        throw new Error(`fixture received the wrong expected revision for ${committedDomain}`)
+      }
+      if (committedDomain !== noOpCommitDomain) {
+        await writeState(
+          stateDir,
+          committedDomain,
+          committedDomain === wrongCommitDomain ? current : staged,
+        )
+      }
+      await appendEvent(eventsPath, {
+        kind: 'commit',
+        domain: committedDomain,
+        expectedRevision,
+        revision: staged.revision,
+      })
+      const evidence = createOwnerPendingCommitEvidence({
+        domain: committedDomain,
+        staged,
+        source: `journal-fixture-commit-${committedDomain}`,
+      })
+      if (committedDomain === missingCommitDomain) return { source: evidence.source }
+      if (committedDomain === mismatchedCommitDomain) {
+        return { ...evidence, checksum: `sha256:${'0'.repeat(64)}` }
+      }
+      return evidence
     },
     async restore({ domain: restoredDomain, target }) {
       await writeState(stateDir, restoredDomain, target)
@@ -237,10 +279,10 @@ async function readWorkerResult(resultPath) {
   return JSON.parse(await readFile(resultPath, 'utf8'))
 }
 
-async function runDirect(fixture, profiles, faults = {}) {
+async function runDirect(fixture, profiles, faults = {}, adapterOptions = {}) {
   return runOwnerPendingJournalOperation({
     ...fixture.options,
-    adapters: createFileAdapters(fixture.stateDir, fixture.eventsPath),
+    adapters: createFileAdapters(fixture.stateDir, fixture.eventsPath, adapterOptions),
     baseline: profiles.baseline,
     staged: profiles.staged,
     operationKind: 'restore',
@@ -347,6 +389,11 @@ try {
     fullEvents.filter((event) => event.kind === 'commit').map((event) => event.domain),
     OWNER_PROFILE_DOMAINS,
   )
+  assert.deepEqual(
+    fullEvents.filter((event) => event.kind === 'commit').map((event) => event.expectedRevision),
+    OWNER_PROFILE_DOMAINS.map((domain) => profiles.baseline.domains[domain].revision),
+    'each domain commit must CAS against its current baseline revision',
+  )
   assert.ok(
     fullEvents.findIndex((event) => event.kind === 'commit')
       > fullEvents.map((event) => event.kind).lastIndexOf('prepare'),
@@ -357,6 +404,84 @@ try {
     status: 'passed',
     journalChecksum: fullJournal.checksum,
     eventCount: fullEvents.length,
+  }
+
+  const missingAdapterEvidence = await createFixture(testRoot, 'missing-adapter-evidence')
+  await initializeFixture(missingAdapterEvidence, profiles)
+  await assert.rejects(
+    runDirect(missingAdapterEvidence, profiles, {}, { missingPrepareDomain: OWNER_PROFILE_DOMAINS[0] }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_INVALID',
+  )
+  const missingAdapterJournal = await readOwnerPendingJournal(missingAdapterEvidence.options)
+  assert.equal(missingAdapterJournal.status, 'pending')
+  assert.deepEqual(Object.keys(missingAdapterJournal.commitEvidence), [])
+
+  const missingCommitEvidence = await createFixture(testRoot, 'missing-commit-evidence')
+  await initializeFixture(missingCommitEvidence, profiles)
+  await assert.rejects(
+    runDirect(missingCommitEvidence, profiles, {}, { missingCommitDomain: OWNER_PROFILE_DOMAINS[0] }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_INVALID',
+  )
+  const missingCommitJournal = await readOwnerPendingJournal(missingCommitEvidence.options)
+  assert.equal(missingCommitJournal.status, 'committing')
+  assert.deepEqual(Object.keys(missingCommitJournal.commitEvidence), [])
+
+  const mismatchedPrepareEvidence = await createFixture(testRoot, 'mismatched-prepare-evidence')
+  await initializeFixture(mismatchedPrepareEvidence, profiles)
+  await assert.rejects(
+    runDirect(mismatchedPrepareEvidence, profiles, {}, { mismatchedPrepareDomain: OWNER_PROFILE_DOMAINS[0] }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_INVALID',
+  )
+
+  const mismatchedCommitEvidence = await createFixture(testRoot, 'mismatched-commit-evidence')
+  await initializeFixture(mismatchedCommitEvidence, profiles)
+  await assert.rejects(
+    runDirect(mismatchedCommitEvidence, profiles, {}, { mismatchedCommitDomain: OWNER_PROFILE_DOMAINS[0] }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_INVALID',
+  )
+  assert.equal(
+    (await readOwnerPendingJournal(mismatchedCommitEvidence.options)).status,
+    'committing',
+  )
+
+  const noOpCommit = await createFixture(testRoot, 'no-op-commit')
+  await initializeFixture(noOpCommit, profiles)
+  await assert.rejects(
+    runDirect(noOpCommit, profiles, {}, { noOpCommitDomain: 'marks-activity' }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_COMMIT_VERIFICATION_FAILED',
+  )
+  const noOpJournal = await readOwnerPendingJournal(noOpCommit.options)
+  assert.equal(noOpJournal.status, 'committing', 'no-op commit must not publish committed status')
+  await assertProfileState(noOpCommit, {
+    domains: Object.fromEntries(OWNER_PROFILE_DOMAINS.map((domain) => [
+      domain,
+      domain === 'marks-activity' ? profiles.baseline.domains[domain] : profiles.staged.domains[domain],
+    ])),
+  })
+
+  const wrongCommit = await createFixture(testRoot, 'wrong-commit')
+  await initializeFixture(wrongCommit, profiles)
+  await assert.rejects(
+    runDirect(wrongCommit, profiles, {}, { wrongCommitDomain: 'workflow' }),
+    (error) => error?.code === 'OWNER_PENDING_JOURNAL_COMMIT_VERIFICATION_FAILED',
+  )
+  const wrongCommitJournal = await readOwnerPendingJournal(wrongCommit.options)
+  assert.equal(wrongCommitJournal.status, 'committing', 'wrong state must not publish committed status')
+  assert.deepEqual(
+    await readState(wrongCommit.stateDir, 'workflow'),
+    profiles.baseline.domains.workflow,
+    'wrong commit fixture must remain at baseline for the rejected domain',
+  )
+  evidence.scenarios.adapterEvidenceAndCommitReadback = {
+    status: 'passed',
+    missingEvidence: 'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_INVALID',
+    missingCommitEvidence: 'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_INVALID',
+    mismatchedPrepareEvidence: 'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_INVALID',
+    mismatchedCommitEvidence: 'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_INVALID',
+    noOpCommit: 'OWNER_PENDING_JOURNAL_COMMIT_VERIFICATION_FAILED',
+    wrongCommit: 'OWNER_PENDING_JOURNAL_COMMIT_VERIFICATION_FAILED',
+    expectedRevisionSource: 'current-baseline',
+    committedStatusRequiresStagedReadback: true,
   }
 
   await assertRecoveryAfterCrash(testRoot, profiles, 'after-prepare', { crashAfterPrepare: true }, {

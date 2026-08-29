@@ -657,75 +657,31 @@ async function ownerPendingPrepare(adapter, domain, baseline, staged, journal) {
     correlationId: journal.correlationId,
     journal: clone(journal),
   }), domain, 'prepare')
-  if (typeof raw.source !== 'string' || !raw.source.trim()) {
-    throw ownerPendingJournalError(
-      'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_MISSING',
-      `Prepare adapter for ${domain} did not identify its evidence source`,
-      { domain },
-    )
-  }
-  const evidence = createOwnerPendingPrepareEvidence({
+  return ownerPendingPrepareEvidence(
+    raw,
     domain,
     baseline,
     staged,
-    source: raw.source,
-    preparedAt: raw.preparedAt || new Date().toISOString(),
-  })
-  for (const [field, expected] of Object.entries({
-    status: 'verified',
-    baselineRevision: evidence.baselineRevision,
-    baselineChecksum: evidence.baselineChecksum,
-    stagedRevision: evidence.stagedRevision,
-    stagedChecksum: evidence.stagedChecksum,
-    evidenceChecksum: evidence.evidenceChecksum,
-  })) {
-    if (raw[field] !== undefined && raw[field] !== expected) {
-      throw ownerPendingJournalError(
-        'OWNER_PENDING_JOURNAL_PREPARE_EVIDENCE_INVALID',
-        `Prepare adapter evidence for ${domain} does not match the requested identities`,
-        { domain, field },
-      )
-    }
-  }
-  return evidence
+    `Prepare adapter evidence for ${domain}`,
+  )
 }
 
-async function ownerPendingCommit(adapter, domain, staged, journal) {
+async function ownerPendingCommit(adapter, domain, current, staged, journal) {
   const raw = ownerPendingReturnedMetadata(await adapter.commit({
     domain,
+    current: clone(current),
+    baseline: clone(current),
     staged: clone(staged),
-    expectedRevision: staged.revision,
+    expectedRevision: current.revision,
     correlationId: journal.correlationId,
     journal: clone(journal),
   }), domain, 'commit')
-  if (typeof raw.source !== 'string' || !raw.source.trim()) {
-    throw ownerPendingJournalError(
-      'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_MISSING',
-      `Commit adapter for ${domain} did not identify its evidence source`,
-      { domain },
-    )
-  }
-  const evidence = createOwnerPendingCommitEvidence({
+  return ownerPendingCommitEvidence(
+    raw,
     domain,
     staged,
-    source: raw.source,
-    committedAt: raw.committedAt || new Date().toISOString(),
-  })
-  for (const [field, expected] of Object.entries({
-    status: 'committed',
-    revision: evidence.revision,
-    checksum: evidence.checksum,
-    evidenceChecksum: evidence.evidenceChecksum,
-  })) {
-    if (raw[field] !== undefined && raw[field] !== expected) {
-      throw ownerPendingJournalError(
-        'OWNER_PENDING_JOURNAL_COMMIT_EVIDENCE_INVALID',
-        `Commit adapter evidence for ${domain} does not match the staged identity`,
-        { domain, field },
-      )
-    }
-  }
-  return evidence
+    `Commit adapter evidence for ${domain}`,
+  )
 }
 
 async function ownerPendingRestore(adapter, domain, target, journal, current) {
@@ -988,7 +944,13 @@ export async function runOwnerPendingJournalOperationUnlocked(context, options =
     await writeOwnerPendingJournalUnlocked(context.profileAuthorityRoot, journal, faultState, io)
     for (let index = 0; index < OWNER_PROFILE_DOMAINS.length; index += 1) {
       const domain = OWNER_PROFILE_DOMAINS[index]
-      const evidence = await ownerPendingCommit(adapters[domain], domain, staged.domains[domain], journal)
+      const evidence = await ownerPendingCommit(
+        adapters[domain],
+        domain,
+        current[domain],
+        staged.domains[domain],
+        journal,
+      )
       journal = ownerPendingJournalUpdate(journal, {
         commitEvidence: { ...journal.commitEvidence, [domain]: evidence },
       })
@@ -999,6 +961,20 @@ export async function runOwnerPendingJournalOperationUnlocked(context, options =
         || (Number.isInteger(options.faults?.crashAfterCommitIndex) && options.faults.crashAfterCommitIndex === index)) {
         process.kill(process.pid, 'SIGKILL')
       }
+    }
+    const committedState = Object.fromEntries(await Promise.all(OWNER_PROFILE_DOMAINS.map(async (domain) => [
+      domain,
+      await ownerPendingReadDomain(adapters[domain], domain, journal),
+    ])))
+    const commitStateMismatches = OWNER_PROFILE_DOMAINS.filter((domain) => (
+      !ownerPendingProfileIdentityEqual(committedState[domain], staged.domains[domain])
+    ))
+    if (commitStateMismatches.length) {
+      throw ownerPendingJournalError(
+        'OWNER_PENDING_JOURNAL_COMMIT_VERIFICATION_FAILED',
+        'Committed domain evidence does not match the staged profile state',
+        { domains: commitStateMismatches },
+      )
     }
     journal = ownerPendingJournalUpdate(journal, { status: 'committed', phase: 'commit' })
     await writeOwnerPendingJournalUnlocked(context.profileAuthorityRoot, journal, faultState, io)
