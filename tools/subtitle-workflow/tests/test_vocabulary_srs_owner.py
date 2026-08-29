@@ -251,11 +251,42 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         self.assertEqual(retry["commitStatus"], "manual-recovery")
         self.assertEqual(retry["error"]["code"], "manual-recovery")
         self.assertIsNone(retry["receipt"])
+        receipt_query = owner.receipt(
+            idempotency_key="rev-2",
+            **self.ids("receipt-after-recovery"),
+        )
+        self.assertEqual(receipt_query["outcome"], "manual-recovery")
+        self.assertEqual(receipt_query["commitStatus"], "manual-recovery")
+        self.assertEqual(receipt_query["error"]["code"], "manual-recovery")
+        self.assertIsNone(receipt_query["receipt"])
         current = owner.query("entry", **self.ids("after-recovery"))
         self.assertEqual(current["payload"]["revision"], 1)
         self.assertEqual(
             current["payload"]["records"][old["id"]]["content"]["words"][0]["word"],
             "old",
+        )
+
+    def test_historical_corrupt_marker_does_not_block_aligned_reopened_command(self):
+        owner = self.make_owner()
+        first = self.row("vocabulary.srs.store.v1", self.srs_content("first"))
+        self.assertEqual(
+            self.command(owner, "entry-upsert", first["id"], first, 0, request_key="aligned-1")["outcome"],
+            "committed",
+        )
+
+        marker = owner.snapshot_path.with_name(f"{owner.snapshot_path.name}.corrupt-old")
+        marker.write_text("{historical evidence", encoding="utf-8")
+        self.assertTrue(marker.exists())
+
+        reopened = self.make_owner(instance_id="instance-2")
+        second = self.row("vocabulary.srs.store.v1", self.srs_content("second"))
+        result = self.command(reopened, "entry-upsert", second["id"], second, 1, request_key="aligned-2")
+
+        self.assertEqual(result["outcome"], "committed")
+        self.assertEqual(result["revision"], 2)
+        self.assertEqual(
+            reopened.query("entry", **self.ids("after-marker"))["payload"]["records"][second["id"]]["content"]["words"][0]["word"],
+            "second",
         )
 
     def test_learning_command_writes_related_records_with_existing_numeric_timestamps(self):

@@ -1019,6 +1019,22 @@ class OwnerCommitReceiptStore:
         except OwnerReceiptStoreError as error:
             return self._result("manual-recovery", error=_error(error.code, str(error), retryable=error.retryable))
 
+    def latest_committed_revision(self, domain: str) -> int | None:
+        """Return the highest numeric committed revision already recorded for a domain."""
+
+        if domain not in OWNER_RECEIPT_DOMAINS:
+            raise OwnerReceiptInputError("domain is invalid")
+        with self._locked_document() as document:
+            revisions = [
+                receipt["revision"]
+                for receipt in document["receipts"]
+                if receipt["domain"] == domain
+                and receipt["commitStatus"] == "committed"
+                and isinstance(receipt.get("revision"), int)
+                and not isinstance(receipt.get("revision"), bool)
+            ]
+        return max(revisions) if revisions else None
+
     def health_summary(self) -> dict[str, Any]:
         """Return receipt counts without exposing receipt identities or payloads."""
 

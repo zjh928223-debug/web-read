@@ -23,6 +23,7 @@ from .windows_owner_receipts import (
     OwnerCommitReceiptStore,
     OwnerCommitContext,
     OwnerReceiptInputError,
+    OwnerReceiptStoreError,
     calculate_evidence_checksum,
 )
 
@@ -407,9 +408,6 @@ class VocabularySrsOwner:
         document, _ = self._read_document()
         return self._empty_document() if document is None else document
 
-    def _has_recovery_evidence(self) -> bool:
-        return any(self.snapshot_path.parent.glob(f"{self.snapshot_path.name}.corrupt-*"))
-
     @staticmethod
     def _validate_payload(payload: Any, operation: str) -> dict[str, dict[str, Any]]:
         if operation not in COMMAND_OPERATIONS:
@@ -521,7 +519,9 @@ class VocabularySrsOwner:
             )
 
         try:
-            _, read_outcome = self._read_document()
+            document, _ = self._read_document()
+            current_revision = 0 if document is None else document["revision"]
+            latest_committed_revision = self.receipts.latest_committed_revision(VOCABULARY_SRS_DOMAIN)
         except VocabularySrsOwnerStorageError as error:
             return self._envelope(
                 operation,
@@ -533,7 +533,23 @@ class VocabularySrsOwner:
                 {"recordKeys": sorted(updates)},
                 _typed_error(error.code, correlation_id),
             )
-        if read_outcome.status == "recovered" or self._has_recovery_evidence():
+        except OwnerReceiptStoreError as error:
+            return self._envelope(
+                operation,
+                request_id,
+                correlation_id,
+                "manual-recovery",
+                "manual-recovery",
+                None,
+                {"recordKeys": sorted(updates)},
+                _typed_error(error.code, correlation_id),
+            )
+        if (
+            isinstance(current_revision, int)
+            and not isinstance(current_revision, bool)
+            and latest_committed_revision is not None
+            and latest_committed_revision > current_revision
+        ):
             return self._envelope(
                 operation,
                 request_id,
@@ -631,6 +647,40 @@ class VocabularySrsOwner:
                 {},
                 _typed_error("invalid-request", correlation_id),
             )
+        receipt = result.get("receipt")
+        if receipt is not None:
+            try:
+                document, _ = self._read_document()
+            except VocabularySrsOwnerStorageError as error:
+                return self._envelope(
+                    "receipt-query",
+                    request_id,
+                    correlation_id,
+                    "manual-recovery",
+                    "manual-recovery",
+                    None,
+                    {},
+                    _typed_error(error.code, correlation_id),
+                )
+            current_revision = 0 if document is None else document["revision"]
+            receipt_revision = receipt.get("revision")
+            if (
+                isinstance(current_revision, int)
+                and not isinstance(current_revision, bool)
+                and isinstance(receipt_revision, int)
+                and not isinstance(receipt_revision, bool)
+                and receipt_revision > current_revision
+            ):
+                return self._envelope(
+                    "receipt-query",
+                    request_id,
+                    correlation_id,
+                    "manual-recovery",
+                    "manual-recovery",
+                    None,
+                    {},
+                    _typed_error("manual-recovery", correlation_id),
+                )
         return self._envelope(
             "receipt-query",
             request_id,
