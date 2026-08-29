@@ -169,7 +169,7 @@ assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned pro
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
 assert(api.futureImplementationBoundary.implementedHere.includes('Browser typed owner API client boundary'), 'browser API client implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('API client'), 'API client is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '3.2 durable UI status mapping', 'API contract next task must remain 3.2')
+assert(api.futureImplementationBoundary.nextAllowedTask === '3.3 legacy compatibility bridge', 'API contract next task must advance to 3.3 after status mapping')
 assert(api.browserClientContract?.module === 'src/services/windows-owner-api-client.js', 'browser API client module is missing')
 assert(api.browserClientContract?.route === '/api/app/owner', 'browser API client route is not frozen')
 assert(api.browserClientContract?.contractVersion === api.contractVersion, 'browser API client contract version is not aligned')
@@ -184,6 +184,20 @@ for (const field of ['identity', 'operation', 'commitStatus', 'revision', 'recei
 }
 assert(api.browserClientContract?.mediaPayloadPolicy === 'metadata-only', 'browser API client media policy must remain metadata-only')
 await assertSourceExists(api.browserClientContract.module)
+assert(api.browserDurableStatusContract?.module === 'src/services/windows-owner-durable-status.js', 'durable status module is missing')
+assert(JSON.stringify(api.browserDurableStatusContract?.statuses) === JSON.stringify(['dirty', 'saving', 'saved', 'conflict', 'commit-unknown', 'not-ready']), 'durable status set changed')
+assert(api.browserDurableStatusContract?.initialStatus === 'not-ready', 'durable status must start not-ready')
+assert(api.browserDurableStatusContract?.memoryOnly === true, 'durable status must remain memory-only')
+assert(api.browserDurableStatusContract?.currentConsumersConnected === false, 'durable status must not be connected to current consumers yet')
+for (const requirement of ['owner typed result outcome=committed', 'commitStatus=committed', 'authoritative revision', 'validated receipt', 'receipt revision matches result revision', 'current intent generation']) {
+  assert(api.browserDurableStatusContract?.savedRequires?.includes(requirement), `durable status saved rule lacks ${requirement}`)
+}
+assert(api.browserDurableStatusContract?.automaticMutationReplay === false, 'durable status must not replay mutations')
+assert(api.browserDurableStatusContract?.queryOrCacheMaySetSaved === false, 'query/cache must not create saved status')
+for (const field of ['domain', 'status', 'authoritativeRevision', 'generation', 'intent', 'inFlight', 'receiptLookup', 'error', 'reason']) {
+  assert(api.browserDurableStatusContract?.snapshotFields?.includes(field), `durable status snapshot lacks ${field}`)
+}
+await assertSourceExists(api.browserDurableStatusContract.module)
 assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
 assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
 for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
@@ -275,7 +289,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

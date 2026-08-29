@@ -279,3 +279,24 @@ does not replay the command. This is only a dependency-injected client seam: all
 pre-cutover, existing browser writers are unchanged, and the Host still returns typed `503 not-ready` for legal
 owner mutations. `npm run verify:windows-owner-api-client` exercises the boundary with a mock fetch and the
 real contract artifact while `npm run verify:windows-owner-contract` checks the documented client contract.
+
+## Task 3.2 browser durable status boundary
+
+`src/services/windows-owner-durable-status.js` is a single, generic in-memory tracker for the future browser
+owner adapter. It records only domain/intent generation and request/receipt identity metadata, then maps typed
+owner results to `dirty`, `saving`, `saved`, `conflict`, `commit-unknown`, or `not-ready`. It starts at
+`not-ready`; local edits, cache/query results, HTTP success, and prepare/ordinary completion cannot create
+`saved`. The only saved transition requires a current-generation `committed` result, `commitStatus=committed`,
+authoritative revision, and a complete receipt whose profile/domain/operation/request/correlation/idempotency/
+expected-revision identity matches the in-flight mutation.
+
+Late generations cannot clear a newer intent. Conflict and not-ready retain the intent, while transport/schema
+uncertainty retains a receipt lookup and remains `commit-unknown` without automatic replay. Only a matching
+authoritative receipt can resolve that state. Pending/unknown receipts remain unresolved; rejected/validation
+results return to dirty. The tracker does not use browser durable storage, persist payloads or media, and is not
+connected to current Reader, marks, SRS, Preview, Annotation, or workflow consumers. All six domains remain
+pre-cutover and the Host continues to return typed `503 not-ready` for legal owner mutations.
+
+The behavior gate is `npm run verify:windows-owner-durable-status`; it loads the real API operation registry and
+exercises all six domains, valid and invalid commit evidence, query/cache isolation, generation ordering,
+duplicate results, conflicts, unknown receipt resolution, not-ready preservation, and the memory-only boundary.

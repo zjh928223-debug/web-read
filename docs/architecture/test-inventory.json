@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 113,
-    "behavior": 106,
+    "behavior": 107,
     "browser": 27,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 258,
-  "executableScriptCount": 281,
+  "packageScriptCount": 259,
+  "executableScriptCount": 282,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-api-client && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-health && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-api-client && npm run verify:windows-owner-durable-status && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-health && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -3007,6 +3007,18 @@
         "scripts/windows-local-owner-determinism-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-determinism"
+    },
+    {
+      "name": "verify:windows-owner-durable-status",
+      "command": "node scripts/windows-owner-durable-status-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-durable-status-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-durable-status"
     },
     {
       "name": "verify:windows-owner-handoff",
@@ -10390,6 +10402,31 @@
       "owners": [
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-api-client"
+      ],
+      "invocation": "transitive",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-durable-status-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner",
+      "owners": [
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-durable-status"
       ],
       "invocation": "transitive",
       "evidence": {

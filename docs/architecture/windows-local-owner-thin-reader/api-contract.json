@@ -531,11 +531,31 @@
     "responseValidation": ["identity", "operation", "commitStatus", "revision", "receipt", "typedError"],
     "mediaPayloadPolicy": "metadata-only"
   },
+  "browserDurableStatusContract": {
+    "module": "src/services/windows-owner-durable-status.js",
+    "statuses": ["dirty", "saving", "saved", "conflict", "commit-unknown", "not-ready"],
+    "initialStatus": "not-ready",
+    "memoryOnly": true,
+    "currentConsumersConnected": false,
+    "savedRequires": [
+      "owner typed result outcome=committed",
+      "commitStatus=committed",
+      "authoritative revision",
+      "validated receipt",
+      "receipt revision matches result revision",
+      "matching domain/operation/requestId/correlationId/idempotencyKey/expectedRevision",
+      "current intent generation"
+    ],
+    "receiptResolution": "only a matching authoritative receipt may resolve commit-unknown; pending/unknown stays unresolved",
+    "automaticMutationReplay": false,
+    "queryOrCacheMaySetSaved": false,
+    "snapshotFields": ["domain", "status", "authoritativeRevision", "generation", "intent", "inFlight", "receiptLookup", "error", "reason"]
+  },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation"],
-    "nextAllowedTask": "3.2 durable UI status mapping",
+    "nextAllowedTask": "3.3 legacy compatibility bridge",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:33074ccec3854cb22e7bdf746be773efe7febbcbe3f2666e446c88acd8d9bf90"
+  "artifactChecksum": "sha256:240e5b1126382b2b75b4d4ea6b813d2567686db4d48ef18fcb7ab1b3a22db28e"
 }
