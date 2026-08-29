@@ -233,15 +233,32 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     }
 
     let idempotencyKey
+    const generatedIdempotencyKey = options.idempotencyKey === undefined
     try {
-      idempotencyKey = options.idempotencyKey === undefined
+      idempotencyKey = generatedIdempotencyKey
         ? await createStableCommitIdempotencyKey(session, candidate, profileId)
         : requireIdempotency(options.idempotencyKey)
     } catch (error) {
       return rejectedResult(error)
     }
-    const commitOptions = { ...options, idempotencyKey }
-    const prior = await lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions)
+    let commitOptions = { ...options, idempotencyKey }
+    let prior = await lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions, expectedRevision)
+    if (prior?.occurrenceRequired) {
+      if (!generatedIdempotencyKey) return occurrenceConflict(prior)
+      try {
+        idempotencyKey = await createStableCommitIdempotencyKey(
+          session,
+          candidate,
+          profileId,
+          prior.baseRevision,
+        )
+        commitOptions = { ...options, idempotencyKey }
+      } catch (error) {
+        return rejectedResult(error)
+      }
+      prior = await lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions, expectedRevision)
+      if (prior?.occurrenceRequired) return occurrenceConflict(prior)
+    }
     if (prior) return prior
 
     let prepareResult
@@ -341,7 +358,7 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     restoreSession,
   })
 
-  async function lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions) {
+  async function lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions, expectedRevision) {
     let receiptResult
     try {
       receiptResult = await ownerClient.receipt({
@@ -376,22 +393,33 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
         error: new WindowsOwnerReaderSessionError('reader-session-conflict', { category: 'conflict', retryable: true }),
       }
     }
-    let snapshot = receiptResult.payload?.snapshot
+    const queried = await querySnapshot({ signal: commitOptions.signal })
+    const snapshot = queried.status === 'found' ? queried.snapshot : null
     if (!snapshot) {
-      const queried = await querySnapshot({ signal: commitOptions.signal })
-      snapshot = queried.status === 'found' ? queried.snapshot : null
-    }
-    if (!snapshot
-      || !snapshotMatchesStableSession(snapshot, session, candidate, profileId)
-      || receipt.revision !== snapshot.revision
-      || receipt.recordChecksums?.[0] !== snapshot.checksum) {
       return {
         status: 'commit-unknown',
         result: receiptResult,
         error: new WindowsOwnerReaderSessionError('reader-session-commit-unknown', { category: 'recovery', retryable: true }),
       }
     }
-    return committedResult(receiptResult, session, candidate)
+    const currentMatches = snapshotMatchesStableSession(snapshot, session, candidate, profileId)
+    if (currentMatches
+      && receipt.revision === snapshot.revision
+      && receipt.expectedRevision === snapshot.commit.expectedRevision
+      && receipt.requestFingerprint === snapshot.commit.requestFingerprint
+      && receipt.effectFingerprint === snapshot.commit.effectFingerprint
+      && receipt.recordChecksums?.[0] === snapshot.checksum) {
+      return committedResult(receiptResult, session, candidate)
+    }
+    const baseRevision = currentMatches ? snapshot.commit.expectedRevision : expectedRevision
+    if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) {
+      return {
+        status: 'commit-unknown',
+        result: receiptResult,
+        error: new WindowsOwnerReaderSessionError('reader-session-commit-unknown', { category: 'recovery', retryable: true }),
+      }
+    }
+    return { occurrenceRequired: true, baseRevision, result: receiptResult }
   }
 
   async function resolveUnknownCommit(command, candidate, session, commitOptions) {
@@ -563,10 +591,11 @@ function snapshotMatchesStableSession(snapshot, session, candidate, profileId) {
   }
 }
 
-async function createStableCommitIdempotencyKey(session, candidate, profileId) {
+async function createStableCommitIdempotencyKey(session, candidate, profileId, baseRevision = null) {
   const material = canonicalJson({
     ...stableSessionProjection(session, candidate, profileId),
     sessionRevision: session.revision === undefined ? null : session.revision,
+    ...(baseRevision === null ? {} : { baseRevision }),
   })
   if (!globalThis.crypto?.subtle || typeof TextEncoder !== 'function') {
     throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
@@ -618,6 +647,14 @@ function commandResult(result) {
       : result?.outcome === 'commit-unknown' ? 'commit-unknown' : 'rejected'
   const error = errorFromResult(result)
   return { status, result, error }
+}
+
+function occurrenceConflict(prior) {
+  return {
+    status: 'conflict',
+    result: prior.result,
+    error: new WindowsOwnerReaderSessionError('reader-session-conflict', { category: 'conflict', retryable: true }),
+  }
 }
 
 function rejectedResult(error, overrideCode = null) {

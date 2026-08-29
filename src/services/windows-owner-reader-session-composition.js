@@ -2,6 +2,7 @@ import { createWindowsOwnerApiClient } from './windows-owner-api-client.js'
 import { createWindowsOwnerReaderSessionConsumer } from './windows-owner-reader-session-consumer.js'
 
 const HEALTH_PATH = '/api/app/health'
+const DEFAULT_HEALTH_TIMEOUT_MS = 1500
 const SAFE_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 
 let composedConsumer = null
@@ -17,7 +18,7 @@ export async function initializeWindowsOwnerReaderSessionComposition(options = {
   const fetchImpl = options.fetchImpl || windowObject.fetch?.bind(windowObject) || globalThis.fetch
   const healthPath = options.healthPath || HEALTH_PATH
 
-  const health = await readHealth(fetchImpl, healthPath)
+  const health = await readHealth(fetchImpl, healthPath, options.healthTimeoutMs)
   const profileId = options.profileId || health?.profileId
   if (!isSafeIdentity(profileId) || !isReaderSessionOwnerReady(health, profileId)) {
     clearComposedConsumer(windowObject)
@@ -76,34 +77,62 @@ export async function initializeWindowsOwnerReaderSessionComposition(options = {
 
 export function isReaderSessionOwnerReady(health, profileId) {
   if (!isSafeIdentity(profileId) || !health || typeof health !== 'object') return false
+  const registry = health.ownerRegistry
   const domain = Array.isArray(health.domains)
     ? health.domains.find((item) => item?.domain === 'reader-session')
     : null
   return health.profileId === profileId
     && health.liveness?.ready === true
-    && health.durableOwnerReadiness?.ready === true
-    && health.durableOwnerReadiness?.acceptingApiAuthoritativeOperations === true
-    && health.ownerRegistry?.ownerApiReady === true
-    && health.ownerRegistry?.acceptingApiAuthoritativeOperations === true
+    && health.contractValid === true
+    && health.profileEvidenceReady === true
+    && registry?.valid === true
+    && registry?.contractValid === true
+    && registry?.profileEvidenceReady === true
     && domain?.authority === 'authoritative'
+    && domain?.queryCapability === 'read-only'
     && domain?.commandCapability === 'writable'
+    && domain?.registry?.status === 'compatible'
+    && domain?.adapter?.status === 'verified'
+    && domain?.repository?.type === 'host-managed'
+    && domain?.revision?.status === 'verified'
+    && domain?.recovery?.status === 'verified'
 }
 
-async function readHealth(fetchImpl, healthPath) {
+async function readHealth(fetchImpl, healthPath, configuredTimeoutMs) {
   if (typeof fetchImpl !== 'function' || !isHealthPath(healthPath)) return null
+  const timeoutMs = normalizeHealthTimeout(configuredTimeoutMs)
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  let timeoutHandle = null
   try {
-    const response = await fetchImpl(healthPath, {
-      method: 'GET',
-      headers: { accept: 'application/json' },
-      credentials: 'same-origin',
-      cache: 'no-store',
+    const healthRequest = (async () => {
+      const response = await fetchImpl(healthPath, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        credentials: 'same-origin',
+        cache: 'no-store',
+        ...(controller ? { signal: controller.signal } : {}),
+      })
+      if (!response || response.ok === false || typeof response.json !== 'function') return null
+      return response.json()
+    })()
+    const timeout = new Promise((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        try { controller?.abort() } catch (_error) {}
+        resolve(null)
+      }, timeoutMs)
     })
-    if (!response || response.ok === false || typeof response.json !== 'function') return null
-    const health = await response.json()
+    const health = await Promise.race([healthRequest, timeout])
     return health && typeof health === 'object' ? health : null
   } catch (_error) {
     return null
+  } finally {
+    if (timeoutHandle !== null) clearTimeout(timeoutHandle)
   }
+}
+
+function normalizeHealthTimeout(value) {
+  const timeoutMs = Number(value)
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_HEALTH_TIMEOUT_MS
 }
 
 function clearComposedConsumer(windowObject) {

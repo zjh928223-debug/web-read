@@ -154,7 +154,32 @@ try {
     if (notReadyComposition.status !== 'not-ready' || window.__windowsOwnerReaderSessionConsumer != null) {
       throw new Error('pre-cutover Host readiness must not inject a Reader Session owner')
     }
+
+    let healthAborted = false
+    const timeoutStarted = Date.now()
+    const timeoutComposition = await initializeWindowsOwnerReaderSessionComposition({
+      windowObject: {},
+      documentObject: {},
+      healthTimeoutMs: 50,
+      fetchImpl: (_url, request) => new Promise((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => {
+          healthAborted = true
+          reject(new Error('health probe aborted'))
+        }, { once: true })
+      }),
+    })
+    if (timeoutComposition.status !== 'not-ready' || !healthAborted || Date.now() - timeoutStarted > 500) {
+      throw new Error('a stalled Host health probe did not fail closed quickly')
+    }
+
     await control({ hostReady: true })
+    const partialHealth = await (await fetch('/api/app/health')).json()
+    if (partialHealth.durableOwnerReadiness?.ready !== false
+      || partialHealth.ownerRegistry?.ownerApiReady !== false
+      || partialHealth.domains?.find((item) => item.domain === 'reader-session')?.commandCapability !== 'writable'
+      || partialHealth.domains?.filter((item) => item.domain !== 'reader-session').some((item) => item.authority !== 'pre-cutover')) {
+      throw new Error('C1 fixture did not model domain-first Host readiness')
+    }
 
     const composition = await initializeWindowsOwnerReaderSessionComposition({
       windowObject: window,
@@ -222,12 +247,12 @@ try {
           files: { audio: 'audio', transcript: 'transcript', chunkData: 'chunkData' },
         }
       },
-      async getFile(_jobId, kind) {
+      async getFile(jobId, kind) {
         if (kind === 'transcript') return new Blob([JSON.stringify({
-          segments: [{ words: [{ word: 'job-new', start: 0, end: 1 }] }],
+          segments: [{ words: [{ word: jobId, start: 0, end: 1 }] }],
         })], { type: 'application/json' })
         return new Blob([JSON.stringify({
-          s: [{ chunks: [{ a: 0, b: 1, en: 'job-new' }] }],
+          s: [{ chunks: [{ a: 0, b: 1, en: jobId }] }],
         })], { type: 'application/json' })
       },
       async getReaderMarks() { return { marks: [] } },
@@ -246,6 +271,32 @@ try {
       validateTranscriptData: (value) => value,
       validateChunkData: (value) => value,
     })
+
+    const firstA = await loader.loadJobIntoReader('job-old', { replacePolicy: 'replace-current' })
+    if (firstA.status !== 'loaded' || visible.contentId !== 'youtube-workflow:job-old') {
+      throw new Error(`first A occurrence did not commit: ${JSON.stringify(firstA)}`)
+    }
+    const firstAState = await counts()
+    const firstAKey = firstAState.commitIdempotencyKeys.at(-1)
+    const firstAReceiptId = firstAState.commitReceiptIds[firstAKey]
+    const sameMaterialLoader = createYoutubeWorkflowLoader({
+      client: workflowClient,
+      readerSessionOwner: owner,
+      readerSessionPersistence: persistence,
+      hasCurrentContent: () => false,
+      sessionPublisher: publisher,
+      validateTranscriptData: (value) => value,
+      validateChunkData: (value) => value,
+    })
+    const sameA = await sameMaterialLoader.loadJobIntoReader('job-old', { replacePolicy: 'replace-current' })
+    const afterSameA = await counts()
+    if (sameA.status !== 'loaded'
+      || afterSameA.prepareRequests !== firstAState.prepareRequests
+      || afterSameA.commitRequests !== firstAState.commitRequests
+      || afterSameA.commitReceiptIds[firstAKey] !== firstAReceiptId) {
+      throw new Error('recreated loader did not reuse the first A occurrence receipt')
+    }
+
     const switched = await loader.loadJobIntoReader('job-new', { replacePolicy: 'replace-current' })
     if (switched.status !== 'loaded' || visible.contentId !== 'youtube-workflow:job-new') {
       throw new Error(`owner material switch failed: ${JSON.stringify(switched)}`)
@@ -257,10 +308,11 @@ try {
     }
     const switchedContentId = visible.contentId
 
-    const beforeStableRetry = await counts()
-    const switchedCommitKey = beforeStableRetry.commitIdempotencyKeys.at(-1)
-    const switchedReceiptId = beforeStableRetry.commitReceiptIds[switchedCommitKey]
-    const retryLoader = createYoutubeWorkflowLoader({
+    const switchedState = await counts()
+    const switchedCommitKey = switchedState.commitIdempotencyKeys.at(-1)
+    const beforeThirdA = switchedState
+    await control({ commandMode: 'unknown-no-evidence' })
+    const uncertainALoader = createYoutubeWorkflowLoader({
       client: workflowClient,
       readerSessionOwner: owner,
       readerSessionPersistence: persistence,
@@ -269,16 +321,37 @@ try {
       validateTranscriptData: (value) => value,
       validateChunkData: (value) => value,
     })
-    const stableRetry = await retryLoader.loadJobIntoReader('job-new', { replacePolicy: 'replace-current' })
-    const afterStableRetry = await counts()
-    if (stableRetry.status !== 'loaded'
-      || afterStableRetry.prepareRequests !== beforeStableRetry.prepareRequests
-      || afterStableRetry.commitRequests !== beforeStableRetry.commitRequests
-      || afterStableRetry.commitReceiptIds[switchedCommitKey] !== switchedReceiptId) {
-      throw new Error('recreated loader did not reuse the committed candidate receipt')
+    await expectReject(() => uncertainALoader.loadJobIntoReader('job-old', { replacePolicy: 'replace-current' }))
+    const afterUncertainA = await counts()
+    const thirdAKey = afterUncertainA.commitIdempotencyKeys.at(-1)
+    if (afterUncertainA.commitRequests !== beforeThirdA.commitRequests + 1
+      || !thirdAKey
+      || thirdAKey === firstAKey
+      || thirdAKey === switchedCommitKey) {
+      throw new Error('A→B→A did not create a distinct occurrence key before retry')
+    }
+    await control({ commandMode: 'none' })
+
+    const thirdRetryLoader = createYoutubeWorkflowLoader({
+      client: workflowClient,
+      readerSessionOwner: owner,
+      readerSessionPersistence: persistence,
+      hasCurrentContent: () => false,
+      sessionPublisher: publisher,
+      validateTranscriptData: (value) => value,
+      validateChunkData: (value) => value,
+    })
+    const thirdA = await thirdRetryLoader.loadJobIntoReader('job-old', { replacePolicy: 'replace-current' })
+    const afterThirdA = await counts()
+    if (thirdA.status !== 'loaded'
+      || visible.contentId !== 'youtube-workflow:job-old'
+      || afterThirdA.commitRequests !== afterUncertainA.commitRequests + 1
+      || afterThirdA.commitIdempotencyKeys.at(-1) !== thirdAKey) {
+      throw new Error('uncertain A retry did not reuse its occurrence key and commit')
     }
 
     const beforeFailedSwitch = structuredClone(visible)
+    const previousFailedDescriptor = owner.getDescriptor()
     await control({ commandMode: 'not-ready' })
     const failedLoader = createYoutubeWorkflowLoader({
       client: {
@@ -300,7 +373,7 @@ try {
     if (persistenceWrites !== 0 || JSON.stringify(visible) !== JSON.stringify(beforeFailedSwitch)) {
       throw new Error('not-ready owner commit did not preserve the visible session without browser fallback')
     }
-    if (owner.getDescriptor()?.authorizedUrl !== switchedDescriptor.authorizedUrl) {
+    if (owner.getDescriptor()?.authorizedUrl !== previousFailedDescriptor?.authorizedUrl) {
       throw new Error('failed owner switch did not rebind the old media descriptor')
     }
     await control({ commandMode: 'none' })
@@ -500,6 +573,12 @@ try {
       asyncEvidence: { playCalls: audio.playCalls, seek: audio.currentTime },
       compositionStatus: composition.status,
       commitKeys: finalCounts.commitIdempotencyKeys,
+      occurrenceKeys: {
+        firstA: firstAKey,
+        switchedB: switchedCommitKey,
+        thirdA: thirdAKey,
+        thirdARetry: afterThirdA.commitIdempotencyKeys.at(-1),
+      },
     }
 
     async function expectReject(operation) {
@@ -527,6 +606,9 @@ try {
   assert.equal(result.reopenedContentId, 'youtube-workflow:job-unknown')
   assert.equal(result.restoredSource, 'owner')
   assert.equal(result.compositionStatus, 'ready')
+  assert.notEqual(result.occurrenceKeys.firstA, result.occurrenceKeys.switchedB, 'different materials must not share an occurrence key')
+  assert.notEqual(result.occurrenceKeys.firstA, result.occurrenceKeys.thirdA, 'A→B→A must create a new A occurrence')
+  assert.equal(result.occurrenceKeys.thirdA, result.occurrenceKeys.thirdARetry, 'uncertain A retry must reuse the occurrence key')
   assert.ok(fixture.ownerRequests.some((request) => request.body.domain === 'workflow'
     && request.body.operation === 'media-capability'
     && request.body.payload?.jobId === 'job-new'
@@ -537,7 +619,6 @@ try {
   'new material must not use the committed session media query')
   assert.ok(result.rangeRequests >= 5, 'C1 should probe each authorized binding with Range')
   assert.ok(result.ownerRequests >= 12, 'C1 should use typed owner queries and prepare/commit')
-  assert.equal(new Set(result.commitKeys).size, result.commitKeys.length, 'different materials must not reuse a commit key')
   assert.deepEqual(result.storage.localStorage, [])
   assert.deepEqual(result.storage.indexedDb, [])
   assert.equal(result.asyncEvidence.playCalls, 1)
@@ -758,23 +839,43 @@ async function handleMediaRequest(request, response, match) {
 
 function makeReadyHealth() {
   const ready = fixture.hostReady
+  const readerDomain = {
+    domain: 'reader-session',
+    authority: ready ? 'authoritative' : 'pre-cutover',
+    queryCapability: ready ? 'read-only' : 'unavailable',
+    commandCapability: ready ? 'writable' : 'unavailable',
+    capability: { query: ready ? 'read-only' : 'unavailable', command: ready ? 'writable' : 'unavailable' },
+    registry: { status: 'compatible' },
+    adapter: { status: 'verified' },
+    repository: { type: 'host-managed' },
+    revision: { status: 'verified' },
+    recovery: { status: 'verified' },
+  }
+  const otherDomains = ['vocabulary-srs', 'passage-preview', 'annotation', 'marks-activity', 'workflow']
+    .map((domain) => ({
+      domain,
+      authority: 'pre-cutover',
+      queryCapability: 'read-only',
+      commandCapability: 'unavailable',
+    }))
   return {
     profileId: PROFILE_ID,
     instanceId: INSTANCE_ID,
+    contractValid: true,
+    profileEvidenceReady: true,
     liveness: { ready: true },
     durableOwnerReadiness: {
-      ready,
-      acceptingApiAuthoritativeOperations: ready,
+      ready: false,
+      acceptingApiAuthoritativeOperations: false,
     },
     ownerRegistry: {
-      ownerApiReady: ready,
-      acceptingApiAuthoritativeOperations: ready,
+      valid: true,
+      contractValid: true,
+      profileEvidenceReady: true,
+      ownerApiReady: false,
+      acceptingApiAuthoritativeOperations: false,
     },
-    domains: [{
-      domain: 'reader-session',
-      authority: ready ? 'authoritative' : 'pre-cutover',
-      commandCapability: ready ? 'writable' : 'unavailable',
-    }],
+    domains: [readerDomain, ...otherDomains],
   }
 }
 

@@ -493,18 +493,22 @@ replace faults. It is registered in `verify:full` but is not part of `verify:fas
 
 `src/services/windows-owner-reader-session-consumer.js` is the small browser consumer seam for an injected,
 ready `ReaderSessionOwner` API client. `src/services/windows-owner-reader-session-composition.js` is the production
-composition: it reads the Host `/api/app/health` status and injects the consumer only when the `reader-session`
-domain is explicitly `authoritative`/`writable`; pre-cutover or degraded status leaves the existing browser path
-unchanged. The consumer reads the Host snapshot and reader-session media-identity capability, normalizes the Python
-owner envelope into the existing reader session shape, and binds the authorized media descriptor through
-`MediaResourceOwner`. The workflow loader uses the existing workflow `media-capability` query for a newly selected
-job, while reader-session `media-identity` remains the restore check for the current committed session.
+composition: it reads the Host `/api/app/health` status with a short bounded probe and injects the consumer only
+when liveness/profile/registry basics and the `reader-session` domain's own evidence report
+`authoritative`/`writable`; global readiness for unrelated domains is not required. Pre-cutover or degraded status
+leaves the existing browser path unchanged. The consumer reads the Host snapshot and reader-session media-identity
+capability, normalizes the Python owner envelope into the existing reader session shape, and binds the authorized
+media descriptor through `MediaResourceOwner`. The workflow loader uses the existing workflow `media-capability`
+query for a newly selected job, while reader-session `media-identity` remains the restore check for the current
+committed session.
 
 The owner path publishes a material only after the Host media probe succeeds and the typed prepare/commit result
 is committed or can be reconciled from matching receipt/snapshot evidence. Commit idempotency is derived from the
 profile and stable candidate/material identity, so a recreated loader can query the same receipt without relying on
-an in-memory generation. A failed, conflicting, not-ready, or unknown command restores the visible session and prior
-media binding without writing browser durable storage.
+an in-memory generation. If the same material is revisited after another material changed the canonical snapshot,
+the consumer derives a new occurrence key from the current base revision; a same-key retry of that occurrence still
+queries the same receipt. A failed, conflicting, not-ready, or unknown command restores the visible session and
+prior media binding without writing browser durable storage.
 Media is assigned directly to the element and probed with the existing `Range: bytes=0-0` seam; changed ETag,
 identity, revision, malformed snapshots, and failed probes stop the old resource and return a rebind/not-ready
 result while retaining the session. The production route remains pre-cutover/not-ready and the existing browser
