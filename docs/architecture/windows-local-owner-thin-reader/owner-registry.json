@@ -236,20 +236,19 @@
         "facade": "windowsHost.annotationOwner"
       },
       "canonicalRecords": [
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.bundle.v2.json", "schemaVersions": ["annotation-bundle.v2", "1"]},
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.generated.json", "schemaVersions": ["1", "annotation-bundle.v2"]},
-        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.status.json", "schemaVersions": ["1", "annotation-bundle.v2"]},
-        {"keyPattern": "AnnotationGenerationStorage::*", "schemaVersions": ["1", "annotation-bundle.v2"]}
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.bundle.v2.json", "schemaVersions": ["annotation-bundle.v2"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.generated.json", "schemaVersions": ["1"]},
+        {"keyPattern": "AnnotationGenerationStorage::*::*::annotation.status.json", "schemaVersions": ["1"]}
       ],
       "compatibilityRecords": [
         {"key": "annotation-full-export.json", "schemaVersions": ["export payload not a canonical bundle"]},
         {"key": "annotation.debug", "schemaVersions": ["none"]}
       ],
-      "queryOperations": ["get-annotation-bundle", "get-annotation-status", "list-annotations"],
-      "commandOperations": ["save-annotation-bundle", "save-annotation-status", "delete-annotation"],
+      "queryOperations": ["bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"],
+      "commandOperations": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import", "receipt-query"],
       "revisionSource": {
         "identity": "annotation.bundle-revision",
-        "source": "annotation bundle/status revision and generated checksum"
+        "source": "Host annotation-owner.json envelope revision is the command CAS/receipt authority; annotation.bundle.v2 inner revision/commitId is an imported subrecord monotonic guard; generated/status retain schemaVersion 1 and scope"
       },
       "backupAdapter": {
         "identity": "read-web-application-backup.annotation",
@@ -266,11 +265,18 @@
         "type": "host-managed",
         "implementation": "contract-only",
         "canonicalWhenApiAuthoritative": true,
-        "availableForCanonicalCommit": false
+        "availableForCanonicalCommit": false,
+        "internalSeam": {
+          "module": "tools/subtitle-workflow/youtube_workflow/annotation_owner.py",
+          "status": "isolated-pre-cutover",
+          "productionApiAuthoritative": false,
+          "browserWriterConnected": false,
+          "migrationConnected": false
+        }
       },
       "evidence": {
         "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},
-        "revision": {"required": true, "status": "declared-contract", "source": "annotation bundle/status revision and checksum"},
+        "revision": {"required": true, "status": "declared-contract", "source": "Host envelope revision/CAS plus annotation.bundle.v2 inner revision/commitId monotonic guard"},
         "recovery": {"required": true, "status": "declared-contract", "source": "application backup prefix restore/quarantine evidence"}
       },
       "authority": {
@@ -404,5 +410,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:6178aca4d15724bf6fbb9d2377dbcfe80d7a87bef89583cc3a939665f30abd44"
+  "artifactChecksum": "sha256:75f5b3d6b6ed08f7ba1a2a600a11c51ee9c949572334fe6919f2c608e9287032"
 }

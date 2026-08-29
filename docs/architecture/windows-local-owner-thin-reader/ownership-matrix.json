@@ -186,15 +186,23 @@
       ],
       "browserDirectWritersRef": ["annotation.storage", "annotation.lightweight-import", "annotation.backfill-import", "annotation.vocabulary-preview"],
       "backupAdapter": "localStorage annotation prefix adapter; audio-folder path requires explicit runtime adapter evidence",
-      "revisionSource": "annotation.bundle.v2 integer revision/commitId; generated/status standalone files are timestamped",
+      "revisionSource": "Host annotation-owner.json envelope revision is the command CAS/receipt authority; annotation.bundle.v2 inner revision/commitId is an imported subrecord monotonic guard; generated/status retain schemaVersion 1 and scope",
       "mediaReferences": "audioKey/documentId scope and occurrence/source references only; ECDICT suggestions are transient",
       "rollbackTarget": "pre-run bundle/generated/status artifacts and corrupt evidence, captured by application-backup annotation domain",
       "futureOwnerFacade": "windowsHost.annotationOwner",
       "querySurface": ["bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"],
-      "commandSurface": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import"],
+      "commandSurface": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import", "receipt-query"],
       "migrationWave": "wave-4-annotation",
       "zeroGate": "No browser audio-folder/localStorage annotation canonical write after checkpoint; compatibility importer only; transient dictionary suggestions never become durable annotation records",
-      "milestoneStatus": "inventory-only; no annotation storage migration"
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/annotation_owner.py",
+        "status": "isolated-pre-cutover",
+        "canonicalStorage": "profile-scoped Host JSON record envelope",
+        "uses": ["DurableJsonRepository", "OwnerCommitReceiptStore"],
+        "browserWriterConnected": false,
+        "productionApiAuthoritative": false
+      },
+      "milestoneStatus": "inventory plus isolated Host seam; browser remains current writer and no migration"
     },
     {
       "domain": "workflow",
@@ -226,5 +234,5 @@
       "milestoneStatus": "inventory-only; current Python service remains owner"
     }
   ],
-  "artifactChecksum": "sha256:e0168f7cabf9b7d48a3ca49287f5bef842eb8f7d6294c6b9204b0f4050e2b2c4"
+  "artifactChecksum": "sha256:fa039b23121717ff89fe6a3cc3876ff090ecee374fa05cd0f2d6d63c21f825ee"
 }

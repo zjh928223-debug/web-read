@@ -338,10 +338,20 @@
         "coverage": "AnnotationGenerationStorage:: prefix; audio-folder records are handled by annotation runtime and require explicit adapter evidence"
       },
       "currentOwner": "Browser AnnotationGenerationStorage using audio-folder handle when granted, otherwise localStorage fallback; Python workflow produces annotation backfill results",
-      "revisionSource": "bundle envelope integer revision and commitId; generated/status standalone records have timestamps only",
+      "revisionSource": "Host annotation-owner.json envelope revision is the command CAS/receipt authority; annotation.bundle.v2 inner revision/commitId is an imported subrecord monotonic guard; generated/status records retain schemaVersion 1 and scope",
       "mediaReferences": "audioKey/documentId scope and occurrence/source references only; ECDICT suggestions remain transient and read-only",
       "rollbackTarget": "Pre-run annotation bundle/generated/status files or localStorage prefix, plus backup artifact and corrupt evidence",
-      "sourceEvidence": ["src/services/annotation/storage.js:42-172", "src/composables/session-annotation-lightweight-io.js:1-220", "src/composables/annotation-lightweight-module.js:1-120"]
+      "sourceEvidence": ["src/services/annotation/storage.js:42-172", "src/composables/session-annotation-lightweight-io.js:1-220", "src/composables/annotation-lightweight-module.js:1-120"],
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/annotation_owner.py",
+        "status": "isolated-pre-cutover",
+        "storage": "profile-scoped annotation-owner.json via DurableJsonRepository",
+        "recordShape": "existing AnnotationGenerationStorage scope keys and bundle/generated/status JSON envelopes; no annotation business-model copy",
+        "queries": ["bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"],
+        "commands": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import", "receipt-query"],
+        "durability": "owner revision/CAS, OwnerCommitReceiptStore idempotency, atomic replace with existing backup; bundle inner revision is a monotonic guard",
+        "boundary": "not wired to /api/app/owner, browser writer, audio folder, localStorage, migration, or authority cutover; export is read-like and ECDICT/backfill matching remains outside the seam"
+      }
     },
     {
       "domain": "workflow",
@@ -371,5 +381,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520"]
     }
   ],
-  "artifactChecksum": "sha256:4075781d6717b28663f5b42b42ab9147926c08d7c054f9d86f6d417ddd1adf3b"
+  "artifactChecksum": "sha256:d6648ac9ab9003991ce7287ac57412cfc9ca51e473ec920d2e020ee9103bfc47"
 }

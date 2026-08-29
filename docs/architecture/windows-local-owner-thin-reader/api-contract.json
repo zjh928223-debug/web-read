@@ -279,9 +279,18 @@
       "commandOperations": ["bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import", "receipt-query"],
       "capabilities": ["annotation.query", "annotation.commit", "annotation.import", "annotation.export", "annotation.receipt"],
       "mutationRequirements": { "expectedRevision": "required for bundle commit when a bundle exists", "idempotencyKey": "required for bundle/import commands; export is read-like but still correlated" },
-      "revisionSource": "annotation.bundle.v2 integer revision/commitId",
+      "revisionSource": "Host annotation-owner.json envelope revision is the command CAS/receipt authority; annotation.bundle.v2 inner revision/commitId is an imported subrecord monotonic guard; generated/status retain schemaVersion 1 and scope",
       "backupAdapter": "localStorage annotation prefix adapter plus explicit audio-folder adapter later",
       "recoveryHandler": "annotation corrupt/permission/quarantine handler, future host-owned",
+      "internalSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/annotation_owner.py",
+        "status": "isolated-pre-cutover",
+        "recordBoundary": "existing AnnotationGenerationStorage dynamic scope keys with bundle/generated/status envelopes; no browser merge or backfill business logic",
+        "durability": ["DurableJsonRepository atomic replace", "OwnerCommitReceiptStore CAS/idempotency"],
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false,
+        "migrationConnected": false
+      },
       "authorityReadyInThisMilestone": false
     },
     {
@@ -659,10 +668,10 @@
     "authorityReady": false
   },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam", "isolated Host AnnotationOwner query/command/receipt repository seam"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation", "production Reader Session authority", "browser session writer cutover"],
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:b1398ab54f7227c53c70b9d33a6f64c1bf4d31365670675e8a35c5d8ac1cea2d"
+  "artifactChecksum": "sha256:a7dd27b0e07822a3af8dec0a0bdaecd00bb089bcbe1d2d71f1062b7ce726dfa0"
 }

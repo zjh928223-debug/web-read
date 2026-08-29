@@ -9,7 +9,7 @@
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 265,
+  "packageScriptCount": 266,
   "executableScriptCount": 285,
   "packageCommands": [
     {
@@ -2947,6 +2947,18 @@
       ],
       "invokes": [],
       "owner": "package.json#scripts.verify:windows-owner"
+    },
+    {
+      "name": "verify:windows-owner-annotation",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_annotation_owner",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-annotation"
     },
     {
       "name": "verify:windows-owner-api-client",
@@ -7913,6 +7925,7 @@
         "package.json#scripts.sentences:build",
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-annotation",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
         "package.json#scripts.verify:windows-owner-passage-preview",

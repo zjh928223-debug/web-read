@@ -82,6 +82,23 @@ This remains an isolated pre-cutover seam: browser localStorage remains the curr
 Session cache, shortcuts, translation/context display preferences, ECDICT suggestions, tokens, paths,
 and complete media stay outside the canonical record boundary. The aggregate A task remains unchecked.
 
+## Annotation internal seam
+
+The third small domain slice is now exercised in
+`tools/subtitle-workflow/youtube_workflow/annotation_owner.py`. It keeps the existing
+`AnnotationGenerationStorage::<audioKey>::<documentId>::annotation.{bundle.v2,generated,status}.json`
+records as opaque, shallow-checked JSON envelopes in a profile-scoped `DurableJsonRepository`, with the
+frozen bundle/scope/generated/status/corrupt-evidence/storage-mode queries and bundle/import/backfill
+commands. The existing `OwnerCommitReceiptStore` supplies Host envelope revision CAS and idempotent
+receipts; the bundle's own revision/commitId is only a monotonic imported-record guard, and its FNV
+checksum follows `storage.js`'s generated/status JSON order. `lightweight-export` is read-like and never
+creates a receipt or download.
+
+This remains an isolated pre-cutover seam: browser audio-folder/localStorage writers, browser merge and
+backfill matching, `/api/app/owner`, migration, and authority cutover are unchanged. Runtime indexes,
+ECDICT suggestions, directory handles, tokens, paths, complete media, and full export blobs stay outside
+the Host record boundary. The aggregate A task remains unchecked until all five domain seams exist.
+
 ## Evidence semantics
 
 `pass` means the named existing focused check or static source assertion actually ran successfully. It does
