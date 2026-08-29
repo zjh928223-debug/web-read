@@ -76,7 +76,15 @@
       "commandSurface": ["marks-commit", "activity-append", "receipt-query"],
       "migrationWave": "wave-2-marks-activity",
       "zeroGate": "No direct browser canonical marks/activity write after checkpoint; API caller may retain latest intent only; repeated activity operation IDs produce one effect",
-      "milestoneStatus": "inventory-only; current backend owner remains authoritative"
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/marks_activity_owner.py",
+        "status": "isolated-pre-cutover",
+        "canonicalStorage": "existing per-job marks/activity/journal JSON; no parallel owner data",
+        "uses": ["ReaderMarksActivityRepository", "ReaderMarksCommitJournal", "DurableJsonRepository"],
+        "browserWriterConnected": false,
+        "productionApiAuthoritative": false
+      },
+      "milestoneStatus": "inventory plus isolated Host seam; browser remains current writer and no migration"
     },
     {
       "domain": "vocabulary-srs",

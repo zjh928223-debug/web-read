@@ -307,8 +307,8 @@
       "compatibilityRecords": [
         {"keyPattern": "read-web.reader-save-outbox.*", "schemaVersions": ["reader-save-outbox.v1/v2", "reader-save-outbox.v1", "reader-save-outbox.v2"]}
       ],
-      "queryOperations": ["get-marks", "get-activity", "get-mark-revision"],
-      "commandOperations": ["save-marks", "record-activity", "rebuild-mark-projection"],
+      "queryOperations": ["marks", "activity", "revision", "receipt", "conflict"],
+      "commandOperations": ["marks-commit", "activity-append", "receipt-query"],
       "revisionSource": {
         "identity": "marks-activity.commit-revision",
         "source": "reader marks commit journal and projection revision"
@@ -328,7 +328,14 @@
         "type": "host-managed",
         "implementation": "contract-only",
         "canonicalWhenApiAuthoritative": true,
-        "availableForCanonicalCommit": false
+        "availableForCanonicalCommit": false,
+        "internalSeam": {
+          "module": "tools/subtitle-workflow/youtube_workflow/marks_activity_owner.py",
+          "status": "isolated-pre-cutover",
+          "productionApiAuthoritative": false,
+          "browserWriterConnected": false,
+          "canonicalRecordReuse": "ReaderMarksActivityRepository and ReaderMarksCommitJournal; no parallel marks/activity owner JSON or receipt store"
+        }
       },
       "evidence": {
         "transaction": {"required": true, "status": "declared-contract", "source": "typed application persistence transaction boundary"},

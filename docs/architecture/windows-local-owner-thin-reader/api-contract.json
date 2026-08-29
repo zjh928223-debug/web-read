@@ -305,6 +305,16 @@
       "revisionSource": "per-job marks/activity envelope revision and commit journal",
       "backupAdapter": "ReaderMarksActivityBackupAdapter",
       "recoveryHandler": "reader marks/activity recovery and commit journal handler",
+      "internalSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/marks_activity_owner.py",
+        "status": "isolated-pre-cutover",
+        "recordBoundary": "existing per-job reader-marks.v1, reader-activity.v1, and reader-marks-commit-journal.v1 envelopes; no second marks/activity schema",
+        "durability": ["ReaderMarksActivityRepository marks/activity CAS and operation-id semantics", "ReaderMarksCommitJournal typed receipt/evidence adaptation", "DurableJsonRepository atomic replace and backup"],
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false,
+        "migrationConnected": false,
+        "receiptAuthority": "existing ReaderMarksCommitJournal; OwnerCommitReceiptStore is not used for this domain"
+      },
       "authorityReadyInThisMilestone": false
     },
     {
@@ -668,7 +678,7 @@
     "authorityReady": false
   },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam", "isolated Host AnnotationOwner query/command/receipt repository seam"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam", "isolated Host AnnotationOwner query/command/receipt repository seam", "isolated Host MarksActivityOwner marks/activity repository seam"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation", "production Reader Session authority", "browser session writer cutover"],
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false

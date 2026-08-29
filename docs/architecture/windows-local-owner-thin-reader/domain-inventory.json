@@ -147,7 +147,17 @@
       "revisionSource": "per-job envelope revision; expectedRevision CAS for marks/activity; operation_id de-duplicates activity; journal revision tracks receipts",
       "mediaReferences": "jobId/contentId references only; no media bytes",
       "rollbackTarget": "Pre-operation marks/activity JSON and commit journal, protected by application-backup rollback artifact",
-      "sourceEvidence": ["src/components/YouTubeWorkflowPanel.vue:670-738", "src/composables/youtube-workflow-client.js:119-137", "tools/subtitle-workflow/youtube_workflow/service.py:3866-3976"]
+      "sourceEvidence": ["src/components/YouTubeWorkflowPanel.vue:670-738", "src/composables/youtube-workflow-client.js:119-137", "tools/subtitle-workflow/service.py:3866-3976"],
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/marks_activity_owner.py",
+        "status": "isolated-pre-cutover",
+        "storage": "existing per-job reader-marks.json, reader-activity.json, and reader-marks-commit-journal.json via ReaderMarksActivityRepository/ReaderMarksCommitJournal",
+        "recordShape": "typed owner envelopes adapt the existing per-job records; no parallel marks/activity canonical JSON",
+        "queries": ["marks", "activity", "revision", "receipt", "conflict"],
+        "commands": ["marks-commit", "activity-append", "receipt-query"],
+        "durability": "existing marks/activity expectedRevision CAS, activity operation_id idempotency, journal receipt/evidence, and DurableJsonRepository atomic replace",
+        "boundary": "not wired to /api/app/owner, browser writer/outbox, migration, backup restore, or authority cutover; contentId is a trusted scope binding only"
+      }
     },
     {
       "domain": "vocabulary-srs",

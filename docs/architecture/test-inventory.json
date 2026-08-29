@@ -3128,6 +3128,18 @@
       "owner": "package.json#scripts.verify:windows-owner-legacy-bridge"
     },
     {
+      "name": "verify:windows-owner-marks-activity",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_marks_activity_owner",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-marks-activity"
+    },
+    {
       "name": "verify:windows-owner-media-capability",
       "command": "node scripts/windows-owner-media-capability-check.mjs",
       "category": "behavior",
@@ -7928,6 +7940,7 @@
         "package.json#scripts.verify:windows-owner-annotation",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
+        "package.json#scripts.verify:windows-owner-marks-activity",
         "package.json#scripts.verify:windows-owner-passage-preview",
         "package.json#scripts.verify:windows-owner-reader-session",
         "package.json#scripts.verify:windows-owner-receipt",

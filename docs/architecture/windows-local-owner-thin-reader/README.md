@@ -99,6 +99,22 @@ backfill matching, `/api/app/owner`, migration, and authority cutover are unchan
 ECDICT suggestions, directory handles, tokens, paths, complete media, and full export blobs stay outside
 the Host record boundary. The aggregate A task remains unchecked until all five domain seams exist.
 
+## Marks/activity internal seam
+
+The marks/activity slice is now exercised in
+`tools/subtitle-workflow/youtube_workflow/marks_activity_owner.py`. It is a narrow typed adapter over
+the existing per-job `ReaderMarksActivityRepository` and `ReaderMarksCommitJournal`: marks and activity
+remain in their existing versioned workflow envelopes, `expectedRevision`/CAS and activity
+`operation_id` semantics are reused, and the journal remains the receipt/evidence authority. No
+`marks-activity-owner.json`, parallel canonical JSON, or `OwnerCommitReceiptStore` is introduced. Its
+focused gate is `npm run verify:windows-owner-marks-activity`.
+
+This remains an isolated pre-cutover seam: the browser marks caller and outbox remain the current
+compatibility path, `/api/app/owner` remains pre-cutover/not-ready, and no browser writer, migration,
+backup restore, or authority cutover is connected. The owner accepts only bounded job/content scope and
+JSON marks/activity updates; tokens, paths, complete media, playback indexes, and uncommitted UI intent
+remain outside the durable boundary. The aggregate A task remains unchecked.
+
 ## Evidence semantics
 
 `pass` means the named existing focused check or static source assertion actually ran successfully. It does
