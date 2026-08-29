@@ -185,10 +185,11 @@ atomic-write failure, lease contention, concurrent recovery, and recovery-before
 
 `youtube_workflow.windows_owner_request_policy` is the shared, small request-policy seam used by the Local
 App Host and workflow service. It validates explicit loopback Host/Origin and instance-token rules before
-dispatch. Query-string tokens remain a narrowly scoped compatibility path for GET/HEAD media URLs only;
-formal owner routes require the instance token in a header or the existing cookie and never treat CORS as
-authorization. Owner envelopes are checked against `api-contract.json`, the six-domain operation/capability
-registry, the current profile/instance, and mutation-only `expectedRevision`/`idempotencyKey` requirements.
+dispatch. Query-string tokens remain a narrowly scoped compatibility path for GET/HEAD media URLs and the
+workflow event stream consumed by `EventSource`; formal owner routes require the instance token in a header
+or the existing cookie and never treat CORS as authorization. Owner envelopes are checked against
+`api-contract.json`, the six-domain operation/capability registry, the current profile/instance, and
+mutation-only `expectedRevision`/`idempotencyKey` requirements.
 
 Payload paths are resolved under configured roots before a future handler can access a repository, media,
 credential, or capability file; traversal and symlink/junction escapes are rejected without echoing the

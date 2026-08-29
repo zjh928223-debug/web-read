@@ -56,7 +56,7 @@ BACKUP_QUERY_OPERATIONS = frozenset(
     {"backup", "manifest", "backup-status", "restore-status", "inventory", "dry-run"}
 )
 BACKUP_COMMAND_OPERATIONS = frozenset({"backup", "restore", "import", "dry-run"})
-MEDIA_QUERY_OPERATIONS = frozenset({"media-capability", "get-media", "range"})
+EVENT_STREAM_PATH = re.compile(r"^/api/jobs/[^/]+/events$")
 PATH_FIELDS = {
     "path": "data",
     "rootPath": "data",
@@ -199,6 +199,7 @@ def allows_query_token(method: object, path: object) -> bool:
         normalized.startswith("/api/tts/edge/audio/")
         or (normalized.startswith("/api/jobs/") and "/media/" in normalized)
         or (normalized.startswith("/api/jobs/") and "/file/" in normalized)
+        or EVENT_STREAM_PATH.fullmatch(normalized) is not None
     )
 
 
@@ -315,6 +316,84 @@ def typed_error(
     }
 
 
+def _validate_operation_capability_registry(
+    contract: Mapping[str, Any],
+    domain_registry: Mapping[str, Mapping[str, Any]],
+    capabilities: Mapping[str, frozenset[str]],
+) -> dict[str, Any]:
+    registry = contract.get("operationCapabilityRegistry")
+    if not isinstance(registry, dict):
+        raise ValueError("Windows owner operation capability registry is unavailable")
+    domain_maps = registry.get("domains")
+    if not isinstance(domain_maps, dict) or set(domain_maps) != set(WINDOWS_OWNER_DOMAINS):
+        raise ValueError("Windows owner operation capability domain registry is incomplete")
+
+    profile_capabilities = registry.get("profileCapabilities")
+    if (
+        not isinstance(profile_capabilities, list)
+        or len(profile_capabilities) != len(set(profile_capabilities))
+        or any(not isinstance(value, str) or SAFE_OPERATION.fullmatch(value) is None for value in profile_capabilities)
+    ):
+        raise ValueError("Windows owner profile capability registry is ambiguous")
+
+    def exact_map(raw: object, expected: list[str], allowed: frozenset[str], label: str) -> dict[str, str]:
+        if (
+            not isinstance(raw, dict)
+            or len(expected) != len(set(expected))
+            or set(raw) != set(expected)
+        ):
+            raise ValueError(f"Windows owner operation capability map is incomplete: {label}")
+        result: dict[str, str] = {}
+        for operation in expected:
+            capability = raw.get(operation)
+            if not isinstance(capability, str) or SAFE_OPERATION.fullmatch(capability) is None or capability not in allowed:
+                raise ValueError(f"Windows owner operation capability map is invalid: {label}.{operation}")
+            result[operation] = capability
+        return result
+
+    normalized_domains: dict[str, dict[str, dict[str, str]]] = {}
+    for domain in WINDOWS_OWNER_DOMAINS:
+        registration = domain_registry[domain]
+        domain_map = domain_maps.get(domain)
+        if not isinstance(domain_map, dict):
+            raise ValueError(f"Windows owner operation capability map is unavailable: {domain}")
+        allowed = capabilities.get(domain, frozenset())
+        query_operations = registration.get("queryOperations")
+        command_operations = registration.get("commandOperations")
+        if (
+            not isinstance(query_operations, list)
+            or not isinstance(command_operations, list)
+            or any(not isinstance(value, str) for value in [*query_operations, *command_operations])
+        ):
+            raise ValueError(f"Windows owner operation registry is invalid: {domain}")
+        normalized_domains[domain] = {
+            "query": exact_map(domain_map.get("query"), query_operations, allowed, f"{domain}.query"),
+            "command": exact_map(domain_map.get("command"), command_operations, allowed, f"{domain}.command"),
+            "receipt-query": exact_map(domain_map.get("receipt-query"), ["receipt-query"], allowed, f"{domain}.receipt-query"),
+            "capability-query": exact_map(domain_map.get("capability-query"), ["capabilities"], allowed, f"{domain}.capability-query"),
+        }
+        media_operations = ["media-identity"] if domain == "reader-session" else ["media-capability"] if domain == "workflow" else []
+        normalized_domains[domain]["media-query"] = exact_map(
+            domain_map.get("media-query"), media_operations, allowed, f"{domain}.media-query"
+        )
+
+    profile_map = registry.get("profile")
+    if not isinstance(profile_map, dict):
+        raise ValueError("Windows owner profile operation capability map is unavailable")
+    profile_allowed = frozenset(profile_capabilities)
+    normalized_profile = {
+        "query": exact_map(profile_map.get("query"), ["capabilities", "readiness", "health"], profile_allowed, "profile.query"),
+        "capability-query": exact_map(profile_map.get("capability-query"), ["capabilities"], profile_allowed, "profile.capability-query"),
+        "backup-query": exact_map(profile_map.get("backup-query"), sorted(BACKUP_QUERY_OPERATIONS), profile_allowed, "profile.backup-query"),
+        "backup-command": exact_map(profile_map.get("backup-command"), sorted(BACKUP_COMMAND_OPERATIONS), profile_allowed, "profile.backup-command"),
+    }
+    return {
+        "profileCapabilities": frozenset(profile_capabilities),
+        "domains": normalized_domains,
+        "profile": normalized_profile,
+    }
+
+
 class WindowsOwnerRequestPolicy:
     """Transport and typed owner-request validation shared by Host seams."""
 
@@ -365,6 +444,11 @@ class WindowsOwnerRequestPolicy:
                 str(domain): frozenset(str(capability) for capability in values)
                 for domain, values in capabilities.items()
             }
+        self.operation_capability_registry = _validate_operation_capability_registry(
+            self.contract,
+            self.domain_registry,
+            self.capabilities,
+        )
         self.path_roots = {
             str(name): Path(value).expanduser()
             for name, value in (path_roots or {}).items()
@@ -464,43 +548,29 @@ class WindowsOwnerRequestPolicy:
         return candidate_resolved
 
     def _validate_payload_paths(self, payload: Mapping[str, Any]) -> None:
-        for field, root_name in PATH_FIELDS.items():
-            if field not in payload:
-                continue
-            value = payload[field]
-            values = value if isinstance(value, list) else [value]
-            for item in values:
-                self.validate_path(item, root_name=root_name, field=f"payload.{field}")
+        def visit(value: object, location: str) -> None:
+            if isinstance(value, dict):
+                for field, nested in value.items():
+                    field_name = str(field)
+                    nested_location = f"{location}.{field_name}"
+                    root_name = PATH_FIELDS.get(field_name)
+                    if root_name is not None:
+                        values = nested if isinstance(nested, list) else [nested]
+                        for index, item in enumerate(values):
+                            item_location = f"{nested_location}[{index}]" if isinstance(nested, list) else nested_location
+                            self.validate_path(item, root_name=root_name, field=item_location)
+                    elif isinstance(nested, (dict, list)):
+                        visit(nested, nested_location)
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    if isinstance(item, (dict, list)):
+                        visit(item, f"{location}[{index}]")
+
+        visit(payload, "payload")
 
     def _operation_is_allowed(self, *, kind: str, domain: str, operation: str) -> bool:
-        if domain == PROFILE_DOMAIN:
-            if kind == "capability-query":
-                return operation in {"capabilities", "readiness", "health"}
-            if kind == "query":
-                return operation in {"capabilities", "readiness", "health"}
-            if kind == "backup-query":
-                return operation in BACKUP_QUERY_OPERATIONS
-            if kind == "backup-command":
-                return operation in BACKUP_COMMAND_OPERATIONS
-            return False
-        registration = self.domain_registry[domain]
-        query_operations = set(registration.get("queryOperations", []))
-        command_operations = set(registration.get("commandOperations", []))
-        if kind == "query":
-            return operation in query_operations
-        if kind == "command":
-            return operation in command_operations
-        if kind == "receipt-query":
-            return operation == "receipt-query" and operation in (query_operations | command_operations)
-        if kind == "capability-query":
-            return operation == "capabilities"
-        if kind == "backup-query":
-            return operation in BACKUP_QUERY_OPERATIONS
-        if kind == "backup-command":
-            return operation in (BACKUP_COMMAND_OPERATIONS | command_operations)
-        if kind == "media-query":
-            return operation in (MEDIA_QUERY_OPERATIONS | {item for item in query_operations if "media" in item})
-        return False
+        scope = self.operation_capability_registry["profile"] if domain == PROFILE_DOMAIN else self.operation_capability_registry["domains"].get(domain, {})
+        return operation in scope.get(kind, {})
 
     @staticmethod
     def _operation_is_read_like(kind: str, operation: str) -> bool:
@@ -537,68 +607,9 @@ class WindowsOwnerRequestPolicy:
         return operation in BACKUP_COMMAND_OPERATIONS
 
     def _validate_capability(self, *, domain: str, kind: str, operation: str, capability: str) -> None:
-        if kind == "backup-query" and (domain != PROFILE_DOMAIN or capability != "profile.backup-query"):
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        if kind == "backup-command" and (domain != PROFILE_DOMAIN or capability != "profile.backup-command"):
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        if domain == PROFILE_DOMAIN:
-            allowed = {"profile.query", "profile.capability-query", "profile.backup-query", "profile.backup-command"}
-        else:
-            allowed = set(self.capabilities.get(domain, ()))
-        if capability not in allowed:
-            raise OwnerRequestPolicyError(
-                "forbidden",
-                "request capability is not valid for this profile",
-                status_code=403,
-                category="authorization",
-                details={"boundary": "profile-capability", "domain": domain},
-            )
-        suffix = capability.rsplit(".", 1)[-1]
-        if kind in QUERY_KINDS:
-            if kind == "receipt-query" and suffix != "receipt":
-                raise OwnerRequestPolicyError(
-                    "forbidden", "request capability does not cover the operation", status_code=403,
-                    category="authorization", details={"boundary": "operation-capability", "domain": domain},
-                )
-            if kind == "media-query" and suffix != "media-range":
-                raise OwnerRequestPolicyError(
-                    "forbidden", "request capability does not cover the operation", status_code=403,
-                    category="authorization", details={"boundary": "operation-capability", "domain": domain},
-                )
-            if kind not in {"receipt-query", "media-query"} and suffix not in {"query", "capability-query", "backup-query"}:
-                raise OwnerRequestPolicyError(
-                    "forbidden", "request capability does not cover the operation", status_code=403,
-                    category="authorization", details={"boundary": "operation-capability", "domain": domain},
-                )
-            return
-        if suffix in {"query", "receipt", "media-range"}:
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        operation_tokens = set(operation.split("-"))
-        if suffix == "job-command" and not operation_tokens.intersection({"job", "submit", "cancel", "retry", "prioritize", "redo", "start"}):
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        if suffix == "config-command" and not operation_tokens.intersection({"config", "index"}):
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        if suffix == "media-range" and operation not in MEDIA_QUERY_OPERATIONS:
-            raise OwnerRequestPolicyError(
-                "forbidden", "request capability does not cover the operation", status_code=403,
-                category="authorization", details={"boundary": "operation-capability", "domain": domain},
-            )
-        if suffix in {"prepare", "commit", "restore"} and operation not in {suffix, "save-session", "save-media", "save-transcript", "save-chunks", "save-marks"}:
+        scope = self.operation_capability_registry["profile"] if domain == PROFILE_DOMAIN else self.operation_capability_registry["domains"].get(domain, {})
+        expected = scope.get(kind, {}).get(operation)
+        if expected is None or capability != expected:
             raise OwnerRequestPolicyError(
                 "forbidden", "request capability does not cover the operation", status_code=403,
                 category="authorization", details={"boundary": "operation-capability", "domain": domain},

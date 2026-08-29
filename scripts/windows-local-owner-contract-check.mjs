@@ -162,6 +162,8 @@ assert(api.outcomeRules.some((item) => item.outcome === 'commit-unknown'), 'comm
 assert(api.typedErrorCodes.some((item) => item.code === 'manual-recovery'), 'manual-recovery error is not registered')
 assert(api.typedErrorCodes.some((item) => item.code === 'unsupported-schema'), 'unsupported-schema error is not registered')
 assert(api.securityAndMediaBoundary.mediaPolicy.includes('complete Blob/ArrayBuffer'), 'media no-copy policy missing')
+assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('/api/jobs/{jobId}/events'), 'event-stream query-token compatibility boundary is missing')
+assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('owner durable API routes reject URL tokens'), 'owner URL-token prohibition is missing')
 assert(api.futureImplementationBoundary.authorityReady === false, 'API contract cannot claim owner authority')
 for (const registration of api.domainRegistry) {
   assert(registration.authorityReadyInThisMilestone === false, `${registration.domain} API registry claims readiness`)
@@ -169,6 +171,69 @@ for (const registration of api.domainRegistry) {
   assert(registration.commandOperations.length > 0, `${registration.domain} API registry lacks command operations`)
   assert(registration.mutationRequirements.expectedRevision, `${registration.domain} API registry lacks expectedRevision rule`)
   assert(registration.mutationRequirements.idempotencyKey, `${registration.domain} API registry lacks idempotencyKey rule`)
+}
+
+const operationCapabilityRegistry = api.operationCapabilityRegistry
+assert(operationCapabilityRegistry && typeof operationCapabilityRegistry === 'object', 'API operation capability registry is missing')
+assert(Array.isArray(operationCapabilityRegistry.profileCapabilities), 'profile capability registry is missing')
+assert(
+  new Set(operationCapabilityRegistry.profileCapabilities).size === operationCapabilityRegistry.profileCapabilities.length,
+  'profile capability registry contains duplicates',
+)
+assert(
+  JSON.stringify(sortedDomains(Object.keys(operationCapabilityRegistry.domains || {}))) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)),
+  'operation capability registry does not cover exactly six domains',
+)
+
+function assertExplicitOperationMap(map, operations, allowedCapabilities, label) {
+  assert(map && typeof map === 'object' && !Array.isArray(map), `${label} operation capability map is missing`)
+  assert(
+    JSON.stringify(sortedDomains(Object.keys(map))) === JSON.stringify(sortedDomains(operations)),
+    `${label} operation capability map does not match registered operations`,
+  )
+  for (const operation of operations) {
+    const capability = map[operation]
+    assert(typeof capability === 'string' && capability.length > 0, `${label}.${operation} must have one capability`)
+    assert(allowedCapabilities.has(capability), `${label}.${operation} references a capability outside its domain`)
+  }
+}
+
+for (const registration of api.domainRegistry) {
+  const domain = registration.domain
+  const maps = operationCapabilityRegistry.domains[domain]
+  const allowedCapabilities = new Set(registration.capabilities)
+  assert(
+    JSON.stringify(sortedDomains(Object.keys(maps || {}))) === JSON.stringify(sortedDomains(['query', 'command', 'receipt-query', 'capability-query', 'media-query'])),
+    `${domain} operation capability map has an unknown request kind`,
+  )
+  assertExplicitOperationMap(maps.query, registration.queryOperations, allowedCapabilities, `${domain}.query`)
+  assertExplicitOperationMap(maps.command, registration.commandOperations, allowedCapabilities, `${domain}.command`)
+  assertExplicitOperationMap(maps['receipt-query'], ['receipt-query'], allowedCapabilities, `${domain}.receipt-query`)
+  assert(maps['receipt-query']['receipt-query'] === `${domain}.receipt`, `${domain} receipt operation capability is not explicit`)
+  assertExplicitOperationMap(maps['capability-query'], ['capabilities'], allowedCapabilities, `${domain}.capability-query`)
+  assert(maps['capability-query'].capabilities === `${domain}.query`, `${domain} capability query mapping is not explicit`)
+  const mediaOperations = domain === 'reader-session' ? ['media-identity'] : domain === 'workflow' ? ['media-capability'] : []
+  assertExplicitOperationMap(maps['media-query'], mediaOperations, allowedCapabilities, `${domain}.media-query`)
+  if (domain === 'workflow') assert(maps['media-query']['media-capability'] === 'workflow.media-range', 'workflow media capability mapping is not explicit')
+}
+
+const profileCapabilityRegistry = operationCapabilityRegistry.profile
+const profileCapabilities = new Set(operationCapabilityRegistry.profileCapabilities)
+assert(
+  JSON.stringify(sortedDomains(Object.keys(profileCapabilityRegistry || {}))) === JSON.stringify(sortedDomains(['query', 'capability-query', 'backup-query', 'backup-command'])),
+  'profile operation capability map has an unknown request kind',
+)
+assertExplicitOperationMap(profileCapabilityRegistry.query, ['capabilities', 'readiness', 'health'], profileCapabilities, 'profile.query')
+assertExplicitOperationMap(profileCapabilityRegistry['capability-query'], ['capabilities'], profileCapabilities, 'profile.capability-query')
+assertExplicitOperationMap(profileCapabilityRegistry['backup-query'], ['backup', 'manifest', 'backup-status', 'restore-status', 'inventory', 'dry-run'], profileCapabilities, 'profile.backup-query')
+assertExplicitOperationMap(profileCapabilityRegistry['backup-command'], ['backup', 'restore', 'import', 'dry-run'], profileCapabilities, 'profile.backup-command')
+assert(profileCapabilityRegistry.query.capabilities === 'profile.query', 'profile query capability mapping is not explicit')
+assert(profileCapabilityRegistry['capability-query'].capabilities === 'profile.capability-query', 'profile capability-query mapping is not explicit')
+for (const capability of profileCapabilityRegistry['backup-query'] ? Object.values(profileCapabilityRegistry['backup-query']) : []) {
+  assert(capability === 'profile.backup-query', 'profile backup query capability mapping is not explicit')
+}
+for (const capability of profileCapabilityRegistry['backup-command'] ? Object.values(profileCapabilityRegistry['backup-command']) : []) {
+  assert(capability === 'profile.backup-command', 'profile backup command capability mapping is not explicit')
 }
 
 assert(nonGoals.forbiddenCapabilities.includes('Windows owner repository implementation'), 'owner implementation non-goal missing')

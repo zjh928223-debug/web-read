@@ -134,7 +134,7 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
 
         wrong_backup_capability = self.envelope(
             kind="backup-query",
-            domain="workflow",
+            domain="profile",
             operation="backup",
             capability="workflow.query",
         )
@@ -165,6 +165,91 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
 
         unsupported_schema = self.envelope(contractVersion="windows-thin-reader-api.v99")
         self.assert_rejected(unsupported_schema, "unsupported-schema")
+
+    def test_explicit_operation_capability_map_accepts_registered_pairs_and_rejects_cross_pairs(self):
+        registry = self.policy.operation_capability_registry
+        for domain in (*registry["domains"], "profile"):
+            scope = registry["profile"] if domain == "profile" else registry["domains"][domain]
+            for kind, operations in scope.items():
+                for operation, capability in operations.items():
+                    envelope = self.envelope(
+                        kind=kind,
+                        domain=domain,
+                        operation=operation,
+                        capability=capability,
+                    )
+                    if kind in {"command", "backup-command"}:
+                        envelope["expectedRevision"] = 0
+                        envelope["idempotencyKey"] = f"map-{domain}-{operation}"
+                    self.policy.validate_owner_envelope(envelope)
+
+        self.policy.validate_owner_envelope(
+            self.envelope(
+                domain="vocabulary-srs",
+                kind="command",
+                operation="review-attempt",
+                capability="vocabulary-srs.review-command",
+                expectedRevision=0,
+                idempotencyKey="review-explicit",
+            )
+        )
+        self.assert_rejected(
+            self.envelope(
+                domain="vocabulary-srs",
+                kind="command",
+                operation="review-attempt",
+                capability="vocabulary-srs.entry-command",
+                expectedRevision=0,
+                idempotencyKey="review-cross",
+            ),
+            "forbidden",
+        )
+        self.policy.validate_owner_envelope(
+            self.envelope(
+                domain="annotation",
+                kind="command",
+                operation="bundle-commit",
+                capability="annotation.commit",
+                expectedRevision=0,
+                idempotencyKey="annotation-explicit",
+            )
+        )
+        self.policy.validate_owner_envelope(
+            self.envelope(
+                domain="passage-preview",
+                kind="command",
+                operation="state-commit",
+                capability="passage-preview.commit",
+                expectedRevision=0,
+                idempotencyKey="preview-explicit",
+            )
+        )
+        self.policy.validate_owner_envelope(
+            self.envelope(
+                domain="marks-activity",
+                kind="command",
+                operation="marks-commit",
+                capability="marks-activity.commit",
+                expectedRevision=0,
+                idempotencyKey="marks-explicit",
+            )
+        )
+        for domain, operation, capability in (
+            ("annotation", "bundle-commit", "annotation.query"),
+            ("passage-preview", "state-commit", "passage-preview.batch"),
+            ("marks-activity", "marks-commit", "marks-activity.query"),
+        ):
+            self.assert_rejected(
+                self.envelope(
+                    domain=domain,
+                    kind="command",
+                    operation=operation,
+                    capability=capability,
+                    expectedRevision=0,
+                    idempotencyKey=f"cross-{domain}",
+                ),
+                "forbidden",
+            )
 
     def test_transport_requires_loopback_host_origin_and_instance_token(self):
         base = {
@@ -210,7 +295,7 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
             )
         )
 
-    def test_query_token_is_limited_to_media_and_never_owner_api(self):
+    def test_query_token_is_limited_to_media_or_event_stream_and_never_owner_api(self):
         media = self.policy.authorize_transport(
             headers={"host": "127.0.0.1"},
             method="GET",
@@ -235,10 +320,41 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
         )
         self.assertEqual(owner.status_code, 401)
 
+        event_stream = self.policy.authorize_transport(
+            headers={"host": "127.0.0.1"},
+            method="GET",
+            path="/api/jobs/job-1/events",
+            query_string="access_token=instance-token",
+        )
+        self.assertIsNone(event_stream)
+        event_without_token = self.policy.authorize_transport(
+            headers={"host": "127.0.0.1"},
+            method="GET",
+            path="/api/jobs/job-1/events",
+        )
+        self.assertEqual(event_without_token.status_code, 401)
+        event_post = self.policy.authorize_transport(
+            headers={"host": "127.0.0.1"},
+            method="POST",
+            path="/api/jobs/job-1/events",
+            query_string="access_token=instance-token",
+        )
+        self.assertEqual(event_post.status_code, 401)
+
     def test_path_root_allows_inside_and_rejects_escape_without_echoing_path(self):
         inside = self.data_root / "nested" / "file.json"
         resolved = self.policy.validate_path(str(inside), root_name="data", field="payload.path")
         self.assertEqual(resolved, inside.resolve())
+
+        nested_payload = self.envelope(
+            payload={
+                "profileId": "fixture-profile",
+                "instanceId": "fixture-instance",
+                "request": {"mediaPath": str(inside)},
+                "items": [{"repositoryPath": str(inside)}],
+            }
+        )
+        self.policy.validate_owner_envelope(nested_payload)
 
         outside = Path(self.outside_temp.name) / "private.json"
         with self.assertRaises(OwnerRequestPolicyError) as context:
@@ -247,6 +363,17 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
         self.assertNotIn(str(outside), str(context.exception))
         with self.assertRaises(OwnerRequestPolicyError):
             self.policy.validate_path("..\\private.json", root_name="data", field="payload.path")
+        nested_escape = self.envelope(
+            payload={
+                "profileId": "fixture-profile",
+                "instanceId": "fixture-instance",
+                "nested": {"mediaPath": str(outside)},
+            }
+        )
+        with self.assertRaises(OwnerRequestPolicyError) as nested_context:
+            self.policy.validate_owner_envelope(nested_escape)
+        self.assertEqual(nested_context.exception.code, "path-not-allowed")
+        self.assertNotIn(str(outside), str(nested_context.exception))
 
     def test_non_loopback_bind_is_rejected_at_policy_creation(self):
         with self.assertRaises(ValueError):
@@ -296,6 +423,21 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
             self.assertNotIn("instance-token", invalid.text)
             self.assertEqual(calls, [])
 
+            nested_invalid = client.post(
+                "/api/app/owner/command",
+                headers={"X-Read-Web-Token": "instance-token"},
+                json=self.envelope(
+                    payload={
+                        "profileId": "fixture-profile",
+                        "instanceId": "fixture-instance",
+                        "nested": {"repositoryPath": str(self.outside_temp.name) + "\\secret.json"},
+                    }
+                ),
+            )
+            self.assertEqual(nested_invalid.status_code, 403)
+            self.assertNotIn(str(self.outside_temp.name), nested_invalid.text)
+            self.assertEqual(calls, [])
+
             valid = client.post(
                 "/api/app/owner/command",
                 headers={"X-Read-Web-Token": "instance-token"},
@@ -324,6 +466,14 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
                     headers={"X-Read-Web-Token": "workflow-token"},
                 ).status_code,
                 200,
+            )
+            self.assertEqual(client.get("/api/jobs/missing/events").status_code, 401)
+            self.assertEqual(
+                client.get(
+                    "/api/jobs/missing/events",
+                    params={"access_token": "workflow-token"},
+                ).status_code,
+                404,
             )
 
 

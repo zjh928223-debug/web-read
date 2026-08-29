@@ -290,6 +290,155 @@
       "authorityReadyInThisMilestone": false
     }
   ],
+  "operationCapabilityRegistry": {
+    "profileCapabilities": ["profile.query", "profile.capability-query", "profile.backup-query", "profile.backup-command"],
+    "domains": {
+      "reader-session": {
+        "query": {
+          "snapshot": "reader-session.query",
+          "current-revision": "reader-session.query",
+          "media-identity": "reader-session.query",
+          "restore-status": "reader-session.query"
+        },
+        "command": {
+          "prepare": "reader-session.prepare",
+          "commit": "reader-session.commit",
+          "restore": "reader-session.restore",
+          "receipt-query": "reader-session.receipt"
+        },
+        "receipt-query": { "receipt-query": "reader-session.receipt" },
+        "capability-query": { "capabilities": "reader-session.query" },
+        "media-query": { "media-identity": "reader-session.query" }
+      },
+      "vocabulary-srs": {
+        "query": {
+          "snapshot": "vocabulary-srs.query",
+          "entry": "vocabulary-srs.query",
+          "acquisition": "vocabulary-srs.query",
+          "review-queue": "vocabulary-srs.query",
+          "learning-events": "vocabulary-srs.query",
+          "context-evidence": "vocabulary-srs.query",
+          "personalization": "vocabulary-srs.query"
+        },
+        "command": {
+          "entry-upsert": "vocabulary-srs.entry-command",
+          "acquisition-command": "vocabulary-srs.entry-command",
+          "review-attempt": "vocabulary-srs.review-command",
+          "learning-event-append": "vocabulary-srs.learning-command",
+          "pending-candidates-update": "vocabulary-srs.learning-command",
+          "personalization-report": "vocabulary-srs.learning-command",
+          "receipt-query": "vocabulary-srs.receipt"
+        },
+        "receipt-query": { "receipt-query": "vocabulary-srs.receipt" },
+        "capability-query": { "capabilities": "vocabulary-srs.query" },
+        "media-query": {}
+      },
+      "passage-preview": {
+        "query": {
+          "durable-state": "passage-preview.query",
+          "preview-batch": "passage-preview.query",
+          "progress": "passage-preview.query",
+          "continuation": "passage-preview.query",
+          "archive": "passage-preview.query",
+          "legacy-keys": "passage-preview.query"
+        },
+        "command": {
+          "state-commit": "passage-preview.commit",
+          "batch-commit": "passage-preview.batch",
+          "rating-apply": "passage-preview.commit",
+          "transition-apply": "passage-preview.commit",
+          "legacy-import": "passage-preview.commit",
+          "receipt-query": "passage-preview.receipt"
+        },
+        "receipt-query": { "receipt-query": "passage-preview.receipt" },
+        "capability-query": { "capabilities": "passage-preview.query" },
+        "media-query": {}
+      },
+      "annotation": {
+        "query": {
+          "bundle": "annotation.query",
+          "scope": "annotation.query",
+          "generated": "annotation.query",
+          "status": "annotation.query",
+          "corrupt-evidence": "annotation.query",
+          "storage-mode": "annotation.query"
+        },
+        "command": {
+          "bundle-commit": "annotation.commit",
+          "lightweight-import": "annotation.import",
+          "lightweight-export": "annotation.export",
+          "backfill-result-import": "annotation.import",
+          "receipt-query": "annotation.receipt"
+        },
+        "receipt-query": { "receipt-query": "annotation.receipt" },
+        "capability-query": { "capabilities": "annotation.query" },
+        "media-query": {}
+      },
+      "marks-activity": {
+        "query": {
+          "marks": "marks-activity.query",
+          "activity": "marks-activity.query",
+          "revision": "marks-activity.query",
+          "receipt": "marks-activity.receipt",
+          "conflict": "marks-activity.query"
+        },
+        "command": {
+          "marks-commit": "marks-activity.commit",
+          "activity-append": "marks-activity.commit",
+          "receipt-query": "marks-activity.receipt"
+        },
+        "receipt-query": { "receipt-query": "marks-activity.receipt" },
+        "capability-query": { "capabilities": "marks-activity.query" },
+        "media-query": {}
+      },
+      "workflow": {
+        "query": {
+          "health": "workflow.query",
+          "readiness": "workflow.query",
+          "capabilities": "workflow.query",
+          "job": "workflow.query",
+          "history": "workflow.query",
+          "reader-index": "workflow.query",
+          "config": "workflow.query",
+          "media-capability": "workflow.media-range",
+          "receipt": "workflow.receipt"
+        },
+        "command": {
+          "job-start": "workflow.job-command",
+          "job-cancel": "workflow.job-command",
+          "job-retry": "workflow.job-command",
+          "config-commit": "workflow.config-command",
+          "reader-index-commit": "workflow.config-command",
+          "receipt-query": "workflow.receipt"
+        },
+        "receipt-query": { "receipt-query": "workflow.receipt" },
+        "capability-query": { "capabilities": "workflow.query" },
+        "media-query": { "media-capability": "workflow.media-range" }
+      }
+    },
+    "profile": {
+      "query": {
+        "capabilities": "profile.query",
+        "readiness": "profile.query",
+        "health": "profile.query"
+      },
+      "capability-query": { "capabilities": "profile.capability-query" },
+      "backup-query": {
+        "backup": "profile.backup-query",
+        "manifest": "profile.backup-query",
+        "backup-status": "profile.backup-query",
+        "restore-status": "profile.backup-query",
+        "inventory": "profile.backup-query",
+        "dry-run": "profile.backup-query"
+      },
+      "backup-command": {
+        "backup": "profile.backup-command",
+        "restore": "profile.backup-command",
+        "import": "profile.backup-command",
+        "dry-run": "profile.backup-command"
+      }
+    }
+  },
   "typedErrorCodes": [
     { "code": "invalid-request", "category": "validation", "retryable": false },
     { "code": "unauthorized", "category": "authorization", "retryable": false },
@@ -312,7 +461,8 @@
   ],
   "securityAndMediaBoundary": {
     "hostOriginTokenCapability": "Required at the shared owner request-policy boundary; CORS alone is insufficient",
-    "tokenPersistence": "Never in URL, durable browser storage, or ordinary diagnostics",
+    "tokenPersistence": "Never in durable browser storage or ordinary diagnostics; URL query compatibility is limited to GET/HEAD media and workflow event-stream routes, never owner durable API",
+    "queryTokenCompatibility": "GET/HEAD media capability/file URLs and /api/jobs/{jobId}/events for EventSource only; owner durable API routes reject URL tokens",
     "pathPolicy": "Only configured optimization profile/data root; reject path escape before path read",
     "mediaPolicy": "Authorized URL/capability plus Range/ETag metadata only; complete Blob/ArrayBuffer/data URI is rejected",
     "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
@@ -322,5 +472,5 @@
     "nextAllowedTask": "2.6 receipt persistence and commit-unknown API",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:1ccf571db2b89101f7410ad0cd3db51cebe6bcaad3a3273272d196ea30b8bf6c"
+  "artifactChecksum": "sha256:7c6c1bbc007ac940fc7536f3934a47fcf1e844891e508f0d7213aac38b684b53"
 }
