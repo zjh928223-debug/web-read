@@ -114,6 +114,27 @@ compatibility path, `/api/app/owner` remains pre-cutover/not-ready, and no brows
 backup restore, or authority cutover is connected. The owner accepts only bounded job/content scope and
 JSON marks/activity updates; tokens, paths, complete media, playback indexes, and uncommitted UI intent
 remain outside the durable boundary. The aggregate A task remains unchecked.
+## Workflow internal seam
+
+The workflow slice is now exercised in
+`tools/subtitle-workflow/youtube_workflow/workflow_owner.py`. It is a narrow typed adapter over the
+existing `WorkflowHistoryStore` and its injected `DurableJsonRepository`; jobs/history keep their existing
+envelopes and revision/recovery behavior, while reader-index/config keep their existing raw JSON shape. It
+does not create a `workflow-owner.json` or copy the service's job transition, queue, or process-supervisor
+rules. The shared `OwnerCommitReceiptStore` supplies durable receipt evidence, CAS, idempotency, and
+reopen/recovery behavior.
+
+Its frozen queries are `health`, `readiness`, `capabilities`, `job`, `history`, `reader-index`, `config`,
+`media-capability`, and `receipt`; commands are `job-start`, `job-cancel`, `job-retry`, `config-commit`,
+`reader-index-commit`, and `receipt-query`. A committed job command means only that the already-validated
+durable job record mutation was submitted and verified. It does not start, cancel, retry, enqueue, or claim
+any external process side effect. The focused gate is `npm run verify:windows-owner-workflow`.
+
+The seam is isolated and pre-cutover: `/api/app/owner` is unchanged, the browser workflow client and its
+local receipt hint remain non-authoritative, and no migration, backup restore, service-route wiring, or UI
+cutover is included. Query responses omit credentials, cookies, machine paths, UI state, and complete media;
+the media capability returns only identity/reference, size, content type, ETag, and an authorized relative
+media URL. The aggregate A task remains unchecked.
 
 ## Evidence semantics
 

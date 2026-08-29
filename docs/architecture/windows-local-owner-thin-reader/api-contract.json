@@ -325,10 +325,23 @@
       "queryOperations": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
       "commandOperations": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
       "capabilities": ["workflow.query", "workflow.job-command", "workflow.config-command", "workflow.media-range", "workflow.receipt"],
-      "mutationRequirements": { "expectedRevision": "required when current domain revision exists", "idempotencyKey": "required for start/cancel/retry/config/index commands" },
-      "revisionSource": "jobs/history envelope revisions and DurableJsonRepository known revisions",
+      "mutationRequirements": { "expectedRevision": "required for every durable workflow command; the empty-state compatibility value is normalized to the current composite revision", "idempotencyKey": "required for start/cancel/retry/config/index commands" },
+      "revisionSource": "existing jobs/history envelope revisions plus config/reader-index repository checksums; no second workflow revision file",
       "backupAdapter": "WorkflowBackupAdapter",
-      "recoveryHandler": "workflow JSON recovery/ProcessSupervisor handler",
+      "recoveryHandler": "DurableJsonRepository recovery and existing workflow service/process boundary; owner commands do not invoke a runner",
+      "internalSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/workflow_owner.py",
+        "status": "isolated-pre-cutover",
+        "repository": "WorkflowHistoryStore over the existing jobs.json/history.json/reader-index.json/config.json files",
+        "receiptStore": "shared OwnerCommitReceiptStore; browser local receipt hints are non-authoritative",
+        "recordBoundary": "validated durable job patches and existing config/reader-index records only; no second workflow canonical JSON",
+        "commandSemantics": "committed means the existing durable repository mutation was submitted and verified; job process side effects are not performed",
+        "revisionAndCas": "jobs/history known revisions are preserved; the seam token also fingerprints raw config/reader-index state",
+        "mediaBoundary": "identity/reference/size/contentType/etag/authorized relative URL metadata only; no local path or bytes",
+        "durability": ["WorkflowHistoryStore existing merge/recovery semantics", "DurableJsonRepository atomic replace", "OwnerCommitReceiptStore CAS/idempotency/recovery"],
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false
+      },
       "authorityReadyInThisMilestone": false
     }
   ],

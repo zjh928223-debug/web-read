@@ -385,10 +385,21 @@
         "coverage": "jobs/history/reader-index/config/output JSON and media identity references; excludes marks/activity files, secrets, temporary files, and bytes"
       },
       "currentOwner": "Python workflow service, WorkflowHistoryStore, DurableJsonRepository, and ProcessSupervisor under the optimization data root",
-      "revisionSource": "jobs/history envelope revisions and workflow repository known revisions; reader output records use source revision or zero; operation receipts are in-memory/localStorage compatibility",
+      "revisionSource": "existing jobs/history envelope revisions plus config/reader-index repository checksums; workflow owner seam uses one composite token without a second revision file",
       "mediaReferences": "only relative identity, size, and modified metadata with identity-metadata-rebind; complete media bytes are rejected",
       "rollbackTarget": "Workflow state JSON backups/journal and application-backup artifact under the same isolated profile root",
-      "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520"]
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/workflow_owner.py",
+        "status": "isolated-pre-cutover",
+        "storage": "the existing WorkflowHistoryStore canonical jobs/history/reader-index/config files; no workflow-owner.json",
+        "queries": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
+        "commands": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
+        "durability": "existing WorkflowHistoryStore revision/recovery plus injected DurableJsonRepository atomic replace and shared OwnerCommitReceiptStore CAS/idempotency",
+        "jobCommandMeaning": "committed means only that the validated durable job mutation was submitted; no queue, runner, or process side effect is performed",
+        "mediaBoundary": "identity/reference/size/contentType/etag/authorized relative URL metadata only; no path or media bytes",
+        "boundary": "not wired to /api/app/owner, browser writer, migration, backup restore, or authority cutover"
+      },
+      "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520", "tools/subtitle-workflow/youtube_workflow/workflow_owner.py:1-1229"]
     }
   ],
   "artifactChecksum": "sha256:d6648ac9ab9003991ce7287ac57412cfc9ca51e473ec920d2e020ee9103bfc47"

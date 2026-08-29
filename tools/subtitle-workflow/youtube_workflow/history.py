@@ -577,7 +577,7 @@ class WorkflowHistoryStore:
 
     def load_reader_index(self) -> list[dict]:
         with self.lock:
-            data = _read_json(self.reader_index_path, {"items": []})
+            data = self.json_repository.read(self.reader_index_path, {"items": []}).value
             items = data.get("items") if isinstance(data, dict) else []
             return list(items) if isinstance(items, list) else []
 
@@ -835,13 +835,13 @@ class WorkflowHistoryStore:
             return
         items = [entry for entry in self.load_reader_index() if entry.get("jobId") != job_id]
         items.append(summary)
-        _write_json_atomic(self.reader_index_path, {"items": items})
+        self.json_repository.write(self.reader_index_path, {"items": items})
 
     def _remove_reader_index_item_locked(self, job_id: str) -> None:
         if not job_id:
             return
         items = [entry for entry in self.load_reader_index() if entry.get("jobId") != job_id]
-        _write_json_atomic(self.reader_index_path, {"items": items})
+        self.json_repository.write(self.reader_index_path, {"items": items})
 
     def _delete_output_dir(self, target: Path) -> bool:
         try:
@@ -858,7 +858,7 @@ class WorkflowHistoryStore:
 
     def load_config(self) -> dict:
         with self.lock:
-            data = _read_json(self.config_path, {})
+            data = self.json_repository.read(self.config_path, {}).value
             return data if isinstance(data, dict) else {}
 
     def save_config(self, config: dict) -> dict:
@@ -872,7 +872,7 @@ class WorkflowHistoryStore:
             "whisperxPath": str(config.get("whisperxPath", "")).strip(),
         }
         with self.lock:
-            _write_json_atomic(self.config_path, safe_config)
+            self.json_repository.write(self.config_path, safe_config)
         return safe_config
 
     def append_log(self, message: str, *, max_bytes: int = 1024 * 1024, backup_count: int = 3) -> None:

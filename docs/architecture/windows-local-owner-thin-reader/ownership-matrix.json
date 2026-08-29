@@ -231,7 +231,7 @@
       ],
       "browserDirectWritersRef": ["workflow.client", "workflow.local-receipt-hint"],
       "backupAdapter": "WorkflowBackupAdapter",
-      "revisionSource": "jobs/history envelope revision and DurableJsonRepository known revisions; output records carry source revision or zero",
+      "revisionSource": "existing jobs/history envelope revisions plus config/reader-index repository checksums; workflow owner seam uses a composite revision token without a second durable revision file",
       "mediaReferences": "authorized relative identity/size/modified metadata with identity-metadata-rebind; no media bytes",
       "rollbackTarget": "workflow JSON backups/journal and application-backup artifact in the same isolated profile root",
       "futureOwnerFacade": "windowsHost.workflowOwner",
@@ -239,7 +239,19 @@
       "commandSurface": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
       "migrationWave": "wave-6-workflow",
       "zeroGate": "No browser direct JSON/localStorage canonical workflow write after checkpoint; service process identity and authorized media Range remain host boundaries",
-      "milestoneStatus": "inventory-only; current Python service remains owner"
+      "hostSeam": {
+        "module": "tools/subtitle-workflow/youtube_workflow/workflow_owner.py",
+        "status": "isolated-pre-cutover",
+        "canonicalAuthority": "existing WorkflowHistoryStore/DurableJsonRepository files; no second workflow canonical JSON",
+        "receiptAuthority": "shared OwnerCommitReceiptStore; browser local receipt hint remains non-authoritative",
+        "querySurface": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
+        "commandSurface": ["job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit", "receipt-query"],
+        "jobCommandBoundary": "durable repository mutation only; committed does not claim queue, runner, or process side effect",
+        "mediaBoundary": "identity/reference/size/contentType/etag/authorized relative URL metadata only; no path or bytes",
+        "productionApiAuthoritative": false,
+        "browserWriterConnected": false
+      },
+      "milestoneStatus": "inventory plus isolated Host seam; current Python service remains owner and no migration"
     }
   ],
   "artifactChecksum": "sha256:fa039b23121717ff89fe6a3cc3876ff090ecee374fa05cd0f2d6d63c21f825ee"

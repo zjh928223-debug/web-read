@@ -3261,6 +3261,18 @@
       "owner": "package.json#scripts.verify:windows-owner-vocabulary-srs"
     },
     {
+      "name": "verify:windows-owner-workflow",
+      "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_workflow_owner",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-workflow"
+    },
+    {
       "name": "verify:workflow-application-backup",
       "command": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_application_backup",
       "category": "behavior",
@@ -7947,6 +7959,7 @@
         "package.json#scripts.verify:windows-owner-registry",
         "package.json#scripts.verify:windows-owner-request-policy",
         "package.json#scripts.verify:windows-owner-vocabulary-srs",
+        "package.json#scripts.verify:windows-owner-workflow",
         "package.json#scripts.verify:workflow-application-backup",
         "package.json#scripts.verify:workflow-application-backup-restore"
       ],
