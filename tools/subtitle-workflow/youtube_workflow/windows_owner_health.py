@@ -303,12 +303,12 @@ def _domain_snapshots(
     evidence_bindings = profile_evidence.get("bindings", {}).get("domains", {}) if isinstance(profile_evidence, Mapping) else {}
     contract_valid = owner_status.get("contractValid") is True
     profile_ready = owner_status.get("profileEvidenceReady") is True
-    owner_ready = (
-        owner_status.get("ownerApiReady") is True
-        and owner_status.get("acceptingApiAuthoritativeOperations") is True
-    )
     owner_mode = owner_status.get("ownerMode") if isinstance(owner_status.get("ownerMode"), Mapping) else {}
     mode = owner_mode.get("status") if owner_mode.get("status") in {"pre-cutover", "authoritative", "read-only", "not-ready", "invalid"} else "not-ready"
+    authoritative_domains = {
+        domain for domain in owner_mode.get("authoritativeDomains", [])
+        if domain in WINDOWS_OWNER_DOMAINS
+    }
     result: list[dict[str, Any]] = []
     for domain in WINDOWS_OWNER_DOMAINS:
         raw = raw_domains.get(domain, {})
@@ -326,18 +326,20 @@ def _domain_snapshots(
             reasons.append("OWNER_SCHEMA_INCOMPATIBLE")
         if not binding_ok:
             reasons.append("DOMAIN_ADAPTER_EVIDENCE_NOT_READY")
-        if not owner_ready or mode != "authoritative":
+        domain_authoritative = domain in authoritative_domains
+        if not domain_authoritative:
             reasons.append("OWNER_PRE_CUTOVER")
         reasons = list(dict.fromkeys(reasons))
         query_state = "read-only" if contract_valid and profile_ready and binding_ok else "unavailable"
-        command_state = "writable" if not reasons else "unavailable"
+        command_state = "writable" if domain_authoritative and not reasons else "unavailable"
+        domain_ready = domain_authoritative and not reasons
         result.append(
             {
                 "domain": domain,
                 "ownerIdentity": _safe_text(raw.get("ownerIdentity")),
                 "facade": _safe_text(raw.get("ownerFacade")),
                 "ownerMode": mode,
-                "authority": "authoritative" if mode == "authoritative" and owner_ready else "pre-cutover" if mode == "pre-cutover" else "unavailable",
+                "authority": "authoritative" if domain_ready else "pre-cutover" if not domain_authoritative else "unavailable",
                 "registry": {
                     "status": "compatible" if contract_valid else "unavailable",
                     "schemaVersion": owner_status.get("schemaVersion") if isinstance(owner_status.get("schemaVersion"), int) else None,

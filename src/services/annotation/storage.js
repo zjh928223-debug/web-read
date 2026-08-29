@@ -3,6 +3,7 @@
 import * as DIAGNOSTICS from './diagnostics.js';
 import { recordBestEffortFailure } from '../runtime/best-effort.js';
 import { createTypedError } from '../runtime/typed-error.js';
+import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js';
 
 const GENERATED_FILE = 'annotation.generated.json';
 const STATUS_FILE = 'annotation.status.json';
@@ -322,6 +323,7 @@ function checksum(value) {
 }
 
 async function saveJson(scope, filename, json) {
+    assertWindowsOwnerBrowserWriterAllowed('annotation', `save:${filename}`);
     if (directoryHandle) {
         const fileHandle = await directoryHandle.getFileHandle(filename, { create: true });
         const writable = await fileHandle.createWritable();

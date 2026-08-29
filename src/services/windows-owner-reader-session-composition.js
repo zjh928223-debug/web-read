@@ -18,7 +18,7 @@ export async function initializeWindowsOwnerReaderSessionComposition(options = {
   const fetchImpl = options.fetchImpl || windowObject.fetch?.bind(windowObject) || globalThis.fetch
   const healthPath = options.healthPath || HEALTH_PATH
 
-  const health = await readHealth(fetchImpl, healthPath, options.healthTimeoutMs)
+  const health = options.health || await readWindowsOwnerHealth(fetchImpl, healthPath, options.healthTimeoutMs)
   const profileId = options.profileId || health?.profileId
   if (!isSafeIdentity(profileId) || !isReaderSessionOwnerReady(health, profileId)) {
     clearComposedConsumer(windowObject)
@@ -98,7 +98,7 @@ export function isReaderSessionOwnerReady(health, profileId) {
     && domain?.recovery?.status === 'verified'
 }
 
-async function readHealth(fetchImpl, healthPath, configuredTimeoutMs) {
+export async function readWindowsOwnerHealth(fetchImpl, healthPath, configuredTimeoutMs) {
   if (typeof fetchImpl !== 'function' || !isHealthPath(healthPath)) return null
   const timeoutMs = normalizeHealthTimeout(configuredTimeoutMs)
   const controller = typeof AbortController === 'function' ? new AbortController() : null

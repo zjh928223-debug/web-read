@@ -56,6 +56,7 @@ const OWNER_MODE_CHECKPOINT_DIR = 'owner-mode'
 const OWNER_MODE_CHECKPOINT_SUBDIR = 'checkpoints'
 const OWNER_MODE_AUTHORITY = 'host-api=authoritative'
 const OWNER_MODE_LEASE_SCHEMA_VERSION = 1
+const OWNER_MODE_REVISION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const PROFILE_LEASE_MODE_AUTHORITATIVE = 'authoritative'
 const PROFILE_LEASE_MODE_STANDBY = 'standby'
 const OWNER_PROFILE_READER_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
@@ -802,9 +803,15 @@ function normalizedOwnerRepository(repository) {
     baseRevision: repository.baseRevision,
     revision: repository.revision,
   }
+  const validRevision = (value) => (
+    (Number.isInteger(value) && value >= 0)
+    || (typeof value === 'string' && OWNER_MODE_REVISION_TOKEN.test(value))
+  )
+  const comparableNumbers = Number.isInteger(revisions.baseRevision) && Number.isInteger(revisions.revision)
   if (!identity || type !== 'host-managed'
-    || !Number.isInteger(revisions.baseRevision) || revisions.baseRevision < 0
-    || !Number.isInteger(revisions.revision) || revisions.revision < revisions.baseRevision
+    || !validRevision(revisions.baseRevision)
+    || !validRevision(revisions.revision)
+    || (comparableNumbers && revisions.revision < revisions.baseRevision)
     || typeof repository.baseEvidence !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(repository.baseEvidence)
     || typeof repository.revisionEvidence !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(repository.revisionEvidence)) {
     throw ownerModeError(

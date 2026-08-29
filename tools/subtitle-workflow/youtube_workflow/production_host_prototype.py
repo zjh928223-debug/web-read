@@ -44,6 +44,7 @@ from .windows_owner_health import (
     build_health_snapshot,
     redact_diagnostics,
 )
+from .windows_owner_runtime import create_profile_owner_handlers
 
 
 CAPABILITY_ROUTE_PREFIXES = (
@@ -135,6 +136,7 @@ class PathPreservingAsgiDispatch:
         owner_registry_status: dict | None = None,
         request_policy: WindowsOwnerRequestPolicy | None = None,
         owner_receipt_store: OwnerCommitReceiptStore | None = None,
+        owner_domain_handlers: dict | None = None,
         application_profile_lease_process=None,
         application_profile_lease_mode: str = "authoritative",
         capability_snapshot_provider=None,
@@ -146,6 +148,7 @@ class PathPreservingAsgiDispatch:
         self.workflow_access_token = workflow_access_token
         self.capability_access_token = capability_access_token
         self.owner_receipt_store = owner_receipt_store
+        self.owner_domain_handlers = dict(owner_domain_handlers or {})
         self.application_profile_lease_process = application_profile_lease_process
         self.application_profile_lease_mode = application_profile_lease_mode
         self.capability_snapshot_provider = capability_snapshot_provider
@@ -205,6 +208,12 @@ class PathPreservingAsgiDispatch:
                     status_code=503,
                     content=json.dumps({"status": "draining", "detail": "new side effects are disabled"}),
                     media_type="application/json",
+                )(scope, receive, send)
+                return
+            if self._legacy_writer_is_frozen(path, str(scope.get("method", "GET"))):
+                await JSONResponse(
+                    {"status": "not-ready", "error": {"code": "legacy-writer-frozen", "message": "the Host owner API is authoritative for this domain"}},
+                    status_code=409,
                 )(scope, receive, send)
                 return
             if self._is_owner_api_path(path):
@@ -296,6 +305,152 @@ class PathPreservingAsgiDispatch:
     def _is_owner_api_path(path: str) -> bool:
         return is_owner_path(path)
 
+    def _legacy_writer_is_frozen(self, path: str, method: str) -> bool:
+        if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return False
+        if self._domain_is_authoritative("workflow"):
+            return path.startswith(("/api/config", "/api/jobs", "/api/import/jobs", "/api/history"))
+        if self._domain_is_authoritative("marks-activity"):
+            if path.startswith("/api/reader/activity"):
+                return True
+            return path.startswith("/api/jobs/") and (
+                path.endswith("/reader-marks") or "/reader-marks/" in path or path.endswith("/marks")
+            )
+        return False
+
+    def _domain_is_authoritative(self, domain: str) -> bool:
+        owner_mode = self.owner_registry_status.get("ownerMode")
+        authoritative = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
+        return domain in authoritative and domain in self.owner_domain_handlers
+
+    @staticmethod
+    def _handler_payload(owner_request):
+        payload = dict(owner_request.payload)
+        payload.pop("profileId", None)
+        payload.pop("instanceId", None)
+        return payload
+
+    def _call_domain_owner(self, owner_request):
+        owner = self.owner_domain_handlers[owner_request.domain]
+        payload = self._handler_payload(owner_request)
+        request_id = owner_request.request_id
+        correlation_id = owner_request.correlation_id
+        domain = owner_request.domain
+        if owner_request.kind == "query":
+            if domain == "annotation":
+                return owner.query(
+                    owner_request.operation,
+                    scope=payload.get("scope"),
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            if domain in {"marks-activity", "workflow"}:
+                return owner.query(
+                    owner_request.operation,
+                    payload=payload,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            return owner.query(owner_request.operation, request_id=request_id, correlation_id=correlation_id)
+        if owner_request.kind == "receipt-query":
+            receipt_kwargs = {
+                "idempotency_key": owner_request.idempotency_key,
+                "receipt_id": payload.get("receiptId"),
+                "request_id": request_id,
+                "correlation_id": correlation_id,
+            }
+            if domain == "marks-activity":
+                receipt_kwargs.update({
+                    "job_id": payload.get("jobId"),
+                    "content_id": payload.get("contentId"),
+                })
+            return owner.receipt(**receipt_kwargs)
+        if owner_request.kind != "command":
+            raise ValueError("owner request kind is not a durable domain command")
+        if domain == "reader-session":
+            if owner_request.operation == "prepare":
+                return owner.prepare(payload.get("candidate"), request_id=request_id, correlation_id=correlation_id)
+            if owner_request.operation == "commit":
+                return owner.commit(
+                    payload.get("prepareId"),
+                    expected_revision=owner_request.expected_revision,
+                    idempotency_key=owner_request.idempotency_key,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            if owner_request.operation == "restore":
+                return owner.restore(
+                    source=payload.get("source", "previous"),
+                    snapshot=payload.get("snapshot"),
+                    expected_revision=owner_request.expected_revision,
+                    idempotency_key=owner_request.idempotency_key,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            raise ValueError("unsupported reader-session command")
+        kwargs = {
+            "operation": owner_request.operation,
+            "payload": payload,
+            "expected_revision": owner_request.expected_revision,
+            "idempotency_key": owner_request.idempotency_key,
+            "request_id": request_id,
+            "correlation_id": correlation_id,
+        }
+        if domain == "annotation":
+            kwargs["scope"] = payload.get("scope")
+        return owner.command(**kwargs)
+
+    @staticmethod
+    def _domain_owner_error(owner_request, error):
+        code = str(getattr(error, "code", "manual-recovery"))
+        if code in {"conflict", "revision-conflict"}:
+            outcome = "conflict"
+        elif code in {"manual-recovery", "not-ready", "commit-unknown"}:
+            outcome = code
+        else:
+            outcome = "rejected"
+        status = "conflict" if outcome == "conflict" else "rejected"
+        if outcome in {"manual-recovery", "not-ready", "commit-unknown"}:
+            status = outcome
+        return {
+            "contractVersion": "windows-thin-reader-api.v1",
+            "requestId": owner_request.request_id,
+            "correlationId": owner_request.correlation_id,
+            "domain": owner_request.domain,
+            "operation": owner_request.operation,
+            "outcome": outcome,
+            "commitStatus": status,
+            "revision": None,
+            "receipt": None,
+            "payload": {},
+            "error": {
+                "type": "windows-thin-reader-error.v1",
+                "code": code if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", code) else "manual-recovery",
+                "category": "conflict" if outcome == "conflict" else "recovery",
+                "message": "owner domain operation could not be completed",
+                "retryable": outcome == "conflict",
+                "correlationId": owner_request.correlation_id,
+                "details": {},
+            },
+        }
+
+    async def _handle_domain_owner_request(self, scope, receive, send, owner_request):
+        try:
+            response = self._call_domain_owner(owner_request)
+            if not isinstance(response, dict):
+                raise ValueError("owner domain returned an invalid response")
+            status_code = 200
+            if response.get("outcome") == "conflict":
+                status_code = 409
+            elif response.get("outcome") in {"not-ready", "manual-recovery"}:
+                status_code = 503
+            elif response.get("outcome") == "rejected":
+                status_code = 400
+        except Exception as error:
+            response = self._domain_owner_error(owner_request, error)
+            status_code = 503 if response["outcome"] == "manual-recovery" else 400
+        await JSONResponse(response, status_code=status_code)(scope, receive, send)
+
     async def _handle_owner_operation_guard(self, scope, receive, send):
         request = Request(scope, receive=receive)
         raw_envelope = None
@@ -322,6 +477,10 @@ class PathPreservingAsgiDispatch:
                 self.request_policy.error_envelope(error, raw_envelope),
                 status_code=error.status_code,
             )(scope, receive, send)
+            return
+
+        if self._domain_is_authoritative(owner_request.domain):
+            await self._handle_domain_owner_request(scope, receive, send, owner_request)
             return
 
         if owner_request.kind == "receipt-query":
@@ -646,6 +805,7 @@ def create_local_app_host(
     owner_receipt_store: OwnerCommitReceiptStore | None = None,
     owner_receipt_revision_reader=None,
     owner_receipt_evidence_resolvers=None,
+    owner_domain_handlers: dict | None = None,
     health_dependency_status: dict | None = None,
     health_range_status: dict | None = None,
     health_schema_status: dict | None = None,
@@ -803,6 +963,7 @@ def create_local_app_host(
         owner_registry_status=owner_registry_status,
         request_policy=request_policy,
         owner_receipt_store=receipt_store,
+        owner_domain_handlers=owner_domain_handlers,
         application_profile_lease_process=application_profile_lease_process,
         application_profile_lease_mode=application_profile_lease_mode,
         capability_snapshot_provider=lambda: build_capability_snapshot(current_health_snapshot()),
@@ -973,6 +1134,17 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(owner_profile_evidence, dict)
             else None
         )
+        owner_mode = owner_profile_evidence.get("ownerMode", {}) if isinstance(owner_profile_evidence, dict) else {}
+        authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
+        owner_handlers = None
+        if authoritative_domains:
+            owner_handlers = create_profile_owner_handlers(
+                args.application_profile_authority_root or args.application_profile_dir,
+                args.profile_id,
+                args.instance_id,
+                workflow_state_dir=args.application_python_state_dir,
+                workflow_output_dir=args.application_python_output_dir,
+            )
         app = create_local_app_host(
             dist_dir=dist,
             capability_base_url=args.capability_base_url,
@@ -995,6 +1167,7 @@ def main(argv: list[str] | None = None) -> int:
             application_profile_lease_mode=profile_lease_mode,
             application_profile_standby_preflight=args.allow_standby_readiness,
             owner_receipt_root=args.application_profile_authority_root,
+            owner_domain_handlers=owner_handlers,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { flushPendingUiNotifications } from './composables/ui-facades.js'
 import { initializeWindowsOwnerReaderSessionComposition } from './services/windows-owner-reader-session-composition.js'
+import { initializeWindowsOwnerDomainCutoverComposition } from './services/windows-owner-domain-cutover.js'
 
 // === Phase 10: Import all utility + annotation ES modules (replaces IIFE <script> tags) ===
 // Side-effect imports — they also set window globals for app.js compatibility
@@ -69,12 +70,18 @@ console.log('[vue] runtime adapters bound to Pinia')
 
 themeStore.init()
 
-// Host-backed Reader Session is optional until the Host explicitly reports
-// this domain authoritative.  A pre-cutover/degraded Host leaves the legacy
-// browser session path unchanged.
+// Host-backed domains are optional until the Host explicitly reports a
+// per-domain authoritative checkpoint.  A degraded/pre-cutover Host leaves
+// the existing browser path unchanged.
+const ownerDomainComposition = await initializeWindowsOwnerDomainCutoverComposition({
+  windowObject: window,
+  documentObject: document,
+})
 await initializeWindowsOwnerReaderSessionComposition({
   windowObject: window,
   documentObject: document,
+  health: ownerDomainComposition.health,
+  ownerClient: ownerDomainComposition.ownerClient,
 })
 
 // Pinia is configured before the legacy reader/session assembly starts, so

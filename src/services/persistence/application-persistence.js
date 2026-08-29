@@ -1,3 +1,5 @@
+import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js'
+
 const DATABASE_NAME = 'SeekPlayerDB'
 const DATABASE_VERSION = 1
 const STORE_NAME = 'files'
@@ -65,6 +67,18 @@ export function createApplicationPersistence(options = {}) {
     if (typeof type.validate !== 'function' || !type.validate(row)) {
       throw persistenceError('INVALID_VALUE', `validate_value:${typeName}`)
     }
+  }
+
+  function assertWriterAllowed(typeName, rows, operation) {
+    if (typeName === 'readerSessionQuarantine') {
+      assertWindowsOwnerBrowserWriterAllowed('reader-session', operation)
+      return
+    }
+    if (typeName !== 'readerSessionRow') return
+    const values = Array.isArray(rows) ? rows : [rows]
+    const ids = new Set(values.map((row) => row?.id).filter(Boolean))
+    if (ids.has('marks')) assertWindowsOwnerBrowserWriterAllowed('marks-activity', operation)
+    if ([...ids].some((id) => id !== 'marks')) assertWindowsOwnerBrowserWriterAllowed('reader-session', operation)
   }
 
   function openDatabase() {
@@ -179,6 +193,7 @@ export function createApplicationPersistence(options = {}) {
     },
 
     async put(typeName, row) {
+      assertWriterAllowed(typeName, row, `put:${typeName}`)
       validateRow(typeName, row)
       await runTransaction('readwrite', `put:${typeName}`, (store) => (
         requestPromise(store.put(row), `put:${typeName}`)
@@ -187,6 +202,7 @@ export function createApplicationPersistence(options = {}) {
     },
 
     async putMany(typeName, rows, options = {}) {
+      assertWriterAllowed(typeName, rows, `put_many:${typeName}`)
       typeFor(typeName)
       if (!Array.isArray(rows) || rows.length === 0) {
         throw persistenceError('INVALID_VALUE_LIST', `put_many:${typeName}`)
@@ -199,6 +215,7 @@ export function createApplicationPersistence(options = {}) {
     },
 
     async compareAndSwapMany(typeName, rows, options = {}) {
+      assertWriterAllowed(typeName, rows, `compare_and_swap_many:${typeName}`)
       typeFor(typeName)
       if (!Array.isArray(rows) || rows.length === 0) {
         throw persistenceError('INVALID_VALUE_LIST', `compare_and_swap_many:${typeName}`)

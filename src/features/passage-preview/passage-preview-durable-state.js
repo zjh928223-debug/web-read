@@ -1,3 +1,5 @@
+import { assertWindowsOwnerBrowserWriterAllowed } from '../../services/windows-owner-domain-cutover.js'
+
 export const PASSAGE_PREVIEW_DURABLE_KEY = 'vocabulary.passage-preview.durable-state.v1'
 export const PASSAGE_PREVIEW_DURABLE_SCHEMA = 'passage-preview.durable-state.v1'
 
@@ -41,6 +43,7 @@ export function inspectPassagePreviewDurableState(storage = globalThis.localStor
 }
 
 export function updatePassagePreviewDurableState(mutator, storage = globalThis.localStorage, legacy = {}, options = {}) {
+  assertWindowsOwnerBrowserWriterAllowed('passage-preview', 'durable-state-update')
   const current = loadPassagePreviewDurableState(storage, legacy)
   if (options.expectedRevision !== undefined && options.expectedRevision !== current.revision) {
     throw persistenceError('PASSAGE_PREVIEW_REVISION_CONFLICT', 'Passage Preview durable state changed in another owner', {

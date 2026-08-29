@@ -506,6 +506,10 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
   }
   const writerControls = isPlainObject(options.writerControls) ? options.writerControls : {}
+  // B remains an isolated, pre-cutover seam by default.  C2 may provide one
+  // small per-domain control pair to make the already verified snapshot
+  // authoritative; no cross-domain coordinator is needed here.
+  const cutoverControls = isPlainObject(options.cutoverControls) ? options.cutoverControls : {}
   const stateStore = options.stateStore || createMemoryMigrationStateStore()
   if (typeof stateStore.read !== 'function' || typeof stateStore.write !== 'function') {
     throw migrationError('migration-state-store-invalid')
@@ -884,7 +888,39 @@ export function createWindowsDurableStateMigration(options = {}) {
     const state = await readState()
     const entry = state.domains[domain]
     if (!entry.verify) return safeFailure(domain, 'switch', 'migration-verify-required')
-    if (entry.switch) return { ok: true, domain, stage: 'switch', ...clone(entry.switch) }
+    if (entry.switch?.authorityChanged === true) return { ok: true, domain, stage: 'switch', ...clone(entry.switch) }
+    const cutover = cutoverControls[domain]
+    if (cutover && typeof cutover.switch === 'function') {
+      let result
+      try {
+        result = await cutover.switch({
+          domain,
+          revision: entry.verify.revision,
+          checksum: entry.verify.checksum,
+          frozen: entry.frozen === true,
+          finalBackup: clone(entry.finalBackup),
+        })
+      } catch (error) {
+        return safeFailure(domain, 'switch', error?.code || 'migration-switch-failed', {
+          currentRevision: error?.currentRevision,
+        })
+      }
+      if (result === false || result?.ok === false || result?.authorityChanged !== true) {
+        return safeFailure(domain, 'switch', result?.reasonCode || 'migration-switch-not-confirmed', result || {})
+      }
+      entry.switch = {
+        status: 'authoritative',
+        outcome: 'committed',
+        authorityChanged: true,
+        frozen: true,
+        reasonCode: null,
+      }
+      entry.status = 'authoritative'
+      try { await writeState(state) } catch (error) {
+        return safeFailure(domain, 'switch', error?.code || 'migration-state-write-failed')
+      }
+      return { ok: true, domain, stage: 'switch', ...clone(entry.switch) }
+    }
     // Task B records that the Host snapshot is ready.  C2 owns the real
     // writer/authority change, so this seam never flips production owner mode.
     entry.switch = {
@@ -906,7 +942,37 @@ export function createWindowsDurableStateMigration(options = {}) {
     const state = await readState()
     const entry = state.domains[domain]
     if (!entry.switch) return safeFailure(domain, 'smoke', 'migration-switch-required')
-    if (entry.smoke) return { ok: false, domain, stage: 'smoke', ...clone(entry.smoke) }
+    if (entry.smoke?.status === 'passed') return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
+    const cutover = cutoverControls[domain]
+    if (cutover && typeof cutover.smoke === 'function') {
+      let result
+      try {
+        result = await cutover.smoke({
+          domain,
+          revision: entry.verify?.revision ?? entry.import?.revision ?? null,
+          checksum: entry.verify?.checksum ?? null,
+          authorityChanged: entry.switch.authorityChanged === true,
+        })
+      } catch (error) {
+        return safeFailure(domain, 'smoke', error?.code || 'migration-smoke-failed', {
+          currentRevision: error?.currentRevision,
+        })
+      }
+      if (result === false || result?.ok !== true) {
+        return safeFailure(domain, 'smoke', result?.reasonCode || 'migration-smoke-failed', result || {})
+      }
+      entry.smoke = {
+        status: 'passed',
+        ok: true,
+        outcome: 'committed',
+        reasonCode: null,
+      }
+      entry.status = 'authoritative'
+      try { await writeState(state) } catch (error) {
+        return safeFailure(domain, 'smoke', error?.code || 'migration-state-write-failed')
+      }
+      return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
+    }
     try {
       entry.smoke = {
         status: 'deferred',
@@ -1136,7 +1202,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     return {
       ok: true,
       domain,
-      status: steps.smoke.reasonCode === 'cutover-deferred' ? 'ready-to-switch' : 'completed',
+      status: steps.smoke.status === 'passed' ? 'completed' : 'ready-to-switch',
       preCutover: steps.smoke.reasonCode === 'cutover-deferred',
       stopped: false,
       steps,
@@ -1162,10 +1228,13 @@ export function createWindowsDurableStateMigration(options = {}) {
 
   async function status() {
     const state = await readState()
+    const authoritative = WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS.some((domain) => (
+      state.domains[domain].switch?.authorityChanged === true
+    ))
     return {
       schemaVersion: WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION,
       profileId,
-      authorityMode: 'pre-cutover',
+      authorityMode: authoritative ? 'authoritative' : 'pre-cutover',
       domains: Object.fromEntries(WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS.map((domain) => {
         const entry = state.domains[domain]
         return [domain, {
@@ -1178,6 +1247,7 @@ export function createWindowsDurableStateMigration(options = {}) {
           switchStatus: entry.switch?.status || null,
           smokeStatus: entry.smoke?.status || null,
           cutoverDeferred: entry.switch?.reasonCode === 'cutover-deferred',
+          authoritative: entry.switch?.authorityChanged === true && entry.smoke?.status === 'passed',
         }]
       })),
     }

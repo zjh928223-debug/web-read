@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 109,
+    "behavior": 111,
     "browser": 29,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 270,
-  "executableScriptCount": 287,
+  "packageScriptCount": 271,
+  "executableScriptCount": 289,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2997,6 +2997,19 @@
       "owner": "package.json#scripts.verify:windows-owner-baseline"
     },
     {
+      "name": "verify:windows-owner-c2a",
+      "command": "node scripts/windows-owner-c2a-cutover-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_c2a",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/run-python-command.mjs",
+        "scripts/windows-owner-c2a-cutover-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-c2a"
+    },
+    {
       "name": "verify:windows-owner-consumer-self-test",
       "command": "node scripts/windows-local-owner-consumer-self-test.mjs",
       "category": "behavior",
@@ -5744,6 +5757,28 @@
       }
     },
     {
+      "path": "scripts/lib/windows-owner-cutover.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": null,
+      "owners": [],
+      "invocation": "orphan",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/lib/windows-owner-pending-journal.mjs",
       "category": "behavior",
       "layers": [
@@ -7975,6 +8010,7 @@
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-annotation",
+        "package.json#scripts.verify:windows-owner-c2a",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
         "package.json#scripts.verify:windows-owner-marks-activity",
@@ -10595,6 +10631,30 @@
       }
     },
     {
+      "path": "scripts/windows-owner-c2a-cutover-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-c2a",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-c2a"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/windows-owner-durable-status-check.mjs",
       "category": "behavior",
       "layers": [
@@ -11233,5 +11293,7 @@
       }
     }
   ],
-  "orphans": []
+  "orphans": [
+    "scripts/lib/windows-owner-cutover.mjs"
+  ]
 }
