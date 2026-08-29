@@ -545,7 +545,17 @@ class MarksActivityOwner:
             return "pending"
         return "manual-recovery"
 
-    def _legacy_marks_adapter_record(self, job_id: str, content_id: str, key: str, legacy: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
+    def _legacy_marks_adapter_record(
+        self,
+        job_id: str,
+        content_id: str,
+        key: str,
+        legacy: Mapping[str, Any],
+        current: Mapping[str, Any],
+        *,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         state = self._legacy_marks_state(legacy, current)
         fingerprint = self._legacy_marks_fingerprint(job_id, content_id, key, legacy)
         current_revision = int(current.get("revision") or 0)
@@ -565,8 +575,8 @@ class MarksActivityOwner:
             operation="marks-commit",
             key=key,
             expected=self._legacy_int(legacy, "expectedRevision"),
-            request_id=f"legacy-request-{digest}",
-            correlation_id=f"legacy-correlation-{digest}",
+            request_id=request_id or f"legacy-request-{digest}",
+            correlation_id=correlation_id or f"legacy-correlation-{digest}",
             fingerprint=fingerprint,
             status=state,
             revision=revision,
@@ -574,7 +584,7 @@ class MarksActivityOwner:
             checksums=checksums,
             created_at=created_at,
             committed_at=created_at if state == "committed" else None,
-            instance_id="legacy-reader-service",
+            instance_id=self.instance_id,
             evidence_source="marks-activity.legacy-journal",
         )
         result = {
@@ -586,11 +596,42 @@ class MarksActivityOwner:
         adapted["legacyStatus"] = legacy.get("status")
         return adapted
 
-    def _adapt_legacy_marks_for_read(self, job_id: str, content_id: str, key: str, record: Mapping[str, Any], paths: tuple[Path, Path, Path]) -> dict[str, Any]:
+    def _adapt_legacy_marks_for_read(
+        self,
+        job_id: str,
+        content_id: str,
+        key: str,
+        record: Mapping[str, Any],
+        paths: tuple[Path, Path, Path],
+        *,
+        request_id: str | None = None,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
         if not self._is_legacy_marks_record(record):
             return dict(record)
         current = self._read(paths[0], job_id, "marks")
-        return self._legacy_marks_adapter_record(job_id, content_id, key, record, current)
+        return self._legacy_marks_adapter_record(
+            job_id,
+            content_id,
+            key,
+            record,
+            current,
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
+
+    @staticmethod
+    def _legacy_terminal_record(legacy: Mapping[str, Any], marks: list[Any], result: Mapping[str, Any]) -> dict[str, Any]:
+        terminal = deepcopy(dict(legacy))
+        terminal.update({
+            "status": "marks-committed",
+            "marks": deepcopy(marks),
+            "revision": int(result["revision"]),
+            "checksum": result["checksum"],
+            "updatedAt": result.get("envelope", {}).get("updatedAt") or result.get("updatedAt") or "",
+            "recovered": bool(result.get("recovered")),
+        })
+        return terminal
 
     def _legacy_marks_command(self, job_id: str, content_id: str, key: str, expected: int, command_payload: Mapping[str, Any], legacy: Mapping[str, Any], paths: tuple[Path, Path, Path], *, request_id: str, correlation_id: str) -> dict[str, Any]:
         current = self._read(paths[0], job_id, "marks")
@@ -598,7 +639,15 @@ class MarksActivityOwner:
         legacy_marks = legacy.get("marks")
         state = self._legacy_marks_state(legacy, current)
         if state == "manual-recovery":
-            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            adapted = self._legacy_marks_adapter_record(
+                job_id,
+                content_id,
+                key,
+                legacy,
+                current,
+                request_id=request_id,
+                correlation_id=correlation_id,
+            )
             return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
         if (legacy_expected is not None and legacy_expected != expected) or not isinstance(legacy_marks, list) or command_payload.get("marks") != legacy_marks:
             return self._error_response(
@@ -612,7 +661,15 @@ class MarksActivityOwner:
                 details={"idempotencyKey": "already-bound", "currentRevision": int(current["revision"])},
             )
         if state != "pending" or legacy.get("status") != "prepared":
-            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            adapted = self._legacy_marks_adapter_record(
+                job_id,
+                content_id,
+                key,
+                legacy,
+                current,
+                request_id=request_id,
+                correlation_id=correlation_id,
+            )
             return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
 
         try:
@@ -626,16 +683,74 @@ class MarksActivityOwner:
             if code == "conflict":
                 state_after = self._legacy_marks_state(legacy, current_after)
                 if state_after == "committed":
-                    adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current_after)
+                    adapted = self._legacy_marks_adapter_record(
+                        job_id,
+                        content_id,
+                        key,
+                        legacy,
+                        current_after,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                    )
                     return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
                 return self._error_response("marks-commit", request_id, correlation_id, "conflict", outcome="conflict", status="conflict", revision=int(current_after["revision"]), details={**details, "idempotencyKey": "already-bound"}, retryable=retryable)
-            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current_after)
+            adapted = self._legacy_marks_adapter_record(
+                job_id,
+                content_id,
+                key,
+                legacy,
+                current_after,
+                request_id=request_id,
+                correlation_id=correlation_id,
+            )
             return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
         except Exception:
-            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            adapted = self._legacy_marks_adapter_record(
+                job_id,
+                content_id,
+                key,
+                legacy,
+                current,
+                request_id=request_id,
+                correlation_id=correlation_id,
+            )
             return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
 
-        adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, result)
+        terminal = self._legacy_terminal_record(legacy, command_payload["marks"], result)
+        try:
+            self.journal.upsert(paths[2], job_id, key, terminal)
+        except Exception:
+            pending = self._legacy_marks_adapter_record(
+                job_id,
+                content_id,
+                key,
+                legacy,
+                current,
+                request_id=request_id,
+                correlation_id=correlation_id,
+            )
+            return self._error_response(
+                "marks-commit",
+                request_id,
+                correlation_id,
+                "commit-unknown",
+                outcome="commit-unknown",
+                status="commit-unknown",
+                revision=int(result["revision"]),
+                payload=self._result_payload(job_id, content_id, result, idempotent=False),
+                receipt=pending.get("receipt"),
+                details={"lookupAvailable": True, "canonicalCommit": True},
+                retryable=True,
+            )
+        adapted = self._legacy_marks_adapter_record(
+            job_id,
+            content_id,
+            key,
+            terminal,
+            result,
+            request_id=request_id,
+            correlation_id=correlation_id,
+        )
         return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
 
     def _existing_activity_operation_response(self, job_id: str, content_id: str, key: str, expected: int, fingerprint: str, command_payload: Mapping[str, Any], paths: tuple[Path, Path, Path], *, request_id: str, correlation_id: str) -> dict[str, Any] | None:
@@ -901,7 +1016,15 @@ class MarksActivityOwner:
                     legacy_key = self._operation_key_for_record(paths[2], job, record, fallback=key)
                     if legacy_key is None:
                         return self._error_response(operation, request_id, correlation_id, "manual-recovery", outcome="read", status="not-applicable", revision=0, payload={"empty": False, "found": False, "jobId": job, "contentId": content})
-                    record = self._adapt_legacy_marks_for_read(job, content, legacy_key, record, paths)
+                    record = self._adapt_legacy_marks_for_read(
+                        job,
+                        content,
+                        legacy_key,
+                        record,
+                        paths,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                    )
                 if (record.get("receipt") or {}).get("commitStatus") == "pending":
                     reconciled = self._reconcile_pending(record, paths, request_id=request_id, correlation_id=correlation_id, operation=operation, scope=(job, content))
                     if reconciled is not None:
@@ -1233,7 +1356,15 @@ class MarksActivityOwner:
                 legacy_key = self._operation_key_for_record(paths[2], job, record, fallback=key)
                 if legacy_key is None:
                     return self._error_response("receipt-query", request_id, correlation_id, "manual-recovery", outcome="read", status="not-applicable", revision=0, payload={"empty": False, "found": False, "jobId": job, "contentId": content})
-                record = self._adapt_legacy_marks_for_read(job, content, legacy_key, record, paths)
+                record = self._adapt_legacy_marks_for_read(
+                    job,
+                    content,
+                    legacy_key,
+                    record,
+                    paths,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
             if (record.get("receipt") or {}).get("commitStatus") == "pending":
                 reconciled = self._reconcile_pending(record, paths, request_id=request_id, correlation_id=correlation_id, operation="receipt-query", scope=(job, content))
                 if reconciled is not None:

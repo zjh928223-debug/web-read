@@ -210,6 +210,10 @@ class MarksActivityOwnerTests(unittest.TestCase):
             self.assertEqual(receipt_query["outcome"], "committed")
             self.assertEqual(receipt_query["receipt"]["commitStatus"], "committed")
             self.assertEqual(receipt_query["receipt"]["evidenceSource"], "marks-activity.legacy-journal")
+            self.assertEqual(receipt_query["receipt"]["requestId"], receipt_query["requestId"])
+            self.assertEqual(receipt_query["receipt"]["correlationId"], receipt_query["correlationId"])
+            self.assertEqual(receipt_query["receipt"]["profileId"], owner.profile_id)
+            self.assertEqual(receipt_query["receipt"]["instanceId"], owner.instance_id)
             by_id = owner.receipt(
                 receipt_id=receipt_query["receipt"]["receiptId"],
                 job_id=job_id,
@@ -217,9 +221,15 @@ class MarksActivityOwnerTests(unittest.TestCase):
                 **self.ids(f"legacy-receipt-id-{status}"),
             )
             self.assertEqual(by_id["outcome"], "committed")
+            self.assertEqual(by_id["receipt"]["requestId"], by_id["requestId"])
+            self.assertEqual(by_id["receipt"]["correlationId"], by_id["correlationId"])
+            self.assertEqual(by_id["receipt"]["instanceId"], owner.instance_id)
             retry = self.command(owner, "marks-commit", {**scope, "marks": marks}, 0, key)
             self.assertEqual(retry["outcome"], "committed")
             self.assertEqual(retry["revision"], 1)
+            self.assertEqual(retry["receipt"]["requestId"], retry["requestId"])
+            self.assertEqual(retry["receipt"]["correlationId"], retry["correlationId"])
+            self.assertEqual(retry["receipt"]["instanceId"], owner.instance_id)
             different = self.command(
                 owner,
                 "marks-commit",
@@ -269,24 +279,65 @@ class MarksActivityOwnerTests(unittest.TestCase):
         )
         self.assertEqual(prepared_receipt["outcome"], "commit-unknown")
         self.assertEqual(prepared_receipt["receipt"]["commitStatus"], "commit-unknown")
-        completed = self.command(owner, "marks-commit", {**prepared_scope, "marks": marks}, 0, prepared_key)
+        completed = owner.command(
+            "marks-commit",
+            payload={**prepared_scope, "marks": marks},
+            expected_revision=0,
+            idempotency_key=prepared_key,
+            request_id="request-prepared-retry-current",
+            correlation_id="correlation-prepared-retry-current",
+        )
         self.assertEqual(completed["outcome"], "committed")
         self.assertEqual(completed["revision"], 1)
+        self.assertEqual(completed["receipt"]["requestId"], completed["requestId"])
+        self.assertEqual(completed["receipt"]["correlationId"], completed["correlationId"])
+        self.assertEqual(completed["receipt"]["instanceId"], owner.instance_id)
+        self.assertEqual(completed["receipt"]["receiptId"], prepared_receipt["receipt"]["receiptId"])
+        raw = owner.journal.get(
+            owner.journal.path(self.root / "jobs" / prepared_job),
+            prepared_job,
+            prepared_key,
+        )
+        self.assertEqual(
+            set(raw),
+            {"status", "marks", "expectedRevision", "revision", "checksum", "updatedAt", "recovered"},
+        )
+        self.assertEqual(raw["status"], "marks-committed")
+        self.assertEqual(raw["marks"], marks)
+        self.assertEqual(raw["expectedRevision"], 0)
+        self.assertEqual(raw["revision"], 1)
+        self.assertIsInstance(raw["checksum"], str)
+        self.assertTrue(raw["updatedAt"])
+        self.assertFalse(raw["recovered"])
+
+        later_marks = self.command(
+            owner,
+            "marks-commit",
+            {**prepared_scope, "marks": [{"globalIndex": 4, "word": "later"}]},
+            1,
+            "legacy-follow-up",
+        )
+        self.assertEqual(later_marks["outcome"], "committed")
+        self.assertEqual(later_marks["revision"], 2)
         reopened_receipt = owner.query(
             "receipt",
             payload={**prepared_scope, "idempotencyKey": prepared_key},
             **self.ids("legacy-prepared-query"),
         )
         self.assertEqual(reopened_receipt["payload"]["receipt"]["commitStatus"], "committed")
-        raw = owner.journal.get(
-            owner.journal.path(self.root / "jobs" / prepared_job),
-            prepared_job,
-            prepared_key,
+        old_receipt = owner.command(
+            "receipt-query",
+            payload={**prepared_scope, "idempotencyKey": prepared_key},
+            request_id="request-old-receipt-query",
+            correlation_id="correlation-old-receipt-query",
         )
-        self.assertEqual(raw["status"], "prepared")
-        self.assertNotIn("receipt", raw)
-        self.assertNotIn("requestFingerprint", raw)
-        self.assertEqual(replacements, 4)
+        self.assertEqual(old_receipt["outcome"], "committed")
+        self.assertEqual(old_receipt["revision"], 1)
+        self.assertEqual(old_receipt["receipt"]["receiptId"], prepared_receipt["receipt"]["receiptId"])
+        self.assertEqual(old_receipt["receipt"]["requestId"], old_receipt["requestId"])
+        self.assertEqual(old_receipt["receipt"]["correlationId"], old_receipt["correlationId"])
+        self.assertEqual(old_receipt["receipt"]["evidenceSource"], "marks-activity.legacy-journal")
+        self.assertEqual(replacements, 5)
 
     def test_existing_activity_operation_id_never_commits_a_different_payload(self):
         replacements = 0
