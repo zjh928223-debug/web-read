@@ -313,14 +313,17 @@ The bridge closes over those sources and exposes exactly `inventory()`, `prepare
 to the UI, Pinia, or the Production Host route.
 
 Inventory output is metadata-only and includes source kind/identity, six-domain claim classification, schema,
-revision, size, checksum, and a stable blocked reason for unknown, ambiguous, unsupported, corrupt, sensitive,
-or media-byte records. It always carries the frozen `SeekPlayerDB` / version `1` / `files` / keyPath `id`
-identity. A missing source or failed collector is blocked rather than treated as an empty profile, and source
+revision, size, content-sensitive checksum evidence, and a stable blocked reason for unknown, ambiguous,
+duplicate, unsupported, corrupt, sensitive, or media-byte records. Claims are source-bound: the frozen
+`SeekPlayerDB/files` records cannot be supplied by localStorage or an arbitrary JSON source. It always carries the
+frozen `SeekPlayerDB` / version `1` / `files` / keyPath `id` identity. A missing source or failed collector is blocked rather than treated as an empty profile, and source
 errors are not echoed.
 
 `prepareImport()` re-reads the source and produces a deterministic `legacy-import-input` only when every observed
 record is safely classified. It returns a source/import checksum and clones JSON-safe payloads; secrets, raw
-handles, complete Blob/ArrayBuffer/byte payloads, unknown records, and corrupt values cannot enter the plan.
+handles, complete Blob/ArrayBuffer/byte payloads, unknown records, corrupt values, media data URIs/base64 values,
+URL userinfo, and sensitive query values cannot enter the plan. Duplicate source/domain/key identities are blocked
+rather than arbitrarily selecting the first record.
 Known non-canonical preference records are reported as explicitly excluded. No Host request or repository
 commit is performed. `readRollbackWindow()` requires an exact source identity, domain, and registered record key,
 and returns a frozen clone for a rollback window; it never mutates the source or becomes an ordinary durable read

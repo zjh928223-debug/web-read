@@ -24,6 +24,11 @@ const SAFE_RECORD_KEY = /^[^\u0000-\u001f]{1,512}$/u
 const SAFE_FINGERPRINT = /^sha256:[a-f0-9]{64}$/u
 const SENSITIVE_KEY = /(?:token|authorization|cookie|password|secret|api[-_]?key|credential)/iu
 const MEDIA_PAYLOAD_KEY = /(?:blob|arraybuffer|typedarray|byte(?:s|array)|base64|datauri|dataurl|media(?:bytes|buffer|blob|payload)|(?:audio|video)(?:bytes|buffer|blob|payload))/iu
+const MEDIA_DATA_URI = /^data:(?:audio|video|image|application\/(?:octet-stream|ogg|mp4|x-7z-compressed))[^,]*;base64,/iu
+const MEDIA_BASE64_PREFIX = /^(?:UklGR|SUQz|T2dn|GkXfo|AAAAIGZ0eX)/u
+const SENSITIVE_URL_QUERY = /^(?:token|access[_-]?token|api[_-]?key|apikey|authorization|auth|password|secret|credential|cookie|signature|sig)$/iu
+const MAX_EVIDENCE_SAMPLE_BYTES = 64 * 1024
+const MAX_EVIDENCE_SAMPLE_CHARS = 64 * 1024
 const RAW_TEXT_LOCAL_STORAGE_KEYS = new Set([
   'vocabulary.passage-preview.shortcut.translation.v1',
   'vocabulary.passage-preview.shortcut.context.v1',
@@ -163,8 +168,10 @@ export function createWindowsOwnerLegacyCompatibilityBridge(options = {}) {
       const source = sourceById.get(findSourceIdentity(sourceId, sourceById))
       if (!source) throw bridgeError('legacy-source-not-found', 'Requested legacy source is not registered')
       const snapshot = await collectSources([source])
-      const record = snapshot.sources[0].records.find((candidate) => candidate.metadata.recordKey === recordKey)
-      if (!record) throw bridgeError('legacy-record-not-found', 'Requested legacy record is not available')
+      const matches = snapshot.sources[0].records.filter((candidate) => candidate.metadata.recordKey === recordKey)
+      if (matches.length === 0) throw bridgeError('legacy-record-not-found', 'Requested legacy record is not available')
+      if (matches.length > 1) throw bridgeError('legacy-duplicate-record', 'Requested legacy record is ambiguous')
+      const record = matches[0]
       if (record.metadata.status !== 'ready') {
         throw bridgeError(record.metadata.reasonCode || 'legacy-record-blocked', 'Requested legacy record is blocked')
       }
@@ -300,14 +307,15 @@ async function collectSources(sources) {
       const rawRecords = extractRecords(result)
       const records = []
       for (const rawRecord of rawRecords) records.push(await normalizeRecord(rawRecord, source))
-      const blocked = records.some((record) => record.metadata.status === 'blocked')
-      const checksum = await digestCanonical(records.map((record) => record.metadata).sort(compareMetadata))
+      const recordsWithDuplicateEvidence = markDuplicateRecords(records)
+      const blocked = recordsWithDuplicateEvidence.some((record) => record.metadata.status === 'blocked')
+      const checksum = await digestCanonical(recordsWithDuplicateEvidence.map((record) => record.metadata).sort(compareMetadata))
       snapshots.push({
         source,
         schema: source.schema,
         status: blocked ? 'blocked' : 'ready',
-        reasonCode: records.find((record) => record.metadata.status === 'blocked')?.metadata.reasonCode || null,
-        records,
+        reasonCode: recordsWithDuplicateEvidence.find((record) => record.metadata.status === 'blocked')?.metadata.reasonCode || null,
+        records: recordsWithDuplicateEvidence,
         checksum,
       })
     } catch {
@@ -331,33 +339,34 @@ function extractRecords(result) {
 }
 
 async function normalizeRecord(rawRecord, source) {
-  if (!isPlainObject(rawRecord)) return blockedRecord(source, '[redacted-record]', null, null, 'legacy-record-corrupt', 'corrupt')
+  if (!isPlainObject(rawRecord)) return blockedRecord(source, '[redacted-record]', null, null, 'legacy-record-corrupt', 'corrupt', rawRecord)
   const rawKey = rawRecord.key ?? rawRecord.id ?? rawRecord.sourceKey
   const hasSafeKey = safeRecordKey(rawKey)
   const recordKey = hasSafeKey ? String(rawKey) : '[redacted-record]'
   const rawValue = rawRecord.rawValue
   const size = recordSize(rawRecord, rawValue)
-  if (!hasSafeKey) return blockedRecord(source, recordKey, readRevision(rawRecord), size, 'legacy-record-key-invalid', 'corrupt')
+  if (!hasSafeKey) return blockedRecord(source, recordKey, readRevision(rawRecord), size, 'legacy-record-key-invalid', 'corrupt', rawRecord)
   const claimResult = resolveClaim(recordKey, rawRecord.domain)
+  const evidenceChecksum = safeFingerprint(rawRecord.checksum) || await evidenceChecksumForRecord(rawRecord, source)
   const base = {
     sourceKind: source.kind,
     sourceId: source.sourceId,
     recordKey,
-    domain: claimResult.claim?.domain || null,
+    domain: claimResult.claim?.domain || registeredDomain(rawRecord.domain),
     classification: claimResult.claim?.classification || 'unclaimed',
     schemaVersion: null,
     revision: readRevision(rawRecord),
     size,
-    checksum: safeFingerprint(rawRecord.checksum),
+    checksum: evidenceChecksum,
     status: 'blocked',
     reasonCode: null,
   }
 
-  if (!claimResult.claim) {
+  if (claimResult.reasonCode || !claimResult.claim) {
     return { metadata: { ...base, reasonCode: claimResult.reasonCode }, payload: null }
   }
-  if (claimResult.reasonCode === 'legacy-ambiguous-claim') {
-    return { metadata: { ...base, reasonCode: claimResult.reasonCode }, payload: null }
+  if (!claimSourceAllows(claimResult.claim, source)) {
+    return { metadata: { ...base, reasonCode: claimSourceReason(claimResult.claim, source) }, payload: null }
   }
 
   let payload
@@ -403,8 +412,8 @@ async function normalizeRecord(rawRecord, source) {
   } catch (error) {
     const code = error?.code === 'legacy-media-payload'
       ? 'legacy-media-payload'
-      : error?.code === 'legacy-sensitive-field'
-        ? 'legacy-sensitive-field'
+      : error?.code === 'legacy-sensitive-field' || error?.code === 'legacy-sensitive-value'
+        ? error.code
         : 'legacy-record-corrupt'
     return {
       metadata: {
@@ -417,7 +426,7 @@ async function normalizeRecord(rawRecord, source) {
   }
 }
 
-function blockedRecord(source, recordKey, revision, size, reasonCode, classification) {
+async function blockedRecord(source, recordKey, revision, size, reasonCode, classification, rawRecord) {
   return {
     metadata: {
       sourceKind: source.kind,
@@ -428,12 +437,41 @@ function blockedRecord(source, recordKey, revision, size, reasonCode, classifica
       schemaVersion: null,
       revision,
       size,
-      checksum: null,
+      checksum: await evidenceChecksumForRecord(rawRecord, source),
       status: 'blocked',
       reasonCode,
     },
     payload: null,
   }
+}
+
+function markDuplicateRecords(records) {
+  const byIdentity = new Map()
+  for (const record of records) {
+    const metadata = record.metadata
+    const identity = `${metadata.domain || '[unclaimed]'}\u0000${metadata.recordKey}`
+    const group = byIdentity.get(identity) || []
+    group.push(record)
+    byIdentity.set(identity, group)
+  }
+  const duplicateIdentities = new Set(
+    [...byIdentity.entries()]
+      .filter(([, group]) => group.length > 1)
+      .map(([identity]) => identity),
+  )
+  return records.map((record) => {
+    const metadata = record.metadata
+    const identity = `${metadata.domain || '[unclaimed]'}\u0000${metadata.recordKey}`
+    if (!duplicateIdentities.has(identity)) return record
+    return {
+      metadata: {
+        ...metadata,
+        status: 'blocked',
+        reasonCode: 'legacy-duplicate-record',
+      },
+      payload: null,
+    }
+  })
 }
 
 function stripRecordMetadata(record) {
@@ -471,11 +509,17 @@ function recordSize(record, rawValue) {
 }
 
 function resolveClaim(key, requestedDomain) {
+  if (requestedDomain !== undefined && requestedDomain !== null && !DOMAINS.includes(requestedDomain)) {
+    return { claim: null, reasonCode: 'legacy-domain-invalid' }
+  }
   const matching = CLAIMS.filter((claim) => claim.matcher.test(key))
   const domainMatching = requestedDomain
     ? matching.filter((claim) => claim.domain === requestedDomain)
     : matching
-  const candidates = domainMatching.length ? domainMatching : matching
+  if (requestedDomain && matching.length > 0 && domainMatching.length === 0) {
+    return { claim: null, reasonCode: 'legacy-domain-claim-mismatch' }
+  }
+  const candidates = requestedDomain ? domainMatching : matching
   if (candidates.length === 0) return { claim: null, reasonCode: 'legacy-unclaimed-record' }
   const highestSpecificity = Math.max(...candidates.map((claim) => claim.specificity))
   const bestCandidates = candidates.filter((claim) => claim.specificity === highestSpecificity)
@@ -521,7 +565,80 @@ function buildClaims() {
       }
     }
   }
-  return [...claims.values()]
+  const sourcePolicies = buildSourcePolicies()
+  return [...claims.values()].map((claim) => {
+    const policies = sourcePolicies.filter((policy) => policy.domain === claim.domain && patternsOverlap(claim.pattern, policy.pattern))
+    return {
+      ...claim,
+      allowedSourceKinds: [...new Set(policies.flatMap((policy) => policy.allowedSourceKinds))],
+      allowedSourceIds: [...new Set(policies.flatMap((policy) => policy.allowedSourceIds))],
+    }
+  })
+}
+
+function buildSourcePolicies() {
+  const policies = []
+  for (const inventory of domainInventory.domains || []) {
+    for (const group of ['canonicalRecords', 'compatibilityKeys', 'ephemeralOrPreferenceKeys']) {
+      for (const claim of inventory[group] || []) {
+        const pattern = claim.key ?? claim.keyPattern
+        if (!pattern) continue
+        const policy = sourcePolicyForStorage(claim.storage)
+        policies.push({
+          domain: inventory.domain,
+          pattern: String(pattern),
+          allowedSourceKinds: policy.allowedSourceKinds,
+          allowedSourceIds: policy.allowedSourceIds,
+        })
+      }
+    }
+  }
+  return policies
+}
+
+function sourcePolicyForStorage(storage) {
+  const text = String(storage || '').toLowerCase()
+  const allowedSourceKinds = new Set()
+  const allowedSourceIds = new Set()
+  if (text.includes('seekplayerdb/files')) {
+    allowedSourceKinds.add('indexeddb')
+    allowedSourceIds.add('SeekPlayerDB/files')
+  }
+  if (text.includes('localstorage')) allowedSourceKinds.add('localStorage')
+  if (text.includes('json') || text.includes('raw ') || text.includes('output') || text.includes('projection')
+    || text.includes('audio-folder') || text.includes('authorized output') || text.includes('embedded migration')) {
+    allowedSourceKinds.add('json')
+  }
+  return {
+    allowedSourceKinds: [...allowedSourceKinds],
+    allowedSourceIds: [...allowedSourceIds],
+  }
+}
+
+function patternsOverlap(leftPattern, rightPattern) {
+  const leftMatcher = claimMatcher(leftPattern)
+  const rightMatcher = claimMatcher(rightPattern)
+  return leftMatcher.test(patternRepresentative(rightPattern)) || rightMatcher.test(patternRepresentative(leftPattern))
+}
+
+function patternRepresentative(pattern) {
+  return String(pattern).replace(/\*|<[^>]+>/gu, 'sample')
+}
+
+function claimSourceAllows(claim, source) {
+  if (!claim.allowedSourceKinds?.length) return false
+  if (!claim.allowedSourceKinds.includes(source.kind)) return false
+  return !claim.allowedSourceIds?.length || claim.allowedSourceIds.includes(source.sourceId) || source.kind !== 'indexeddb'
+}
+
+function claimSourceReason(claim, source) {
+  if (!claim.allowedSourceKinds?.length) return 'legacy-source-binding-missing'
+  if (!claim.allowedSourceKinds.includes(source.kind)) return 'legacy-source-kind-mismatch'
+  return 'legacy-source-id-mismatch'
+}
+
+function registeredDomain(value) {
+  return DOMAINS.includes(value) ? value : null
 }
 
 function claimMatcher(pattern) {
@@ -586,7 +703,7 @@ function compareMetadata(left, right) {
     const difference = compareCodePoint(leftValue, rightValue)
     if (difference !== 0) return difference
   }
-  return 0
+  return compareCodePoint(canonicalJson(left), canonicalJson(right))
 }
 
 function firstReasonCode(snapshot, blocked) {
@@ -595,8 +712,115 @@ function firstReasonCode(snapshot, blocked) {
     || null
 }
 
+async function evidenceChecksumForRecord(rawRecord, source) {
+  const evidence = await evidenceProjection(rawRecord, [])
+  return digestCanonical({
+    schemaVersion: 'legacy-record-evidence.v1',
+    sourceKind: source.kind,
+    sourceId: source.sourceId,
+    recordKey: String(rawRecord?.key ?? rawRecord?.id ?? rawRecord?.sourceKey ?? '[redacted-record]'),
+    evidence,
+  })
+}
+
+async function evidenceProjection(value, path) {
+  if (value === null || typeof value === 'boolean') return value
+  if (typeof value === 'string') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : { type: 'non-finite-number' }
+  if (value === undefined) return { type: 'undefined' }
+  if (typeof value !== 'object') return { type: typeof value }
+  if (isBinaryLike(value)) return { type: binaryType(value), fingerprint: await binaryEvidenceFingerprint(value) }
+  if (path.includes(value)) return { type: 'cycle' }
+  const nextPath = [...path, value]
+  if (Array.isArray(value)) return Promise.all(value.map((item) => evidenceProjection(item, nextPath)))
+  const result = {}
+  for (const key of Object.keys(value).sort(compareCodePoint)) {
+    let child
+    try { child = value[key] } catch { child = { type: 'unreadable-value' } }
+    if (SENSITIVE_KEY.test(key) || MEDIA_PAYLOAD_KEY.test(key)) {
+      result[key] = { type: 'opaque-value', fingerprint: await opaqueEvidenceFingerprint(child) }
+    } else {
+      result[key] = await evidenceProjection(child, nextPath)
+    }
+  }
+  return result
+}
+
+async function opaqueEvidenceFingerprint(value) {
+  if (typeof value === 'string') return digestTextEvidence(value)
+  if (isBinaryLike(value)) return binaryEvidenceFingerprint(value)
+  return digestCanonical(await evidenceProjection(value, []))
+}
+
+async function digestTextEvidence(value) {
+  if (value.length <= MAX_EVIDENCE_SAMPLE_CHARS) return digestBytes(new TextEncoder().encode(value))
+  const first = new TextEncoder().encode(value.slice(0, MAX_EVIDENCE_SAMPLE_CHARS / 2))
+  const last = new TextEncoder().encode(value.slice(-MAX_EVIDENCE_SAMPLE_CHARS / 2))
+  return digestCanonical({
+    type: 'sampled-string',
+    length: value.length,
+    first: await digestBytes(first),
+    last: await digestBytes(last),
+  })
+}
+
+async function binaryEvidenceFingerprint(value) {
+  const byteLength = binaryByteLength(value)
+  try {
+    const samples = await binaryEvidenceSamples(value)
+    return {
+      type: binaryType(value),
+      byteLength,
+      first: await digestBytes(samples.first),
+      last: await digestBytes(samples.last),
+      sampled: byteLength > MAX_EVIDENCE_SAMPLE_BYTES,
+    }
+  } catch {
+    return { type: binaryType(value), byteLength, sampled: true, read: 'unavailable' }
+  }
+}
+
+async function binaryEvidenceSamples(value) {
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    const firstEnd = Math.min(value.size, MAX_EVIDENCE_SAMPLE_BYTES)
+    const lastStart = Math.max(0, value.size - MAX_EVIDENCE_SAMPLE_BYTES)
+    return {
+      first: new Uint8Array(await value.slice(0, firstEnd).arrayBuffer()),
+      last: new Uint8Array(await value.slice(lastStart, value.size).arrayBuffer()),
+    }
+  }
+  const bytes = value instanceof ArrayBuffer
+    ? new Uint8Array(value)
+    : new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+  return {
+    first: bytes.subarray(0, Math.min(bytes.byteLength, MAX_EVIDENCE_SAMPLE_BYTES)),
+    last: bytes.subarray(Math.max(0, bytes.byteLength - MAX_EVIDENCE_SAMPLE_BYTES)),
+  }
+}
+
+function binaryByteLength(value) {
+  if (typeof value?.size === 'number') return value.size
+  if (typeof value?.byteLength === 'number') return value.byteLength
+  return null
+}
+
+function binaryType(value) {
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return 'blob'
+  if (value instanceof ArrayBuffer) return 'arraybuffer'
+  return 'typed-array'
+}
+
 function cloneSafeValue(value, path) {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (value === null || typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    if (MEDIA_DATA_URI.test(value) || MEDIA_BASE64_PREFIX.test(value)) {
+      throw bridgeError('legacy-media-payload', 'Legacy media payload is outside the compatibility bridge')
+    }
+    if (hasSensitiveUrlMaterial(value)) {
+      throw bridgeError('legacy-sensitive-value', 'Legacy sensitive URL material is outside the compatibility bridge')
+    }
+    return value
+  }
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw bridgeError('legacy-record-corrupt', 'Legacy record has a non-finite number')
     return value
@@ -617,6 +841,20 @@ function cloneSafeValue(value, path) {
     result[key] = cloneSafeValue(child, nextPath)
   }
   return result
+}
+
+function hasSensitiveUrlMaterial(value) {
+  if (!/^(?:https?:|wss?:|\/\/)/iu.test(value)) return false
+  try {
+    const url = new URL(value, 'http://windows-owner-legacy.invalid')
+    if (url.username || url.password) return true
+    for (const key of url.searchParams.keys()) {
+      if (SENSITIVE_URL_QUERY.test(key)) return true
+    }
+  } catch {
+    return false
+  }
+  return false
 }
 
 function isBinaryLike(value) {
@@ -684,6 +922,12 @@ async function digestCanonical(value) {
   const cryptoApi = globalThis.crypto
   if (!cryptoApi?.subtle) throw bridgeError('legacy-checksum-unavailable', 'Web Crypto is required for compatibility evidence')
   const bytes = new TextEncoder().encode(canonicalJson(value))
+  return digestBytes(bytes)
+}
+
+async function digestBytes(bytes) {
+  const cryptoApi = globalThis.crypto
+  if (!cryptoApi?.subtle) throw bridgeError('legacy-checksum-unavailable', 'Web Crypto is required for compatibility evidence')
   const digest = await cryptoApi.subtle.digest('SHA-256', bytes)
   return `sha256:${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }

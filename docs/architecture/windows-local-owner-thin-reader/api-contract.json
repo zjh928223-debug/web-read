@@ -557,6 +557,10 @@
     "sourceKinds": ["indexeddb", "localStorage", "json"],
     "publicMethods": ["inventory", "prepareImport", "readRollbackWindow"],
     "inventory": "read-only source metadata with domain/key/schema/revision/size/checksum or blocked reason",
+    "blockedEvidence": "blocked records retain a source-bound, content-sensitive checksum; source checksums cover blocked metadata without returning payload",
+    "duplicateIdentity": "duplicate source/domain/recordKey identities are blocked and cannot be selected for import or rollback",
+    "claimSourceBinding": "record claims are restricted to the registered source kind and, for frozen IndexedDB, SeekPlayerDB/files",
+    "stringValuePolicy": "media data/base64 values and URL userinfo or sensitive query values are blocked while ordinary text and media identity references remain readable",
     "oneTimeImport": "deterministic legacy-import-input only; no browser write, host commit, or committed receipt",
     "rollbackWindow": "explicit source/domain/key read returning a cloned serialized payload",
     "frozenIndexedDbSchema": {
@@ -576,5 +580,5 @@
     "nextAllowedTask": "3.4 media resource owner",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:b1cb70e641c16f44581f64ed248c6e276072abfc8744c811c98d6dcc75e48863"
+  "artifactChecksum": "sha256:303b0991b1827a3aef81df63b10654fb7d16a7c981ba9dcd321d48e29ccbe9e1"
 }

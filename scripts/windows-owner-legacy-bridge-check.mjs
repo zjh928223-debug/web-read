@@ -115,6 +115,11 @@ const jsonFixture = {
       schemaVersion: '1',
       revision: 3,
       payload: { schemaVersion: 1, jobs: [] },
+    }, {
+      key: 'history.json',
+      schemaVersion: '99',
+      revision: 3,
+      payload: { schemaVersion: 99, items: [] },
     }],
   }),
 }
@@ -134,6 +139,8 @@ assert.ok(blockedInventory.records.some((record) => record.reasonCode === 'legac
 assert.ok(blockedInventory.records.some((record) => record.reasonCode === 'legacy-unclaimed-record'))
 assert.ok(blockedInventory.records.some((record) => record.reasonCode === 'legacy-record-corrupt'))
 assert.ok(blockedInventory.records.some((record) => record.reasonCode === 'legacy-unsupported-schema'))
+assert.ok(blockedInventory.records.some((record) => record.reasonCode === 'legacy-source-kind-mismatch'))
+assert.ok(blockedInventory.records.filter((record) => record.status === 'blocked').every((record) => /^sha256:[a-f0-9]{64}$/u.test(record.checksum)))
 assert.ok(blockedInventory.records.some((record) => record.recordKey === 'jobs.json' && record.domain === 'workflow'))
 assert.equal(JSON.stringify(blockedInventory).includes('media-bytes-must-not-escape'), false)
 assert.equal(JSON.stringify(blockedInventory).includes('secret-value-must-not-escape'), false)
@@ -151,6 +158,11 @@ const validRows = [
     id: 'readerSession',
     revision: 'rev-a',
     content: { schemaVersion: 1, contentId: 'content-1', state: 'ready' },
+  },
+  {
+    id: 'vocabulary.srs.store.v1',
+    revision: 'rev-a',
+    content: { schemaVersion: 1, entries: [] },
   },
 ]
 const validStorage = new FakeStorage({
@@ -177,12 +189,6 @@ const validBridge = createWindowsOwnerLegacyCompatibilityBridge({
         schemaVersion: 'reader-marks.v1',
         revision: 4,
         payload: { schemaVersion: 'reader-marks.v1', marks: [] },
-      },
-      {
-        key: 'vocabulary.srs.store.v1',
-        schemaVersion: '1',
-        revision: 4,
-        payload: { schemaVersion: 1, entries: [] },
       },
       {
         key: 'AnnotationGenerationStorage::audio-1::doc-1::annotation.bundle.v2.json',
@@ -232,6 +238,9 @@ assert.ok(!JSON.stringify(firstPlan).includes('must-not-run'))
 assert.equal(JSON.stringify(firstPlan).includes('mediaBytes'), false)
 assert.equal(JSON.stringify(firstPlan).includes('secret'), false)
 assert.deepEqual(hostCommitCalls, [])
+assert.equal(firstInventory.records.some((record) => record.recordKey === 'audioMeta' && record.sourceKind === 'indexeddb' && record.status === 'ready'), true)
+assert.equal(firstInventory.records.some((record) => record.recordKey === 'vocabulary.srs.store.v1' && record.sourceKind === 'indexeddb' && record.status === 'ready'), true)
+assert.equal(firstInventory.records.some((record) => record.recordKey === 'jobs.json' && record.sourceKind === 'json' && record.status === 'ready'), true)
 
 const rollbackRead = await validBridge.readRollbackWindow({
   sourceId: 'SeekPlayerDB/files',
@@ -258,6 +267,122 @@ await assert.rejects(
   }),
   (error) => error instanceof WindowsOwnerLegacyBridgeError && error.code === 'legacy-domain-mismatch',
 )
+
+let changingRawValue = '{aa'
+const changingRawEvidence = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'raw-evidence',
+    read: async () => ({ records: [{ key: 'history.json', rawValue: changingRawValue }] }),
+  }],
+})
+const rawInventoryA = await changingRawEvidence.inventory()
+changingRawValue = '{bb'
+const rawInventoryB = await changingRawEvidence.inventory()
+const rawRecordA = rawInventoryA.records.find((record) => record.recordKey === 'history.json')
+const rawRecordB = rawInventoryB.records.find((record) => record.recordKey === 'history.json')
+assert.equal(rawRecordA.status, 'blocked')
+assert.equal(rawRecordB.status, 'blocked')
+assert.match(rawRecordA.checksum, /^sha256:[a-f0-9]{64}$/u)
+assert.match(rawRecordB.checksum, /^sha256:[a-f0-9]{64}$/u)
+assert.notEqual(rawRecordA.checksum, rawRecordB.checksum)
+assert.notEqual(rawInventoryA.sources[0].checksum, rawInventoryB.sources[0].checksum)
+assert.equal(JSON.stringify(rawInventoryA).includes('{aa'), false)
+assert.equal(JSON.stringify(rawInventoryB).includes('{bb'), false)
+
+const duplicateBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'duplicate-fixture',
+    read: async () => ({ records: [
+      { key: 'jobs.json', schemaVersion: 1, payload: { schemaVersion: 1, jobs: [{ id: 'one' }] } },
+      { key: 'jobs.json', schemaVersion: 1, payload: { schemaVersion: 1, jobs: [{ id: 'two' }] } },
+    ] }),
+  }],
+})
+const duplicateInventory = await duplicateBridge.inventory()
+const duplicateRecords = duplicateInventory.records.filter((record) => record.recordKey === 'jobs.json')
+assert.equal(duplicateRecords.length, 2)
+assert.ok(duplicateRecords.every((record) => record.status === 'blocked' && record.reasonCode === 'legacy-duplicate-record'))
+assert.equal((await duplicateBridge.prepareImport()).status, 'blocked')
+await assert.rejects(
+  duplicateBridge.readRollbackWindow({ sourceId: 'duplicate-fixture', domain: 'workflow', recordKey: 'jobs.json' }),
+  (error) => error instanceof WindowsOwnerLegacyBridgeError && error.code === 'legacy-duplicate-record',
+)
+
+const wrongSourceBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  storage: new FakeStorage({
+    audioMeta: JSON.stringify({ schemaVersion: 1, contentId: 'wrong-source' }),
+  }),
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'wrong-json-source',
+    read: async () => ({ records: [{
+      key: 'vocabulary.srs.store.v1',
+      schemaVersion: 1,
+      payload: { schemaVersion: 1, entries: [] },
+    }] }),
+  }],
+})
+const wrongSourceInventory = await wrongSourceBridge.inventory()
+assert.ok(wrongSourceInventory.records.some((record) => record.recordKey === 'audioMeta' && record.reasonCode === 'legacy-source-kind-mismatch'))
+assert.ok(wrongSourceInventory.records.some((record) => record.recordKey === 'vocabulary.srs.store.v1' && record.reasonCode === 'legacy-source-kind-mismatch'))
+assert.equal((await wrongSourceBridge.prepareImport()).status, 'blocked')
+
+const wrongDomainBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'wrong-domain-source',
+    read: async () => ({ records: [{
+      key: 'jobs.json',
+      domain: 'reader-session',
+      schemaVersion: 1,
+      payload: { schemaVersion: 1, jobs: [] },
+    }] }),
+  }],
+})
+const wrongDomainInventory = await wrongDomainBridge.inventory()
+assert.ok(wrongDomainInventory.records.some((record) => record.reasonCode === 'legacy-domain-claim-mismatch' && record.status === 'blocked'))
+
+const sensitiveStringBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'sensitive-string-source',
+    read: async () => ({ records: [
+      { key: 'jobs.json', schemaVersion: 1, payload: { schemaVersion: 1, note: 'data:audio/wav;base64,AAAA-secret-media' } },
+      { key: 'history.json', schemaVersion: 1, payload: { schemaVersion: 1, note: 'https://user:pass@example.com/audio.mp3' } },
+      { key: 'reader-index.json', schemaVersion: 1, payload: { schemaVersion: 1, note: 'https://example.com/audio.mp3?token=do-not-escape' } },
+      { key: 'config.json', schemaVersion: 1, payload: { schemaVersion: 1, note: 'UklGRmV2aWRlbmNlLWJsb2NrZWQ=' } },
+    ] }),
+  }],
+})
+const sensitiveStringInventory = await sensitiveStringBridge.inventory()
+assert.equal(sensitiveStringInventory.status, 'blocked')
+assert.ok(sensitiveStringInventory.records.some((record) => record.reasonCode === 'legacy-media-payload'))
+assert.ok(sensitiveStringInventory.records.some((record) => record.reasonCode === 'legacy-sensitive-value'))
+assert.equal((await sensitiveStringBridge.prepareImport()).status, 'blocked')
+const sensitiveStringJson = JSON.stringify(sensitiveStringInventory)
+assert.equal(sensitiveStringJson.includes('secret-media'), false)
+assert.equal(sensitiveStringJson.includes('do-not-escape'), false)
+assert.equal(sensitiveStringJson.includes('UklGR'), false)
+
+const ordinaryStringBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'ordinary-string-source',
+    read: async () => ({ records: [{
+      key: 'jobs.json',
+      schemaVersion: 1,
+      payload: {
+        schemaVersion: 1,
+        note: 'ordinary short text',
+        contentId: 'content-1',
+        mediaIdentity: { url: 'https://example.com/audio.mp3' },
+      },
+    }] }),
+  }],
+})
+assert.equal((await ordinaryStringBridge.inventory()).status, 'ready')
 
 const noSources = createWindowsOwnerLegacyCompatibilityBridge({ profileId: 'optimization' })
 assert.deepEqual(Object.keys(noSources).sort(), [...WINDOWS_OWNER_LEGACY_BRIDGE_METHODS].sort())

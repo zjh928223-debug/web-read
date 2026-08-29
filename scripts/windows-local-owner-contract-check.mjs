@@ -202,6 +202,9 @@ assert(api.legacyCompatibilityBridgeContract?.module === 'src/services/windows-o
 assert(api.legacyCompatibilityBridgeContract?.schemaVersion === 1, 'legacy compatibility bridge schema changed')
 assert(JSON.stringify(api.legacyCompatibilityBridgeContract?.sourceKinds) === JSON.stringify(['indexeddb', 'localStorage', 'json']), 'legacy bridge source kinds changed')
 assert(JSON.stringify(api.legacyCompatibilityBridgeContract?.publicMethods) === JSON.stringify(['inventory', 'prepareImport', 'readRollbackWindow']), 'legacy bridge public methods changed')
+for (const field of ['blockedEvidence', 'duplicateIdentity', 'claimSourceBinding', 'stringValuePolicy']) {
+  assert(typeof api.legacyCompatibilityBridgeContract?.[field] === 'string' && api.legacyCompatibilityBridgeContract[field].length > 0, `legacy bridge contract lacks ${field}`)
+}
 assert(api.legacyCompatibilityBridgeContract?.rawStorageHandles === false, 'legacy bridge cannot expose raw storage handles')
 assert(api.legacyCompatibilityBridgeContract?.hostRepositoryCommit === false, 'legacy bridge cannot commit to the Host repository')
 assert(api.legacyCompatibilityBridgeContract?.canonical === false, 'legacy bridge cannot be canonical')
