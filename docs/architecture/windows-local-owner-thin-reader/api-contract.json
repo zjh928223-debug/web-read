@@ -558,7 +558,7 @@
     "publicMethods": ["inventory", "prepareImport", "readRollbackWindow"],
     "inventory": "read-only source metadata with domain/key/schema/revision/size/checksum or blocked reason",
     "blockedEvidence": "blocked records retain a source-bound, content-sensitive checksum; source checksums cover blocked metadata without returning payload",
-    "duplicateIdentity": "duplicate source/domain/recordKey identities are blocked and cannot be selected for import or rollback",
+    "duplicateIdentity": "duplicate source/domain/recordKey identities and duplicate domain/recordKey identities across selected sources are blocked from import; rollback remains explicitly source-scoped",
     "claimSourceBinding": "record claims are restricted to the registered source kind and, for frozen IndexedDB, SeekPlayerDB/files",
     "stringValuePolicy": "media data/base64 values and URL userinfo or sensitive query values are blocked while ordinary text and media identity references remain readable",
     "oneTimeImport": "deterministic legacy-import-input only; no browser write, host commit, or committed receipt",
@@ -580,5 +580,5 @@
     "nextAllowedTask": "3.4 media resource owner",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:303b0991b1827a3aef81df63b10654fb7d16a7c981ba9dcd321d48e29ccbe9e1"
+  "artifactChecksum": "sha256:c23dfcd9b3088c61ef231aea84e9fabe74c2b9a3f74782fd7cae5758d583cbb9"
 }

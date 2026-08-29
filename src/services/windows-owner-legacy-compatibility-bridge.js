@@ -108,9 +108,12 @@ export function createWindowsOwnerLegacyCompatibilityBridge(options = {}) {
       const snapshot = await collectSources(selectedSources)
       const allRecords = snapshot.sources.flatMap((source) => source.records)
       const blocked = allRecords.filter((record) => record.metadata.status === 'blocked')
+      const duplicateEvidence = findDuplicateImportMetadata(allRecords)
+      const duplicateIdentities = new Set(duplicateEvidence.map(importIdentityForMetadata))
       const importable = allRecords
         .filter((record) => record.metadata.status === 'ready')
         .filter((record) => ALLOWED_IMPORT_CLASSIFICATIONS.has(record.metadata.classification))
+        .filter((record) => !duplicateIdentities.has(importIdentityForMetadata(record.metadata)))
         .sort(compareRecordMetadata)
       const excludedRecords = allRecords
         .filter((record) => record.metadata.status === 'ready' && !ALLOWED_IMPORT_CLASSIFICATIONS.has(record.metadata.classification))
@@ -121,15 +124,16 @@ export function createWindowsOwnerLegacyCompatibilityBridge(options = {}) {
         bridge: BRIDGE_NAME,
         mode: 'one-time-import-plan',
         profileId,
-        status: blocked.length > 0 || snapshot.sources.some((source) => source.status === 'blocked') ? 'blocked' : 'ready',
-        reasonCode: firstReasonCode(snapshot, blocked),
+        status: blocked.length > 0 || duplicateEvidence.length > 0 || snapshot.sources.some((source) => source.status === 'blocked') ? 'blocked' : 'ready',
+        reasonCode: firstReasonCode(snapshot, [...blocked, ...duplicateEvidence.map((metadata) => ({ metadata }))]),
         frozenIndexedDbSchema: FROZEN_INDEXED_DB_SCHEMA,
         sourceChecksums: snapshot.sources.map((source) => ({
           sourceKind: source.source.kind,
           sourceId: source.source.sourceId,
           checksum: source.checksum,
         })),
-        blockedRecords: blocked.map((record) => record.metadata),
+        blockedRecords: [...blocked.map((record) => record.metadata), ...duplicateEvidence],
+        duplicateRecords: duplicateEvidence,
         excludedRecords,
         importInput: null,
       }
@@ -140,6 +144,7 @@ export function createWindowsOwnerLegacyCompatibilityBridge(options = {}) {
           importIdentity: await digestCanonical({
             sourceChecksums: base.sourceChecksums,
             blockedRecords: base.blockedRecords,
+            duplicateRecords: base.duplicateRecords,
           }),
         })
       }
@@ -676,22 +681,54 @@ async function withInventoryChecksum(snapshot, profileId) {
     records: source.records.map((record) => record.metadata).sort(compareMetadata),
     checksum: source.checksum,
   }))
-  const records = sources.flatMap((source) => source.records).sort(compareMetadata)
+  const sourceRecords = sources.flatMap((source) => source.records)
+  const duplicateEvidence = findDuplicateImportMetadata(sourceRecords)
+  const duplicateIdentities = new Set(duplicateEvidence.map(importIdentityForMetadata))
+  const records = sourceRecords
+    .map((metadata) => duplicateIdentities.has(importIdentityForMetadata(metadata))
+      ? { ...metadata, status: 'blocked', reasonCode: 'legacy-duplicate-record' }
+      : metadata)
+    .sort(compareMetadata)
   const base = {
     schemaVersion: BRIDGE_SCHEMA_VERSION,
     bridge: BRIDGE_NAME,
     mode: 'read-only-inventory',
     profileId,
-    status: sources.some((source) => source.status === 'blocked') ? 'blocked' : 'ready',
-    reasonCode: sources.find((source) => source.reasonCode)?.reasonCode || null,
+    status: sources.some((source) => source.status === 'blocked') || duplicateEvidence.length > 0 ? 'blocked' : 'ready',
+    reasonCode: sources.find((source) => source.reasonCode)?.reasonCode || duplicateEvidence[0]?.reasonCode || null,
     frozenIndexedDbSchema: FROZEN_INDEXED_DB_SCHEMA,
     sources,
     records,
+    duplicateRecords: duplicateEvidence,
   }
   return {
     ...base,
     checksum: await digestCanonical(base),
   }
+}
+
+function findDuplicateImportMetadata(records) {
+  const groups = new Map()
+  for (const record of records) {
+    const metadata = record.metadata || record
+    if (metadata.status !== 'ready' || !ALLOWED_IMPORT_CLASSIFICATIONS.has(metadata.classification)) continue
+    const identity = importIdentityForMetadata(metadata)
+    const group = groups.get(identity) || []
+    group.push(metadata)
+    groups.set(identity, group)
+  }
+  return [...groups.values()]
+    .filter((group) => group.length > 1)
+    .flatMap((group) => group.map((metadata) => ({
+      ...metadata,
+      status: 'blocked',
+      reasonCode: 'legacy-duplicate-record',
+    })))
+    .sort(compareMetadata)
+}
+
+function importIdentityForMetadata(metadata) {
+  return `${metadata.domain || '[unclaimed]'}\u0000${metadata.recordKey}`
 }
 
 function compareMetadata(left, right) {

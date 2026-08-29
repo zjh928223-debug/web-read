@@ -310,6 +310,48 @@ await assert.rejects(
   (error) => error instanceof WindowsOwnerLegacyBridgeError && error.code === 'legacy-duplicate-record',
 )
 
+const crossSourceDuplicateBridge = createWindowsOwnerLegacyCompatibilityBridge({
+  jsonSources: [{
+    kind: 'json',
+    sourceId: 'workflow-source-a',
+    read: async () => ({ records: [{
+      key: 'jobs.json',
+      schemaVersion: 1,
+      payload: { schemaVersion: 1, jobs: [{ id: 'source-a' }] },
+    }] }),
+  }, {
+    kind: 'json',
+    sourceId: 'workflow-source-b',
+    read: async () => ({ records: [{
+      key: 'jobs.json',
+      schemaVersion: 1,
+      payload: { schemaVersion: 1, jobs: [{ id: 'source-b' }] },
+    }] }),
+  }],
+})
+const crossSourceInventory = await crossSourceDuplicateBridge.inventory()
+assert.equal(crossSourceInventory.status, 'blocked')
+assert.equal(crossSourceInventory.sources.every((source) => source.status === 'ready'), true)
+assert.equal(crossSourceInventory.sources.every((source) => source.records[0].status === 'ready'), true)
+assert.equal(crossSourceInventory.duplicateRecords.length, 2)
+assert.ok(crossSourceInventory.duplicateRecords.every((record) => record.reasonCode === 'legacy-duplicate-record'))
+const crossSourcePlan = await crossSourceDuplicateBridge.prepareImport()
+assert.equal(crossSourcePlan.status, 'blocked')
+assert.equal(crossSourcePlan.duplicateRecords.length, 2)
+assert.ok(crossSourcePlan.blockedRecords.every((record) => record.reasonCode === 'legacy-duplicate-record'))
+const singleSourcePlan = await crossSourceDuplicateBridge.prepareImport({ sourceIds: ['workflow-source-a'] })
+assert.equal(singleSourcePlan.status, 'ready')
+assert.equal(singleSourcePlan.importInput.records.length, 1)
+assert.equal(singleSourcePlan.importInput.records[0].payload.jobs[0].id, 'source-a')
+const crossSourceInventoryAgain = await crossSourceDuplicateBridge.inventory()
+assert.deepEqual(crossSourceInventoryAgain.sources, crossSourceInventory.sources)
+const explicitRollback = await crossSourceDuplicateBridge.readRollbackWindow({
+  sourceId: 'workflow-source-b',
+  domain: 'workflow',
+  recordKey: 'jobs.json',
+})
+assert.equal(explicitRollback.payload.jobs[0].id, 'source-b')
+
 const wrongSourceBridge = createWindowsOwnerLegacyCompatibilityBridge({
   storage: new FakeStorage({
     audioMeta: JSON.stringify({ schemaVersion: 1, contentId: 'wrong-source' }),

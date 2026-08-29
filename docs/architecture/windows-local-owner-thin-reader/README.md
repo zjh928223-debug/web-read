@@ -322,8 +322,9 @@ errors are not echoed.
 `prepareImport()` re-reads the source and produces a deterministic `legacy-import-input` only when every observed
 record is safely classified. It returns a source/import checksum and clones JSON-safe payloads; secrets, raw
 handles, complete Blob/ArrayBuffer/byte payloads, unknown records, corrupt values, media data URIs/base64 values,
-URL userinfo, and sensitive query values cannot enter the plan. Duplicate source/domain/key identities are blocked
-rather than arbitrarily selecting the first record.
+URL userinfo, and sensitive query values cannot enter the plan. Duplicate source/domain/key identities, including
+the same domain/key across selected sources, are blocked rather than arbitrarily selecting the first record; an
+explicit single-source rollback read remains source-scoped.
 Known non-canonical preference records are reported as explicitly excluded. No Host request or repository
 commit is performed. `readRollbackWindow()` requires an exact source identity, domain, and registered record key,
 and returns a frozen clone for a rollback window; it never mutates the source or becomes an ordinary durable read
