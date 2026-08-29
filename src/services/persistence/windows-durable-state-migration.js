@@ -540,7 +540,7 @@ export function createWindowsDurableStateMigration(options = {}) {
   async function compensateHostSnapshot(domain, original, observed, reason) {
     if (domainEquivalent(observed, original)) return { ok: true, snapshot: observed }
     const adapter = adapterFor(domain)
-    const method = mutationMethod(adapter)
+    const method = mutationMethod(adapter, true)
     if (!method) return { ok: false, reasonCode: 'migration-compensation-unavailable' }
     let result
     try {

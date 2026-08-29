@@ -69,10 +69,27 @@ function emptySnapshot() {
 }
 
 class HostAdapter {
-  constructor(initial = emptySnapshot(), { failImport = false, mutationBehavior = null } = {}) {
+  constructor(initial = emptySnapshot(), {
+    failImport = false,
+    mutationBehavior = null,
+    rejectLowerImport = false,
+    withRollback = false,
+  } = {}) {
     this.snapshot = clone(initial)
     this.failImport = failImport
     this.mutationBehavior = mutationBehavior
+    this.rejectLowerImport = rejectLowerImport
+    this.rollbackCalls = 0
+    this.lastRollbackContext = null
+    if (withRollback) {
+      this.rollback = async ({ snapshot, expectedRevision, reason, idempotencyKey }) => {
+        this.rollbackCalls += 1
+        this.lastRollbackContext = { expectedRevision, reason, idempotencyKey }
+        if (this.snapshot.revision !== expectedRevision) return { status: 'conflict', currentRevision: this.snapshot.revision }
+        this.snapshot = clone(snapshot)
+        return { status: 'committed', commitStatus: 'committed', revision: this.snapshot.revision, receiptId: `rollback-${this.snapshot.revision}` }
+      }
+    }
     this.freezeCalls = 0
     this.unfreezeCalls = 0
     this.importCalls = 0
@@ -97,6 +114,12 @@ class HostAdapter {
   async importRecords({ snapshot, expectedRevision }) {
     this.importCalls += 1
     if (this.snapshot.revision !== expectedRevision) return { status: 'conflict', currentRevision: this.snapshot.revision }
+    if (this.rejectLowerImport
+      && Number.isInteger(this.snapshot.revision)
+      && Number.isInteger(snapshot.revision)
+      && snapshot.revision < this.snapshot.revision) {
+      return { status: 'conflict', currentRevision: this.snapshot.revision }
+    }
     if (this.mutationBehavior) {
       const behavior = this.mutationBehavior
       this.mutationBehavior = null
@@ -577,6 +600,30 @@ assert.equal(wrongCommittedImport.ok, false)
 assert.equal(wrongCommittedImport.reasonCode, 'migration-import-verification-failed')
 assert.deepEqual(wrongCommittedHost['reader-session'].snapshot, emptySnapshot(), 'a wrong committed result is compensated before failure')
 assert.equal(wrongCommittedHost['reader-session'].importCalls, 2)
+
+const rollbackFirstHost = createHostAdapters({
+  'reader-session': new HostAdapter(emptySnapshot(), {
+    mutationBehavior: 'return-wrong-committed',
+    rejectLowerImport: true,
+    withRollback: true,
+  }),
+})
+const rollbackFirstFixture = createMigrationFixture({ hostAdapters: rollbackFirstHost })
+await rollbackFirstFixture.service.dryRun('reader-session')
+await rollbackFirstFixture.service.freeze('reader-session')
+await rollbackFirstFixture.service.createFinalBackup('reader-session')
+const rollbackFirstImport = await rollbackFirstFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-rollback-first-compensation',
+})
+assert.equal(rollbackFirstImport.ok, false)
+assert.equal(rollbackFirstImport.reasonCode, 'migration-import-verification-failed')
+assert.equal(rollbackFirstHost['reader-session'].importCalls, 1, 'compensation must not retry through lower-revision importRecords')
+assert.equal(rollbackFirstHost['reader-session'].rollbackCalls, 1)
+assert.equal(rollbackFirstHost['reader-session'].lastRollbackContext.expectedRevision, 1)
+assert.equal(rollbackFirstHost['reader-session'].lastRollbackContext.reason, 'migration-import-failed')
+assert.equal(typeof rollbackFirstHost['reader-session'].lastRollbackContext.idempotencyKey, 'string')
+assert.deepEqual(rollbackFirstHost['reader-session'].snapshot, emptySnapshot(), '专用 rollback restores the old snapshot')
 
 const partialRestoreHost = createHostAdapters({
   'reader-session': new HostAdapter(emptySnapshot(), { mutationBehavior: 'throw-after-wrong' }),

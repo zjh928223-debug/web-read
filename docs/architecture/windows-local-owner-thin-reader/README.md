@@ -507,7 +507,7 @@ the old Host value, and rollback restores the captured pre-import value when ver
 
 The normalized `sourceIds` selected during dry-run are persisted and reused for the freeze-time final backup, so a
 subset migration cannot silently change its source set. If an adapter writes a wrong/partial value before failing or
-before post-commit verification, the controller performs one expected-revision compensation to the invocation
+before post-commit verification, the controller prefers the adapter rollback path for one expected-revision compensation to the invocation
 snapshot; a failed compensation remains frozen and not-ready. If the canonical write succeeds but state persistence
 fails, reopen consumes the pending import attempt when the canonical snapshot matches the saved artifact instead of
 importing again. Numeric revisions retain numeric ordering and opaque owner revisions use strict equality/CAS.
