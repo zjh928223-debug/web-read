@@ -600,9 +600,10 @@
     ],
     "authorizedUrlPolicy": "Same-origin relative /api/jobs/{jobId}/media/{audio|video} URL only; no data/blob URL, absolute URL, userinfo, query token, fragment, or raw local path",
     "rangeProbe": {
-      "request": "GET with Range bytes=0-0, If-Range equal to descriptor etag, credentials same-origin, no-store",
+      "request": "GET with Range bytes=0-0 only, no If-Range, credentials same-origin, no-store",
       "response": "206 with exact Content-Range, Accept-Ranges bytes, matching ETag, and X-Read-Web-Media-Identity",
-      "bodyRead": false
+      "bodyRead": false,
+      "unexpectedFullResponse": "Cancel an HTTP 200 response body without reading it and return media-rebind-required"
     },
     "binding": "Validated descriptor is assigned directly to the media element; replacement, dispose, identity mismatch, or ETag mismatch releases the previous resource",
     "mediaPayloadPolicy": "Only bounded identity/reference metadata crosses owner API; Blob, ArrayBuffer, typed-array, media data URI, and obvious media base64 payloads are rejected",
@@ -614,5 +615,5 @@
     "nextAllowedTask": "3.5 media/auth/range focused checks",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:3fe1e2d5b111f252101c072d32c00479f2e10fec64906687e17560b0776bccad"
+  "artifactChecksum": "sha256:c636e9f2967a16d941a777bc2175081e9cd93f569f922dd466539e16653b9989"
 }

@@ -36,6 +36,9 @@ const MEDIA_BINARY_KEY = /^(?:blob|arraybuffer|typedarray|bytes|base64|datauri|m
 const MEDIA_DATA_URI = /^data:(?:audio|video|application\/octet-stream)(?:;[^,]*)?;base64,/iu
 const MEDIA_BASE64 = /^[A-Za-z0-9+/]{128,}={0,2}$/u
 const MEDIA_BASE64_PREFIX = /^(?:UklGR|SUQz|T2dn|GkXfo|AAAAIGZ0eX)/u
+const MEDIA_QUERY_NOT_READY_VALUES = new Set(['not-ready', 'manual-recovery', 'commit-unknown'])
+const MEDIA_QUERY_NOT_FOUND_VALUES = new Set(['not-found'])
+const MEDIA_QUERY_UNAUTHORIZED_VALUES = new Set(['unauthorized', 'forbidden', 'path-not-allowed'])
 const MEDIA_ERROR_MESSAGE = Object.freeze({
   'media-descriptor-invalid': 'media capability descriptor is invalid',
   'media-unauthorized-url': 'media capability URL is not an authorized relative URL',
@@ -117,11 +120,10 @@ export function validateWindowsOwnerMediaQueryResult(result, options = {}) {
   if (result.domain !== options.domain || result.operation !== mapping.operation) {
     throw mediaError('media-capability-invalid', { field: 'operation' })
   }
+  const failureCode = mapWindowsOwnerMediaQueryFailure(result)
+  if (failureCode) throw mediaError(failureCode, { field: 'outcome' })
   assertWindowsOwnerMediaMetadataOnly(result.payload, 'response.payload')
   if (result.outcome !== 'read' || result.commitStatus !== 'not-applicable') {
-    if (['not-ready', 'manual-recovery', 'commit-unknown'].includes(result.outcome)) {
-      throw mediaError('media-not-ready', { field: 'outcome' })
-    }
     throw mediaError('media-capability-invalid', { field: 'commitStatus' })
   }
   if (!isPlainObject(result.payload) || Object.keys(result.payload).some((key) => key !== 'media')) {
@@ -147,7 +149,6 @@ export async function probeWindowsOwnerMediaRange(descriptor, options = {}) {
       method: 'GET',
       headers: {
         Range: 'bytes=0-0',
-        'If-Range': normalizedDescriptor.etag,
       },
       credentials: 'same-origin',
       cache: 'no-store',
@@ -161,6 +162,10 @@ export async function probeWindowsOwnerMediaRange(descriptor, options = {}) {
   }
 
   const status = Number(response?.status)
+  if (status === 200) {
+    await cancelResponseBody(response)
+    throw mediaError('media-rebind-required')
+  }
   if (status === 404 || status === 410) throw mediaError('media-not-found')
   if (status === 401 || status === 403) throw mediaError('media-unauthorized')
   if (status !== 206) throw mediaError('media-range-unsupported', { status })
@@ -261,6 +266,30 @@ export function createWindowsOwnerMediaResourceOwner(options = {}) {
 
 function mediaError(code, details = {}) {
   return new MediaResourceOwnerError(code, details)
+}
+
+function mapWindowsOwnerMediaQueryFailure(result) {
+  const outcome = typeof result.outcome === 'string' ? result.outcome : ''
+  const typedError = isPlainObject(result.error) ? result.error : null
+  const errorCode = typeof typedError?.code === 'string' ? typedError.code : ''
+  const errorCategory = typeof typedError?.category === 'string' ? typedError.category : ''
+
+  if (MEDIA_QUERY_NOT_READY_VALUES.has(outcome) || MEDIA_QUERY_NOT_READY_VALUES.has(errorCode)) return 'media-not-ready'
+  if (MEDIA_QUERY_NOT_FOUND_VALUES.has(errorCode) || MEDIA_QUERY_NOT_FOUND_VALUES.has(errorCategory)) return 'media-not-found'
+  if (errorCategory === 'authorization' || MEDIA_QUERY_UNAUTHORIZED_VALUES.has(errorCode)) {
+    return 'media-unauthorized'
+  }
+  return null
+}
+
+async function cancelResponseBody(response) {
+  const body = response?.body
+  if (!body || typeof body.cancel !== 'function') return
+  try {
+    await body.cancel()
+  } catch {
+    // The typed rebind result remains authoritative even if stream cancellation rejects.
+  }
 }
 
 function requireMediaIdentity(value, field) {

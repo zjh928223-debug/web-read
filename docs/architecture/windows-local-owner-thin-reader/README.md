@@ -341,12 +341,13 @@ schema. Task 3.4 adds the narrow media owner boundary described below; it does n
 validated Windows owner media binding seam. The seam consumes only the frozen `reader-session.media-identity`
 or `workflow.media-capability` mapping, accepts a bounded descriptor (`profileId`, media identity, kind, size,
 content type, ETag, revision, and an authorized relative `/api/jobs/{jobId}/media/{kind}` URL), and never exposes
-a local path or storage handle. A descriptor is range-probed with `Range: bytes=0-0` and `If-Range`; only a
-`206` response with exact `Content-Range`, `Accept-Ranges: bytes`, matching ETag, and
+a local path or storage handle. A descriptor is range-probed with only `Range: bytes=0-0` (without `If-Range`);
+only a `206` response with exact `Content-Range`, `Accept-Ranges: bytes`, matching ETag, and
 `X-Read-Web-Media-Identity` can bind it.
 
 The media element receives the authorized URL directly. Replacement, disposal, identity change, ETag mismatch,
-missing media, and failed probes release the old resource or return a typed rebind/not-found result. The seam
+missing media, and failed probes release the old resource or return a typed rebind/not-found result. A `200` full
+representation from the probe is canceled without reading its body and returns `media-rebind-required`. The seam
 does not call `blob()`, `arrayBuffer()`, `text()`, or `URL.createObjectURL`, and its request/response metadata
 boundary rejects Blob, ArrayBuffer, typed-array, media data URI, and obvious media base64 payloads. The existing
 workflow media route remains a legacy Range stream; the owner media query is still typed `not-ready` while all

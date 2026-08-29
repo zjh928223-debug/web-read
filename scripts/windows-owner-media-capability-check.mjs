@@ -57,6 +57,52 @@ assert.throws(
   }, { domain: 'workflow', profileId: 'optimization' }),
   (error) => error instanceof MediaResourceOwnerError && error.code === 'media-capability-invalid',
 )
+for (const [typedError, expectedCode] of [
+  [{ code: 'not-found', category: 'not-found', details: { path: 'C:\\secret\\media' } }, 'media-not-found'],
+  [{ code: 'unauthorized', category: 'authorization', details: { token: 'secret-token' } }, 'media-unauthorized'],
+  [{ code: 'forbidden', category: 'authorization', details: { reason: 'permission denied' } }, 'media-unauthorized'],
+  [{ code: 'path-not-allowed', category: 'authorization', details: { path: 'C:\\secret\\media' } }, 'media-unauthorized'],
+]) {
+  assert.throws(
+    () => validateWindowsOwnerMediaQueryResult({
+      domain: 'workflow',
+      operation: 'media-capability',
+      outcome: 'rejected',
+      commitStatus: 'rejected',
+      payload: {},
+      error: typedError,
+    }, { domain: 'workflow', profileId: 'optimization' }),
+    (error) => error instanceof MediaResourceOwnerError
+      && error.code === expectedCode
+      && !JSON.stringify(error).includes('secret'),
+  )
+}
+for (const outcome of ['not-ready', 'manual-recovery', 'commit-unknown']) {
+  assert.throws(
+    () => validateWindowsOwnerMediaQueryResult({
+      domain: 'workflow',
+      operation: 'media-capability',
+      outcome,
+      commitStatus: outcome,
+      payload: {},
+      error: { code: outcome, category: 'readiness', details: { secret: 'hidden' } },
+    }, { domain: 'workflow', profileId: 'optimization' }),
+    (error) => error instanceof MediaResourceOwnerError
+      && error.code === 'media-not-ready'
+      && !JSON.stringify(error).includes('hidden'),
+  )
+}
+assert.throws(
+  () => validateWindowsOwnerMediaQueryResult({
+    domain: 'workflow',
+    operation: 'media-capability',
+    outcome: 'rejected',
+    commitStatus: 'rejected',
+    payload: {},
+    error: { code: 'unexpected', category: 'validation', details: {} },
+  }, { domain: 'workflow', profileId: 'optimization' }),
+  (error) => error instanceof MediaResourceOwnerError && error.code === 'media-capability-invalid',
+)
 
 for (const unauthorizedUrl of [
   'https://example.test/api/jobs/job-1/media/audio',
@@ -143,7 +189,6 @@ assert.equal(rangeCalls.length, 1)
 assert.equal(rangeCalls[0].url, descriptor.authorizedUrl)
 assert.deepEqual(rangeCalls[0].options.headers, {
   Range: 'bytes=0-0',
-  'If-Range': descriptor.etag,
 })
 assert.equal(rangeCalls[0].options.credentials, 'same-origin')
 assert.equal(rangeCalls[0].options.cache, 'no-store')
@@ -158,12 +203,25 @@ for (const response of [
     (error) => error instanceof MediaResourceOwnerError && error.code === 'media-rebind-required',
   )
 }
+let canceledFullResponse = false
+let fullResponseBodyRead = false
 await assert.rejects(
   probeWindowsOwnerMediaRange(descriptor, {
-    fetchImpl: async () => rangeResponse(descriptor, { status: 200 }),
+    fetchImpl: async () => ({
+      status: 200,
+      body: {
+        async cancel() { canceledFullResponse = true },
+        blob() { fullResponseBodyRead = true; throw new Error('full response must not be read') },
+        arrayBuffer() { fullResponseBodyRead = true; throw new Error('full response must not be read') },
+        text() { fullResponseBodyRead = true; throw new Error('full response must not be read') },
+      },
+      headers: rangeHeaders(descriptor),
+    }),
   }),
-  (error) => error instanceof MediaResourceOwnerError && error.code === 'media-range-unsupported',
+  (error) => error instanceof MediaResourceOwnerError && error.code === 'media-rebind-required',
 )
+assert.equal(canceledFullResponse, true)
+assert.equal(fullResponseBodyRead, false)
 await assert.rejects(
   probeWindowsOwnerMediaRange(descriptor, {
     fetchImpl: async () => ({ status: 404, headers: new Map() }),
