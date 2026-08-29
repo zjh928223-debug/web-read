@@ -463,6 +463,253 @@ function marksHostSnapshot(response, scope) {
   }
 }
 
+function ownerRecordToBackupRecord(id, record) {
+  const content = record && typeof record === 'object' && !Array.isArray(record) && 'content' in record
+    ? record.content
+    : record
+  if (!content || typeof content !== 'object' || Array.isArray(content)) {
+    throw productionHostError('OWNER_CUTOVER_HOST_QUERY_INVALID', 'Host owner record content is invalid')
+  }
+  const schemaVersion = record?.schemaVersion
+    ?? content.schemaVersion
+    ?? content.schema_version
+    ?? 1
+  const revision = record && Object.prototype.hasOwnProperty.call(record, 'revision')
+    ? record.revision
+    : (Number.isInteger(content.revision) ? content.revision : null)
+  return hostRecord(id, schemaVersion, revision, record?.contentId ?? null, content, {
+    references: Array.isArray(record?.references) ? clone(record.references) : [],
+    mediaReferences: Array.isArray(record?.mediaReferences) ? clone(record.mediaReferences) : [],
+  })
+}
+
+function ownerRecordsHostSnapshot(records, revision, references = [], mediaReferences = []) {
+  return {
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision,
+    records: Object.entries(records)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, record]) => ownerRecordToBackupRecord(id, record)),
+    references: clone(references),
+    mediaReferences: clone(mediaReferences),
+  }
+}
+
+function responseRecords(response, operation) {
+  const payload = hostResponsePayload(response, operation)
+  return {
+    revision: payload.revision ?? response.revision ?? 0,
+    records: payload.records && typeof payload.records === 'object' && !Array.isArray(payload.records)
+      ? payload.records
+      : {},
+  }
+}
+
+async function queryOwnerRecords(client, domain, operations, payload = {}) {
+  const responses = await Promise.all(operations.map((operation) => client.query({
+    domain,
+    operation,
+    payload,
+  })))
+  const records = {}
+  let revision = 0
+  for (const [index, response] of responses.entries()) {
+    const selected = responseRecords(response, operations[index])
+    revision = selected.revision
+    Object.assign(records, selected.records)
+  }
+  return { records, revision }
+}
+
+function recordsPayload(snapshot) {
+  return Object.fromEntries((snapshot?.records || []).map((record) => [record.id, record.payload]))
+}
+
+function ownerRecordsPayload(snapshot) {
+  return Object.fromEntries((snapshot?.records || []).map((record) => {
+    const ownerRecord = {
+      id: record.id,
+      content: clone(record.payload ?? record.content),
+    }
+    for (const field of ['timestamp', 'revision', 'contentId']) {
+      if (record[field] !== undefined && record[field] !== null) ownerRecord[field] = record[field]
+    }
+    return [record.id, ownerRecord]
+  }))
+}
+
+function createPassagePreviewHostAdapter({ client }) {
+  const queryOperations = ['durable-state', 'preview-batch', 'progress', 'continuation', 'archive', 'legacy-keys']
+  return {
+    key: 'passage-preview',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const selected = await queryOwnerRecords(client, 'passage-preview', queryOperations)
+      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+    },
+    async restoreRecords(snapshot, context = {}) {
+      return client.command({
+        domain: 'passage-preview',
+        operation: 'legacy-import',
+        payload: { records: recordsPayload(snapshot) },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
+    },
+  }
+}
+
+function safeAnnotationScope(scope) {
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)
+    || typeof scope.audioKey !== 'string' || !scope.audioKey
+    || typeof scope.documentId !== 'string' || !scope.documentId) {
+    throw productionHostError('OWNER_CUTOVER_HOST_SCOPE_REQUIRED', 'Annotation Host scope is required')
+  }
+  return { audioKey: scope.audioKey, documentId: scope.documentId }
+}
+
+function createAnnotationHostAdapter({ client, scope }) {
+  const fixedScope = safeAnnotationScope(scope)
+  return {
+    key: 'annotation',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const selected = await queryOwnerRecords(client, 'annotation', ['scope'], { scope: fixedScope })
+      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+    },
+    async restoreRecords(snapshot, context = {}) {
+      return client.command({
+        domain: 'annotation',
+        operation: 'lightweight-import',
+        payload: { scope: fixedScope, records: recordsPayload(snapshot) },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
+    },
+  }
+}
+
+function createVocabularySrsHostAdapter({ client }) {
+  return {
+    key: 'vocabulary-srs',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const selected = await queryOwnerRecords(client, 'vocabulary-srs', ['snapshot'])
+      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+    },
+    async restoreRecords(snapshot, context = {}) {
+      const records = ownerRecordsPayload(snapshot)
+      const keys = Object.keys(records)
+      if (keys.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
+      const supported = new Set(['vocabulary.srs.store.v1'])
+      if (keys.some((key) => !supported.has(key))) {
+        throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Vocabulary migration fixture contains records outside the entry command')
+      }
+      return client.command({
+        domain: 'vocabulary-srs',
+        operation: 'entry-upsert',
+        payload: { records },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
+    },
+  }
+}
+
+function workflowRecord(id, content, revision, contentId = null) {
+  return hostRecord(id, 1, revision, contentId, content)
+}
+
+function createWorkflowHostAdapter({ client }) {
+  return {
+    key: 'workflow',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const operations = ['job', 'history', 'reader-index', 'config']
+      const responses = await Promise.all(operations.map((operation) => client.query({
+        domain: 'workflow',
+        operation,
+        payload: {},
+      })))
+      const records = []
+      let revision = 0
+      const jobs = responses[0]?.payload?.records || []
+      const history = responses[1]?.payload?.records || []
+      const readerIndex = responses[2]?.payload?.records || []
+      for (const response of responses) revision = response.revision ?? revision
+      for (const item of jobs) {
+        const jobId = String(item?.jobId || '')
+        if (jobId) records.push(workflowRecord(`jobs:${jobId}`, item, responses[0].payload.sourceRevision ?? revision, jobId))
+      }
+      for (const item of history) {
+        const jobId = String(item?.jobId || '')
+        if (jobId) records.push(workflowRecord(`items:${jobId}`, item, responses[1].payload.sourceRevision ?? revision, jobId))
+      }
+      for (const item of readerIndex) {
+        const jobId = String(item?.jobId || `reader-index-${records.length}`)
+        records.push(workflowRecord(`reader-index:${jobId}`, item, 0, jobId))
+      }
+      const config = responses[3]?.payload?.config
+      if (config?.configured) {
+        records.push(workflowRecord('config', {
+          model: config.model || '',
+          baseUrl: config.baseUrl || '',
+          proxyUrl: config.proxyUrl || '',
+        }, 0))
+      }
+      if (records.length === 0 && !config?.configured) revision = 0
+      records.sort((left, right) => left.id.localeCompare(right.id))
+      return {
+        schemaVersion: 1,
+        adapterVersion: 1,
+        revision,
+        records,
+        references: [],
+        mediaReferences: [],
+      }
+    },
+    async restoreRecords(snapshot, context = {}) {
+      const records = Array.isArray(snapshot?.records) ? snapshot.records : []
+      if (records.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
+      const nonConfig = records.filter((record) => record.id !== 'config' && !String(record.id).startsWith('reader-index:'))
+      if (nonConfig.length > 0) {
+        throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration fixture contains job/history records without a single-command import seam')
+      }
+      let result = { ok: true, status: 'committed', revision: context.expectedRevision }
+      const indexRecord = records.find((record) => String(record.id).startsWith('reader-index:'))
+      if (indexRecord) {
+        result = await client.command({
+          domain: 'workflow',
+          operation: 'reader-index-commit',
+          payload: { readerIndex: { items: [indexRecord.payload] } },
+          expectedRevision: context.expectedRevision,
+          idempotencyKey: context.idempotencyKey,
+        })
+      }
+      const configRecord = records.find((record) => record.id === 'config')
+      if (configRecord) {
+        result = await client.command({
+          domain: 'workflow',
+          operation: 'config-commit',
+          payload: { config: configRecord.payload },
+          expectedRevision: result.revision ?? context.expectedRevision,
+          idempotencyKey: `${context.idempotencyKey}-config`,
+        })
+      }
+      return result
+    },
+  }
+}
+
 function createMarksHostAdapter({ client, scope }) {
   const fixedScope = safeMarksScope(scope)
   return {
@@ -508,22 +755,21 @@ function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {
   const adapters = {
     'reader-session': createReaderHostAdapter({ client, profileId }),
     'marks-activity': createMarksHostAdapter({ client, scope: hostScopeByDomain['marks-activity'] }),
+    'passage-preview': createPassagePreviewHostAdapter({ client }),
+    'vocabulary-srs': createVocabularySrsHostAdapter({ client }),
+    workflow: createWorkflowHostAdapter({ client }),
   }
-  // The existing migration controller validates the six-domain map even
-  // when this explicitly scoped C2a runner only migrates the first two.
-  // Keep later domains visibly unavailable rather than borrowing browser
-  // backup adapters or presenting empty data as a Host snapshot.
-  for (const domain of ['passage-preview', 'annotation', 'vocabulary-srs', 'workflow']) {
-    adapters[domain] = {
-      key: domain,
+  adapters.annotation = hostScopeByDomain.annotation
+    ? createAnnotationHostAdapter({ client, scope: hostScopeByDomain.annotation })
+    : {
+      key: 'annotation',
       schemaVersion: 1,
       adapterVersion: 1,
       supportedSchemaVersions: [1],
       async collect() {
-        throw productionHostError('OWNER_CUTOVER_HOST_DOMAIN_NOT_READY', `Production Host ${domain} is not ready in C2a`)
+        throw productionHostError('OWNER_CUTOVER_HOST_SCOPE_REQUIRED', 'Annotation Host scope is required')
       },
     }
-  }
   return adapters
 }
 
@@ -562,14 +808,14 @@ function productionLayout(composition) {
 
 function validateProductionDomains(value) {
   const domains = value === undefined ? [...PRODUCTION_C2A_DOMAINS] : value
-  if (!Array.isArray(domains) || domains.length === 0 || domains.some((domain) => !PRODUCTION_C2A_DOMAINS.includes(domain))) {
-    const error = new Error('Production C2a cutover only supports reader-session and marks-activity')
+  if (!Array.isArray(domains) || domains.length === 0 || domains.some((domain) => !DOMAINS.includes(domain))) {
+    const error = new Error('Production owner cutover domain is not registered')
     error.code = 'OWNER_CUTOVER_PRODUCTION_DOMAIN_INVALID'
     throw error
   }
-  const indexes = domains.map((domain) => PRODUCTION_C2A_DOMAINS.indexOf(domain))
+  const indexes = domains.map((domain) => DOMAINS.indexOf(domain))
   if (new Set(indexes).size !== indexes.length || indexes.some((index, position) => index !== position)) {
-    const error = new Error('Production C2a domains must follow the fixed Reader Session then marks order')
+    const error = new Error('Production owner domains must follow the fixed cutover order')
     error.code = 'OWNER_CUTOVER_PRODUCTION_ORDER_INVALID'
     throw error
   }
@@ -593,27 +839,29 @@ function stateFileStore(filePath, containmentRoot) {
 }
 
 function createProductionLegacyJsonSources(sourceComposition) {
-  const marksAdapter = sourceComposition?.pythonAdapters?.['marks-activity']
-  if (!marksAdapter || typeof marksAdapter.collect !== 'function') return []
-  return [{
-    kind: 'json',
-    sourceId: 'backup.marks-activity',
-    defaultSchemaVersion: 1,
-    read: async () => {
-      const snapshot = await marksAdapter.collect({ domain: 'marks-activity' })
-      return {
-        records: (Array.isArray(snapshot?.records) ? snapshot.records : []).map((record) => ({
-          ...record,
-          key: record?.id,
-          schemaVersion: record?.payload?.schemaVersion ?? record?.schemaVersion,
-        })),
-      }
-    },
-  }]
+  return ['marks-activity', 'workflow'].flatMap((domain) => {
+    const adapter = sourceComposition?.pythonAdapters?.[domain]
+    if (!adapter || typeof adapter.collect !== 'function') return []
+    return [{
+      kind: 'json',
+      sourceId: `backup.${domain}`,
+      defaultSchemaVersion: 1,
+      read: async () => {
+        const snapshot = await adapter.collect({ domain })
+        return {
+          records: (Array.isArray(snapshot?.records) ? snapshot.records : []).map((record) => ({
+            ...record,
+            key: record?.id,
+            schemaVersion: record?.payload?.schemaVersion ?? record?.schemaVersion,
+          })),
+        }
+      },
+    }]
+  })
 }
 
 /**
- * Explicit local/optimization entry for the first two C2 domains.  The
+ * Explicit local/optimization entry for the fixed C2 domain order.  The
  * caller must opt in and provide the already-open browser guard refresh so a
  * freeze marker is observed before the final source read.  The normal app
  * startup never invokes this function and no daily profile is migrated by
@@ -702,11 +950,14 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
       const current = await hostAdapters[domain].collect({ domain })
       const state = await stateStore.read()
       const expected = state?.domains?.[domain]?.finalBackup?.artifact?.domains?.[domain]
-      return {
-        ok: Number(current?.revision) === Number(revision)
-          && expected !== undefined
-          && equivalentDomain(current, expected),
+      if (current?.revision !== revision || expected === undefined || !equivalentDomain(current, expected)) {
+        return { ok: false, reasonCode: 'OWNER_CUTOVER_SMOKE_QUERY_FAILED' }
       }
+      const smoke = options.smokeByDomain?.[domain]
+      if (typeof smoke !== 'function') return { ok: true, queried: true, mutation: 'not-run' }
+      const result = await smoke({ domain, revision, client: hostClient, adapter: hostAdapters[domain] })
+      if (result === false || result?.ok === false) return result || { ok: false, reasonCode: 'OWNER_CUTOVER_SMOKE_MUTATION_FAILED' }
+      return { ok: true, queried: true, mutation: result || 'passed' }
     },
   })
   const migration = createWindowsDurableStateMigration({

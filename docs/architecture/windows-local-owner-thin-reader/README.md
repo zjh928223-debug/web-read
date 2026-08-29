@@ -550,3 +550,20 @@ pre-cutover preparation is complete, not that authority or smoke has passed. The
 `npm run verify:windows-durable-state-migration`; it is standalone rather than part of `verify:fast` and covers
 representative six-domain inventory, source selection, dry-run, freeze ordering, final manifest, import/retry,
 restore, rollback, no-copy, failure retention, and reopen behavior.
+
+## Task C2 isolated production cutover
+
+`scripts/lib/windows-owner-cutover.mjs` now exposes the explicit optimization-only
+`runWindowsOwnerProductionCutover(...)` entry. It connects the existing backup/migration controller to the
+real Local App Host owner handlers and typed owner client for the fixed order
+`reader-session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow`. It requires
+isolated source/target compositions and an explicit optimization opt-in; ordinary startup and the normal
+production route remain pre-cutover/not-ready until a persisted per-domain checkpoint exists.
+
+Each selected domain observes its persisted freeze marker through the already-open browser guard before the
+freeze-time final backup. The controller then performs the single import, verify, checkpoint/switch and small
+query/mutation smoke in sequence; a failed domain stops later domains and leaves the domain frozen or rolls back
+using its existing B evidence. After a successful checkpoint, the compatibility writer is read-only and the
+normal typed client can read the Host owner again after a Local App Host reopen. The C2 evidence is the isolated
+`npm run verify:windows-owner-c2` journey; it uses empty workflow state and representative records in the other
+domains, and never migrates a daily profile or copies complete media.

@@ -320,10 +320,22 @@ def _typed_error(
     details: dict[str, Any] = {}
     if current_revision is not None:
         details["currentRevision"] = current_revision
+    category = {
+        "conflict": "conflict",
+        "revision-conflict": "conflict",
+        "invalid-request": "validation",
+        "unsupported-operation": "unsupported",
+        "unsupported-schema": "schema",
+        "corrupt": "storage",
+        "not-found": "not-found",
+        "manual-recovery": "recovery",
+        "commit-unknown": "recovery",
+        "not-ready": "readiness",
+    }.get(code, "recovery")
     return {
         "type": "windows-thin-reader-error.v1",
         "code": code,
-        "category": "conflict" if code == "conflict" else "validation" if code == "invalid-request" else "durability",
+        "category": category,
         "message": "workflow operation could not be completed",
         "retryable": bool(retryable),
         "correlationId": correlation_id,

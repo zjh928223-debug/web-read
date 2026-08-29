@@ -64,7 +64,7 @@ CAPABILITY_ROUTE_PREFIXES = (
 OWNER_MIGRATION_MODE = "optimization"
 OWNER_MIGRATION_HEADER = "x-read-web-owner-migration"
 OWNER_MIGRATION_HEADER_VALUE = "optimization"
-OWNER_MIGRATION_DOMAINS = frozenset({"reader-session", "marks-activity"})
+OWNER_MIGRATION_DOMAINS = frozenset(WINDOWS_OWNER_DOMAINS)
 OWNER_MIGRATION_OPERATIONS = {
     "reader-session": {
         "query": frozenset({"snapshot"}),
@@ -73,6 +73,27 @@ OWNER_MIGRATION_OPERATIONS = {
     "marks-activity": {
         "query": frozenset({"marks"}),
         "command": frozenset({"marks-commit"}),
+        "receipt-query": frozenset({"receipt-query"}),
+    },
+    "passage-preview": {
+        "query": frozenset({"durable-state", "preview-batch", "progress", "continuation", "archive", "legacy-keys"}),
+        "command": frozenset({"state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import"}),
+        "receipt-query": frozenset({"receipt-query"}),
+    },
+    "annotation": {
+        "query": frozenset({"bundle", "scope", "generated", "status", "corrupt-evidence", "storage-mode"}),
+        "command": frozenset({"bundle-commit", "lightweight-import", "lightweight-export", "backfill-result-import"}),
+        "receipt-query": frozenset({"receipt-query"}),
+    },
+    "vocabulary-srs": {
+        "query": frozenset({"snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"}),
+        "command": frozenset({"entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report"}),
+        "receipt-query": frozenset({"receipt-query"}),
+    },
+    "workflow": {
+        "query": frozenset({"health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"}),
+        "command": frozenset({"job-start", "job-cancel", "job-retry", "config-commit", "reader-index-commit"}),
+        "receipt-query": frozenset({"receipt-query"}),
     },
 }
 
@@ -991,7 +1012,7 @@ def create_local_app_host(
     if migration_mode is not None and migration_mode != OWNER_MIGRATION_MODE:
         raise ValueError("Local App Host migration mode is limited to optimization")
     if migration_domains - OWNER_MIGRATION_DOMAINS:
-        raise ValueError("Local App Host migration access is limited to the first two C2 domains")
+        raise ValueError("Local App Host migration access is limited to registered owner domains")
     if migration_domains and migration_mode != OWNER_MIGRATION_MODE:
         raise ValueError("Local App Host migration domains require explicit optimization mode")
     if migration_mode is not None and not str(profile_id or "").strip():

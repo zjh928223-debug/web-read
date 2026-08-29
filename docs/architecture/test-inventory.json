@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 111,
+    "behavior": 112,
     "browser": 29,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 271,
-  "executableScriptCount": 289,
+  "packageScriptCount": 272,
+  "executableScriptCount": 290,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2995,6 +2995,18 @@
         "scripts/windows-local-owner-baseline-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-baseline"
+    },
+    {
+      "name": "verify:windows-owner-c2",
+      "command": "npm run verify:windows-owner-c2a && node scripts/windows-owner-c2-cutover-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-c2-cutover-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-c2"
     },
     {
       "name": "verify:windows-owner-c2a",
@@ -8013,6 +8025,7 @@
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-annotation",
+        "package.json#scripts.verify:windows-owner-c2",
         "package.json#scripts.verify:windows-owner-c2a",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
@@ -10634,6 +10647,30 @@
       }
     },
     {
+      "path": "scripts/windows-owner-c2-cutover-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-c2",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-c2"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/windows-owner-c2a-cutover-check.mjs",
       "category": "behavior",
       "layers": [
@@ -10641,11 +10678,12 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": "package.json#scripts.verify:windows-owner-c2a",
+      "owner": "package.json#scripts.verify:windows-owner-c2",
       "owners": [
+        "package.json#scripts.verify:windows-owner-c2",
         "package.json#scripts.verify:windows-owner-c2a"
       ],
-      "invocation": "direct",
+      "invocation": "transitive",
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,
@@ -10861,6 +10899,7 @@
       "owner": "package.json#scripts.verify:behavior:workflow",
       "owners": [
         "package.json#scripts.verify:behavior:workflow",
+        "package.json#scripts.verify:windows-owner-c2",
         "package.json#scripts.verify:windows-owner-c2a",
         "package.json#scripts.verify:youtube-workflow-client"
       ],

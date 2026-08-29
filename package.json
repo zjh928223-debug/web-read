@@ -69,6 +69,7 @@
     "verify:windows-owner-reader-session": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_reader_session_owner",
     "verify:windows-owner-reader-session-c1": "node scripts/windows-owner-reader-session-c1-check.mjs",
     "verify:windows-owner-c2a": "node scripts/windows-owner-c2a-cutover-check.mjs && node scripts/youtube-workflow-client-check.cjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_c2a",
+    "verify:windows-owner-c2": "npm run verify:windows-owner-c2a && node scripts/windows-owner-c2-cutover-check.mjs",
     "verify:windows-owner-vocabulary-srs": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_vocabulary_srs_owner",
     "verify:windows-owner-passage-preview": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_passage_preview_owner",
     "verify:windows-owner-annotation": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_annotation_owner",
