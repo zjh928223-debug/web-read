@@ -457,7 +457,9 @@ function assertJsonSafe(value, field, seen = new WeakSet(), makeError = inputErr
   if (Array.isArray(value)) value.forEach((item, index) => assertJsonSafe(item, `${field}[${index}]`, seen, makeError, allowedSensitiveKeys))
   else {
     for (const [key, item] of Object.entries(value)) {
-      if (makeError === inputError && SENSITIVE_PAYLOAD_KEY.test(key) && !allowedSensitiveKeys.has(key)) throw makeError(`${field} contains an unsupported credential field`)
+      // The workflow UI stores a local path in `cookiesPath`; it is not a
+      // cookie value. Preserve the generic guard for every other cookie key.
+      if (makeError === inputError && key !== 'cookiesPath' && SENSITIVE_PAYLOAD_KEY.test(key) && !allowedSensitiveKeys.has(key)) throw makeError(`${field} contains an unsupported credential field`)
       assertJsonSafe(item, `${field}.${key}`, seen, makeError, allowedSensitiveKeys)
     }
   }
@@ -507,7 +509,7 @@ function requiresIdempotency(domain, operation) {
   if (domain === 'passage-preview') return operation !== 'legacy-import'
   if (domain === 'annotation') return ['bundle-commit', 'lightweight-import', 'backfill-result-import'].includes(operation)
   if (domain === 'marks-activity') return ['marks-commit', 'activity-append'].includes(operation)
-  if (domain === 'workflow') return ['job-start', 'job-cancel', 'job-retry', 'snapshot-commit', 'config-commit', 'reader-index-commit'].includes(operation) || operation.includes('config') || operation.includes('index')
+  if (domain === 'workflow') return ['job-start', 'job-cancel', 'job-retry', 'job-prioritize', 'job-delete', 'job-clear-failed', 'snapshot-commit', 'config-commit', 'reader-index-commit'].includes(operation) || operation.includes('config') || operation.includes('index')
   return false
 }
 

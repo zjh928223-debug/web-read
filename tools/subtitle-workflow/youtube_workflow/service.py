@@ -1073,6 +1073,7 @@ class JobManager:
         self._persistence_closed = False
         self.pending: list[JobRecord] = []
         self.worker_thread: threading.Thread | None = None
+        self._dispatch_paused = False
         self.current_job_id: str | None = None
         self.recent: list[dict] = []
         self.store = WorkflowHistoryStore(self.config.state_dir, self.config.output_dir)
@@ -1089,6 +1090,42 @@ class JobManager:
     def _apply_saved_config(self) -> None:
         saved = self.store.load_config()
         self._apply_config_payload(saved)
+
+    def reload_saved_config(self) -> None:
+        """Apply the canonical config after an owner-side config commit."""
+        with self.lock:
+            self._apply_saved_config()
+
+    def reload_persisted_state(self) -> None:
+        """Reload jobs/history after the owner imports a durable snapshot.
+
+        The production Host creates this manager before the one-time owner
+        import runs.  Reloading the existing manager keeps the service seam
+        on the imported canonical files without introducing another store.
+        """
+        with self.lock:
+            if self.current_job_id or self.pending or (self.worker_thread and self.worker_thread.is_alive()):
+                raise RuntimeError("workflow service cannot reload while a job is active")
+            self._flush_persistence_locked()
+            self.jobs.clear()
+            self.recent = []
+            self.recovery_status = {
+                "jobs": {"status": "ok", "writable": True},
+                "history": {"status": "ok", "writable": True},
+            }
+            self._apply_saved_config()
+            self._load_persisted_jobs()
+
+    def start_pending_worker(self) -> None:
+        """Start queued work after its Host owner receipt is durable."""
+        with self.lock:
+            self._ensure_worker_locked()
+
+    def resume_pending_worker(self) -> None:
+        """Resume queue dispatch after a Host-coordinated mutation settles."""
+        with self.lock:
+            self._dispatch_paused = False
+            self._ensure_worker_locked()
 
     def _apply_config_payload(self, payload: dict) -> None:
         if not isinstance(payload, dict):
@@ -1197,6 +1234,7 @@ class JobManager:
         *,
         idempotency_key: str | None = None,
         expected_revision: int | None = None,
+        start_worker: bool = True,
     ) -> dict:
         self._require_domain_writable("jobs")
         self._require_domain_writable("history")
@@ -1247,7 +1285,8 @@ class JobManager:
                 self.pending = [item for item in self.pending if item.job_id != job_id]
                 self.jobs.pop(job_id, None)
                 raise
-            self._ensure_worker_locked()
+            if start_worker:
+                self._ensure_worker_locked()
         self.append_service_log(f"job queued {job_id} mode={request.gemini_mode} url={request.url}")
         snapshot = record.public_snapshot()
         snapshot["revision"] = self._jobs_revision_locked()
@@ -1886,6 +1925,8 @@ class JobManager:
         self.store.save_jobs([record.persisted_snapshot() for record in self.jobs.values()])
 
     def _ensure_worker_locked(self) -> None:
+        if self._dispatch_paused:
+            return
         if self.worker_thread and self.worker_thread.is_alive():
             return
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
@@ -1894,6 +1935,10 @@ class JobManager:
     def _worker_loop(self) -> None:
         while True:
             with self.lock:
+                if self._dispatch_paused:
+                    self.current_job_id = None
+                    self.worker_thread = None
+                    return
                 if not self.pending:
                     self.current_job_id = None
                     self.worker_thread = None
@@ -1952,15 +1997,20 @@ class JobManager:
         *,
         idempotency_key: str | None = None,
         expected_revision: int | None = None,
+        wait_for_completion: bool = False,
     ) -> dict:
         idempotency_key = _normalize_idempotency_key(idempotency_key)
         fingerprint = _mutation_fingerprint("cancel", job_id)
+        record = None
+        was_pending = False
         with self.lock:
             existing = self._find_mutation_receipt_locked(idempotency_key, fingerprint)
             if existing is not None:
                 return self._replay_mutation_receipt_locked(existing)
             record = self.get_job(job_id)
             self._check_expected_revision_locked(expected_revision)
+            if wait_for_completion:
+                self._dispatch_paused = True
             with record.lock:
                 record._defer_persistence = True
                 try:
@@ -1984,9 +2034,29 @@ class JobManager:
                     if was_pending or record.status not in TERMINAL_STATUSES or idempotency_key:
                         self._persist_jobs_locked()
                     snapshot["revision"] = self._jobs_revision_locked()
-                    return snapshot
                 finally:
                     record._defer_persistence = False
+        if wait_for_completion and record is not None:
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
+                with record.lock:
+                    target_settled = record.status in TERMINAL_STATUSES
+                with self.lock:
+                    worker_settled = self.current_job_id is None and not (
+                        self.worker_thread and self.worker_thread.is_alive()
+                    )
+                if target_settled and worker_settled:
+                    break
+                time.sleep(0.01)
+            with record.lock:
+                if record.status not in TERMINAL_STATUSES:
+                    raise TimeoutError("workflow job cancellation did not settle")
+                snapshot = record.public_snapshot()
+            with self.lock:
+                if self.current_job_id is not None or (self.worker_thread and self.worker_thread.is_alive()):
+                    raise TimeoutError("workflow queue did not settle after cancellation")
+                snapshot["revision"] = self._jobs_revision_locked()
+        return snapshot
 
     def prioritize_job(
         self,
@@ -2059,6 +2129,7 @@ class JobManager:
         *,
         idempotency_key: str | None = None,
         expected_revision: int | None = None,
+        start_worker: bool = True,
     ) -> dict:
         payload = payload or {}
         idempotency_key = _normalize_idempotency_key(
@@ -2124,7 +2195,8 @@ class JobManager:
                 self.pending = [item for item in self.pending if item.job_id != new_id]
                 self.jobs.pop(new_id, None)
                 raise
-            self._ensure_worker_locked()
+            if start_worker:
+                self._ensure_worker_locked()
         snapshot = record.public_snapshot()
         snapshot["revision"] = self._jobs_revision_locked()
         return snapshot

@@ -3,9 +3,10 @@
 This module is deliberately an adapter, not a second workflow service.  Jobs,
 history, reader-index, and configuration remain in the JSON files already
 owned by :class:`WorkflowHistoryStore`; commit receipts are delegated to the
-shared :class:`OwnerCommitReceiptStore`.  The job commands only publish a
-validated durable snapshot/patch.  They never enter the service queue or
-invoke a runner/process supervisor.
+shared :class:`OwnerCommitReceiptStore`.  In production, job commands cross
+the existing :class:`JobManager` service seam while the owner receipt and
+repository remain the durable authority.  Isolated owner tests may still use
+the repository-only compatibility path.
 """
 
 from __future__ import annotations
@@ -56,6 +57,9 @@ COMMAND_OPERATIONS = (
     "job-start",
     "job-cancel",
     "job-retry",
+    "job-prioritize",
+    "job-delete",
+    "job-clear-failed",
     "snapshot-commit",
     "config-commit",
     "reader-index-commit",
@@ -66,6 +70,9 @@ _CAPABILITY_BY_OPERATION = {
     "job-start": "workflow.job-command",
     "job-cancel": "workflow.job-command",
     "job-retry": "workflow.job-command",
+    "job-prioritize": "workflow.job-command",
+    "job-delete": "workflow.job-command",
+    "job-clear-failed": "workflow.job-command",
     "snapshot-commit": "workflow.job-command",
     "config-commit": "workflow.config-command",
     "reader-index-commit": "workflow.config-command",
@@ -148,13 +155,37 @@ _JOB_STATUSES = frozenset(
         "running",
         "canceled",
         "completed",
+        "ready",
         "failed",
         "cancelled",
         "pending",
         "retrying",
     }
 )
-_CONFIG_FIELDS = frozenset({"model", "baseUrl", "proxyUrl"})
+_CONFIG_FIELDS = frozenset({
+    "model",
+    "baseUrl",
+    "proxyUrl",
+    "cookiesPath",
+    "outputDir",
+    "ytDlpPath",
+    "whisperxPath",
+})
+_CONFIG_PATH_FIELDS = frozenset({"cookiesPath", "outputDir", "ytDlpPath", "whisperxPath"})
+_SNAPSHOT_PATH_OBJECT_FIELDS = frozenset({"manifest", "checkpoint"})
+_SNAPSHOT_RECORD_FIELDS = frozenset({
+    *_SAFE_JOB_FIELDS,
+    "outputDir",
+    "manifest",
+    "manifestPath",
+    "files",
+    "fileSizes",
+    "checkpoint",
+    "durationSeconds",
+    "logSummary",
+    "importAction",
+    "sourceMap",
+})
 _MEDIA_SUFFIXES = frozenset({".mp3", ".m4a", ".wav", ".ogg", ".flac", ".mp4", ".webm", ".mkv", ".mov", ".avi"})
 _MEDIA_CONTENT_TYPES = {
     ".mp3": "audio/mpeg",
@@ -284,6 +315,72 @@ def _validate_safe_value(value: Any, *, key_hint: str = "", depth: int = 0) -> N
     raise WorkflowOwnerError("invalid-request")
 
 
+def _safe_snapshot_path(value: Any) -> str:
+    """Accept the backup adapter's relative path references only."""
+    if not isinstance(value, str) or not value or len(value) > 4096:
+        raise WorkflowOwnerError("invalid-request")
+    if any(ord(char) < 0x20 and char not in "\t" for char in value):
+        raise WorkflowOwnerError("invalid-request")
+    if _FILE_URI.match(value) or _DATA_URI.match(value) or _ABSOLUTE_PATH.search(value):
+        raise WorkflowOwnerError("invalid-request")
+    try:
+        candidate = Path(value)
+    except (OSError, ValueError) as error:
+        raise WorkflowOwnerError("invalid-request") from error
+    if candidate.is_absolute() or candidate.drive or any(part == ".." for part in candidate.parts):
+        raise WorkflowOwnerError("invalid-request")
+    return value
+
+
+def _validate_snapshot_safe_value(value: Any, *, key_hint: str = "", depth: int = 0) -> None:
+    """Validate sanitized WorkflowBackupAdapter payloads without dropping paths."""
+    if depth > 12:
+        raise WorkflowOwnerError("invalid-request")
+    classification = _key_class(key_hint) if key_hint else None
+    if classification in {"sensitive", "binary", "ui"}:
+        raise WorkflowOwnerError("invalid-request")
+    if classification == "path":
+        if key_hint.lower() in _SNAPSHOT_PATH_OBJECT_FIELDS:
+            if value is None:
+                return
+            if isinstance(value, Mapping):
+                _validate_snapshot_safe_value(value, depth=depth + 1)
+                return
+        if value is None:
+            raise WorkflowOwnerError("invalid-request")
+        if classification == "path":
+            _safe_snapshot_path(value)
+            return
+    if value is None or isinstance(value, bool):
+        return
+    if isinstance(value, int) and not isinstance(value, bool):
+        if abs(value) > 2**53:
+            raise WorkflowOwnerError("invalid-request")
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise WorkflowOwnerError("invalid-request")
+        return
+    if isinstance(value, str):
+        _safe_text(value)
+        return
+    if isinstance(value, list):
+        if len(value) > 4096:
+            raise WorkflowOwnerError("invalid-request")
+        for item in value:
+            _validate_snapshot_safe_value(item, depth=depth + 1)
+        return
+    if isinstance(value, Mapping):
+        if len(value) > 256:
+            raise WorkflowOwnerError("invalid-request")
+        for key, item in value.items():
+            if not isinstance(key, str) or len(key) > 128:
+                raise WorkflowOwnerError("invalid-request")
+            _validate_snapshot_safe_value(item, key_hint=key, depth=depth + 1)
+        return
+    raise WorkflowOwnerError("invalid-request")
+
+
 def _public_value(value: Any, *, key_hint: str = "", depth: int = 0) -> Any:
     """Clone a canonical value while dropping secrets, paths, bytes, and UI state."""
 
@@ -383,6 +480,22 @@ def _safe_url(value: Any) -> str:
     return text
 
 
+def _safe_local_path_text(value: Any) -> str:
+    """Keep the path fields used by the workflow panel intact.
+
+    These are configuration references, not backup payloads.  They may be
+    absolute Windows paths because the existing service consumes them as
+    executable/data locations, but URI and control-character forms remain
+    invalid.
+    """
+    if not isinstance(value, str) or len(value) > 4096 or any(ord(char) < 0x20 and char not in "\t" for char in value):
+        raise WorkflowOwnerError("invalid-request")
+    normalized = value.strip()
+    if not normalized or _FILE_URI.match(normalized) or _DATA_URI.match(normalized) or "://" in normalized:
+        raise WorkflowOwnerError("invalid-request")
+    return normalized
+
+
 def _validate_reader_index_document(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise JsonValidationError("reader index must be an object", error_code="WORKFLOW_READER_INDEX_INVALID")
@@ -466,6 +579,7 @@ class WorkflowOwner:
         repository: DurableJsonRepository | None = None,
         receipt_store: OwnerCommitReceiptStore | None = None,
         backup_adapter: WorkflowBackupAdapter | None = None,
+        service_manager=None,
     ):
         # Compatibility with the other isolated owner test factories:
         # WorkflowOwner(root, profile_id, instance_id).
@@ -494,6 +608,7 @@ class WorkflowOwner:
         self.reader_index_path = self.store.reader_index_path
         self.config_path = self.store.config_path
         self.backup_adapter = backup_adapter or WorkflowBackupAdapter(self.state_dir, self.output_dir)
+        self.service_manager = service_manager
 
         if receipt_store is None:
             self.receipts = OwnerCommitReceiptStore(
@@ -978,12 +1093,30 @@ class WorkflowOwner:
         if not isinstance(value, Mapping):
             raise WorkflowOwnerError("invalid-request")
         record = dict(value)
-        if set(record) - _SAFE_JOB_FIELDS:
+        if set(record) - _SNAPSHOT_RECORD_FIELDS:
             raise WorkflowOwnerError("invalid-request")
         _identity(record.get("jobId"), "jobId", pattern=_SAFE_JOB_ID)
         if "status" in record and record["status"] not in _JOB_STATUSES:
             raise WorkflowOwnerError("invalid-request")
-        _validate_safe_value(record)
+        _validate_snapshot_safe_value(record)
+        return record
+
+    @staticmethod
+    def _snapshot_output_record(value: Any) -> dict[str, Any]:
+        if not isinstance(value, Mapping):
+            raise WorkflowOwnerError("invalid-request")
+        record = dict(value)
+        allowed = {"id", "schemaVersion", "revision", "contentId", "payload", "references", "mediaReferences", "checksum"}
+        if set(record) - allowed or not isinstance(record.get("id"), str) or not record["id"].startswith("output:"):
+            raise WorkflowOwnerError("invalid-request")
+        _safe_snapshot_path(record["id"][len("output:"):])
+        if not isinstance(record.get("payload"), (Mapping, list)):
+            raise WorkflowOwnerError("invalid-request")
+        if "references" in record and not isinstance(record["references"], list):
+            raise WorkflowOwnerError("invalid-request")
+        if "mediaReferences" in record and not isinstance(record["mediaReferences"], list):
+            raise WorkflowOwnerError("invalid-request")
+        _validate_snapshot_safe_value(record)
         return record
 
     @classmethod
@@ -991,7 +1124,8 @@ class WorkflowOwner:
         if not isinstance(payload, Mapping) or set(payload) != {"snapshot"}:
             raise WorkflowOwnerError("invalid-request")
         raw_snapshot = payload["snapshot"]
-        if not isinstance(raw_snapshot, Mapping) or set(raw_snapshot) != {"jobs", "history", "readerIndex", "config"}:
+        allowed_snapshot_fields = {"jobs", "history", "readerIndex", "config", "outputs", "mediaReferences"}
+        if not isinstance(raw_snapshot, Mapping) or set(raw_snapshot) - allowed_snapshot_fields:
             raise WorkflowOwnerError("invalid-request")
         jobs = raw_snapshot["jobs"]
         history = raw_snapshot["history"]
@@ -1008,12 +1142,24 @@ class WorkflowOwner:
         if not isinstance(config_value, Mapping):
             raise WorkflowOwnerError("invalid-request")
         config = {} if not config_value else cls._config_payload({"config": config_value})["config"]
+        raw_outputs = raw_snapshot.get("outputs", [])
+        if not isinstance(raw_outputs, list) or len(raw_outputs) > 4096:
+            raise WorkflowOwnerError("invalid-request")
+        outputs = [cls._snapshot_output_record(item) for item in raw_outputs]
+        if len({item["id"] for item in outputs}) != len(outputs):
+            raise WorkflowOwnerError("invalid-request")
+        media_references = raw_snapshot.get("mediaReferences", [])
+        if not isinstance(media_references, list) or len(media_references) > 4096:
+            raise WorkflowOwnerError("invalid-request")
+        _validate_snapshot_safe_value(media_references)
         return {
             "snapshot": {
                 "jobs": normalized_jobs,
                 "history": normalized_history,
                 "readerIndex": index,
                 "config": config,
+                "outputs": outputs,
+                "mediaReferences": deepcopy(media_references),
             }
         }
 
@@ -1026,6 +1172,7 @@ class WorkflowOwner:
         ]
         if snapshot.get("config"):
             values.append(snapshot["config"])
+        values.extend(item.get("payload") for item in snapshot.get("outputs", []) if isinstance(item, Mapping))
         return sorted({_checksum(value) for value in values})
 
     @staticmethod
@@ -1050,9 +1197,10 @@ class WorkflowOwner:
         for key, item in config.items():
             if key in {"baseUrl", "proxyUrl"}:
                 config[key] = _safe_url(item)
+            elif key in _CONFIG_PATH_FIELDS:
+                config[key] = _safe_local_path_text(item)
             else:
                 config[key] = _safe_text(item, max_length=256).strip()
-        _validate_safe_value(config)
         return {"config": config}
 
     @staticmethod
@@ -1084,15 +1232,23 @@ class WorkflowOwner:
         return {"readerIndex": {"items": deepcopy(record["items"])}
         }
 
-    @staticmethod
-    def _command_payload_result(operation: str, mutation: Mapping[str, Any]) -> dict[str, Any]:
+    def _command_payload_result(self, operation: str, mutation: Mapping[str, Any]) -> dict[str, Any]:
         payload_result: dict[str, Any] = {
-            "durableMutation": "job-record" if operation.startswith("job-") else "workflow-json-record",
-            "processSideEffect": "not-performed" if operation.startswith("job-") else None,
+            "durableMutation": (
+                "workflow-service-state+owner-receipt"
+                if operation.startswith("job-") and self.service_manager is not None
+                else "job-record" if operation.startswith("job-") else "workflow-json-record"
+            ),
+            "processSideEffect": (
+                "existing-workflow-service"
+                if operation.startswith("job-") and self.service_manager is not None
+                else "not-performed" if operation.startswith("job-") else None
+            ),
         }
         if operation.startswith("job-"):
-            payload_result["jobId"] = mutation["jobId"]
-            payload_result["recordChecksums"] = [_checksum(mutation["record"])]
+            if mutation.get("jobId"):
+                payload_result["jobId"] = mutation["jobId"]
+            payload_result["recordChecksums"] = [_checksum(mutation["record"])] if mutation.get("record") else []
         elif operation == "snapshot-commit":
             snapshot = mutation["snapshot"]
             payload_result["durableMutation"] = "workflow-snapshot"
@@ -1102,6 +1258,8 @@ class WorkflowOwner:
                 "readerIndex": len(snapshot["readerIndex"]["items"]),
                 "config": 1 if snapshot["config"] else 0,
             }
+            if snapshot.get("outputs"):
+                payload_result["recordCounts"]["outputs"] = len(snapshot["outputs"])
             payload_result["recordCount"] = sum(payload_result["recordCounts"].values())
             payload_result["recordChecksums"] = WorkflowOwner._snapshot_record_checksums(snapshot)
         elif operation == "config-commit":
@@ -1191,8 +1349,16 @@ class WorkflowOwner:
                     "secondCanonicalJson": False,
                 },
                 "jobCommands": {
-                    "durableMutation": "validated workflow job record only",
-                    "processSideEffect": "not-performed",
+                    "durableMutation": (
+                        "WorkflowHistoryStore service state plus owner receipt"
+                        if self.service_manager is not None
+                        else "validated workflow job record only"
+                    ),
+                    "processSideEffect": (
+                        "existing workflow service boundary"
+                        if self.service_manager is not None
+                        else "not-performed"
+                    ),
                 },
                 "media": {
                     "metadataOnly": True,
@@ -1217,6 +1383,24 @@ class WorkflowOwner:
             }
             if len(public) == 1:
                 payload_result["job"] = public[0]
+            if "jobId" not in query_payload:
+                try:
+                    backup = self.backup_adapter.collect()
+                except Exception:
+                    return self._envelope(
+                        operation,
+                        request_id,
+                        correlation_id,
+                        "manual-recovery",
+                        "manual-recovery",
+                        None,
+                        {},
+                        _typed_error("manual-recovery", correlation_id),
+                    )
+                if isinstance(backup, Mapping):
+                    payload_result["backupRecords"] = deepcopy(backup.get("records", []))
+                    payload_result["backupReferences"] = deepcopy(backup.get("references", []))
+                    payload_result["backupMediaReferences"] = deepcopy(backup.get("mediaReferences", []))
             error = _typed_error("not-found", correlation_id) if not public else None
             return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", state["revision"], payload_result, error)
         if operation == "history":
@@ -1251,7 +1435,11 @@ class WorkflowOwner:
                 "model": str(raw.get("model") or ""),
                 "baseUrl": _redact_url(raw.get("baseUrl")),
                 "proxyUrl": _redact_url(raw.get("proxyUrl")),
-                "configured": bool(raw.get("model") or raw.get("baseUrl") or raw.get("proxyUrl")),
+                "cookiesPath": str(raw.get("cookiesPath") or ""),
+                "outputDir": str(raw.get("outputDir") or ""),
+                "ytDlpPath": str(raw.get("ytDlpPath") or ""),
+                "whisperxPath": str(raw.get("whisperxPath") or ""),
+                "configured": bool(any(raw.get(key) for key in _CONFIG_FIELDS)),
                 "present": not state["configMissing"],
             }
             return self._envelope(operation, request_id, correlation_id, "read", "not-applicable", state["revision"], {"config": public})
@@ -1350,6 +1538,123 @@ class WorkflowOwner:
             {"empty": False, "found": True, "media": descriptor},
         )
 
+    @staticmethod
+    def _service_request_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+        request = record.get("request") if isinstance(record.get("request"), Mapping) else {}
+        result = {
+            key: deepcopy(request[key])
+            for key in (
+                "url",
+                "geminiMode",
+                "model",
+                "baseUrl",
+                "autoOpenWhenReady",
+                "replacePolicy",
+                "videoPriority",
+                "forceReprocess",
+            )
+            if key in request
+        }
+        for key in ("url", "geminiMode", "model", "baseUrl", "videoPriority", "forceReprocess"):
+            if key not in result and key in record:
+                result[key] = deepcopy(record[key])
+        return result
+
+    def _service_command_result(
+        self,
+        operation: str,
+        mutation: Mapping[str, Any],
+        current: Mapping[str, Any],
+        context: OwnerCommitContext,
+    ) -> dict[str, Any]:
+        manager = self.service_manager
+        if manager is None:
+            raise RuntimeError("workflow service is unavailable")
+        expected_revision = int(current["jobsRevision"])
+        record = mutation.get("record") if isinstance(mutation.get("record"), Mapping) else {}
+        if operation == "job-start":
+            return manager.create_job(
+                self._service_request_payload(record),
+                idempotency_key=context.idempotency_key,
+                expected_revision=expected_revision,
+                start_worker=False,
+            )
+        if operation == "job-cancel":
+            return manager.cancel_job(
+                mutation["jobId"],
+                idempotency_key=context.idempotency_key,
+                expected_revision=expected_revision,
+                wait_for_completion=True,
+            )
+        if operation == "job-retry":
+            request = self._service_request_payload(record)
+            retry_payload = {
+                key: request[key]
+                for key in ("model", "baseUrl", "videoPriority")
+                if key in request
+            }
+            retry_stage = str(record.get("retryStage") or record.get("stage") or "").strip()
+            if retry_stage:
+                retry_payload["stage"] = retry_stage
+            return manager.retry_job(
+                mutation["jobId"],
+                retry_payload,
+                idempotency_key=context.idempotency_key,
+                expected_revision=expected_revision,
+                start_worker=False,
+            )
+        if operation == "job-prioritize":
+            return manager.prioritize_job(
+                mutation["jobId"],
+                idempotency_key=context.idempotency_key,
+                expected_revision=expected_revision,
+            )
+        if operation == "job-delete":
+            return manager.delete_job(mutation["jobId"], expected_revision=expected_revision)
+        if operation == "job-clear-failed":
+            return manager.clear_failed_jobs(expected_revision=expected_revision)
+        raise RuntimeError("unsupported workflow service operation")
+
+    def _rebind_snapshot_value(self, value: Any) -> Any:
+        """Rebind sanitized backup output references to this Host's root."""
+        if isinstance(value, list):
+            return [self._rebind_snapshot_value(item) for item in value]
+        if not isinstance(value, Mapping):
+            return deepcopy(value)
+        result = {}
+        for key, item in value.items():
+            if key in {"outputDir", "manifestPath"} and isinstance(item, str) and item:
+                if item in {".", "[REDACTED_PATH]"}:
+                    result[key] = str(self.output_dir.resolve(strict=False))
+                    continue
+                candidate = Path(item)
+                if candidate.is_absolute() or candidate.drive or any(part == ".." for part in candidate.parts):
+                    raise WorkflowOwnerStorageError("manual-recovery")
+                target = (self.output_dir / candidate).resolve(strict=False)
+                output_root = self.output_dir.resolve(strict=False)
+                if target != output_root and output_root not in target.parents:
+                    raise WorkflowOwnerStorageError("manual-recovery")
+                result[key] = str(target)
+                continue
+            if key == "files" and isinstance(item, Mapping):
+                files = {}
+                for file_key, file_value in item.items():
+                    if isinstance(file_value, str) and file_value:
+                        candidate = Path(file_value)
+                        if candidate.is_absolute() or candidate.drive or any(part == ".." for part in candidate.parts):
+                            raise WorkflowOwnerStorageError("manual-recovery")
+                        target = (self.output_dir / candidate).resolve(strict=False)
+                        output_root = self.output_dir.resolve(strict=False)
+                        if target != output_root and output_root not in target.parents:
+                            raise WorkflowOwnerStorageError("manual-recovery")
+                        files[file_key] = str(target)
+                    else:
+                        files[file_key] = deepcopy(file_value)
+                result[key] = files
+                continue
+            result[key] = self._rebind_snapshot_value(item)
+        return result
+
     def command(
         self,
         operation: str,
@@ -1381,8 +1686,12 @@ class WorkflowOwner:
             if idempotency_key is None:
                 raise WorkflowOwnerError("invalid-request")
             _identity(idempotency_key, "idempotencyKey", pattern=_SAFE_IDEMPOTENCY)
-            if operation in {"job-start", "job-cancel", "job-retry"}:
+            if operation in {"job-start", "job-cancel", "job-retry", "job-prioritize", "job-delete"}:
                 mutation = self._job_payload(payload, operation)
+            elif operation == "job-clear-failed":
+                if not isinstance(payload, Mapping) or payload:
+                    raise WorkflowOwnerError("invalid-request")
+                mutation = {"operation": operation, "record": {}}
             elif operation == "snapshot-commit":
                 mutation = self._snapshot_payload(payload)
             elif operation == "config-commit":
@@ -1430,6 +1739,9 @@ class WorkflowOwner:
 
         payload_result = self._command_payload_result(operation, mutation)
         receipt_payload = {"operation": operation, "mutation": mutation}
+        service_result: dict[str, Any] | None = None
+        start_service_worker = False
+        pause_service_worker = operation == "job-cancel" and self.service_manager is not None
         try:
             existing = self.receipts.query(idempotency_key=idempotency_key, domain=WORKFLOW_DOMAIN)
         except OwnerReceiptInputError:
@@ -1470,17 +1782,44 @@ class WorkflowOwner:
                 )
 
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
+            nonlocal service_result, start_service_worker
             current = self._read_state()
             if current["revision"] != context.expected_revision:
                 return self._evidence(context, status="conflict", revision=current["revision"], record_checksums=[])
             if operation == "snapshot-commit":
                 snapshot = mutation["snapshot"]
+                rebound_jobs = [self._rebind_snapshot_value(item) for item in snapshot["jobs"]]
+                rebound_history = [self._rebind_snapshot_value(item) for item in snapshot["history"]]
+                rebound_index = self._rebind_snapshot_value(snapshot["readerIndex"])
                 self.store.replace_snapshot(
-                    snapshot["jobs"],
-                    snapshot["history"],
-                    snapshot["readerIndex"],
+                    rebound_jobs,
+                    rebound_history,
+                    rebound_index,
                     snapshot["config"],
                 )
+                for output_record in snapshot.get("outputs", []):
+                    relative = output_record["id"][len("output:"):]
+                    target = (self.output_dir / relative).resolve(strict=False)
+                    output_root = self.output_dir.resolve(strict=False)
+                    if target != output_root and output_root not in target.parents:
+                        raise WorkflowOwnerStorageError("manual-recovery")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    self.repository.write(target, deepcopy(output_record["payload"]))
+                media_references = snapshot.get("mediaReferences", [])
+                media_payload = {"mediaReferences": deepcopy(media_references)}
+                self.repository.write(
+                    self.state_dir / "application-backup-media-references.json",
+                    {
+                        "schemaVersion": 1,
+                        "domain": "workflow.media-references",
+                        "revision": 1,
+                        "payload": media_payload,
+                        "mediaReferences": deepcopy(media_references),
+                        "checksum": _checksum(media_payload),
+                    },
+                )
+                if self.service_manager is not None and hasattr(self.service_manager, "reload_persisted_state"):
+                    self.service_manager.reload_persisted_state()
                 next_revision = self._read_state()["revision"]
                 record_checksums = self._snapshot_record_checksums(snapshot)
                 return self._evidence(
@@ -1490,19 +1829,58 @@ class WorkflowOwner:
                     record_checksums=record_checksums,
                     effect_fingerprint=_checksum({"operation": operation, "revision": next_revision, "recordChecksums": record_checksums}),
                 )
-            if operation in {"job-start", "job-cancel", "job-retry"}:
-                job_id = mutation["jobId"]
+            if operation.startswith("job-") and self.service_manager is not None:
+                try:
+                    service_result = self._service_command_result(operation, mutation, current, context)
+                    if not isinstance(service_result, Mapping):
+                        raise RuntimeError("workflow service returned an invalid result")
+                except Exception:
+                    current_after = self._read_state()
+                    status = "conflict" if current_after["revision"] != context.expected_revision else "rejected"
+                    return self._evidence(
+                        context,
+                        status=status,
+                        revision=current_after["revision"],
+                        record_checksums=[],
+                        effect_fingerprint=_checksum({"operation": operation, "revision": current_after["revision"], "status": status}),
+                    )
+                start_service_worker = operation in {"job-start", "job-retry"}
+                service_job_id = str(service_result.get("jobId") or "").strip()
+                next_state = self._read_state()
+                actual_job = next(
+                    (item for item in next_state["jobs"] if item.get("jobId") == service_job_id),
+                    None,
+                ) if service_job_id else None
+                record_checksums = [_checksum(actual_job)] if actual_job is not None else [_checksum(dict(service_result))]
+                if service_job_id:
+                    payload_result["jobId"] = service_job_id
+                payload_result["recordChecksums"] = record_checksums
+                return self._evidence(
+                    context,
+                    status="committed",
+                    revision=next_state["revision"],
+                    record_checksums=record_checksums,
+                    effect_fingerprint=_checksum({"operation": operation, "revision": next_state["revision"], "recordChecksums": record_checksums}),
+                )
+            if operation in {"job-start", "job-cancel", "job-retry", "job-prioritize", "job-delete", "job-clear-failed"}:
+                job_id = mutation.get("jobId")
                 jobs = deepcopy(current["jobs"])
-                existing_index = next((index for index, item in enumerate(jobs) if item.get("jobId") == job_id), None)
-                if existing_index is None:
-                    jobs.append(deepcopy(mutation["record"]))
+                if operation == "job-clear-failed":
+                    jobs = [item for item in jobs if item.get("status") != "failed"]
+                elif operation == "job-delete":
+                    jobs = [item for item in jobs if item.get("jobId") != job_id]
                 else:
-                    merged = deepcopy(jobs[existing_index])
-                    merged.update(deepcopy(mutation["record"]))
-                    jobs[existing_index] = merged
+                    existing_index = next((index for index, item in enumerate(jobs) if item.get("jobId") == job_id), None)
+                    if existing_index is None:
+                        jobs.append(deepcopy(mutation["record"]))
+                    else:
+                        merged = deepcopy(jobs[existing_index])
+                        merged.update(deepcopy(mutation["record"]))
+                        jobs[existing_index] = merged
                 self.store.save_jobs(jobs)
                 next_revision = self._read_state()["revision"]
-                record_checksums = [_checksum(mutation["record"])]
+                record_checksums = [_checksum(mutation["record"])] if mutation.get("record") else []
+                payload_result["recordChecksums"] = record_checksums
                 return self._evidence(
                     context,
                     status="committed",
@@ -1514,6 +1892,8 @@ class WorkflowOwner:
                 next_config = deepcopy(current["config"])
                 next_config.update(deepcopy(mutation["config"]))
                 self.store.save_config(next_config)
+                if self.service_manager is not None and hasattr(self.service_manager, "reload_saved_config"):
+                    self.service_manager.reload_saved_config()
                 next_revision = self._read_state()["revision"]
                 record_checksums = [_checksum(mutation["config"])]
                 return self._evidence(
@@ -1536,19 +1916,27 @@ class WorkflowOwner:
             )
 
         try:
-            result = self.receipts.commit(
-                request_id=request_id,
-                correlation_id=correlation_id,
-                domain=WORKFLOW_DOMAIN,
-                operation=operation,
-                capability=_CAPABILITY_BY_OPERATION[operation],
-                idempotency_key=idempotency_key,
-                expected_revision=expected,
-                payload=receipt_payload,
-                adapter=apply,
-            )
-        except OwnerReceiptInputError:
-            result = {"outcome": "manual-recovery", "commitStatus": "manual-recovery", "revision": None, "receipt": None, "error": {"code": "manual-recovery"}}
+            try:
+                result = self.receipts.commit(
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                    domain=WORKFLOW_DOMAIN,
+                    operation=operation,
+                    capability=_CAPABILITY_BY_OPERATION[operation],
+                    idempotency_key=idempotency_key,
+                    expected_revision=expected,
+                    payload=receipt_payload,
+                    adapter=apply,
+                )
+            except OwnerReceiptInputError:
+                result = {"outcome": "manual-recovery", "commitStatus": "manual-recovery", "revision": None, "receipt": None, "error": {"code": "manual-recovery"}}
+        finally:
+            if pause_service_worker and hasattr(self.service_manager, "resume_pending_worker"):
+                self.service_manager.resume_pending_worker()
+        if service_result is not None and result.get("outcome") == "committed":
+            payload_result["serviceResult"] = deepcopy(dict(service_result))
+            if start_service_worker:
+                self.service_manager.start_pending_worker()
         return self._envelope(
             operation,
             request_id,

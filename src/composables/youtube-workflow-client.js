@@ -343,8 +343,12 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   function workflowCommandResult(response, record) {
+    const serviceResult = response?.payload?.serviceResult
+    const result = serviceResult && typeof serviceResult === 'object' && !Array.isArray(serviceResult)
+      ? (serviceResult.job && typeof serviceResult.job === 'object' ? serviceResult.job : serviceResult)
+      : (record || {})
     return {
-      ...(record || {}),
+      ...result,
       revision: workflowResultRevision(response),
       ownerRevision: response.revision,
     }
@@ -480,7 +484,7 @@ export function createYoutubeWorkflowClient(options = {}) {
       if (cutover) {
         const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
         const config = {}
-        for (const key of ['model', 'baseUrl', 'proxyUrl']) {
+        for (const key of ['model', 'baseUrl', 'proxyUrl', 'cookiesPath', 'outputDir', 'ytDlpPath', 'whisperxPath']) {
           if (input[key] !== undefined) config[key] = String(input[key] || '').trim()
         }
         const response = await workflowCommand(cutover, 'config-commit', { config }, options)
@@ -530,7 +534,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`)))
     },
     async deleteJob(jobId, options = {}) {
-      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-delete')
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowCommand(cutover, 'job-delete', { jobId: String(jobId || '') }, options)
+        return workflowCommandResult(response, { jobId: String(jobId || '') })
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}`), {
         method: 'DELETE',
         headers: mutationHeaders(options, { revision: true }),
@@ -581,8 +589,8 @@ export function createYoutubeWorkflowClient(options = {}) {
     async cancelJob(jobId, options = {}) {
       const cutover = activeWorkflowOwner()
       if (cutover) {
-        const current = await workflowJob(cutover, jobId, options.signal)
-        const record = { ...current, status: 'canceled', stage: 'canceled', updatedAt: new Date().toISOString() }
+        await workflowJob(cutover, jobId, options.signal)
+        const record = { jobId: String(jobId || ''), status: 'canceled', stage: 'canceled' }
         const response = await workflowCommand(cutover, 'job-cancel', { record }, options)
         return workflowCommandResult(response, record)
       }
@@ -593,7 +601,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async prioritizeJob(jobId, options = {}) {
-      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-prioritize')
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowCommand(cutover, 'job-prioritize', { jobId: String(jobId || '') }, options)
+        return workflowCommandResult(response, { jobId: String(jobId || '') })
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/prioritize`), {
         method: 'POST',
         headers: mutationHeaders(options, { idempotent: true, revision: true }),
@@ -612,16 +624,16 @@ export function createYoutubeWorkflowClient(options = {}) {
         const current = await workflowJob(cutover, jobId, options.signal)
         const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
         const request = { ...(current.request && typeof current.request === 'object' ? current.request : {}) }
-        for (const key of ['model', 'baseUrl', 'videoPriority', 'stage']) {
+        for (const key of ['model', 'baseUrl', 'videoPriority']) {
           if (input[key] !== undefined) request[key] = input[key]
         }
+        const retryStage = String(input.stage || current.stage || 'queued')
         const record = {
-          ...current,
+          jobId: String(current.jobId || jobId || ''),
           status: 'queued',
-          stage: String(input.stage || 'queued'),
-          retryOf: current.jobId,
-          retryStage: String(input.stage || current.stage || 'queued'),
-          updatedAt: new Date().toISOString(),
+          stage: 'queued',
+          retryOf: String(current.jobId || jobId || ''),
+          retryStage,
           request,
         }
         const response = await workflowCommand(cutover, 'job-retry', { record }, options)
@@ -641,7 +653,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       }))
     },
     async clearFailedJobs(options = {}) {
-      if (activeWorkflowOwner()) throw workflowUnsupportedError('job-clear-failed')
+      const cutover = activeWorkflowOwner()
+      if (cutover) {
+        const response = await workflowCommand(cutover, 'job-clear-failed', {}, options)
+        return workflowCommandResult(response, {})
+      }
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs/clear-failed'), {
         method: 'POST',
         headers: mutationHeaders(options, { revision: true }),
@@ -762,7 +778,18 @@ export function createYoutubeWorkflowClient(options = {}) {
     },
     async getHistory(jobId, options = {}) {
       const cutover = activeWorkflowOwner()
-      if (cutover) return workflowJob(cutover, jobId, options.signal)
+      if (cutover) {
+        const response = await workflowQuery(cutover, 'history', { jobId: String(jobId || '') }, options.signal)
+        const item = response?.payload?.records?.[0]
+        if (!item) {
+          const error = new Error('Workflow history item was not found')
+          error.code = 'HISTORY_NOT_FOUND'
+          error.status = 404
+          error.retryable = false
+          throw error
+        }
+        return item
+      }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/history/${encodeURIComponent(jobId)}`)))
     },
     async deleteHistory(jobId, options = {}) {

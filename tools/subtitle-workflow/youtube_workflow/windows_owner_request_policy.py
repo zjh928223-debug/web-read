@@ -601,7 +601,8 @@ class WindowsOwnerRequestPolicy:
             return operation in {"marks-commit", "activity-append", "save-marks", "record-activity", "rebuild-mark-projection"}
         if domain == "workflow":
             return operation in {
-                "job-start", "job-cancel", "job-retry", "submit-job", "cancel-job", "retry-job",
+                "job-start", "job-cancel", "job-retry", "job-prioritize", "job-delete", "job-clear-failed",
+                "submit-job", "cancel-job", "retry-job",
                 "snapshot-commit", "config-commit", "reader-index-commit", "start", "cancel", "retry",
             } or any(token in operation for token in ("config", "index"))
         return operation in BACKUP_COMMAND_OPERATIONS

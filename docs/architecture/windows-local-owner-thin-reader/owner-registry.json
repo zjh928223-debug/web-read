@@ -381,7 +381,7 @@
         {"keyPattern": "read-web.workflow-operation-receipt-quarantine.v1.*", "schemaVersions": ["1"]}
       ],
       "queryOperations": ["health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"],
-      "commandOperations": ["job-start", "job-cancel", "job-retry", "snapshot-commit", "config-commit", "reader-index-commit", "receipt-query"],
+      "commandOperations": ["job-start", "job-cancel", "job-retry", "job-prioritize", "job-delete", "job-clear-failed", "snapshot-commit", "config-commit", "reader-index-commit", "receipt-query"],
       "revisionSource": {
         "identity": "workflow.history-and-job-revision",
         "source": "WorkflowHistoryStore jobs/history envelope revisions plus DurableJsonRepository config/reader-index checksums"
@@ -401,7 +401,7 @@
         "status": "isolated-pre-cutover",
         "repository": "existing WorkflowHistoryStore/DurableJsonRepository canonical files; no second workflow owner JSON",
         "receiptStore": "shared OwnerCommitReceiptStore evidence; browser local receipt hints are not authoritative",
-        "jobCommandBoundary": "validated durable job record mutation and one-time jobs/history/config/reader-index snapshot import; no queue, runner, or ProcessSupervisor side effect",
+        "jobCommandBoundary": "owner receipt coordinates the existing JobManager queue/runner/process boundary; WorkflowHistoryStore remains canonical and no browser durable writer is used",
         "mediaBoundary": "identity/reference/size/contentType/etag/authorized relative URL metadata only; no path or bytes",
         "productionApiAuthoritative": false,
         "browserWriterConnected": false

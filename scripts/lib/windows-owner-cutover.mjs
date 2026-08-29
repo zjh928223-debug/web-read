@@ -711,25 +711,33 @@ function workflowRecord(id, content, revision, contentId = null) {
   })
 }
 
-function workflowSnapshotFromRecords(records) {
+function workflowSnapshotFromRecords(records, mediaReferences = []) {
   if (!Array.isArray(records)) {
     throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration snapshot records are invalid')
   }
   const jobs = []
   const history = []
   const readerIndex = []
+  const outputs = []
   let config = {}
   let configSeen = false
   const ids = new Set()
   for (const record of records) {
     const id = String(record?.id || '')
-    if (!id || ids.has(id) || !record || typeof record.payload !== 'object' || Array.isArray(record.payload)) {
+    const isOutput = id.startsWith('output:')
+    const outputRelative = isOutput ? id.slice('output:'.length) : ''
+    if (!id || ids.has(id) || !record || typeof record.payload !== 'object' || (!isOutput && Array.isArray(record.payload))) {
       throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration record identity or payload is invalid')
+    }
+    if (isOutput && (!outputRelative || /^[\\/]/u.test(outputRelative) || /^[A-Za-z]:[\\/]/u.test(outputRelative)
+      || outputRelative.split(/[\\/]+/u).some((part) => part === '..'))) {
+      throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', `Workflow output record path is invalid: ${id}`)
     }
     ids.add(id)
     if (id.startsWith('jobs:')) jobs.push(record.payload)
     else if (id.startsWith('items:')) history.push(record.payload)
     else if (id.startsWith('reader-index:')) readerIndex.push(record.payload)
+    else if (isOutput) outputs.push(clone(record))
     else if (id === 'config') {
       if (configSeen) throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration contains duplicate config records')
       configSeen = true
@@ -743,6 +751,8 @@ function workflowSnapshotFromRecords(records) {
     history,
     readerIndex: { items: readerIndex },
     config,
+    outputs,
+    mediaReferences: Array.isArray(mediaReferences) ? clone(mediaReferences) : [],
   }
 }
 
@@ -764,6 +774,19 @@ function createWorkflowHostAdapter({ client }) {
       const jobs = responses[0]?.payload?.records || []
       const history = responses[1]?.payload?.records || []
       const readerIndex = responses[2]?.payload?.records || []
+      const backupRecords = responses[0]?.payload?.backupRecords
+      if (Array.isArray(backupRecords)) {
+        for (const response of responses) revision = response.revision ?? revision
+        const records = clone(backupRecords)
+        return {
+          schemaVersion: 1,
+          adapterVersion: 1,
+          revision,
+          records,
+          references: records.flatMap((record) => Array.isArray(record.references) ? clone(record.references) : []),
+          mediaReferences: clone(responses[0]?.payload?.backupMediaReferences || []),
+        }
+      }
       for (const response of responses) revision = response.revision ?? revision
       for (const item of jobs) {
         const jobId = String(item?.jobId || '')
@@ -783,6 +806,10 @@ function createWorkflowHostAdapter({ client }) {
           model: config.model || '',
           baseUrl: config.baseUrl || '',
           proxyUrl: config.proxyUrl || '',
+          cookiesPath: config.cookiesPath || '',
+          outputDir: config.outputDir || '',
+          ytDlpPath: config.ytDlpPath || '',
+          whisperxPath: config.whisperxPath || '',
         }, 0))
       }
       if (records.length === 0 && !config?.configured) revision = 0
@@ -802,7 +829,7 @@ function createWorkflowHostAdapter({ client }) {
       return client.command({
         domain: 'workflow',
         operation: 'snapshot-commit',
-        payload: { snapshot: workflowSnapshotFromRecords(records) },
+        payload: { snapshot: workflowSnapshotFromRecords(records, snapshot?.mediaReferences) },
         expectedRevision: context.expectedRevision,
         idempotencyKey: context.idempotencyKey,
       })

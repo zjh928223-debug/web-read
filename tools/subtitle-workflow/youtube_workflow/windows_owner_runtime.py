@@ -36,6 +36,7 @@ def create_profile_owner_handlers(
     *,
     workflow_state_dir: Path | None = None,
     workflow_output_dir: Path | None = None,
+    workflow_service_manager=None,
 ) -> dict[str, Any]:
     """Construct the six existing owner facades for one isolated profile."""
 
@@ -57,6 +58,7 @@ def create_profile_owner_handlers(
             Path(workflow_output_dir or (owners / "workflow-output")),
             profile_id,
             instance_id,
+            service_manager=workflow_service_manager,
         ),
     }
 

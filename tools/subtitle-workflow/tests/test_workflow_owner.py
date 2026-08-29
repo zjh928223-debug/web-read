@@ -89,7 +89,14 @@ class WorkflowOwnerTests(unittest.TestCase):
 
         config = owner.command(
             "config-commit",
-            payload={"config": {"model": "gemini-test", "baseUrl": "https://example.test/v1"}},
+            payload={"config": {
+                "model": "gemini-test",
+                "baseUrl": "https://example.test/v1",
+                "cookiesPath": "C:\\Users\\profile\\cookies.txt",
+                "outputDir": "C:\\Users\\profile\\workflow-output",
+                "ytDlpPath": "C:\\Tools\\yt-dlp.exe",
+                "whisperxPath": "C:\\Tools\\whisperx.exe",
+            }},
             expected_revision=revision,
             idempotency_key="config-1",
             **self.ids("config"),
@@ -97,7 +104,10 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertEqual(config["outcome"], "committed")
         config_query = owner.query("config", **self.ids("config-query"))
         self.assertEqual(config_query["payload"]["config"]["model"], "gemini-test")
-        self.assertNotIn("outputDir", json.dumps(config_query))
+        self.assertEqual(config_query["payload"]["config"]["cookiesPath"], "C:\\Users\\profile\\cookies.txt")
+        self.assertEqual(config_query["payload"]["config"]["outputDir"], "C:\\Users\\profile\\workflow-output")
+        self.assertEqual(config_query["payload"]["config"]["ytDlpPath"], "C:\\Tools\\yt-dlp.exe")
+        self.assertEqual(config_query["payload"]["config"]["whisperxPath"], "C:\\Tools\\whisperx.exe")
 
         index = owner.command(
             "reader-index-commit",
@@ -255,7 +265,7 @@ class WorkflowOwnerTests(unittest.TestCase):
             ("job-start", {"record": {"jobId": "bad", "outputDir": "C:\\Users\\secret"}}),
             ("job-start", {"record": {"jobId": "bad", "title": "safe", "url": "https://example.test/?token=secret"}}),
             ("job-start", {"record": {"jobId": "bad", "audio": [0] * 17}}),
-            ("config-commit", {"config": {"cookiesPath": "C:\\Users\\secret\\cookies.txt"}}),
+            ("config-commit", {"config": {"cookiesPath": "data:text/plain,secret"}}),
             ("reader-index-commit", {"readerIndex": {"items": [{"jobId": "bad", "ui": {"theme": "dark"}}]}}),
         ):
             result = owner.command(

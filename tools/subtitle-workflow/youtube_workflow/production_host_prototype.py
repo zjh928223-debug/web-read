@@ -18,7 +18,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from .service import create_app as create_workflow_app
+from .core import WorkflowConfig
+from .service import JobManager, create_app as create_workflow_app
 from .windows_owner_registry import (
     OwnerRegistryError,
     WINDOWS_OWNER_DOMAINS,
@@ -92,7 +93,7 @@ OWNER_MIGRATION_OPERATIONS = {
     },
     "workflow": {
         "query": frozenset({"health", "readiness", "capabilities", "job", "history", "reader-index", "config", "media-capability", "receipt"}),
-        "command": frozenset({"job-start", "job-cancel", "job-retry", "snapshot-commit", "config-commit", "reader-index-commit"}),
+        "command": frozenset({"job-start", "job-cancel", "job-retry", "job-prioritize", "job-delete", "job-clear-failed", "snapshot-commit", "config-commit", "reader-index-commit"}),
         "receipt-query": frozenset({"receipt-query"}),
     },
 }
@@ -963,6 +964,7 @@ def create_local_app_host(
     *,
     dist_dir: Path,
     workflow_app: FastAPI | None = None,
+    workflow_service_manager=None,
     capability_app=None,
     capability_base_url: str = "",
     started_at: float | None = None,
@@ -1047,6 +1049,14 @@ def create_local_app_host(
     freeze_root = owner_freeze_root or owner_receipt_root
     base_owner_registry_status = owner_registry_status
     owner_registry_status = _merge_owner_freeze_state(base_owner_registry_status, freeze_root, profile_id)
+    service_manager = workflow_service_manager
+    if service_manager is None and workflow_app is None and (owner_workflow_state_dir is not None or owner_workflow_output_dir is not None):
+        config_kwargs = {}
+        if owner_workflow_state_dir is not None:
+            config_kwargs["state_dir"] = Path(owner_workflow_state_dir)
+        if owner_workflow_output_dir is not None:
+            config_kwargs["output_dir"] = Path(owner_workflow_output_dir)
+        service_manager = JobManager(config=WorkflowConfig(**config_kwargs))
     if owner_domain_handlers is None and owner_repository_root is not None:
         owner_mode = owner_registry_status.get("ownerMode")
         authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
@@ -1057,6 +1067,7 @@ def create_local_app_host(
                 instance_id,
                 workflow_state_dir=owner_workflow_state_dir,
                 workflow_output_dir=owner_workflow_output_dir,
+                workflow_service_manager=service_manager,
             )
     receipt_store = owner_receipt_store
     if receipt_store is None and owner_receipt_root is not None:
@@ -1070,6 +1081,7 @@ def create_local_app_host(
     if receipt_store is not None and receipt_store.profile_id != profile_id:
         raise ValueError("owner receipt store profile does not match Local App Host profile")
     workflow = workflow_app or create_workflow_app(
+        manager=service_manager,
         access_token=workflow_token,
         bind_host=bind_host,
         profile_id=profile_id,
