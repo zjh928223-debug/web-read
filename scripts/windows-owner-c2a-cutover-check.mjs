@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,10 +13,22 @@ import {
   readOwnerModeFreeze,
   writeIsolatedBrowserProfile,
 } from './lib/read-web-production-backup.mjs'
-import { runWindowsOwnerProductionCutover } from './lib/windows-owner-cutover.mjs'
+import {
+  createWindowsOwnerProductionHostClient,
+  runWindowsOwnerProductionCutover,
+} from './lib/windows-owner-cutover.mjs'
+import { resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PRODUCTION_DOMAINS = ['reader-session', 'marks-activity']
+const ALL_OWNER_DOMAINS = [
+  'reader-session',
+  'vocabulary-srs',
+  'passage-preview',
+  'annotation',
+  'marks-activity',
+  'workflow',
+]
 
 function dataUrl(source) {
   return `data:text/javascript;base64,${Buffer.from(source, 'utf8').toString('base64')}`
@@ -43,8 +58,9 @@ function makeLayout(root, name) {
   }
 }
 
-function makeHealth(frozenDomains) {
+function makeHealth(frozenDomains, authoritativeDomains = []) {
   const frozen = new Set(frozenDomains)
+  const authoritative = new Set(authoritativeDomains)
   return {
     profileId: 'c2a-production-profile',
     instanceId: 'c2a-production-instance',
@@ -53,18 +69,181 @@ function makeHealth(frozenDomains) {
     profileEvidenceReady: true,
     ownerRegistry: { valid: true },
     ownerMode: {
-      status: frozen.size ? 'frozen' : 'authoritative',
-      authoritativeDomains: [...PRODUCTION_DOMAINS],
+      status: frozen.size ? 'frozen' : authoritative.size ? 'authoritative' : 'pre-cutover',
+      authoritativeDomains: [...authoritative],
       frozenDomains: [...frozen],
     },
     domains: PRODUCTION_DOMAINS.map((domain) => ({
       domain,
-      authority: 'authoritative',
+      authority: authoritative.has(domain) ? 'authoritative' : 'pre-cutover',
       queryCapability: 'read-only',
-      commandCapability: 'writable',
+      commandCapability: authoritative.has(domain) ? 'writable' : 'not-ready',
       writerFrozen: frozen.has(domain),
     })),
   }
+}
+
+function ownerProfileEvidence(profileId) {
+  const verified = {
+    bound: true,
+    status: 'verified',
+    source: 'read-web-production-backup.composition',
+  }
+  const bindings = {
+    backupAdapterRegistry: {
+      ...verified,
+      requiredDomains: [...ALL_OWNER_DOMAINS],
+    },
+    applicationLease: {
+      ...verified,
+      source: 'read-web-production-backup.application-profile-lease',
+    },
+    transaction: { ...verified },
+    revision: { ...verified },
+    recovery: { ...verified },
+    domains: {},
+  }
+  for (const domain of ALL_OWNER_DOMAINS) {
+    bindings.domains[domain] = {
+      backupAdapter: {
+        ...verified,
+        key: domain,
+        schemaVersion: 1,
+        supportedSchemaVersions: [1],
+      },
+      revision: { ...verified },
+      recovery: { ...verified },
+    }
+  }
+  return {
+    schemaVersion: 1,
+    source: 'read-web-production-backup.composition',
+    ready: true,
+    profileChecksum: `sha256:${'a'.repeat(64)}`,
+    inventory: {
+      present: true,
+      status: 'verified',
+      source: 'browser-profile.json + application_backup.py',
+      indexedDbRowCount: 0,
+      localStorageKeyCount: 0,
+      pythonSourceCount: 2,
+    },
+    collection: {
+      status: 'verified',
+      source: 'createReadWebApplicationBackupService.createBackup',
+      artifactChecksum: `sha256:${'b'.repeat(64)}`,
+    },
+    rows: [],
+    bindings,
+    profileLease: {
+      schemaVersion: 1,
+      status: 'held',
+      profileId,
+      profileKeyHash: `sha256:${'c'.repeat(64)}`,
+      leaseIdHash: `sha256:${'d'.repeat(64)}`,
+      ownerTokenHash: `sha256:${'e'.repeat(64)}`,
+      pid: process.pid,
+    },
+    ownerMode: {
+      schemaVersion: 1,
+      status: 'authoritative',
+      authoritativeDomains: [...PRODUCTION_DOMAINS],
+      invalidDomains: [],
+    },
+  }
+}
+
+async function unusedPort() {
+  const server = net.createServer()
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+  const port = address?.port
+  await new Promise((resolve) => server.close(resolve))
+  return port
+}
+
+async function startLocalAppHost(layout) {
+  const port = await unusedPort()
+  const distDir = path.join(layout.isolationRoot, 'host-dist')
+  await mkdir(distDir, { recursive: true })
+  await writeFile(path.join(distDir, 'index.html'), '<main>isolated C2a Host</main>', 'utf8')
+  const profileId = 'c2a-production-profile'
+  const instanceId = 'c2a-production-instance'
+  const accessToken = 'c2a-production-token'
+  const python = await resolveSelectedPython({
+    repoRoot: repositoryRoot,
+    configPath: path.join(repositoryRoot, 'config', 'runtime.optimization.json'),
+  })
+  const script = `
+import json, os
+from pathlib import Path
+from fastapi import FastAPI
+import uvicorn
+from youtube_workflow.production_host_prototype import create_local_app_host
+from youtube_workflow.windows_owner_registry import load_owner_registry
+
+registry = load_owner_registry(Path(os.environ['C2A_REGISTRY']))
+app = create_local_app_host(
+    dist_dir=Path(os.environ['C2A_DIST']),
+    workflow_app=FastAPI(),
+    access_token=os.environ['C2A_TOKEN'],
+    profile_id=os.environ['C2A_PROFILE_ID'],
+    instance_id=os.environ['C2A_INSTANCE_ID'],
+    owner_registry=registry,
+    owner_profile_evidence=json.loads(os.environ['C2A_OWNER_EVIDENCE']),
+    owner_repository_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
+    owner_receipt_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
+    owner_freeze_root=Path(os.environ['C2A_AUTHORITY_ROOT']),
+    config_compatibility={'schemaVersion': 1, 'minimum': 1, 'maximum': 1},
+)
+uvicorn.run(app, host='127.0.0.1', port=int(os.environ['C2A_PORT']), log_level='warning', access_log=False)
+`
+  const child = spawn(python.executable, ['-c', script], {
+    cwd: path.join(repositoryRoot, 'tools', 'subtitle-workflow'),
+    env: {
+      ...process.env,
+      PYTHONUNBUFFERED: '1',
+      PYTHONPATH: path.join(repositoryRoot, 'tools', 'subtitle-workflow'),
+      C2A_DIST: distDir,
+      C2A_REGISTRY: path.join(repositoryRoot, 'docs', 'architecture', 'windows-local-owner-thin-reader', 'owner-registry.json'),
+      C2A_TOKEN: accessToken,
+      C2A_PROFILE_ID: profileId,
+      C2A_INSTANCE_ID: instanceId,
+      C2A_OWNER_EVIDENCE: JSON.stringify(ownerProfileEvidence(profileId)),
+      C2A_AUTHORITY_ROOT: layout.profileAuthorityRoot,
+      C2A_PORT: String(port),
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+  let stderr = ''
+  child.stderr?.on('data', (chunk) => { stderr += String(chunk) })
+  const baseUrl = `http://127.0.0.1:${port}`
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    if (child.exitCode !== null) throw new Error(`Local App Host exited before ready: ${stderr.trim() || child.exitCode}`)
+    try {
+      const response = await fetch(`${baseUrl}/api/app/health`, {
+        headers: { 'X-Read-Web-Token': accessToken },
+      })
+      if (response.ok) {
+        const health = await response.json()
+        return { child, baseUrl, accessToken, profileId, instanceId, health }
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  child.kill()
+  await once(child, 'exit').catch(() => {})
+  throw new Error(`Local App Host did not become ready: ${stderr.trim() || 'timeout'}`)
+}
+
+async function stopLocalAppHost(host) {
+  if (!host?.child || host.child.exitCode !== null) return
+  host.child.kill()
+  await once(host.child, 'exit').catch(() => {})
 }
 
 async function loadBrowserCutoverModule() {
@@ -103,7 +282,7 @@ function readerRows() {
   const payloads = {
     audioMeta: { schemaVersion: 1, contentId, mediaIdentity },
     transcript: { schemaVersion: 1, contentId, segments: [] },
-    chunkData: { schemaVersion: 1, contentId, chunks: [] },
+    chunkData: [{ text: 'c2a', index: 0 }],
     marks: { schemaVersion: 1, contentId, marks: [{ globalIndex: 0, word: 'c2a' }] },
     readerSession: { schemaVersion: 3, contentId, revision: 1 },
   }
@@ -150,29 +329,41 @@ async function seedProfile(layout, { reader = false, marks = false } = {}) {
 const browserCutoverModule = await loadBrowserCutoverModule()
 const {
   assertWindowsOwnerBrowserWriterAllowed,
-  createWindowsOwnerDomainCutover,
+  initializeWindowsOwnerDomainCutoverComposition,
 } = browserCutoverModule
 
 const workRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-owner-c2a-production-'))
+let host = null
+let reopenedHost = null
+let browserGuard = null
 try {
   const source = makeLayout(workRoot, 'source')
   const target = makeLayout(workRoot, 'target')
   await seedProfile(source, { reader: true, marks: true })
   await seedProfile(target)
+  host = await startLocalAppHost(target)
+  assert.deepEqual(host.health.ownerMode?.authoritativeDomains, PRODUCTION_DOMAINS)
+  assert.equal(host.health.domains?.find((domain) => domain.domain === 'reader-session')?.authority, 'authoritative')
+  const hostClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: host.baseUrl,
+    accessToken: host.accessToken,
+    profileId: host.profileId,
+    instanceId: host.instanceId,
+  })
 
   const frozenDomains = new Set()
   const windowObject = {}
-  const browserGuard = createWindowsOwnerDomainCutover({
+  const browserComposition = await initializeWindowsOwnerDomainCutoverComposition({
     windowObject,
     health: makeHealth([]),
-    authoritativeDomains: PRODUCTION_DOMAINS,
-    frozenDomains: [],
-    ownerClient: {},
     fetchImpl: async () => ({ ok: true, async json() { return makeHealth([...frozenDomains]) } }),
     healthPath: '/api/app/health',
     healthTimeoutMs: 500,
   })
-  windowObject.__windowsOwnerDomainCutover = browserGuard
+  assert.equal(browserComposition.status, 'not-ready')
+  assert.ok(browserComposition.cutover, 'pre-cutover page must retain a pollable guard')
+  assert.deepEqual(browserComposition.cutover.authoritativeDomains, [])
+  browserGuard = browserComposition.cutover
 
   const refreshes = []
   const result = await runWindowsOwnerProductionCutover({
@@ -189,6 +380,10 @@ try {
     expectedRevisionByDomain: {
       'reader-session': 0,
       'marks-activity': 0,
+    },
+    hostClient,
+    hostScopeByDomain: {
+      'marks-activity': { jobId: 'c2a-marks', contentId: 'c2a-marks' },
     },
     browserGuard,
     refreshBrowserGuard: async ({ domain }) => {
@@ -207,7 +402,11 @@ try {
         /frozen after Host cutover/,
       )
       refreshes.push(domain)
-      return { ok: true, observedFrozen: true }
+      return {
+        ok: true,
+        observedFrozen: true,
+        frozenDomains: refreshed.frozenDomains,
+      }
     },
   })
 
@@ -228,16 +427,36 @@ try {
     assert.equal(await readOwnerModeFreeze({ ...target, profileId: 'c2a-production-profile', domain }), null)
   }
 
-  const reopened = await (await import('./lib/read-web-production-backup.mjs')).createReadWebProductionBackupComposition({
-    ...target,
-    profileId: 'c2a-production-profile',
+  await stopLocalAppHost(host)
+  host = null
+  reopenedHost = await startLocalAppHost(target)
+  const reopenedClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: reopenedHost.baseUrl,
+    accessToken: reopenedHost.accessToken,
+    profileId: reopenedHost.profileId,
+    instanceId: reopenedHost.instanceId,
   })
-  const reopenedReader = await reopened.adapters['reader-session'].collect({ domain: 'reader-session' })
-  const reopenedMarks = await reopened.adapters['marks-activity'].collect({ domain: 'marks-activity' })
-  assert.ok(reopenedReader.records.some((record) => record.id === 'audioMeta' && record.contentId === 'c2a-reader-content'))
-  assert.ok(reopenedMarks.records.some((record) => record.contentId === 'c2a-marks'))
-  browserGuard.dispose()
+  const reopenedReader = await reopenedClient.query({
+    domain: 'reader-session',
+    operation: 'snapshot',
+    payload: {},
+  })
+  const reopenedMarks = await reopenedClient.query({
+    domain: 'marks-activity',
+    operation: 'marks',
+    payload: { jobId: 'c2a-marks', contentId: 'c2a-marks' },
+  })
+  assert.equal(reopenedReader.outcome, 'read')
+  assert.equal(reopenedReader.payload.snapshot.contentId, 'c2a-reader-content')
+  assert.equal(reopenedReader.payload.snapshot.media.mediaId, 'c2a-reader-audio')
+  assert.equal(reopenedMarks.outcome, 'read')
+  assert.deepEqual(reopenedMarks.payload.marks, [{ globalIndex: 1, word: 'marks' }])
+  await stopLocalAppHost(reopenedHost)
+  reopenedHost = null
   console.log('Windows owner C2a production cutover checks passed.')
 } finally {
+  await stopLocalAppHost(reopenedHost)
+  await stopLocalAppHost(host)
+  browserGuard?.dispose?.()
   await rm(workRoot, { recursive: true, force: true })
 }

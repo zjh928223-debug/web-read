@@ -147,11 +147,23 @@ function equivalentDomain(left, right) {
       ...value,
       records: value.records.map((record) => {
         if (!record || typeof record !== 'object' || Array.isArray(record)) return record
-        const { checksum: _checksum, ...content } = record
+        const { checksum: _checksum, ...recordContent } = record
+        const content = { ...recordContent }
         if (/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json:/u.test(String(content.id || ''))
           && content.payload && typeof content.payload === 'object' && !Array.isArray(content.payload)
           && typeof content.payload.schemaVersion === 'string'
           && (content.schemaVersion === 1 || content.schemaVersion === content.payload.schemaVersion)) {
+          // The Python owner creates a fresh updatedAt/checksum when a legacy
+          // marks envelope is imported.  Compare the durable marks payload,
+          // not those derived write-time fields.
+          content.payload = clone(content.payload)
+          delete content.payload.checksum
+          delete content.payload.updatedAt
+          if (content.payload.payload && typeof content.payload.payload === 'object'
+            && !Array.isArray(content.payload.payload)) {
+            delete content.payload.payload.updatedAt
+            delete content.payload.payload.checksum
+          }
           delete content.schemaVersion
         }
         return content
@@ -193,6 +205,10 @@ async function loadProductionModules() {
         path.join(repositoryRoot, 'src', 'services', 'windows-owner-legacy-compatibility-bridge.js'),
         'utf8',
       )
+      const apiClientSource = await readFile(
+        path.join(repositoryRoot, 'src', 'services', 'windows-owner-api-client.js'),
+        'utf8',
+      )
       const apiContract = JSON.parse(await readFile(
         path.join(repositoryRoot, 'docs', 'architecture', 'windows-local-owner-thin-reader', 'api-contract.json'),
         'utf8',
@@ -224,13 +240,305 @@ async function loadProductionModules() {
             `const ownerRegistry = ${JSON.stringify(ownerRegistry)}`,
           ),
       ))
+      const apiClient = await import(dataUrl(
+        apiClientSource.replace(
+          "import apiContract from '../../docs/architecture/windows-local-owner-thin-reader/api-contract.json'",
+          `const apiContract = ${JSON.stringify(apiContract)}`,
+        ),
+      ))
       return Object.freeze({
         createWindowsDurableStateMigration: migration.createWindowsDurableStateMigration,
         createWindowsOwnerLegacyCompatibilityBridge: bridge.createWindowsOwnerLegacyCompatibilityBridge,
+        createWindowsOwnerApiClient: apiClient.createWindowsOwnerApiClient,
       })
     })()
   }
   return productionModulesPromise
+}
+
+function productionHostError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+function createProductionHostFetch({ baseUrl, accessToken, fetchImpl = globalThis.fetch } = {}) {
+  if (typeof fetchImpl !== 'function') throw productionHostError('OWNER_CUTOVER_HOST_FETCH_UNAVAILABLE', 'Production Host fetch is unavailable')
+  let root
+  try { root = new URL(String(baseUrl || '')) } catch {
+    throw productionHostError('OWNER_CUTOVER_HOST_URL_INVALID', 'Production Host URL is invalid')
+  }
+  if (!['http:', 'https:'].includes(root.protocol)
+    || !['127.0.0.1', 'localhost', '::1'].includes(root.hostname.toLowerCase())) {
+    throw productionHostError('OWNER_CUTOVER_HOST_URL_INVALID', 'Production Host URL must be loopback')
+  }
+  const token = String(accessToken || '').trim()
+  if (!token) throw productionHostError('OWNER_CUTOVER_HOST_TOKEN_REQUIRED', 'Production Host access token is required')
+  return (requestUrl, init = {}) => {
+    const target = new URL(String(requestUrl), root)
+    if (target.origin !== root.origin) {
+      throw productionHostError('OWNER_CUTOVER_HOST_URL_INVALID', 'Production Host request must remain on the configured loopback origin')
+    }
+    const headers = { ...(init.headers || {}), 'X-Read-Web-Token': token }
+    return fetchImpl(target, { ...init, headers })
+  }
+}
+
+function hostResponsePayload(response, operation) {
+  if (!response || response.outcome !== 'read') {
+    throw productionHostError(
+      'OWNER_CUTOVER_HOST_QUERY_FAILED',
+      `Production Host ${operation} query did not return a readable result (${response?.outcome || 'missing'}:${response?.error?.code || 'unknown'})`,
+    )
+  }
+  return response.payload && typeof response.payload === 'object' ? response.payload : {}
+}
+
+function hostRecord(id, schemaVersion, revision, contentId, payload, extra = {}) {
+  return {
+    id,
+    schemaVersion,
+    revision,
+    contentId,
+    payload: clone(payload),
+    references: [],
+    mediaReferences: [],
+    ...extra,
+  }
+}
+
+function emptyHostDomain() {
+  return {
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision: 0,
+    records: [],
+    references: [],
+    mediaReferences: [],
+  }
+}
+
+function readerHostSnapshot(response) {
+  const payload = hostResponsePayload(response, 'reader-session')
+  if (payload.found !== true || !payload.snapshot || typeof payload.snapshot !== 'object') return emptyHostDomain()
+  const snapshot = payload.snapshot
+  const revision = snapshot.revision
+  const contentId = snapshot.contentId
+  return {
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision,
+    records: [
+      hostRecord('audioMeta', 1, revision, contentId, snapshot.audioMeta),
+      hostRecord('chunkData', 1, revision, contentId, snapshot.chunkData),
+      hostRecord('marks', 1, revision, contentId, {
+        schemaVersion: 1,
+        contentId,
+        marks: snapshot.marks,
+      }),
+      hostRecord('readerSession', 3, revision, contentId, {
+        schemaVersion: 3,
+        contentId,
+        revision,
+      }),
+      hostRecord('transcript', 1, revision, contentId, snapshot.transcript),
+    ],
+    references: [],
+    mediaReferences: [],
+  }
+}
+
+function recordById(snapshot, id) {
+  return Array.isArray(snapshot?.records)
+    ? snapshot.records.find((record) => String(record?.id || '') === id)
+    : null
+}
+
+function readerCandidate(snapshot, profileId, expectedRevision) {
+  const audioRecord = recordById(snapshot, 'audioMeta')
+  const transcriptRecord = recordById(snapshot, 'transcript')
+  const chunkRecord = recordById(snapshot, 'chunkData')
+  const marksRecord = recordById(snapshot, 'marks')
+  const audioMeta = audioRecord?.payload
+  const mediaSource = audioMeta?.mediaIdentity || audioMeta?.media || snapshot?.media
+  const marksPayload = marksRecord?.payload
+  const marks = Array.isArray(marksPayload) ? marksPayload : marksPayload?.marks
+  if (!audioMeta || !transcriptRecord?.payload || !chunkRecord?.payload || !marksRecord
+    || !Array.isArray(marks) || !mediaSource || typeof mediaSource !== 'object') {
+    throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Reader Session backup has no complete Host candidate')
+  }
+  const media = { ...mediaSource }
+  if (!media.authorizedUrl && typeof media.authorizedReference === 'string') media.authorizedUrl = media.authorizedReference
+  delete media.authorizedReference
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    throw productionHostError('OWNER_CUTOVER_HOST_REVISION_INVALID', 'Reader Session Host revision must be numeric')
+  }
+  return {
+    schemaVersion: 'reader-session-owner.v1',
+    domain: 'reader-session',
+    profileId,
+    contentId: String(audioRecord.contentId || audioMeta.contentId || ''),
+    revision: expectedRevision + 1,
+    audioMeta,
+    transcript: transcriptRecord.payload,
+    chunkData: chunkRecord.payload,
+    marks,
+    media,
+  }
+}
+
+function createReaderHostAdapter({ client, profileId }) {
+  return {
+    key: 'reader-session',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const response = await client.query({ domain: 'reader-session', operation: 'snapshot', payload: {} })
+      return readerHostSnapshot(response)
+    },
+    async restoreRecords(snapshot, context = {}) {
+      const candidate = readerCandidate(snapshot, profileId, context.expectedRevision)
+      const prepared = await client.command({
+        domain: 'reader-session',
+        operation: 'prepare',
+        payload: { candidate },
+      })
+      if (prepared?.outcome !== 'read' || typeof prepared.payload?.prepare?.prepareId !== 'string') {
+        throw productionHostError('OWNER_CUTOVER_HOST_PREPARE_FAILED', 'Reader Session Host prepare was not accepted')
+      }
+      return client.command({
+        domain: 'reader-session',
+        operation: 'commit',
+        payload: { prepareId: prepared.payload.prepare.prepareId },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
+    },
+  }
+}
+
+function safeMarksScope(scope) {
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope)) {
+    throw productionHostError('OWNER_CUTOVER_HOST_SCOPE_REQUIRED', 'Marks/activity Host scope is required')
+  }
+  const jobId = String(scope.jobId || '')
+  const contentId = String(scope.contentId || jobId)
+  if (!jobId || !contentId || jobId.length > 128 || contentId.length > 128
+    || /[\\/\u0000-\u001f\u007f]/u.test(jobId) || /[\\/\u0000-\u001f\u007f]/u.test(contentId)) {
+    throw productionHostError('OWNER_CUTOVER_HOST_SCOPE_INVALID', 'Marks/activity Host scope is invalid')
+  }
+  return { jobId, contentId }
+}
+
+function marksHostSnapshot(response, scope) {
+  const payload = hostResponsePayload(response, 'marks-activity')
+  if (payload.found !== true || payload.empty === true) return emptyHostDomain()
+  const revision = payload.revision
+  const marks = Array.isArray(payload.marks) ? payload.marks : []
+  const envelope = {
+    schemaVersion: 'reader-marks.v1',
+    domain: 'reader-marks',
+    jobId: scope.jobId,
+    revision,
+    updatedAt: '',
+    payload: { jobId: scope.jobId, marks, updatedAt: '' },
+  }
+  const reference = { type: 'workflow-job', id: scope.jobId }
+  return {
+    schemaVersion: 1,
+    adapterVersion: 1,
+    revision,
+    records: [hostRecord(
+      'reader-marks.json:_workflow/reader-marks.json',
+      1,
+      revision,
+      scope.jobId,
+      envelope,
+      { references: [reference], mediaReferences: [] },
+    )],
+    references: [reference],
+    mediaReferences: [],
+  }
+}
+
+function createMarksHostAdapter({ client, scope }) {
+  const fixedScope = safeMarksScope(scope)
+  return {
+    key: 'marks-activity',
+    schemaVersion: 1,
+    adapterVersion: 1,
+    supportedSchemaVersions: [1],
+    async collect() {
+      const response = await client.query({
+        domain: 'marks-activity',
+        operation: 'marks',
+        payload: fixedScope,
+      })
+      return marksHostSnapshot(response, fixedScope)
+    },
+    async restoreRecords(snapshot, context = {}) {
+      const record = Array.isArray(snapshot?.records)
+        ? snapshot.records.find((candidate) => String(candidate?.id || '').startsWith('reader-marks.json:'))
+        : null
+      if (!record?.payload || typeof record.payload !== 'object') return { status: 'committed', revision: context.expectedRevision }
+      const envelope = record.payload
+      const marks = Array.isArray(envelope.payload?.marks)
+        ? envelope.payload.marks
+        : (Array.isArray(envelope.marks) ? envelope.marks : null)
+      if (!marks) throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Marks/activity backup has no marks array')
+      const jobId = String(envelope.jobId || fixedScope.jobId)
+      const contentId = String(envelope.payload?.jobId || record.contentId || fixedScope.contentId)
+      return client.command({
+        domain: 'marks-activity',
+        operation: 'marks-commit',
+        payload: { jobId, contentId, marks },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey,
+      })
+    },
+  }
+}
+
+function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {} } = {}) {
+  if (!client || typeof client.query !== 'function' || typeof client.command !== 'function') {
+    throw productionHostError('OWNER_CUTOVER_HOST_CLIENT_INVALID', 'Production Host typed client is required')
+  }
+  const adapters = {
+    'reader-session': createReaderHostAdapter({ client, profileId }),
+    'marks-activity': createMarksHostAdapter({ client, scope: hostScopeByDomain['marks-activity'] }),
+  }
+  // The existing migration controller validates the six-domain map even
+  // when this explicitly scoped C2a runner only migrates the first two.
+  // Keep later domains visibly unavailable rather than borrowing browser
+  // backup adapters or presenting empty data as a Host snapshot.
+  for (const domain of ['passage-preview', 'annotation', 'vocabulary-srs', 'workflow']) {
+    adapters[domain] = {
+      key: domain,
+      schemaVersion: 1,
+      adapterVersion: 1,
+      supportedSchemaVersions: [1],
+      async collect() {
+        throw productionHostError('OWNER_CUTOVER_HOST_DOMAIN_NOT_READY', `Production Host ${domain} is not ready in C2a`)
+      },
+    }
+  }
+  return adapters
+}
+
+export async function createWindowsOwnerProductionHostClient(options = {}) {
+  if (options.client && typeof options.client.query === 'function') return options.client
+  const { createWindowsOwnerApiClient } = await loadProductionModules()
+  return createWindowsOwnerApiClient({
+    profileId: options.profileId,
+    instanceId: options.instanceId,
+    fetchImpl: createProductionHostFetch({
+      baseUrl: options.baseUrl,
+      accessToken: options.accessToken,
+      fetchImpl: options.fetchImpl,
+    }),
+    timeoutMs: options.timeoutMs,
+  })
 }
 
 function productionLayout(composition) {
@@ -330,17 +638,27 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     ...options.target,
     profileId,
     pythonCommand: options.pythonCommand || options.target.pythonCommand,
-    migrationAdapterAccess: true,
   })
   const targetLayout = productionLayout(targetComposition)
-  const hostAdapters = targetComposition.migrationAdapters
-  if (!hostAdapters || domains.some((domain) => !hostAdapters[domain])) {
-    const error = new Error('Production cutover composition did not expose host migration adapters')
-    error.code = 'OWNER_CUTOVER_PRODUCTION_COMPOSITION_INVALID'
-    throw error
-  }
 
   const { createWindowsDurableStateMigration, createWindowsOwnerLegacyCompatibilityBridge } = await loadProductionModules()
+  const hostClient = await createWindowsOwnerProductionHostClient({
+    client: options.hostClient,
+    baseUrl: options.hostBaseUrl,
+    accessToken: options.hostAccessToken,
+    profileId,
+    instanceId: options.hostInstanceId || profileId,
+    fetchImpl: options.hostFetchImpl,
+    timeoutMs: options.hostTimeoutMs,
+  })
+  const hostAdapters = createProductionHostAdapters({
+    client: hostClient,
+    profileId,
+    hostScopeByDomain: options.hostScopeByDomain,
+  })
+  if (domains.some((domain) => !hostAdapters[domain])) {
+    throw productionHostError('OWNER_CUTOVER_PRODUCTION_COMPOSITION_INVALID', 'Production Host owner adapter is missing')
+  }
   const legacyBridge = createWindowsOwnerLegacyCompatibilityBridge({
     profileId,
     applicationPersistence: sourceComposition.browserProfile.persistence,
@@ -405,7 +723,14 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
           return { ok: false, reasonCode: 'migration-browser-refresh-required' }
         }
         const refreshed = await refreshBrowserGuard({ domain, stage: 'before-final-backup', freeze: context.freeze })
-        if (refreshed === false || refreshed?.ok === false) return refreshed || { ok: false, reasonCode: 'migration-browser-refresh-failed' }
+        const observedFrozenDomains = Array.isArray(refreshed?.frozenDomains) ? refreshed.frozenDomains : []
+        if (refreshed === false || refreshed?.ok === false || !observedFrozenDomains.includes(domain)) {
+          return {
+            ...(refreshed && typeof refreshed === 'object' ? refreshed : {}),
+            ok: false,
+            reasonCode: refreshed?.reasonCode || 'migration-browser-freeze-not-observed',
+          }
+        }
         return { ok: true, status: 'browser-frozen-observed', ...(refreshed && typeof refreshed === 'object' ? refreshed : {}) }
       },
     })

@@ -162,7 +162,11 @@ export async function initializeWindowsOwnerDomainCutoverComposition(options = {
   )
   const domains = readyDomains(health)
   const frozen = frozenDomains(health)
-  if ((!domains.length && !frozen.length) || !SAFE_IDENTITY.test(String(health?.profileId || '')) || !baseHealthReady(health)) {
+  // A valid pre-cutover health response still needs a live guard so an
+  // already-open page can observe the first persisted freeze marker.  Only
+  // invalid health/profile identity is non-pollable; an empty domain set is
+  // an honest not-ready state, not a reason to tear down the guard.
+  if (!SAFE_IDENTITY.test(String(health?.profileId || '')) || !baseHealthReady(health)) {
     const previous = windowObject.__windowsOwnerDomainCutover
     try { previous?.dispose?.() } catch (_error) {}
     return Object.freeze({ status: 'not-ready', authoritativeDomains: [], health: health || null, ownerClient: null, cutover: null })
@@ -187,7 +191,7 @@ export async function initializeWindowsOwnerDomainCutoverComposition(options = {
     })
     windowObject.__windowsOwnerDomainCutover = cutover
     return Object.freeze({
-      status: domains.length ? 'ready' : 'frozen',
+      status: domains.length ? 'ready' : (frozen.length ? 'frozen' : 'not-ready'),
       authoritativeDomains: domains,
       health,
       ownerClient,

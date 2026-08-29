@@ -258,7 +258,8 @@ function domainEquivalent(left, right) {
         ...value,
         records: value.records.map((record) => {
           if (!isPlainObject(record)) return record
-          const { checksum: _checksum, ...content } = record
+          const { checksum: _checksum, ...recordContent } = record
+          const content = { ...recordContent }
           if (/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json:/u.test(String(content.id || ''))
             && isPlainObject(content.payload)
             && typeof content.payload.schemaVersion === 'string'
@@ -266,6 +267,15 @@ function domainEquivalent(left, right) {
             // The Python marks adapter uses the generic application record
             // schema (1), while the nested legacy envelope keeps its
             // reader-marks.v1/reader-activity.v1 marker.
+            // Its checksum and timestamps are regenerated on each owner
+            // write, so compare the durable marks payload only.
+            content.payload = clone(content.payload)
+            delete content.payload.checksum
+            delete content.payload.updatedAt
+            if (isPlainObject(content.payload.payload)) {
+              delete content.payload.payload.updatedAt
+              delete content.payload.payload.checksum
+            }
             delete content.schemaVersion
           }
           return content

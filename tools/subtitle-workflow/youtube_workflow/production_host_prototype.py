@@ -329,7 +329,6 @@ class PathPreservingAsgiDispatch:
         return (
             domain in authoritative
             and domain in self.owner_domain_handlers
-            and not self._domain_is_frozen(domain)
         )
 
     def _domain_is_frozen(self, domain: str) -> bool:
