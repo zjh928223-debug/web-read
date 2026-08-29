@@ -7,7 +7,7 @@
 
 ## A. 完成剩余五域最小 Host repository seam
 
-- [ ] A 为 `vocabulary-srs`、`passage-preview`、`annotation`、`marks-activity`、`workflow` 各提供必要的 canonical record、query、command、revision/CAS 和 receipt seam，并在隔离 profile 中验证正常读写、相同 key 重试、明显 revision conflict、坏输入拒绝和旧值保留；复用现有 registry、auth、repository 和 receipt，不接入 browser UI writer，完整媒体/token/任意路径/纯 UI 状态不进入 durable record。
+- [x] A 为 `vocabulary-srs`、`passage-preview`、`annotation`、`marks-activity`、`workflow` 各提供必要的 canonical record、query、command、revision/CAS 和 receipt seam，并在隔离 profile 中验证正常读写、相同 key 重试、明显 revision conflict、坏输入拒绝和旧值保留；复用现有 registry、auth、repository 和 receipt，不接入 browser UI writer，完整媒体/token/任意路径/纯 UI 状态不进入 durable record。
 
 ## B. 最小备份、恢复与一次性迁移
 

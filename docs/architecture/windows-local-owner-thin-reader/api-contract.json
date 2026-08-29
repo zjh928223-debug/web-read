@@ -691,10 +691,10 @@
     "authorityReady": false
   },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam", "isolated Host AnnotationOwner query/command/receipt repository seam", "isolated Host MarksActivityOwner marks/activity repository seam"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam", "isolated Host AnnotationOwner query/command/receipt repository seam", "isolated Host MarksActivityOwner marks/activity repository seam", "isolated Host WorkflowOwner query/command/receipt repository seam"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation", "production Reader Session authority", "browser session writer cutover"],
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:a7dd27b0e07822a3af8dec0a0bdaecd00bb089bcbe1d2d71f1062b7ce726dfa0"
+  "artifactChecksum": "sha256:7cce61914c0d2f1d30f4fba7c625fc33045b6f23dc67cfd4b7b3c845c59bc113"
 }

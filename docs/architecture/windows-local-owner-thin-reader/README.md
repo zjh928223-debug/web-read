@@ -65,8 +65,8 @@ row envelopes under the inventoried keys in a profile-scoped `DurableJsonReposit
 This is an isolated pre-cutover seam only: the browser vocabulary repositories remain the current writer,
 no data migration or UI wiring has occurred, and `/api/app/owner` still returns the existing pre-cutover
 `not-ready` result. The seam does not persist ECDICT suggestions, tokens, absolute paths, UI-only state, or
-complete media; media-related content remains outside this small JSON record boundary. The aggregate A task
-is intentionally still unchecked until the other four domain seams exist.
+complete media; media-related content remains outside this small JSON record boundary. Aggregate Task A is now
+complete because the other four domain seams have been integrated; production authority remains disabled.
 
 ## Passage-preview internal seam
 
@@ -80,7 +80,8 @@ passage-preview and IELTS localStorage envelopes as opaque JSON records in a pro
 This remains an isolated pre-cutover seam: browser localStorage remains the current writer and
 `/api/app/owner` remains pre-cutover/not-ready, with no migration, backup/cutover, or UI wiring.
 Session cache, shortcuts, translation/context display preferences, ECDICT suggestions, tokens, paths,
-and complete media stay outside the canonical record boundary. The aggregate A task remains unchecked.
+and complete media stay outside the canonical record boundary. Aggregate Task A is complete; production authority
+remains disabled.
 
 ## Annotation internal seam
 
@@ -97,7 +98,7 @@ creates a receipt or download.
 This remains an isolated pre-cutover seam: browser audio-folder/localStorage writers, browser merge and
 backfill matching, `/api/app/owner`, migration, and authority cutover are unchanged. Runtime indexes,
 ECDICT suggestions, directory handles, tokens, paths, complete media, and full export blobs stay outside
-the Host record boundary. The aggregate A task remains unchecked until all five domain seams exist.
+the Host record boundary. Aggregate Task A is complete; production authority remains disabled.
 
 ## Marks/activity internal seam
 
@@ -113,7 +114,8 @@ This remains an isolated pre-cutover seam: the browser marks caller and outbox r
 compatibility path, `/api/app/owner` remains pre-cutover/not-ready, and no browser writer, migration,
 backup restore, or authority cutover is connected. The owner accepts only bounded job/content scope and
 JSON marks/activity updates; tokens, paths, complete media, playback indexes, and uncommitted UI intent
-remain outside the durable boundary. The aggregate A task remains unchecked.
+remain outside the durable boundary. Aggregate Task A is complete; production authority remains disabled.
+
 ## Workflow internal seam
 
 The workflow slice is now exercised in
@@ -134,7 +136,7 @@ The seam is isolated and pre-cutover: `/api/app/owner` is unchanged, the browser
 local receipt hint remain non-authoritative, and no migration, backup restore, service-route wiring, or UI
 cutover is included. Query responses omit credentials, cookies, machine paths, UI state, and complete media;
 the media capability returns only identity/reference, size, content type, ETag, and an authorized relative
-media URL. The aggregate A task remains unchecked.
+media URL. Aggregate Task A is complete; production authority remains disabled.
 
 ## Evidence semantics
 
