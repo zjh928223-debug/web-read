@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import { flushPendingUiNotifications } from './composables/ui-facades.js'
+import { initializeWindowsOwnerReaderSessionComposition } from './services/windows-owner-reader-session-composition.js'
 
 // === Phase 10: Import all utility + annotation ES modules (replaces IIFE <script> tags) ===
 // Side-effect imports — they also set window globals for app.js compatibility
@@ -67,6 +68,14 @@ if (window.__clozeState && typeof window.__clozeState.bindPiniaStore === 'functi
 console.log('[vue] runtime adapters bound to Pinia')
 
 themeStore.init()
+
+// Host-backed Reader Session is optional until the Host explicitly reports
+// this domain authoritative.  A pre-cutover/degraded Host leaves the legacy
+// browser session path unchanged.
+await initializeWindowsOwnerReaderSessionComposition({
+  windowObject: window,
+  documentObject: document,
+})
 
 // Pinia is configured before the legacy reader/session assembly starts, so
 // compatibility stores and global Pinia bridges are no longer required.

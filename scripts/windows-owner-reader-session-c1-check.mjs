@@ -16,7 +16,9 @@ const fixture = {
   mediaRequests: [],
   prepared: new Map(),
   receipts: new Map(),
+  committedSnapshots: new Map(),
   snapshot: null,
+  hostReady: true,
   ownerNotReady: false,
   commandMode: null,
   rangeMismatch: false,
@@ -47,6 +49,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === '/__c1/control' && request.method === 'GET') {
       if (url.searchParams.has('rangeMismatch')) fixture.rangeMismatch = url.searchParams.get('rangeMismatch') === 'true'
+      if (url.searchParams.has('hostReady')) fixture.hostReady = url.searchParams.get('hostReady') === 'true'
       if (url.searchParams.has('ownerNotReady')) fixture.ownerNotReady = url.searchParams.get('ownerNotReady') === 'true'
       if (url.searchParams.has('descriptorMismatch')) fixture.descriptorMismatch = url.searchParams.get('descriptorMismatch') === 'true'
       if (url.searchParams.has('snapshotMode')) {
@@ -59,6 +62,7 @@ const server = http.createServer(async (request, response) => {
       }
       return sendJson(response, 200, {
         ok: true,
+        hostReady: fixture.hostReady,
         rangeMismatch: fixture.rangeMismatch,
         ownerNotReady: fixture.ownerNotReady,
         descriptorMismatch: fixture.descriptorMismatch,
@@ -70,8 +74,16 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 200, {
         ownerRequests: fixture.ownerRequests.length,
         mediaRequests: fixture.mediaRequests.length,
+        prepareRequests: fixture.ownerRequests.filter((item) => item.body.kind === 'command' && item.body.operation === 'prepare').length,
+        commitRequests: fixture.ownerRequests.filter((item) => item.body.kind === 'command' && item.body.operation === 'commit').length,
+        commitIdempotencyKeys: fixture.ownerRequests
+          .filter((item) => item.body.kind === 'command' && item.body.operation === 'commit')
+          .map((item) => item.body.idempotencyKey),
+        commitReceiptIds: Object.fromEntries([...fixture.receipts.entries()]
+          .map(([key, receipt]) => [key, receipt.receiptId])),
       })
     }
+    if (url.pathname === '/api/app/health' && request.method === 'GET') return sendJson(response, 200, makeReadyHealth())
     if (url.pathname === '/api/app/owner' && request.method === 'POST') return handleOwnerRequest(request, response)
     const mediaMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/media\/(audio|video)$/u)
     if (mediaMatch && request.method === 'GET') return handleMediaRequest(request, response, mediaMatch)
@@ -102,37 +114,23 @@ try {
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
 
   const result = await page.evaluate(async ({ contractVersion, profileId, instanceId }) => {
-    const [apiModule, consumerModule, mediaModule, loaderModule, restoreModule] = await Promise.all([
+    const [apiModule, consumerModule, compositionModule, loaderModule, restoreModule] = await Promise.all([
       import('/src/services/windows-owner-api-client.js'),
       import('/src/services/windows-owner-reader-session-consumer.js'),
-      import('/src/services/media/media-resource-owner.js'),
+      import('/src/services/windows-owner-reader-session-composition.js'),
       import('/src/composables/youtube-workflow-loader.js'),
       import('/src/composables/session-restore-runtime.js'),
     ])
     const { createWindowsOwnerApiClient } = apiModule
     const {
-      createWindowsOwnerMediaResourceOwner,
-    } = mediaModule
-    const {
       createWindowsOwnerReaderSessionConsumer,
     } = consumerModule
+    const { initializeWindowsOwnerReaderSessionComposition } = compositionModule
     const { createYoutubeWorkflowLoader } = loaderModule
     const { createSessionRestoreRuntime } = restoreModule
-    const client = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1500 })
 
     const audio = createMediaElement()
-    const mediaOwner = createWindowsOwnerMediaResourceOwner({
-      profileId,
-      mediaElement: audio,
-      ownerClient: client,
-      fetchImpl: window.fetch.bind(window),
-    })
-    const owner = createWindowsOwnerReaderSessionConsumer({
-      profileId,
-      ownerClient: client,
-      mediaOwner,
-      fetchImpl: window.fetch.bind(window),
-    })
+    const client = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1500 })
     const control = async (values) => {
       const params = new URLSearchParams()
       for (const [key, value] of Object.entries(values || {})) params.set(key, String(value))
@@ -144,6 +142,32 @@ try {
       if (!response.ok) throw new Error(`C1 fixture state failed: ${response.status}`)
       return response.json()
     }
+
+    const preflightAudio = createMediaElement()
+    await control({ hostReady: false })
+    const notReadyComposition = await initializeWindowsOwnerReaderSessionComposition({
+      windowObject: window,
+      documentObject: document,
+      mediaElement: preflightAudio,
+      fetchImpl: window.fetch.bind(window),
+    })
+    if (notReadyComposition.status !== 'not-ready' || window.__windowsOwnerReaderSessionConsumer != null) {
+      throw new Error('pre-cutover Host readiness must not inject a Reader Session owner')
+    }
+    await control({ hostReady: true })
+
+    const composition = await initializeWindowsOwnerReaderSessionComposition({
+      windowObject: window,
+      documentObject: document,
+      mediaElement: audio,
+      fetchImpl: window.fetch.bind(window),
+      timeoutMs: 1500,
+    })
+    if (composition.status !== 'ready' || composition.source !== 'host-readiness') {
+      throw new Error(`production owner composition did not use Host readiness: ${JSON.stringify(composition)}`)
+    }
+    const owner = composition.readerSessionOwner
+    if (window.__windowsOwnerReaderSessionConsumer !== owner) throw new Error('composition did not inject the owner consumer')
 
     const initial = await owner.load()
     if (initial.status !== 'loaded' || initial.session.contentId !== 'youtube-workflow:job-old') {
@@ -233,6 +257,27 @@ try {
     }
     const switchedContentId = visible.contentId
 
+    const beforeStableRetry = await counts()
+    const switchedCommitKey = beforeStableRetry.commitIdempotencyKeys.at(-1)
+    const switchedReceiptId = beforeStableRetry.commitReceiptIds[switchedCommitKey]
+    const retryLoader = createYoutubeWorkflowLoader({
+      client: workflowClient,
+      readerSessionOwner: owner,
+      readerSessionPersistence: persistence,
+      hasCurrentContent: () => false,
+      sessionPublisher: publisher,
+      validateTranscriptData: (value) => value,
+      validateChunkData: (value) => value,
+    })
+    const stableRetry = await retryLoader.loadJobIntoReader('job-new', { replacePolicy: 'replace-current' })
+    const afterStableRetry = await counts()
+    if (stableRetry.status !== 'loaded'
+      || afterStableRetry.prepareRequests !== beforeStableRetry.prepareRequests
+      || afterStableRetry.commitRequests !== beforeStableRetry.commitRequests
+      || afterStableRetry.commitReceiptIds[switchedCommitKey] !== switchedReceiptId) {
+      throw new Error('recreated loader did not reuse the committed candidate receipt')
+    }
+
     const beforeFailedSwitch = structuredClone(visible)
     await control({ commandMode: 'not-ready' })
     const failedLoader = createYoutubeWorkflowLoader({
@@ -258,6 +303,54 @@ try {
     if (owner.getDescriptor()?.authorizedUrl !== switchedDescriptor.authorizedUrl) {
       throw new Error('failed owner switch did not rebind the old media descriptor')
     }
+    await control({ commandMode: 'none' })
+
+    const legacyAudio = createMediaElement()
+    legacyAudio.src = '/legacy/audio'
+    const legacyVisible = {
+      contentId: 'legacy-browser-session',
+      audio: legacyAudio.getAttribute('src'),
+      transcript: 'legacy',
+      chunk: 'legacy',
+    }
+    const legacyOwner = createWindowsOwnerReaderSessionConsumer({
+      profileId,
+      ownerClient: createWindowsOwnerApiClient({ profileId, instanceId: `${instanceId}-legacy`, timeoutMs: 1500 }),
+      mediaElement: legacyAudio,
+      fetchImpl: window.fetch.bind(window),
+    })
+    const legacyPublisher = {
+      async captureVisibleSession() { return structuredClone(legacyVisible) },
+      async publishPreparedSession(prepared) {
+        legacyVisible.contentId = prepared.contentId
+        legacyVisible.transcript = prepared.transcript.segments[0].words[0].word
+        legacyVisible.chunk = prepared.chunkData.s[0].chunks[0].en
+        legacyVisible.audio = prepared.audioUrl
+        legacyAudio.src = prepared.audioUrl
+      },
+      async restoreVisibleSession(snapshot) {
+        Object.assign(legacyVisible, snapshot)
+        legacyAudio.src = snapshot.audio
+      },
+    }
+    await control({ commandMode: 'not-ready' })
+    const legacyLoader = createYoutubeWorkflowLoader({
+      client: workflowClient,
+      readerSessionOwner: legacyOwner,
+      readerSessionPersistence: persistence,
+      hasCurrentContent: () => false,
+      sessionPublisher: legacyPublisher,
+      validateTranscriptData: (value) => value,
+      validateChunkData: (value) => value,
+    })
+    await expectReject(() => legacyLoader.loadJobIntoReader('job-legacy', { replacePolicy: 'replace-current' }))
+    if (legacyVisible.contentId !== 'legacy-browser-session'
+      || legacyAudio.getAttribute('src') !== '/legacy/audio'
+      || legacyVisible.audio !== '/legacy/audio'
+      || legacyOwner.getDescriptor() !== null) {
+      throw new Error('legacy visible session/audio was not restored after owner commit failure')
+    }
+    legacyOwner.dispose()
     await control({ commandMode: 'none' })
 
     const beforeConflictSwitch = structuredClone(visible)
@@ -405,6 +498,8 @@ try {
       directAuthorizedUrls: [audio.getAttribute('src'), reopenedAudio.getAttribute('src'), restoreAudio.getAttribute('src')],
       storage: { localStorage: Object.keys(localStorage), indexedDb: databases.map((item) => item.name).filter(Boolean) },
       asyncEvidence: { playCalls: audio.playCalls, seek: audio.currentTime },
+      compositionStatus: composition.status,
+      commitKeys: finalCounts.commitIdempotencyKeys,
     }
 
     async function expectReject(operation) {
@@ -431,8 +526,18 @@ try {
   assert.equal(result.switchedContentId, 'youtube-workflow:job-new')
   assert.equal(result.reopenedContentId, 'youtube-workflow:job-unknown')
   assert.equal(result.restoredSource, 'owner')
+  assert.equal(result.compositionStatus, 'ready')
+  assert.ok(fixture.ownerRequests.some((request) => request.body.domain === 'workflow'
+    && request.body.operation === 'media-capability'
+    && request.body.payload?.jobId === 'job-new'
+    && request.body.payload?.mediaKind === 'audio'), 'new material must use the workflow media capability query')
+  assert.equal(fixture.ownerRequests.some((request) => request.body.domain === 'reader-session'
+    && request.body.operation === 'media-identity'
+    && request.body.payload?.contentId === 'youtube-workflow:job-new'), false,
+  'new material must not use the committed session media query')
   assert.ok(result.rangeRequests >= 5, 'C1 should probe each authorized binding with Range')
   assert.ok(result.ownerRequests >= 12, 'C1 should use typed owner queries and prepare/commit')
+  assert.equal(new Set(result.commitKeys).size, result.commitKeys.length, 'different materials must not reuse a commit key')
   assert.deepEqual(result.storage.localStorage, [])
   assert.deepEqual(result.storage.indexedDb, [])
   assert.equal(result.asyncEvidence.playCalls, 1)
@@ -494,12 +599,17 @@ async function handleOwnerRequest(request, response) {
       }))
     }
     if (body.operation === 'media-identity') {
-      const contentId = String(body.payload?.contentId || fixture.snapshot?.contentId || 'youtube-workflow:job-old')
-      const jobId = contentId.replace(/^youtube-workflow:/u, '')
-      const baseMedia = fixture.snapshot?.contentId === contentId
-        ? descriptorFromSnapshot(fixture.snapshot)
-        : makeMediaDescriptor(jobId)
-      const media = fixture.descriptorMismatch && fixture.snapshot?.contentId === contentId
+      const baseMedia = fixture.snapshot ? descriptorFromSnapshot(fixture.snapshot) : null
+      if (!baseMedia) {
+        return sendJson(response, 200, ownerResponse(body, {
+          outcome: 'read',
+          commitStatus: 'not-applicable',
+          revision: 0,
+          payload: { found: false, empty: true },
+          error: typedError(body, 'not-found', 'not-found'),
+        }))
+      }
+      const media = fixture.descriptorMismatch
         ? { ...baseMedia, revision: 'changed-media-revision' }
         : baseMedia
       return sendJson(response, 200, ownerResponse(body, {
@@ -509,6 +619,26 @@ async function handleOwnerRequest(request, response) {
         payload: { media },
       }))
     }
+  }
+
+  if (body.kind === 'query' && body.domain === 'workflow' && body.operation === 'media-capability') {
+    const jobId = body.payload?.jobId
+    const mediaKind = body.payload?.mediaKind
+    if (typeof jobId !== 'string' || (mediaKind !== 'audio' && mediaKind !== 'video')) {
+      return sendJson(response, 200, ownerResponse(body, {
+        outcome: 'read',
+        commitStatus: 'not-applicable',
+        revision: fixture.snapshot?.revision || 0,
+        payload: { found: false, empty: true },
+        error: typedError(body, 'not-found', 'not-found'),
+      }))
+    }
+    return sendJson(response, 200, ownerResponse(body, {
+      outcome: 'read',
+      commitStatus: 'not-applicable',
+      revision: fixture.snapshot?.revision || 0,
+      payload: { media: makeMediaDescriptor(jobId) },
+    }))
   }
 
   if (body.kind === 'command' && body.domain === 'reader-session' && body.operation === 'prepare') {
@@ -551,7 +681,9 @@ async function handleOwnerRequest(request, response) {
       commitStatus: existing.commitStatus,
       revision: existing.revision,
       receipt: existing,
-      payload: existing.commitStatus === 'committed' ? { snapshot: fixture.snapshot } : {},
+      payload: existing.commitStatus === 'committed'
+        ? { snapshot: fixture.committedSnapshots.get(body.idempotencyKey) || fixture.snapshot }
+        : {},
       error: existing.commitStatus === 'committed' ? null : typedError(body, 'conflict', 'conflict'),
     }))
     const prepared = fixture.prepared.get(body.payload?.prepareId)
@@ -565,6 +697,7 @@ async function handleOwnerRequest(request, response) {
     }
     fixture.snapshot = makeSnapshot(prepared.candidate, 'commit', body.expectedRevision, receipt)
     fixture.receipts.set(body.idempotencyKey, receipt)
+    fixture.committedSnapshots.set(body.idempotencyKey, fixture.snapshot)
     if (fixture.commandMode === 'commit-unknown') {
       fixture.commandMode = null
       return send(response, 200, 'application/json', '{')
@@ -594,7 +727,9 @@ async function handleOwnerRequest(request, response) {
       commitStatus: receipt.commitStatus,
       revision: receipt.revision,
       receipt,
-      payload: receipt.commitStatus === 'committed' ? { snapshot: fixture.snapshot } : {},
+      payload: receipt.commitStatus === 'committed'
+        ? { snapshot: fixture.committedSnapshots.get(body.idempotencyKey) || fixture.snapshot }
+        : {},
       error: receipt.commitStatus === 'committed' ? null : typedError(body, receipt.commitStatus, receipt.commitStatus === 'conflict' ? 'conflict' : 'readiness'),
     }))
   }
@@ -619,6 +754,28 @@ async function handleMediaRequest(request, response, match) {
     'x-read-web-media-identity': identity,
     'content-length': String(body.length),
   })
+}
+
+function makeReadyHealth() {
+  const ready = fixture.hostReady
+  return {
+    profileId: PROFILE_ID,
+    instanceId: INSTANCE_ID,
+    liveness: { ready: true },
+    durableOwnerReadiness: {
+      ready,
+      acceptingApiAuthoritativeOperations: ready,
+    },
+    ownerRegistry: {
+      ownerApiReady: ready,
+      acceptingApiAuthoritativeOperations: ready,
+    },
+    domains: [{
+      domain: 'reader-session',
+      authority: ready ? 'authoritative' : 'pre-cutover',
+      commandCapability: ready ? 'writable' : 'unavailable',
+    }],
+  }
 }
 
 function makeCandidate(jobId, revision) {

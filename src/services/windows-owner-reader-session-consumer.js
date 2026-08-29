@@ -108,11 +108,26 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     return requireHostRevision(revision, 'currentRevision')
   }
 
-  async function resolveMediaDescriptor(request = {}, { signal } = {}) {
-    const mapping = getWindowsOwnerMediaQueryOperation(WINDOWS_OWNER_READER_SESSION_DOMAIN)
-    if (!mapping) throw new WindowsOwnerReaderSessionError('owner-not-ready')
+  async function resolveMediaDescriptor(request = {}, options = {}) {
     const payload = request.payload === undefined ? request : request.payload
-    assertWindowsOwnerMediaMetadataOnly(payload, 'reader-session.media-query')
+    return queryMediaDescriptor(WINDOWS_OWNER_READER_SESSION_DOMAIN, payload, options)
+  }
+
+  async function resolveWorkflowMediaDescriptor(request = {}, options = {}) {
+    const source = request.payload === undefined ? request : request.payload
+    const jobId = source?.jobId
+      || (typeof source?.contentId === 'string' ? source.contentId.replace(/^youtube-workflow:/u, '') : '')
+    const mediaKind = source?.mediaKind || source?.kind || 'audio'
+    if (typeof jobId !== 'string' || !jobId || (mediaKind !== 'audio' && mediaKind !== 'video')) {
+      throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'validation' })
+    }
+    return queryMediaDescriptor('workflow', { jobId, mediaKind }, options)
+  }
+
+  async function queryMediaDescriptor(domain, payload, { signal } = {}) {
+    const mapping = getWindowsOwnerMediaQueryOperation(domain)
+    if (!mapping) throw new WindowsOwnerReaderSessionError('owner-not-ready')
+    assertWindowsOwnerMediaMetadataOnly(payload, `${domain}.media-query`)
 
     let result
     try {
@@ -217,6 +232,18 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
       return rejectedResult(error)
     }
 
+    let idempotencyKey
+    try {
+      idempotencyKey = options.idempotencyKey === undefined
+        ? await createStableCommitIdempotencyKey(session, candidate, profileId)
+        : requireIdempotency(options.idempotencyKey)
+    } catch (error) {
+      return rejectedResult(error)
+    }
+    const commitOptions = { ...options, idempotencyKey }
+    const prior = await lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions)
+    if (prior) return prior
+
     let prepareResult
     try {
       prepareResult = await ownerClient.command({
@@ -243,7 +270,7 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
         domain: WINDOWS_OWNER_READER_SESSION_DOMAIN,
         operation: 'commit',
         expectedRevision,
-        idempotencyKey: requireIdempotency(options.idempotencyKey),
+        idempotencyKey,
         payload: { prepareId },
         ...(options.signal ? { signal: options.signal } : {}),
       })
@@ -252,7 +279,7 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     }
 
     if (commitResult.outcome === 'commit-unknown') {
-      return resolveUnknownCommit(commitResult, candidate, session, options)
+      return resolveUnknownCommit(commitResult, candidate, session, commitOptions)
     }
     if (commitResult.outcome !== 'committed') return commandResult(commitResult)
     return committedResult(commitResult, session, candidate)
@@ -310,8 +337,62 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     load,
     querySnapshot,
     resolveMediaDescriptor,
+    resolveWorkflowMediaDescriptor,
     restoreSession,
   })
+
+  async function lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions) {
+    let receiptResult
+    try {
+      receiptResult = await ownerClient.receipt({
+        domain: WINDOWS_OWNER_READER_SESSION_DOMAIN,
+        idempotencyKey,
+        ...(commitOptions.signal ? { signal: commitOptions.signal } : {}),
+      })
+    } catch (error) {
+      return rejectedResult(error, 'reader-session-commit-unknown')
+    }
+    if (isNotFound(receiptResult)) return null
+    if (receiptResult.outcome === 'conflict'
+      || receiptResult.outcome === 'not-ready'
+      || receiptResult.outcome === 'manual-recovery') {
+      return commandResult(receiptResult)
+    }
+    if (receiptResult.outcome !== 'committed'
+      || receiptResult.commitStatus !== 'committed'
+      || !isPlainObject(receiptResult.receipt)) {
+      return {
+        status: 'commit-unknown',
+        result: receiptResult,
+        error: new WindowsOwnerReaderSessionError('reader-session-commit-unknown', { category: 'recovery', retryable: true }),
+      }
+    }
+
+    const receipt = receiptResult.receipt
+    if (receipt.operation !== 'commit' || receipt.idempotencyKey !== idempotencyKey) {
+      return {
+        status: 'conflict',
+        result: receiptResult,
+        error: new WindowsOwnerReaderSessionError('reader-session-conflict', { category: 'conflict', retryable: true }),
+      }
+    }
+    let snapshot = receiptResult.payload?.snapshot
+    if (!snapshot) {
+      const queried = await querySnapshot({ signal: commitOptions.signal })
+      snapshot = queried.status === 'found' ? queried.snapshot : null
+    }
+    if (!snapshot
+      || !snapshotMatchesStableSession(snapshot, session, candidate, profileId)
+      || receipt.revision !== snapshot.revision
+      || receipt.recordChecksums?.[0] !== snapshot.checksum) {
+      return {
+        status: 'commit-unknown',
+        result: receiptResult,
+        error: new WindowsOwnerReaderSessionError('reader-session-commit-unknown', { category: 'recovery', retryable: true }),
+      }
+    }
+    return committedResult(receiptResult, session, candidate)
+  }
 
   async function resolveUnknownCommit(command, candidate, session, commitOptions) {
     let receiptResult
@@ -465,6 +546,57 @@ function snapshotMatchesCandidate(snapshot, candidate, profileId) {
   } catch (_error) {
     return false
   }
+}
+
+function snapshotMatchesStableSession(snapshot, session, candidate, profileId) {
+  try {
+    const normalized = normalizeSnapshot(snapshot, profileId)
+    return canonicalJson(stableSessionProjection(normalized.session, {
+      media: normalized.session.media,
+      audioMeta: normalized.session.audioMeta,
+      transcript: normalized.session.transcript,
+      chunkData: normalized.session.chunkData,
+      marks: normalized.session.marks,
+    }, profileId)) === canonicalJson(stableSessionProjection(session, candidate, profileId))
+  } catch (_error) {
+    return false
+  }
+}
+
+async function createStableCommitIdempotencyKey(session, candidate, profileId) {
+  const material = canonicalJson({
+    ...stableSessionProjection(session, candidate, profileId),
+    sessionRevision: session.revision === undefined ? null : session.revision,
+  })
+  if (!globalThis.crypto?.subtle || typeof TextEncoder !== 'function') {
+    throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
+  }
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(material))
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  return `reader-session-${hex}`
+}
+
+function stableSessionProjection(session, candidate, profileId) {
+  const media = candidate.media || session.mediaDescriptor || session.media || session.audioMeta?.media
+  const audioMeta = candidate.audioMeta || session.audioMeta
+  return {
+    schemaVersion: WINDOWS_OWNER_READER_SESSION_SCHEMA,
+    domain: WINDOWS_OWNER_READER_SESSION_DOMAIN,
+    profileId,
+    contentId: requireIdentity(candidate.contentId || session.contentId, 'contentId'),
+    media: stripMediaDescriptor(normalizeMediaDescriptor(media, profileId)),
+    audioMeta: stableAudioMeta(audioMeta),
+    transcript: cloneJson(candidate.transcript || session.transcript),
+    chunkData: cloneJson(candidate.chunkData || session.chunkData),
+    marks: cloneJson(candidate.marks || session.marks),
+  }
+}
+
+function stableAudioMeta(value) {
+  if (!isPlainObject(value)) return null
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !['lastModified', 'streamUrl', 'media'].includes(key))
+    .sort(([left], [right]) => left.localeCompare(right)))
 }
 
 function committedResult(result, session, candidate) {

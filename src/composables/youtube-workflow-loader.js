@@ -378,7 +378,6 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       const result = await readerSessionOwner.commitSession(session, {
         expectedRevision,
         mediaDescriptor: session.mediaDescriptor,
-        idempotencyKey: `reader-session-load-${load.generation}`,
         signal: requestOptions.signal,
       })
       if (result?.status === 'committed') return result
@@ -488,13 +487,16 @@ export function createYoutubeWorkflowLoader(deps = {}) {
 
       let mediaDescriptor = null
       if (ownerMode) {
-        if (typeof readerSessionOwner.resolveMediaDescriptor !== 'function') {
+        if (typeof readerSessionOwner.resolveWorkflowMediaDescriptor === 'function') {
+          mediaDescriptor = await readerSessionOwner.resolveWorkflowMediaDescriptor({
+            jobId,
+            mediaKind: 'audio',
+          }, requestOptions)
+        } else if (typeof readerSessionOwner.resolveMediaDescriptor === 'function') {
+          throw new Error('reader session owner workflow media query is not available')
+        } else {
           throw new Error('reader session owner media query is not available')
         }
-        mediaDescriptor = await readerSessionOwner.resolveMediaDescriptor({
-          contentId: identity.contentId,
-          kind: 'audio',
-        }, requestOptions)
         audioUrl = mediaDescriptor.authorizedUrl
       }
 
@@ -559,8 +561,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         }
         await sessionPublisher.publishPreparedSession(preparedSession)
         if (!isCurrentLoad(load)) {
-          await sessionPublisher.restoreVisibleSession(visibleSnapshot)
-          if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
+          await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           return supersededResult(load)
         }
         const commitResult = await commitLatestSession(load, {
@@ -573,16 +574,14 @@ export function createYoutubeWorkflowLoader(deps = {}) {
           ...(mediaDescriptor ? { mediaDescriptor } : {}),
         }, requestOptions)
         if (commitResult.status === 'superseded') {
-          await sessionPublisher.restoreVisibleSession(visibleSnapshot)
-          if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
+          await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           return commitResult
         }
         committed = true
       } catch (error) {
         if (!committed && isCurrentLoad(load)) {
           try {
-            await sessionPublisher.restoreVisibleSession(visibleSnapshot)
-            if (ownerMode) await restoreOwnerMedia(previousOwnerMedia)
+            await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           } catch (rollbackError) {
             const failure = new Error('reader session load failed and visible-session rollback failed', { cause: error })
             failure.name = 'ReaderSessionPublishRollbackError'
@@ -630,6 +629,15 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     } catch (_error) {
       if (typeof readerSessionOwner.dispose === 'function') readerSessionOwner.dispose()
     }
+  }
+
+  async function restoreFailedLoad(visibleSnapshot, previousOwnerMedia) {
+    // A legacy visible session has no owner descriptor.  Dispose the failed
+    // owner binding first; otherwise it would clear the audio element after
+    // the legacy publisher restored its old source.
+    if (ownerMode && !previousOwnerMedia) await restoreOwnerMedia(null)
+    await sessionPublisher.restoreVisibleSession(visibleSnapshot)
+    if (ownerMode && previousOwnerMedia) await restoreOwnerMedia(previousOwnerMedia)
   }
 
   return { loadJobIntoReader, validateGeneratedSession, getLoadState, cancelLoad }
