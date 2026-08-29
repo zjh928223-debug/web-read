@@ -263,3 +263,19 @@ cookies, media bytes and raw exception/path text are not returned. The optimizat
 root identity and release runtime hashes rather than requiring an absolute path or interpreter path in health.
 `applicationStartupRecovery` remains a small lifecycle summary; it does not claim browser freeze/drain or owner
 cutover. The focused evidence is `npm run verify:windows-owner-health`.
+
+## Task 3.1 browser typed owner API client
+
+`src/services/windows-owner-api-client.js` is the browser boundary for future six-domain owner queries,
+commands, and receipt lookups. It derives its operation/capability allow-list from `api-contract.json`, sends
+only the frozen `/api/app/owner` JSON envelope with a same-origin relative URL and `credentials: same-origin`,
+and relies on the existing HttpOnly instance authorization channel without reading or injecting a token. It
+validates request bindings before `fetch` and validates response identity, operation, revision, receipt,
+commit-status, and typed-error semantics before returning a small typed result.
+
+The client has no durable browser storage, no automatic mutation retry, and no media-byte interface. A transport
+loss or timeout during a command returns `commit-unknown` with the original idempotency lookup information; it
+does not replay the command. This is only a dependency-injected client seam: all six domains remain
+pre-cutover, existing browser writers are unchanged, and the Host still returns typed `503 not-ready` for legal
+owner mutations. `npm run verify:windows-owner-api-client` exercises the boundary with a mock fetch and the
+real contract artifact while `npm run verify:windows-owner-contract` checks the documented client contract.

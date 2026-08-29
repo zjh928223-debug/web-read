@@ -167,7 +167,23 @@ for (const field of ['profileId', 'instanceId', 'expectedRevision', 'requestFing
 }
 assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned profile-scoped receipt persistence/query'), 'receipt persistence implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '3.1 thin Reader API client', 'API contract next task must remain 3.1')
+assert(api.futureImplementationBoundary.implementedHere.includes('Browser typed owner API client boundary'), 'browser API client implementation boundary is missing')
+assert(!api.futureImplementationBoundary.notDefinedHere.includes('API client'), 'API client is still marked as unimplemented')
+assert(api.futureImplementationBoundary.nextAllowedTask === '3.2 durable UI status mapping', 'API contract next task must remain 3.2')
+assert(api.browserClientContract?.module === 'src/services/windows-owner-api-client.js', 'browser API client module is missing')
+assert(api.browserClientContract?.route === '/api/app/owner', 'browser API client route is not frozen')
+assert(api.browserClientContract?.contractVersion === api.contractVersion, 'browser API client contract version is not aligned')
+assert(api.browserClientContract?.transport === 'same-origin-cookie', 'browser API client must use same-origin credentials')
+assert(JSON.stringify(sortedDomains(api.browserClientContract?.supportedDomains || [])) === JSON.stringify(sortedDomains(WINDOWS_OWNER_DOMAINS)), 'browser API client must cover exactly six domains')
+assert(JSON.stringify(api.browserClientContract?.supportedKinds) === JSON.stringify(['query', 'command', 'receipt-query']), 'browser API client request kinds changed')
+assert(api.browserClientContract?.operationRegistry === 'operationCapabilityRegistry', 'browser API client must use the operation capability registry')
+assert(api.browserClientContract?.durableBrowserStorage === false, 'browser API client cannot use durable browser storage')
+assert(api.browserClientContract?.automaticMutationRetry === false, 'browser API client cannot retry mutations automatically')
+for (const field of ['identity', 'operation', 'commitStatus', 'revision', 'receipt', 'typedError']) {
+  assert(api.browserClientContract?.responseValidation?.includes(field), `browser API client response validation lacks ${field}`)
+}
+assert(api.browserClientContract?.mediaPayloadPolicy === 'metadata-only', 'browser API client media policy must remain metadata-only')
+await assertSourceExists(api.browserClientContract.module)
 assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
 assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
 for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
@@ -259,7 +275,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

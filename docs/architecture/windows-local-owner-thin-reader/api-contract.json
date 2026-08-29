@@ -518,11 +518,24 @@
     "readinessRule": "liveness remains available for optional dependency failure; durable readiness fails closed for registry, repository, lease, pending recovery, schema, revision, or authority gaps",
     "diagnosticPolicy": "health and capability responses contain status/reason codes and identity summaries only; secrets, receipt/request identities, media bytes, and absolute personal paths are omitted"
   },
+  "browserClientContract": {
+    "module": "src/services/windows-owner-api-client.js",
+    "route": "/api/app/owner",
+    "contractVersion": "windows-thin-reader-api.v1",
+    "transport": "same-origin-cookie",
+    "supportedKinds": ["query", "command", "receipt-query"],
+    "supportedDomains": ["reader-session", "vocabulary-srs", "passage-preview", "annotation", "marks-activity", "workflow"],
+    "operationRegistry": "operationCapabilityRegistry",
+    "durableBrowserStorage": false,
+    "automaticMutationRetry": false,
+    "responseValidation": ["identity", "operation", "commitStatus", "revision", "receipt", "typedError"],
+    "mediaPayloadPolicy": "metadata-only"
+  },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract"],
-    "notDefinedHere": ["six-domain repository implementation", "pending journal", "API client", "production mutation"],
-    "nextAllowedTask": "3.1 thin Reader API client",
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary"],
+    "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation"],
+    "nextAllowedTask": "3.2 durable UI status mapping",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:ba7634e1ba776c5db3c9921cfee22e91d26fe4696e1e204fd1a31cb3b179e8fe"
+  "artifactChecksum": "sha256:33074ccec3854cb22e7bdf746be773efe7febbcbe3f2666e446c88acd8d9bf90"
 }
