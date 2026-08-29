@@ -333,4 +333,26 @@ fallback. The six browser sources remain old-owner/pre-cutover until later inven
 The behavior gate is `npm run verify:windows-owner-legacy-bridge`; it exercises IndexedDB, localStorage, and JSON
 collectors, all six domain classifications, deterministic inventory/import checksums, unknown/schema/corrupt and
 media blocking, source/path isolation, no-write counters, cloned rollback reads, and the frozen IndexedDB
-schema. Task 3.4 is the next allowed implementation; no media Range owner or domain cutover is introduced here.
+schema. Task 3.4 adds the narrow media owner boundary described below; it does not introduce a domain cutover.
+
+## Task 3.4 media resource owner
+
+`src/services/media/media-resource-owner.js` contains both the existing short-lived resource owner and a
+validated Windows owner media binding seam. The seam consumes only the frozen `reader-session.media-identity`
+or `workflow.media-capability` mapping, accepts a bounded descriptor (`profileId`, media identity, kind, size,
+content type, ETag, revision, and an authorized relative `/api/jobs/{jobId}/media/{kind}` URL), and never exposes
+a local path or storage handle. A descriptor is range-probed with `Range: bytes=0-0` and `If-Range`; only a
+`206` response with exact `Content-Range`, `Accept-Ranges: bytes`, matching ETag, and
+`X-Read-Web-Media-Identity` can bind it.
+
+The media element receives the authorized URL directly. Replacement, disposal, identity change, ETag mismatch,
+missing media, and failed probes release the old resource or return a typed rebind/not-found result. The seam
+does not call `blob()`, `arrayBuffer()`, `text()`, or `URL.createObjectURL`, and its request/response metadata
+boundary rejects Blob, ArrayBuffer, typed-array, media data URI, and obvious media base64 payloads. The existing
+workflow media route remains a legacy Range stream; the owner media query is still typed `not-ready` while all
+six domains are pre-cutover, so no writer, repository, or authority is changed here.
+
+The focused behavior gate is `npm run verify:windows-owner-media-capability`; it covers the two contract mappings,
+descriptor and URL validation, no-copy values, Range/ETag/identity checks, direct element binding, replacement,
+disposal, and typed failure behavior. Task 3.5 is the next allowed implementation; no domain repository or UI
+cutover is introduced here.

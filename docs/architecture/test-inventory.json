@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 107,
+    "behavior": 108,
     "browser": 27,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 260,
-  "executableScriptCount": 283,
+  "packageScriptCount": 261,
+  "executableScriptCount": 284,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2939,7 +2939,7 @@
     },
     {
       "name": "verify:windows-owner",
-      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-api-client && npm run verify:windows-owner-durable-status && npm run verify:windows-owner-legacy-bridge && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-health && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
+      "command": "npm run verify:windows-owner-contract && npm run verify:windows-owner-api-client && npm run verify:windows-owner-durable-status && npm run verify:windows-owner-legacy-bridge && npm run verify:windows-owner-media-capability && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-health && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
       "category": "architecture",
       "layers": [
         "behavior",
@@ -3092,6 +3092,18 @@
         "scripts/windows-owner-legacy-bridge-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-legacy-bridge"
+    },
+    {
+      "name": "verify:windows-owner-media-capability",
+      "command": "node scripts/windows-owner-media-capability-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-media-capability-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-media-capability"
     },
     {
       "name": "verify:windows-owner-non-goals",
@@ -10477,6 +10489,31 @@
           "asserts-source-text"
         ],
         "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-media-capability-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner",
+      "owners": [
+        "package.json#scripts.verify:windows-owner",
+        "package.json#scripts.verify:windows-owner-media-capability"
+      ],
+      "invocation": "transitive",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,

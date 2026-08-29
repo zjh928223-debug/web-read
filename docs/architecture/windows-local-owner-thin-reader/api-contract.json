@@ -574,11 +574,45 @@
     "canonical": false,
     "mediaPayloadPolicy": "complete Blob/ArrayBuffer/bytes are blocked; identity metadata only"
   },
+  "mediaResourceOwnerContract": {
+    "module": "src/services/media/media-resource-owner.js",
+    "schemaVersion": 1,
+    "queryMappings": {
+      "reader-session": {
+        "operation": "media-identity",
+        "capability": "reader-session.query"
+      },
+      "workflow": {
+        "operation": "media-capability",
+        "capability": "workflow.media-range"
+      }
+    },
+    "descriptorFields": [
+      "schemaVersion",
+      "profileId",
+      "mediaId",
+      "kind",
+      "authorizedUrl",
+      "size",
+      "contentType",
+      "etag",
+      "revision"
+    ],
+    "authorizedUrlPolicy": "Same-origin relative /api/jobs/{jobId}/media/{audio|video} URL only; no data/blob URL, absolute URL, userinfo, query token, fragment, or raw local path",
+    "rangeProbe": {
+      "request": "GET with Range bytes=0-0, If-Range equal to descriptor etag, credentials same-origin, no-store",
+      "response": "206 with exact Content-Range, Accept-Ranges bytes, matching ETag, and X-Read-Web-Media-Identity",
+      "bodyRead": false
+    },
+    "binding": "Validated descriptor is assigned directly to the media element; replacement, dispose, identity mismatch, or ETag mismatch releases the previous resource",
+    "mediaPayloadPolicy": "Only bounded identity/reference metadata crosses owner API; Blob, ArrayBuffer, typed-array, media data URI, and obvious media base64 payloads are rejected",
+    "productionStatus": "Narrow browser boundary is implemented; six domains remain pre-cutover and the owner media query remains typed not-ready until a future Host capability producer is enabled"
+  },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation"],
-    "nextAllowedTask": "3.4 media resource owner",
+    "nextAllowedTask": "3.5 media/auth/range focused checks",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:c23dfcd9b3088c61ef231aea84e9fabe74c2b9a3f74782fd7cae5758d583cbb9"
+  "artifactChecksum": "sha256:3fe1e2d5b111f252101c072d32c00479f2e10fec64906687e17560b0776bccad"
 }

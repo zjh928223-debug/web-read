@@ -3682,7 +3682,7 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["content-type", "x-read-web-token", "idempotency-key", "x-expected-revision", "if-match"],
-        expose_headers=["accept-ranges", "content-range", "etag"],
+        expose_headers=["accept-ranges", "content-range", "etag", "x-read-web-media-identity"],
     )
 
     @app.get("/api/health")
@@ -3966,7 +3966,15 @@ def create_app(
     @app.api_route("/api/jobs/{job_id}/media/{media_kind}", methods=["GET", "HEAD"])
     def job_media(job_id: str, media_kind: str):
         path = manager.registered_media_path(job_id, media_kind)
-        return FileResponse(path, filename=path.name, content_disposition_type="inline")
+        media_identity = f"{job_id}:{media_kind}"
+        if len(media_identity) > 256 or any(ord(char) < 0x20 or ord(char) == 0x7f for char in media_identity):
+            raise HTTPException(status_code=404, detail="media identity not found")
+        return FileResponse(
+            path,
+            filename=path.name,
+            content_disposition_type="inline",
+            headers={"X-Read-Web-Media-Identity": media_identity},
+        )
 
     @app.get("/api/recent")
     def recent(limit: int = 10):

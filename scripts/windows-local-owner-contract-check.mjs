@@ -169,7 +169,7 @@ assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned pro
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
 assert(api.futureImplementationBoundary.implementedHere.includes('Browser typed owner API client boundary'), 'browser API client implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('API client'), 'API client is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '3.4 media resource owner', 'API contract next task must advance to 3.4 after the legacy bridge')
+assert(api.futureImplementationBoundary.nextAllowedTask === '3.5 media/auth/range focused checks', 'API contract next task must advance to 3.5 after the media owner')
 assert(api.browserClientContract?.module === 'src/services/windows-owner-api-client.js', 'browser API client module is missing')
 assert(api.browserClientContract?.route === '/api/app/owner', 'browser API client route is not frozen')
 assert(api.browserClientContract?.contractVersion === api.contractVersion, 'browser API client contract version is not aligned')
@@ -213,6 +213,25 @@ assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.version ===
 assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.objectStore === 'files', 'legacy bridge IndexedDB store changed')
 assert(api.legacyCompatibilityBridgeContract?.frozenIndexedDbSchema?.keyPath === 'id', 'legacy bridge IndexedDB key path changed')
 await assertSourceExists(api.legacyCompatibilityBridgeContract.module)
+assert(api.mediaResourceOwnerContract?.module === 'src/services/media/media-resource-owner.js', 'media resource owner module is missing')
+assert(api.mediaResourceOwnerContract?.schemaVersion === 1, 'media resource owner schema changed')
+assert(
+  JSON.stringify(api.mediaResourceOwnerContract?.queryMappings) === JSON.stringify({
+    'reader-session': { operation: 'media-identity', capability: 'reader-session.query' },
+    workflow: { operation: 'media-capability', capability: 'workflow.media-range' },
+  }),
+  'media resource owner query mapping is not aligned with the API contract',
+)
+assert(
+  JSON.stringify(api.mediaResourceOwnerContract?.descriptorFields) === JSON.stringify([
+    'schemaVersion', 'profileId', 'mediaId', 'kind', 'authorizedUrl', 'size', 'contentType', 'etag', 'revision',
+  ]),
+  'media descriptor fields changed',
+)
+assert(api.mediaResourceOwnerContract?.rangeProbe?.bodyRead === false, 'media range probe cannot read a full response body')
+assert(api.mediaResourceOwnerContract?.authorizedUrlPolicy?.includes('no data/blob URL'), 'media URL boundary is missing')
+assert(api.mediaResourceOwnerContract?.mediaPayloadPolicy?.includes('ArrayBuffer'), 'media payload no-copy boundary is missing')
+await assertSourceExists(api.mediaResourceOwnerContract.module)
 assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
 assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
 for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
@@ -304,7 +323,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '3.3'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '3.3', '3.4'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

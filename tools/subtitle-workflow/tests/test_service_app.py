@@ -2217,6 +2217,7 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(full.content, b"0123456789")
             self.assertEqual(full.headers["accept-ranges"], "bytes")
             self.assertTrue(full.headers["etag"])
+            self.assertEqual(full.headers["x-read-web-media-identity"], f"{ready['jobId']}:video")
 
             head = client.head(f"/api/jobs/{ready['jobId']}/media/video")
             self.assertEqual(head.status_code, 200)
@@ -2235,7 +2236,7 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(ranged.headers["content-length"], "4")
             self.assertEqual(ranged.headers["etag"], full.headers["etag"])
             exposed = {item.strip().lower() for item in ranged.headers["access-control-expose-headers"].split(",")}
-            self.assertTrue({"accept-ranges", "content-range", "etag"}.issubset(exposed))
+            self.assertTrue({"accept-ranges", "content-range", "etag", "x-read-web-media-identity"}.issubset(exposed))
 
             unsatisfied = client.get(
                 f"/api/jobs/{ready['jobId']}/media/video",
