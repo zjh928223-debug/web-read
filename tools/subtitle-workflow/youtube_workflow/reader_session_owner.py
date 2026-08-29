@@ -330,6 +330,23 @@ def _snapshot_checksum(candidate: Mapping[str, Any]) -> str:
     return _checksum({key: candidate[key] for key in sorted(_CANDIDATE_FIELDS)})
 
 
+def _owner_request_fingerprint(
+    operation: str,
+    capability: str,
+    expected_revision: int,
+    payload: Mapping[str, Any],
+) -> str:
+    return _checksum(
+        {
+            "domain": READER_SESSION_DOMAIN,
+            "operation": operation,
+            "capability": capability,
+            "expectedRevision": expected_revision,
+            "payload": payload,
+        }
+    )
+
+
 def _validate_commit_metadata(value: Any) -> dict[str, Any]:
     if not _is_json_object(value) or set(value) != _COMMIT_FIELDS:
         raise _SnapshotValidationError("corrupt")
@@ -699,14 +716,7 @@ class ReaderSessionOwner:
                 if existing_result is None:
                     return existing
                 if self._receipt_is_terminal(existing_result):
-                    receipt = existing_result.get("receipt")
-                    if (
-                        prepared is None
-                        and isinstance(receipt, Mapping)
-                        and receipt.get("operation") == "commit"
-                        and type(receipt.get("expectedRevision")) is type(expected)
-                        and receipt.get("expectedRevision") == expected
-                    ):
+                    if prepared is None and self._commit_retry_matches(existing_result, expected, prepare_id):
                         return existing
                     if existing_result.get("receipt") is not None:
                         return self._failure(
@@ -758,7 +768,7 @@ class ReaderSessionOwner:
                 details={"baseRevision": prepared.base_revision},
             )
 
-        payload = self._receipt_payload(prepared.candidate, "commit")
+        payload = self._receipt_payload(prepared.candidate, "commit", prepare_id=prepare_id)
         try:
             result = self.receipts.commit(
                 request_id=request_id,
@@ -1173,6 +1183,30 @@ class ReaderSessionOwner:
             and receipt.get("recordChecksums") == [snapshot["checksum"]]
         )
 
+    def _commit_retry_matches(
+        self,
+        result: Mapping[str, Any],
+        expected_revision: int,
+        prepare_id: str,
+    ) -> bool:
+        receipt = result.get("receipt")
+        current, _previous = self._read_pair()
+        if result.get("outcome") != "committed" or not self._receipt_matches_snapshot(receipt, current):
+            return False
+        if current.snapshot is None:
+            return False
+        try:
+            candidate = self._candidate_from_snapshot(current.snapshot, current.snapshot["revision"])
+        except _SnapshotValidationError:
+            return False
+        payload = self._receipt_payload(candidate, "commit", prepare_id=prepare_id)
+        return receipt.get("requestFingerprint") == _owner_request_fingerprint(
+            "commit",
+            "reader-session.commit",
+            expected_revision,
+            payload,
+        )
+
     def _restore_retry_matches(
         self,
         result: Mapping[str, Any],
@@ -1189,16 +1223,26 @@ class ReaderSessionOwner:
             or receipt.get("expectedRevision") != expected_revision
         ):
             return False
-        if result.get("outcome") != "committed":
-            return True
-        if not self._receipt_matches_snapshot(receipt, current):
-            # An older receipt may no longer have a matching current
-            # snapshot; operation, expected revision, and validated source
-            # are the available stable retry evidence in that case.
-            return True
-        if source == "previous":
-            return True
-        return receipt.get("recordChecksums") == [_snapshot_checksum(candidate)]
+        if source == "snapshot":
+            retry_candidate = candidate
+        elif source == "previous":
+            if result.get("outcome") != "committed" or not self._receipt_matches_snapshot(receipt, current):
+                return False
+            if current.snapshot is None:
+                return False
+            try:
+                retry_candidate = self._candidate_from_snapshot(current.snapshot, current.snapshot["revision"])
+            except _SnapshotValidationError:
+                return False
+        else:
+            return False
+        payload = self._receipt_payload(retry_candidate, "restore", source=source)
+        return receipt.get("requestFingerprint") == _owner_request_fingerprint(
+            "restore",
+            "reader-session.restore",
+            expected_revision,
+            payload,
+        )
 
     @staticmethod
     def _current_receipt_context(state: _ReadState) -> dict[str, Any]:
@@ -1272,6 +1316,7 @@ class ReaderSessionOwner:
         operation: str,
         *,
         source: str | None = None,
+        prepare_id: str | None = None,
     ) -> dict[str, Any]:
         payload = {
             "candidateChecksum": _snapshot_checksum(candidate),
@@ -1282,6 +1327,8 @@ class ReaderSessionOwner:
         }
         if source is not None:
             payload["source"] = source
+        if prepare_id is not None:
+            payload["prepareId"] = prepare_id
         return payload
 
     @staticmethod

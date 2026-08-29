@@ -191,10 +191,10 @@ class ReaderSessionOwnerTests(unittest.TestCase):
             idempotency_key="old-receipt",
             **self.request_ids("old-receipt-retry"),
         )
-        self.assertEqual(retried["outcome"], "committed")
-        self.assertEqual(retried["receipt"]["receiptId"], first["receipt"]["receiptId"])
-        self.assertNotIn("snapshot", retried["payload"])
-        self.assertEqual(retried["payload"]["current"]["contentId"], "content-2")
+        self.assertEqual(retried["outcome"], "conflict")
+        self.assertEqual(retried["error"]["code"], "conflict")
+        self.assertEqual(retried["payload"]["contentId"], "content-2")
+        self.assertEqual(retried["payload"]["sessionRevision"], 2)
 
     def test_duplicate_idempotency_replays_durable_receipt_without_second_write(self):
         replacements = 0
@@ -225,6 +225,27 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertEqual(retry["outcome"], "committed")
         self.assertEqual(first["receipt"]["receiptId"], retry["receipt"]["receiptId"])
         self.assertEqual(replacements, 1)
+
+    def test_completed_commit_with_different_prepare_id_conflicts(self):
+        owner = self.make_owner()
+        prepare_id = self.prepare(owner, self.candidate(), key="completed-commit-prepare")
+        committed = owner.commit(
+            prepare_id,
+            expected_revision=0,
+            idempotency_key="completed-commit-key",
+            **self.request_ids("completed-commit"),
+        )
+        self.assertEqual(committed["outcome"], "committed")
+
+        different_prepare = owner.commit(
+            "prepare-different",
+            expected_revision=0,
+            idempotency_key="completed-commit-key",
+            **self.request_ids("completed-commit-different-prepare"),
+        )
+        self.assertEqual(different_prepare["outcome"], "conflict")
+        self.assertEqual(different_prepare["error"]["code"], "conflict")
+        self.assertEqual(owner.query("current-revision")["payload"]["revision"], 1)
 
     def test_replaced_prepare_and_stale_cas_do_not_overwrite_current_snapshot(self):
         owner = self.make_owner()
@@ -546,6 +567,45 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertEqual(rejected["outcome"], "rejected")
         self.assertEqual(rejected["error"]["code"], "corrupt")
         self.assertEqual(owner.snapshot_path.read_text(encoding="utf-8"), before)
+
+    def test_old_snapshot_restore_receipt_with_different_snapshot_conflicts_after_revision_advances(self):
+        owner = self.make_owner()
+        self.commit(owner, self.candidate(), key="restore-binding-1")
+        original_snapshot = owner.query("snapshot")["payload"]["snapshot"]
+        self.commit(
+            owner,
+            self.candidate(2, content_id="content-2", media_id="media-2"),
+            key="restore-binding-2",
+        )
+
+        restored = owner.restore(
+            source="snapshot",
+            snapshot=original_snapshot,
+            expected_revision=2,
+            idempotency_key="restore-binding-key",
+            **self.request_ids("restore-binding"),
+        )
+        self.assertEqual(restored["outcome"], "committed")
+        self.assertEqual(restored["revision"], 3)
+        self.commit(
+            owner,
+            self.candidate(4, content_id="content-4", media_id="media-4"),
+            key="restore-binding-4",
+        )
+        before = owner.snapshot_path.read_text(encoding="utf-8")
+
+        changed_snapshot = self.candidate(99, content_id="different-content", media_id="different-media")
+        different_payload = owner.restore(
+            source="snapshot",
+            snapshot=changed_snapshot,
+            expected_revision=2,
+            idempotency_key="restore-binding-key",
+            **self.request_ids("restore-binding-different"),
+        )
+        self.assertEqual(different_payload["outcome"], "conflict")
+        self.assertEqual(different_payload["error"]["code"], "conflict")
+        self.assertEqual(owner.snapshot_path.read_text(encoding="utf-8"), before)
+        self.assertEqual(owner.query("current-revision")["payload"]["revision"], 4)
 
     def test_atomic_replace_fault_keeps_old_snapshot_and_leaves_no_half_write(self):
         def fail_after_replace(_temporary, target):
