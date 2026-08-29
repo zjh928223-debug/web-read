@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from .service import create_app as create_workflow_app
 from .windows_owner_registry import (
     OwnerRegistryError,
+    WINDOWS_OWNER_DOMAINS,
     load_owner_registry,
     owner_registry_error_status,
     owner_registry_profile_not_ready_status,
@@ -137,6 +138,8 @@ class PathPreservingAsgiDispatch:
         request_policy: WindowsOwnerRequestPolicy | None = None,
         owner_receipt_store: OwnerCommitReceiptStore | None = None,
         owner_domain_handlers: dict | None = None,
+        owner_freeze_root: Path | None = None,
+        owner_profile_id: str = "",
         application_profile_lease_process=None,
         application_profile_lease_mode: str = "authoritative",
         capability_snapshot_provider=None,
@@ -149,6 +152,8 @@ class PathPreservingAsgiDispatch:
         self.capability_access_token = capability_access_token
         self.owner_receipt_store = owner_receipt_store
         self.owner_domain_handlers = dict(owner_domain_handlers or {})
+        self.owner_freeze_root = Path(owner_freeze_root).resolve() if owner_freeze_root is not None else None
+        self.owner_profile_id = str(owner_profile_id or "")
         self.application_profile_lease_process = application_profile_lease_process
         self.application_profile_lease_mode = application_profile_lease_mode
         self.capability_snapshot_provider = capability_snapshot_provider
@@ -308,9 +313,9 @@ class PathPreservingAsgiDispatch:
     def _legacy_writer_is_frozen(self, path: str, method: str) -> bool:
         if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
             return False
-        if self._domain_is_authoritative("workflow"):
+        if self._domain_is_frozen("workflow") or self._domain_is_authoritative("workflow"):
             return path.startswith(("/api/config", "/api/jobs", "/api/import/jobs", "/api/history"))
-        if self._domain_is_authoritative("marks-activity"):
+        if self._domain_is_frozen("marks-activity") or self._domain_is_authoritative("marks-activity"):
             if path.startswith("/api/reader/activity"):
                 return True
             return path.startswith("/api/jobs/") and (
@@ -321,7 +326,32 @@ class PathPreservingAsgiDispatch:
     def _domain_is_authoritative(self, domain: str) -> bool:
         owner_mode = self.owner_registry_status.get("ownerMode")
         authoritative = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
-        return domain in authoritative and domain in self.owner_domain_handlers
+        return (
+            domain in authoritative
+            and domain in self.owner_domain_handlers
+            and not self._domain_is_frozen(domain)
+        )
+
+    def _domain_is_frozen(self, domain: str) -> bool:
+        if self.owner_freeze_root is not None and domain in WINDOWS_OWNER_DOMAINS:
+            marker = self.owner_freeze_root / "owner-mode" / "frozen" / f"{domain}.json"
+            try:
+                value = json.loads(marker.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return False
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                return True
+            if not (
+                isinstance(value, dict)
+                and value.get("schemaVersion") == 1
+                and value.get("domain") == domain
+                and value.get("profileId") == self.owner_profile_id
+            ):
+                return True
+            return value.get("status") == "frozen"
+        owner_mode = self.owner_registry_status.get("ownerMode")
+        frozen = owner_mode.get("frozenDomains", []) if isinstance(owner_mode, dict) else []
+        return domain in frozen
 
     @staticmethod
     def _handler_payload(owner_request):
@@ -777,6 +807,51 @@ def _standby_profile_evidence_is_safe(evidence: dict | None) -> bool:
     )
 
 
+def _read_owner_freeze_state(authority_root: Path | None, profile_id: str) -> tuple[set[str], set[str]]:
+    """Read only the small persistent pre-switch markers used by browser guards."""
+
+    if authority_root is None:
+        return set(), set()
+    marker_root = Path(authority_root).resolve() / "owner-mode" / "frozen"
+    frozen: set[str] = set()
+    invalid: set[str] = set()
+    for domain in WINDOWS_OWNER_DOMAINS:
+        marker = marker_root / f"{domain}.json"
+        try:
+            value = json.loads(marker.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            invalid.add(domain)
+            frozen.add(domain)
+            continue
+        if (
+            isinstance(value, dict)
+            and value.get("schemaVersion") == 1
+            and value.get("domain") == domain
+            and value.get("profileId") == profile_id
+            and value.get("status") == "frozen"
+        ):
+            frozen.add(domain)
+        else:
+            invalid.add(domain)
+            frozen.add(domain)
+    return frozen, invalid
+
+
+def _merge_owner_freeze_state(owner_status: dict, authority_root: Path | None, profile_id: str) -> dict:
+    frozen, invalid = _read_owner_freeze_state(authority_root, profile_id)
+    owner_mode = dict(owner_status.get("ownerMode") or {})
+    existing_invalid = set(owner_mode.get("invalidDomains", []))
+    owner_mode["frozenDomains"] = sorted(
+        frozen if authority_root is not None else set(owner_mode.get("frozenDomains", []))
+    )
+    owner_mode["invalidDomains"] = sorted(existing_invalid | invalid)
+    if invalid:
+        owner_mode["status"] = "invalid"
+    return {**owner_status, "ownerMode": owner_mode}
+
+
 def create_local_app_host(
     *,
     dist_dir: Path,
@@ -802,6 +877,10 @@ def create_local_app_host(
     application_profile_lease_mode: str = "authoritative",
     application_profile_standby_preflight: bool = False,
     owner_receipt_root: Path | None = None,
+    owner_freeze_root: Path | None = None,
+    owner_repository_root: Path | None = None,
+    owner_workflow_state_dir: Path | None = None,
+    owner_workflow_output_dir: Path | None = None,
     owner_receipt_store: OwnerCommitReceiptStore | None = None,
     owner_receipt_revision_reader=None,
     owner_receipt_evidence_resolvers=None,
@@ -846,6 +925,20 @@ def create_local_app_host(
         owner_profile_evidence=owner_profile_evidence,
         profile_id=profile_id,
     )
+    freeze_root = owner_freeze_root or owner_receipt_root
+    base_owner_registry_status = owner_registry_status
+    owner_registry_status = _merge_owner_freeze_state(base_owner_registry_status, freeze_root, profile_id)
+    if owner_domain_handlers is None and owner_repository_root is not None:
+        owner_mode = owner_registry_status.get("ownerMode")
+        authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
+        if authoritative_domains:
+            owner_domain_handlers = create_profile_owner_handlers(
+                owner_repository_root,
+                profile_id,
+                instance_id,
+                workflow_state_dir=owner_workflow_state_dir,
+                workflow_output_dir=owner_workflow_output_dir,
+            )
     receipt_store = owner_receipt_store
     if receipt_store is None and owner_receipt_root is not None:
         receipt_store = OwnerCommitReceiptStore(
@@ -903,6 +996,8 @@ def create_local_app_host(
     app = FastAPI(title="Read-Web Local App Host")
 
     def current_health_snapshot():
+        nonlocal owner_registry_status
+        owner_registry_status = _merge_owner_freeze_state(base_owner_registry_status, freeze_root, profile_id)
         dist_ready = (root / "index.html").is_file()
         return build_health_snapshot(
             service="read-web-local-app-host",
@@ -964,6 +1059,8 @@ def create_local_app_host(
         request_policy=request_policy,
         owner_receipt_store=receipt_store,
         owner_domain_handlers=owner_domain_handlers,
+        owner_freeze_root=freeze_root,
+        owner_profile_id=profile_id,
         application_profile_lease_process=application_profile_lease_process,
         application_profile_lease_mode=application_profile_lease_mode,
         capability_snapshot_provider=lambda: build_capability_snapshot(current_health_snapshot()),
@@ -1134,17 +1231,6 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(owner_profile_evidence, dict)
             else None
         )
-        owner_mode = owner_profile_evidence.get("ownerMode", {}) if isinstance(owner_profile_evidence, dict) else {}
-        authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
-        owner_handlers = None
-        if authoritative_domains:
-            owner_handlers = create_profile_owner_handlers(
-                args.application_profile_authority_root or args.application_profile_dir,
-                args.profile_id,
-                args.instance_id,
-                workflow_state_dir=args.application_python_state_dir,
-                workflow_output_dir=args.application_python_output_dir,
-            )
         app = create_local_app_host(
             dist_dir=dist,
             capability_base_url=args.capability_base_url,
@@ -1167,7 +1253,10 @@ def main(argv: list[str] | None = None) -> int:
             application_profile_lease_mode=profile_lease_mode,
             application_profile_standby_preflight=args.allow_standby_readiness,
             owner_receipt_root=args.application_profile_authority_root,
-            owner_domain_handlers=owner_handlers,
+            owner_repository_root=args.application_profile_authority_root or args.application_profile_dir,
+            owner_freeze_root=args.application_profile_authority_root,
+            owner_workflow_state_dir=args.application_python_state_dir,
+            owner_workflow_output_dir=args.application_python_output_dir,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

@@ -91,6 +91,45 @@ async function readJsonResponse(response) {
   return response.json()
 }
 
+function activeMarksOwner() {
+  const cutover = globalThis.__windowsOwnerDomainCutover
+  return cutover
+    && typeof cutover.isAuthoritative === 'function'
+    && cutover.isAuthoritative('marks-activity')
+    && typeof cutover.query === 'function'
+    && typeof cutover.command === 'function'
+    ? cutover
+    : null
+}
+
+async function currentMarksRevision(cutover, jobId, contentId, signal) {
+  const response = await cutover.query({
+    domain: 'marks-activity',
+    operation: 'revision',
+    payload: { jobId, contentId },
+    ...(signal ? { signal } : {}),
+  })
+  const revision = response?.payload?.revision ?? response?.revision
+  if (!Number.isInteger(revision) || revision < 0) {
+    const error = new Error('Host marks/activity revision is unavailable')
+    error.code = 'marks-owner-not-ready'
+    throw error
+  }
+  return revision
+}
+
+function marksOperationKey(operation, jobId, contentId, payload, options = {}) {
+  const explicit = options.idempotencyKey || options.operationKey
+  if (explicit) return String(explicit)
+  const text = JSON.stringify({ operation, jobId, contentId, payload })
+  let hash = 2166136261
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `marks-${operation}-${(hash >>> 0).toString(16)}`
+}
+
 export function createYoutubeWorkflowClient(options = {}) {
   const baseUrl = trimTrailingSlash(options.baseUrl || DEFAULT_BASE_URL)
   const rawFetch = options.fetchImpl || fetch
@@ -114,6 +153,23 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   async function requestReaderActivity(payload = {}, options = {}) {
+    const cutover = activeMarksOwner()
+    if (cutover) {
+      const jobId = String(payload?.jobId || '')
+      const contentId = String(payload?.contentId || jobId)
+      const commandPayload = { jobId, contentId, ...(payload || {}) }
+      const expectedRevision = options.expectedRevision === undefined
+        ? await currentMarksRevision(cutover, jobId, contentId, options.signal)
+        : options.expectedRevision
+      return cutover.command({
+        domain: 'marks-activity',
+        operation: 'activity-append',
+        payload: commandPayload,
+        expectedRevision,
+        idempotencyKey: marksOperationKey('activity-append', jobId, contentId, commandPayload, options),
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
+    }
     return readJsonResponse(await fetchImpl(apiUrl('/api/reader/activity'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -124,6 +180,27 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   async function requestReaderMarks(jobId, payload = {}, options = {}) {
+    const cutover = activeMarksOwner()
+    if (cutover) {
+      const normalizedJobId = String(jobId || '')
+      const contentId = String(payload?.contentId || normalizedJobId)
+      const commandPayload = {
+        jobId: normalizedJobId,
+        contentId,
+        marks: Array.isArray(payload?.marks) ? payload.marks : [],
+      }
+      const expectedRevision = options.expectedRevision === undefined
+        ? await currentMarksRevision(cutover, normalizedJobId, contentId, options.signal)
+        : options.expectedRevision
+      return cutover.command({
+        domain: 'marks-activity',
+        operation: 'marks-commit',
+        payload: commandPayload,
+        expectedRevision,
+        idempotencyKey: marksOperationKey('marks-commit', normalizedJobId, contentId, commandPayload, options),
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
+    }
     return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

@@ -146,8 +146,10 @@ def _validate_owner_mode_evidence(value: Any) -> dict[str, Any]:
             "OWNER_MODE_CHECKPOINT_INVALID",
             "Owner-mode checkpoint evidence has an invalid status",
         )
-    for field_name in ("authoritativeDomains", "invalidDomains"):
+    for field_name in ("authoritativeDomains", "invalidDomains", "frozenDomains"):
         values = owner_mode.get(field_name)
+        if field_name == "frozenDomains" and values is None:
+            values = []
         if not isinstance(values, list) or any(item not in _DOMAIN_SET for item in values):
             raise OwnerRegistryError(
                 "OWNER_MODE_CHECKPOINT_INVALID",
@@ -172,6 +174,7 @@ def _validate_owner_mode_evidence(value: Any) -> dict[str, Any]:
         "schemaVersion": OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
         "status": status,
         "authoritativeDomains": list(owner_mode["authoritativeDomains"]),
+        "frozenDomains": list(owner_mode.get("frozenDomains", [])),
         "invalidDomains": list(owner_mode["invalidDomains"]),
     }
 

@@ -88,6 +88,34 @@ async function main() {
   await client.getAnnotationBackfillRunResult('job-1', 'run-1');
   await client.quality('job-1');
 
+  const ownerQueries = [];
+  const ownerCommands = [];
+  globalThis.__windowsOwnerDomainCutover = {
+    isAuthoritative(domain) { return domain === 'marks-activity'; },
+    async query(request) {
+      ownerQueries.push(request);
+      return { payload: { revision: 4 }, revision: 4 };
+    },
+    async command(request) {
+      ownerCommands.push(request);
+      return { outcome: 'committed', commitStatus: 'committed', revision: 5 };
+    },
+  };
+  try {
+    await client.recordReaderActivity({ jobId: 'job-owner', contentId: 'content-owner', event: 'progress' });
+    await client.saveReaderMarks('job-owner', { contentId: 'content-owner', marks: [{ globalIndex: 1 }] });
+  } finally {
+    delete globalThis.__windowsOwnerDomainCutover;
+  }
+  assert.equal(ownerQueries.length, 2);
+  assert.equal(ownerCommands.length, 2);
+  assert.deepEqual(ownerCommands.map((request) => [request.domain, request.operation, request.expectedRevision]), [
+    ['marks-activity', 'activity-append', 4],
+    ['marks-activity', 'marks-commit', 4],
+  ]);
+  assert.ok(ownerCommands.every((request) => typeof request.idempotencyKey === 'string' && request.idempotencyKey.startsWith('marks-')));
+  assert.equal(calls.filter((call) => call.url.includes('/api/reader/activity') || call.url.includes('/reader-marks')).length, 3);
+
   assert.deepEqual(calls.map((call) => call.url), [
     'http://127.0.0.1:8765/api/health',
     'http://127.0.0.1:8765/api/diagnostics',

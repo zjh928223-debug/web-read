@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from youtube_workflow.production_host_prototype import create_local_app_host
 from youtube_workflow.windows_owner_registry import WINDOWS_OWNER_DOMAINS, load_owner_registry
-from youtube_workflow.windows_owner_runtime import create_profile_owner_handlers
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -117,7 +116,6 @@ class WindowsOwnerC2aTests(unittest.TestCase):
         profile_id = "c2a-profile"
         instance_id = "c2a-instance"
         evidence = profile_evidence(profile_id, authoritative_domains)
-        handlers = create_profile_owner_handlers(root / "host", profile_id, instance_id)
         dist = root / "dist"
         dist.mkdir(parents=True, exist_ok=True)
         (dist / "index.html").write_text("<main>isolated C2a</main>", encoding="utf-8")
@@ -129,7 +127,8 @@ class WindowsOwnerC2aTests(unittest.TestCase):
             instance_id=instance_id,
             owner_registry=self.registry,
             owner_profile_evidence=evidence,
-            owner_domain_handlers=handlers,
+            owner_repository_root=root / "host",
+            owner_freeze_root=root / "authority",
             config_compatibility={"schemaVersion": 1, "minimum": 1, "maximum": 1},
         )
 
@@ -155,6 +154,7 @@ class WindowsOwnerC2aTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             app = self.make_app(root, ["reader-session", "marks-activity"])
+            self.assertEqual(set(app.owner_domain_handlers), set(WINDOWS_OWNER_DOMAINS))
             candidate = reader_candidate()
             with TestClient(app, base_url="http://127.0.0.1") as client:
                 health = client.get("/api/app/health").json()
@@ -287,6 +287,44 @@ class WindowsOwnerC2aTests(unittest.TestCase):
                 )
                 self.assertEqual(response.status_code, 503)
                 self.assertEqual(response.json()["error"]["details"]["reason"], "pre-cutover")
+
+    def test_persistent_pre_switch_freeze_blocks_legacy_writer_before_checkpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            app = self.make_app(root, [])
+            marker = root / "authority" / "owner-mode" / "frozen" / "marks-activity.json"
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "domain": "marks-activity",
+                    "profileId": "c2a-profile",
+                    "status": "frozen",
+                }),
+                encoding="utf-8",
+            )
+            with TestClient(app, base_url="http://127.0.0.1") as client:
+                health = client.get("/api/app/health").json()
+                marks = next(item for item in health["domains"] if item["domain"] == "marks-activity")
+                self.assertTrue(marks["writerFrozen"])
+                response = client.post(
+                    "/api/reader/activity",
+                    headers={"X-Read-Web-Token": "c2a-token"},
+                    json={"jobId": "c2a-job", "event": "blocked-before-final-backup"},
+                )
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.json()["error"]["code"], "legacy-writer-frozen")
+                marker.unlink()
+                reopened_health = client.get("/api/app/health").json()
+                reopened_marks = next(item for item in reopened_health["domains"] if item["domain"] == "marks-activity")
+                self.assertFalse(reopened_marks["writerFrozen"])
+                unblocked = client.post(
+                    "/api/reader/activity",
+                    headers={"X-Read-Web-Token": "c2a-token"},
+                    json={"jobId": "c2a-job", "event": "after-freeze-cleared"},
+                )
+                self.assertNotEqual(unblocked.status_code, 409)
+                self.assertNotEqual(unblocked.json().get("error", {}).get("code"), "legacy-writer-frozen")
 
 
 if __name__ == "__main__":

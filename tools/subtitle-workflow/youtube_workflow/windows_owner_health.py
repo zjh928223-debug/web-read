@@ -309,6 +309,10 @@ def _domain_snapshots(
         domain for domain in owner_mode.get("authoritativeDomains", [])
         if domain in WINDOWS_OWNER_DOMAINS
     }
+    frozen_domains = {
+        domain for domain in owner_mode.get("frozenDomains", [])
+        if domain in WINDOWS_OWNER_DOMAINS
+    }
     result: list[dict[str, Any]] = []
     for domain in WINDOWS_OWNER_DOMAINS:
         raw = raw_domains.get(domain, {})
@@ -327,18 +331,22 @@ def _domain_snapshots(
         if not binding_ok:
             reasons.append("DOMAIN_ADAPTER_EVIDENCE_NOT_READY")
         domain_authoritative = domain in authoritative_domains
+        writer_frozen = domain in frozen_domains
         if not domain_authoritative:
             reasons.append("OWNER_PRE_CUTOVER")
+        if writer_frozen:
+            reasons.append("OWNER_WRITER_FROZEN")
         reasons = list(dict.fromkeys(reasons))
         query_state = "read-only" if contract_valid and profile_ready and binding_ok else "unavailable"
-        command_state = "writable" if domain_authoritative and not reasons else "unavailable"
-        domain_ready = domain_authoritative and not reasons
+        command_state = "writable" if domain_authoritative and not writer_frozen and not reasons else "unavailable"
+        domain_ready = domain_authoritative and not writer_frozen and not reasons
         result.append(
             {
                 "domain": domain,
                 "ownerIdentity": _safe_text(raw.get("ownerIdentity")),
                 "facade": _safe_text(raw.get("ownerFacade")),
                 "ownerMode": mode,
+                "writerFrozen": writer_frozen,
                 "authority": "authoritative" if domain_ready else "pre-cutover" if not domain_authoritative else "unavailable",
                 "registry": {
                     "status": "compatible" if contract_valid else "unavailable",
@@ -653,10 +661,23 @@ def build_health_snapshot(
         "dependencies": dependencies,
         "applicationStartupRecovery": startup_safe,
         "ownerMode": {
-            "status": _safe_code((owner_status.get("ownerMode") or {}).get("status")) if isinstance(owner_status.get("ownerMode"), Mapping) else "not-ready",
+            "status": (
+                _safe_code((owner_status.get("ownerMode") or {}).get("status"))
+                if isinstance(owner_status.get("ownerMode"), Mapping) else "not-ready"
+            ),
             "authoritativeDomains": [
                 domain
                 for domain in ((owner_status.get("ownerMode") or {}).get("authoritativeDomains", []) if isinstance(owner_status.get("ownerMode"), Mapping) else [])
+                if domain in WINDOWS_OWNER_DOMAINS
+                and domain not in {
+                    frozen_domain
+                    for frozen_domain in ((owner_status.get("ownerMode") or {}).get("frozenDomains", []) if isinstance(owner_status.get("ownerMode"), Mapping) else [])
+                    if frozen_domain in WINDOWS_OWNER_DOMAINS
+                }
+            ],
+            "frozenDomains": [
+                domain
+                for domain in ((owner_status.get("ownerMode") or {}).get("frozenDomains", []) if isinstance(owner_status.get("ownerMode"), Mapping) else [])
                 if domain in WINDOWS_OWNER_DOMAINS
             ],
         },

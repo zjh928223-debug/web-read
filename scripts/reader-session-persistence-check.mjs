@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
-const applicationSource = await fs.readFile(new URL('../src/services/persistence/application-persistence.js', import.meta.url), 'utf8')
+const applicationSource = (await fs.readFile(new URL('../src/services/persistence/application-persistence.js', import.meta.url), 'utf8'))
+  .replace(
+    "import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js'\n",
+    'const assertWindowsOwnerBrowserWriterAllowed = () => {}\n',
+  )
 const applicationUrl = `data:text/javascript;base64,${Buffer.from(applicationSource).toString('base64')}`
 const adapterSource = (await fs.readFile(new URL('../src/services/persistence/reader-session-persistence.js', import.meta.url), 'utf8'))
   .replace("'./application-persistence.js'", `'${applicationUrl}'`)

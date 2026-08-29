@@ -54,6 +54,7 @@ const OWNER_PROFILE_EVIDENCE_SOURCE = 'read-web-production-backup.composition'
 const OWNER_MODE_CHECKPOINT_SCHEMA_VERSION = 1
 const OWNER_MODE_CHECKPOINT_DIR = 'owner-mode'
 const OWNER_MODE_CHECKPOINT_SUBDIR = 'checkpoints'
+const OWNER_MODE_FREEZE_SUBDIR = 'frozen'
 const OWNER_MODE_AUTHORITY = 'host-api=authoritative'
 const OWNER_MODE_LEASE_SCHEMA_VERSION = 1
 const OWNER_MODE_REVISION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
@@ -785,7 +786,16 @@ function ownerModeCheckpointPath(profileAuthorityRoot, domain) {
   return path.join(profileAuthorityRoot, OWNER_MODE_CHECKPOINT_DIR, OWNER_MODE_CHECKPOINT_SUBDIR, `${ownerModeDomain(domain)}.json`)
 }
 
+function ownerModeFreezePath(profileAuthorityRoot, domain) {
+  return path.join(profileAuthorityRoot, OWNER_MODE_CHECKPOINT_DIR, OWNER_MODE_FREEZE_SUBDIR, `${ownerModeDomain(domain)}.json`)
+}
+
 function ownerModeCheckpointChecksum(value) {
+  const { checksum: _checksum, ...core } = value || {}
+  return checksumValue(core)
+}
+
+function ownerModeFreezeChecksum(value) {
   const { checksum: _checksum, ...core } = value || {}
   return checksumValue(core)
 }
@@ -900,6 +910,52 @@ function validateOwnerModeCheckpoint(value, { profileAuthorityRoot, isolationRoo
     repository: Object.freeze(repository),
     authorityMode: OWNER_MODE_AUTHORITY,
     committedAt: value.committedAt,
+    checksum: value.checksum,
+  })
+}
+
+function validateOwnerModeFreeze(value, { profileAuthorityRoot, isolationRoot, profileId, lease, domain } = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw ownerModeError('OWNER_MODE_FREEZE_CORRUPT', 'Owner-mode freeze marker is not an object')
+  }
+  if (value.schemaVersion !== OWNER_MODE_CHECKPOINT_SCHEMA_VERSION) {
+    throw ownerModeError('OWNER_MODE_FREEZE_UNKNOWN_SCHEMA', 'Owner-mode freeze marker schema is unsupported')
+  }
+  const expectedDomain = ownerModeDomain(domain || value.domain)
+  if (value.domain !== expectedDomain) {
+    throw ownerModeError('OWNER_MODE_FREEZE_INVALID', 'Owner-mode freeze marker domain does not match the requested domain')
+  }
+  const expectedProfileId = String(profileId || '').trim()
+  if (!expectedProfileId || value.profileId !== expectedProfileId) {
+    throw ownerModeError('OWNER_MODE_FREEZE_PROFILE_MISMATCH', 'Owner-mode freeze marker belongs to a different profile')
+  }
+  const currentLease = assertActiveProfileLease(lease, {
+    profileAuthorityRoot: profileAuthorityRoot || isolationRoot,
+    profileId: expectedProfileId,
+  })
+  const markerLease = value.lease
+  if (!markerLease || typeof markerLease !== 'object'
+    || markerLease.schemaVersion !== OWNER_MODE_LEASE_SCHEMA_VERSION
+    || markerLease.profileKeyHash !== currentLease.profileKeyHash
+    || markerLease.leaseIdHash !== currentLease.leaseIdHash) {
+    throw ownerModeError('OWNER_MODE_FREEZE_LEASE_MISMATCH', 'Owner-mode freeze marker is not bound to this profile lease')
+  }
+  if (value.status !== 'frozen'
+    || typeof value.frozenAt !== 'string' || !Number.isFinite(Date.parse(value.frozenAt))
+    || typeof value.checksum !== 'string' || value.checksum !== ownerModeFreezeChecksum(value)) {
+    throw ownerModeError('OWNER_MODE_FREEZE_CORRUPT', 'Owner-mode freeze marker evidence is invalid')
+  }
+  return Object.freeze({
+    schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+    profileId: value.profileId,
+    domain: value.domain,
+    lease: Object.freeze({
+      schemaVersion: OWNER_MODE_LEASE_SCHEMA_VERSION,
+      profileKeyHash: markerLease.profileKeyHash,
+      leaseIdHash: markerLease.leaseIdHash,
+    }),
+    status: 'frozen',
+    frozenAt: value.frozenAt,
     checksum: value.checksum,
   })
 }
@@ -1020,6 +1076,105 @@ async function writeOwnerModeCheckpointUnlocked(context, options) {
   return Object.freeze({ created: true, status: 'created', path: filePath, checkpoint })
 }
 
+async function readOwnerModeFreezeUnlocked({ profileAuthorityRoot, profileDir, isolationRoot, profileId, lease, domain }) {
+  const freezeDomain = ownerModeDomain(domain)
+  const authorityRoot = profileAuthorityRoot || profileDir
+  const filePath = ownerModeFreezePath(authorityRoot, freezeDomain)
+  if (!await pathExists(filePath)) return null
+  await assertPathContainedBeforeWrite(authorityRoot, filePath)
+  const value = await readJsonIfPresent(filePath, 'OWNER_MODE_FREEZE_CORRUPT')
+  if (!value) return null
+  return validateOwnerModeFreeze(value, {
+    profileAuthorityRoot: authorityRoot,
+    isolationRoot,
+    profileId,
+    lease,
+    domain: freezeDomain,
+  })
+}
+
+async function writeOwnerModeFreezeUnlocked(context, options) {
+  const { isolationRoot, profileAuthorityRoot, profileId, lease, profileLease } = context
+  const domain = ownerModeDomain(options.domain)
+  const core = {
+    schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
+    profileId,
+    domain,
+    lease: {
+      schemaVersion: OWNER_MODE_LEASE_SCHEMA_VERSION,
+      profileKeyHash: profileLease.profileKeyHash,
+      leaseIdHash: profileLease.leaseIdHash,
+    },
+    status: 'frozen',
+    frozenAt: typeof options.frozenAt === 'string' && options.frozenAt
+      ? options.frozenAt
+      : new Date().toISOString(),
+  }
+  const filePath = ownerModeFreezePath(profileAuthorityRoot, domain)
+  if (await pathExists(filePath)) {
+    await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
+    const existing = await readJsonIfPresent(filePath, 'OWNER_MODE_FREEZE_CORRUPT')
+    const freeze = validateOwnerModeFreeze(existing, {
+      profileAuthorityRoot,
+      isolationRoot,
+      profileId,
+      lease,
+      domain,
+    })
+    return Object.freeze({ created: false, status: 'existing', freeze })
+  }
+  const candidate = { ...core, checksum: ownerModeFreezeChecksum(core) }
+  await writeJsonAtomic(filePath, candidate, { containmentRoot: profileAuthorityRoot })
+  await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
+  const reread = await readJsonIfPresent(filePath, 'OWNER_MODE_FREEZE_CORRUPT')
+  const freeze = validateOwnerModeFreeze(reread, {
+    profileAuthorityRoot,
+    isolationRoot,
+    profileId,
+    lease,
+    domain,
+  })
+  return Object.freeze({ created: true, status: 'created', freeze })
+}
+
+async function clearOwnerModeFreezeUnlocked(context, options) {
+  const { isolationRoot, profileAuthorityRoot, profileId, lease } = context
+  const domain = ownerModeDomain(options.domain)
+  const filePath = ownerModeFreezePath(profileAuthorityRoot, domain)
+  if (!await pathExists(filePath)) return Object.freeze({ removed: false, status: 'absent', domain })
+  const freeze = await readOwnerModeFreezeUnlocked({ ...context, domain })
+  await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
+  await rm(filePath, { force: true })
+  return Object.freeze({ removed: true, status: 'cleared', domain, freeze })
+}
+
+async function revokeOwnerModeCheckpointUnlocked(context, options) {
+  const { profileAuthorityRoot } = context
+  const domain = ownerModeDomain(options.domain)
+  const filePath = ownerModeCheckpointPath(profileAuthorityRoot, domain)
+  if (!await pathExists(filePath)) return Object.freeze({ removed: false, status: 'absent', domain })
+  const checkpoint = await readOwnerModeCheckpointUnlocked({ ...context, domain })
+  if (options.expectedRevision !== undefined
+    && checkpoint.repository.revision !== options.expectedRevision) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_MISMATCH',
+      'Owner-mode checkpoint no longer matches the cutover being rolled back',
+      { domain },
+    )
+  }
+  if (options.expectedRevisionEvidence !== undefined
+    && checkpoint.repository.revisionEvidence !== options.expectedRevisionEvidence) {
+    throw ownerModeError(
+      'OWNER_MODE_CHECKPOINT_MISMATCH',
+      'Owner-mode checkpoint evidence no longer matches the cutover being rolled back',
+      { domain },
+    )
+  }
+  await assertPathContainedBeforeWrite(profileAuthorityRoot, filePath)
+  await rm(filePath, { force: true })
+  return Object.freeze({ removed: true, status: 'revoked', domain })
+}
+
 export async function withReadWebApplicationProfileLease(options = {}, operation) {
   return withOwnerProfileLease(options, operation)
 }
@@ -1061,6 +1216,14 @@ export async function writeOwnerModeCheckpoint(options = {}) {
   return withOwnerProfileLease(options, (context) => writeOwnerModeCheckpointUnlocked(context, options))
 }
 
+export async function writeOwnerModeFreeze(options = {}) {
+  return withOwnerProfileLease(options, (context) => writeOwnerModeFreezeUnlocked(context, options))
+}
+
+export async function clearOwnerModeFreeze(options = {}) {
+  return withOwnerProfileLease(options, (context) => clearOwnerModeFreezeUnlocked(context, options))
+}
+
 export async function commitOwnerModeCheckpoint(options = {}) {
   return writeOwnerModeCheckpoint(options)
 }
@@ -1076,19 +1239,34 @@ export async function readOwnerModeCheckpoint(options = {}) {
   })
 }
 
+export async function readOwnerModeFreeze(options = {}) {
+  return withOwnerProfileLease(options, async (context) => {
+    const freeze = await readOwnerModeFreezeUnlocked({ ...context, domain: options.domain })
+    return freeze ? Object.freeze(clone(freeze)) : null
+  })
+}
+
+export async function revokeOwnerModeCheckpoint(options = {}) {
+  return withOwnerProfileLease(options, (context) => revokeOwnerModeCheckpointUnlocked(context, options))
+}
+
 async function inspectOwnerModeCheckpointsUnlocked(context) {
   const domains = {}
   for (const domain of OWNER_PROFILE_DOMAINS) {
     try {
       const checkpoint = await readOwnerModeCheckpointUnlocked({ ...context, domain })
+      const freeze = await readOwnerModeFreezeUnlocked({ ...context, domain })
       domains[domain] = checkpoint
-        ? { status: 'authoritative', revision: checkpoint.repository.revision, checksum: checkpoint.checksum }
-        : { status: 'pre-cutover' }
+        ? { status: 'authoritative', revision: checkpoint.repository.revision, checksum: checkpoint.checksum, frozen: Boolean(freeze) }
+        : freeze
+          ? { status: 'frozen', frozen: true }
+          : { status: 'pre-cutover', frozen: false }
     } catch (error) {
       domains[domain] = { status: 'invalid', code: error.code || 'OWNER_MODE_CHECKPOINT_INVALID' }
     }
   }
   const authoritativeDomains = OWNER_PROFILE_DOMAINS.filter((domain) => domains[domain].status === 'authoritative')
+  const frozenDomains = OWNER_PROFILE_DOMAINS.filter((domain) => domains[domain].frozen === true)
   const invalidDomains = OWNER_PROFILE_DOMAINS.filter((domain) => domains[domain].status === 'invalid')
   return {
     schemaVersion: OWNER_MODE_CHECKPOINT_SCHEMA_VERSION,
@@ -1096,6 +1274,7 @@ async function inspectOwnerModeCheckpointsUnlocked(context) {
     profileId: context.profileId,
     profileLease: context.profileLease,
     authoritativeDomains,
+    frozenDomains,
     invalidDomains,
     domains,
   }

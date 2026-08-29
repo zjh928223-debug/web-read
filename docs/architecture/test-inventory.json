@@ -2998,14 +2998,15 @@
     },
     {
       "name": "verify:windows-owner-c2a",
-      "command": "node scripts/windows-owner-c2a-cutover-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_c2a",
+      "command": "node scripts/windows-owner-c2a-cutover-check.mjs && node scripts/youtube-workflow-client-check.cjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_c2a",
       "category": "behavior",
       "layers": [
         "behavior"
       ],
       "invokes": [
         "scripts/run-python-command.mjs",
-        "scripts/windows-owner-c2a-cutover-check.mjs"
+        "scripts/windows-owner-c2a-cutover-check.mjs",
+        "scripts/youtube-workflow-client-check.cjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-c2a"
     },
@@ -5764,9 +5765,11 @@
       ],
       "aggregates": [],
       "architectureEvidence": [],
-      "owner": null,
-      "owners": [],
-      "invocation": "orphan",
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
       "evidence": {
         "sourceShape": [],
         "sourceRead": false,
@@ -10858,6 +10861,7 @@
       "owner": "package.json#scripts.verify:behavior:workflow",
       "owners": [
         "package.json#scripts.verify:behavior:workflow",
+        "package.json#scripts.verify:windows-owner-c2a",
         "package.json#scripts.verify:youtube-workflow-client"
       ],
       "invocation": "direct",
@@ -11293,7 +11297,5 @@
       }
     }
   ],
-  "orphans": [
-    "scripts/lib/windows-owner-cutover.mjs"
-  ]
+  "orphans": []
 }

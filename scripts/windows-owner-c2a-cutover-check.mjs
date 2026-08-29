@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { writeJsonAtomic } from './lib/read-web-production-backup.mjs'
+import { readOwnerModeCheckpoint, readOwnerModeFreeze, writeJsonAtomic } from './lib/read-web-production-backup.mjs'
 import { createWindowsOwnerCutoverControls } from './lib/windows-owner-cutover.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -223,6 +223,15 @@ try {
     assert.deepEqual(dryRun.sourceIds, [sourceId])
     const frozen = await service.freeze(domain)
     assert.equal(frozen.status, 'frozen')
+    const freezeEvidence = await readOwnerModeFreeze({
+      isolationRoot: instanceRoot,
+      profileDir,
+      profileAuthorityIsolationRoot: authorityIsolationRoot,
+      profileAuthorityRoot: authorityRoot,
+      profileId: 'c2a-profile',
+      domain,
+    })
+    assert.equal(freezeEvidence.status, 'frozen', 'browser-visible freeze must exist before final backup')
     const finalBackup = await service.createFinalBackup(domain)
     assert.equal(finalBackup.ok, true, JSON.stringify(finalBackup))
     assert.deepEqual(finalBackup.finalBackup.sourceIds, [sourceId])
@@ -239,6 +248,55 @@ try {
     assert.deepEqual(await reopenedAdapter.collect(), expectedSnapshots[domain])
     assert.equal(hostAdapters[domain].frozen, true)
   }
+
+  const failedWorkRoot = path.join(workRoot, 'smoke-failure')
+  const failedInstanceRoot = path.join(failedWorkRoot, 'instance')
+  const failedProfileDir = path.join(failedInstanceRoot, 'profile')
+  const failedAuthorityIsolationRoot = path.join(failedWorkRoot, 'authority-isolation')
+  const failedAuthorityRoot = path.join(failedAuthorityIsolationRoot, 'profile-authority')
+  const failedHostRoot = path.join(failedAuthorityRoot, 'owners')
+  await mkdir(failedProfileDir, { recursive: true })
+  await mkdir(failedHostRoot, { recursive: true })
+  const failedAdapters = Object.fromEntries(
+    ['reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow']
+      .map((domain) => [domain, new FileOwnerAdapter(failedHostRoot, domain)]),
+  )
+  const failedControls = createWindowsOwnerCutoverControls({
+    isolationRoot: failedInstanceRoot,
+    profileDir: failedProfileDir,
+    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
+    profileAuthorityRoot: failedAuthorityRoot,
+    profileId: 'c2a-profile',
+    smokeCheck: async () => ({ ok: false, reasonCode: 'c2a-smoke-failed' }),
+  })
+  const failedService = createWindowsDurableStateMigration({
+    profileId: 'c2a-profile',
+    legacyBridge: createLegacyBridge([]),
+    hostAdapters: failedAdapters,
+    stateStore: createStateStore(path.join(failedWorkRoot, 'migration-state.json')),
+    cutoverControls: failedControls,
+    capacityBytes: 8 * 1024 * 1024,
+  })
+  const failedMigration = await failedService.migrateDomain('reader-session', { expectedRevision: 0 })
+  assert.equal(failedMigration.ok, false)
+  assert.equal(failedMigration.steps.rollback.ok, true, JSON.stringify(failedMigration))
+  assert.equal(await readOwnerModeCheckpoint({
+    isolationRoot: failedInstanceRoot,
+    profileDir: failedProfileDir,
+    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
+    profileAuthorityRoot: failedAuthorityRoot,
+    profileId: 'c2a-profile',
+    domain: 'reader-session',
+  }), null, 'smoke failure must revoke the authoritative checkpoint')
+  assert.equal(await readOwnerModeFreeze({
+    isolationRoot: failedInstanceRoot,
+    profileDir: failedProfileDir,
+    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
+    profileAuthorityRoot: failedAuthorityRoot,
+    profileId: 'c2a-profile',
+    domain: 'reader-session',
+  }), null, 'successful rollback compensation may release the old-writer freeze')
+  assert.deepEqual(await failedAdapters['reader-session'].collect(), emptySnapshot())
 
   const checkpointReader = await import('./lib/read-web-production-backup.mjs')
   const readerCheckpoint = await checkpointReader.readOwnerModeCheckpoint({

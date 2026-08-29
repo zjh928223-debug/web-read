@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
-const source = await fs.readFile(new URL('../src/features/passage-preview/passage-preview-durable-state.js', import.meta.url), 'utf8')
+const source = (await fs.readFile(new URL('../src/features/passage-preview/passage-preview-durable-state.js', import.meta.url), 'utf8'))
+  .replace(
+    "import { assertWindowsOwnerBrowserWriterAllowed } from '../../services/windows-owner-domain-cutover.js'\n",
+    'const assertWindowsOwnerBrowserWriterAllowed = () => {}\n',
+  )
 const api = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 const {
   PASSAGE_PREVIEW_DURABLE_KEY,

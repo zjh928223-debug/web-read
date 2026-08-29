@@ -20,6 +20,7 @@ const executableSource = storageSource
   .replace("import { createTypedError } from '../runtime/typed-error.js';", `
     const createTypedError = (input) => Object.assign(new Error(input.message), input);
   `)
+  .replace("import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js';", 'const assertWindowsOwnerBrowserWriterAllowed = () => {};')
 const storageApi = await import(`data:text/javascript;base64,${Buffer.from(executableSource).toString('base64')}`)
 const scope = { audioKey: 'audio-a', documentId: 'doc-a' }
 const local = memoryStorage()

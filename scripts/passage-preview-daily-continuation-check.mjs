@@ -236,7 +236,12 @@ async function importDailyContinuation() {
     .replace("./passage-preview-durable-state.js", './passage-preview-durable-state.mjs')
   await writeFile(join(tempDir, 'primary-sense-policy.mjs'), policySource, 'utf8')
   await writeFile(join(tempDir, 'passage-preview-import.mjs'), importerSource, 'utf8')
-  await writeFile(join(tempDir, 'passage-preview-durable-state.mjs'), await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-durable-state.js'), 'utf8'), 'utf8')
+  const durableSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-durable-state.js'), 'utf8'))
+    .replace(
+      "import { assertWindowsOwnerBrowserWriterAllowed } from '../../services/windows-owner-domain-cutover.js'\n",
+      'const assertWindowsOwnerBrowserWriterAllowed = () => {}\n',
+    )
+  await writeFile(join(tempDir, 'passage-preview-durable-state.mjs'), durableSource, 'utf8')
   const continuationPath = join(tempDir, 'passage-preview-daily-continuation.mjs')
   await writeFile(continuationPath, continuationSource, 'utf8')
   return import(`${pathToFileURL(continuationPath).href}?v=${Date.now()}`)

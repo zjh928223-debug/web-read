@@ -675,11 +675,17 @@ export function createWindowsDurableStateMigration(options = {}) {
     const entry = state.domains[domain]
     if (entry.frozen === true) return { ok: true, domain, stage: 'freeze', status: 'frozen', idempotent: true }
     if (entry.preflight?.sourceImportIdentity === undefined) return safeFailure(domain, 'freeze', 'migration-preflight-required')
-    const control = writerControls[domain] || adapterFor(domain)
-    if (typeof control.freeze !== 'function') return safeFailure(domain, 'freeze', 'migration-freeze-unavailable')
+    const writerControl = writerControls[domain] || adapterFor(domain)
+    const cutoverControl = cutoverControls[domain]
+    const controls = [writerControl, cutoverControl].filter((control, index, all) => (
+      control && typeof control.freeze === 'function' && all.indexOf(control) === index
+    ))
+    if (!controls.length) return safeFailure(domain, 'freeze', 'migration-freeze-unavailable')
     try {
-      const result = await control.freeze({ domain, reason: 'one-time-host-owner-migration' })
-      if (result === false || result?.ok === false) return safeFailure(domain, 'freeze', 'migration-freeze-failed')
+      for (const control of controls) {
+        const result = await control.freeze({ domain, reason: 'one-time-host-owner-migration' })
+        if (result === false || result?.ok === false) return safeFailure(domain, 'freeze', 'migration-freeze-failed')
+      }
       entry.frozen = true
       entry.status = 'frozen'
       entry.freeze = { status: 'frozen' }
@@ -971,6 +977,17 @@ export function createWindowsDurableStateMigration(options = {}) {
       try { await writeState(state) } catch (error) {
         return safeFailure(domain, 'smoke', error?.code || 'migration-state-write-failed')
       }
+      if (typeof cutover.unfreeze === 'function') {
+        let unfreezeResult
+        try {
+          unfreezeResult = await cutover.unfreeze({ domain, reason: 'migration-authoritative' })
+        } catch (error) {
+          return safeFailure(domain, 'smoke', error?.code || 'migration-unfreeze-failed')
+        }
+        if (unfreezeResult === false || unfreezeResult?.ok === false) {
+          return safeFailure(domain, 'smoke', unfreezeResult?.reasonCode || 'migration-unfreeze-failed')
+        }
+      }
       return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
     }
     try {
@@ -1017,6 +1034,28 @@ export function createWindowsDurableStateMigration(options = {}) {
       return safeFailure(domain, 'rollback', error?.code || 'migration-host-snapshot-invalid')
     }
     if (current.revision !== entry.import.revision) return safeFailure(domain, 'rollback', 'migration-conflict', { currentRevision: current.revision })
+    const cutover = cutoverControls[domain]
+    if (cutover && typeof cutover.rollback === 'function') {
+      let checkpointResult
+      try {
+        checkpointResult = await cutover.rollback({
+          domain,
+          revision: entry.import.revision,
+          checksum: entry.verify?.checksum || null,
+          reason: 'migration-rollback',
+          frozen: true,
+        })
+      } catch (error) {
+        return safeFailure(domain, 'rollback', error?.code || 'migration-checkpoint-rollback-failed', {
+          currentRevision: current.revision,
+        })
+      }
+      if (checkpointResult === false || checkpointResult?.ok === false) {
+        return safeFailure(domain, 'rollback', checkpointResult?.reasonCode || 'migration-checkpoint-rollback-failed', {
+          currentRevision: current.revision,
+        })
+      }
+    }
     const idempotencyKey = rollbackOptions.idempotencyKey === undefined
       ? `rollback-${domain}-${entry.import.artifactChecksum.slice(7, 39)}`
       : safeIdentity(rollbackOptions.idempotencyKey, 'idempotencyKey')
@@ -1036,8 +1075,16 @@ export function createWindowsDurableStateMigration(options = {}) {
     try {
       const restored = await collectHost(domain)
       if (!domainEquivalent(restored, preImport)) return safeFailure(domain, 'rollback', 'migration-rollback-verification-failed')
-      const control = writerControls[domain] || adapter
-      if (typeof control.unfreeze === 'function') await control.unfreeze({ domain, reason: 'migration-rollback' })
+      const controls = [writerControls[domain] || adapter, cutoverControls[domain]]
+        .filter((control, index, all) => (
+          control && typeof control.unfreeze === 'function' && all.indexOf(control) === index
+        ))
+      for (const control of controls) {
+        const unfreezeResult = await control.unfreeze({ domain, reason: 'migration-rollback' })
+        if (unfreezeResult === false || unfreezeResult?.ok === false) {
+          return safeFailure(domain, 'rollback', 'migration-unfreeze-failed', { currentRevision: restored.revision })
+        }
+      }
       entry.rollback = { status: 'rolled-back', revision: restored.revision, idempotencyKey }
       entry.status = 'rolled-back'
       await writeState(state)

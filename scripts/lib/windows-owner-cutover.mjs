@@ -1,4 +1,9 @@
-import { writeOwnerModeCheckpoint } from './read-web-production-backup.mjs'
+import {
+  clearOwnerModeFreeze,
+  revokeOwnerModeCheckpoint,
+  writeOwnerModeCheckpoint,
+  writeOwnerModeFreeze,
+} from './read-web-production-backup.mjs'
 
 const DOMAINS = Object.freeze([
   'reader-session',
@@ -51,6 +56,16 @@ export function createWindowsOwnerCutoverControls(options = {}) {
   }
   const smokeCheck = typeof options.smokeCheck === 'function' ? options.smokeCheck : null
   return Object.fromEntries(DOMAINS.map((domain) => [domain, {
+    async freeze({ domain: requestedDomain, reason }) {
+      if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
+      const result = await writeOwnerModeFreeze({ ...common, domain, reason })
+      return { ok: true, status: result.status, frozen: true }
+    },
+    async unfreeze({ domain: requestedDomain }) {
+      if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
+      const result = await clearOwnerModeFreeze({ ...common, domain })
+      return { ok: true, status: result.status, frozen: false }
+    },
     async switch({ domain: requestedDomain, revision, checksum, frozen, finalBackup }) {
       if (requestedDomain !== domain || frozen !== true || !finalBackup?.final) {
         return { ok: false, reasonCode: 'OWNER_CUTOVER_PRECONDITION_FAILED' }
@@ -79,6 +94,16 @@ export function createWindowsOwnerCutoverControls(options = {}) {
         status: 'authoritative',
         checkpointStatus: result.status,
       }
+    },
+    async rollback({ domain: requestedDomain, revision, checksum }) {
+      if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
+      const result = await revokeOwnerModeCheckpoint({
+        ...common,
+        domain,
+        expectedRevision: revision,
+        expectedRevisionEvidence: checksum,
+      })
+      return { ok: true, status: result.status, authorityChanged: false }
     },
     async smoke(context) {
       if (!smokeCheck) return { ok: false, reasonCode: 'OWNER_CUTOVER_SMOKE_UNAVAILABLE' }

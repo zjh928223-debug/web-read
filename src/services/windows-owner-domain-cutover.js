@@ -38,23 +38,48 @@ function readyDomains(health) {
   })
 }
 
+function frozenDomains(health) {
+  if (!health || typeof health !== 'object') return []
+  const fromOwnerMode = Array.isArray(health.ownerMode?.frozenDomains)
+    ? health.ownerMode.frozenDomains
+    : []
+  const fromDomains = Array.isArray(health.domains)
+    ? health.domains.filter((item) => item?.writerFrozen === true).map((item) => item.domain)
+    : []
+  return [...new Set([...fromOwnerMode, ...fromDomains])].filter((domain) => DOMAINS.includes(domain))
+}
+
+function baseHealthReady(health) {
+  return Boolean(health && typeof health === 'object'
+    && health.profileId
+    && health.liveness?.ready === true
+    && health.contractValid === true
+    && health.profileEvidenceReady === true
+    && health.ownerRegistry?.valid === true)
+}
+
 export function createWindowsOwnerDomainCutover(options = {}) {
   const windowObject = options.windowObject || globalThis
   const health = options.health
   const authoritativeDomains = Object.freeze([...new Set(
     Array.isArray(options.authoritativeDomains) ? options.authoritativeDomains : readyDomains(health),
   )].filter((domain) => DOMAINS.includes(domain)))
+  const frozen = Object.freeze([...new Set(
+    Array.isArray(options.frozenDomains) ? options.frozenDomains : frozenDomains(health),
+  )].filter((domain) => DOMAINS.includes(domain)))
   const authoritative = new Set(authoritativeDomains)
+  const frozenSet = new Set(frozen)
   const ownerClient = options.ownerClient || null
   const cutover = {
-    status: authoritativeDomains.length ? 'authoritative' : 'not-ready',
+    status: authoritativeDomains.length ? 'authoritative' : frozen.length ? 'frozen' : 'not-ready',
     authoritativeDomains,
+    frozenDomains: frozen,
     health: health || null,
     isAuthoritative(domain) {
       return authoritative.has(domain)
     },
     assertBrowserWriterAllowed(domain, operation = 'write') {
-      if (authoritative.has(domain)) throw cutoverError(domain, operation)
+      if (authoritative.has(domain) || frozenSet.has(domain)) throw cutoverError(domain, operation)
     },
     async query(request) {
       if (!ownerClient || !authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'query')
@@ -84,22 +109,29 @@ export async function initializeWindowsOwnerDomainCutoverComposition(options = {
     options.healthTimeoutMs,
   )
   const domains = readyDomains(health)
-  if (!domains.length || !SAFE_IDENTITY.test(String(health?.profileId || ''))) {
+  const frozen = frozenDomains(health)
+  if ((!domains.length && !frozen.length) || !SAFE_IDENTITY.test(String(health?.profileId || '')) || !baseHealthReady(health)) {
     const previous = windowObject.__windowsOwnerDomainCutover
     try { previous?.dispose?.() } catch (_error) {}
     return Object.freeze({ status: 'not-ready', authoritativeDomains: [], health: health || null, ownerClient: null, cutover: null })
   }
   try {
-    const ownerClient = options.ownerClient || createWindowsOwnerApiClient({
+    const ownerClient = options.ownerClient || (domains.length ? createWindowsOwnerApiClient({
       profileId: health.profileId,
       instanceId: SAFE_IDENTITY.test(String(health.instanceId || '')) ? health.instanceId : undefined,
       fetchImpl,
       timeoutMs: options.timeoutMs,
+    }) : null)
+    const cutover = createWindowsOwnerDomainCutover({
+      windowObject,
+      health,
+      ownerClient,
+      authoritativeDomains: domains,
+      frozenDomains: frozen,
     })
-    const cutover = createWindowsOwnerDomainCutover({ windowObject, health, ownerClient, authoritativeDomains: domains })
     windowObject.__windowsOwnerDomainCutover = cutover
     return Object.freeze({
-      status: 'ready',
+      status: domains.length ? 'ready' : 'frozen',
       authoritativeDomains: domains,
       health,
       ownerClient,

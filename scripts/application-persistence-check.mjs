@@ -5,8 +5,15 @@ const moduleSource = readFileSync(
   new URL('../src/services/persistence/application-persistence.js', import.meta.url),
   'utf8',
 )
+// The source is loaded as an isolated check module because the repository's
+// browser .js files are not Node ESM by extension.  Stub only the browser
+// writer guard; the persistence behavior under test remains the real module.
+const isolatedSource = moduleSource.replace(
+  "import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js'\n",
+  'const assertWindowsOwnerBrowserWriterAllowed = () => {}\n',
+)
 const { createApplicationPersistence } = await import(
-  `data:text/javascript;base64,${Buffer.from(moduleSource).toString('base64')}`
+  `data:text/javascript;base64,${Buffer.from(isolatedSource).toString('base64')}`
 )
 
 const fake = createFakeIndexedDb()
