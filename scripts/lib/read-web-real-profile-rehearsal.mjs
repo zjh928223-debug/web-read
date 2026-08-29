@@ -14,6 +14,7 @@ import { resolveExecutable, resolveSelectedPython } from './python-runtime.mjs'
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const READER_SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
 const VOCABULARY_ROW_PREFIXES = ['vocabulary.', 'vocabulary-article-srs-settlement-progress:']
+const VOCABULARY_PENDING_CANDIDATES_ROW_ID = 'vocabulary-srs-pending-candidates'
 const EXCLUDED_BROWSER_ROWS = Object.freeze({
   media: Object.freeze(['audio']),
   retired: Object.freeze(['allSentenceNotesByDoc']),
@@ -47,6 +48,7 @@ function isLiveBrowserRowId(id) {
   const value = String(id || '')
   return READER_SESSION_ROW_IDS.has(value)
     || value.startsWith('readerSessionQuarantine:')
+    || value === VOCABULARY_PENDING_CANDIDATES_ROW_ID
     || VOCABULARY_ROW_PREFIXES.some((prefix) => value.startsWith(prefix))
 }
 
@@ -254,6 +256,7 @@ export async function exportChromiumOriginSnapshot({ browserProfileDir, browserO
           const claimed = (id) => ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'].includes(id)
             || String(id || '').startsWith('readerSessionQuarantine:')
             || String(id || '').startsWith('vocabulary.')
+            || id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
             || String(id || '').startsWith('vocabulary-article-srs-settlement-progress:')
           const indexedDbRows = []
           for (const id of rowIds) {
@@ -451,6 +454,7 @@ export function validateRestoredDomainJourneys(artifact) {
       return id.startsWith('vocabulary.srs.')
         || id.startsWith('vocabulary.review.')
         || id.startsWith('vocabulary-article-srs-settlement-progress:')
+        || id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
     }),
     Preview: preview.length > 0,
     Annotation: annotation.length > 0,

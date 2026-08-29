@@ -517,7 +517,7 @@ function serializeWrites(repository) {
 
 export function createInMemoryAcquisitionRepository(seed) {
   let store = normalizeSeed(seed);
-  const repository = createRepositoryCore({
+  const repository = createVocabularyAcquisitionRepository({
     async loadStore() {
       return clone(store);
     },
@@ -525,7 +525,15 @@ export function createInMemoryAcquisitionRepository(seed) {
       store = clone(nextStore);
     },
   });
-  return serializeWrites(repository);
+  return repository;
+}
+
+// Kept as a small public seam so the Windows owner adapter can reuse the
+// existing acquisition invariants with a Host-backed load/save pair.  The
+// browser and Host paths therefore share the same repository contract instead
+// of maintaining a second acquisition model.
+export function createVocabularyAcquisitionRepository(storage, options = {}) {
+  return serializeWrites(createRepositoryCore(storage, options));
 }
 
 export function bindAcquisitionRepositoryToTransaction(rowPort) {

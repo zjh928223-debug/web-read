@@ -36,6 +36,10 @@ async function importVocabularyApi(repoRoot) {
 
   const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-vocabulary-preview-${process.pid}-`));
   try {
+    fs.writeFileSync(
+      path.join(tempDir, 'windows-owner-vocabulary-srs.mjs'),
+      'export const getWindowsOwnerVocabularySrsIntegration = () => null\n',
+    );
     const poolConfig = JSON.stringify(JSON.parse(fs.readFileSync(path.join(repoRoot, 'config', 'ielts-learning-pools.json'), 'utf8')));
     files.forEach((file) => {
       let source = fs.readFileSync(path.join(sourceDir, file), 'utf8')

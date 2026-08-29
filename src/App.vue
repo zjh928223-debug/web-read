@@ -106,6 +106,7 @@ import {
   createLegacyVocabularyMigration,
   createVocabularyService,
 } from './services/vocabulary/index.js'
+import { getWindowsOwnerVocabularySrsIntegration } from './services/vocabulary/windows-owner-vocabulary-srs.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
@@ -122,8 +123,13 @@ const passagePreviewPreparationMessage = ref('正在准备预习句子…')
 const passagePreviewPreloaded = ref({ sentences: {}, translations: {} })
 const isPassagePreviewCheckOpen = ref(false)
 const passagePreviewCheckItems = ref([])
-const vocabularyService = createVocabularyService({ acquisitionEnabled: true })
-const legacyVocabularyMigration = createLegacyVocabularyMigration()
+const vocabularySrsIntegration = getWindowsOwnerVocabularySrsIntegration()
+const vocabularyService = createVocabularyService({
+  acquisitionEnabled: true,
+  ownerIntegration: vocabularySrsIntegration,
+})
+const legacyVocabularyMigration = vocabularySrsIntegration?.legacyMigration
+  || createLegacyVocabularyMigration()
 const legacyReviewService = createLegacyReviewServiceAdapter(
   vocabularyService,
   legacyVocabularyMigration,
@@ -131,11 +137,12 @@ const legacyReviewService = createLegacyReviewServiceAdapter(
 const passagePreviewAcquisition = createPassagePreviewAcquisitionCoordinator({ vocabularyService })
 const srsReviewV2Service = createSrsReviewUiService({
   managementService: vocabularyService,
+  ownerIntegration: vocabularySrsIntegration,
 })
 const srsReviewUiService = createSrsReviewSourceSelector({
   v2Service: srsReviewV2Service,
   legacyService: legacyReviewService,
-  v2Enabled: import.meta.env.VITE_SRS_REVIEW_V2_ENABLED,
+  v2Enabled: vocabularySrsIntegration ? true : import.meta.env.VITE_SRS_REVIEW_V2_ENABLED,
 })
 const dictionaryClient = createOptionalLocalDictionaryClient()
 let legacyMigrationTimer = null
@@ -159,6 +166,7 @@ function closeSrsReview() {
 }
 
 function scheduleLegacyVocabularyMigration(delay = 1000) {
+  if (vocabularySrsIntegration) return
   if (legacyMigrationStopped || !document.hidden) return
   if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
   legacyMigrationTimer = window.setTimeout(() => {
@@ -168,6 +176,7 @@ function scheduleLegacyVocabularyMigration(delay = 1000) {
 }
 
 async function migrateLegacyVocabularyInBackground() {
+  if (vocabularySrsIntegration) return
   if (legacyMigrationStopped || !document.hidden) return
   if (isSrsReviewOpen.value) {
     scheduleLegacyVocabularyMigration(5000)

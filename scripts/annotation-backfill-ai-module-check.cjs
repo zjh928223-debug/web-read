@@ -64,6 +64,10 @@ async function importModule(filePath) {
     fs.mkdirSync(tempPersonalization, { recursive: true });
     fs.mkdirSync(tempReviewFeatures, { recursive: true });
     fs.mkdirSync(tempRuntime, { recursive: true });
+    fs.writeFileSync(
+      path.join(tempVocabulary, 'windows-owner-vocabulary-srs.mjs'),
+      'export const getWindowsOwnerVocabularySrsIntegration = () => null\n',
+    );
     const rewriteSource = (source) => source
       .replace(/from '\.\.\/services\/vocabulary\/([^']+)\.js'/g, "from '../services/vocabulary/$1.mjs'")
       .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")

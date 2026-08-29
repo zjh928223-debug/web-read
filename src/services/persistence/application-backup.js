@@ -16,6 +16,7 @@ const REQUIRED_DOMAINS = Object.freeze([
 ])
 
 const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|private[_-]?key|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$)/i
+const VOCABULARY_SETTLEMENT_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const SENSITIVE_URL_PARAMETER = /(?:api[_-]?key|access[_-]?token|authorization|cookie|password|passwd|secret|credential|proxy[_-]?auth|session[_-]?token|^token$|^auth$|^jwt$|^bearer$|signature|^sig$)/i
 const EMBEDDED_MEDIA_KEY = /(?:blob|arraybuffer|typedarray|binary|base64|datauri|inline(?:data|media)?|media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))/i
 const PRIVATE_PATH_VALUE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?:Users|home|private|var|tmp)\/)/i
@@ -820,7 +821,7 @@ function createSanitizeState() {
   return { redactions: 0 }
 }
 
-function sanitizeValue(value, state, path = '$', seen = new WeakSet()) {
+function sanitizeValue(value, state, path = '$', seen = new WeakSet(), options = {}) {
   assertNoBinaryValue(value, path)
   if (value === null || value === undefined) return value
   if (typeof value === 'string') {
@@ -839,15 +840,16 @@ function sanitizeValue(value, state, path = '$', seen = new WeakSet()) {
   seen.add(value)
   let result
   if (Array.isArray(value)) {
-    result = value.map((entry, index) => sanitizeValue(entry, state, `${path}[${index}]`, seen))
+    result = value.map((entry, index) => sanitizeValue(entry, state, `${path}[${index}]`, seen, options))
   } else {
     result = {}
     for (const [key, child] of Object.entries(value)) {
-      if (SENSITIVE_KEY.test(key)) {
+      if (SENSITIVE_KEY.test(key)
+        && !(options.allowVocabularySettlementAttemptToken === true && key === 'attempt_token')) {
         state.redactions += 1
         continue
       }
-      result[key] = sanitizeValue(child, state, `${path}.${key}`, seen)
+      result[key] = sanitizeValue(child, state, `${path}.${key}`, seen, options)
     }
   }
   seen.delete(value)
@@ -953,7 +955,10 @@ async function normalizeRecord(record, domain, state, limits) {
   if (containsEmbeddedMedia(rawPayload)) {
     throw backupError('BACKUP_MEDIA_PAYLOAD_REJECTED', `Embedded media content is not allowed in record ${id}`, { domain: domain.key })
   }
-  const payload = sanitizeValue(rawPayload, state, `$.domains.${domain.key}.${id}`)
+  const payload = sanitizeValue(rawPayload, state, `$.domains.${domain.key}.${id}`, new WeakSet(), {
+    allowVocabularySettlementAttemptToken: domain.key === 'vocabulary-srs'
+      && id.startsWith(VOCABULARY_SETTLEMENT_PREFIX),
+  })
   const references = normalizeReferences(record.references, state)
   const mediaReferences = normalizeMediaReferences(record.mediaReferences, state, limits)
   if (record.contentId !== undefined && record.contentId !== null && typeof record.contentId !== 'string') {
@@ -1189,7 +1194,7 @@ function verificationValidateMediaReferences(value, path, maxBytes) {
   }
 }
 
-function rejectUnsafeVerificationValue(value, path = '$', seen = new WeakSet()) {
+function rejectUnsafeVerificationValue(value, path = '$', seen = new WeakSet(), options = {}) {
   if (isBinaryValue(value)) throw backupError('BACKUP_BINARY_PAYLOAD_REJECTED', `Binary payload found at ${path}`)
   if (value === null || typeof value !== 'object') {
     if (typeof value === 'string' && /^data:/i.test(value.trim())) {
@@ -1206,12 +1211,26 @@ function rejectUnsafeVerificationValue(value, path = '$', seen = new WeakSet()) 
   }
   if (seen.has(value)) throw backupError('BACKUP_CYCLIC_PAYLOAD', `Cyclic artifact found at ${path}`)
   seen.add(value)
-  if (Array.isArray(value)) value.forEach((entry, index) => rejectUnsafeVerificationValue(entry, `${path}[${index}]`, seen))
+  const allowSettlementToken = options.allowVocabularySettlementAttemptToken === true
+    || (path.includes('.vocabulary-srs')
+      && typeof value.id === 'string'
+      && value.id.startsWith(VOCABULARY_SETTLEMENT_PREFIX))
+  if (Array.isArray(value)) value.forEach((entry, index) => rejectUnsafeVerificationValue(
+    entry,
+    `${path}[${index}]`,
+    seen,
+    { ...options, allowVocabularySettlementAttemptToken: allowSettlementToken },
+  ))
   else for (const [key, child] of Object.entries(value)) {
-    if (SENSITIVE_KEY.test(key) && child !== '[REDACTED]') {
+    if (SENSITIVE_KEY.test(key)
+      && child !== '[REDACTED]'
+      && !(allowSettlementToken && key === 'attempt_token')) {
       throw backupError('BACKUP_SECRET_PRESENT', `Secret-bearing field found at ${path}.${key}`)
     }
-    rejectUnsafeVerificationValue(child, `${path}.${key}`, seen)
+    rejectUnsafeVerificationValue(child, `${path}.${key}`, seen, {
+      ...options,
+      allowVocabularySettlementAttemptToken: allowSettlementToken,
+    })
   }
   seen.delete(value)
 }

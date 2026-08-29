@@ -140,10 +140,10 @@ function canonical(value) {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
 }
 
-function equivalentDomain(left, right) {
+function equivalentDomain(left, right, domain = null) {
   const comparable = (value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.records)) return value
-    return {
+    const normalized = {
       ...value,
       records: value.records.map((record) => {
         if (!record || typeof record !== 'object' || Array.isArray(record)) return record
@@ -169,6 +169,8 @@ function equivalentDomain(left, right) {
         return content
       }).sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
     }
+    if (domain === 'vocabulary-srs') delete normalized.revision
+    return normalized
   }
   return canonical(comparable(left)) === canonical(comparable(right))
 }
@@ -632,6 +634,44 @@ function createAnnotationHostAdapter({ client, scope, scopes }) {
 }
 
 function createVocabularySrsHostAdapter({ client }) {
+  const restoreGroups = [
+    {
+      operation: 'entry-upsert',
+      keys: new Set(['vocabulary.srs.store.v1']),
+    },
+    {
+      operation: 'acquisition-command',
+      keys: new Set(['vocabulary.acquisition.store.v1']),
+    },
+    {
+      operation: 'review-attempt',
+      keys: new Set([
+        'vocabulary.review.store.v2',
+        'vocabulary.review-session-ledgers.v1',
+      ]),
+    },
+    {
+      operation: 'learning-event-append',
+      keys: new Set([
+        'vocabulary.learning-events.manifest.v1',
+        'vocabulary.context-evidence.store.v1',
+        'vocabulary.revision-watermark.v1',
+      ]),
+      dynamic: (key) => (
+        /^vocabulary\.learning-events\.v1\.\d{4}-(?:0[1-9]|1[0-2])(?:\.\d{4})?$/u.test(key)
+        || /^vocabulary-article-srs-settlement-progress:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(key)
+        || /^vocabulary\.learning-command-receipt\.v1:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(key)
+      ),
+    },
+    {
+      operation: 'pending-candidates-update',
+      keys: new Set(['vocabulary-srs-pending-candidates']),
+    },
+    {
+      operation: 'personalization-report',
+      keys: new Set(['vocabulary.personalization.shadow-reports.v1']),
+    },
+  ]
   return {
     key: 'vocabulary-srs',
     schemaVersion: 1,
@@ -645,17 +685,42 @@ function createVocabularySrsHostAdapter({ client }) {
       const records = ownerRecordsPayload(snapshot)
       const keys = Object.keys(records)
       if (keys.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
-      const supported = new Set(['vocabulary.srs.store.v1'])
-      if (keys.some((key) => !supported.has(key))) {
-        throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Vocabulary migration fixture contains records outside the entry command')
+      const unsupported = keys.filter((key) => !restoreGroups.some((group) => (
+        group.keys.has(key) || group.dynamic?.(key)
+      )))
+      if (unsupported.length) {
+        throw productionHostError(
+          'OWNER_CUTOVER_HOST_IMPORT_INVALID',
+          `Vocabulary migration contains unregistered records: ${unsupported.join(', ')}`,
+        )
       }
-      return client.command({
-        domain: 'vocabulary-srs',
-        operation: 'entry-upsert',
-        payload: { records },
-        expectedRevision: context.expectedRevision,
-        idempotencyKey: context.idempotencyKey,
-      })
+
+      let expectedRevision = context.expectedRevision
+      let lastResult = { ok: true, status: 'committed', revision: expectedRevision }
+      let commandIndex = 0
+      for (const group of restoreGroups) {
+        const selected = Object.fromEntries(Object.entries(records).filter(([key]) => (
+          group.keys.has(key) || group.dynamic?.(key)
+        )))
+        if (!Object.keys(selected).length) continue
+        const idempotencyKey = `${context.idempotencyKey || 'vocabulary-srs-import'}-${commandIndex}-${group.operation}`.slice(0, 255)
+        lastResult = await client.command({
+          domain: 'vocabulary-srs',
+          operation: group.operation,
+          payload: { records: selected },
+          expectedRevision,
+          idempotencyKey,
+        })
+        if (lastResult?.outcome !== 'committed' || lastResult?.commitStatus !== 'committed') {
+          throw productionHostError(
+            'OWNER_CUTOVER_HOST_IMPORT_FAILED',
+            `Vocabulary ${group.operation} did not commit`,
+          )
+        }
+        expectedRevision = lastResult.revision
+        commandIndex += 1
+      }
+      return lastResult
     },
   }
 }
@@ -1179,7 +1244,7 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
       const current = await hostAdapters[domain].collect({ domain })
       const state = await stateStore.read()
       const expected = state?.domains?.[domain]?.finalBackup?.artifact?.domains?.[domain]
-      if (current?.revision !== revision || expected === undefined || !equivalentDomain(current, expected)) {
+      if (current?.revision !== revision || expected === undefined || !equivalentDomain(current, expected, domain)) {
         return { ok: false, reasonCode: 'OWNER_CUTOVER_SMOKE_QUERY_FAILED' }
       }
       const smoke = options.smokeByDomain?.[domain]

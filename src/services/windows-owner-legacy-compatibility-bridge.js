@@ -34,6 +34,7 @@ const RAW_TEXT_LOCAL_STORAGE_KEYS = new Set([
   'vocabulary.passage-preview.shortcut.context.v1',
   'vocabulary.passage-preview.translation-display-mode.v1',
 ])
+const VOCABULARY_SETTLEMENT_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const LEGACY_LOCAL_STORAGE_SCOPE_PREFIXES = Object.freeze([
   'vocabulary.',
   'AnnotationGenerationStorage::',
@@ -404,7 +405,10 @@ async function normalizeRecord(rawRecord, source) {
   }
 
   try {
-    const safePayload = cloneSafeValue(payload, [])
+    const safePayload = cloneSafeValue(payload, [], {
+      allowVocabularySettlementAttemptToken: source.kind === 'indexeddb'
+        && recordKey.startsWith(VOCABULARY_SETTLEMENT_PREFIX),
+    })
     const metadata = {
       ...base,
       checksum: await digestCanonical({
@@ -491,6 +495,17 @@ function stripRecordMetadata(record) {
 }
 
 function readSchemaVersion(record, payload, claim, source) {
+  // IndexedDB FileRow.schemaVersion is the frozen row-envelope version (1).
+  // Vocabulary/SRS rows carry their domain schema in schema_version, so use
+  // that marker before falling back to the envelope version for rows whose
+  // current payload deliberately has no domain marker.
+  if (source.kind === 'indexeddb'
+    && String(record?.id || '').startsWith('vocabulary.')
+    && isPlainObject(payload)
+    && payload.schema_version !== undefined
+    && payload.schema_version !== null) {
+    return payload.schema_version
+  }
   if (record.schemaVersion !== undefined && record.schemaVersion !== null) return record.schemaVersion
   if (isPlainObject(payload) && payload.schemaVersion !== undefined && payload.schemaVersion !== null) return payload.schemaVersion
   if (source.defaultSchemaVersion !== undefined && source.defaultSchemaVersion !== null
@@ -859,7 +874,7 @@ function binaryType(value) {
   return 'typed-array'
 }
 
-function cloneSafeValue(value, path) {
+function cloneSafeValue(value, path, options = {}) {
   if (value === null || typeof value === 'boolean') return value
   if (typeof value === 'string') {
     if (MEDIA_DATA_URI.test(value) || MEDIA_BASE64_PREFIX.test(value)) {
@@ -882,12 +897,15 @@ function cloneSafeValue(value, path) {
   }
   if (path.includes(value)) throw bridgeError('legacy-record-corrupt', 'Legacy record contains a cycle')
   const nextPath = [...path, value]
-  if (Array.isArray(value)) return value.map((item) => cloneSafeValue(item, nextPath))
+  if (Array.isArray(value)) return value.map((item) => cloneSafeValue(item, nextPath, options))
   const result = {}
   for (const [key, child] of Object.entries(value)) {
-    if (SENSITIVE_KEY.test(key)) throw bridgeError('legacy-sensitive-field', 'Legacy sensitive fields are not importable')
+    if (SENSITIVE_KEY.test(key)
+      && !(options.allowVocabularySettlementAttemptToken === true && key === 'attempt_token')) {
+      throw bridgeError('legacy-sensitive-field', 'Legacy sensitive fields are not importable')
+    }
     if (MEDIA_PAYLOAD_KEY.test(key)) throw bridgeError('legacy-media-payload', 'Legacy media bytes are outside the compatibility bridge')
-    result[key] = cloneSafeValue(child, nextPath)
+    result[key] = cloneSafeValue(child, nextPath, options)
   }
   return result
 }

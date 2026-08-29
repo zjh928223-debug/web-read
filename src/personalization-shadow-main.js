@@ -24,21 +24,34 @@ import {
 import {
   createIndexedDbReviewSessionLedgerRepository,
 } from './services/vocabulary/srs-review-session-ledger.js';
+import { initializeWindowsOwnerDomainCutoverComposition } from './services/windows-owner-domain-cutover.js';
+import { getWindowsOwnerVocabularySrsIntegration } from './services/vocabulary/windows-owner-vocabulary-srs.js';
+
+await initializeWindowsOwnerDomainCutoverComposition({
+  windowObject: window,
+  documentObject: document,
+  pollIntervalMs: 750,
+});
+const vocabularySrsIntegration = getWindowsOwnerVocabularySrsIntegration(window);
 
 const params = new URLSearchParams(window.location.search);
 const demoMode = params.get('demo') === '1';
 const reportRepository = demoMode
   ? createInMemoryPersonalizationShadowReportRepository(createPersonalizationShadowDemoReports())
-  : createIndexedDbPersonalizationShadowReportRepository();
+  : vocabularySrsIntegration?.personalizationShadowReportRepository
+    || createIndexedDbPersonalizationShadowReportRepository();
 const settingsService = createPersonalizationShadowSettings({
   storage: demoMode ? createMemoryStorage() : window.localStorage,
 });
 const controlService = demoMode
   ? createDemoControlService(reportRepository)
   : createPersonalizationShadowControlService({
-    acquisitionRepository: createIndexedDbAcquisitionRepository(),
-    learningEventRepository: createIndexedDbLearningEventRepository(),
-    sessionLedgerRepository: createIndexedDbReviewSessionLedgerRepository(),
+    acquisitionRepository: vocabularySrsIntegration?.acquisitionRepository
+      || createIndexedDbAcquisitionRepository(),
+    learningEventRepository: vocabularySrsIntegration?.learningEventRepository
+      || createIndexedDbLearningEventRepository(),
+    sessionLedgerRepository: vocabularySrsIntegration?.sessionLedgerRepository
+      || createIndexedDbReviewSessionLedgerRepository(),
     reportRepository,
     shadowRunner: createPersonalizationShadowService({ reportRepository }),
   });

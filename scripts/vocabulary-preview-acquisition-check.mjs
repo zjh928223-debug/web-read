@@ -239,8 +239,13 @@ async function loadModules(repoRoot) {
       const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
         .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")
         .replace(/from \"\.\/([^\"]+)\.js\"/g, 'from "./$1.mjs"')
+        .replace("from './windows-owner-vocabulary-srs.mjs'", "from './owner-vocabulary-srs-stub.mjs'")
       fs.writeFileSync(path.join(tempDir, file.replace(/\.js$/u, '.mjs')), source)
     })
+    fs.writeFileSync(
+      path.join(tempDir, 'owner-vocabulary-srs-stub.mjs'),
+      'export const getWindowsOwnerVocabularySrsIntegration = () => null\n',
+    )
     const modules = await Promise.all(files.map((file) => import(
       `${pathToFileURL(path.join(tempDir, file.replace(/\.js$/u, '.mjs'))).href}?preview=${Date.now()}`
     )))

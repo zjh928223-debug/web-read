@@ -7,6 +7,7 @@ import {
 
 const READER_SESSION_ROW_IDS = new Set(['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'])
 const VOCABULARY_ROW_PREFIX = 'vocabulary.'
+const VOCABULARY_PENDING_CANDIDATES_ROW_ID = 'vocabulary-srs-pending-candidates'
 const VOCABULARY_SETTLEMENT_PROGRESS_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const ANNOTATION_STORAGE_PREFIX = 'AnnotationGenerationStorage::'
 const READER_SAVE_OUTBOX_V1_KEY = 'read-web.reader-save-outbox.v1'
@@ -131,6 +132,7 @@ export function createReadWebApplicationBackupAdapters(options = {}) {
     : (row) => READER_SESSION_ROW_IDS.has(row?.id)
       || String(row?.id || '').startsWith('readerSessionQuarantine:')
       || String(row?.id || '').startsWith(VOCABULARY_ROW_PREFIX)
+      || row?.id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
       || String(row?.id || '').startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX)
   const assertRowsConsumed = async (rows) => {
     const unclaimed = rows.find((row) => !claimedRow(row))
@@ -175,6 +177,7 @@ export function createReadWebApplicationBackupAdapters(options = {}) {
             readRows,
             assertRows: assertRowsConsumed,
             rowFilter: (row) => String(row?.id || '').startsWith(VOCABULARY_ROW_PREFIX)
+              || row?.id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
               || String(row?.id || '').startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX),
           })
         : null
@@ -893,6 +896,7 @@ function isReaderIndexedDbId(id) {
 
 function isVocabularyIndexedDbId(id) {
   return String(id).startsWith(VOCABULARY_ROW_PREFIX)
+    || id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
     || String(id).startsWith(VOCABULARY_SETTLEMENT_PROGRESS_PREFIX)
 }
 

@@ -17,24 +17,33 @@ import {
 import {
   createSrsReviewServiceV2,
 } from '../../services/vocabulary/srs-review-service-v2.js'
+import { getWindowsOwnerVocabularySrsIntegration } from '../../services/vocabulary/windows-owner-vocabulary-srs.js'
 import { normalizeReviewPolicy } from './srs-review-policy.js'
 
 export const SRS_REVIEW_UI_SERVICE_VERSION = 'srs-review-ui-service.v1'
 
 export function createSrsReviewUiService(options = {}) {
   const indexedDBApi = options.indexedDBApi
+  const ownerIntegration = options.ownerIntegration
+    || getWindowsOwnerVocabularySrsIntegration(options.windowObject || globalThis)
   const acquisitionRepository = options.acquisitionRepository
+    || ownerIntegration?.acquisitionRepository
     || createIndexedDbAcquisitionRepository({ indexedDBApi })
   const contextEvidenceRepository = options.contextEvidenceRepository
+    || ownerIntegration?.contextEvidenceRepository
     || createIndexedDbContextEvidenceRepository({ indexedDBApi })
   const learningEventRepository = createWarmableLearningEventRepository(
-    options.learningEventRepository || createIndexedDbLearningEventRepository({ indexedDBApi }),
+    options.learningEventRepository || ownerIntegration?.learningEventRepository
+      || createIndexedDbLearningEventRepository({ indexedDBApi }),
   )
   const sessionLedgerRepository = options.sessionLedgerRepository
+    || ownerIntegration?.sessionLedgerRepository
     || createIndexedDbReviewSessionLedgerRepository({ indexedDBApi })
   const reviewStateRepository = options.reviewStateRepository
+    || ownerIntegration?.reviewStateRepository
     || createIndexedDbReviewStateReader({ indexedDBApi })
   const contentRepository = options.contentRepository
+    || ownerIntegration?.vocabularyRepository
     || createIndexedDbVocabularyRepository({ indexedDBApi })
   const managementService = options.managementService || null
   const personalizationShadowRunner = options.personalizationShadowRunner || null
@@ -52,6 +61,8 @@ export function createSrsReviewUiService(options = {}) {
     featureFlags: options.featureFlags,
     onPersonalizationShadowError: options.onPersonalizationShadowError,
     now: options.now,
+    runUnitOfWork: options.runVocabularyLearningUnitOfWork
+      || ownerIntegration?.runVocabularyLearningUnitOfWork,
   })
   function warmReviewData() {
     return learningEventRepository.warmReviewEvents().then(() => true)

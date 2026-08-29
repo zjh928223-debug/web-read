@@ -32,6 +32,7 @@ async function main() {
       'export const createIndexedDbPersonalizationShadowReportRepository = unavailable',
       'export const createPersonalizationShadowService = unavailable',
       'export const createSrsReviewServiceV2 = unavailable',
+      'export const getWindowsOwnerVocabularySrsIntegration = () => null',
       '',
     ].join('\n'),
   )
@@ -52,6 +53,7 @@ async function main() {
       ['../../services/vocabulary/srs-review-service-v2.js', './ui-service-deps.mjs'],
       ['../../services/vocabulary/personalization/personalization-shadow-report-repository.js', './ui-service-deps.mjs'],
       ['../../services/vocabulary/personalization/personalization-shadow-service.js', './ui-service-deps.mjs'],
+      ['../../services/vocabulary/windows-owner-vocabulary-srs.js', './ui-service-deps.mjs'],
       ['./srs-review-policy.js', './policy.mjs'],
     ],
   )

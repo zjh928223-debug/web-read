@@ -7,6 +7,7 @@ import {
   getRemainingSrsCandidatesAfterApply,
   summarizeSrsCandidates,
 } from '../services/vocabulary/index.js';
+import { getWindowsOwnerVocabularySrsIntegration } from '../services/vocabulary/windows-owner-vocabulary-srs.js';
 import { createDialogController } from '../services/runtime/dialog-controller.js';
 
 const DEFAULT_BUTTON_TEXT = 'AI解释标注';
@@ -959,8 +960,13 @@ export function createAnnotationBackfillAiController(deps = {}) {
   const refreshAfterImport = typeof deps.refreshAfterImport === 'function' ? deps.refreshAfterImport : function () {};
   const windowObject = deps.windowObject || (typeof window !== 'undefined' ? window : null);
   const documentObject = deps.documentObject || (windowObject && windowObject.document) || (typeof document !== 'undefined' ? document : null);
-  const vocabularyService = deps.vocabularyService || createVocabularyService();
-  const srsPendingRepository = deps.srsPendingRepository || createIndexedDbSrsPendingCandidatesRepository();
+  const ownerIntegration = deps.ownerIntegration
+    || getWindowsOwnerVocabularySrsIntegration(windowObject || globalThis);
+  const vocabularyService = deps.vocabularyService
+    || (ownerIntegration ? createVocabularyService({ ownerIntegration }) : createVocabularyService());
+  const srsPendingRepository = deps.srsPendingRepository
+    || ownerIntegration?.srsPendingCandidatesRepository
+    || createIndexedDbSrsPendingCandidatesRepository();
   const confirmRun = typeof deps.confirmRun === 'function'
     ? deps.confirmRun
     : (windowObject && typeof windowObject.confirm === 'function' ? windowObject.confirm.bind(windowObject) : function () { return true; });

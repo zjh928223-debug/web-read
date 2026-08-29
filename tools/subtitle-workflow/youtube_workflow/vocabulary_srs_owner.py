@@ -164,7 +164,7 @@ def _forbidden_key(key: str) -> bool:
     return "base64" in normalized and any(part in normalized for part in ("media", "audio", "video"))
 
 
-def _validate_json_value(value: Any, *, key_hint: str = "") -> None:
+def _validate_json_value(value: Any, *, key_hint: str = "", allowed_sensitive_keys: frozenset[str] = frozenset()) -> None:
     if isinstance(value, (bytes, bytearray, memoryview)):
         raise VocabularySrsOwnerError("invalid-request")
     if value is None or isinstance(value, (str, bool, int)):
@@ -182,15 +182,16 @@ def _validate_json_value(value: Any, *, key_hint: str = "") -> None:
         return
     if isinstance(value, list):
         for item in value:
-            _validate_json_value(item, key_hint=key_hint)
+            _validate_json_value(item, key_hint=key_hint, allowed_sensitive_keys=allowed_sensitive_keys)
         return
     if isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str) or _forbidden_key(key):
-                raise VocabularySrsOwnerError("invalid-request")
+                if key not in allowed_sensitive_keys:
+                    raise VocabularySrsOwnerError("invalid-request")
             if isinstance(item, str) and _is_absolute_path(item):
                 raise VocabularySrsOwnerError("invalid-request")
-            _validate_json_value(item, key_hint=key)
+            _validate_json_value(item, key_hint=key, allowed_sensitive_keys=allowed_sensitive_keys)
         return
     raise VocabularySrsOwnerError("invalid-request")
 
@@ -234,6 +235,45 @@ def _expected_schema(key: str) -> tuple[str, Any] | None:
 def _validate_record_content(key: str, content: Any) -> dict[str, Any]:
     if not isinstance(content, dict):
         raise VocabularySrsOwnerError("invalid-request")
+    if _SETTLEMENT.fullmatch(key):
+        # The current browser repository stores one normalized progress object
+        # per article row.  Unlike the legacy whole-store fallback, that row
+        # deliberately has no schemaVersion marker.  Keep accepting the old
+        # wrapper used by early rehearsals, but validate the real row shape at
+        # the Host boundary so migration does not rewrite durable data.
+        if "schemaVersion" in content:
+            if content.get("schemaVersion") != 1:
+                raise VocabularySrsOwnerError("unsupported-schema")
+        else:
+            required_fields = {
+                "article_id",
+                "refinements",
+                "application_claims",
+                "settlement_target_ids",
+                "removed_target_ids",
+                "applied_target_ids",
+                "skipped_target_ids",
+                "last_apply_mode",
+                "refined_at",
+                "applied_at",
+                "skipped_at",
+                "updated_at",
+            }
+            if not required_fields.issubset(content):
+                raise VocabularySrsOwnerError("unsupported-schema")
+            if not isinstance(content["article_id"], str) or not content["article_id"]:
+                raise VocabularySrsOwnerError("invalid-request")
+            if any(not isinstance(content[field], list) for field in (
+                "refinements",
+                "application_claims",
+                "settlement_target_ids",
+                "removed_target_ids",
+                "applied_target_ids",
+                "skipped_target_ids",
+            )):
+                raise VocabularySrsOwnerError("invalid-request")
+        _validate_json_value(content, allowed_sensitive_keys=frozenset({"attempt_token"}))
+        return deepcopy(content)
     marker = _expected_schema(key)
     if marker is not None:
         field, expected = marker
@@ -414,7 +454,6 @@ class VocabularySrsOwner:
             raise VocabularySrsOwnerError("unsupported-operation")
         if not isinstance(payload, dict):
             raise VocabularySrsOwnerError("invalid-request")
-        _validate_json_value(payload)
         keys = set(payload)
         if keys == {"recordKey", "record"}:
             raw_records = {payload["recordKey"]: payload["record"]}
@@ -424,12 +463,25 @@ class VocabularySrsOwner:
             raise VocabularySrsOwnerError("invalid-request")
         if not raw_records:
             raise VocabularySrsOwnerError("invalid-request")
+        allows_settlement_attempt_token = any(
+            isinstance(key, str) and _SETTLEMENT.fullmatch(key)
+            for key in raw_records
+        )
+        _validate_json_value(
+            payload,
+            allowed_sensitive_keys=frozenset({"attempt_token"}) if allows_settlement_attempt_token else frozenset(),
+        )
         allowed = _COMMAND_RECORD_RULES[operation]
         result = {}
         for raw_key, raw_record in raw_records.items():
             key = _record_key(raw_key)
             if operation == "learning-event-append":
-                allowed_key = key in allowed or _EVENT_SHARD.fullmatch(key) or _SETTLEMENT.fullmatch(key)
+                allowed_key = (
+                    key in allowed
+                    or _EVENT_SHARD.fullmatch(key)
+                    or _SETTLEMENT.fullmatch(key)
+                    or _LEARNING_RECEIPT.fullmatch(key)
+                )
             else:
                 allowed_key = key in allowed
             if not allowed_key:

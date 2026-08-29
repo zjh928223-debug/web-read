@@ -34,15 +34,20 @@ import {
   canonicalJson,
   sha256Utf8,
 } from './vocabulary-learning-uow.js';
+import { getWindowsOwnerVocabularySrsIntegration } from './windows-owner-vocabulary-srs.js';
 
 export const VOCABULARY_LEGACY_ADD_WORD_COMPATIBILITY = 'legacy-add-word.v1';
 
 export function createVocabularyService(options = {}) {
-  const repository = options.repository || createIndexedDbVocabularyRepository(options.repositoryOptions || {});
+  const ownerIntegration = options.ownerIntegration
+    || (!options.repository ? getWindowsOwnerVocabularySrsIntegration(options.windowObject || globalThis) : null);
+  const repository = options.repository || ownerIntegration?.vocabularyRepository
+    || createIndexedDbVocabularyRepository(options.repositoryOptions || {});
   const scheduler = options.scheduler || createSrsScheduler(options.schedulerOptions || {});
   const nowProvider = typeof options.now === 'function' ? options.now : () => new Date();
   const acquisitionEnabled = resolveAcquisitionFeatureFlag(options);
   const acquisitionRepository = options.acquisitionRepository
+    || ownerIntegration?.acquisitionRepository
     || createIndexedDbAcquisitionRepository(options.acquisitionRepositoryOptions || {});
   const acquisitionServiceOptions = {
     enabled: acquisitionEnabled,
@@ -53,6 +58,12 @@ export function createVocabularyService(options = {}) {
   }
   if (typeof options.runVocabularyLearningBatchSession === 'function') {
     acquisitionServiceOptions.runBatchSession = options.runVocabularyLearningBatchSession;
+  } else if (typeof ownerIntegration?.runVocabularyLearningBatchSession === 'function') {
+    acquisitionServiceOptions.runBatchSession = ownerIntegration.runVocabularyLearningBatchSession;
+  }
+  if (typeof options.runVocabularyLearningUnitOfWork !== 'function'
+    && typeof ownerIntegration?.runVocabularyLearningUnitOfWork === 'function') {
+    acquisitionServiceOptions.runUnitOfWork = ownerIntegration.runVocabularyLearningUnitOfWork;
   }
   const acquisitionService = options.acquisitionService
     || createVocabularyAcquisitionService(acquisitionServiceOptions);

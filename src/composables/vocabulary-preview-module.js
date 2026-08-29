@@ -17,6 +17,7 @@ import {
   getPreviewWordIndexesFromGeneratedItems,
   selectArticleSrsSettlementCandidates,
 } from '../services/vocabulary/index.js';
+import { getWindowsOwnerVocabularySrsIntegration } from '../services/vocabulary/windows-owner-vocabulary-srs.js';
 import { createDialogController } from '../services/runtime/dialog-controller.js';
 import {
   getAnnotationGenerationScope,
@@ -998,15 +999,19 @@ export function createVocabularyPreviewController(deps = {}) {
   const windowObject = deps.windowObject || globalThis;
   const documentObject = deps.documentObject || windowObject.document;
   const client = deps.client || null;
-  const vocabularyService = deps.vocabularyService || createVocabularyService();
+  const ownerIntegration = deps.ownerIntegration
+    || getWindowsOwnerVocabularySrsIntegration(windowObject);
+  const vocabularyService = deps.vocabularyService
+    || (ownerIntegration ? createVocabularyService({ ownerIntegration }) : createVocabularyService());
   const settlementApplicationRunner = typeof deps.runSettlementApplication === 'function'
     ? deps.runSettlementApplication
     : (options) => (
-      canRunArticleSrsSettlementInWorker(windowObject)
+      !ownerIntegration && canRunArticleSrsSettlementInWorker(windowObject)
         ? runArticleSrsSettlementInWorker({ ...options, windowObject })
         : applyArticleSrsSettlement({ ...options, vocabularyService })
     );
   const settlementProgressRepository = deps.settlementProgressRepository
+    || ownerIntegration?.settlementProgressRepository
     || createIndexedDbArticleSrsSettlementProgressRepository();
   const showToast = typeof deps.showToast === 'function' ? deps.showToast : function () {};
   const showError = typeof deps.showError === 'function' ? deps.showError : function () {};

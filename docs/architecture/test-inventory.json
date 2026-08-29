@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 114,
     "behavior": 113,
-    "browser": 30,
+    "browser": 31,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 273,
-  "executableScriptCount": 292,
+  "packageScriptCount": 274,
+  "executableScriptCount": 293,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3035,6 +3035,20 @@
         "scripts/windows-owner-c2b-cutover-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-c2b"
+    },
+    {
+      "name": "verify:windows-owner-c2c",
+      "command": "node scripts/windows-owner-c2c-vocabulary-srs-check.mjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-c2c-vocabulary-srs-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-c2c"
     },
     {
       "name": "verify:windows-owner-consumer-self-test",
@@ -10757,6 +10771,34 @@
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-c2c-vocabulary-srs-check.mjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-c2c",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-c2c"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": true,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {

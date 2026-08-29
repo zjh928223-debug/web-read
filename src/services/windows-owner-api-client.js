@@ -50,6 +50,7 @@ const RESPONSE_KEYS = new Set([
 const READ_LIKE_COMMANDS = new Set(['prepare', 'lightweight-export', 'export'])
 const SENSITIVE_PAYLOAD_KEY = /(?:token|authorization|cookie|password|secret|api[-_]?key)/i
 const SENSITIVE_ERROR_KEY = /(?:token|authorization|cookie|password|secret|api[-_]?key|path|media|receiptId|idempotencyKey|requestId|correlationId)/i
+const VOCABULARY_SETTLEMENT_RECORD_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 const TYPED_ERROR_CODES = new Set((apiContract.typedErrorCodes || []).map((item) => item.code))
 const TYPED_ERROR_CATEGORIES = new Set((apiContract.typedErrorCodes || []).map((item) => item.category))
 let generatedIdentityCounter = 0
@@ -428,11 +429,15 @@ function bindPayload(payload, profileId, instanceId) {
   if (instanceId && copy.instanceId !== undefined && copy.instanceId !== instanceId) throw inputError('payload instanceId does not match client instance')
   copy.profileId = profileId
   if (instanceId) copy.instanceId = instanceId
-  assertJsonSafe(copy, 'payload')
+  const allowsVocabularySettlementAttemptToken = typeof copy.recordKey === 'string'
+    ? copy.recordKey.startsWith(VOCABULARY_SETTLEMENT_RECORD_PREFIX)
+    : isPlainObject(copy.records)
+      && Object.keys(copy.records).some((recordKey) => recordKey.startsWith(VOCABULARY_SETTLEMENT_RECORD_PREFIX))
+  assertJsonSafe(copy, 'payload', new WeakSet(), inputError, allowsVocabularySettlementAttemptToken ? new Set(['attempt_token']) : new Set())
   return copy
 }
 
-function assertJsonSafe(value, field, seen = new WeakSet(), makeError = inputError) {
+function assertJsonSafe(value, field, seen = new WeakSet(), makeError = inputError, allowedSensitiveKeys = new Set()) {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     if (typeof value === 'string' && value.startsWith('data:')) throw makeError(`${field} cannot contain complete media data`)
     return
@@ -449,11 +454,11 @@ function assertJsonSafe(value, field, seen = new WeakSet(), makeError = inputErr
     throw makeError(`${field} is not JSON-safe`)
   }
   seen.add(value)
-  if (Array.isArray(value)) value.forEach((item, index) => assertJsonSafe(item, `${field}[${index}]`, seen, makeError))
+  if (Array.isArray(value)) value.forEach((item, index) => assertJsonSafe(item, `${field}[${index}]`, seen, makeError, allowedSensitiveKeys))
   else {
     for (const [key, item] of Object.entries(value)) {
-      if (makeError === inputError && SENSITIVE_PAYLOAD_KEY.test(key)) throw makeError(`${field} contains an unsupported credential field`)
-      assertJsonSafe(item, `${field}.${key}`, seen, makeError)
+      if (makeError === inputError && SENSITIVE_PAYLOAD_KEY.test(key) && !allowedSensitiveKeys.has(key)) throw makeError(`${field} contains an unsupported credential field`)
+      assertJsonSafe(item, `${field}.${key}`, seen, makeError, allowedSensitiveKeys)
     }
   }
   seen.delete(value)

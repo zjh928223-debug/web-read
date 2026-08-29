@@ -24,6 +24,10 @@ async function loadModules(repoRoot) {
   ];
   const tempDir = fs.mkdtempSync(path.join(repoRoot, `.tmp-vocabulary-p10-${process.pid}-`));
   try {
+    fs.writeFileSync(
+      path.join(tempDir, 'windows-owner-vocabulary-srs.mjs'),
+      'export const getWindowsOwnerVocabularySrsIntegration = () => null\n',
+    );
     for (const file of files) {
       const source = fs.readFileSync(path.join(sourceDir, file), 'utf8')
         .replace(/from '\.\/([^']+)\.js'/g, "from './$1.mjs'")

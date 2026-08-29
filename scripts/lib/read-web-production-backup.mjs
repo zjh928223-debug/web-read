@@ -2163,6 +2163,7 @@ function assertOwnerProfileIndexedDbRows(state) {
     const recognized = OWNER_PROFILE_READER_ROW_IDS.has(key)
       || key.startsWith('readerSessionQuarantine:')
       || key.startsWith('vocabulary.')
+      || key === 'vocabulary-srs-pending-candidates'
       || key.startsWith('vocabulary-article-srs-settlement-progress:')
     if (!recognized) {
       throw ownerProfileError(
