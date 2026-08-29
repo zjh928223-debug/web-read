@@ -2563,8 +2563,11 @@ export async function createReadWebProductionBackupComposition(options = {}) {
       journalStore: targetOptions.journalStore,
       pendingStore: targetOptions.pendingStore,
       revisionStore: targetOptions.revisionStore,
+      migrationAdapterAccess: targetOptions.migrationAdapterAccess === true,
+      migrationAdapterSink: targetOptions.migrationAdapterSink,
     })
   }
+  let migrationAdapters = null
   const restoreTarget = createApplicationRestoreTarget(browser, pythonAdapters, adapters, {
     capacityBytes: options.capacityBytes,
     faults: options.faults,
@@ -2573,6 +2576,8 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     journalStore: options.journalStore,
     pendingStore: options.pendingStore,
     revisionStore: options.revisionStore,
+    migrationAdapterAccess: options.migrationAdapterAccess === true,
+    migrationAdapterSink: (value) => { migrationAdapters = value },
   })
   registerTrustedRestoreTarget({ applicationBackup, isolationIssuerToken, target: restoreTarget })
   const ownerPendingOptions = {
@@ -2616,6 +2621,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     browser,
     adapters,
     restoreTarget,
+    ...(migrationAdapters ? { migrationAdapters } : {}),
     service,
     pythonAdapters,
     startupRecovery,
@@ -2632,6 +2638,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     adapters,
     service,
     restoreTarget,
+    ...(migrationAdapters ? { migrationAdapters } : {}),
     startupRecovery: startupRecovery ? Object.freeze(clone(startupRecovery)) : null,
     ownerPendingRecovery: Object.freeze(clone(ownerPendingRecovery)),
     browserProfile: browser,

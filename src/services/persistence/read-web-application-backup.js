@@ -1489,6 +1489,41 @@ export function createReadWebApplicationRestoreTarget(options = {}) {
       })
     },
   }]))
+  // The production cutover runner is the only caller that may ask for the
+  // write-capable adapters.  Keep them out of the normal restore target
+  // surface so a read/restore composition cannot accidentally become a
+  // browser writer.
+  const migrationAdapters = options.migrationAdapterAccess === true
+    ? Object.fromEntries(Object.entries(adapters).map(([key, adapter]) => [key, {
+      key: adapter.key || key,
+      schemaVersion: adapter.schemaVersion ?? 1,
+      adapterVersion: adapter.adapterVersion ?? 1,
+      supportedSchemaVersions: adapter.supportedSchemaVersions || [adapter.schemaVersion ?? 1],
+      async collect(...args) {
+        return withTargetLock(async () => {
+          await recoverPendingAndRecordUnlocked()
+          return adapter.collect(...args)
+        })
+      },
+      async restoreRecords(domain, context = {}) {
+        return withTargetLock(async () => {
+          await recoverPendingAndRecordUnlocked()
+          const result = await adapter.restoreRecords(domain, context)
+          const current = await adapter.collect({ domain: key })
+          return {
+            ...(result && typeof result === 'object' ? result : {}),
+            status: result?.status || 'committed',
+            outcome: result?.outcome || 'committed',
+            commitStatus: result?.commitStatus || 'committed',
+            revision: result?.revision ?? current?.revision ?? null,
+          }
+        })
+      },
+    }]))
+    : null
+  if (migrationAdapters && typeof options.migrationAdapterSink === 'function') {
+    options.migrationAdapterSink(migrationAdapters)
+  }
   const target = {
     isolated: isApplicationBackupIsolationCertificate(options.isolationCertificate),
     isolationCertificate: options.isolationCertificate,

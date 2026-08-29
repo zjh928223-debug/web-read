@@ -116,6 +116,83 @@ async function main() {
   assert.ok(ownerCommands.every((request) => typeof request.idempotencyKey === 'string' && request.idempotencyKey.startsWith('marks-')));
   assert.equal(calls.filter((call) => call.url.includes('/api/reader/activity') || call.url.includes('/reader-marks')).length, 3);
 
+  const failureCommands = [];
+  let failureMode = 'conflict';
+  globalThis.__windowsOwnerDomainCutover = {
+    isAuthoritative(domain) { return domain === 'marks-activity'; },
+    async query() { return { revision: 7 }; },
+    async command(request) {
+      failureCommands.push(request);
+      const error = failureMode === 'conflict'
+        ? { code: 'OWNER_REVISION_CONFLICT', category: 'conflict' }
+        : { code: 'OWNER_NOT_READY', category: 'recovery' };
+      return {
+        outcome: failureMode,
+        commitStatus: failureMode,
+        revision: 8,
+        error,
+      };
+    },
+  };
+  try {
+    await assert.rejects(
+      client.recordReaderActivity({
+        jobId: 'job-owner',
+        contentId: 'content-owner',
+        event: 'progress',
+        expectedRevision: 7,
+        operationId: 'activity-op-7',
+      }),
+      (error) => error.category === 'conflict',
+    );
+    assert.equal(failureCommands[0].expectedRevision, 7);
+    assert.equal(failureCommands[0].idempotencyKey, 'activity-op-7');
+    assert.deepEqual(failureCommands[0].payload, {
+      jobId: 'job-owner',
+      contentId: 'content-owner',
+      event: 'progress',
+    });
+
+    failureMode = 'not-ready';
+    await assert.rejects(
+      client.saveReaderMarks('job-owner', {
+        contentId: 'content-owner',
+        marks: [],
+        expectedRevision: 7,
+        operationId: 'marks-op-7',
+      }),
+      (error) => error.category === 'recovery',
+    );
+    assert.equal(failureCommands[1].expectedRevision, 7);
+    assert.equal(failureCommands[1].idempotencyKey, 'marks-op-7');
+    assert.equal(Object.hasOwn(failureCommands[1].payload, 'expectedRevision'), false);
+    assert.equal(Object.hasOwn(failureCommands[1].payload, 'operationId'), false);
+
+    failureMode = 'commit-unknown';
+    const ledgerApi = await importModule(
+      path.join(repoRoot, 'src', 'services', 'persistence', 'latest-wins-ledger.js'),
+    );
+    const ledger = ledgerApi.createLatestWinsLedger({
+      write(snapshot, context) {
+        return client.saveReaderMarks('job-owner', {
+          ...snapshot,
+          expectedRevision: 7,
+          operationId: context.operationId,
+        });
+      },
+    });
+    ledger.submit({ marks: [{ globalIndex: 2 }] });
+    await ledger.waitForIdle();
+    assert.equal(ledger.getState().status, 'error');
+    assert.equal(ledger.getState().dirty, true);
+    assert.equal(ledger.getState().savedSequence, 0);
+    assert.equal(failureCommands[2].expectedRevision, 7);
+    assert.equal(failureCommands[2].idempotencyKey, 'ledger-1');
+    ledger.dispose();
+  } finally {
+    delete globalThis.__windowsOwnerDomainCutover;
+  }
+
   assert.deepEqual(calls.map((call) => call.url), [
     'http://127.0.0.1:8765/api/health',
     'http://127.0.0.1:8765/api/diagnostics',

@@ -119,7 +119,11 @@ async function currentMarksRevision(cutover, jobId, contentId, signal) {
 }
 
 function marksOperationKey(operation, jobId, contentId, payload, options = {}) {
-  const explicit = options.idempotencyKey || options.operationKey
+  const explicit = options.idempotencyKey
+    || options.operationKey
+    || payload?.idempotencyKey
+    || payload?.operationId
+    || payload?.activityOperationId
   if (explicit) return String(explicit)
   const text = JSON.stringify({ operation, jobId, contentId, payload })
   let hash = 2166136261
@@ -128,6 +132,35 @@ function marksOperationKey(operation, jobId, contentId, payload, options = {}) {
     hash = Math.imul(hash, 16777619)
   }
   return `marks-${operation}-${(hash >>> 0).toString(16)}`
+}
+
+function stripMarksControlFields(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {}
+  const {
+    expectedRevision: _expectedRevision,
+    operationId: _operationId,
+    activityOperationId: _activityOperationId,
+    idempotencyKey: _idempotencyKey,
+    operationKey: _operationKey,
+    ...businessPayload
+  } = payload
+  return businessPayload
+}
+
+function requireCommittedMarksResult(response) {
+  const outcome = response?.outcome
+  const commitStatus = response?.commitStatus
+  const revision = response?.revision ?? response?.payload?.revision
+  if (outcome !== 'committed' || commitStatus !== 'committed' || !Number.isInteger(revision) || revision < 0) {
+    const error = new Error('Host marks/activity mutation was not committed')
+    error.code = response?.error?.code || 'marks-owner-mutation-not-committed'
+    error.category = response?.error?.category
+      || (outcome === 'conflict' || commitStatus === 'conflict' ? 'conflict' : 'recovery')
+    error.retryable = response?.error?.retryable !== false
+    if (Number.isInteger(response?.revision)) error.currentRevision = response.revision
+    throw error
+  }
+  return response
 }
 
 export function createYoutubeWorkflowClient(options = {}) {
@@ -155,20 +188,24 @@ export function createYoutubeWorkflowClient(options = {}) {
   async function requestReaderActivity(payload = {}, options = {}) {
     const cutover = activeMarksOwner()
     if (cutover) {
-      const jobId = String(payload?.jobId || '')
-      const contentId = String(payload?.contentId || jobId)
-      const commandPayload = { jobId, contentId, ...(payload || {}) }
-      const expectedRevision = options.expectedRevision === undefined
-        ? await currentMarksRevision(cutover, jobId, contentId, options.signal)
-        : options.expectedRevision
-      return cutover.command({
+      const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
+      const jobId = String(input.jobId || '')
+      const contentId = String(input.contentId || jobId)
+      const commandPayload = { ...stripMarksControlFields(input), jobId, contentId }
+      const expectedRevision = options.expectedRevision !== undefined
+        ? options.expectedRevision
+        : input.expectedRevision !== undefined
+          ? input.expectedRevision
+          : await currentMarksRevision(cutover, jobId, contentId, options.signal)
+      const response = await cutover.command({
         domain: 'marks-activity',
         operation: 'activity-append',
         payload: commandPayload,
         expectedRevision,
-        idempotencyKey: marksOperationKey('activity-append', jobId, contentId, commandPayload, options),
+        idempotencyKey: marksOperationKey('activity-append', jobId, contentId, input, options),
         ...(options.signal ? { signal: options.signal } : {}),
       })
+      return requireCommittedMarksResult(response)
     }
     return readJsonResponse(await fetchImpl(apiUrl('/api/reader/activity'), {
       method: 'POST',
@@ -182,24 +219,28 @@ export function createYoutubeWorkflowClient(options = {}) {
   async function requestReaderMarks(jobId, payload = {}, options = {}) {
     const cutover = activeMarksOwner()
     if (cutover) {
+      const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
       const normalizedJobId = String(jobId || '')
-      const contentId = String(payload?.contentId || normalizedJobId)
+      const contentId = String(input.contentId || normalizedJobId)
       const commandPayload = {
         jobId: normalizedJobId,
         contentId,
-        marks: Array.isArray(payload?.marks) ? payload.marks : [],
+        marks: Array.isArray(input.marks) ? input.marks : [],
       }
-      const expectedRevision = options.expectedRevision === undefined
-        ? await currentMarksRevision(cutover, normalizedJobId, contentId, options.signal)
-        : options.expectedRevision
-      return cutover.command({
+      const expectedRevision = options.expectedRevision !== undefined
+        ? options.expectedRevision
+        : input.expectedRevision !== undefined
+          ? input.expectedRevision
+          : await currentMarksRevision(cutover, normalizedJobId, contentId, options.signal)
+      const response = await cutover.command({
         domain: 'marks-activity',
         operation: 'marks-commit',
         payload: commandPayload,
         expectedRevision,
-        idempotencyKey: marksOperationKey('marks-commit', normalizedJobId, contentId, commandPayload, options),
+        idempotencyKey: marksOperationKey('marks-commit', normalizedJobId, contentId, input, options),
         ...(options.signal ? { signal: options.signal } : {}),
       })
+      return requireCommittedMarksResult(response)
     }
     return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`), {
       method: 'POST',

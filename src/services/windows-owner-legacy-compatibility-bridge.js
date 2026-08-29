@@ -361,6 +361,9 @@ async function normalizeRecord(rawRecord, source) {
     classification: claimResult.claim?.classification || 'unclaimed',
     schemaVersion: null,
     revision: readRevision(rawRecord),
+      contentId: typeof rawRecord.contentId === 'string' ? rawRecord.contentId : null,
+      references: Array.isArray(rawRecord.references) ? rawRecord.references : [],
+      mediaReferences: Array.isArray(rawRecord.mediaReferences) ? rawRecord.mediaReferences : [],
     size,
     checksum: evidenceChecksum,
     status: 'blocked',
@@ -517,7 +520,7 @@ function resolveClaim(key, requestedDomain) {
   if (requestedDomain !== undefined && requestedDomain !== null && !DOMAINS.includes(requestedDomain)) {
     return { claim: null, reasonCode: 'legacy-domain-invalid' }
   }
-  const matching = CLAIMS.filter((claim) => claim.matcher.test(key))
+  const matching = CLAIMS.filter((claim) => claimKeyCandidates(key).some((candidate) => claim.matcher.test(candidate)))
   const domainMatching = requestedDomain
     ? matching.filter((claim) => claim.domain === requestedDomain)
     : matching
@@ -531,6 +534,15 @@ function resolveClaim(key, requestedDomain) {
   const domains = new Set(bestCandidates.map((claim) => claim.domain))
   if (domains.size > 1) return { claim: null, reasonCode: 'legacy-ambiguous-claim' }
   return { claim: bestCandidates[0], reasonCode: null }
+}
+
+function claimKeyCandidates(key) {
+  const value = String(key)
+  const separator = value.indexOf(':')
+  if (separator <= 0) return [value]
+  const filename = value.slice(0, separator)
+  if (!/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json$/u.test(filename)) return [value]
+  return [value, value.slice(separator + 1)]
 }
 
 function buildClaims() {

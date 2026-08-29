@@ -248,7 +248,31 @@ function sourceDomainRevision(domain) {
 
 function domainEquivalent(left, right) {
   try {
-    return canonicalize(left) === canonicalize(right)
+    // Application backup adapters expose the durable record fields, while
+    // the backup artifact adds derived per-record checksums.  Compare the
+    // shared record content so a real adapter is not treated as divergent
+    // merely because it does not echo that derived field on collect().
+    const comparable = (value) => {
+      if (!isPlainObject(value) || !Array.isArray(value.records)) return value
+      return {
+        ...value,
+        records: value.records.map((record) => {
+          if (!isPlainObject(record)) return record
+          const { checksum: _checksum, ...content } = record
+          if (/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json:/u.test(String(content.id || ''))
+            && isPlainObject(content.payload)
+            && typeof content.payload.schemaVersion === 'string'
+            && (content.schemaVersion === 1 || content.schemaVersion === content.payload.schemaVersion)) {
+            // The Python marks adapter uses the generic application record
+            // schema (1), while the nested legacy envelope keeps its
+            // reader-marks.v1/reader-activity.v1 marker.
+            delete content.schemaVersion
+          }
+          return content
+        }),
+      }
+    }
+    return canonicalize(comparable(left)) === canonicalize(comparable(right))
   } catch {
     return false
   }
@@ -1227,6 +1251,22 @@ export function createWindowsDurableStateMigration(options = {}) {
     if (!steps.dryRun.ok) return { ok: false, domain, stopped: true, steps }
     steps.freeze = await freeze(domain)
     if (!steps.freeze.ok) return { ok: false, domain, stopped: true, steps }
+    if (typeof runOptions.beforeFinalBackup === 'function') {
+      try {
+        steps.beforeFinalBackup = await runOptions.beforeFinalBackup({
+          domain,
+          freeze: steps.freeze,
+        })
+      } catch (error) {
+        steps.beforeFinalBackup = {
+          ok: false,
+          reasonCode: error?.code || 'migration-pre-final-backup-hook-failed',
+        }
+      }
+      if (steps.beforeFinalBackup === false || steps.beforeFinalBackup?.ok === false) {
+        return { ok: false, domain, stopped: true, steps }
+      }
+    }
     steps.finalBackup = await createFinalBackup(domain)
     if (!steps.finalBackup.ok) return { ok: false, domain, stopped: true, steps }
     steps.import = await importDomain(domain, runOptions)

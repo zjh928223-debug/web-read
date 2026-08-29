@@ -5772,12 +5772,12 @@
       "invocation": "inventory-only",
       "evidence": {
         "sourceShape": [],
-        "sourceRead": false,
+        "sourceRead": true,
         "browser": false,
         "performance": false,
         "release": false,
         "behaviorAssertions": false,
-        "executesModule": false,
+        "executesModule": true,
         "startsBrowser": false
       }
     },

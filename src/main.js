@@ -76,6 +76,7 @@ themeStore.init()
 const ownerDomainComposition = await initializeWindowsOwnerDomainCutoverComposition({
   windowObject: window,
   documentObject: document,
+  pollIntervalMs: 750,
 })
 await initializeWindowsOwnerReaderSessionComposition({
   windowObject: window,

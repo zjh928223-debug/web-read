@@ -60,42 +60,94 @@ function baseHealthReady(health) {
 
 export function createWindowsOwnerDomainCutover(options = {}) {
   const windowObject = options.windowObject || globalThis
-  const health = options.health
-  const authoritativeDomains = Object.freeze([...new Set(
-    Array.isArray(options.authoritativeDomains) ? options.authoritativeDomains : readyDomains(health),
-  )].filter((domain) => DOMAINS.includes(domain)))
-  const frozen = Object.freeze([...new Set(
-    Array.isArray(options.frozenDomains) ? options.frozenDomains : frozenDomains(health),
-  )].filter((domain) => DOMAINS.includes(domain)))
-  const authoritative = new Set(authoritativeDomains)
-  const frozenSet = new Set(frozen)
+  const fetchImpl = options.fetchImpl || null
+  const healthPath = options.healthPath || HEALTH_PATH
+  const healthTimeoutMs = options.healthTimeoutMs
+  const state = {
+    health: options.health || null,
+    authoritativeDomains: [],
+    frozenDomains: [],
+    authoritative: new Set(),
+    frozen: new Set(),
+  }
+  function setState(nextHealth, nextAuthoritative, nextFrozen) {
+    const authoritativeDomains = nextAuthoritative === undefined
+      ? (baseHealthReady(nextHealth) ? readyDomains(nextHealth) : [])
+      : nextAuthoritative
+    const frozen = nextFrozen === undefined ? frozenDomains(nextHealth) : nextFrozen
+    state.health = nextHealth || null
+    state.authoritativeDomains = Object.freeze([...new Set(authoritativeDomains)].filter((domain) => DOMAINS.includes(domain)))
+    state.frozenDomains = Object.freeze([...new Set(frozen)].filter((domain) => DOMAINS.includes(domain)))
+    state.authoritative = new Set(state.authoritativeDomains)
+    state.frozen = new Set(state.frozenDomains)
+  }
+  setState(
+    state.health,
+    Array.isArray(options.authoritativeDomains) ? options.authoritativeDomains : undefined,
+    Array.isArray(options.frozenDomains) ? options.frozenDomains : undefined,
+  )
   const ownerClient = options.ownerClient || null
   const cutover = {
-    status: authoritativeDomains.length ? 'authoritative' : frozen.length ? 'frozen' : 'not-ready',
-    authoritativeDomains,
-    frozenDomains: frozen,
-    health: health || null,
+    get status() {
+      return state.authoritativeDomains.length ? 'authoritative' : state.frozenDomains.length ? 'frozen' : 'not-ready'
+    },
+    get authoritativeDomains() {
+      return state.authoritativeDomains
+    },
+    get frozenDomains() {
+      return state.frozenDomains
+    },
+    get health() {
+      return state.health
+    },
     isAuthoritative(domain) {
-      return authoritative.has(domain)
+      return state.authoritative.has(domain)
     },
     assertBrowserWriterAllowed(domain, operation = 'write') {
-      if (authoritative.has(domain) || frozenSet.has(domain)) throw cutoverError(domain, operation)
+      if (state.authoritative.has(domain) || state.frozen.has(domain)) throw cutoverError(domain, operation)
     },
     async query(request) {
-      if (!ownerClient || !authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'query')
+      if (!ownerClient || !state.authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'query')
       return ownerClient.query(request)
     },
     async command(request) {
-      if (!ownerClient || !authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'command')
+      if (!ownerClient || !state.authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'command')
       return ownerClient.command(request)
     },
     async receipt(request) {
-      if (!ownerClient || !authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'receipt-query')
+      if (!ownerClient || !state.authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'receipt-query')
       return ownerClient.receipt(request)
     },
+    async refresh(refreshOptions = {}) {
+      if (typeof fetchImpl !== 'function') {
+        return {
+          status: cutover.status,
+          authoritativeDomains: state.authoritativeDomains,
+          frozenDomains: state.frozenDomains,
+          health: state.health,
+        }
+      }
+      const nextHealth = await readWindowsOwnerHealth(
+        fetchImpl,
+        healthPath,
+        refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs,
+      )
+      setState(nextHealth)
+      return {
+        status: cutover.status,
+        authoritativeDomains: state.authoritativeDomains,
+        frozenDomains: state.frozenDomains,
+        health: state.health,
+      }
+    },
     dispose() {
+      if (cutover.pollHandle) clearInterval(cutover.pollHandle)
       if (windowObject.__windowsOwnerDomainCutover === cutover) windowObject.__windowsOwnerDomainCutover = null
     },
+  }
+  if (Number.isFinite(options.pollIntervalMs) && options.pollIntervalMs > 0 && typeof fetchImpl === 'function') {
+    cutover.pollHandle = setInterval(() => { cutover.refresh().catch(() => {}) }, options.pollIntervalMs)
+    cutover.pollHandle?.unref?.()
   }
   return Object.freeze(cutover)
 }
@@ -126,6 +178,10 @@ export async function initializeWindowsOwnerDomainCutoverComposition(options = {
       windowObject,
       health,
       ownerClient,
+      fetchImpl,
+      healthPath: options.healthPath || HEALTH_PATH,
+      healthTimeoutMs: options.healthTimeoutMs,
+      pollIntervalMs: options.pollIntervalMs,
       authoritativeDomains: domains,
       frozenDomains: frozen,
     })

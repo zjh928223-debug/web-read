@@ -1,31 +1,22 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { readOwnerModeCheckpoint, readOwnerModeFreeze, writeJsonAtomic } from './lib/read-web-production-backup.mjs'
-import { createWindowsOwnerCutoverControls } from './lib/windows-owner-cutover.mjs'
+import {
+  readOwnerModeCheckpoint,
+  readOwnerModeFreeze,
+  writeIsolatedBrowserProfile,
+} from './lib/read-web-production-backup.mjs'
+import { runWindowsOwnerProductionCutover } from './lib/windows-owner-cutover.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const appBackupSource = await readFile(path.join(repositoryRoot, 'src/services/persistence/application-backup.js'), 'utf8')
-const migrationSource = await readFile(path.join(repositoryRoot, 'src/services/persistence/windows-durable-state-migration.js'), 'utf8')
+const PRODUCTION_DOMAINS = ['reader-session', 'marks-activity']
 
 function dataUrl(source) {
-  return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
-}
-
-const migration = await import(dataUrl(migrationSource.replace(
-  "from './application-backup.js'",
-  `from '${dataUrl(appBackupSource)}'`,
-)))
-
-const {
-  createWindowsDurableStateMigration,
-} = migration
-
-function clone(value) {
-  return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value))
+  return `data:text/javascript;base64,${Buffer.from(source, 'utf8').toString('base64')}`
 }
 
 function canonical(value) {
@@ -35,291 +26,218 @@ function canonical(value) {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`
 }
 
-function emptySnapshot() {
-  return { schemaVersion: 1, adapterVersion: 1, revision: 0, records: [], references: [], mediaReferences: [] }
+function checksum(value) {
+  return `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`
 }
 
-class FileOwnerAdapter {
-  constructor(root, domain) {
-    this.root = root
-    this.domain = domain
-    this.filePath = path.join(root, `${domain}.json`)
-    this.frozen = false
-    this.writeCount = 0
-  }
-
-  async collect() {
-    try {
-      return JSON.parse(await readFile(this.filePath, 'utf8'))
-    } catch (error) {
-      if (error?.code === 'ENOENT') return emptySnapshot()
-      throw error
-    }
-  }
-
-  async freeze() {
-    this.frozen = true
-    return { ok: true }
-  }
-
-  async unfreeze() {
-    this.frozen = false
-    return { ok: true }
-  }
-
-  async importRecords({ snapshot, expectedRevision }) {
-    const current = await this.collect()
-    if (current.revision !== expectedRevision) {
-      return { status: 'conflict', currentRevision: current.revision }
-    }
-    if (!this.frozen) return { status: 'rejected' }
-    await writeJsonAtomic(this.filePath, clone(snapshot), { containmentRoot: this.root })
-    this.writeCount += 1
-    return {
-      status: 'committed',
-      commitStatus: 'committed',
-      revision: snapshot.revision,
-      receiptId: `c2a-${this.domain}-${snapshot.revision}`,
-    }
-  }
-}
-
-function createLegacyBridge(records) {
+function makeLayout(root, name) {
+  const instanceRoot = path.join(root, `${name}-instance`)
+  const authorityIsolationRoot = path.join(root, `${name}-authority`)
   return {
-    async inventory() {
-      return { status: 'ready', records: clone(records) }
-    },
-    async prepareImport({ sourceIds } = {}) {
-      const selected = Array.isArray(sourceIds)
-        ? records.filter((record) => sourceIds.includes(record.sourceId))
-        : records
-      return {
-        status: 'ready',
-        importIdentity: `c2a-${selected.map((record) => record.sourceId).join(',') || 'empty'}`,
-        importInput: {
-          schemaVersion: 1,
-          mode: 'legacy-import-input',
-          profileId: 'c2a-profile',
-          records: clone(selected),
-        },
-      }
-    },
-  }
-}
-
-function createStateStore(filePath) {
-  return {
-    async read() {
-      try {
-        return JSON.parse(await readFile(filePath, 'utf8'))
-      } catch (error) {
-        if (error?.code === 'ENOENT') return null
-        throw error
-      }
-    },
-    async write(value) {
-      await writeJsonAtomic(filePath, value)
-    },
-  }
-}
-
-const workRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-owner-c2a-'))
-try {
-  const instanceRoot = path.join(workRoot, 'instance')
-  const profileDir = path.join(instanceRoot, 'profile')
-  const authorityIsolationRoot = path.join(workRoot, 'authority-isolation')
-  const authorityRoot = path.join(authorityIsolationRoot, 'profile-authority')
-  const hostRoot = path.join(authorityRoot, 'owners')
-  await Promise.all([
-    mkdir(profileDir, { recursive: true }),
-    mkdir(hostRoot, { recursive: true }),
-  ])
-
-  const records = [
-    {
-      domain: 'reader-session',
-      sourceId: 'reader-session-source',
-      recordKey: 'audioMeta',
-      schemaVersion: 1,
-      revision: 2,
-      payload: {
-        schemaVersion: 1,
-        contentId: 'c2-reader-content',
-      },
-      references: [{ kind: 'media', id: 'c2-reader-audio', revision: 1 }],
-      mediaReferences: [{
-        mediaId: 'c2-reader-audio',
-        kind: 'audio',
-        size: 12,
-        contentType: 'audio/mp4',
-        etag: '"c2-reader-v1"',
-        revision: 1,
-        authorizedReference: '/api/jobs/c2-reader/media/audio',
-      }],
-    },
-    {
-      domain: 'reader-session',
-      sourceId: 'reader-session-source',
-      recordKey: 'readerSession',
-      schemaVersion: 1,
-      revision: 2,
-      payload: { schemaVersion: 1, contentId: 'c2-reader-content', revision: 2 },
-    },
-    {
-      domain: 'marks-activity',
-      sourceId: 'marks-activity-source',
-      recordKey: 'reader-marks.json',
-      schemaVersion: 1,
-      revision: 3,
-      payload: {
-        schemaVersion: 1,
-        jobId: 'c2-reader',
-        contentId: 'c2-reader-content',
-        marks: [{ word: 'range', index: 0 }],
-      },
-      references: [{ kind: 'content', id: 'c2-reader-content' }],
-      mediaReferences: [],
-    },
-  ]
-  const hostAdapters = Object.fromEntries([
-    'reader-session',
-    'marks-activity',
-    'passage-preview',
-    'annotation',
-    'vocabulary-srs',
-    'workflow',
-  ].map((domain) => [domain, new FileOwnerAdapter(hostRoot, domain)]))
-  const expectedSnapshots = {}
-  const cutoverControls = createWindowsOwnerCutoverControls({
     isolationRoot: instanceRoot,
-    profileDir,
+    profileDir: path.join(instanceRoot, 'profile'),
+    pythonStateDir: path.join(instanceRoot, 'python-state'),
+    pythonOutputDir: path.join(instanceRoot, 'python-output'),
     profileAuthorityIsolationRoot: authorityIsolationRoot,
-    profileAuthorityRoot: authorityRoot,
-    profileId: 'c2a-profile',
-    smokeCheck: async ({ domain, revision }) => {
-      const current = await hostAdapters[domain].collect()
-      const expected = expectedSnapshots[domain]
-      return {
-        ok: current.revision === revision && expected && canonical(current) === canonical(expected),
-      }
-    },
-  })
-  const service = createWindowsDurableStateMigration({
-    profileId: 'c2a-profile',
-    legacyBridge: createLegacyBridge(records),
-    hostAdapters,
-    stateStore: createStateStore(path.join(workRoot, 'migration-state.json')),
-    cutoverControls,
-    capacityBytes: 8 * 1024 * 1024,
-  })
+    profileAuthorityRoot: path.join(authorityIsolationRoot, 'profile-authority'),
+  }
+}
 
-  assert.equal((await service.createFinalBackup('reader-session')).reasonCode, 'migration-freeze-required')
-  for (const [domain, sourceId] of [
-    ['reader-session', 'reader-session-source'],
-    ['marks-activity', 'marks-activity-source'],
-  ]) {
-    const dryRun = await service.dryRun(domain, { sourceIds: [sourceId], expectedRevision: 0 })
-    assert.equal(dryRun.ok, true, JSON.stringify(dryRun))
-    assert.deepEqual(dryRun.sourceIds, [sourceId])
-    const frozen = await service.freeze(domain)
-    assert.equal(frozen.status, 'frozen')
-    const freezeEvidence = await readOwnerModeFreeze({
-      isolationRoot: instanceRoot,
-      profileDir,
-      profileAuthorityIsolationRoot: authorityIsolationRoot,
-      profileAuthorityRoot: authorityRoot,
-      profileId: 'c2a-profile',
+function makeHealth(frozenDomains) {
+  const frozen = new Set(frozenDomains)
+  return {
+    profileId: 'c2a-production-profile',
+    instanceId: 'c2a-production-instance',
+    liveness: { ready: true },
+    contractValid: true,
+    profileEvidenceReady: true,
+    ownerRegistry: { valid: true },
+    ownerMode: {
+      status: frozen.size ? 'frozen' : 'authoritative',
+      authoritativeDomains: [...PRODUCTION_DOMAINS],
+      frozenDomains: [...frozen],
+    },
+    domains: PRODUCTION_DOMAINS.map((domain) => ({
       domain,
-    })
-    assert.equal(freezeEvidence.status, 'frozen', 'browser-visible freeze must exist before final backup')
-    const finalBackup = await service.createFinalBackup(domain)
-    assert.equal(finalBackup.ok, true, JSON.stringify(finalBackup))
-    assert.deepEqual(finalBackup.finalBackup.sourceIds, [sourceId])
-    const imported = await service.importDomain(domain, { expectedRevision: 0, idempotencyKey: `c2a-import-${domain}` })
-    assert.equal(imported.outcome, 'committed', JSON.stringify(imported))
-    const verified = await service.verify(domain)
-    assert.equal(verified.ok, true, JSON.stringify(verified))
-    expectedSnapshots[domain] = await hostAdapters[domain].collect()
-    const switched = await service.switchHostAuthoritative(domain)
-    assert.equal(switched.authorityChanged, true, JSON.stringify(switched))
-    const smoke = await service.smokeCheck(domain)
-    assert.equal(smoke.status, 'passed', JSON.stringify(smoke))
-    const reopenedAdapter = new FileOwnerAdapter(hostRoot, domain)
-    assert.deepEqual(await reopenedAdapter.collect(), expectedSnapshots[domain])
-    assert.equal(hostAdapters[domain].frozen, true)
+      authority: 'authoritative',
+      queryCapability: 'read-only',
+      commandCapability: 'writable',
+      writerFrozen: frozen.has(domain),
+    })),
+  }
+}
+
+async function loadBrowserCutoverModule() {
+  const source = await readFile(path.join(repositoryRoot, 'src/services/windows-owner-domain-cutover.js'), 'utf8')
+  const resolved = source
+    .replace(
+      "import { createWindowsOwnerApiClient } from './windows-owner-api-client.js'\n",
+      'const createWindowsOwnerApiClient = () => null\n',
+    )
+    .replace(
+      "import { readWindowsOwnerHealth } from './windows-owner-reader-session-composition.js'\n",
+      `const readWindowsOwnerHealth = async (fetchImpl, healthPath) => {
+        try {
+          const response = await fetchImpl(healthPath, { method: 'GET', credentials: 'same-origin' })
+          return response?.ok === false || typeof response?.json !== 'function' ? null : response.json()
+        } catch (_error) {
+          return null
+        }
+      }
+`,
+    )
+  return import(dataUrl(resolved))
+}
+
+function readerRows() {
+  const contentId = 'c2a-reader-content'
+  const mediaIdentity = {
+    mediaId: 'c2a-reader-audio',
+    kind: 'audio',
+    size: 12,
+    contentType: 'audio/mp4',
+    etag: '"c2a-reader-v1"',
+    revision: 1,
+    authorizedReference: '/api/jobs/c2a-reader/media/audio',
+  }
+  const payloads = {
+    audioMeta: { schemaVersion: 1, contentId, mediaIdentity },
+    transcript: { schemaVersion: 1, contentId, segments: [] },
+    chunkData: { schemaVersion: 1, contentId, chunks: [] },
+    marks: { schemaVersion: 1, contentId, marks: [{ globalIndex: 0, word: 'c2a' }] },
+    readerSession: { schemaVersion: 3, contentId, revision: 1 },
+  }
+  return Object.entries(payloads).map(([id, content]) => ({
+    id,
+    schemaVersion: id === 'readerSession' ? 3 : 1,
+    revision: 1,
+    contentId,
+    content,
+  }))
+}
+
+function marksEnvelope() {
+  const unsigned = {
+    schemaVersion: 'reader-marks.v1',
+    domain: 'reader-marks',
+    jobId: 'c2a-marks',
+    revision: 1,
+    updatedAt: '2026-08-30T00:00:00Z',
+    payload: {
+      jobId: 'c2a-marks',
+      marks: [{ globalIndex: 1, word: 'marks' }],
+      updatedAt: '2026-08-30T00:00:00Z',
+    },
+  }
+  return { ...unsigned, checksum: checksum(unsigned) }
+}
+
+async function seedProfile(layout, { reader = false, marks = false } = {}) {
+  await mkdir(layout.pythonOutputDir, { recursive: true })
+  await mkdir(layout.pythonStateDir, { recursive: true })
+  await mkdir(layout.profileAuthorityRoot, { recursive: true })
+  await writeIsolatedBrowserProfile(layout.profileDir, {
+    localStorage: {},
+    indexedDbRows: reader ? readerRows() : [],
+  })
+  if (marks) {
+    const marksPath = path.join(layout.pythonOutputDir, '_workflow', 'reader-marks.json')
+    await mkdir(path.dirname(marksPath), { recursive: true })
+    await writeFile(marksPath, `${JSON.stringify(marksEnvelope(), null, 2)}\n`, 'utf8')
+  }
+}
+
+const browserCutoverModule = await loadBrowserCutoverModule()
+const {
+  assertWindowsOwnerBrowserWriterAllowed,
+  createWindowsOwnerDomainCutover,
+} = browserCutoverModule
+
+const workRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-owner-c2a-production-'))
+try {
+  const source = makeLayout(workRoot, 'source')
+  const target = makeLayout(workRoot, 'target')
+  await seedProfile(source, { reader: true, marks: true })
+  await seedProfile(target)
+
+  const frozenDomains = new Set()
+  const windowObject = {}
+  const browserGuard = createWindowsOwnerDomainCutover({
+    windowObject,
+    health: makeHealth([]),
+    authoritativeDomains: PRODUCTION_DOMAINS,
+    frozenDomains: [],
+    ownerClient: {},
+    fetchImpl: async () => ({ ok: true, async json() { return makeHealth([...frozenDomains]) } }),
+    healthPath: '/api/app/health',
+    healthTimeoutMs: 500,
+  })
+  windowObject.__windowsOwnerDomainCutover = browserGuard
+
+  const refreshes = []
+  const result = await runWindowsOwnerProductionCutover({
+    mode: 'optimization',
+    explicitOptIn: true,
+    profileId: 'c2a-production-profile',
+    source,
+    target,
+    domains: PRODUCTION_DOMAINS,
+    sourceIdsByDomain: {
+      'reader-session': ['SeekPlayerDB/files'],
+      'marks-activity': ['backup.marks-activity'],
+    },
+    expectedRevisionByDomain: {
+      'reader-session': 0,
+      'marks-activity': 0,
+    },
+    browserGuard,
+    refreshBrowserGuard: async ({ domain }) => {
+      frozenDomains.clear()
+      frozenDomains.add(domain)
+      const marker = await readOwnerModeFreeze({
+        ...target,
+        profileId: 'c2a-production-profile',
+        domain,
+      })
+      assert.equal(marker?.status, 'frozen', 'the open browser must see a persisted freeze marker')
+      const refreshed = await browserGuard.refresh()
+      assert.ok(refreshed.frozenDomains.includes(domain), `open browser did not observe ${domain} frozen`)
+      assert.throws(
+        () => assertWindowsOwnerBrowserWriterAllowed(domain, 'opened-browser-write', windowObject),
+        /frozen after Host cutover/,
+      )
+      refreshes.push(domain)
+      return { ok: true, observedFrozen: true }
+    },
+  })
+
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal(result.productionComposition, true)
+  assert.deepEqual(result.domains.map((entry) => entry.domain), PRODUCTION_DOMAINS)
+  assert.deepEqual(refreshes, PRODUCTION_DOMAINS, 'each domain must refresh the already-open browser before final backup')
+  assert.deepEqual(
+    result.domains.map((entry) => entry.steps.dryRun.sourceIds),
+    [['SeekPlayerDB/files'], ['backup.marks-activity']],
+  )
+  assert.ok(result.domains.every((entry) => entry.steps.beforeFinalBackup?.observedFrozen === true))
+  assert.ok(result.domains.every((entry) => entry.steps.smoke?.status === 'passed'))
+
+  for (const domain of PRODUCTION_DOMAINS) {
+    const checkpoint = await readOwnerModeCheckpoint({ ...target, profileId: 'c2a-production-profile', domain })
+    assert.equal(checkpoint?.authorityMode, 'host-api=authoritative')
+    assert.equal(await readOwnerModeFreeze({ ...target, profileId: 'c2a-production-profile', domain }), null)
   }
 
-  const failedWorkRoot = path.join(workRoot, 'smoke-failure')
-  const failedInstanceRoot = path.join(failedWorkRoot, 'instance')
-  const failedProfileDir = path.join(failedInstanceRoot, 'profile')
-  const failedAuthorityIsolationRoot = path.join(failedWorkRoot, 'authority-isolation')
-  const failedAuthorityRoot = path.join(failedAuthorityIsolationRoot, 'profile-authority')
-  const failedHostRoot = path.join(failedAuthorityRoot, 'owners')
-  await mkdir(failedProfileDir, { recursive: true })
-  await mkdir(failedHostRoot, { recursive: true })
-  const failedAdapters = Object.fromEntries(
-    ['reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow']
-      .map((domain) => [domain, new FileOwnerAdapter(failedHostRoot, domain)]),
-  )
-  const failedControls = createWindowsOwnerCutoverControls({
-    isolationRoot: failedInstanceRoot,
-    profileDir: failedProfileDir,
-    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
-    profileAuthorityRoot: failedAuthorityRoot,
-    profileId: 'c2a-profile',
-    smokeCheck: async () => ({ ok: false, reasonCode: 'c2a-smoke-failed' }),
+  const reopened = await (await import('./lib/read-web-production-backup.mjs')).createReadWebProductionBackupComposition({
+    ...target,
+    profileId: 'c2a-production-profile',
   })
-  const failedService = createWindowsDurableStateMigration({
-    profileId: 'c2a-profile',
-    legacyBridge: createLegacyBridge([]),
-    hostAdapters: failedAdapters,
-    stateStore: createStateStore(path.join(failedWorkRoot, 'migration-state.json')),
-    cutoverControls: failedControls,
-    capacityBytes: 8 * 1024 * 1024,
-  })
-  const failedMigration = await failedService.migrateDomain('reader-session', { expectedRevision: 0 })
-  assert.equal(failedMigration.ok, false)
-  assert.equal(failedMigration.steps.rollback.ok, true, JSON.stringify(failedMigration))
-  assert.equal(await readOwnerModeCheckpoint({
-    isolationRoot: failedInstanceRoot,
-    profileDir: failedProfileDir,
-    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
-    profileAuthorityRoot: failedAuthorityRoot,
-    profileId: 'c2a-profile',
-    domain: 'reader-session',
-  }), null, 'smoke failure must revoke the authoritative checkpoint')
-  assert.equal(await readOwnerModeFreeze({
-    isolationRoot: failedInstanceRoot,
-    profileDir: failedProfileDir,
-    profileAuthorityIsolationRoot: failedAuthorityIsolationRoot,
-    profileAuthorityRoot: failedAuthorityRoot,
-    profileId: 'c2a-profile',
-    domain: 'reader-session',
-  }), null, 'successful rollback compensation may release the old-writer freeze')
-  assert.deepEqual(await failedAdapters['reader-session'].collect(), emptySnapshot())
-
-  const checkpointReader = await import('./lib/read-web-production-backup.mjs')
-  const readerCheckpoint = await checkpointReader.readOwnerModeCheckpoint({
-    isolationRoot: instanceRoot,
-    profileDir,
-    profileAuthorityIsolationRoot: authorityIsolationRoot,
-    profileAuthorityRoot: authorityRoot,
-    profileId: 'c2a-profile',
-    domain: 'reader-session',
-  })
-  const marksCheckpoint = await checkpointReader.readOwnerModeCheckpoint({
-    isolationRoot: instanceRoot,
-    profileDir,
-    profileAuthorityIsolationRoot: authorityIsolationRoot,
-    profileAuthorityRoot: authorityRoot,
-    profileId: 'c2a-profile',
-    domain: 'marks-activity',
-  })
-  assert.equal(readerCheckpoint.repository.type, 'host-managed')
-  assert.equal(marksCheckpoint.repository.type, 'host-managed')
-  assert.equal((await service.status()).domains['reader-session'].authoritative, true)
-  assert.equal((await service.status()).domains['marks-activity'].authoritative, true)
-  console.log('Windows owner C2a cutover checks passed.')
+  const reopenedReader = await reopened.adapters['reader-session'].collect({ domain: 'reader-session' })
+  const reopenedMarks = await reopened.adapters['marks-activity'].collect({ domain: 'marks-activity' })
+  assert.ok(reopenedReader.records.some((record) => record.id === 'audioMeta' && record.contentId === 'c2a-reader-content'))
+  assert.ok(reopenedMarks.records.some((record) => record.contentId === 'c2a-marks'))
+  browserGuard.dispose()
+  console.log('Windows owner C2a production cutover checks passed.')
 } finally {
   await rm(workRoot, { recursive: true, force: true })
 }
