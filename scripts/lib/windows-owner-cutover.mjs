@@ -167,7 +167,7 @@ function equivalentDomain(left, right) {
           delete content.schemaVersion
         }
         return content
-      }),
+      }).sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
     }
   }
   return canonical(comparable(left)) === canonical(comparable(right))
@@ -467,12 +467,17 @@ function ownerRecordToBackupRecord(id, record) {
   const content = record && typeof record === 'object' && !Array.isArray(record) && 'content' in record
     ? record.content
     : record
-  if (!content || typeof content !== 'object' || Array.isArray(content)) {
+  if (!content || typeof content !== 'object') {
     throw productionHostError('OWNER_CUTOVER_HOST_QUERY_INVALID', 'Host owner record content is invalid')
+  }
+  const knownSchemaVersions = {
+    'vocabulary.passage-preview.data.v1': 'passage-preview.legacy-data.v1',
+    'vocabulary.passage-preview.progress.v1': 'passage-preview.legacy-progress.v1',
   }
   const schemaVersion = record?.schemaVersion
     ?? content.schemaVersion
     ?? content.schema_version
+    ?? knownSchemaVersions[id]
     ?? 1
   const revision = record && Object.prototype.hasOwnProperty.call(record, 'revision')
     ? record.revision
@@ -571,22 +576,54 @@ function safeAnnotationScope(scope) {
   return { audioKey: scope.audioKey, documentId: scope.documentId }
 }
 
-function createAnnotationHostAdapter({ client, scope }) {
-  const fixedScope = safeAnnotationScope(scope)
+function annotationScopeFromRecord(record) {
+  const content = record?.payload ?? record?.content ?? record
+  const scope = content?.scope || content
+  if (!scope || typeof scope !== 'object') return null
+  if (typeof scope.audioKey !== 'string' || typeof scope.documentId !== 'string') return null
+  return { audioKey: scope.audioKey, documentId: scope.documentId }
+}
+
+function uniqueAnnotationScopes(scopes) {
+  const values = Array.isArray(scopes) ? scopes : (scopes ? [scopes] : [])
+  const seen = new Set()
+  return values.map((scope) => safeAnnotationScope(scope)).filter((scope) => {
+    const key = `${scope.audioKey}\u0000${scope.documentId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function createAnnotationHostAdapter({ client, scope, scopes }) {
+  const fixedScopes = uniqueAnnotationScopes(scopes || scope)
   return {
     key: 'annotation',
     schemaVersion: 1,
     adapterVersion: 1,
     supportedSchemaVersions: [1],
     async collect() {
-      const selected = await queryOwnerRecords(client, 'annotation', ['scope'], { scope: fixedScope })
-      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+      const responses = fixedScopes.length
+        ? await Promise.all(fixedScopes.map((fixedScope) => client.query({
+          domain: 'annotation',
+          operation: 'scope',
+          payload: { scope: fixedScope },
+        })))
+        : [await client.query({ domain: 'annotation', operation: 'scope', payload: {} })]
+      const records = {}
+      let revision = 0
+      for (const response of responses) {
+        const selected = responseRecords(response, 'annotation')
+        revision = selected.revision > revision ? selected.revision : revision
+        Object.assign(records, selected.records)
+      }
+      return ownerRecordsHostSnapshot(records, revision)
     },
     async restoreRecords(snapshot, context = {}) {
       return client.command({
         domain: 'annotation',
         operation: 'lightweight-import',
-        payload: { scope: fixedScope, records: recordsPayload(snapshot) },
+        payload: { records: recordsPayload(snapshot) },
         expectedRevision: context.expectedRevision,
         idempotencyKey: context.idempotencyKey,
       })
@@ -710,57 +747,191 @@ function createWorkflowHostAdapter({ client }) {
   }
 }
 
-function createMarksHostAdapter({ client, scope }) {
-  const fixedScope = safeMarksScope(scope)
+function uniqueMarksScopes(scopes) {
+  const values = Array.isArray(scopes) ? scopes : (scopes ? [scopes] : [])
+  const seen = new Set()
+  return values.map((scope) => {
+    const normalized = safeMarksScope(scope)
+    return {
+      ...normalized,
+      recordIds: scope && typeof scope === 'object' && scope.recordIds && typeof scope.recordIds === 'object'
+        ? { ...scope.recordIds }
+        : {},
+    }
+  }).filter((scope) => {
+    const key = `${scope.jobId}\u0000${scope.contentId}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function marksRecordId(scope, kind) {
+  const filename = kind === 'marks'
+    ? 'reader-marks.json'
+    : kind === 'activity'
+      ? 'reader-activity.json'
+      : 'reader-marks-commit-journal.json'
+  return scope.recordIds?.[kind] || `${filename}:${scope.jobId}/_workflow/${filename}`
+}
+
+function marksEnvelope(scope, kind, payload, revision) {
+  const isMarks = kind === 'marks'
+  const value = isMarks ? payload?.marks : kind === 'activity' ? payload?.activity : payload?.journal
+  if (!value || typeof value !== 'object') return null
+  if (kind === 'journal') return value
+  const schemaVersion = isMarks ? 'reader-marks.v1' : 'reader-activity.v1'
+  const domain = isMarks ? 'reader-marks' : 'reader-activity'
+  const updatedAt = value.updatedAt || payload?.updatedAt || ''
+  const envelopePayload = isMarks
+    ? { jobId: scope.jobId, marks: Array.isArray(value) ? value : [], updatedAt }
+    : { ...(value && typeof value === 'object' ? value : {}), jobId: scope.jobId }
+  return {
+    schemaVersion,
+    domain,
+    jobId: scope.jobId,
+    revision: revision ?? 0,
+    updatedAt,
+    payload: envelopePayload,
+    ...(isMarks ? { marks: envelopePayload.marks } : {}),
+  }
+}
+
+function marksSnapshotForScope(scope, responses) {
+  const marksPayload = hostResponsePayload(responses.marks, 'marks-activity')
+  const activityPayload = hostResponsePayload(responses.activity, 'marks-activity')
+  const revisionPayload = hostResponsePayload(responses.revision, 'marks-activity')
+  const marksRevision = marksPayload.revision ?? responses.marks.revision ?? 0
+  const activityRevision = activityPayload.revision ?? responses.activity.revision ?? 0
+  const records = []
+  const marks = marksEnvelope(scope, 'marks', marksPayload, marksRevision)
+  const activity = marksEnvelope(scope, 'activity', activityPayload, activityRevision)
+  const journal = marksEnvelope(scope, 'journal', revisionPayload, revisionPayload.journalRevision ?? 0)
+  if (marks) records.push(hostRecord(marksRecordId(scope, 'marks'), 1, marksRevision, scope.jobId, marks, {
+    references: [{ type: 'workflow-job', id: scope.jobId }],
+  }))
+  if (activity) records.push(hostRecord(marksRecordId(scope, 'activity'), 1, activityRevision, scope.jobId, activity, {
+    references: [{ type: 'workflow-job', id: scope.jobId }],
+  }))
+  if (journal) records.push(hostRecord(marksRecordId(scope, 'journal'), 1, revisionPayload.journalRevision ?? 0, scope.jobId, journal, {
+    references: [{ type: 'workflow-job', id: scope.jobId }],
+  }))
+  return {
+    records,
+    revision: Math.max(marksRevision, activityRevision, revisionPayload.journalRevision ?? 0),
+  }
+}
+
+function createMarksHostAdapter({ client, scope, scopes }) {
+  const fixedScopes = uniqueMarksScopes(scopes || scope)
   return {
     key: 'marks-activity',
     schemaVersion: 1,
     adapterVersion: 1,
     supportedSchemaVersions: [1],
     async collect() {
-      const response = await client.query({
-        domain: 'marks-activity',
-        operation: 'marks',
-        payload: fixedScope,
-      })
-      return marksHostSnapshot(response, fixedScope)
+      const scopesToRead = fixedScopes.length ? fixedScopes : []
+      const all = []
+      let revision = 0
+      for (const fixedScope of scopesToRead) {
+        const [marks, activity, revisionResponse] = await Promise.all([
+          client.query({ domain: 'marks-activity', operation: 'marks', payload: fixedScope }),
+          client.query({ domain: 'marks-activity', operation: 'activity', payload: fixedScope }),
+          client.query({ domain: 'marks-activity', operation: 'revision', payload: fixedScope }),
+        ])
+        const selected = marksSnapshotForScope(fixedScope, { marks, activity, revision: revisionResponse })
+        all.push(...selected.records)
+        revision = Math.max(revision, selected.revision)
+      }
+      return {
+        schemaVersion: 1,
+        adapterVersion: 1,
+        revision,
+        records: all.sort((left, right) => left.id.localeCompare(right.id)),
+        references: fixedScopes.map((fixedScope) => ({ type: 'workflow-job', id: fixedScope.jobId })),
+        mediaReferences: [],
+      }
     },
     async restoreRecords(snapshot, context = {}) {
-      const record = Array.isArray(snapshot?.records)
-        ? snapshot.records.find((candidate) => String(candidate?.id || '').startsWith('reader-marks.json:'))
-        : null
-      if (!record?.payload || typeof record.payload !== 'object') return { status: 'committed', revision: context.expectedRevision }
-      const envelope = record.payload
-      const marks = Array.isArray(envelope.payload?.marks)
-        ? envelope.payload.marks
-        : (Array.isArray(envelope.marks) ? envelope.marks : null)
-      if (!marks) throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Marks/activity backup has no marks array')
-      const jobId = String(envelope.jobId || fixedScope.jobId)
-      const contentId = String(envelope.payload?.jobId || record.contentId || fixedScope.contentId)
-      return client.command({
-        domain: 'marks-activity',
-        operation: 'marks-commit',
-        payload: { jobId, contentId, marks },
-        expectedRevision: context.expectedRevision,
-        idempotencyKey: context.idempotencyKey,
-      })
+      const groups = new Map()
+      for (const record of snapshot?.records || []) {
+        const envelope = record?.payload
+        const jobId = String(envelope?.jobId || record?.contentId || '')
+        if (!jobId) continue
+        const group = groups.get(jobId) || {
+          jobId,
+          contentId: String(record.contentId || envelope?.payload?.jobId || jobId),
+          marks: null,
+          activity: null,
+        }
+        const id = String(record.id || '')
+        if (id.startsWith('reader-marks.json:')) group.marks = envelope
+        if (id.startsWith('reader-activity.json:')) group.activity = envelope
+        groups.set(jobId, group)
+      }
+      let last = { status: 'committed', commitStatus: 'committed', outcome: 'committed', revision: context.expectedRevision }
+      for (const group of groups.values()) {
+        if (group.marks) {
+          const current = await client.query({
+            domain: 'marks-activity',
+            operation: 'revision',
+            payload: { jobId: group.jobId, contentId: group.contentId },
+          })
+          const currentRevision = current.payload?.marksRevision ?? 0
+          const marks = Array.isArray(group.marks.payload?.marks) ? group.marks.payload.marks : group.marks.marks
+          if (!Array.isArray(marks)) throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Marks migration record has no marks array')
+          last = await client.command({
+            domain: 'marks-activity',
+            operation: 'marks-commit',
+            payload: { jobId: group.jobId, contentId: group.contentId, marks },
+            expectedRevision: currentRevision,
+            idempotencyKey: `${context.idempotencyKey}-marks-${group.jobId}`.slice(0, 255),
+          })
+          if (last.outcome !== 'committed') return last
+        }
+        if (group.activity) {
+          const current = await client.query({
+            domain: 'marks-activity',
+            operation: 'revision',
+            payload: { jobId: group.jobId, contentId: group.contentId },
+          })
+          const activity = group.activity.payload && typeof group.activity.payload === 'object'
+            ? { ...group.activity.payload }
+            : {}
+          delete activity.jobId
+          last = await client.command({
+            domain: 'marks-activity',
+            operation: 'activity-append',
+            payload: { jobId: group.jobId, contentId: group.contentId, update: activity },
+            expectedRevision: current.payload?.activityRevision ?? 0,
+            idempotencyKey: `${context.idempotencyKey}-activity-${group.jobId}`.slice(0, 255),
+          })
+          if (last.outcome !== 'committed') return last
+        }
+      }
+      return last
     },
   }
 }
 
-function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {} } = {}) {
+function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {}, sourceScopesByDomain = {} } = {}) {
   if (!client || typeof client.query !== 'function' || typeof client.command !== 'function') {
     throw productionHostError('OWNER_CUTOVER_HOST_CLIENT_INVALID', 'Production Host typed client is required')
   }
   const adapters = {
     'reader-session': createReaderHostAdapter({ client, profileId }),
-    'marks-activity': createMarksHostAdapter({ client, scope: hostScopeByDomain['marks-activity'] }),
+    'marks-activity': createMarksHostAdapter({
+      client,
+      scope: hostScopeByDomain['marks-activity'],
+      scopes: sourceScopesByDomain['marks-activity'] || hostScopeByDomain['marks-activity'],
+    }),
     'passage-preview': createPassagePreviewHostAdapter({ client }),
     'vocabulary-srs': createVocabularySrsHostAdapter({ client }),
     workflow: createWorkflowHostAdapter({ client }),
   }
-  adapters.annotation = hostScopeByDomain.annotation
-    ? createAnnotationHostAdapter({ client, scope: hostScopeByDomain.annotation })
+  const annotationScopes = sourceScopesByDomain.annotation || hostScopeByDomain.annotation
+  adapters.annotation = annotationScopes
+    ? createAnnotationHostAdapter({ client, scope: hostScopeByDomain.annotation, scopes: annotationScopes })
     : {
       key: 'annotation',
       schemaVersion: 1,
@@ -814,7 +985,8 @@ function validateProductionDomains(value) {
     throw error
   }
   const indexes = domains.map((domain) => DOMAINS.indexOf(domain))
-  if (new Set(indexes).size !== indexes.length || indexes.some((index, position) => index !== position)) {
+  if (new Set(indexes).size !== indexes.length
+    || indexes.some((index, position) => position > 0 && index !== indexes[position - 1] + 1)) {
     const error = new Error('Production owner domains must follow the fixed cutover order')
     error.code = 'OWNER_CUTOVER_PRODUCTION_ORDER_INVALID'
     throw error
@@ -858,6 +1030,57 @@ function createProductionLegacyJsonSources(sourceComposition) {
       },
     }]
   })
+}
+
+async function discoverProductionScopes(legacyBridge, domains, sourceIdsByDomain = {}) {
+  const discovered = {}
+  for (const domain of ['marks-activity', 'annotation']) {
+    if (!domains.includes(domain)) continue
+    const sourceIds = sourceIdsByDomain[domain]
+    const plan = await legacyBridge.prepareImport(
+      sourceIds === undefined ? {} : { sourceIds },
+    )
+    if (plan?.status !== 'ready' || !Array.isArray(plan.importInput?.records)) continue
+    const records = plan.importInput.records.filter((record) => record?.domain === domain)
+    if (domain === 'annotation') {
+      const byScope = new Map()
+      for (const record of records) {
+        const scope = annotationScopeFromRecord(record)
+        if (!scope) continue
+        const key = `${scope.audioKey}\u0000${scope.documentId}`
+        const item = byScope.get(key) || { ...scope, recordIds: {} }
+        const suffix = String(record.recordKey || '').endsWith('annotation.bundle.v2.json')
+          ? 'bundle'
+          : String(record.recordKey || '').endsWith('annotation.generated.json')
+            ? 'generated'
+            : 'status'
+        item.recordIds[suffix] = record.recordKey
+        byScope.set(key, item)
+      }
+      discovered.annotation = [...byScope.values()]
+    } else {
+      const byJob = new Map()
+      for (const record of records) {
+        const content = record.payload || {}
+        const jobId = String(content.jobId || content.payload?.jobId || record.contentId || '')
+        if (!jobId) continue
+        const contentId = String(content.payload?.jobId || record.contentId || jobId)
+        const item = byJob.get(jobId) || { jobId, contentId, recordIds: {} }
+        const key = String(record.recordKey || '')
+        const kind = key.startsWith('reader-marks.json:')
+          ? 'marks'
+          : key.startsWith('reader-activity.json:')
+            ? 'activity'
+            : key.startsWith('reader-marks-commit-journal.json:')
+              ? 'journal'
+              : null
+        if (kind) item.recordIds[kind] = record.recordKey
+        byJob.set(jobId, item)
+      }
+      discovered['marks-activity'] = [...byJob.values()]
+    }
+  }
+  return discovered
 }
 
 /**
@@ -911,20 +1134,26 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     mode: options.mode,
     explicitOptIn: options.explicitOptIn,
   })
-  const hostAdapters = createProductionHostAdapters({
-    client: hostClient,
-    profileId,
-    hostScopeByDomain: options.hostScopeByDomain,
-  })
-  if (domains.some((domain) => !hostAdapters[domain])) {
-    throw productionHostError('OWNER_CUTOVER_PRODUCTION_COMPOSITION_INVALID', 'Production Host owner adapter is missing')
-  }
   const legacyBridge = createWindowsOwnerLegacyCompatibilityBridge({
     profileId,
     applicationPersistence: sourceComposition.browserProfile.persistence,
     storage: sourceComposition.browserProfile.storage,
     jsonSources: createProductionLegacyJsonSources(sourceComposition),
   })
+  const sourceScopesByDomain = await discoverProductionScopes(
+    legacyBridge,
+    domains,
+    options.sourceIdsByDomain || {},
+  )
+  const hostAdapters = createProductionHostAdapters({
+    client: hostClient,
+    profileId,
+    hostScopeByDomain: options.hostScopeByDomain,
+    sourceScopesByDomain,
+  })
+  if (domains.some((domain) => !hostAdapters[domain])) {
+    throw productionHostError('OWNER_CUTOVER_PRODUCTION_COMPOSITION_INVALID', 'Production Host owner adapter is missing')
+  }
   const authorityRoot = targetComposition.profileAuthorityRoot
   const authorityIsolationRoot = targetComposition.profileAuthorityIsolationRoot
   const statePath = containedPath(

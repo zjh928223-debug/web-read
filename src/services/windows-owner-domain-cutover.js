@@ -86,7 +86,7 @@ export function createWindowsOwnerDomainCutover(options = {}) {
     Array.isArray(options.authoritativeDomains) ? options.authoritativeDomains : undefined,
     Array.isArray(options.frozenDomains) ? options.frozenDomains : undefined,
   )
-  const ownerClient = options.ownerClient || null
+  let ownerClient = options.ownerClient || null
   const cutover = {
     get status() {
       return state.authoritativeDomains.length ? 'authoritative' : state.frozenDomains.length ? 'frozen' : 'not-ready'
@@ -133,6 +133,18 @@ export function createWindowsOwnerDomainCutover(options = {}) {
         refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs,
       )
       setState(nextHealth)
+      if (!ownerClient && state.authoritativeDomains.length) {
+        try {
+          ownerClient = createWindowsOwnerApiClient({
+            profileId: nextHealth.profileId,
+            instanceId: SAFE_IDENTITY.test(String(nextHealth.instanceId || '')) ? nextHealth.instanceId : undefined,
+            fetchImpl,
+            timeoutMs: refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs,
+          })
+        } catch (_error) {
+          ownerClient = null
+        }
+      }
       return {
         status: cutover.status,
         authoritativeDomains: state.authoritativeDomains,

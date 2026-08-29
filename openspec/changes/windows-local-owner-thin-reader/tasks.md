@@ -16,7 +16,7 @@
 ## C. 先 Reader Session，再逐域切换 writer
 
 - [x] C1 将 Reader Session loader 与 media 使用接到已完成 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind、Host restart/reopen 和旧 session 保留；继续保持薄入口、script order 和 no-copy。
-- [x] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；切换后 compatibility path 只读，不保留长期双写。验证使用显式 optimization-only production cutover 入口、真实 Local App Host owner handlers、逐域 freeze guard、typed Host smoke 和 Host reopen；不自动迁移日常 profile。
+- [ ] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；切换后 compatibility path 只读，不保留长期双写。验证使用显式 optimization-only production cutover 入口、真实 Local App Host owner handlers、逐域 freeze guard、typed Host smoke 和 Host reopen；不自动迁移日常 profile。
 
 ## D. 核心验证、旧 writer 收敛与文档
 

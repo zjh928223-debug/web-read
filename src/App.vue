@@ -74,7 +74,9 @@ import {
   createInitialPassagePreviewProgress,
   hasLegacyPassagePreviewData,
   loadPassagePreviewData,
+  loadPassagePreviewDataFromOwner,
   loadPassagePreviewProgress,
+  loadPassagePreviewProgressFromOwner,
   savePassagePreviewData,
   savePassagePreviewProgress,
 } from './features/passage-preview/passage-preview-storage.js'
@@ -281,8 +283,8 @@ async function openStoredPassagePreview() {
     } catch (error) {
       console.warn('[passage-preview] delayed-check probe unavailable', error)
     }
-    passagePreviewItems.value = loadPassagePreviewData()
-    let progress = loadPassagePreviewProgress()
+    passagePreviewItems.value = await loadPassagePreviewDataFromOwner() ?? loadPassagePreviewData()
+    let progress = await loadPassagePreviewProgressFromOwner() ?? loadPassagePreviewProgress()
     const storedBatchDate = getPreviewBatchDate(passagePreviewItems.value)
     const reconciledItems = excludePreviouslyIntroducedPreviewItems({
       items: passagePreviewItems.value,

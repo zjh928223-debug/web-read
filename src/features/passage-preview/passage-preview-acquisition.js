@@ -2,6 +2,10 @@ import {
   ACQUISITION_STATUSES,
 } from '../../services/vocabulary/vocabulary-learning-models.js'
 import { createVocabularyService } from '../../services/vocabulary/vocabulary-service.js'
+import {
+  commitPassagePreviewOwnerRecords,
+  isPassagePreviewOwnerAuthoritative,
+} from './passage-preview-storage.js'
 
 export const PASSAGE_PREVIEW_ACQUISITION_KEY = 'vocabulary.passage-preview.acquisition.v1'
 export const PASSAGE_PREVIEW_ACQUISITION_SCHEMA = 'passage-preview.acquisition.v1'
@@ -16,11 +20,17 @@ export function loadPassagePreviewAcquisitionRecords(storage = globalThis.localS
 
 export function savePassagePreviewAcquisitionRecords(records = [], storage = globalThis.localStorage) {
   const normalized = uniqueRecords(records)
+  const envelope = {
+    schemaVersion: PASSAGE_PREVIEW_ACQUISITION_SCHEMA,
+    records: normalized,
+  }
+  if (isPassagePreviewOwnerAuthoritative()) {
+    return commitPassagePreviewOwnerRecords({
+      [PASSAGE_PREVIEW_ACQUISITION_KEY]: envelope,
+    }).then(() => normalized)
+  }
   if (typeof storage?.setItem === 'function') {
-    storage.setItem(PASSAGE_PREVIEW_ACQUISITION_KEY, JSON.stringify({
-      schemaVersion: PASSAGE_PREVIEW_ACQUISITION_SCHEMA,
-      records: normalized,
-    }))
+    storage.setItem(PASSAGE_PREVIEW_ACQUISITION_KEY, JSON.stringify(envelope))
   }
   return normalized
 }

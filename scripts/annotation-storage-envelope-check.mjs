@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 
 const storageSource = await fs.readFile(new URL('../src/services/annotation/storage.js', import.meta.url), 'utf8')
+const ownerAdapterSource = await fs.readFile(new URL('../src/services/windows-owner-domain-adapter.js', import.meta.url), 'utf8')
 assert.match(storageSource, /BUNDLE_SCHEMA = 'annotation-bundle\.v2'/)
 assert.match(storageSource, /await saveJson\(normalizedScope, BUNDLE_FILE, envelope\)/)
 assert.doesNotMatch(storageSource, /await saveJson\(normalizedScope, GENERATED_FILE, nextGenerated\)/)
@@ -21,6 +22,10 @@ const executableSource = storageSource
     const createTypedError = (input) => Object.assign(new Error(input.message), input);
   `)
   .replace("import { assertWindowsOwnerBrowserWriterAllowed } from '../windows-owner-domain-cutover.js';", 'const assertWindowsOwnerBrowserWriterAllowed = () => {};')
+  .replace(
+    "from '../windows-owner-domain-adapter.js';",
+    `from ${JSON.stringify(`data:text/javascript;base64,${Buffer.from(ownerAdapterSource).toString('base64')}`)};`,
+  )
 const storageApi = await import(`data:text/javascript;base64,${Buffer.from(executableSource).toString('base64')}`)
 const scope = { audioKey: 'audio-a', documentId: 'doc-a' }
 const local = memoryStorage()

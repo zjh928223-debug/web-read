@@ -199,7 +199,12 @@ import { createDialogController } from '../../services/runtime/dialog-controller
 import { createAriaAmericanPronunciationService } from '../../services/pronunciation/aria-american-pronunciation.js'
 import { findAiPreviewSentence } from './passage-preview-ai-sentence.js'
 import { findPreviewSentence, REAL_SENTENCE_STATUS, resolvePreviewContextSentence } from './preview-sentence-source.js'
-import { loadPassagePreviewProgress, savePassagePreviewProgress } from './passage-preview-storage.js'
+import {
+  isPassagePreviewOwnerAuthoritative,
+  loadPassagePreviewProgress,
+  loadPassagePreviewProgressFromOwner,
+  savePassagePreviewProgress,
+} from './passage-preview-storage.js'
 import { sentenceTranslationKey, translateSentenceBatches } from './sentence-translation.js'
 import { createTranslationGenerationQueue } from './translation-generation-queue.js'
 import { validatePreviewSentenceResult } from './preview-sentence-target-validation.mjs'
@@ -261,7 +266,7 @@ if (progress.status === 'not_started' || progress.currentIndex >= props.items.le
   progress.status = 'in_progress'
   progress.currentIndex = Math.min(progress.currentIndex, props.items.length - 1)
   progress.startedAt ||= new Date().toISOString()
-  persist()
+  if (!isPassagePreviewOwnerAuthoritative()) persist()
 }
 
 const currentIndex = computed(() => Math.min(progress.currentIndex, props.items.length - 1))
@@ -590,11 +595,18 @@ function validatedStoredSentence(item) {
   return validation.accepted ? validation.result : null
 }
 
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener('keydown', handleShortcutKeydown, true)
   window.addEventListener('keyup', handleShortcutKeyup, true)
   window.addEventListener('blur', handlePreviewWindowBlur)
   document.addEventListener('visibilitychange', handlePreviewVisibilityChange)
+  if (!isPassagePreviewOwnerAuthoritative()) return
+  try {
+    const ownerProgress = await loadPassagePreviewProgressFromOwner()
+    if (ownerProgress) Object.assign(progress, ownerProgress)
+  } catch (_error) {
+    // The owner path stays fail-closed; the already rendered session remains visible.
+  }
 })
 
 watch(() => current.value.id, () => {

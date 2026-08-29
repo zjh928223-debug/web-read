@@ -234,8 +234,13 @@ async function importDailyContinuation() {
   const continuationSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-daily-continuation.js'), 'utf8'))
     .replace("./passage-preview-import.js", './passage-preview-import.mjs')
     .replace("./passage-preview-durable-state.js", './passage-preview-durable-state.mjs')
+    .replace("./passage-preview-storage.js", './passage-preview-storage.mjs')
   await writeFile(join(tempDir, 'primary-sense-policy.mjs'), policySource, 'utf8')
   await writeFile(join(tempDir, 'passage-preview-import.mjs'), importerSource, 'utf8')
+  await writeFile(join(tempDir, 'passage-preview-storage.mjs'), [
+    'export const isPassagePreviewOwnerAuthoritative = () => false',
+    'export const commitPassagePreviewOwnerDurableUpdate = async () => null',
+  ].join('\n'), 'utf8')
   const durableSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-durable-state.js'), 'utf8'))
     .replace(
       "import { assertWindowsOwnerBrowserWriterAllowed } from '../../services/windows-owner-domain-cutover.js'\n",

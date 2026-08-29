@@ -884,8 +884,18 @@ async function importSource(relativePath) {
   let source = read(relativePath)
   if (relativePath.endsWith('passage-preview-storage.js')) {
     const durableSource = read('src/features/passage-preview/passage-preview-durable-state.js')
-    const durableUrl = `data:text/javascript;base64,${Buffer.from(durableSource).toString('base64')}`
+    const ownerAdapterSource = read('src/services/windows-owner-domain-adapter.js')
+    const ownerAdapterUrl = `data:text/javascript;base64,${Buffer.from(ownerAdapterSource).toString('base64')}`
+    const cutoverStubUrl = `data:text/javascript;base64,${Buffer.from(
+      'export function assertWindowsOwnerBrowserWriterAllowed() {}',
+    ).toString('base64')}`
+    const isolatedDurableSource = durableSource.replace(
+      "'../../services/windows-owner-domain-cutover.js'",
+      JSON.stringify(cutoverStubUrl),
+    )
+    const durableUrl = `data:text/javascript;base64,${Buffer.from(isolatedDurableSource).toString('base64')}`
     source = source.replace("'./passage-preview-durable-state.js'", JSON.stringify(durableUrl))
+    source = source.replace("'../../services/windows-owner-domain-adapter.js'", JSON.stringify(ownerAdapterUrl))
   }
   return import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)
 }

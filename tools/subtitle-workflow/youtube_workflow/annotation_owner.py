@@ -568,13 +568,17 @@ class AnnotationOwner:
             record_scopes.append(record_scope)
         if scope is None:
             scope = record_scopes[0]
+            # A migration/import payload may contain several complete scopes.
+            # Keep the public single-scope shape when possible, but do not
+            # reject a validated multi-scope batch merely because its dynamic
+            # keys contain the delimiter used by the legacy storage key.
             if any(item != scope for item in record_scopes[1:]):
-                raise AnnotationOwnerError("invalid-request")
+                scope = None
         return scope, dict(sorted(result.items()))
 
     @staticmethod
     def _record_scope_for_query(operation: str, scope: Mapping[str, Any] | None) -> dict[str, str] | None:
-        if operation in {"storage-mode", "corrupt-evidence"} and scope is None:
+        if operation in {"storage-mode", "corrupt-evidence", "scope"} and scope is None:
             return None
         if scope is None:
             raise AnnotationOwnerError("invalid-request")
@@ -586,7 +590,7 @@ class AnnotationOwner:
         scope: Mapping[str, str] | None,
         records: Mapping[str, Any],
     ) -> dict[str, Any]:
-        if scope is None:
+        if scope is None and operation != "scope":
             return {}
         suffix_by_operation = {
             "bundle": {ANNOTATION_BUNDLE_FILE},
@@ -598,7 +602,9 @@ class AnnotationOwner:
         selected = {}
         for key, record in records.items():
             suffix = _record_suffix(key)
-            if suffix in suffixes and key == annotation_record_key(scope, suffix):
+            if suffix not in suffixes:
+                continue
+            if scope is None or key == annotation_record_key(scope, suffix):
                 selected[key] = deepcopy(record)
         return selected
 
@@ -791,20 +797,21 @@ class AnnotationOwner:
 
     @staticmethod
     def _bundle_conflict(document: Mapping[str, Any], updates: Mapping[str, Any]) -> bool:
-        incoming_key = next(
-            (key for key in updates if _record_suffix(key) == ANNOTATION_BUNDLE_FILE),
-            None,
-        )
-        incoming = updates.get(incoming_key) if incoming_key is not None else None
-        current = document.get("records", {}).get(incoming_key) if incoming_key is not None else None
-        if incoming is None or current is None:
-            return False
-        current_revision = current["content"]["revision"]
-        incoming_revision = incoming["content"]["revision"]
-        return (
-            incoming_revision < current_revision
-            or (incoming_revision == current_revision and incoming["checksum"] != current["checksum"])
-        )
+        current_records = document.get("records", {})
+        for incoming_key, incoming in updates.items():
+            if _record_suffix(incoming_key) != ANNOTATION_BUNDLE_FILE:
+                continue
+            current = current_records.get(incoming_key)
+            if current is None:
+                continue
+            current_revision = current["content"]["revision"]
+            incoming_revision = incoming["content"]["revision"]
+            if (
+                incoming_revision < current_revision
+                or (incoming_revision == current_revision and incoming["checksum"] != current["checksum"])
+            ):
+                return True
+        return False
 
     def command(
         self,

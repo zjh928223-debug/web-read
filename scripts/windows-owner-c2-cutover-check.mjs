@@ -20,7 +20,7 @@ import {
 import { resolveSelectedPython } from './lib/python-runtime.mjs'
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const DOMAINS = [
+const ALL_DOMAINS = [
   'reader-session',
   'marks-activity',
   'passage-preview',
@@ -28,6 +28,14 @@ const DOMAINS = [
   'vocabulary-srs',
   'workflow',
 ]
+const requestedDomains = String(process.env.READ_WEB_OWNER_C2_DOMAINS || '')
+  .split(',')
+  .map((domain) => domain.trim())
+  .filter(Boolean)
+const DOMAINS = requestedDomains.length ? requestedDomains : ALL_DOMAINS
+if (DOMAINS.some((domain) => !ALL_DOMAINS.includes(domain))) {
+  throw new Error(`Unknown C2 focused domain: ${DOMAINS.join(',')}`)
+}
 
 function dataUrl(source) {
   return `data:text/javascript;base64,${Buffer.from(source, 'utf8').toString('base64')}`
@@ -81,7 +89,7 @@ function makeHealth(frozenDomains, authoritativeDomains = []) {
       authoritativeDomains: [...authoritative],
       frozenDomains: [...frozen],
     },
-    domains: DOMAINS.map((domain) => ({
+    domains: ALL_DOMAINS.map((domain) => ({
       domain,
       authority: authoritative.has(domain) ? 'authoritative' : 'pre-cutover',
       queryCapability: 'read-only',
@@ -98,14 +106,14 @@ function ownerProfileEvidence(profileId) {
     source: 'read-web-production-backup.composition',
   }
   const bindings = {
-    backupAdapterRegistry: { ...verified, requiredDomains: [...DOMAINS] },
+    backupAdapterRegistry: { ...verified, requiredDomains: [...ALL_DOMAINS] },
     applicationLease: { ...verified, source: 'read-web-production-backup.application-profile-lease' },
     transaction: { ...verified },
     revision: { ...verified },
     recovery: { ...verified },
     domains: {},
   }
-  for (const domain of DOMAINS) {
+  for (const domain of ALL_DOMAINS) {
     bindings.domains[domain] = {
       backupAdapter: { ...verified, key: domain, schemaVersion: 1, supportedSchemaVersions: [1] },
       revision: { ...verified },
@@ -307,42 +315,93 @@ function marksEnvelope() {
 }
 
 function passageRecords() {
+  const item = { id: 'p1', text: 'passage' }
+  const progress = {
+    schemaVersion: 'passage-preview.local-progress.v2',
+    status: 'in_progress',
+    currentIndex: 0,
+    revealed: {},
+    contextExpanded: {},
+    startedAt: null,
+    completedAt: null,
+  }
   return {
     'vocabulary.passage-preview.durable-state.v1': {
       schemaVersion: 'passage-preview.durable-state.v1',
       revision: 1,
       contentId: 'c2-passage',
-      items: [{ id: 'p1', text: 'passage' }],
+      batchId: 'c2-passage-batch',
+      data: [item],
+      progress,
+      allocations: { schemaVersion: 'ielts-daily-preview.allocations.v1', batches: [], assignedLemmas: [] },
+      continuation: { schemaVersion: 'ielts-daily-preview.continuation.v1', consumedBatchDates: [], lastLoadedBatchDate: null, updatedAt: null },
+      archive: [],
     },
-    'vocabulary.passage-preview.progress.v2': {
-      schemaVersion: 'passage-preview.local-progress.v2',
-      contentId: 'c2-passage',
-      completed: ['p1'],
+    'vocabulary.passage-preview.data.v2': {
+      schemaVersion: 'passage-preview.local-data.v2',
+      items: [item],
+    },
+    'vocabulary.passage-preview.progress.v2': progress,
+    'vocabulary.passage-preview.data.v1': [item],
+    'vocabulary.passage-preview.progress.v1': {
+      status: 'in_progress',
+      currentIndex: 0,
+      revealed: {},
+      sentenceExpanded: {},
+    },
+    'vocabulary.passage-preview.acquisition.v1': {
+      schemaVersion: 'passage-preview.acquisition.v1',
+      records: [],
+    },
+    'vocabulary.passage-preview.delayed-check.v1': {
+      schemaVersion: 'passage-preview.delayed-check.v1',
+      checks: [],
+    },
+    'vocabulary.passage-preview.reacquisition-progress.v1': {
+      schemaVersion: 'passage-preview.reacquisition-progress.v1',
+      records: [],
+    },
+    'vocabulary.ielts-daily-preview.allocations.v1': {
+      schemaVersion: 'ielts-daily-preview.allocations.v1',
+      batches: [],
+      assignedLemmas: [],
+    },
+    'vocabulary.ielts-daily-preview.continuation.v1': {
+      schemaVersion: 'ielts-daily-preview.continuation.v1',
+      consumedBatchDates: [],
+      lastLoadedBatchDate: null,
+      updatedAt: null,
+    },
+    'vocabulary.ielts-daily-preview.archive.v1': {
+      schemaVersion: 'ielts-daily-preview.archive.v1',
+      entries: [],
     },
   }
 }
 
 function annotationRecords() {
-  const scope = { audioKey: 'youtube-workflow::c2 annotation audio', documentId: 'c2 document::中文' }
-  const generated = { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, items: [] }
-  const status = { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, blocks: {} }
-  const bundle = {
-    schemaVersion: 'annotation-bundle.v2',
-    scope,
-    revision: 1,
-    commitId: 'c2-annotation-1',
-    generated,
-    status,
-    checksum: fnv1aUtf16(JSON.stringify({ generated, status })),
+  const scopes = [
+    { audioKey: 'youtube-workflow::c2 annotation audio', documentId: 'c2 document::中文' },
+    { audioKey: '本地 audio file 2::job', documentId: '文档::二' },
+  ]
+  const records = {}
+  for (const [index, scope] of scopes.entries()) {
+    const generated = { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, items: [{ id: `annotation-${index + 1}`, text: 'c2' }] }
+    const status = { schemaVersion: 1, audioKey: scope.audioKey, documentId: scope.documentId, blocks: {} }
+    const bundle = {
+      schemaVersion: 'annotation-bundle.v2',
+      scope,
+      revision: 1,
+      commitId: `c2-annotation-${index + 1}`,
+      generated,
+      status,
+      checksum: fnv1aUtf16(JSON.stringify({ generated, status })),
+    }
+    records[`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.bundle.v2.json`] = bundle
+    records[`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.generated.json`] = generated
+    records[`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.status.json`] = status
   }
-  return {
-    scope,
-    records: {
-      [`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.bundle.v2.json`]: bundle,
-      [`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.generated.json`]: generated,
-      [`AnnotationGenerationStorage::${scope.audioKey}::${scope.documentId}::annotation.status.json`]: status,
-    },
-  }
+  return { scope: scopes[0], scopes, records }
 }
 
 function vocabularyRows() {
@@ -432,14 +491,14 @@ try {
     source,
     target,
     domains: DOMAINS,
-    sourceIdsByDomain: {
+    sourceIdsByDomain: Object.fromEntries(DOMAINS.map((domain) => [domain, {
       'reader-session': ['SeekPlayerDB/files'],
       'marks-activity': ['backup.marks-activity'],
       'passage-preview': ['localStorage'],
       annotation: ['localStorage'],
       'vocabulary-srs': ['SeekPlayerDB/files'],
       workflow: ['backup.workflow'],
-    },
+    }[domain]])),
     hostBaseUrl: host.baseUrl,
     hostAccessToken: host.accessToken,
     hostInstanceId: host.instanceId,
@@ -520,7 +579,7 @@ try {
         const committed = await client.command({
           domain: 'annotation',
           operation: 'lightweight-import',
-          payload: { scope: annotation.scope, records: annotation.records },
+          payload: { records: annotation.records },
           expectedRevision: revision,
           idempotencyKey: 'c2-smoke-annotation',
         })
@@ -562,15 +621,24 @@ try {
   assert.ok(result.domains.every((entry) => entry.steps.smoke?.outcome === 'committed'))
   assert.deepEqual(
     result.domains.map((entry) => entry.steps.dryRun.sourceIds),
-    [
-      ['SeekPlayerDB/files'],
-      ['backup.marks-activity'],
-      ['localStorage'],
-      ['localStorage'],
-      ['SeekPlayerDB/files'],
-      ['backup.workflow'],
-    ],
+    DOMAINS.map((domain) => ({
+      'reader-session': ['SeekPlayerDB/files'],
+      'marks-activity': ['backup.marks-activity'],
+      'passage-preview': ['localStorage'],
+      annotation: ['localStorage'],
+      'vocabulary-srs': ['SeekPlayerDB/files'],
+      workflow: ['backup.workflow'],
+    }[domain])),
   )
+
+  if (DOMAINS.includes('passage-preview')) {
+    const passageResult = result.domains.find((entry) => entry.domain === 'passage-preview')
+    assert.equal(passageResult.steps.finalBackup.finalBackup.artifact.domains['passage-preview'].records.length, 11)
+  }
+  if (DOMAINS.includes('annotation')) {
+    const annotationResult = result.domains.find((entry) => entry.domain === 'annotation')
+    assert.equal(annotationResult.steps.finalBackup.finalBackup.artifact.domains.annotation.records.length, 6)
+  }
 
   for (const domain of DOMAINS) {
     const checkpoint = await readOwnerModeCheckpoint({ ...target, profileId: 'c2-production-profile', domain })
@@ -591,24 +659,33 @@ try {
     profileId: reopenedHost.profileId,
     instanceId: reopenedHost.instanceId,
   })
-  const reopenedQueries = await Promise.all([
-    reopenedClient.query({ domain: 'reader-session', operation: 'snapshot', payload: {} }),
-    reopenedClient.query({ domain: 'marks-activity', operation: 'marks', payload: { jobId: 'c2-marks', contentId: 'c2-marks' } }),
-    reopenedClient.query({ domain: 'passage-preview', operation: 'durable-state', payload: {} }),
-    reopenedClient.query({ domain: 'annotation', operation: 'scope', payload: { scope: annotation.scope } }),
-    reopenedClient.query({ domain: 'vocabulary-srs', operation: 'snapshot', payload: {} }),
-    reopenedClient.query({ domain: 'workflow', operation: 'config', payload: {} }),
-  ])
-  assert.equal(reopenedQueries[0].outcome, 'read')
-  assert.equal(reopenedQueries[0].payload.snapshot.contentId, 'c2-reader-content')
-  assert.equal(reopenedQueries[0].payload.snapshot.media.mediaId, 'c2-reader-audio')
-  assert.equal(reopenedQueries[1].outcome, 'read')
-  assert.equal(reopenedQueries[2].outcome, 'read')
-  assert.equal(reopenedQueries[3].outcome, 'read')
-  assert.equal(reopenedQueries[4].outcome, 'read')
-  assert.equal(reopenedQueries[5].outcome, 'read')
-  assert.equal(reopenedQueries[5].payload.config.model, 'c2-smoke')
-  assert.equal(reopenedQueries[4].payload.records['vocabulary.srs.store.v1'].content.entries.c2.word, 'c2')
+  const reopenedQueries = await Promise.all(DOMAINS.map((domain) => {
+    const requests = {
+      'reader-session': { domain, operation: 'snapshot', payload: {} },
+      'marks-activity': { domain, operation: 'marks', payload: { jobId: 'c2-marks', contentId: 'c2-marks' } },
+      'passage-preview': { domain, operation: 'durable-state', payload: {} },
+      annotation: { domain, operation: 'scope', payload: {} },
+      'vocabulary-srs': { domain, operation: 'snapshot', payload: {} },
+      workflow: { domain, operation: 'config', payload: {} },
+    }
+    return reopenedClient.query(requests[domain])
+  }))
+  const reopenedByDomain = new Map(DOMAINS.map((domain, index) => [domain, reopenedQueries[index]]))
+  assert.ok(reopenedQueries.every((query) => query.outcome === 'read'))
+  if (DOMAINS.includes('reader-session')) {
+    const query = reopenedByDomain.get('reader-session')
+    assert.equal(query.payload.snapshot.contentId, 'c2-reader-content')
+    assert.equal(query.payload.snapshot.media.mediaId, 'c2-reader-audio')
+  }
+  if (DOMAINS.includes('annotation')) {
+    assert.equal(Object.keys(reopenedByDomain.get('annotation').payload.records).length, 6)
+  }
+  if (DOMAINS.includes('vocabulary-srs')) {
+    assert.equal(reopenedByDomain.get('vocabulary-srs').payload.records['vocabulary.srs.store.v1'].content.entries.c2.word, 'c2')
+  }
+  if (DOMAINS.includes('workflow')) {
+    assert.equal(reopenedByDomain.get('workflow').payload.config.model, 'c2-smoke')
+  }
   await stopLocalAppHost(reopenedHost)
   reopenedHost = null
   console.log('Windows owner C2 six-domain production cutover checks passed.')

@@ -6,6 +6,10 @@ import {
   loadPassagePreviewDurableState,
   updatePassagePreviewDurableState,
 } from './passage-preview-durable-state.js'
+import {
+  commitPassagePreviewOwnerDurableUpdate,
+  isPassagePreviewOwnerAuthoritative,
+} from './passage-preview-storage.js'
 
 export const IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY = 'vocabulary.ielts-daily-preview.allocations.v1'
 export const IELTS_DAILY_PREVIEW_CONTINUATION_KEY = 'vocabulary.ielts-daily-preview.continuation.v1'
@@ -34,15 +38,19 @@ export function loadIeltsDailyPreviewAllocations(storage = globalThis.localStora
 
 export function saveIeltsDailyPreviewAllocations(allocations = {}, storage = globalThis.localStorage) {
   const normalized = normalizeAllocations(allocations)
+  const envelope = {
+    schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
+    batches: Object.fromEntries(normalized.batches.map((batch) => [batch.date, {
+      words: batch.words,
+      ...(batch.candidateItems?.length ? { candidateItems: batch.candidateItems } : {}),
+    }])),
+    assignedLemmas: normalized.assignedLemmas,
+  }
+  if (isPassagePreviewOwnerAuthoritative()) {
+    return commitPassagePreviewOwnerDurableUpdate((state) => ({ ...state, allocations: envelope }))
+      .then(() => normalized)
+  }
   if (typeof storage?.setItem === 'function') {
-    const envelope = {
-      schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
-      batches: Object.fromEntries(normalized.batches.map((batch) => [batch.date, {
-        words: batch.words,
-        ...(batch.candidateItems?.length ? { candidateItems: batch.candidateItems } : {}),
-      }])),
-      assignedLemmas: normalized.assignedLemmas,
-    }
     updatePassagePreviewDurableState((state) => ({ ...state, allocations: envelope }), storage, {
       allocations: readJson(storage, IELTS_DAILY_PREVIEW_ALLOCATIONS_KEY, null),
     })
@@ -156,6 +164,10 @@ export function loadIeltsDailyPreviewContinuation(storage = globalThis.localStor
 
 export function saveIeltsDailyPreviewContinuation(state = {}, storage = globalThis.localStorage) {
   const normalized = normalizeContinuation(state)
+  if (isPassagePreviewOwnerAuthoritative()) {
+    return commitPassagePreviewOwnerDurableUpdate((current) => ({ ...current, continuation: normalized }))
+      .then(() => normalized)
+  }
   if (typeof storage?.setItem === 'function') {
     updatePassagePreviewDurableState((state) => ({ ...state, continuation: normalized }), storage, {
       continuation: readJson(storage, IELTS_DAILY_PREVIEW_CONTINUATION_KEY, null),
@@ -181,6 +193,18 @@ export function loadIeltsDailyPreviewArchive(storage = globalThis.localStorage) 
 export function saveIeltsDailyPreviewArchive({ date, items, completedAt } = {}, storage = globalThis.localStorage) {
   const normalizedDate = normalizeDate(date)
   if (!normalizedDate || !Array.isArray(items) || !items.length) return loadIeltsDailyPreviewArchive(storage)
+  if (isPassagePreviewOwnerAuthoritative()) {
+    return commitPassagePreviewOwnerDurableUpdate((state) => {
+      const entries = (Array.isArray(state.archive) ? state.archive : [])
+        .filter((entry) => entry?.date !== normalizedDate)
+      entries.unshift({
+        date: normalizedDate,
+        items,
+        completedAt: normalizeIso(completedAt) || new Date().toISOString(),
+      })
+      return { ...state, archive: entries.slice(0, 30) }
+    }).then(({ state }) => state.archive)
+  }
   const entries = loadIeltsDailyPreviewArchive(storage)
     .filter((entry) => entry.date !== normalizedDate)
   entries.unshift({

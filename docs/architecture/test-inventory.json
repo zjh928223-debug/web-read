@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 112,
-    "browser": 29,
+    "behavior": 113,
+    "browser": 30,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 272,
-  "executableScriptCount": 290,
+  "packageScriptCount": 273,
+  "executableScriptCount": 292,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3021,6 +3021,20 @@
         "scripts/youtube-workflow-client-check.cjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-c2a"
+    },
+    {
+      "name": "verify:windows-owner-c2b",
+      "command": "node scripts/windows-owner-c2b-browser-adapters-check.mjs && node scripts/windows-owner-c2b-cutover-check.mjs && npm run verify:windows-owner-passage-preview && npm run verify:windows-owner-annotation",
+      "category": "browser",
+      "layers": [
+        "behavior",
+        "browser"
+      ],
+      "invokes": [
+        "scripts/windows-owner-c2b-browser-adapters-check.mjs",
+        "scripts/windows-owner-c2b-cutover-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-c2b"
     },
     {
       "name": "verify:windows-owner-consumer-self-test",
@@ -8027,6 +8041,7 @@
         "package.json#scripts.verify:windows-owner-annotation",
         "package.json#scripts.verify:windows-owner-c2",
         "package.json#scripts.verify:windows-owner-c2a",
+        "package.json#scripts.verify:windows-owner-c2b",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-health",
         "package.json#scripts.verify:windows-owner-marks-activity",
@@ -10692,6 +10707,55 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-c2b-browser-adapters-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-c2b",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-c2b"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/windows-owner-c2b-cutover-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-c2b",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-c2b"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

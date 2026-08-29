@@ -279,7 +279,7 @@ function domainEquivalent(left, right) {
             delete content.schemaVersion
           }
           return content
-        }),
+        }).sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
       }
     }
     return canonicalize(comparable(left)) === canonicalize(comparable(right))
