@@ -266,6 +266,91 @@ class PassagePreviewOwnerTests(unittest.TestCase):
         current = owner.query("preview-batch", **self.ids("current"))
         self.assertEqual(current["payload"]["records"][key]["content"]["items"][0]["word"], "first")
 
+    def test_durable_state_inner_revision_guard_keeps_whole_snapshot(self):
+        owner = self.make_owner()
+        durable_key = "vocabulary.passage-preview.durable-state.v1"
+        data_key = "vocabulary.passage-preview.data.v2"
+        progress_key = "vocabulary.passage-preview.progress.v2"
+        high_durable = self.durable(revision=8, batch_id="high")
+        initial = owner.command(
+            "transition-apply",
+            payload={"records": {
+                durable_key: self.row(durable_key, high_durable),
+                data_key: self.row(data_key, self.data("kept")),
+                progress_key: self.row(progress_key, self.progress()),
+            }},
+            expected_revision=0,
+            idempotency_key="inner-high",
+            **self.ids("inner-high"),
+        )
+        self.assertEqual(initial["outcome"], "committed")
+
+        changed_progress = self.progress()
+        changed_progress["currentIndex"] = 1
+        for inner_revision, batch_id, request_key in (
+            (7, "lower", "inner-lower"),
+            (8, "different", "inner-same-revision-different"),
+        ):
+            conflict = owner.command(
+                "transition-apply",
+                payload={"records": {
+                    durable_key: self.row(
+                        durable_key,
+                        self.durable(revision=inner_revision, batch_id=batch_id),
+                    ),
+                    data_key: self.row(data_key, self.data("changed")),
+                    progress_key: self.row(progress_key, changed_progress),
+                }},
+                expected_revision=1,
+                idempotency_key=request_key,
+                **self.ids(request_key),
+            )
+            self.assertEqual(conflict["outcome"], "conflict")
+            self.assertEqual(conflict["commitStatus"], "conflict")
+            self.assertEqual(conflict["error"]["code"], "conflict")
+            self.assertEqual(conflict["error"]["details"]["currentRevision"], 1)
+            self.assertEqual(conflict["error"]["details"]["durableStateRevision"], 8)
+            self.assertIsNone(conflict["receipt"])
+
+            durable_result = owner.query("durable-state", **self.ids(f"durable-{request_key}"))
+            data_result = owner.query("preview-batch", **self.ids(f"data-{request_key}"))
+            progress_result = owner.query("progress", **self.ids(f"progress-{request_key}"))
+            self.assertEqual(
+                durable_result["payload"]["records"][durable_key]["content"],
+                high_durable,
+            )
+            self.assertEqual(
+                data_result["payload"]["records"][data_key]["content"]["items"][0]["word"],
+                "kept",
+            )
+            self.assertEqual(
+                progress_result["payload"]["records"][progress_key]["content"]["currentIndex"],
+                0,
+            )
+
+        same_inner = owner.command(
+            "transition-apply",
+            payload={"records": {
+                durable_key: self.row(durable_key, copy.deepcopy(high_durable)),
+                progress_key: self.row(progress_key, changed_progress),
+            }},
+            expected_revision=1,
+            idempotency_key="inner-same-content",
+            **self.ids("inner-same-content"),
+        )
+        self.assertEqual(same_inner["outcome"], "committed")
+        self.assertEqual(same_inner["revision"], 2)
+        current_durable = owner.query("durable-state", **self.ids("same-durable"))
+        current_progress = owner.query("progress", **self.ids("same-progress"))
+        self.assertEqual(
+            current_durable["payload"]["records"][durable_key]["content"],
+            high_durable,
+        )
+        self.assertEqual(
+            current_progress["payload"]["records"][progress_key]["content"]["currentIndex"],
+            1,
+        )
+
     def test_bad_keys_schema_media_and_paths_are_rejected_before_canonical_write(self):
         owner = self.make_owner()
         cases = [

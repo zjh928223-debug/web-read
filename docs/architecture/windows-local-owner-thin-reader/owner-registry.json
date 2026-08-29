@@ -185,7 +185,7 @@
       "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
       "revisionSource": {
         "identity": "passage-preview.durable-state-revision",
-        "source": "vocabulary.passage-preview.durable-state.v1 revision"
+        "source": "Host passage-preview-owner.json envelope revision is the command CAS/receipt authority; durable-state.v1 inner revision is the imported subrecord monotonic guard"
       },
       "backupAdapter": {
         "identity": "read-web-application-backup.passage-preview",
@@ -404,5 +404,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:8d0dd18982c3f2d95ed09a19dd00aac59124ae32fd215cb35626c0450d17d308"
+  "artifactChecksum": "sha256:6178aca4d15724bf6fbb9d2377dbcfe80d7a87bef89583cc3a939665f30abd44"
 }

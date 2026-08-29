@@ -148,7 +148,7 @@
       ],
       "browserDirectWritersRef": ["preview.local-storage", "preview.durable-envelope", "preview.daily-continuation", "preview.preference-storage"],
       "backupAdapter": "localStorage passage-preview key-spec adapter",
-      "revisionSource": "passage-preview durable-state.v1 integer revision and expectedRevision; legacy data/progress/preferences have no independent CAS",
+      "revisionSource": "Host passage-preview-owner.json envelope revision is the command CAS/receipt authority; durable-state.v1 inner revision is an imported subrecord monotonic guard; legacy data/progress/preferences have no independent CAS",
       "mediaReferences": "preview source/item locator and sentence metadata only",
       "rollbackTarget": "pre-change preview localStorage keys and durable envelope; application-backup preview domain",
       "futureOwnerFacade": "windowsHost.passagePreviewOwner",
@@ -226,5 +226,5 @@
       "milestoneStatus": "inventory-only; current Python service remains owner"
     }
   ],
-  "artifactChecksum": "sha256:af77b09ae1f0097cca52bb143291228813eabd82906bf48140c989b10cdcf947"
+  "artifactChecksum": "sha256:e0168f7cabf9b7d48a3ca49287f5bef842eb8f7d6294c6b9204b0f4050e2b2c4"
 }

@@ -256,7 +256,7 @@
       "commandOperations": ["state-commit", "batch-commit", "rating-apply", "transition-apply", "legacy-import", "receipt-query"],
       "capabilities": ["passage-preview.query", "passage-preview.commit", "passage-preview.batch", "passage-preview.receipt"],
       "mutationRequirements": { "expectedRevision": "required for durable envelope/batch transitions", "idempotencyKey": "required for every state/batch/rating/transition/legacy command" },
-      "revisionSource": "passage-preview durable-state.v1 integer revision",
+      "revisionSource": "Host passage-preview-owner.json envelope revision is the command CAS/receipt authority; durable-state.v1 inner revision is an imported subrecord monotonic guard",
       "backupAdapter": "localStorage passage-preview key-spec adapter",
       "recoveryHandler": "preview key/schema/quota recovery handler, future host-owned",
       "internalSeam": {
@@ -664,5 +664,5 @@
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:3e593b0b05da50476ba72cc77d16d3e6d75cf9e5784293ada0d293a576fb12f4"
+  "artifactChecksum": "sha256:b1398ab54f7227c53c70b9d33a6f64c1bf4d31365670675e8a35c5d8ac1cea2d"
 }

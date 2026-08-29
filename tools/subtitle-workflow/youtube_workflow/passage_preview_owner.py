@@ -29,6 +29,7 @@ from .windows_owner_receipts import (
 PASSAGE_PREVIEW_DOMAIN = "passage-preview"
 PASSAGE_PREVIEW_OWNER_SCHEMA = "passage-preview-owner.v1"
 PASSAGE_PREVIEW_OWNER_FILE = "passage-preview-owner.json"
+DURABLE_STATE_KEY = "vocabulary.passage-preview.durable-state.v1"
 
 _SAFE_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SHA256 = re.compile(r"^sha256:[a-f0-9]{64}$")
@@ -266,7 +267,7 @@ def _validate_record_content(key: str, content: Any) -> Any:
     if not allow_legacy_value or (isinstance(content, dict) and field in content):
         if not isinstance(content, dict) or content.get(field) != expected:
             raise PassagePreviewOwnerError("unsupported-schema")
-    if key == "vocabulary.passage-preview.durable-state.v1":
+    if key == DURABLE_STATE_KEY:
         revision = content.get("revision")
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
             raise PassagePreviewOwnerError("invalid-request")
@@ -315,6 +316,25 @@ def _validate_record(key: str, value: Any) -> dict[str, Any]:
     return result
 
 
+def _durable_state_conflict(
+    document: Mapping[str, Any], updates: Mapping[str, Any]
+) -> int | None:
+    """Return the current inner revision when an update would roll it back."""
+
+    current = document.get("records", {}).get(DURABLE_STATE_KEY)
+    incoming = updates.get(DURABLE_STATE_KEY)
+    if current is None or incoming is None:
+        return None
+
+    current_revision = current["content"]["revision"]
+    incoming_revision = incoming["content"]["revision"]
+    if incoming_revision < current_revision:
+        return current_revision
+    if incoming_revision == current_revision and incoming["checksum"] != current["checksum"]:
+        return current_revision
+    return None
+
+
 def _validate_document(value: Any, *, profile_id: str) -> dict[str, Any]:
     required = {"schemaVersion", "profileId", "revision", "records", "checksum"}
     if not isinstance(value, dict) or set(value) != required:
@@ -358,6 +378,7 @@ def _typed_error(
     *,
     retryable: bool = False,
     current_revision: int | None = None,
+    durable_state_revision: int | None = None,
 ) -> dict[str, Any]:
     categories = {
         "invalid-request": "validation",
@@ -374,6 +395,8 @@ def _typed_error(
     details = {}
     if current_revision is not None:
         details["currentRevision"] = current_revision
+    if durable_state_revision is not None:
+        details["durableStateRevision"] = durable_state_revision
     return {
         "type": "windows-thin-reader-error.v1",
         "code": code if code in categories else "invalid-request",
@@ -624,9 +647,38 @@ class PassagePreviewOwner:
                 _typed_error("manual-recovery", correlation_id),
             )
 
+        if current_revision == expected_revision and document is not None:
+            durable_state_revision = _durable_state_conflict(document, updates)
+            if durable_state_revision is not None:
+                return self._envelope(
+                    operation,
+                    request_id,
+                    correlation_id,
+                    "conflict",
+                    "conflict",
+                    current_revision,
+                    {
+                        "recordKeys": sorted(updates),
+                        "recordChecksums": sorted({_checksum(record["content"]) for record in updates.values()}),
+                    },
+                    _typed_error(
+                        "conflict",
+                        correlation_id,
+                        current_revision=current_revision,
+                        durable_state_revision=durable_state_revision,
+                    ),
+                )
+
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
             document = self._read_for_command()
             if document["revision"] != context.expected_revision:
+                return self._evidence(
+                    context,
+                    status="conflict",
+                    revision=document["revision"],
+                    record_checksums=[],
+                )
+            if (durable_state_revision := _durable_state_conflict(document, updates)) is not None:
                 return self._evidence(
                     context,
                     status="conflict",
