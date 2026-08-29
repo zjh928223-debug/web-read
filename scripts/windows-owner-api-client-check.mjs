@@ -278,6 +278,157 @@ await assert.rejects(
   (error) => error instanceof WindowsOwnerApiError && error.code === 'invalid-response',
 )
 
+async function assertDispatchedCommandUnknown(label, responseFactory) {
+  const request = {
+    domain: 'workflow',
+    operation: 'job-start',
+    requestId: `unknown-request-${label}`,
+    correlationId: `unknown-correlation-${label}`,
+    expectedRevision: 3,
+    idempotencyKey: `unknown-idempotency-${label}`,
+  }
+  let commandCalls = 0
+  const unknownClient = createWindowsOwnerApiClient({
+    profileId: 'optimization',
+    fetchImpl: async (url, options) => {
+      commandCalls += 1
+      return responseFactory(url, options, JSON.parse(options.body))
+    },
+  })
+  const result = await unknownClient.command(request)
+  assert.equal(result.outcome, 'commit-unknown', `${label} must be commit-unknown`)
+  assert.equal(result.commitStatus, 'commit-unknown', `${label} must preserve commit status`)
+  assert.equal(result.domain, request.domain)
+  assert.equal(result.operation, request.operation)
+  assert.equal(result.requestId, request.requestId)
+  assert.equal(result.correlationId, request.correlationId)
+  assert.equal(result.error.code, 'commit-unknown')
+  assert.deepEqual(result.payload.receiptQuery, {
+    domain: request.domain,
+    operation: request.operation,
+    requestId: request.requestId,
+    correlationId: request.correlationId,
+    receiptOperation: 'receipt-query',
+    idempotencyKey: request.idempotencyKey,
+  })
+  assert.equal(commandCalls, 1, `${label} must dispatch exactly once`)
+}
+
+await assertDispatchedCommandUnknown('non-json', async () => ({ status: 502, ok: false }))
+await assertDispatchedCommandUnknown('json-parse', async () => ({
+  status: 502,
+  ok: false,
+  async json() {
+    throw new SyntaxError('invalid JSON')
+  },
+}))
+await assertDispatchedCommandUnknown('malformed-envelope', async () => jsonResponse({
+  contractVersion: contract.contractVersion,
+}))
+await assertDispatchedCommandUnknown('mismatched-envelope', async (_url, options, request) => jsonResponse(
+  readResponse({ ...request, requestId: 'different-request-id' }),
+))
+await assertDispatchedCommandUnknown('malformed-receipt', async (_url, _options, request) => jsonResponse({
+  ...committedResponse(request),
+  receipt: {},
+}))
+
+const preDispatchAbortController = new AbortController()
+preDispatchAbortController.abort()
+let preDispatchAbortCalls = 0
+const preDispatchAbortClient = createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  fetchImpl: async () => {
+    preDispatchAbortCalls += 1
+    return jsonResponse(readResponse({}))
+  },
+})
+await assert.rejects(
+  preDispatchAbortClient.command({
+    domain: 'workflow',
+    operation: 'job-start',
+    expectedRevision: 0,
+    idempotencyKey: 'pre-dispatch-abort',
+    signal: preDispatchAbortController.signal,
+  }),
+  (error) => error instanceof WindowsOwnerApiError && error.code === 'aborted',
+)
+assert.equal(preDispatchAbortCalls, 0, 'pre-dispatch abort must not call fetch')
+
+const postDispatchAbortController = new AbortController()
+let postDispatchAbortCalls = 0
+const postDispatchAbortClient = createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  fetchImpl: async (_url, options) => {
+    postDispatchAbortCalls += 1
+    await new Promise((resolve, reject) => {
+      if (options.signal.aborted) {
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        return
+      }
+      options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true })
+    })
+  },
+})
+const postDispatchAbortPromise = postDispatchAbortClient.command({
+  domain: 'workflow',
+  operation: 'job-start',
+  requestId: 'post-dispatch-abort-request',
+  correlationId: 'post-dispatch-abort-correlation',
+  expectedRevision: 0,
+  idempotencyKey: 'post-dispatch-abort',
+  signal: postDispatchAbortController.signal,
+})
+postDispatchAbortController.abort()
+const postDispatchAbortResult = await postDispatchAbortPromise
+assert.equal(postDispatchAbortResult.outcome, 'commit-unknown')
+assert.equal(postDispatchAbortResult.payload.receiptQuery.idempotencyKey, 'post-dispatch-abort')
+assert.equal(postDispatchAbortResult.payload.receiptQuery.requestId, 'post-dispatch-abort-request')
+assert.equal(postDispatchAbortCalls, 1, 'post-dispatch abort must not replay the command')
+
+let nonFiniteRequestCalls = 0
+const nonFiniteRequestClient = createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  fetchImpl: async () => {
+    nonFiniteRequestCalls += 1
+    return jsonResponse(readResponse({}))
+  },
+})
+for (const [label, value] of [['nan', Number.NaN], ['infinity', Number.POSITIVE_INFINITY], ['negative-infinity', Number.NEGATIVE_INFINITY]]) {
+  await assert.rejects(
+    nonFiniteRequestClient.command({
+      domain: 'workflow',
+      operation: 'job-start',
+      expectedRevision: 0,
+      idempotencyKey: `non-finite-${label}`,
+      payload: { nested: { values: [value] } },
+    }),
+    (error) => error instanceof WindowsOwnerApiError && error.code === 'invalid-request',
+  )
+}
+assert.equal(nonFiniteRequestCalls, 0, 'non-finite request payloads must fail before fetch')
+
+let nonFiniteResponseCalls = 0
+const nonFiniteResponseQueryClient = createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  fetchImpl: async (_url, options) => {
+    nonFiniteResponseCalls += 1
+    const request = JSON.parse(options.body)
+    return jsonResponse({ ...readResponse(request), payload: { nested: { value: Number.NaN } } })
+  },
+})
+await assert.rejects(
+  nonFiniteResponseQueryClient.query({ domain: 'workflow', operation: 'health' }),
+  (error) => error instanceof WindowsOwnerApiError && error.code === 'invalid-response',
+)
+assert.equal(nonFiniteResponseCalls, 1)
+for (const [label, value] of [['nan', Number.NaN], ['infinity', Number.POSITIVE_INFINITY], ['negative-infinity', Number.NEGATIVE_INFINITY]]) {
+  await assertDispatchedCommandUnknown(`response-non-finite-${label}`, async (_url, _options, request) => jsonResponse({
+    ...readResponse(request),
+    payload: { nested: { value } },
+  }))
+}
+
 const abortController = new AbortController()
 let abortCalls = 0
 const abortClient = createWindowsOwnerApiClient({

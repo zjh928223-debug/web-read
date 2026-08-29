@@ -203,13 +203,13 @@ export function createWindowsOwnerApiClient(options = {}) {
 async function execute(envelope, { signal, timeoutMs, fetchImpl }) {
   const isMutation = envelope.kind === 'command'
   const control = composeAbortSignal(signal, timeoutMs)
+  let dispatched = false
   try {
     if (signal?.aborted) {
-      throw new WindowsOwnerApiError('aborted', 'owner API request was aborted', {
-        category: 'timeout',
-        retryable: false,
-      })
+      throw abortedError()
     }
+    const body = JSON.stringify(envelope)
+    dispatched = true
     const response = await fetchImpl(OWNER_API_ROUTE, {
       method: 'POST',
       headers: {
@@ -217,27 +217,36 @@ async function execute(envelope, { signal, timeoutMs, fetchImpl }) {
         'content-type': 'application/json',
       },
       credentials: 'same-origin',
-      body: JSON.stringify(envelope),
+      body,
       signal: control.signal,
     })
+    if (signal?.aborted) {
+      if (isMutation) return unknownResult(envelope, 'aborted')
+      throw abortedError()
+    }
     const raw = await readJsonResponse(response)
+    if (signal?.aborted) {
+      if (isMutation) return unknownResult(envelope, 'aborted')
+      throw abortedError()
+    }
     return validateResponse(raw, envelope)
   } catch (error) {
-    if (error instanceof WindowsOwnerApiError) throw error
+    if (error instanceof WindowsOwnerApiError) {
+      if (isMutation && dispatched) return unknownResult(envelope, 'invalid-response')
+      throw error
+    }
     if (signal?.aborted) {
-      throw new WindowsOwnerApiError('aborted', 'owner API request was aborted', {
-        category: 'timeout',
-        retryable: false,
-      })
+      if (isMutation && dispatched) return unknownResult(envelope, 'aborted')
+      throw abortedError()
     }
     if (control.timedOut()) {
-      if (isMutation) return unknownResult(envelope, 'timeout')
+      if (isMutation && dispatched) return unknownResult(envelope, 'timeout')
       throw new WindowsOwnerApiError('timeout', 'owner API request timed out', {
         category: 'timeout',
         retryable: true,
       })
     }
-    if (isMutation) return unknownResult(envelope, 'upstream')
+    if (isMutation && dispatched) return unknownResult(envelope, 'upstream')
     throw new WindowsOwnerApiError('upstream', 'owner API transport failed', {
       category: 'upstream',
       retryable: true,
@@ -245,6 +254,13 @@ async function execute(envelope, { signal, timeoutMs, fetchImpl }) {
   } finally {
     control.cleanup()
   }
+}
+
+function abortedError() {
+  return new WindowsOwnerApiError('aborted', 'owner API request was aborted', {
+    category: 'timeout',
+    retryable: false,
+  })
 }
 
 async function readJsonResponse(response) {
@@ -367,9 +383,21 @@ function validateOutcomePair(outcome, commitStatus) {
 }
 
 function unknownResult(request, reason) {
-  const lookup = request.idempotencyKey
-    ? { domain: request.domain, operation: 'receipt-query', idempotencyKey: request.idempotencyKey }
-    : { domain: request.domain, operation: 'receipt-query' }
+  const lookup = {
+    domain: request.domain,
+    operation: request.operation,
+    requestId: request.requestId,
+    correlationId: request.correlationId,
+    receiptOperation: 'receipt-query',
+    ...(request.idempotencyKey ? { idempotencyKey: request.idempotencyKey } : {}),
+  }
+  const message = reason === 'timeout'
+    ? 'owner command timed out before commit was known'
+    : reason === 'aborted'
+      ? 'owner command was aborted after dispatch; commit status is unknown'
+      : reason === 'invalid-response'
+        ? 'owner command response was invalid; commit status is unknown'
+        : 'owner command result was not received'
   return Object.freeze({
     contractVersion: apiContract.contractVersion,
     requestId: request.requestId,
@@ -385,7 +413,7 @@ function unknownResult(request, reason) {
       type: 'windows-thin-reader-error.v1',
       code: 'commit-unknown',
       category: 'recovery',
-      message: reason === 'timeout' ? 'owner command timed out before commit was known' : 'owner command result was not received',
+      message,
       retryable: false,
       correlationId: request.correlationId,
       details: { lookupAvailable: Boolean(request.idempotencyKey) },
@@ -405,8 +433,12 @@ function bindPayload(payload, profileId, instanceId) {
 }
 
 function assertJsonSafe(value, field, seen = new WeakSet(), makeError = inputError) {
-  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     if (typeof value === 'string' && value.startsWith('data:')) throw makeError(`${field} cannot contain complete media data`)
+    return
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw makeError(`${field} must be a finite number`)
     return
   }
   if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') throw makeError(`${field} is not JSON-safe`)
