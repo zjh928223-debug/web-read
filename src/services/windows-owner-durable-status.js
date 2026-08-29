@@ -125,7 +125,9 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     }
     flight.lastResultKey = resultKey
     if (result.outcome === 'conflict') {
-      updateRevision(result.revision ?? result.error?.details?.currentRevision)
+      updateRevision(result.revision ?? result.error?.details?.currentRevision, {
+        expectedRevision: flight.expectedRevision,
+      })
       return settleNonCommit(flight, currentFlight(flight) ? 'conflict' : 'dirty', 'revision-conflict', result.error)
     }
     if (result.outcome === 'not-ready' || result.outcome === 'manual-recovery') {
@@ -137,7 +139,10 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
   function observeOwnerQuery(result) {
     ensureActive()
     if (!isTypedQueryResult(result, domain)) return snapshot
-    const changed = updateRevision(result.revision)
+    const activeFlight = [...flights.values()].find((candidate) => candidate.phase === 'active')
+    const changed = updateRevision(result.revision, {
+      expectedRevision: activeFlight?.expectedRevision,
+    })
     if (!intent && !flights.size) {
       reason = 'authoritative-query-observed'
       emit()
@@ -153,8 +158,8 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     if (!flight || !contextMatches(flight, context)) return snapshot
     const code = typeof failure?.code === 'string' ? failure.code : ''
     const dispatched = !isPlainObject(context) || context.dispatched !== false
-    if (code === 'commit-unknown' || code === 'timeout' || code === 'upstream' || code === 'aborted'
-      || (code === 'invalid-response' && dispatched)) {
+    if (code === 'commit-unknown'
+      || (dispatched && (code === 'timeout' || code === 'upstream' || code === 'aborted' || code === 'invalid-response'))) {
       flight.phase = 'unknown'
       flight.receiptLookup = lookupFor(flight)
       status = currentFlight(flight) ? 'commit-unknown' : 'dirty'
@@ -164,7 +169,9 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
       return snapshot
     }
     if (code === 'conflict' || code === 'revision-conflict' || failure?.category === 'conflict') {
-      updateRevision(failure?.details?.currentRevision)
+      updateRevision(failure?.details?.currentRevision, {
+        expectedRevision: flight.expectedRevision,
+      })
       return settleNonCommit(flight, currentFlight(flight) ? 'conflict' : 'dirty', 'revision-conflict', failure)
     }
     if (code === 'not-ready' || code === 'manual-recovery' || failure?.category === 'readiness') {
@@ -194,7 +201,9 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     if (!RECEIPT_TERMINAL.has(receiptStatus)) return keepFlight(flight, 'receipt-mismatch', 'schema')
     if (receiptStatus === 'committed') return settleCommitted(flight, extracted.receipt.revision)
     if (receiptStatus === 'conflict') {
-      updateRevision(extracted.receipt.revision)
+      updateRevision(extracted.receipt.revision, {
+        expectedRevision: flight.expectedRevision,
+      })
       return settleNonCommit(flight, currentFlight(flight) ? 'conflict' : 'dirty', 'revision-conflict', null)
     }
     if (receiptStatus === 'not-ready' || receiptStatus === 'manual-recovery') {
@@ -297,7 +306,7 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
 
   function settleCommitted(flight, revision) {
     const current = currentFlight(flight)
-    if (authoritativeRevision !== null && !isAtLeast(revision, authoritativeRevision)) {
+    if (!canAcceptCommitRevision(flight, revision)) {
       if (!current) {
         flights.delete(flight.generation)
         status = intent ? 'dirty' : 'not-ready'
@@ -308,7 +317,7 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
       }
       return keepFlight(flight, 'stale-commit-evidence', 'conflict')
     }
-    updateRevision(revision)
+    updateRevision(revision, { expectedRevision: flight.expectedRevision })
     flights.delete(flight.generation)
     status = current ? 'saved' : intent ? 'dirty' : 'not-ready'
     reason = current ? 'committed-receipt' : intent ? 'newer-intent' : 'committed-baseline'
@@ -327,11 +336,24 @@ export function createWindowsOwnerDurableStatusTracker(options = {}) {
     return snapshot
   }
 
-  function updateRevision(candidate) {
-    if (!isRevision(candidate) || (authoritativeRevision !== null && !isAtLeast(candidate, authoritativeRevision))) return false
+  function updateRevision(candidate, options = {}) {
+    if (!isRevision(candidate)) return false
+    if (authoritativeRevision !== null && !canAdvanceRevision(candidate, options.expectedRevision)) return false
     const changed = !sameRevision(candidate, authoritativeRevision)
     authoritativeRevision = candidate
     return changed
+  }
+
+  function canAcceptCommitRevision(flight, candidate) {
+    if (!isRevision(candidate) || authoritativeRevision === null || sameRevision(candidate, authoritativeRevision)) return true
+    if (typeof candidate === 'number' && typeof authoritativeRevision === 'number') return candidate >= authoritativeRevision
+    return sameRevision(authoritativeRevision, flight.expectedRevision)
+  }
+
+  function canAdvanceRevision(candidate, expectedRevision) {
+    if (authoritativeRevision === null || sameRevision(candidate, authoritativeRevision)) return true
+    if (typeof candidate === 'number' && typeof authoritativeRevision === 'number') return candidate >= authoritativeRevision
+    return expectedRevision !== undefined && sameRevision(authoritativeRevision, expectedRevision)
   }
 }
 
@@ -378,15 +400,25 @@ function isTypedQueryResult(result, domain) {
 }
 
 function isTypedReceiptQueryResult(result) {
-  return isPlainObject(result)
-    && result.contractVersion === CONTRACT_VERSION
-    && result.operation === 'receipt-query'
-    && result.outcome === 'read'
-    && result.commitStatus === 'not-applicable'
-    && (result.revision === null || isRevision(result.revision))
-    && isPlainObject(result.receipt)
-    && isPlainObject(result.payload)
-    && result.error === null
+  if (!isPlainObject(result)
+    || result.contractVersion !== CONTRACT_VERSION
+    || result.operation !== 'receipt-query'
+    || !WINDOWS_OWNER_DOMAIN_REGISTRY[result.domain]?.commandOperations.includes('receipt-query')
+    || !Object.prototype.hasOwnProperty.call(OUTCOME_STATUS, result.outcome)
+    || !COMMIT_STATUS_VALUES.has(result.commitStatus)
+    || OUTCOME_STATUS[result.outcome] !== result.commitStatus
+    || (result.revision !== null && !isRevision(result.revision))
+    || !isPlainObject(result.payload)
+    || (result.receipt !== null && !isPlainObject(result.receipt))) return false
+  if (result.outcome === 'read' || result.outcome === 'committed') {
+    if (result.error !== null) return false
+  } else if (!isTypedError(result.error, result.correlationId)) {
+    return false
+  }
+  if (result.receipt !== null
+    && (result.receipt.commitStatus !== result.commitStatus
+      || !sameRevision(result.receipt.revision, result.revision))) return false
+  return true
 }
 
 function isTypedError(value, correlationId) {
@@ -442,7 +474,7 @@ function extractReceipt(value) {
 }
 
 function isReceiptQueryIdentity(result, flight) {
-  return result.domain === flight.domain && result.outcome === 'read' && result.operation === 'receipt-query'
+  return result.domain === flight.domain && result.operation === 'receipt-query'
 }
 
 function lookupFor(flight) {
@@ -520,11 +552,6 @@ function isRevision(value) {
 
 function sameRevision(left, right) {
   return left === right
-}
-
-function isAtLeast(candidate, current) {
-  return sameRevision(candidate, current)
-    || (typeof candidate === 'number' && typeof current === 'number' && candidate >= current)
 }
 
 function validDate(value) {

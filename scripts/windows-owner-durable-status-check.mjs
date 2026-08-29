@@ -152,6 +152,17 @@ unknownTracker.resolveReceipt(receiptQueryResult(receiptFor(unknownRequest, { re
 assert.equal(unknownTracker.getSnapshot().status, 'saved')
 assert.equal(unknownTracker.getSnapshot().authoritativeRevision, 1)
 
+const producerUnknownTracker = trackerFor('workflow')
+producerUnknownTracker.recordIntent({ intentId: 'producer-unknown' })
+const producerUnknownRequest = requestFor('workflow', 'job-start', 'producer-unknown')
+producerUnknownTracker.beginMutation(producerUnknownRequest)
+producerUnknownTracker.applyOwnerResult(baseResult(producerUnknownRequest, 'commit-unknown', 'commit-unknown', null))
+producerUnknownTracker.resolveReceipt(receiptQueryResult(receiptFor(producerUnknownRequest, {
+  commitStatus: 'commit-unknown',
+  revision: null,
+})))
+assert.equal(producerUnknownTracker.getSnapshot().status, 'commit-unknown', 'producer commit-unknown receipt must remain unresolved')
+
 const conflictReceiptTracker = trackerFor('workflow')
 conflictReceiptTracker.recordIntent({ intentId: 'conflict-receipt' })
 const conflictReceiptRequest = requestFor('workflow', 'job-start', 'conflict-receipt')
@@ -188,6 +199,32 @@ assert.equal(savedSnapshot.status, 'saved')
 currentCommitTracker.applyOwnerResult(committedResult(currentRequest))
 assert.deepEqual(currentCommitTracker.getSnapshot(), savedSnapshot, 'same-generation duplicate result must be idempotent')
 
+const opaqueRevisionTracker = trackerFor('workflow')
+opaqueRevisionTracker.recordIntent({ intentId: 'opaque-revision' })
+opaqueRevisionTracker.observeOwnerQuery({
+  ...baseResult({ domain: 'workflow', operation: 'health', requestId: 'opaque-query', correlationId: 'opaque-correlation' }, 'read', 'not-applicable', 'rev-a'),
+})
+const opaqueRequest = requestFor('workflow', 'job-start', 'opaque-revision', { expectedRevision: 'rev-a' })
+opaqueRevisionTracker.beginMutation(opaqueRequest)
+opaqueRevisionTracker.applyOwnerResult(committedResult(opaqueRequest, 'rev-b'))
+assert.equal(opaqueRevisionTracker.getSnapshot().status, 'saved', 'opaque revision receipt may advance a matching CAS baseline')
+assert.equal(opaqueRevisionTracker.getSnapshot().authoritativeRevision, 'rev-b')
+
+const outOfOrderOpaqueTracker = trackerFor('workflow')
+outOfOrderOpaqueTracker.recordIntent({ intentId: 'opaque-old' })
+outOfOrderOpaqueTracker.observeOwnerQuery({
+  ...baseResult({ domain: 'workflow', operation: 'health', requestId: 'opaque-old-query', correlationId: 'opaque-old-correlation' }, 'read', 'not-applicable', 'rev-a'),
+})
+const outOfOrderRequest = requestFor('workflow', 'job-start', 'opaque-old', { expectedRevision: 'rev-a' })
+outOfOrderOpaqueTracker.beginMutation(outOfOrderRequest)
+outOfOrderOpaqueTracker.recordIntent({ intentId: 'opaque-new' })
+outOfOrderOpaqueTracker.observeOwnerQuery({
+  ...baseResult({ domain: 'workflow', operation: 'health', requestId: 'opaque-new-query', correlationId: 'opaque-new-correlation' }, 'read', 'not-applicable', 'rev-c'),
+})
+outOfOrderOpaqueTracker.applyOwnerResult(committedResult(outOfOrderRequest, 'rev-b'))
+assert.equal(outOfOrderOpaqueTracker.getSnapshot().authoritativeRevision, 'rev-c', 'late opaque receipt must not roll back a newer observed revision')
+assert.equal(outOfOrderOpaqueTracker.getSnapshot().status, 'dirty')
+
 const failureTracker = trackerFor('workflow')
 failureTracker.recordIntent({ intentId: 'failure-intent' })
 const failureRequest = requestFor('workflow', 'job-start', 'failure')
@@ -198,6 +235,20 @@ failureTracker.recordMutationFailure({ code: 'invalid-request', category: 'valid
   dispatched: false,
 })
 assert.equal(failureTracker.getSnapshot().status, 'dirty', 'pre-dispatch validation failure must return dirty')
+
+for (const code of ['timeout', 'aborted', 'upstream']) {
+  const preDispatchTracker = trackerFor('workflow')
+  preDispatchTracker.recordIntent({ intentId: `pre-dispatch-${code}` })
+  const preDispatchRequest = requestFor('workflow', 'job-start', `pre-dispatch-${code}`)
+  preDispatchTracker.beginMutation(preDispatchRequest)
+  preDispatchTracker.recordMutationFailure({ code, category: 'recovery' }, {
+    generation: 1,
+    requestId: preDispatchRequest.requestId,
+    dispatched: false,
+  })
+  assert.equal(preDispatchTracker.getSnapshot().status, 'dirty', `${code} before dispatch must return dirty`)
+  assert.equal(preDispatchTracker.getSnapshot().receiptLookup, null, `${code} before dispatch must not create receipt lookup`)
+}
 
 const dispatchedFailureTracker = trackerFor('workflow')
 dispatchedFailureTracker.recordIntent({ intentId: 'dispatched-failure' })
@@ -294,8 +345,8 @@ function baseResult(request, outcome, commitStatus, revision, overrides = {}) {
   return result
 }
 
-function committedResult(request) {
-  return baseResult(request, 'committed', 'committed', 1, { receipt: receiptFor(request) })
+function committedResult(request, revision = 1) {
+  return baseResult(request, 'committed', 'committed', revision, { receipt: receiptFor(request, { revision }) })
 }
 
 function receiptFor(request, overrides = {}) {
@@ -329,18 +380,24 @@ function receiptFor(request, overrides = {}) {
 }
 
 function receiptQueryResult(receipt) {
+  const status = receipt.commitStatus === 'pending' ? 'commit-unknown' : receipt.commitStatus
+  const producerReceipt = receipt.commitStatus === status
+    ? receipt
+    : { ...receipt, commitStatus: status }
+  const requestId = `receipt-query-${receipt.receiptId}`
+  const correlationId = `receipt-correlation-${receipt.receiptId}`
   return {
     contractVersion: contract.contractVersion,
-    requestId: 'lookup-request',
-    correlationId: 'lookup-correlation',
+    requestId,
+    correlationId,
     domain: receipt.domain,
     operation: 'receipt-query',
-    outcome: 'read',
-    commitStatus: 'not-applicable',
-    revision: receipt.revision,
-    receipt,
-    payload: {},
-    error: null,
+    outcome: status === 'commit-unknown' ? 'commit-unknown' : status,
+    commitStatus: status,
+    revision: producerReceipt.revision,
+    receipt: producerReceipt,
+    payload: { found: true },
+    error: status === 'committed' ? null : typedError(status, correlationId),
   }
 }
 
