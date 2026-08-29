@@ -37,6 +37,8 @@ COMMAND_OPERATIONS = ("marks-commit", "activity-append", "receipt-query")
 _SAFE_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SAFE_OPERATION = re.compile(r"^[a-z][a-z0-9.-]{0,95}$")
+_SAFE_CHECKSUM = re.compile(r"^sha256:[a-f0-9]{64}$")
+_LEGACY_MARKS_STATUSES = frozenset({"prepared", "marks-committed", "complete"})
 _ABSOLUTE_PATH = re.compile(
     r"^(?:[A-Za-z]:[\\/]|\\\\|/(?:Users|home|tmp|var|mnt|Volumes|private|opt|Program Files|Windows|Documents and Settings)(?:[\\/]|$))",
     re.IGNORECASE,
@@ -331,7 +333,7 @@ class MarksActivityOwner:
         job_id: str,
         operation: str,
         key: str,
-        expected: int,
+        expected: int | None,
         request_id: str,
         correlation_id: str,
         fingerprint: str,
@@ -466,6 +468,252 @@ class MarksActivityOwner:
             record["requestedMarksFingerprint"] = marks_fingerprint
         return record
 
+    @staticmethod
+    def _is_legacy_marks_record(record: Mapping[str, Any] | None) -> bool:
+        return (
+            isinstance(record, Mapping)
+            and record.get("status") in _LEGACY_MARKS_STATUSES
+            and "receipt" not in record
+            and "requestFingerprint" not in record
+        )
+
+    @staticmethod
+    def _legacy_int(record: Mapping[str, Any], field: str) -> int | None:
+        value = record.get(field)
+        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+    @staticmethod
+    def _legacy_checksum(record: Mapping[str, Any]) -> str | None:
+        value = record.get("checksum")
+        return value if isinstance(value, str) and _SAFE_CHECKSUM.fullmatch(value) else None
+
+    @classmethod
+    def _legacy_marks_fingerprint(cls, job_id: str, content_id: str, key: str, record: Mapping[str, Any]) -> str:
+        return _checksum({
+            "domain": MARKS_ACTIVITY_DOMAIN,
+            "operation": "marks-commit",
+            "jobId": job_id,
+            "contentId": content_id,
+            "idempotencyKey": key,
+            "expectedRevision": record.get("expectedRevision"),
+            "marks": deepcopy(record.get("marks")),
+        })
+
+    @classmethod
+    def _legacy_receipt_id(cls, job_id: str, content_id: str, key: str, record: Mapping[str, Any]) -> str:
+        return cls._receipt_id(job_id, "marks-commit", key, cls._legacy_marks_fingerprint(job_id, content_id, key, record))
+
+    def _legacy_marks_state(self, record: Mapping[str, Any], current: Mapping[str, Any]) -> str:
+        """Classify legacy service evidence without changing its record shape."""
+
+        if not self._is_legacy_marks_record(record) or not isinstance(record.get("marks"), list):
+            return "manual-recovery"
+        expected = self._legacy_int(record, "expectedRevision")
+        record_revision = record.get("revision")
+        if record_revision is not None and self._legacy_int(record, "revision") is None:
+            return "manual-recovery"
+        record_checksum = record.get("checksum")
+        if record_checksum not in (None, "") and self._legacy_checksum(record) is None:
+            return "manual-recovery"
+        current_revision = int(current.get("revision") or 0)
+        current_marks = (current.get("payload") or {}).get("marks")
+        marks_match = current_marks == record.get("marks")
+        checksum_match = record_checksum in (None, "") or current.get("checksum") == record_checksum
+        status = str(record.get("status"))
+
+        if status in {"marks-committed", "complete"}:
+            if record_revision is None:
+                if expected is None:
+                    return "manual-recovery"
+                return "committed" if current_revision == expected + 1 and marks_match and checksum_match else "manual-recovery"
+            legacy_revision = int(record_revision)
+            if current_revision < legacy_revision:
+                return "manual-recovery"
+            if current_revision == legacy_revision:
+                return "committed" if marks_match and checksum_match else "manual-recovery"
+            # A later canonical marks commit may have replaced the old value;
+            # the terminal legacy record still proves the earlier operation.
+            return "committed" if self._legacy_checksum(record) is not None else "manual-recovery"
+
+        if expected is None:
+            return "manual-recovery"
+        if current_revision == expected + 1 and marks_match and checksum_match:
+            if record_revision is not None and int(record_revision) != current_revision:
+                return "manual-recovery"
+            return "committed"
+        if current_revision == expected:
+            return "pending"
+        return "manual-recovery"
+
+    def _legacy_marks_adapter_record(self, job_id: str, content_id: str, key: str, legacy: Mapping[str, Any], current: Mapping[str, Any]) -> dict[str, Any]:
+        state = self._legacy_marks_state(legacy, current)
+        fingerprint = self._legacy_marks_fingerprint(job_id, content_id, key, legacy)
+        current_revision = int(current.get("revision") or 0)
+        record_revision = self._legacy_int(legacy, "revision")
+        record_checksum = self._legacy_checksum(legacy)
+        if state == "committed" and record_revision is not None:
+            revision = record_revision
+            effect = record_checksum or str(current.get("checksum") or fingerprint)
+        else:
+            revision = current_revision
+            effect = str(current.get("checksum") or fingerprint)
+        checksums = [effect] if _SAFE_CHECKSUM.fullmatch(effect) else []
+        digest = sha256(f"legacy:{job_id}:{content_id}:{key}:{fingerprint}".encode()).hexdigest()[:32]
+        created_at = legacy.get("updatedAt") if isinstance(legacy.get("updatedAt"), str) and legacy.get("updatedAt") else "1970-01-01T00:00:00.000Z"
+        receipt = self._make_receipt(
+            job_id=job_id,
+            operation="marks-commit",
+            key=key,
+            expected=self._legacy_int(legacy, "expectedRevision"),
+            request_id=f"legacy-request-{digest}",
+            correlation_id=f"legacy-correlation-{digest}",
+            fingerprint=fingerprint,
+            status=state,
+            revision=revision,
+            effect=effect,
+            checksums=checksums,
+            created_at=created_at,
+            committed_at=created_at if state == "committed" else None,
+            instance_id="legacy-reader-service",
+            evidence_source="marks-activity.legacy-journal",
+        )
+        result = {
+            "revision": revision,
+            "checksum": effect,
+            "idempotent": True,
+        }
+        adapted = self._journal_record(job_id, content_id, "marks-commit", key, fingerprint, "marks", receipt, self._result_payload(job_id, content_id, result, idempotent=True))
+        adapted["legacyStatus"] = legacy.get("status")
+        return adapted
+
+    def _adapt_legacy_marks_for_read(self, job_id: str, content_id: str, key: str, record: Mapping[str, Any], paths: tuple[Path, Path, Path]) -> dict[str, Any]:
+        if not self._is_legacy_marks_record(record):
+            return dict(record)
+        current = self._read(paths[0], job_id, "marks")
+        return self._legacy_marks_adapter_record(job_id, content_id, key, record, current)
+
+    def _legacy_marks_command(self, job_id: str, content_id: str, key: str, expected: int, command_payload: Mapping[str, Any], legacy: Mapping[str, Any], paths: tuple[Path, Path, Path], *, request_id: str, correlation_id: str) -> dict[str, Any]:
+        current = self._read(paths[0], job_id, "marks")
+        legacy_expected = self._legacy_int(legacy, "expectedRevision")
+        legacy_marks = legacy.get("marks")
+        state = self._legacy_marks_state(legacy, current)
+        if state == "manual-recovery":
+            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+        if (legacy_expected is not None and legacy_expected != expected) or not isinstance(legacy_marks, list) or command_payload.get("marks") != legacy_marks:
+            return self._error_response(
+                "marks-commit",
+                request_id,
+                correlation_id,
+                "conflict",
+                outcome="conflict",
+                status="conflict",
+                revision=int(current["revision"]),
+                details={"idempotencyKey": "already-bound", "currentRevision": int(current["revision"])},
+            )
+        if state != "pending" or legacy.get("status") != "prepared":
+            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+
+        try:
+            result = self.repository.write_marks(paths[0], job_id, command_payload["marks"], expected_revision=expected)
+        except ReaderPersistenceError as error:
+            code, details, retryable = _reader_error(error)
+            try:
+                current_after = self._read(paths[0], job_id, "marks")
+            except MarksActivityOwnerStorageError:
+                current_after = current
+            if code == "conflict":
+                state_after = self._legacy_marks_state(legacy, current_after)
+                if state_after == "committed":
+                    adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current_after)
+                    return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+                return self._error_response("marks-commit", request_id, correlation_id, "conflict", outcome="conflict", status="conflict", revision=int(current_after["revision"]), details={**details, "idempotencyKey": "already-bound"}, retryable=retryable)
+            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current_after)
+            return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+        except Exception:
+            adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, current)
+            return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+
+        adapted = self._legacy_marks_adapter_record(job_id, content_id, key, legacy, result)
+        return self._record_response(adapted, request_id=request_id, correlation_id=correlation_id, operation="marks-commit")
+
+    def _existing_activity_operation_response(self, job_id: str, content_id: str, key: str, expected: int, fingerprint: str, command_payload: Mapping[str, Any], paths: tuple[Path, Path, Path], *, request_id: str, correlation_id: str) -> dict[str, Any] | None:
+        current = self._read(paths[1], job_id, "activity")
+        operation_ids = (current.get("payload") or {}).get("_activityOperationIds") or []
+        if not isinstance(operation_ids, list) or key not in operation_ids:
+            return None
+        current_payload = deepcopy(current.get("payload") or {})
+        try:
+            candidate = self._activity_updater(deepcopy(current_payload), command_payload)
+            if not isinstance(candidate, Mapping):
+                raise MarksActivityOwnerError("invalid-request")
+            candidate = dict(candidate)
+            _validate_json(candidate)
+        except MarksActivityOwnerError as error:
+            return self._error_response("activity-append", request_id, correlation_id, error.code, details=error.details)
+        except Exception:
+            return self._error_response("activity-append", request_id, correlation_id, "manual-recovery", outcome="manual-recovery", status="manual-recovery", revision=int(current["revision"]))
+        if candidate != current_payload:
+            return self._error_response(
+                "activity-append",
+                request_id,
+                correlation_id,
+                "conflict",
+                outcome="conflict",
+                status="conflict",
+                revision=int(current["revision"]),
+                payload=self._result_payload(job_id, content_id, current, idempotent=True),
+                details={"idempotencyKey": "already-applied", "evidence": "activity-operation-id"},
+            )
+
+        checksum = str(current.get("checksum") or fingerprint)
+        committed = self._make_receipt(
+            job_id=job_id,
+            operation="activity-append",
+            key=key,
+            expected=expected,
+            request_id=request_id,
+            correlation_id=correlation_id,
+            fingerprint=fingerprint,
+            status="committed",
+            revision=int(current["revision"]),
+            effect=checksum,
+            checksums=[checksum] if _SAFE_CHECKSUM.fullmatch(checksum) else [],
+            committed_at=_utc_now(),
+            evidence_source="marks-activity.activity-operation-id",
+        )
+        compatibility_record = self._journal_record(
+            job_id,
+            content_id,
+            "activity-append",
+            key,
+            fingerprint,
+            "activity",
+            committed,
+            self._result_payload(job_id, content_id, current, idempotent=True),
+        )
+        compatibility_record["compatibilityEvidence"] = "activity-operation-id"
+        try:
+            self._persist_record(paths[2], job_id, key, compatibility_record)
+        except MarksActivityOwnerStorageError:
+            pending = self._make_receipt(
+                job_id=job_id,
+                operation="activity-append",
+                key=key,
+                expected=expected,
+                request_id=request_id,
+                correlation_id=correlation_id,
+                fingerprint=fingerprint,
+                status="pending",
+                revision=int(current["revision"]),
+                effect=checksum,
+                checksums=[],
+                evidence_source="marks-activity.activity-operation-id",
+            )
+            return self._error_response("activity-append", request_id, correlation_id, "commit-unknown", outcome="commit-unknown", status="commit-unknown", revision=int(current["revision"]), payload=self._result_payload(job_id, content_id, current, idempotent=True), receipt=pending, details={"canonicalOperationId": True, "lookupAvailable": True}, retryable=True)
+        return self._record_response(compatibility_record, request_id=request_id, correlation_id=correlation_id, operation="activity-append")
+
     def _persist_record(self, path: Path, job_id: str, key: str, record: Mapping[str, Any]) -> None:
         try:
             self.journal.upsert(path, job_id, key, dict(record))
@@ -486,20 +734,39 @@ class MarksActivityOwner:
     def _find_record(self, path: Path, job_id: str, *, key: str | None = None, receipt_id: str | None = None, content_id: str | None = None) -> dict[str, Any] | None:
         if key is not None:
             record = self.journal.get(path, job_id, key)
-            if content_id is not None and isinstance(record, Mapping) and record.get("contentId") != content_id:
+            if content_id is not None and isinstance(record, Mapping) and record.get("contentId") not in (None, content_id):
                 return None
             return record
         try:
             document = self.journal._read(path, job_id)
         except ReaderPersistenceError:
             raise
-        for record in ((document.get("payload") or {}).get("operations") or {}).values():
+        for operation_id, record in ((document.get("payload") or {}).get("operations") or {}).items():
             if (
                 isinstance(record, Mapping)
-                and (content_id is None or record.get("contentId") == content_id)
-                and (record.get("receipt") or {}).get("receiptId") == receipt_id
+                and (content_id is None or record.get("contentId") in (None, content_id))
+                and (
+                    (record.get("receipt") or {}).get("receiptId") == receipt_id
+                    or (
+                        self._is_legacy_marks_record(record)
+                        and content_id is not None
+                        and self._legacy_receipt_id(job_id, content_id, str(operation_id), record) == receipt_id
+                    )
+                )
             ):
                 return deepcopy(dict(record))
+        return None
+
+    def _operation_key_for_record(self, path: Path, job_id: str, record: Mapping[str, Any], fallback: str | None = None) -> str | None:
+        if fallback is not None:
+            return fallback
+        try:
+            document = self.journal._read(path, job_id)
+        except ReaderPersistenceError:
+            raise
+        for operation_id, candidate in ((document.get("payload") or {}).get("operations") or {}).items():
+            if candidate == record:
+                return str(operation_id)
         return None
 
     def _record_response(self, record: Mapping[str, Any], *, request_id: str, correlation_id: str, operation: str, revision: int | None = None, scope: tuple[str, str] | None = None) -> dict[str, Any]:
@@ -630,6 +897,11 @@ class MarksActivityOwner:
                 record = self._find_record(paths[2], job, key=key, receipt_id=receipt_id, content_id=content)
                 if record is None:
                     return self._error_response(operation, request_id, correlation_id, "not-found", outcome="read", status="not-applicable", revision=0, payload={"empty": True, "found": False, "jobId": job, "contentId": content})
+                if self._is_legacy_marks_record(record):
+                    legacy_key = self._operation_key_for_record(paths[2], job, record, fallback=key)
+                    if legacy_key is None:
+                        return self._error_response(operation, request_id, correlation_id, "manual-recovery", outcome="read", status="not-applicable", revision=0, payload={"empty": False, "found": False, "jobId": job, "contentId": content})
+                    record = self._adapt_legacy_marks_for_read(job, content, legacy_key, record, paths)
                 if (record.get("receipt") or {}).get("commitStatus") == "pending":
                     reconciled = self._reconcile_pending(record, paths, request_id=request_id, correlation_id=correlation_id, operation=operation, scope=(job, content))
                     if reconciled is not None:
@@ -765,6 +1037,21 @@ class MarksActivityOwner:
         except ReaderPersistenceError:
             return self._error_response(operation, request_id, correlation_id, "manual-recovery", outcome="manual-recovery", status="manual-recovery")
         if existing is not None:
+            if kind == "marks" and self._is_legacy_marks_record(existing):
+                try:
+                    return self._legacy_marks_command(
+                        job,
+                        content,
+                        key,
+                        expected,
+                        command_payload,
+                        existing,
+                        paths,
+                        request_id=request_id,
+                        correlation_id=correlation_id,
+                    )
+                except MarksActivityOwnerStorageError as error:
+                    return self._error_response(operation, request_id, correlation_id, error.code, outcome="manual-recovery", status="manual-recovery", details=error.details)
             if existing.get("requestFingerprint") != fingerprint:
                 try:
                     current = self._read(paths[0] if kind == "marks" else paths[1], job, kind)
@@ -777,6 +1064,24 @@ class MarksActivityOwner:
                 if reconciled is not None:
                     return reconciled
             return self._record_response(existing, request_id=request_id, correlation_id=correlation_id, operation=operation)
+
+        if kind == "activity":
+            try:
+                compatible = self._existing_activity_operation_response(
+                    job,
+                    content,
+                    key,
+                    expected,
+                    fingerprint,
+                    command_payload,
+                    paths,
+                    request_id=request_id,
+                    correlation_id=correlation_id,
+                )
+            except MarksActivityOwnerStorageError as error:
+                return self._error_response(operation, request_id, correlation_id, error.code, outcome="manual-recovery", status="manual-recovery", details=error.details)
+            if compatible is not None:
+                return compatible
 
         try:
             current = self._read(paths[0] if kind == "marks" else paths[1], job, kind)
@@ -924,6 +1229,11 @@ class MarksActivityOwner:
             record = self._find_record(paths[2], job, key=key, receipt_id=rid, content_id=content)
             if record is None:
                 return self._error_response("receipt-query", request_id, correlation_id, "not-found", outcome="read", status="not-applicable", revision=0, payload={"empty": True, "found": False, "jobId": job, "contentId": content})
+            if self._is_legacy_marks_record(record):
+                legacy_key = self._operation_key_for_record(paths[2], job, record, fallback=key)
+                if legacy_key is None:
+                    return self._error_response("receipt-query", request_id, correlation_id, "manual-recovery", outcome="read", status="not-applicable", revision=0, payload={"empty": False, "found": False, "jobId": job, "contentId": content})
+                record = self._adapt_legacy_marks_for_read(job, content, legacy_key, record, paths)
             if (record.get("receipt") or {}).get("commitStatus") == "pending":
                 reconciled = self._reconcile_pending(record, paths, request_id=request_id, correlation_id=correlation_id, operation="receipt-query", scope=(job, content))
                 if reconciled is not None:

@@ -84,7 +84,7 @@
         "browserWriterConnected": false,
         "productionApiAuthoritative": false
       },
-      "milestoneStatus": "inventory plus isolated Host seam; browser remains current writer and no migration"
+      "milestoneStatus": "inventory plus isolated Host seam; browser remains write-intent/API caller, Python repository remains current canonical writer; Host seam is not authoritative and no cutover"
     },
     {
       "domain": "vocabulary-srs",

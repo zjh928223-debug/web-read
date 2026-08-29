@@ -5,6 +5,7 @@ import unittest
 
 from youtube_workflow.durable_json import DurableJsonRepository
 from youtube_workflow.marks_activity_owner import MarksActivityOwner
+from youtube_workflow.reader_marks_activity import ReaderMarksCommitJournal
 
 
 class MarksActivityOwnerTests(unittest.TestCase):
@@ -43,6 +44,39 @@ class MarksActivityOwnerTests(unittest.TestCase):
             expected_revision=expected,
             idempotency_key=key,
             **self.ids(key),
+        )
+
+    def seed_legacy_marks_record(self, owner, job_id, operation_id, status, marks, *, expected_revision=0):
+        output_dir = self.root / "jobs" / job_id
+        result = None
+        if status != "prepared":
+            result = owner.repository.write_marks(
+                owner.repository.marks_path(output_dir),
+                job_id,
+                copy.deepcopy(marks),
+                expected_revision=0,
+            )
+        record = {
+            "status": status,
+            "marks": copy.deepcopy(marks),
+            "expectedRevision": expected_revision,
+            "revision": result["revision"] if result else None,
+            "checksum": result["checksum"] if result else None,
+            "updatedAt": result["envelope"].get("updatedAt") if result else "",
+            "recovered": False,
+        }
+        journal = ReaderMarksCommitJournal(json_repository=owner.repository.json_repository)
+        journal.upsert(journal.path(output_dir), job_id, operation_id, record)
+        return result, record
+
+    def seed_activity_operation(self, owner, job_id, operation_id, last_event):
+        output_dir = self.root / "jobs" / job_id
+        return owner.repository.update_activity(
+            owner.repository.activity_path(output_dir),
+            job_id,
+            expected_revision=0,
+            operation_id=operation_id,
+            update=lambda current: {**current, "lastEvent": last_event},
         )
 
     def test_normal_marks_activity_queries_and_receipts_use_existing_records(self):
@@ -150,6 +184,172 @@ class MarksActivityOwnerTests(unittest.TestCase):
         self.assertEqual(first_activity["receipt"]["receiptId"], retry_activity["receipt"]["receiptId"])
         self.assertEqual(first_activity["revision"], retry_activity["revision"])
         self.assertEqual(replacements["activity"], 1)
+
+    def test_legacy_marks_journal_records_are_read_and_retried_without_migration(self):
+        replacements = 0
+
+        def after_replace(_temporary, target):
+            nonlocal replacements
+            if Path(target).name == "reader-marks.json":
+                replacements += 1
+
+        owner = self.make_owner(repository=DurableJsonRepository(after_replace=after_replace))
+        marks = [{"globalIndex": 3, "word": "legacy"}]
+
+        for status in ("marks-committed", "complete"):
+            job_id = f"job-{status}"
+            key = f"legacy-{status}"
+            scope = self.scope(job_id, f"content-{status}")
+            self.seed_legacy_marks_record(owner, job_id, key, status, marks)
+            receipt_query = owner.command(
+                "receipt-query",
+                payload={**scope, "idempotencyKey": key},
+                request_id=f"request-receipt-{status}",
+                correlation_id=f"correlation-receipt-{status}",
+            )
+            self.assertEqual(receipt_query["outcome"], "committed")
+            self.assertEqual(receipt_query["receipt"]["commitStatus"], "committed")
+            self.assertEqual(receipt_query["receipt"]["evidenceSource"], "marks-activity.legacy-journal")
+            by_id = owner.receipt(
+                receipt_id=receipt_query["receipt"]["receiptId"],
+                job_id=job_id,
+                content_id=scope["contentId"],
+                **self.ids(f"legacy-receipt-id-{status}"),
+            )
+            self.assertEqual(by_id["outcome"], "committed")
+            retry = self.command(owner, "marks-commit", {**scope, "marks": marks}, 0, key)
+            self.assertEqual(retry["outcome"], "committed")
+            self.assertEqual(retry["revision"], 1)
+            different = self.command(
+                owner,
+                "marks-commit",
+                {**scope, "marks": [{"globalIndex": 3, "word": "different"}]},
+                0,
+                key,
+            )
+            self.assertEqual(different["outcome"], "conflict")
+
+        optional_expected_job = "job-complete-without-expected"
+        optional_expected_key = "legacy-complete-without-expected"
+        optional_expected_scope = self.scope(optional_expected_job, "content-complete-without-expected")
+        self.seed_legacy_marks_record(
+            owner,
+            optional_expected_job,
+            optional_expected_key,
+            "complete",
+            marks,
+            expected_revision=None,
+        )
+        optional_expected_receipt = owner.receipt(
+            idempotency_key=optional_expected_key,
+            job_id=optional_expected_job,
+            content_id=optional_expected_scope["contentId"],
+            **self.ids("legacy-complete-without-expected-receipt"),
+        )
+        self.assertEqual(optional_expected_receipt["outcome"], "committed")
+        self.assertIsNone(optional_expected_receipt["receipt"]["expectedRevision"])
+        optional_expected_retry = self.command(
+            owner,
+            "marks-commit",
+            {**optional_expected_scope, "marks": marks},
+            0,
+            optional_expected_key,
+        )
+        self.assertEqual(optional_expected_retry["outcome"], "committed")
+
+        prepared_job = "job-prepared"
+        prepared_key = "legacy-prepared"
+        prepared_scope = self.scope(prepared_job, "content-prepared")
+        self.seed_legacy_marks_record(owner, prepared_job, prepared_key, "prepared", marks)
+        prepared_receipt = owner.receipt(
+            idempotency_key=prepared_key,
+            job_id=prepared_job,
+            content_id=prepared_scope["contentId"],
+            **self.ids("legacy-prepared-receipt"),
+        )
+        self.assertEqual(prepared_receipt["outcome"], "commit-unknown")
+        self.assertEqual(prepared_receipt["receipt"]["commitStatus"], "commit-unknown")
+        completed = self.command(owner, "marks-commit", {**prepared_scope, "marks": marks}, 0, prepared_key)
+        self.assertEqual(completed["outcome"], "committed")
+        self.assertEqual(completed["revision"], 1)
+        reopened_receipt = owner.query(
+            "receipt",
+            payload={**prepared_scope, "idempotencyKey": prepared_key},
+            **self.ids("legacy-prepared-query"),
+        )
+        self.assertEqual(reopened_receipt["payload"]["receipt"]["commitStatus"], "committed")
+        raw = owner.journal.get(
+            owner.journal.path(self.root / "jobs" / prepared_job),
+            prepared_job,
+            prepared_key,
+        )
+        self.assertEqual(raw["status"], "prepared")
+        self.assertNotIn("receipt", raw)
+        self.assertNotIn("requestFingerprint", raw)
+        self.assertEqual(replacements, 4)
+
+    def test_existing_activity_operation_id_never_commits_a_different_payload(self):
+        replacements = 0
+
+        def after_replace(_temporary, target):
+            nonlocal replacements
+            if Path(target).name == "reader-activity.json":
+                replacements += 1
+
+        owner = self.make_owner(repository=DurableJsonRepository(after_replace=after_replace))
+        conflict_job = "job-activity-conflict"
+        conflict_key = "activity-existing-conflict"
+        conflict_scope = self.scope(conflict_job, "content-activity-conflict")
+        self.seed_activity_operation(owner, conflict_job, conflict_key, "stored")
+        conflict = self.command(
+            owner,
+            "activity-append",
+            {**conflict_scope, "update": {"lastEvent": "different"}},
+            0,
+            conflict_key,
+        )
+        self.assertEqual(conflict["outcome"], "conflict")
+        self.assertEqual(conflict["error"]["code"], "conflict")
+        self.assertEqual(
+            owner.query("activity", payload=conflict_scope, **self.ids("activity-conflict-current"))["payload"]["activity"]["lastEvent"],
+            "stored",
+        )
+        self.assertFalse((self.root / "jobs" / conflict_job / "_workflow" / "reader-marks-commit-journal.json").exists())
+
+        same_job = "job-activity-same"
+        same_key = "activity-existing-same"
+        same_scope = self.scope(same_job, "content-activity-same")
+        self.seed_activity_operation(owner, same_job, same_key, "same")
+        same = self.command(
+            owner,
+            "activity-append",
+            {**same_scope, "update": {"lastEvent": "same"}},
+            0,
+            same_key,
+        )
+        retry = self.command(
+            owner,
+            "activity-append",
+            {**same_scope, "update": {"lastEvent": "same"}},
+            0,
+            same_key,
+        )
+        self.assertEqual(same["outcome"], "committed")
+        self.assertTrue(same["payload"]["idempotent"])
+        self.assertEqual(same["receipt"]["receiptId"], retry["receipt"]["receiptId"])
+        self.assertEqual(replacements, 2)
+        different_after_compat = self.command(
+            owner,
+            "activity-append",
+            {**same_scope, "update": {"lastEvent": "different-after-compat"}},
+            0,
+            same_key,
+        )
+        self.assertEqual(different_after_compat["outcome"], "conflict")
+        self.assertEqual(
+            owner.query("activity", payload=same_scope, **self.ids("activity-same-current"))["payload"]["activity"]["lastEvent"],
+            "same",
+        )
 
     def test_cas_conflict_and_conflict_query_keep_the_authoritative_marks(self):
         owner = self.make_owner()
