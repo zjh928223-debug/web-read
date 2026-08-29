@@ -1,39 +1,37 @@
 ## 为什么
 
-当前 Read-Web 已有 Windows 本机 `Local App Host`、`ApplicationPersistence`、Reader Session 原子切换、Range media 和六域备份/恢复基础，但浏览器运行时仍是混合架构：部分 durable state 仍可由 browser 直接写入，部分能力通过 `window.*`/DOM compatibility 面连接。这样会留下双 writer、跨进程恢复边界不清、回滚时数据格式与 owner 不一致等风险，也无法把“本机可用”与“数据已安全提交”区分开。
+当前 Read-Web 已有 Windows 本机 `Local App Host`、`ApplicationPersistence`、Reader Session 原子切换、Range media 和六域备份/恢复基础，但浏览器运行时仍有部分 durable state 直接写入 browser storage。这样会留下两个 owner、恢复边界不清，以及“请求成功”与“数据已安全提交”难以区分的问题。
 
-现在先把 Windows 本机定义为唯一 data owner，并让同一台机器上的 browser 也通过正式 loopback API 成为薄 Reader，可以在引入任何未来跨设备 transport 前固定 ownership、atomicity、备份恢复和 fail-closed 契约；本变更不提前设计 Mac、Tailscale 或任何非-loopback transport。
+本变更把 Windows loopback Host 定义为个人工具的唯一 durable owner，让 browser 成为薄 Reader，并在未来跨设备 transport 之前固定最小的 ownership、校验、备份和回退语义。范围只面向单人、单机、Windows loopback 使用，不追求多租户、高可用或企业级审计系统。
 
 ## 变更内容
 
-- **BREAKING**：将 Windows `Local App Host` 定义为以下六个 durable domain 的唯一 data owner：`Reader Session`、`Vocabulary/SRS`、`Preview`、`Annotation`、`marks/activity`、`workflow`。浏览器只能通过正式 API 读写 canonical durable state，不再把 browser storage 当作第二权威来源。
-- 为六个 domain 建立可审查的 ownership/API 矩阵：每个 domain 明确 canonical record、read/write command、revision/CAS、commit acknowledgement、错误分类和 owner health 状态；跨 domain 只通过受控 command/manifest 协调，不假设异构存储存在隐式 distributed transaction。
-- 让 Windows 本机前端先走与未来远程式调用相同的 typed loopback API；API 具备 Host/Origin/token、correlationId、revision、capability/readiness 和 fail-closed 语义。
-- 保持 media bytes 不进入 browser durable state：媒体继续由 Windows host 提供授权 URL、HTTP `Range`/`ETag` streaming；Reader 只持有短生命周期 playback/resource handle，不下载或复制大文件。
-- 以 domain 为单位退役 browser durable writers，保留可观测、可回滚的 compatibility reader/adapter；owner 不可用、契约不兼容、未知版本或数据损坏时拒绝写入，不静默回落到另一份 browser-owned state。
-- 冻结最终落点：API-authoritative 阶段的六域 canonical durable records 必须存放在 Windows Host 管理的 repository；browser bridge 只能做只读 inventory、一次性 import 或 rollback-window compatibility reader，不能成为 repository、commit executor 或 canonical writer。
-- 以 profile lease + journal 保护原子 owner-mode 切换：先冻结并阻断旧 writer，将 compatibility path 置为 read-only，确认无 in-flight mutation，再用单一 checkpoint 同时记录旧 writer blocked 与 Host repository authoritative；失败只能保持旧 owner 或进入 not-ready/manual-recovery，不能出现双写窗口。
-- 建立备份 manifest、逐域 checksum、dry-run restore、冲突/未知数据隔离、原子恢复和恢复演练要求。继续保持 `SeekPlayerDB` `version 1`、`files`、`keyPath id`；任何 schema migration 必须另行获得用户明确授权并单独设计。
-- 把边界拆成可并行与必须串行的实施阶段，并为每一阶段设置行为门禁、旧/新 owner 双读差分、故障注入、冷启/重启/回滚和完成定义。
+- **BREAKING**：Windows `Local App Host` 最终成为 `Reader Session`、`Vocabulary/SRS`、`Preview`、`Annotation`、`marks/activity`、`workflow` 六个 durable domain 的唯一 canonical owner；browser 通过 typed owner API 读写，完成切换后不再直接写 canonical `IndexedDB`、`localStorage` 或 JSON。
+- 保留已经完成的 1.x–3.x 与 4.1 基础：owner registry、loopback/auth、lease/receipt、typed API、media capability/no-copy 检查，以及 `ReaderSessionOwner` 的 query/prepare/commit/restore。它们不在本次范围精简中拆除或返工。
+- 为剩余五域建立必要的 query/command/receipt seam；每个 domain 使用可解释的 revision/CAS、幂等 key、atomic write、checksum、失败保留旧值和最小恢复状态。
+- 以逐域顺序完成 read-only inventory、备份、一次性迁移、验证、writer freeze、切换和 rollback；不建立长期双写，也不声称跨异构存储存在 global transaction。
+- 保持媒体只保存 identity/reference metadata，浏览器直接使用 Host 授权 URL 和 HTTP `Range`/`ETag`；不把完整媒体 Blob/ArrayBuffer 放入 API、repository、backup 或 migration。
+- 保持 `SeekPlayerDB` database `version 1`、store `files`、key path `id` 不变；六个用户 WhisperX/语言处理文件继续不碰。
+- 将后续实施压缩为少量 A–D 阶段，并只保留正常使用、重复请求、明显 CAS 冲突、启动/恢复、核心播放切换和大媒体不整文件复制等直接影响个人数据与可用性的验证。
 
 ## 能力
 
 ### 新增能力
 
-- `windows-durable-domain-ownership`: Windows 本机六个 durable domain 的唯一 owner、canonical records、写入授权、revision/CAS、commit acknowledgement、health 和 fail-closed contract。
-- `windows-thin-reader-api`: browser 作为薄 Reader 使用的 typed loopback API、权限/能力边界、ephemeral state、Range media 和禁止大文件复制的 contract。
-- `windows-durable-state-migration`: browser durable state 退役、兼容迁移、备份/恢复、corrupt quarantine、rollback 和恢复演练的 contract。
+- `windows-durable-domain-ownership`：六域唯一 owner、canonical records、query/command/receipt、revision/CAS 和 loopback fail-closed 边界。
+- `windows-thin-reader-api`：browser 薄 Reader 的 typed loopback API、授权 capability、ephemeral state、Range media 和 no-copy contract。
+- `windows-durable-state-migration`：逐域 inventory、最小备份/恢复、一次性 import、旧值保留和可回退 writer 切换。
 
 ### 修改能力
 
-- `local-application-host`: 从“提供本地静态资源和高权限 endpoint”扩展为六个 durable domain 的唯一 Windows owner，并在 readiness 中声明 domain/API 能力。
-- `durable-application-data`: 将现有事务、版本 envelope、冲突、备份/恢复要求绑定到六个 domain 的 owner boundary；明确不得在本变更中改变 `SeekPlayerDB v1/files/id` schema。
-- `reliable-reader-session`: Reader Session 的 durable prepare/commit 和恢复通过 Windows API 完成；媒体继续 URL/Range streaming，browser 不复制大媒体。
-- `workflow-service-reliability`: workflow durable state、job command 和相关文件引用必须继承 Windows owner/API 授权与 fail-closed boundary。
+- `local-application-host`：补充六域 owner/readiness、loopback authorization 和 media Range boundary。
+- `durable-application-data`：把现有事务与备份能力绑定到 owner boundary，并冻结 `SeekPlayerDB v1/files/id`。
+- `reliable-reader-session`：Reader Session 的 durable prepare/commit/restore 继续通过 Host owner，媒体继续 URL/Range streaming。
+- `workflow-service-reliability`：workflow durable state、job command 和文件引用继承 owner API、CAS/receipt 与 loopback boundary。
 
 ## 影响
 
-- 主要影响 `tools/subtitle-workflow/youtube_workflow/service.py` 及其 persistence/health/auth seams、`src/services/persistence/`、`src/services/runtime/`、Reader/Preview/Vocabulary/Annotation/SRS 访问层和现有 compatibility adapters；具体文件拆分留在 `design.md`/`tasks.md`，本提案不修改业务源码。
-- 需要新增 typed API contract、Windows Host-managed repository contract、domain ownership matrix、profile lease/readiness 诊断、backup/restore rehearsal fixtures 和 browser/backend behavior gates；现有 `ApplicationPersistence` 可作为冻结 schema 的 legacy inventory/import/rollback-window adapter，不能作为 API-authoritative 阶段的最终 repository。
-- API transport 仅限 Windows 本机 loopback，使用当前 optimization workspace 的隔离配置/数据根；不得触碰 `E:\read-web-next`、`E:\read-web` 或日常端口/数据。
-- 这是数据边界和调用方式的 BREAKING 变更，实施必须先落 API contract 与 owner observability，再迁移 browser writers；任何 schema、Mac、Tailscale、远程部署或非-loopback transport 均不在本 change 范围内。
+- 主要影响 `tools/subtitle-workflow/youtube_workflow/` 的 Host/domain seam、`src/services/persistence/`、Reader/Preview/Vocabulary/Annotation/SRS 访问层和现有 compatibility adapters；具体实施只在后续任务中进行，本轮不修改业务源码。
+- 迁移目标是隔离的 optimization config/data root，使用 Windows loopback；不得触碰 `E:\read-web-next`、`E:\read-web`、日常端口或日常数据根。
+- 现有 lease、receipt、backup、health 和 fail-closed 基础设施继续复用，但后续不再扩展成多租户、HA、审计或复杂跨域协调平台。
+- Mac、Tailscale、VPN、远程部署和任何非-loopback transport 不在本 change 范围内。

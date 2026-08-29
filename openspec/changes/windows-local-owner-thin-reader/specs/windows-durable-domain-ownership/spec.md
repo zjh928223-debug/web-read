@@ -1,71 +1,49 @@
 ## ADDED Requirements
 
-### Requirement: Windows application profile 必须暴露六个唯一 durable domain owner
-Local App Host SHALL 在 profile ready 之前，为 `reader-session`、`vocabulary-srs`、`passage-preview`、`annotation`、`marks-activity` 和 `workflow` 各注册一个 canonical owner facade。每个 registration MUST 声明 canonical records、支持的 schema versions、query/command surface、current revision source、backup adapter 和 recovery handler。在 API-authoritative mode 下，每条 canonical record MUST 位于 Windows Host 管理的 repository 中；该 repository MAY 由独立的 host-managed service 提供，但 browser 的 `IndexedDB`/`localStorage` bridge MUST NOT 成为最终 repository 或 commit executor，browser code 也 MUST NOT 成为第二个 owner。
+### Requirement: Windows application profile 必须为六域建立唯一 owner registration
 
-#### Scenario: Host 启动并完成 owner registry
-- **WHEN** Local App Host 完成 Windows application profile 的启动
-- **THEN** readiness MUST 列出六个 domain owner 的唯一 identity、支持的 schema 和 current revision evidence
-- **THEN** capability response MUST 标明各 domain command 是 writable、read-only 还是 unavailable
+Local App Host SHALL 为 `reader-session`、`vocabulary-srs`、`passage-preview`、`annotation`、`marks-activity` 和 `workflow` 各注册一个 canonical owner facade。每个 registration MUST 声明最小 canonical record、支持的 schema、query/command surface、revision source 和 backup/restore target。某个 domain 完成切换后，其 canonical record MUST 位于 Host-managed repository；browser `IndexedDB`/`localStorage` bridge MUST NOT 成为最终 repository、commit executor 或第二 owner。
 
-#### Scenario: Owner registry 不完整或有歧义
-- **WHEN** 某个 domain adapter 缺失、重复、未认领或报告 unsupported schema
-- **THEN** Local App Host MUST 对 durable operation 保持 not-ready
-- **THEN** host MUST 保留现有 canonical data，并发出包含 domain 和 correlationId 的 typed diagnostic
+#### Scenario: owner registry 可用
 
-#### Scenario: Owner registry 仅指向 browser bridge
-- **WHEN** 某个 domain 没有具备 transaction/revision/recovery evidence 的 ready Host-managed repository，且只有 browser persistence bridge 可用
-- **THEN** 该 domain MUST 按 migration journal 保持 old-owner 或 not-ready/manual-recovery
-- **THEN** host MUST NOT 声明 API authority，也 MUST NOT 允许 bridge 确认 canonical commit
+- **WHEN** Local App Host 为 profile 建立六域 registry
+- **THEN** capability/readiness MUST 能标识每个 domain 的 owner、当前 revision 和 `ready`/`legacy`/`not-ready` 状态
+- **THEN** 已切换 domain 的新 durable mutation MUST 只能进入 Host-managed repository
 
-### Requirement: Durable domain 写入必须经过 Windows owner API
-六个 domain 的所有 durable mutation SHALL 通过 owner facade 及其授权 command contract 进入。Browser component、Pinia store、legacy facade 和 workflow client MUST NOT 直接写入 canonical `IndexedDB`、`localStorage`、SQLite 或 JSON record。Compatibility adapter MAY 仅在显式 migration operation 下读取或 import legacy record，且 MUST NOT 暴露第二条 UI write path。
+#### Scenario: registry 或某个 domain 尚未准备好
 
-#### Scenario: Browser 请求正常 durable mutation
-- **WHEN** Reader、Vocabulary/SRS、Preview、Annotation、marks/activity 或 workflow UI 提交 mutation
-- **THEN** browser MUST 发送包含 domain、operation、correlationId 以及所需 expected revision 或 idempotency key 的 typed owner command
-- **THEN** owner MUST 是唯一能够确认 canonical durable write 的 component
+- **WHEN** domain owner、repository、schema 或 revision evidence 缺失或无效
+- **THEN** 该 domain MUST 保持 legacy-owner 或 not-ready，并保留现有数据
+- **THEN** host MUST NOT 允许 browser fallback writer 冒充 canonical owner
 
-#### Scenario: 已退役 direct writer 尝试 canonical write
-- **WHEN** legacy browser path 在 owner-mode checkpoint 将该 domain 记录为 API-authoritative 后调用 direct durable writer
-- **THEN** architecture/runtime gate MUST 在 canonical record 改变前拒绝或 quarantine 该 write
-- **THEN** UI MUST NOT 根据该 rejected path 显示 saved state
+### Requirement: Durable domain mutation 必须经过 owner API 并提供基本 receipt
 
-### Requirement: Owner commit 必须发布 revision evidence 并防止 lost update
-每个可变 domain SHALL 使用 monotonic revision、expected-revision CAS 或等价的 concurrency guard。若 retry 可能重复 side effect，mutation MUST 包含 idempotency key；owner MUST 返回包含 authoritative revision 的 durable commit receipt。durability result 未知的 request MUST 在 receipt query 解决前表示为 `commit-unknown`。
+六域新的 durable mutation SHALL 通过 owner facade 及 typed command 进入。每个可变 domain MUST 使用 monotonic revision、expected-revision CAS 或等价的单用户 lost-update guard；可能重试的 mutation MUST 带 idempotency key。提交成功 MUST 返回 authoritative revision 和 durable receipt；结果未知时 MUST 返回或可查询 `commit-unknown`，不得盲目重复副作用。已切换 domain 的 legacy path 只能 read-only/inventory/import-evidence。
 
-#### Scenario: 两个 client 提交同一 base revision
-- **WHEN** 两个 browser client 都基于 revision 7 提交 mutation
-- **THEN** 只有一个合法 transition MAY 提交 revision 8
-- **THEN** 另一个 client MUST 收到带 current revision 的 typed conflict，且 MUST NOT 覆盖 revision 8
+#### Scenario: 正常 mutation 与重复 retry
 
-#### Scenario: Owner 写入后 commit result 丢失
-- **WHEN** owner 可能已经提交 mutation，但 client 尚未收到 response 时 network 或 process boundary 发生故障
-- **THEN** client MUST 保留 dirty/unknown state，并查询 idempotency receipt 或 authoritative revision
-- **THEN** 使用相同 idempotency key 重试 MUST NOT 重复该 mutation 或 activity event
+- **WHEN** browser 通过 owner API 提交带 expected revision 和 idempotency key 的 command
+- **THEN** owner MUST 原子写入该 domain，并返回 revision/receipt
+- **THEN** 使用相同 key 重试 MUST 返回同一 logical result，不得重复写入
 
-### Requirement: 跨 domain durable 变更必须使用 profile lease 和 journal
-涉及多个 durable domain 的 operation（包括 full restore、migration cutover 和 material publication）SHALL 在第一次 owner commit 前取得 application-profile lease 并记录 pending journal。该 operation MUST 只从完整 baseline 或完整 staged revision 发布 read，绝不能发布未记录的 domain revision 混合状态。
+#### Scenario: 明显 revision conflict
 
-#### Scenario: 跨 domain commit 达到可见 revision
-- **WHEN** profile operation 准备好所有请求的 domain adapter，并在 lease 下完成 commit
-- **THEN** 每个 committed domain revision 和 operation id MUST 在新 profile revision 暴露前写入记录
-- **THEN** owner read MUST 只能观察到之前的完整 baseline 或完整 committed staged state
+- **WHEN** command 的 expected revision 不是当前 revision
+- **THEN** owner MUST 返回 typed conflict
+- **THEN** canonical record MUST 保持原值，不得由 browser storage 补写
 
-#### Scenario: Host 在一个 domain commit 后退出
-- **WHEN** process 在两个 domain commit 之间、且 pending journal 仍存在时终止
-- **THEN** 下一次 startup MUST 在 readiness 之前将 journal 恢复为完整 baseline 或完整 staged state
-- **THEN** host MUST 保持 not-ready，且 MUST NOT 在 recovery evidence 不完整时暴露 partial cross-domain snapshot
+### Requirement: Owner authorization 必须保持 loopback fail-closed
 
-### Requirement: Owner health 和 authorization 必须 fail closed
-Owner API SHALL 区分 liveness、readiness、domain availability、lease ownership、recovery state 和 authorization。缺失 token、无效 Host/Origin、non-loopback binding、stale capability、缺失 revision evidence、corrupt data 或 unknown schema MUST 阻止受影响的 side effect，而不是选择 browser fallback writer。
+Owner API SHALL 只绑定 Windows loopback，并对 durable command、受保护文件读取和 workflow 高权限操作校验 Host、Origin、instance token、profile capability、path/operation 和适用的 revision/idempotency。缺失或不匹配的授权 MUST 在副作用前拒绝；错误不得暴露 token、完整受保护路径或媒体 bytes。
 
-#### Scenario: Domain owner 不可用
-- **WHEN** browser 在 owner recovering、stopped、conflicted 或 marked corrupt 时请求 mutation
-- **THEN** API MUST 在任何 write 之前返回 typed `not-ready`、`conflict`、`corrupt` 或 `manual-recovery` result
-- **THEN** browser MUST 保留 unsaved intent，并显示 retry、export、rebind 或 recovery action，且不得在本地写入
+#### Scenario: 未授权或越界请求
 
-#### Scenario: 未授权或 non-loopback request 到达 mutation endpoint
-- **WHEN** request 缺少 instance token、未通过 Host/Origin validation 或通过 non-loopback bind 到达
-- **THEN** owner MUST 在读取任意路径、凭据或 durable record 之前拒绝 request
-- **THEN** canonical domain state、revision 和 job state MUST 保持不变
+- **WHEN** request 使用 non-loopback、错误 Host/Origin、无效 token/capability 或越界 path/operation
+- **THEN** service MUST 返回 typed unauthorized/permission result
+- **THEN** domain revision、job state 和 filesystem state MUST 保持不变
+
+#### Scenario: 已切换 direct writer 尝试写入
+
+- **WHEN** legacy browser path 尝试修改已 API-authoritative domain
+- **THEN** host/runtime gate MUST 拒绝或隔离该 write
+- **THEN** UI MUST NOT 根据该 path 显示 saved

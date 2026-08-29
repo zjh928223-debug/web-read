@@ -1,141 +1,102 @@
 ## 背景
 
-本变更建立在当前 Windows 本机稳定化基线上，而不是重新发明已有持久化设施。当前证据包括：
+本变更建立在现有 Windows 本机稳定化基础上：`Local App Host`、`ApplicationPersistence`、`DurableJsonRepository`、owner receipt/lease、Range media、六域 backup adapter 和 Reader Session `ReaderSessionOwner` 已存在。已完成的 1.x–3.x 与 4.1 代码和检查保留，不在本次范围精简中拆除或返工。
 
-- `CURRENT_PROJECT_STATUS.md` 与 `PROJECT_MAP.md` 记录了 Vite + Vue 3 + Pinia + FastAPI 的混合运行时、`Local App Host`、`ApplicationPersistence`、Range media、latest-wins marks/activity ledger，以及仍需逐步收敛的 browser compatibility 面。
-- `docs/persistence/application-backup.md` 已把 `reader-session`、`marks-activity`、`vocabulary-srs`、`passage-preview`、`annotation`、`workflow` 列为完整备份所需的六个 durable domain；现有 adapter registry、checksum、dry-run restore、journal、quarantine、cross-process lease 和 isolated real-profile rehearsal 可作为本变更的基线。
-- `src/services/persistence/application-persistence.js` 与现有 `durable-application-data` spec 固定 `SeekPlayerDB` version `1`、object store `files`、key path `id`。本变更只迁移 owner/call boundary，不升级、重建或删除这个 schema。
-- Reader Session 的运行时组装在 `src/composables/session-*`、`src/services/persistence/reader-session-persistence.js` 与 `src/composables/reader-session-publisher.js`；Vocabulary/SRS、Preview、Annotation、marks/activity 和 workflow 分别已有 focused services/features、Python owner 和 focused verification scripts，但 browser 仍可直接触达部分 durable storage。
-- `openspec/specs/local-application-host`、`durable-application-data`、`reliable-reader-session`、`workflow-service-reliability` 已覆盖 host 安全、事务、Range、CAS、恢复和 workflow 可靠性；本变更补上跨 domain 的唯一 owner 与 API-first 迁移语义。
-
-“唯一 owner”指 Windows application profile 的唯一 canonical authority 与写入入口，不要求六个 domain 在同一进程或同一种物理存储中实现。API-authoritative 阶段的六域 canonical durable records MUST 落在由 Windows Local App Host 管理生命周期、锁、事务、backup/recovery 和 revision 的 repository 中；该 repository 可以由 FastAPI host 进程或受管 Node sidecar 提供，但不能由 browser storage 提供。Local App Host 负责 profile lease、授权、capability、readiness、备份/恢复协调和统一 API。迁移期间，旧 `SeekPlayerDB/files` 和 browser keys 只能作为受控的只读 inventory、一次性 import source 或 rollback-window compatibility reader，不能作为最终 repository、commit executor 或 canonical writer。
+当前仍需把 browser 的 durable writer 逐域收敛到 Host。最终目标是一个单人、单机、Windows loopback 工具：Host 管理六域 canonical repository，browser 只负责 UI、播放和短期状态；legacy browser storage 只用于受控 inventory、一次性 import 或短期 rollback read。
 
 ## 目标 / 非目标
 
 **目标：**
 
-- 建立六个 durable domain 的 ownership matrix，明确 canonical record、owner、API command/query、revision/CAS、commit receipt、故障语义和备份范围。
-- 先为 Windows 本机提供正式 typed loopback API，让本机 browser 使用与未来远程式调用相同的 request/response、auth、revision、idempotency 和 error contract。
-- 让 browser 保留 UI、playback、短期 cache、in-flight request 和 Pinia view-model 等 ephemeral state；所有 durable read/write 经过 API owner facade。
-- 保持媒体授权 URL、HTTP `Range`/`ETag` 和生命周期 owner 语义；不把大媒体 Blob/ArrayBuffer 复制到 browser durable state 或备份包。
-- 逐 domain 退役 browser durable writers，使用备份、迁移 checkpoint、read-only compatibility adapter、差分读取和明确 rollback target 保留回退能力。
-- 将 API-authoritative 阶段的最终 canonical durable records 固定到 Windows Host-managed repository；browser bridge 仅允许只读 inventory、一次性 import 和 rollback-window compatibility read。
-- 将每域 commit 与跨域 backup/restore 的 atomicity、CAS、corrupt quarantine、unknown schema、recovery-before-ready 和 fail-closed 行为变成可测试契约。
-- 明确可并行和必须串行的实施边界，并在优化 workspace 的隔离 config/data root 上完成行为、故障注入和恢复演练。
+- 为六个 durable domain 建立可理解的 Host owner、query/command/receipt 和 revision/CAS seam。
+- 安全迁移现有个人数据：先读取和校验，备份后导入，验证成功才切换 writer；失败保留旧值并可回退。
+- 保持 `SeekPlayerDB` database `version 1`、store `files`、key path `id`，以及六个 WhisperX/语言处理文件不变。
+- 让媒体只以 identity/reference metadata 进入 durable records；browser media element 继续使用 Host 授权 URL 和 Range，不整文件复制。
+- 保留基本 atomic write、checksum、幂等 retry、明显 CAS conflict、最小 backup/restore/rollback 和核心用户流程回归。
 
 **非目标：**
 
-- 不设计或开放 Mac、Tailscale、VPN、远程部署、多设备同步、云端服务或任何非-loopback transport。
-- 不改变 `SeekPlayerDB` 的 database name、version、object store 或 key path；任何未来 schema migration、重建或数据删除都必须是另一个获得用户明确授权的 change。
-- 不复制或重新实现 UI、SRS policy、ECDICT、WhisperX、语言处理或媒体转码功能；只定义它们访问 durable owner 的边界。
-- 不承诺跨异构物理存储的隐式 distributed transaction；需要跨域一致性的操作必须使用显式 profile journal/lease 协议。
-- 不在本 change 中删除所有 legacy rows 或 compatibility code；删除必须等待 cutover、回滚窗口和 consumer gate 全部完成。
+- 不开放 Mac、Tailscale、VPN、远程部署、云端、多设备或任何非-loopback transport。
+- 不实现六域 global transaction、跨物理存储 material publish、HA、多租户、审计平台或新的通用事务基础设施。
+- 不做 multi-tab/高并发/多 writer 全矩阵，不建立长期 shadow、双写、canary 或复杂 cutover coordinator。
+- 不新增穷举 fault matrix、hard process-exit 组合、30 分钟 soak、heap/Long Task 性能体系或正式 release readiness 流程。
+- 不在本 change 中改变 UI 设计、SRS policy、ECDICT、WhisperX、语言处理或媒体转码功能。
+
+## 已完成基础（历史记录）
+
+1.x 已完成基线、ownership inventory、consumer map、baseline journeys 和 non-goal guard；2.x 已完成 owner registry、lease、typed API、receipt、readiness/auth 基础；3.x 已完成 browser client/status、legacy read-only bridge、media capability/no-copy seam 和三层 focused checks；4.1 已完成 `ReaderSessionOwner` 的 query/prepare/commit/restore、可恢复 snapshot、receipt/CAS/atomic write 及直接行为测试。它们是后续工作输入，不因范围裁剪回退。
 
 ## 设计决策
 
-### 1. 以 Windows application profile 作为唯一 authority boundary
+### 1. Windows profile 是唯一 durable authority
 
-Local App Host 为 profile 的 owner coordinator，持有跨进程 profile lease，并把六个 domain 的 Windows Host-managed repository/adapter 注册为完整 registry。浏览器、Vue/Pinia、workflow worker 和外部进程都只能通过 host 认可的 domain facade 产生 durable side effect。最终 canonical record 必须写入 host-managed repository；`DurableJsonRepository`、SQLite 或受控 Python owner 可以作为该 repository 的实现，`ApplicationPersistence` 只能在 host 明确管理其生命周期且不改变 frozen schema 时作为受控 adapter 使用。browser `IndexedDB`/`localStorage` bridge 只允许 inventory、一次性 import 或 rollback-window compatibility read，不能执行 canonical commit。
+Local App Host 为六个 domain 保留唯一 registration。一个 domain 在完成迁移前可以处于 legacy-owner 或 not-ready；完成切换后，canonical record 和新的 durable mutation 只能属于 Host-managed repository。browser `IndexedDB`、`localStorage`、raw JSON 和 compatibility facade 不得作为第二 canonical writer。
 
-选择 profile boundary 而不是“一个进程/一个 store”是为了覆盖当前 Node、browser 和 Python service 的混合架构，同时复用已经存在的 host lifetime lease、backup registry 和 workflow owner。浏览器直接作为 owner 会继续保留双 writer；把六域强行合并为一个 SQLite 会扩大迁移范围并诱发 schema 变化，这两种方案都拒绝。
-
-Ownership matrix 的初始语义如下：
-
-| Domain | canonical durable 内容 | Windows owner facade | 明确排除 |
+| Domain | 最小 canonical 内容 | 目标 owner seam | 排除 |
 | --- | --- | --- | --- |
-| `reader-session` | manifest、transcript/chunk 小资源、session revision、`contentId`、媒体 identity 引用、恢复/隔离证据 | `ReaderSessionOwner` 的 prepare/commit/restore/query | 完整媒体 bytes、playback time、DOM |
-| `vocabulary-srs` | vocabulary entry、acquisition/review/SRS state、learning events 和已纳入当前契约的 personalization rows | `VocabularySrsOwner` 的 command/query/receipt | ECDICT/外部词典缓存、纯 UI 派生排序 |
-| `passage-preview` | preview envelope、continuation/rating/transition durable state 和已注册 legacy keys | `PreviewOwner` 的 batch read/commit/restore | 句子候选的 session-memory cache、未注册 key |
-| `annotation` | scoped generated/status/bundle、轻量 annotation import/export state、corrupt evidence | `AnnotationOwner` 的 scoped command/query | 仅用于渲染的 hit-test index、临时 API response |
-| `marks-activity` | marks ledger、activity event identity、latest-wins revision 和 dirty/saved/error evidence | `MarksActivityOwner` 的 coalesced commit/event receipt | playback hot-path 当前 index、未提交 UI 草稿 |
-| `workflow` | job snapshot、history/event ring、reader-index/config、输出 JSON 和媒体 identity/reference | `WorkflowOwner` 的 authorized job command/query | 完整媒体备份、token/cookie、任意路径副作用 |
+| `reader-session` | transcript/chunk、session revision、`contentId`、media reference、marks reference | `ReaderSessionOwner` query/prepare/commit/restore | 完整媒体、DOM、playback buffer |
+| `vocabulary-srs` | entry、acquisition/review/SRS、学习事件 | `VocabularySrsOwner` query/command/receipt | ECDICT transient cache、纯 UI 排序 |
+| `passage-preview` | preview envelope、continuation/rating/transition | `PreviewOwner` query/command/receipt | 未注册 key、session-only 候选 |
+| `annotation` | scoped generated/status/bundle、轻量 import/export | `AnnotationOwner` query/command/receipt | hit-test index、临时建议 |
+| `marks-activity` | marks、activity identity、revision/status | `MarksActivityOwner` query/command/receipt | playback hot-path index、未提交草稿 |
+| `workflow` | job snapshot/history/event、reader-index/config、media reference | `WorkflowOwner` query/command/receipt | token/cookie、完整媒体、任意路径 |
 
-### 2. 先建立 typed loopback API，再迁移任何 browser writer
+### 2. API 与授权保持小而明确
 
-API 采用 versioned JSON contract；每个 request 带 `requestId`、`correlationId`、`domain`、operation、`expectedRevision`（适用时）和 `idempotencyKey`（mutation 必需）。每个 response 带 authoritative `revision`、`commitStatus`、capability/diagnostic metadata 和 typed error。写入只有在对应 owner 完成事务、fsync/atomic replace 或等价提交并取得 revision evidence 后才返回 `committed`；结果未知必须返回 `commit-unknown`，保留 dirty 状态并通过 receipt 查询恢复，不能盲目重复副作用。
+Typed loopback API 使用现有 versioned envelope、`requestId`/`correlationId`、domain、operation、适用时的 `expectedRevision` 和 mutation `idempotencyKey`。Host 校验 loopback Host/Origin、instance token、profile capability 和受限 path/operation；失败在副作用前返回 typed error。只保留轻量 readiness：能确认 owner registry、repository、lease/recovery 状态即可，不把外部 AI、dictionary 或发布信息做成个人工具的可用性前置条件。
 
-API 族只定义稳定语义，不在本 change 锁死每个 route 名称：capability/readiness、domain snapshot/query、domain command/receipt、Reader Session prepare/commit、backup/restore dry-run/execute、media capability/Range。所有 mutation 经过统一授权 middleware，再进入 domain adapter。未来 transport 可以复用该 contract，但本变更只允许 Windows loopback。
+### 3. 每域单独提交，不承诺跨域原子事务
 
-本机 browser 也必须调用这个 facade。迁移期间可以有一个只负责读取 legacy `SeekPlayerDB/files` 或 localStorage 并生成一次性 API import snapshot 的 compatibility bridge；bridge 不向 UI 暴露 raw `IDBObjectStore`/`localStorage`，不接受新的 browser-side durable write，不执行 host repository commit，并在 owner-mode 切换后只保留 read-only/quarantine compatibility read。
+每个 domain 复用已有 repository/receipt 工具，采用小型 record envelope、checksum、monotonic revision、expected-revision CAS 和幂等 receipt。写入或 replace 失败时保留旧 canonical snapshot；结果不确定时通过 receipt query/recovery 处理，不盲目重做副作用。
 
-### 3. 每域原子 commit，跨域使用显式 profile journal
+多个 domain 的 backup/import/cutover 按固定顺序逐个完成：当前域 inventory、backup、import/dry-run、verify、writer freeze、switch、smoke check；成功后才进入下一个域。任一域失败就停止后续步骤，保留原数据和已生成的 backup/receipt，并按该域的 rollback target 回退。这里不宣称六域 global transaction 或跨域一致性读取。
 
-单域 command 使用 domain repository 的 transaction boundary、revision/CAS 和 idempotency receipt。`Reader Session` 使用 prepare/validate/commit，确保新材料无效时旧 session 保持可用；marks/activity 继续 one-in-flight latest-wins；workflow 使用合法 state transition 与 job revision。
+### 4. 媒体只走 capability + Range
 
-涉及多个 domain 的 restore、迁移切换或 material publish 不假设 JSON、IndexedDB、SQLite 和 Python service 自动形成一个 transaction。host 在 profile lease 下创建 pending journal，先完成所有 adapter 的 prepare/validation，再按固定顺序提交并记录每个 domain 的 committed revision；在此期间阻止不一致的 owner read/readiness。重启时依据 journal 和 commit evidence 恢复到完整 baseline 或完整 staged revision；缺少 evidence、CAS 冲突或未知 domain 一律停在 recovery-required，而不是返回半完成组合。
+Reader Session 及其他 durable records 只保存 media identity、size、content type、ETag/revision 和 authorized reference。Host media route 继续限制在配置 root/capability 内，支持 `206`、`Content-Range`、`Accept-Ranges` 和一致 ETag；identity 变化返回 rebind/not-found，不能拼接不同 revision。Browser media element 直接使用授权 URL，API、backup、migration 不接收完整 Blob/ArrayBuffer/bytes/data URI/base64 media。
 
-### 4. 大媒体永远走 capability + Range streaming
+### 5. 每域一个可理解的 writer 切换流程
 
-Reader Session 只保存 media identity、size、mtime/ETag、授权 capability 和可重绑定引用。host 的 media endpoint 只在允许 root/capability 下读取请求的 byte range，返回正确的 `206`、`Content-Range`、`Accept-Ranges` 和稳定 `ETag`。browser 的 `MediaResourceOwner` 管理 URL、`src` 和 revoke/dispose；任何 API adapter、backup adapter 或 migration helper 看到完整 Blob/ArrayBuffer 都拒绝该操作。
+切换不使用长期双写。每个 domain 遵循：
 
-这样可保留当前 300–540MB fixture 的首次可播放和 seek 预算，也避免把“owner”误解为复制媒体。媒体文件缺失或 identity 变化时只返回 typed rebind/not-found，不删除 Reader Session 或其他五个 domain。
+`inventory → backup → one-time import/dry-run → verify → freeze old writer → switch to Host → smoke check → rollback if needed`。
 
-### 5. 逐 domain API-first cutover，compatibility 只读且可回滚
+freeze 后旧 path 只可读；switch 前 Host API 不确认该域新的 canonical write；switch 后新的 durable mutation 只能经 Host receipt。回滚先停止 Host 新写入，再用该域 pre-switch backup 和 revision evidence 恢复旧值或保持 not-ready，确认后才恢复一个 writer。Reader Session 先于其余 domain 切换，其余五域逐域处理。
 
-每个 domain 的最终 canonical records 先准备到 Windows Host-managed repository，并按以下严格状态机切换：`inventory → backup/checksum → dry-run/shadow → isolated host-repository canary → acquire profile lease + journal → freeze/block old writer → compatibility-read-only (no commit) → drain and verify no in-flight mutation → single atomic owner-mode checkpoint (old writer blocked + Host repository authoritative) → post-cutover verification/rollback window → retire old writer`。`shadow` 与 isolated canary 只读取或写入隔离 staging target，不触碰 production canonical state；切换前 Host API 不得对该 production domain 接受 canonical commit。freeze 步骤必须先阻断旧 writer，并将 compatibility path 置为 read-only；单一 checkpoint 必须在同一 profile lease/journal transition 中记录旧 writer 已阻断、compatibility path read-only、in-flight mutation 为零、Host repository revision/base checksum 和 API authority；checkpoint 前后不得存在两个 authoritative writers。
+### 6. 核心验证足够证明个人工具可用
 
-冻结旧 writer 后，compatibility path 立即进入 read-only/import-evidence 模式；任何新的旧路径 mutation 必须被拒绝，已有 mutation 必须 drain 到零并取得明确结果；无法 drain、checkpoint 或取得 revision evidence 时，系统只能保持旧 owner mode（仅当 journal 证明 freeze 尚未生效），或保持 not-ready/manual-recovery，不能开放 Host writer 形成双写。checkpoint 成功后，旧 writer 永久 blocked，compatibility path 继续只能 read-only/import-evidence，所有新的 durable mutation 只能由 Host repository API commit。
+保留已有基础 gate，并为后续每个阶段补直接行为验证：正常 query/command/receipt、相同 key retry、明显 CAS conflict、坏数据/写入失败时旧值保留、Host restart/reopen、Reader 播放与材料切换、backup/restore，以及大媒体 Range/no-copy。验证使用 optimization config、`5184/8776` 和隔离 data root；不做性能实验室或证据归档系统。
 
-回滚不是让两个 writer 再次同时工作。若 post-cutover verification 或 rollback window 失败，先阻断 Host API 新 commit，依据 migration journal、expected revision 和 pre-cutover backup 恢复一个完整可读版本，再以一次新的 owner-mode checkpoint 选择旧 owner 或保持 not-ready/manual-recovery；恢复旧 owner 前必须确认 Host writer 已 blocked 且无 in-flight mutation。host 不可用、API contract mismatch、unknown schema、corrupt record 或 recovery 未完成时，browser 只能显示 `not-ready/recovery-required`、提供导出/重试/重新绑定等操作，不能把未确认写入标记为 saved，也不能静默写回 localStorage/IndexedDB。
+## 个人工具范围裁剪
 
-`SeekPlayerDB` 现有 `v1/files/id` 在整个流程中保持可打开、可审计和可回滚。迁移可以把已验证记录导入 host-owned repository，或在短期内由受控 adapter 代管旧记录，但不得执行 schema upgrade；若未来必须移动/重建该 schema，另开 change 并要求用户授权、迁移前备份、逆向 reader 和独立恢复演练。
+本次明确移除尚未开始且不影响单人单机实际安全的企业级工作：穷举 fault matrix 与多阶段 pending evidence 组合、多标签页/高并发/双 writer 全矩阵、跨六域 global transaction 和复杂 coordinator、shadow/diff/canary/drain/no-in-flight 多层流程、30 分钟 soak 与完整性能指标、release manifest/previous-release 自动恢复、clean-room/trace/screenshot/machine-readable 归档和正式 release review。已有的 lease、receipt、auth、checksum、atomic write、backup、recovery 和 media no-copy 基础继续复用，但不再向多租户、HA、审计或企业安全系统扩展。
 
-### 6. readiness、auth 和 diagnostics 是 owner contract 的一部分
+## 后续实施阶段
 
-host 只绑定明确的 loopback address；高权限 API 同时校验 Host、Origin、短期 instance token、capability 和参数范围。`/health`/capabilities 既区分 liveness、readiness、domain owner 状态和可选依赖，也报告当前 profile revision、pending journal、backup/recovery 状态及脱敏 correlationId。缺失 adapter、lease、token、revision evidence 或 registry contract 时，host 不进入 ready，API 不执行副作用。
+### A. 完成剩余五域最小 Host repository seam
 
-错误统一映射为 `unauthorized`、`not-ready`、`not-found`、`conflict`、`unsupported-schema`、`corrupt`、`quota`、`timeout`、`upstream`、`commit-unknown`、`manual-recovery` 等 typed category；diagnostics 不写 token、cookie、API key、完整个人路径或媒体 bytes。
+按 ownership matrix 为 `vocabulary-srs`、`passage-preview`、`annotation`、`marks-activity`、`workflow` 补齐必要的 record/query/command/receipt。每域只需能在隔离 profile 中读、写、重试、检测明显 revision conflict，并复用现有 registry、auth、CAS 和 receipt。
 
-### 7. 行为门禁优先于源码形状，源码门禁作为 owner 保护
+### B. 最小备份、恢复与一次性迁移
 
-验收分为四层：
+为六域提供 read-only inventory、六域 manifest/checksum、一次性 import、restore dry-run/execute 和 per-domain rollback。保留未知/损坏记录与旧值，完整媒体只保留 reference metadata；同时持续冻结 `SeekPlayerDB v1/files/id`。
 
-1. contract gates：API schema、auth/loopback、lease、revision/CAS、idempotency、commit receipt 和 error taxonomy；
-2. architecture gates：所有六域 adapter 都注册、browser direct writer consumer map 逐域归零、`SeekPlayerDB` schema guard、Range/no-copy guard；
-3. isolated behavior gates：六条领域 journey、host restart/crash、A/B/A、multi-tab conflict、offline/timeout、workflow cancel、Quota/corrupt/unknown schema；
-4. release/recovery gates：real-profile read-only snapshot、isolated restore/reopen、逐域 checksum、zero network、30 分钟播放/seek、backup/rollback 和 release health。
+### C. 先 Reader Session，再逐域切换 writer
 
-手工优化运行只使用 `config/runtime.optimization.json`、frontend/backend `5184/8776` 和 `E:\ReadWebData\SubtitleWorkflow-Optimization`；所有 fixture、日志和 restore target 写入显式临时隔离目录。不得为验证启动、构建或修改 `E:\read-web-next`、`E:\read-web` 或其数据根。
+先把 Reader Session loader/media 使用接到已完成的 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind 和旧 session 保留。随后按个人工具可控顺序逐域执行上述 freeze/copy/verify/switch/rollback 流程，切换后 compatibility path 只读，不允许长期双写。
 
-## 风险 / 权衡
+### D. 核心验证、旧 writer 收敛与文档
 
-- [迁移范围横跨 browser、Node、Python 和六个 domain] → 先冻结 API/ownership matrix 和 profile lease；领域 adapter 与 contract fixtures 可并行，writer cutover 必须逐域串行且每域单独 gate。
-- [现有 browser state 的物理位置与 host-owned repository 不同] → 最终 canonical 落点固定为 Host-managed repository；先做只读 inventory/checksum 和显式一次性 import snapshot，旧 `SeekPlayerDB` 保持 schema 不变，任何物理 schema 重建另开授权 change。
-- [严格 fail-closed 可能暂时降低可用性] → 提供可操作的 retry、rebind、export、recovery status 和旧 release rollback；不把不确定的写入伪装成成功。
-- [跨域恢复没有真正的异构 distributed transaction] → 使用 profile lease、pending journal、逐域 revision evidence 和 recovery-before-ready；公开 read 只看到完整 baseline 或完整 staged revision。
-- [loopback API 与现有 DOM/Pinia compatibility ordering 可能互相影响] → 保留当前 `index.html` script order，先接入薄 API client/adapter，再按 consumer map 逐项移除 direct storage，禁止在 `reader-runtime.js` 或 `session-init.js` 堆新逻辑。
-- [Range capability 泄露本地文件或造成 TOCTOU] → 复用 RuntimeConfig root/capability mapping、identity/ETag 校验、Host/Origin/token 和 typed not-found/permission；备份只保存 media identity metadata。
-- [双读差分会带来额外 I/O 和诊断复杂度] → 仅在切换前的可配置迁移窗口启用、限制 payload/bytes、脱敏并记录 revision；差分和 isolated canary 不触碰 production canonical state，也不产生第二个 commit executor。
+运行正常 build/启动、核心 reader/workflow journey、Host restart/reopen、retry/CAS、backup/restore 和大媒体 Range/no-copy 检查；确认各域切换后的 direct writer 已删除或隔离，保留必要的 read-only compatibility reader，更新项目地图、owner contract、backup/recovery 说明和运行状态。
 
-## 迁移计划
+## 风险与取舍
 
-实施顺序和依赖如下；其中同一波次可并行的项目必须仍以固定 contract 为输入。
-
-### 必须串行的主干
-
-1. **Freeze baseline**：记录隔离 profile、六域 adapter registry、direct-writer inventory、现有 checksums、`SeekPlayerDB v1/files/id` 证据、Range/reader/workflow journey baseline；确认未提交 WhisperX/语言处理改动保持原样。
-2. **Owner foundation**：落地 ownership matrix、Windows Host-managed repository contract、typed API envelope、loopback auth、profile lease、capability/readiness、commit receipt 和 fail-closed error mapping。没有这一阶段的 contract/repository green，不迁移任何 writer。
-3. **Reader Session/media seam**：先让 Windows 本机 Reader 通过 API 访问 Host-managed repository，完成 prepare/query/commit/restore，并确认 Range streaming 与 `MediaResourceOwner` 无大文件复制；这是其余 material/workflow domain 的引用基线。
-4. **Domain cutover**：按 `marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 的顺序逐域完成 backup、shadow/diff、isolated host-repository canary、profile lease/journal、freeze/block old writer、compatibility read-only、drain/no-in-flight verification、single atomic owner-mode checkpoint、post-cutover verification 和 rollback window；checkpoint 后 compatibility read-only 必须继续保持。每次只允许一个 domain 改变 authoritative writer；若失败，保持旧 owner 或 not-ready/manual-recovery，绝不开放双写。
-5. **Cross-domain recovery**：六域全部 API-authoritative 后，启用 profile journal 的迁移/restore 原子可见性，完成 crash/kill/restart、CAS、quota、corrupt/unknown schema 和 pending recovery 全矩阵。
-6. **Retirement/release**：回滚窗口结束且行为门禁连续通过后，删除或隔离 direct browser writer；保留 read-only compatibility reader、previous release、pre-cutover backup 和恢复说明。最后才运行 release health/rollback rehearsal，等待用户另行确认任何外部 shortcut 或生产切换。
-
-### 可并行的边界
-
-- `Preview`、`Annotation`、`Vocabulary/SRS` 的 read-only adapter、Host repository contract fixtures、schema inventory 和 isolated canary 可以并行；它们不得直接修改同一 profile 的 production authoritative state。
-- `marks/activity` ledger 的 API receipt 测试可以与 Preview/Annotation adapter 开发并行，但其 authoritative cutover 要等 Reader Session playback/mark reference contract green。
-- workflow 的 snapshot/event、ProcessSupervisor 和 API auth 测试可以并行准备；workflow writer cutover 必须等 Reader Session/media capability 以及 host recovery-before-ready green。
-- backup manifest、restore dry-run、fault matrix 和 direct-writer consumer map 可以从 owner foundation 后并行建设；最终 real-profile restore 与每次 owner-mode checkpoint 必须串行执行并锁定 profile。
-
-### 回滚与恢复
-
-每个 cutover 前生成带 release、domain、base revision、record/domain checksum 和 migration id 的 pre-cutover backup。API owner 记录 pending checkpoint 和 commit evidence；发现异常时停止新 writer，先检查是否存在已提交 revision，再按 expected-revision CAS 恢复。若有并发 writer 或证据不足，返回 `conflict/manual-recovery` 并保留较新状态，不能盲目覆盖。
-
-恢复演练至少覆盖：每个 domain 单独损坏、unknown/future schema、checksum mismatch、Quota/disk-full、transaction abort、进程在每个 commit boundary 被终止、host restart、重复 restore、revision conflict、失效媒体 identity、token/Origin 错误和 workflow 子进程取消。演练目标目录必须隔离，重开后验证六域 record count/checksum、Reader/Vocabulary/SRS/Preview/Annotation/workflow journeys、Range playback 和 zero network；失败时 host 必须在 recovery 完成前保持 not-ready。
+- 单域顺序迁移比 global transaction 简单，但中途失败可能暂时只完成部分 domain；通过每域 backup、旧值保留和停止后续步骤控制风险。
+- writer freeze 会让某个 domain 短暂不可写；这是比双写更容易理解的代价，失败时保持旧 owner 或 not-ready。
+- 不做多标签页和高并发保证；仍保留单用户重复请求的 idempotency 与明显 CAS conflict，覆盖个人工具最常见的数据风险。
+- 通过 URL capability、Range、ETag/identity 和 no-copy 约束避免媒体复制；媒体缺失时 rebind，不删除其他 session 数据。
 
 ## 待决问题
 
-- API-authoritative 阶段的 canonical records 固定由 Windows Host-managed repository 接管；browser bridge 的职责只限于只读 inventory、一次性 import 和 rollback-window compatibility read，不得代管最终 repository、执行 commit 或成为 canonical writer。
-- Local App Host 继续由 FastAPI 单 host 承载全部 domain facade，还是保留 Node sidecar 作为仅限本机的 broker，需要用 startup、Range、lease 和故障恢复证据决定；对 browser 的 typed API contract 不因进程选择改变。
-- 多标签页是否允许多个 reader client 并发读取、只允许单一 mutation lease，还是在 profile 级阻止第二个 writer，需要以 conflict journey 和实际 UX 决定；无论选择如何，不能恢复 browser direct writer。
-- API 的具体 route 命名、JSON serialization 和 capability token 注入通道应在 implementation 任务中冻结，并写入 contract fixture；本 change 只冻结语义和 loopback 范围。
+- 后续只需在实现阶段确定各 domain 的具体 route/JSON 字段和逐域切换顺序；这些选择不得改变 loopback、唯一 owner、CAS/receipt、backup/rollback 或 no-copy 边界。
+- `Local App Host` 继续优先复用现有 FastAPI/domain owner；只有现有 seam 无法承载时才考虑小型受管 sidecar，不为此新增通用平台。
