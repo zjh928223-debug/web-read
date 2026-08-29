@@ -39,6 +39,11 @@ from .windows_owner_receipts import (
     OwnerCommitReceiptStore,
     OwnerReceiptInputError,
 )
+from .windows_owner_health import (
+    build_capability_snapshot,
+    build_health_snapshot,
+    redact_diagnostics,
+)
 
 
 CAPABILITY_ROUTE_PREFIXES = (
@@ -56,10 +61,21 @@ CAPABILITY_ROUTE_PREFIXES = (
 
 
 class LocalCapabilityProxy:
-    def __init__(self, base_url: str, access_token: str, client_factory=None):
+    def __init__(self, base_url: str, access_token: str, client_factory=None, health_status_callback=None):
         self.base_url = str(base_url).rstrip("/")
         self.access_token = access_token
         self.client_factory = client_factory or httpx.AsyncClient
+        self.health_status_callback = health_status_callback
+
+    def _record_health(self, status: str, reason_code: str | None = None):
+        if self.health_status_callback is None:
+            return
+        try:
+            self.health_status_callback(status, reason_code)
+        except Exception:
+            # Health reporting is observational and must not change proxy
+            # response semantics.
+            return
 
     async def __call__(self, scope, receive, send):
         request = Request(scope, receive=receive)
@@ -83,10 +99,15 @@ class LocalCapabilityProxy:
             async with self.client_factory(timeout=30.0, trust_env=False) as client:
                 upstream = await client.request(method, target, headers=headers, content=body)
         except httpx.HTTPError:
+            self._record_health("unavailable", "LOCAL_CAPABILITY_HOST_UNAVAILABLE")
             response = JSONResponse(
                 {"detail": "local capability host unavailable"}, status_code=503
             )
         else:
+            self._record_health(
+                "available" if 200 <= upstream.status_code < 300 else "degraded",
+                None if 200 <= upstream.status_code < 300 else "LOCAL_CAPABILITY_HOST_RESPONSE",
+            )
             response = Response(
                 content=upstream.content,
                 status_code=upstream.status_code,
@@ -116,6 +137,7 @@ class PathPreservingAsgiDispatch:
         owner_receipt_store: OwnerCommitReceiptStore | None = None,
         application_profile_lease_process=None,
         application_profile_lease_mode: str = "authoritative",
+        capability_snapshot_provider=None,
     ):
         self.host_app = host_app
         self.workflow_app = workflow_app
@@ -126,6 +148,7 @@ class PathPreservingAsgiDispatch:
         self.owner_receipt_store = owner_receipt_store
         self.application_profile_lease_process = application_profile_lease_process
         self.application_profile_lease_mode = application_profile_lease_mode
+        self.capability_snapshot_provider = capability_snapshot_provider
         self.request_policy = request_policy or WindowsOwnerRequestPolicy(
             access_token=access_token,
             bind_host="127.0.0.1",
@@ -202,9 +225,12 @@ class PathPreservingAsgiDispatch:
             and scope["type"] in {"http", "websocket"}
             and any(path == prefix or path.startswith(prefix + "/") for prefix in CAPABILITY_ROUTE_PREFIXES)
         ):
-            await self.capability_app(
-                _scope_with_token(scope, self.capability_access_token), receive, send
-            )
+            if path == "/api/app/capabilities" and self.capability_snapshot_provider is not None and scope["type"] == "http":
+                await self._dispatch_capability_snapshot(scope, receive, send)
+            else:
+                await self.capability_app(
+                    _scope_with_token(scope, self.capability_access_token), receive, send
+                )
             return
         if scope["type"] in {"http", "websocket"} and path.startswith("/api/") and not path.startswith("/api/app/"):
             await self.workflow_app(
@@ -212,6 +238,50 @@ class PathPreservingAsgiDispatch:
             )
             return
         await self.host_app(scope, receive, self._cookie_send(send))
+
+    async def _dispatch_capability_snapshot(self, scope, receive, send):
+        """Enrich the delegated capability document with the Host snapshot."""
+
+        messages = []
+
+        async def capture(message):
+            messages.append(message)
+
+        await self.capability_app(
+            _scope_with_token(scope, self.capability_access_token), receive, capture
+        )
+        if str(scope.get("method", "GET")).upper() == "HEAD":
+            for message in messages:
+                await send(message)
+            return
+        start_index = next((index for index, message in enumerate(messages) if message.get("type") == "http.response.start"), None)
+        body_indexes = [index for index, message in enumerate(messages) if message.get("type") == "http.response.body"]
+        if start_index is None or not body_indexes or messages[start_index].get("status", 500) >= 400:
+            for message in messages:
+                await send(message)
+            return
+        body = b"".join(messages[index].get("body", b"") for index in body_indexes)
+        try:
+            value = json.loads(body.decode("utf-8"))
+            aggregate = self.capability_snapshot_provider()
+            if not isinstance(value, dict) or not isinstance(aggregate, dict):
+                raise ValueError("capability snapshot is not an object")
+            merged = redact_diagnostics({**value, **aggregate})
+            new_body = json.dumps(merged, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except (UnicodeDecodeError, TypeError, ValueError, json.JSONDecodeError):
+            for message in messages:
+                await send(message)
+            return
+        start = dict(messages[start_index])
+        headers = [
+            (key, header_value)
+            for key, header_value in start.get("headers", [])
+            if key.lower() != b"content-length"
+        ]
+        headers.append((b"content-length", str(len(new_body)).encode("ascii")))
+        start["headers"] = headers
+        await send(start)
+        await send({"type": "http.response.body", "body": new_body, "more_body": False})
 
     @staticmethod
     def _is_side_effect_path(path: str) -> bool:
@@ -576,6 +646,9 @@ def create_local_app_host(
     owner_receipt_store: OwnerCommitReceiptStore | None = None,
     owner_receipt_revision_reader=None,
     owner_receipt_evidence_resolvers=None,
+    health_dependency_status: dict | None = None,
+    health_range_status: dict | None = None,
+    health_schema_status: dict | None = None,
 ) -> PathPreservingAsgiDispatch:
     """Create the production Local App Host without a Vite runtime dependency."""
     try:
@@ -629,9 +702,35 @@ def create_local_app_host(
         bind_host=bind_host,
         profile_id=profile_id,
     )
+    health_dependencies = dict(health_dependency_status or {})
+    capability_health_state = {
+        "status": "available" if capability_app is not None else "unavailable",
+        "source": "local-app" if capability_app is not None else "host",
+    }
+    if capability_app is None:
+        capability_health_state["reasonCode"] = (
+            "LOCAL_CAPABILITY_HOST_UNVERIFIED" if capability_base_url else "LOCAL_CAPABILITY_HOST_NOT_CONFIGURED"
+        )
+
+    def record_capability_health(status: str, reason_code: str | None = None):
+        capability_health_state["status"] = status
+        capability_health_state["source"] = "proxy"
+        if reason_code:
+            capability_health_state["reasonCode"] = reason_code
+        else:
+            capability_health_state.pop("reasonCode", None)
+
     capabilities = capability_app or (
-        LocalCapabilityProxy(capability_base_url, capability_token) if capability_base_url else None
+        LocalCapabilityProxy(
+            capability_base_url,
+            capability_token,
+            health_status_callback=record_capability_health,
+        )
+        if capability_base_url
+        else None
     )
+    if "localCapabilityHost" not in health_dependencies:
+        health_dependencies["localCapabilityHost"] = capability_health_state
     boot_started_at = perf_counter() if started_at is None else started_at
     manifest_identity = dict(release_manifest_identity or {})
     compatible_config = dict(config_compatibility or {})
@@ -643,61 +742,40 @@ def create_local_app_host(
     }
     app = FastAPI(title="Read-Web Local App Host")
 
+    def current_health_snapshot():
+        dist_ready = (root / "index.html").is_file()
+        return build_health_snapshot(
+            service="read-web-local-app-host",
+            release_id=str(release_id),
+            profile_id=str(profile_id),
+            instance_id=str(instance_id),
+            manifest=manifest_identity,
+            config_compatibility=compatible_config,
+            data_root=os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT"),
+            dist_ready=dist_ready,
+            owner_registry_status=owner_registry_status,
+            owner_profile_evidence=owner_profile_evidence,
+            lease_mode=application_profile_lease_mode,
+            lease_process=application_profile_lease_process,
+            standby_preflight=application_profile_standby_preflight,
+            startup_recovery=startup_recovery,
+            receipt_store=receipt_store,
+            dependency_status=health_dependencies,
+            range_status=health_range_status,
+            schema_status=health_schema_status,
+            accepting_requests=not drain_state["draining"],
+            inflight_requests=drain_state["inflight"],
+            drain_started_at=drain_state["drainStartedAt"],
+            startup_ms=(perf_counter() - boot_started_at) * 1000,
+        )
+
     @app.get("/api/app/health")
     def app_health():
-        dist_ready = (root / "index.html").is_file()
-        registry_valid = owner_registry_status.get("valid") is True
-        contract_valid = owner_registry_status.get("contractValid") is True
-        profile_evidence_ready = owner_registry_status.get("profileEvidenceReady") is True
-        profile_lease_ready = owner_registry_status.get("profileLeaseReady") is True
-        profile_lease_alive = (
-            application_profile_lease_process is None
-            or application_profile_lease_process.poll() is None
-        )
-        profile_lease_ready = profile_lease_ready and profile_lease_alive
-        standby_evidence_ready = _standby_profile_evidence_is_safe(owner_profile_evidence)
-        standby_ready = (
-            application_profile_lease_mode == "standby"
-            and application_profile_standby_preflight
-            and contract_valid
-            and standby_evidence_ready
-            and profile_lease_alive
-        )
-        owner_api_ready = owner_registry_status.get("ownerApiReady") is True
-        return {
-            "status": "ready" if dist_ready and (
-                registry_valid and profile_lease_ready
-                or standby_ready
-            ) else "degraded",
-            "service": "read-web-local-app-host",
-            "releaseId": str(release_id),
-            "profileId": str(profile_id),
-            "instanceId": str(instance_id),
-            "dataRoot": str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT", "")),
-            "manifest": manifest_identity,
-            "configCompatibility": compatible_config,
-            "distReady": dist_ready,
-            "ownerRegistry": owner_registry_status,
-            "contractValid": contract_valid,
-            "profileEvidenceReady": profile_evidence_ready,
-            "profileLeaseReady": profile_lease_ready,
-            "profileLeaseAlive": profile_lease_alive,
-            "profileLeaseMode": application_profile_lease_mode,
-            "standbyPreflight": application_profile_standby_preflight,
-            "standbyEvidenceReady": standby_evidence_ready,
-            "profileLease": owner_registry_status.get("profileLease"),
-            "profileEvidenceMode": owner_registry_status.get("profileEvidenceMode"),
-            "legacyBrowserData": owner_registry_status.get("legacyBrowserData"),
-            "ownerPendingRecovery": owner_registry_status.get("ownerPendingRecovery"),
-            "ownerMode": owner_registry_status.get("ownerMode"),
-            "durableOwnerReady": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,
-            "acceptingApiAuthoritativeOperations": registry_valid and profile_evidence_ready and profile_lease_ready and owner_api_ready,
-            "applicationStartupRecovery": startup_recovery,
-            "acceptingRequests": not drain_state["draining"],
-            "inflightRequests": drain_state["inflight"],
-            "drainStartedAt": drain_state["drainStartedAt"],
-            "startupMs": round(max(0.0, (perf_counter() - boot_started_at) * 1000), 3),
-        }
+        return current_health_snapshot()
+
+    @app.get("/api/app/capabilities")
+    def app_capabilities():
+        return build_capability_snapshot(current_health_snapshot())
 
     @app.get("/{asset_path:path}", include_in_schema=False)
     def static_or_spa(asset_path: str, request: Request):
@@ -727,6 +805,7 @@ def create_local_app_host(
         owner_receipt_store=receipt_store,
         application_profile_lease_process=application_profile_lease_process,
         application_profile_lease_mode=application_profile_lease_mode,
+        capability_snapshot_provider=lambda: build_capability_snapshot(current_health_snapshot()),
     )
 
 

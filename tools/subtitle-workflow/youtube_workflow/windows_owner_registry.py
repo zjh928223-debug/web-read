@@ -583,7 +583,11 @@ def _validate_registration(registration: Any, owner_ids: set[str], repository_id
     return {
         "domain": domain,
         "ownerIdentity": owner_identity,
+        "ownerFacade": owner["facade"],
         "repositoryIdentity": repository_identity,
+        "repositoryType": repository["type"],
+        "backupAdapterIdentity": backup["identity"],
+        "recoveryHandlerIdentity": recovery_handler["identity"],
         "revisionSource": revision_identity,
         "claimCount": len(claims),
         "queryOperationCount": len(queries),

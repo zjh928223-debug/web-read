@@ -36,6 +36,8 @@ authoritative by accident.
   and a checksum.
 - `scripts/lib/windows-owner-pending-journal.mjs` — the focused profile-journal coordinator used by the
   isolated behavior gate; the production composition only calls its lease-protected recovery seam.
+- `tools/subtitle-workflow/youtube_workflow/windows_owner_health.py` — the focused health/capability snapshot
+  and diagnostic-redaction seam used by the Local App Host.
 
 Every JSON artifact has an `artifactChecksum` over the canonical JSON object with that field omitted. The
 canonicalization is UTF-8 JSON with recursively code-point-sorted object keys, array order preserved, and no
@@ -235,3 +237,29 @@ production repository mutation or authority switch is claimed. The focused behav
 new-process recovery and a real `Production Host` dispatch to exercise abort, process death,
 timeout/response loss, duplicate retry, CAS conflict, corrupt evidence, atomic-write failure,
 six-domain persistence and receipt query.
+
+## Task 2.7 health and capability snapshot
+
+`youtube_workflow.windows_owner_health` is the single small aggregation seam for Local App Host health and the
+delegated `/api/app/capabilities` document. It distinguishes process liveness, application readiness and
+durable-owner/API-authoritative readiness. The latter remains false in this pre-cutover milestone: every domain
+reports its declared owner/facade, registry/adapter/repository/revision/recovery state, query/command capability
+state and stable reason codes. The legacy nullable `profileLease` field remains compatible with the launcher;
+the structured `profileLeaseState` reports mode, binding, aliveness and separates `authoritativeLeaseHeld` from
+`authoritativeOperationsAllowed`; the latter is false until owner mode, API and durable-readiness gates all pass.
+Pending journal state, aggregate receipt counts,
+runtime/API/registry schema compatibility, Range/206/ETag identity capability and required/optional dependencies
+are reported in the same snapshot. Optional AI, dictionary, ECDICT and external-network failures never make
+liveness fail; required workflow failure makes application readiness not-ready.
+
+The capability route retains the existing nine endpoint list and is enriched with the same readiness, domain,
+lease, recovery, schema, Range and dependency snapshot. When a capability sidecar owns the route, the Local App
+Host safely merges this snapshot into its JSON response; the route remains delegated and no domain repository or
+writer is introduced. A host without a sidecar serves the same nine-endpoint contract locally.
+
+Health diagnostics are allow-listed and redacted: `dataRoot` is only `configured`/`not-configured` with a stable
+`dataRootIdentity`, manifest interpreter paths are omitted, and receipt/request/idempotency identities, tokens,
+cookies, media bytes and raw exception/path text are not returned. The optimization launcher compares the hashed
+root identity and release runtime hashes rather than requiring an absolute path or interpreter path in health.
+`applicationStartupRecovery` remains a small lifecycle summary; it does not claim browser freeze/drain or owner
+cutover. The focused evidence is `npm run verify:windows-owner-health`.

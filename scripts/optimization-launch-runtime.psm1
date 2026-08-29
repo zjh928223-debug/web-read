@@ -96,6 +96,19 @@ function Normalize-OptimizationPath {
   return [IO.Path]::GetFullPath($Value).TrimEnd('\', '/').ToLowerInvariant()
 }
 
+function Get-OptimizationPathIdentity {
+  param([Parameter(Mandatory)][string]$Value)
+  $normalized = Normalize-OptimizationPath -Value $Value
+  $bytes = [Text.Encoding]::UTF8.GetBytes($normalized)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try {
+    $hex = [BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+    return 'sha256:' + $hex
+  } finally {
+    $sha.Dispose()
+  }
+}
+
 function Test-OptimizationLoopbackHost {
   param([Parameter(Mandatory)][string]$HostName)
   return $HostName.Trim().TrimStart('[').TrimEnd(']').ToLowerInvariant() -in @('127.0.0.1', 'localhost', '::1')
@@ -382,8 +395,7 @@ function Test-OptimizationPairReady {
   $releasePythonIdentity = Get-OptimizationObjectValue -Object $releaseRuntime -Name 'pythonIdentity'
   $hostRuntimeIdentityMatches = (Get-OptimizationObjectText -Object $hostManifest -Name 'toolchainSha256') -eq $Release.toolchainSha256 `
     -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonIdentitySha256') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'environmentSha256') `
-    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonPackageSetSha256') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'packageSetSha256') `
-    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonExecutable') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'executable')
+    -and (Get-OptimizationObjectText -Object $hostManifest -Name 'pythonPackageSetSha256') -eq (Get-OptimizationObjectText -Object $releasePythonIdentity -Name 'packageSetSha256')
   if (-not $hostRuntimeIdentityMatches) { return $false }
   $capabilityInstanceId = Get-OptimizationObjectText -Object $CapabilityState -Name 'instanceId'
   $capabilityReleaseId = Get-OptimizationObjectText -Object $CapabilityState -Name 'releaseId'
@@ -392,8 +404,8 @@ function Test-OptimizationPairReady {
     -and (Get-OptimizationObjectText -Object $CapabilityHealth -Name 'profileId') -eq $ProfileId `
     -and (Get-OptimizationObjectText -Object $CapabilityHealth -Name 'instanceId') -eq $capabilityInstanceId
   if (-not $capabilityIdentityMatches) { return $false }
-  $reportedDataRoot = Get-OptimizationObjectText -Object $HostHealth -Name 'dataRoot'
-  $dataRootMatches = (-not $ExpectedDataRoot) -or ($reportedDataRoot -and (Normalize-OptimizationPath -Value $reportedDataRoot) -eq (Normalize-OptimizationPath -Value $ExpectedDataRoot))
+  $reportedDataRootIdentity = Get-OptimizationObjectText -Object $HostHealth -Name 'dataRootIdentity'
+  $dataRootMatches = (-not $ExpectedDataRoot) -or ($reportedDataRootIdentity -and $reportedDataRootIdentity -eq (Get-OptimizationPathIdentity -Value $ExpectedDataRoot))
   return $dataRootMatches `
     -and (Get-OptimizationObjectText -Object $HostState -Name 'profileId') -eq $ProfileId `
     -and (Get-OptimizationObjectText -Object $CapabilityState -Name 'profileId') -eq $ProfileId `
@@ -740,6 +752,7 @@ Export-ModuleMember -Function `
   Get-OptimizationObjectValue, `
   Get-OptimizationObjectText, `
   Normalize-OptimizationPath, `
+  Get-OptimizationPathIdentity, `
   Test-OptimizationLoopbackHost, `
   Format-OptimizationUrlHost, `
   Get-OptimizationHttpJson, `

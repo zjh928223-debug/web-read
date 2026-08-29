@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile as execFileCallback } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -88,6 +89,29 @@ async function readRawProfile(profileDir) {
   return readFile(path.join(profileDir, 'browser-profile.json'), 'utf8')
 }
 
+async function assertWindowsPowerShellPathIdentity(root) {
+  const value = path.join(root, 'identity-fixture')
+  const normalized = path.resolve(value).replace(/[\\/]+$/, '').toLowerCase()
+  const expected = `sha256:${createHash('sha256').update(normalized, 'utf8').digest('hex')}`
+  const powershellValue = value.replaceAll("'", "''")
+  const modulePath = path.join(repositoryRoot, 'scripts', 'optimization-launch-runtime.psm1').replaceAll("'", "''")
+  const result = await execFile('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    [
+      '$ErrorActionPreference = "Stop"',
+      `Import-Module '${modulePath}' -Force -DisableNameChecking`,
+      `$actual = Get-OptimizationPathIdentity -Value '${powershellValue}'`,
+      `if ($actual -ne '${expected}') { throw "path identity mismatch" }`,
+      'Write-Output $actual',
+    ].join('; '),
+  ], { cwd: repositoryRoot })
+  assert.equal(result.stdout.trim(), expected)
+}
+
 async function assertExistingProfileIsNotReinitialized(profile, expectedCode, expectedEvidenceCode = null) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-windows-owner-launcher-profile-'))
   try {
@@ -124,6 +148,7 @@ async function assertExistingProfileIsNotReinitialized(profile, expectedCode, ex
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'read-web-windows-owner-launcher-profile-'))
 try {
+  await assertWindowsPowerShellPathIdentity(root)
   const fresh = fixtureOptions(root)
   const cli = await execFile(process.execPath, [
     initializerScript,

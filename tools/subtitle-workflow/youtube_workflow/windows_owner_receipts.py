@@ -1019,6 +1019,30 @@ class OwnerCommitReceiptStore:
         except OwnerReceiptStoreError as error:
             return self._result("manual-recovery", error=_error(error.code, str(error), retryable=error.retryable))
 
+    def health_summary(self) -> dict[str, Any]:
+        """Return receipt counts without exposing receipt identities or payloads."""
+
+        counts = {status: 0 for status in OWNER_RECEIPT_STATUSES}
+        try:
+            with self._locked_document() as document:
+                for receipt in document["receipts"]:
+                    status = receipt.get("commitStatus")
+                    if status in counts:
+                        counts[status] += 1
+                unresolved = counts["pending"] + counts["commit-unknown"] + counts["manual-recovery"]
+                return {
+                    "status": "manual-recovery" if counts["manual-recovery"] else "pending" if unresolved else "ready",
+                    "total": sum(counts.values()),
+                    "counts": counts,
+                }
+        except OwnerReceiptStoreError:
+            return {
+                "status": "manual-recovery",
+                "total": 0,
+                "counts": counts,
+                "reasonCode": "OWNER_RECEIPT_STORE_UNAVAILABLE",
+            }
+
     def reconcile(self, *, idempotency_key: str, evidence: Mapping[str, Any]) -> dict[str, Any]:
         _safe_identity(idempotency_key, "idempotencyKey", pattern=_SAFE_IDEMPOTENCY)
         try:

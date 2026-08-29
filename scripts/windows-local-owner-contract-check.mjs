@@ -167,7 +167,18 @@ for (const field of ['profileId', 'instanceId', 'expectedRevision', 'requestFing
 }
 assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned profile-scoped receipt persistence/query'), 'receipt persistence implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '2.7 health and capability status expansion', 'API contract next task must remain 2.7')
+assert(api.futureImplementationBoundary.nextAllowedTask === '3.1 thin Reader API client', 'API contract next task must remain 3.1')
+assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
+assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
+for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
+  assert(api.healthCapabilityContract.requiredHealthFields.includes(field), `health snapshot contract lacks ${field}`)
+  assert(api.healthCapabilityContract.requiredCapabilityFields.includes(field), `capability snapshot contract lacks ${field}`)
+}
+assert(api.healthCapabilityContract.domainCount === 6, 'health snapshot contract must cover six domains')
+assert(api.healthCapabilityContract.capabilityEndpointCount === 9, 'capability snapshot contract must retain nine endpoints')
+for (const field of ['mode', 'held', 'alive', 'profileBound', 'profileId', 'authoritativeLeaseHeld', 'authoritativeOperationsAllowed', 'status']) {
+  assert(api.healthCapabilityContract.profileLeaseFields.includes(field), `profile lease snapshot contract lacks ${field}`)
+}
 assert(api.securityAndMediaBoundary.mediaPolicy.includes('complete Blob/ArrayBuffer'), 'media no-copy policy missing')
 assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('/api/jobs/{jobId}/events'), 'event-stream query-token compatibility boundary is missing')
 assert(api.securityAndMediaBoundary.queryTokenCompatibility.includes('owner durable API routes reject URL tokens'), 'owner URL-token prohibition is missing')
@@ -248,7 +259,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)

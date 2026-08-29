@@ -473,11 +473,56 @@
     "mediaPolicy": "Authorized URL/capability plus Range/ETag metadata only; complete Blob/ArrayBuffer/data URI is rejected",
     "credentialPolicy": "Credentials are not part of request/response payloads or backup records"
   },
+  "healthCapabilityContract": {
+    "healthSchema": "read-web-local-app-health.v1",
+    "capabilitySchema": "read-web-local-capabilities.v1",
+    "requiredHealthFields": [
+      "liveness",
+      "applicationReadiness",
+      "durableOwnerReadiness",
+      "domains",
+      "profileLease",
+      "profileLeaseState",
+      "pendingRecovery",
+      "receiptSummary",
+      "schemaCompatibility",
+      "rangeMedia",
+      "dependencies"
+    ],
+    "requiredCapabilityFields": [
+      "endpoints",
+      "liveness",
+      "applicationReadiness",
+      "durableOwnerReadiness",
+      "domains",
+      "profileLease",
+      "profileLeaseState",
+      "pendingRecovery",
+      "receiptSummary",
+      "schemaCompatibility",
+      "rangeMedia",
+      "dependencies"
+    ],
+    "domainCount": 6,
+    "capabilityEndpointCount": 9,
+    "profileLeaseFields": [
+      "mode",
+      "held",
+      "alive",
+      "profileBound",
+      "profileId",
+      "authoritativeLeaseHeld",
+      "authoritativeOperationsAllowed",
+      "status"
+    ],
+    "readinessRule": "liveness remains available for optional dependency failure; durable readiness fails closed for registry, repository, lease, pending recovery, schema, revision, or authority gaps",
+    "diagnosticPolicy": "health and capability responses contain status/reason codes and identity summaries only; secrets, receipt/request identities, media bytes, and absolute personal paths are omitted"
+  },
   "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract"],
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract"],
     "notDefinedHere": ["six-domain repository implementation", "pending journal", "API client", "production mutation"],
-    "nextAllowedTask": "2.7 health and capability status expansion",
+    "nextAllowedTask": "3.1 thin Reader API client",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:8305fca8bb4acf75f05e79936ac7ecb348dd2e8398a68e7622a8f98d8a025c7b"
+  "artifactChecksum": "sha256:ba7634e1ba776c5db3c9921cfee22e91d26fe4696e1e204fd1a31cb3b179e8fe"
 }
