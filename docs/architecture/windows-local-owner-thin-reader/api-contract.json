@@ -609,11 +609,43 @@
     "mediaPayloadPolicy": "Only bounded identity/reference metadata crosses owner API; Blob, ArrayBuffer, typed-array, media data URI, and obvious media base64 payloads are rejected",
     "productionStatus": "Narrow browser boundary is implemented; six domains remain pre-cutover and the owner media query remains typed not-ready until a future Host capability producer is enabled"
   },
-  "futureImplementationBoundary": {
-    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary"],
-    "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation"],
-    "nextAllowedTask": "3.5 media/auth/range focused checks",
+  "readerSessionOwnerContract": {
+    "module": "tools/subtitle-workflow/youtube_workflow/reader_session_owner.py",
+    "status": "isolated-pre-cutover",
+    "domain": "reader-session",
+    "repository": "DurableJsonRepository profile-scoped reader-session-owner.json with a .bak previous snapshot",
+    "receiptStore": "OwnerCommitReceiptStore profile-scoped durable commit receipt evidence",
+    "canonicalFields": [
+      "schemaVersion",
+      "domain",
+      "profileId",
+      "contentId",
+      "revision",
+      "audioMeta",
+      "transcript",
+      "chunkData",
+      "marks",
+      "media",
+      "checksum",
+      "commit"
+    ],
+    "mediaFields": ["mediaId", "kind", "size", "contentType", "etag", "revision", "authorizedUrl"],
+    "queryOperations": ["snapshot", "current-revision", "media-identity", "restore-status"],
+    "commandOperations": ["prepare", "commit", "restore", "receipt-query"],
+    "prepare": "Validate contentId, session resources, media identity and revision; return bounded prepare evidence without writing canonical state or a receipt",
+    "commit": "Require a matching unexpired prepare, expectedRevision and idempotencyKey; atomically replace the Host snapshot and return authoritative revision plus durable receipt",
+    "restore": "Restore a validated previous or supplied small snapshot through the same expectedRevision/idempotency receipt boundary; failed or conflicting restore keeps the current snapshot",
+    "reopen": "Strictly validate current, previous and receipt evidence; unknown schema, corruption or checksum mismatch returns manual-recovery without quarantine, normalization or overwrite",
+    "noCopyPolicy": "Only bounded JSON session state and media identity/reference metadata are accepted; Blob, ArrayBuffer, typed-array, bytes, data URI, media base64 and raw paths are rejected",
+    "productionRoute": "Not wired into /api/app/owner; production owner query/command remains pre-cutover/not-ready",
+    "browserWriterCutover": false,
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:c636e9f2967a16d941a777bc2175081e9cd93f569f922dd466539e16653b9989"
+  "futureImplementationBoundary": {
+    "implementedHere": ["Host-owned profile-scoped receipt persistence/query", "commit-unknown lookup/reconciliation seam", "synthetic adapter evidence contract", "Local App Host health/readiness and capability snapshot contract", "Browser typed owner API client boundary", "Browser durable status mapping boundary", "Browser legacy compatibility bridge boundary", "Browser MediaResourceOwner descriptor/Range/ETag boundary", "isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam"],
+    "notDefinedHere": ["six-domain repository implementation", "pending journal", "production mutation", "production Reader Session authority", "browser session writer cutover"],
+    "nextAllowedTask": "4.2+ domain owner facades",
+    "authorityReady": false
+  },
+  "artifactChecksum": "sha256:11e825f694322fa12688118da4147cca9b160fe6783ada69141ca2a30ddd6a23"
 }

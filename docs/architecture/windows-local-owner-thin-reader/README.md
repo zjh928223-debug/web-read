@@ -373,3 +373,32 @@ profile, does not use the optimization service ports, and is closed before the c
 The slice is included in `npm run verify:full` but not `npm run verify:fast`; it is focused evidence for the
 contract boundaries only. It does not claim owner authority, add repositories, migrate writers, or perform UI
 cutover.
+
+## Task 4.1 isolated Reader Session owner repository
+
+`tools/subtitle-workflow/youtube_workflow/reader_session_owner.py` is a small, profile-scoped Host-side
+`ReaderSessionOwner` facade over `DurableJsonRepository` and `OwnerCommitReceiptStore`. It is an isolated
+pre-cutover seam and is not wired into `/api/app/owner`; the production Local App Host continues to report
+Reader Session commands as not-ready and the browser `reader-session-persistence.js` writer remains unchanged.
+
+The canonical record is a bounded JSON snapshot containing schema/domain/profile identity, `contentId`, session
+revision, `audioMeta`, `transcript`, `chunkData`, `marks`, media identity/reference metadata, a stable checksum,
+and commit metadata. Media metadata contains only `mediaId`, kind, non-negative size, content type, ETag,
+revision, and the authorized relative route reference. Complete Blob/ArrayBuffer/typed-array/bytes, data URI,
+media base64, and raw paths are rejected; ordinary small JSON/text fields remain valid. The repository keeps the
+previous snapshot as a durable `.bak` and never returns an absolute path.
+
+The facade supports typed `snapshot`, `current-revision`, `media-identity`, and `restore-status` queries. Empty
+state is explicit; unknown schema, corrupt JSON, and checksum mismatch return manual-recovery evidence without
+normalization or overwrite. `prepare` validates the complete candidate and returns only a bounded in-memory
+handle/evidence. `commit` and `restore` require the matching base/expected revision and idempotency key, use the
+shared durable receipt boundary, and atomically publish a complete snapshot. Repeated keys replay one receipt;
+stale or replaced candidates, restore conflicts, and atomic write faults retain the previous canonical snapshot.
+After process reopen, current/previous snapshots and receipt evidence can be queried, including a domain commit
+that was durable before its receipt response was lost.
+
+The focused gate is `npm run verify:windows-owner-reader-session`; it runs the isolated Python tests for empty and
+valid query, prepare-without-write, commit/reopen, receipt idempotency and recovery, CAS/replaced candidates,
+no-copy/path/media validation, strict corrupt/unknown handling, restore success/conflict/failure, and atomic
+replace faults. It is registered in `verify:full` but is not part of `verify:fast`, and it does not implement
+4.2+, backup/migration aggregation, browser cutover, or owner-mode authority.

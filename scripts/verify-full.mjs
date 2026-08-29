@@ -23,6 +23,7 @@ const included = [
   command('optimization built launcher lifecycle and release safety', npmCommand, ['run', 'verify:optimization-launcher']),
   command('optimization built launcher lifecycle and release safety (pwsh)', npmCommand, ['run', 'verify:optimization-launcher:pwsh']),
   command('Windows owner focused boundary slice (Node/Python/browser)', npmCommand, ['run', 'verify:windows-owner-focused-boundaries']),
+  command('Reader Session owner repository focused checks', npmCommand, ['run', 'verify:windows-owner-reader-session']),
   command('isolated development browser journeys', process.execPath, ['scripts/vite-verify.js'], {
     env: {
       READ_WEB_PORT: isolatedPorts.dev,

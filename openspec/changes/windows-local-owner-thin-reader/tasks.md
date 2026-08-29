@@ -27,7 +27,7 @@
 
 ## 4. 并行建立六域 read/query 与 adapter seam
 
-- [ ] 4.1（可与 4.2–4.6 并行）为 `reader-session` 建立面向 Host-managed repository 的 owner query、prepare/commit/restore facade，输出 `contentId`、session revision、media identity 和可恢复 snapshot。
+- [x] 4.1（可与 4.2–4.6 并行）为 `reader-session` 建立面向 Host-managed repository 的 owner query、prepare/commit/restore facade，输出 `contentId`、session revision、media identity 和可恢复 snapshot。
 - [ ] 4.2（可与 4.1、4.3–4.6 并行）为 `vocabulary-srs` 接通写入 Host-managed repository 的 entry、acquisition、review、SRS、learning-event 和当前纳入范围的 personalization query/command seam，复用既有 UoW/CAS。
 - [ ] 4.3（可与 4.1–4.6 并行）为 `passage-preview` 接通写入 Host-managed repository 的 durable envelope、continuation/rating/transition batch query/commit，并注册所有 legacy key schema。
 - [ ] 4.4（可与 4.1–4.6 并行）为 `annotation` 接通写入 Host-managed repository 的 scoped generated/status/bundle、lightweight import/export 与 corrupt evidence query/commit，保持 ECDICT transient suggestion 非 durable。

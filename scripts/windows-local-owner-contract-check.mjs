@@ -169,7 +169,8 @@ assert(api.futureImplementationBoundary.implementedHere.includes('Host-owned pro
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('receipt persistence'), 'receipt persistence is still marked as unimplemented')
 assert(api.futureImplementationBoundary.implementedHere.includes('Browser typed owner API client boundary'), 'browser API client implementation boundary is missing')
 assert(!api.futureImplementationBoundary.notDefinedHere.includes('API client'), 'API client is still marked as unimplemented')
-assert(api.futureImplementationBoundary.nextAllowedTask === '3.5 media/auth/range focused checks', 'API contract next task must advance to 3.5 after the media owner')
+assert(api.futureImplementationBoundary.implementedHere.includes('isolated Host ReaderSessionOwner query/prepare/commit/restore repository seam'), 'Reader Session owner repository implementation boundary is missing')
+assert(api.futureImplementationBoundary.nextAllowedTask === '4.2+ domain owner facades', 'API contract next task must advance beyond Reader Session owner seam')
 assert(api.browserClientContract?.module === 'src/services/windows-owner-api-client.js', 'browser API client module is missing')
 assert(api.browserClientContract?.route === '/api/app/owner', 'browser API client route is not frozen')
 assert(api.browserClientContract?.contractVersion === api.contractVersion, 'browser API client contract version is not aligned')
@@ -232,6 +233,21 @@ assert(api.mediaResourceOwnerContract?.rangeProbe?.bodyRead === false, 'media ra
 assert(api.mediaResourceOwnerContract?.authorizedUrlPolicy?.includes('no data/blob URL'), 'media URL boundary is missing')
 assert(api.mediaResourceOwnerContract?.mediaPayloadPolicy?.includes('ArrayBuffer'), 'media payload no-copy boundary is missing')
 await assertSourceExists(api.mediaResourceOwnerContract.module)
+assert(api.readerSessionOwnerContract?.module === 'tools/subtitle-workflow/youtube_workflow/reader_session_owner.py', 'Reader Session owner module is missing')
+assert(api.readerSessionOwnerContract?.status === 'isolated-pre-cutover', 'Reader Session owner must remain isolated before cutover')
+assert(JSON.stringify(api.readerSessionOwnerContract?.queryOperations) === JSON.stringify(['snapshot', 'current-revision', 'media-identity', 'restore-status']), 'Reader Session owner query operations changed')
+assert(JSON.stringify(api.readerSessionOwnerContract?.commandOperations) === JSON.stringify(['prepare', 'commit', 'restore', 'receipt-query']), 'Reader Session owner command operations changed')
+for (const field of ['contentId', 'revision', 'media', 'checksum', 'commit']) {
+  assert(api.readerSessionOwnerContract?.canonicalFields?.includes(field), `Reader Session canonical snapshot lacks ${field}`)
+}
+for (const field of ['mediaId', 'kind', 'size', 'contentType', 'etag', 'revision', 'authorizedUrl']) {
+  assert(api.readerSessionOwnerContract?.mediaFields?.includes(field), `Reader Session media metadata lacks ${field}`)
+}
+assert(api.readerSessionOwnerContract?.noCopyPolicy?.includes('Blob'), 'Reader Session no-copy policy is missing')
+assert(api.readerSessionOwnerContract?.productionRoute?.includes('pre-cutover/not-ready'), 'Reader Session owner must not be wired as production authority')
+assert(api.readerSessionOwnerContract?.browserWriterCutover === false, 'Reader Session browser writer cutover must remain disabled')
+assert(api.readerSessionOwnerContract?.authorityReady === false, 'Reader Session owner cannot claim authority readiness')
+await assertSourceExists(api.readerSessionOwnerContract.module)
 assert(api.healthCapabilityContract?.healthSchema === 'read-web-local-app-health.v1', 'health snapshot schema is missing')
 assert(api.healthCapabilityContract?.capabilitySchema === 'read-web-local-capabilities.v1', 'capability snapshot schema is missing')
 for (const field of ['liveness', 'applicationReadiness', 'durableOwnerReadiness', 'domains', 'profileLease', 'profileLeaseState', 'pendingRecovery', 'receiptSummary', 'schemaCompatibility', 'rangeMedia', 'dependencies']) {
@@ -323,7 +339,7 @@ assert(nonGoals.forbiddenCapabilities.includes('domain writer migration'), 'writ
 assert(nonGoals.forbiddenCapabilities.includes('profile lease/journal cutover'), 'cutover non-goal missing')
 
 const tasks = await readFile(path.join(REPOSITORY_ROOT, 'openspec', 'changes', 'windows-local-owner-thin-reader', 'tasks.md'), 'utf8')
-const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '3.3', '3.4', '3.5'])
+const allowedChecked = new Set(['1.1', '1.2', '1.3', '1.4', '1.5', '1.6', '2.1', '2.2', '2.3', '2.4', '2.5', '2.6', '2.7', '3.1', '3.2', '3.3', '3.4', '3.5', '4.1'])
 for (const match of tasks.matchAll(/- \[([ xX])\] (\d+\.\d+)/gu)) {
   const checked = match[1].trim().toLowerCase() === 'x'
   if (checked !== allowedChecked.has(match[2])) throw new Error(`unexpected OpenSpec task checkbox state: ${match[2]}`)
