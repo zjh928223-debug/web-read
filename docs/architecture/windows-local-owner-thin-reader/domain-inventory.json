@@ -258,6 +258,22 @@
           "schemaVersion": "command-receipt.v1",
           "checksum": "sha256:receipt payload through learning UoW",
           "sourceEvidence": ["src/services/vocabulary/vocabulary-learning-uow.js:15-19", "src/services/vocabulary/vocabulary-learning-uow.js:672-672"]
+        },
+        {
+          "key": "vocabulary.*.backup:<revision>",
+          "storage": "SeekPlayerDB/files",
+          "classification": "vocabulary recovery backup artifact, not active canonical state",
+          "schemaVersion": "vocabulary-backup.v1",
+          "checksum": "sha256:backup envelope/source row evidence",
+          "sourceEvidence": ["src/services/vocabulary/vocabulary-repository.js:recoverCorruptRecord", "src/services/vocabulary/vocabulary-acquisition-repository.js:recoverCorruptAcquisitionRow"]
+        },
+        {
+          "key": "vocabulary.corrupt.quarantine.v1:<sha256>",
+          "storage": "SeekPlayerDB/files",
+          "classification": "vocabulary corruption recovery evidence, not active canonical state",
+          "schemaVersion": "vocabulary-corrupt-quarantine.v1",
+          "checksum": "sha256:reason-and-source-row fingerprint",
+          "sourceEvidence": ["src/services/vocabulary/vocabulary-repository.js:recoverCorruptRecord", "src/services/vocabulary/vocabulary-acquisition-repository.js:recoverCorruptAcquisitionRow"]
         }
       ],
       "compatibilityKeys": [
@@ -278,7 +294,7 @@
         "status": "isolated-pre-cutover",
         "storage": "profile-scoped vocabulary-srs-owner.json via DurableJsonRepository",
         "recordShape": "existing SeekPlayerDB/files row envelope under inventoried keys; no second domain model",
-        "commands": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report"],
+        "commands": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "learning-unit-of-work"],
         "durability": "owner revision/CAS, OwnerCommitReceiptStore idempotency, atomic replace with existing backup",
         "boundary": "not wired to /api/app/owner, browser writer, migration, or authority cutover; ECDICT remains transient"
       },
@@ -402,5 +418,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520", "tools/subtitle-workflow/youtube_workflow/workflow_owner.py:1-1229"]
     }
   ],
-  "artifactChecksum": "sha256:584836efdd27dd6a4e3c1a7ae0088213fdc4285a36d4991c3749544b2aafcd00"
+  "artifactChecksum": "sha256:6723251e28235808a43fe0b884550535d323503aeff27e88ef521461a569af4f"
 }

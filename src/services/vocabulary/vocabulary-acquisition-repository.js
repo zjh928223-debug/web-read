@@ -23,6 +23,10 @@ const STORE_KEY_PATH = 'id';
 const ACQUISITION_ROW_ID = 'vocabulary.acquisition.store.v1';
 const ACQUISITION_STORE_SCHEMA = 'acquisition-store.v1';
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 function contractError(code, message, details = {}) {
   const error = new Error(message);
   error.name = 'VocabularyLearningContractError';
@@ -709,6 +713,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
   }
 
   async function runTransaction(mode, operation) {
+    if (mode === 'readwrite') assertVocabularyBrowserWriterAllowed('acquisition_transaction');
     const database = await openDatabase();
     let transaction;
     try {
@@ -889,6 +894,7 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
   }
 
   async function recoverCorruptAcquisitionRow(error) {
+    assertVocabularyBrowserWriterAllowed('recover_acquisition_row');
     const database = await openDatabase();
     let transaction;
     try {

@@ -26,6 +26,10 @@ const DEFAULT_MIGRATIONS = new Map([
   [0, (snapshot) => ({ ...snapshot, schemaVersion: CURRENT_SCHEMA_VERSION })],
 ]);
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 function vocabularyPersistenceError(code, message, details = {}) {
   const error = new Error(message);
   error.name = 'VocabularyPersistenceError';
@@ -253,6 +257,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
         toSchemaVersion: migrated?.schemaVersion ?? null,
       });
     }
+    assertVocabularyBrowserWriterAllowed('migrate_record');
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([storeName], 'readwrite');
@@ -350,6 +355,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
   }
 
   async function compareAndSwap(snapshot, expectedRevision) {
+    assertVocabularyBrowserWriterAllowed('compare_and_swap');
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([storeName], 'readwrite');
@@ -474,6 +480,7 @@ export function createIndexedDbVocabularyRepository(options = {}) {
   }
 
   async function recoverCorruptRecord(row, reason) {
+    assertVocabularyBrowserWriterAllowed('recover_corrupt_record');
     const db = await openDb();
     return new Promise((resolve, reject) => {
       let settled = false;

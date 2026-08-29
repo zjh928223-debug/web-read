@@ -2,6 +2,10 @@ export const PERSONALIZATION_SHADOW_REPORT_SCHEMA_VERSION = 'personalization-sha
 export const PERSONALIZATION_SHADOW_REPORT_STORE_SCHEMA_VERSION = 'personalization-shadow-report-store.v1';
 export const PERSONALIZATION_SHADOW_REPORT_ROW_ID = 'vocabulary.personalization.shadow-reports.v1';
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 export class PersonalizationShadowReportError extends TypeError {
   constructor(code, message, details = {}) {
     super(message);
@@ -263,6 +267,7 @@ export function createIndexedDbPersonalizationShadowReportRepository(options = {
   }
   const database = createDatabaseAccessor(options.indexedDBApi ?? globalThis.indexedDB);
   const run = async (mode, execute) => {
+    if (mode === 'readwrite') assertVocabularyBrowserWriterAllowed('personalization_shadow_report');
     const db = await database();
     const transaction = db.transaction(['files'], mode);
     const completion = transactionCompletion(transaction, 'personalization_shadow_report');

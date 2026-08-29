@@ -10,6 +10,10 @@ const DB_NAME = 'SeekPlayerDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 function createEmptyPendingStore() {
   return {
     schemaVersion: 1,
@@ -147,6 +151,7 @@ export function createIndexedDbSrsPendingCandidatesRepository(options = {}) {
   }
 
   async function updateStore(mutator) {
+    assertVocabularyBrowserWriterAllowed('pending_candidates_update');
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([storeName], 'readwrite');

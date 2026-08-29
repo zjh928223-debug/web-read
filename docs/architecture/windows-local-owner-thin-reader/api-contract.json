@@ -231,7 +231,7 @@
       "futureOwnerFacade": "windowsHost.vocabularySrsOwner",
       "canonicalRecordsRef": "domain-inventory.json#/domains/vocabulary-srs",
       "queryOperations": ["snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"],
-      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "receipt-query"],
+      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "learning-unit-of-work", "receipt-query"],
       "capabilities": ["vocabulary-srs.query", "vocabulary-srs.entry-command", "vocabulary-srs.review-command", "vocabulary-srs.learning-command", "vocabulary-srs.receipt"],
       "mutationRequirements": { "expectedRevision": "required for mutable row/UoW command", "idempotencyKey": "required for review, acquisition, learning-event, and report commands" },
       "revisionSource": "vocabulary revision watermark plus repository/UoW CAS",
@@ -382,6 +382,7 @@
           "learning-event-append": "vocabulary-srs.learning-command",
           "pending-candidates-update": "vocabulary-srs.learning-command",
           "personalization-report": "vocabulary-srs.learning-command",
+          "learning-unit-of-work": "vocabulary-srs.learning-command",
           "receipt-query": "vocabulary-srs.receipt"
         },
         "receipt-query": { "receipt-query": "vocabulary-srs.receipt" },
@@ -696,5 +697,5 @@
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:7cce61914c0d2f1d30f4fba7c625fc33045b6f23dc67cfd4b7b3c845c59bc113"
+  "artifactChecksum": "sha256:5f6557ef4e434e1c0f391334a9b596b53645473774de321f4553bf7395217e85"
 }

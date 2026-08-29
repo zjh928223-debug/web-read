@@ -18,6 +18,10 @@ const QUEUE_KINDS = new Set([
 ]);
 const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u;
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
@@ -388,6 +392,7 @@ export function createIndexedDbReviewSessionLedgerRepository(options = {}) {
   const indexedDBApi = options.indexedDBApi ?? globalThis.indexedDB;
   const database = createDatabaseAccessor(indexedDBApi);
   const run = async (mode, execute) => {
+    if (mode === 'readwrite') assertVocabularyBrowserWriterAllowed('review_session_ledger');
     const db = await database();
     const transaction = db.transaction(['files'], mode);
     const completion = transactionCompletion(transaction, 'review_session_ledger');

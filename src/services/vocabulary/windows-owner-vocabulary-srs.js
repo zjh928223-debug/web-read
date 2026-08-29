@@ -53,6 +53,21 @@ const EVENT_SHARD_PATTERN = /^vocabulary\.learning-events\.v1\.\d{4}-(?:0[1-9]|1
 const SETTLEMENT_PREFIX = `${ARTICLE_SRS_SETTLEMENT_PROGRESS_STORE_KEY}:`
 const integrationCache = new WeakMap()
 
+function isAuthoritativeCheckpoint(windowObject) {
+  const cutover = windowObject?.__windowsOwnerDomainCutover
+  return cutover?.isAuthoritative?.(DOMAIN) === true
+    || cutover?.authoritativeDomains?.includes?.(DOMAIN) === true
+}
+
+function ownerNotReadyError() {
+  const error = new Error('The vocabulary-srs Windows owner is authoritative but not ready')
+  error.name = 'WindowsOwnerNotReadyError'
+  error.code = 'owner-not-ready'
+  error.outcome = 'not-ready'
+  error.domain = DOMAIN
+  return error
+}
+
 function clone(value) {
   if (value === undefined) return undefined
   return JSON.parse(JSON.stringify(value))
@@ -173,30 +188,6 @@ function changedRows(beforeRecords, afterRows) {
     const previous = beforeRecords?.[row.id]
     return !previous || canonicalJson(ownerRecordContent(previous)) !== canonicalJson(row.content)
   })
-}
-
-function commandGroups(rows) {
-  const groups = [
-    {
-      operation: 'acquisition-command',
-      keys: new Set([ACQUISITION_ROW_ID]),
-    },
-    {
-      operation: 'review-attempt',
-      keys: new Set([REVIEW_ROW_ID, LEDGER_ROW_ID]),
-    },
-    {
-      operation: 'learning-event-append',
-      keys: new Set([EVENTS_MANIFEST_ROW_ID, CONTEXT_ROW_ID, WATERMARK_ROW_ID]),
-      include: (id) => isEventShard(id) || isSettlementKey(id) || isLearningReceiptKey(id),
-    },
-  ]
-  return groups.map((group) => ({
-    ...group,
-    records: Object.fromEntries(rows
-      .filter((row) => group.keys.has(row.id) || group.include?.(row.id))
-      .map((row) => [row.id, recordForCommand(row.id, row.content)])),
-  })).filter((group) => Object.keys(group.records).length)
 }
 
 function emptyAcquisitionStore() {
@@ -588,23 +579,19 @@ function createOwnerLearningRunner(owner, now) {
   }
 
   async function commitChangedRows(currentOwner, selected, rows, command) {
-    const groups = commandGroups(changedRows(selected.records, rows))
-    let expectedRevision = selected.revision
-    for (const [index, group] of groups.entries()) {
-      const response = await commitRecords(
-        currentOwner,
-        group.operation,
-        group.records,
-        expectedRevision,
-        {
-          commandId: command?.command_id || 'unknown',
-          commandType: command?.command_type || 'unknown',
-          group: group.operation,
-          index,
-        },
-      )
-      expectedRevision = response.revision
-    }
+    const changed = changedRows(selected.records, rows)
+    if (!changed.length) return null
+    return commitRecords(
+      currentOwner,
+      'learning-unit-of-work',
+      Object.fromEntries(changed.map((row) => [row.id, recordForCommand(row.id, row.content)])),
+      selected.revision,
+      {
+        commandId: command?.command_id || 'unknown',
+        commandType: command?.command_type || 'unknown',
+        changedRecordIds: changed.map((row) => row.id).sort(),
+      },
+    )
   }
 
   return { run, runBatchSession }
@@ -645,7 +632,10 @@ export function createWindowsOwnerVocabularySrsIntegration(options = {}) {
 
 export function getWindowsOwnerVocabularySrsIntegration(windowObject = globalThis) {
   const owner = getAuthoritativeWindowsOwner(DOMAIN, windowObject)
-  if (!owner) return null
+  if (!owner) {
+    if (isAuthoritativeCheckpoint(windowObject)) throw ownerNotReadyError()
+    return null
+  }
   if (windowObject && typeof windowObject === 'object' && integrationCache.has(windowObject)) {
     const cached = integrationCache.get(windowObject)
     if (cached.owner === owner) return cached

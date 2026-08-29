@@ -12,6 +12,10 @@ export const ARTICLE_SRS_SETTLEMENT_PROGRESS_STORE_KEY = 'vocabulary-article-srs
 const DB_NAME = 'SeekPlayerDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
+
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
 const APPLICATION_CLAIM_TTL_MS = 15 * 60 * 1000;
 
 function createEmptyStore() {
@@ -490,6 +494,7 @@ export function createIndexedDbArticleSrsSettlementProgressRepository(options = 
   }
 
   async function updateProgress(articleId, mutator) {
+    assertVocabularyBrowserWriterAllowed('settlement_progress_update');
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([storeName], 'readwrite');

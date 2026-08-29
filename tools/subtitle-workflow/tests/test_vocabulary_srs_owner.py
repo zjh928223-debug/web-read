@@ -336,6 +336,79 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         self.assertEqual(snapshot["payload"]["records"][settlement_key]["timestamp"], timestamp)
         self.assertEqual(snapshot["payload"]["records"][watermark_key]["timestamp"], timestamp)
 
+    def test_learning_unit_of_work_commits_all_changed_rows_once_with_one_receipt(self):
+        replacements = 0
+
+        def after_replace(_temporary, target):
+            nonlocal replacements
+            if Path(target) == owner.snapshot_path:
+                replacements += 1
+
+        owner = self.make_owner(repository=DurableJsonRepository(after_replace=after_replace))
+        records = {
+            "vocabulary.srs.store.v1": self.row(
+                "vocabulary.srs.store.v1",
+                self.srs_content("batch"),
+            ),
+            "vocabulary.acquisition.store.v1": self.row(
+                "vocabulary.acquisition.store.v1",
+                self.acquisition_content(),
+            ),
+            "vocabulary.review.store.v2": self.row(
+                "vocabulary.review.store.v2",
+                self.review_content(),
+            ),
+        }
+
+        result = owner.command(
+            "learning-unit-of-work",
+            payload={"records": records},
+            expected_revision=0,
+            idempotency_key="batch-once",
+            **self.ids("batch-once"),
+        )
+
+        self.assertEqual(result["outcome"], "committed")
+        self.assertEqual(result["commitStatus"], "committed")
+        self.assertEqual(result["revision"], 1)
+        self.assertEqual(result["receipt"]["operation"], "learning-unit-of-work")
+        self.assertEqual(replacements, 1)
+        snapshot = owner.query("snapshot", **self.ids("batch-snapshot"))
+        self.assertEqual(set(snapshot["payload"]["records"]), set(records))
+
+    def test_learning_unit_of_work_write_failure_leaves_zero_partial_rows(self):
+        fail_write = False
+
+        def before_replace(_temporary, target):
+            if fail_write and Path(target) == owner.snapshot_path:
+                raise OSError("injected batch write failure")
+
+        owner = self.make_owner(repository=DurableJsonRepository(before_replace=before_replace))
+        records = {
+            "vocabulary.srs.store.v1": self.row(
+                "vocabulary.srs.store.v1",
+                self.srs_content("failed-batch"),
+            ),
+            "vocabulary.acquisition.store.v1": self.row(
+                "vocabulary.acquisition.store.v1",
+                self.acquisition_content(),
+            ),
+        }
+        fail_write = True
+
+        result = owner.command(
+            "learning-unit-of-work",
+            payload={"records": records},
+            expected_revision=0,
+            idempotency_key="batch-failure",
+            **self.ids("batch-failure"),
+        )
+
+        self.assertEqual(result["outcome"], "manual-recovery")
+        self.assertFalse(owner.snapshot_path.exists())
+        snapshot = owner.query("snapshot", **self.ids("batch-failure-snapshot"))
+        self.assertEqual(snapshot["payload"]["records"], {})
+
     def test_stale_revision_conflicts_and_keeps_the_previous_record(self):
         owner = self.make_owner()
         original = self.row("vocabulary.srs.store.v1", self.srs_content("old"))

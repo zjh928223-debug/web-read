@@ -87,7 +87,7 @@ OWNER_MIGRATION_OPERATIONS = {
     },
     "vocabulary-srs": {
         "query": frozenset({"snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"}),
-        "command": frozenset({"entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report"}),
+        "command": frozenset({"entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "learning-unit-of-work"}),
         "receipt-query": frozenset({"receipt-query"}),
     },
     "workflow": {

@@ -16,6 +16,7 @@ import { chromium } from 'playwright'
 import {
   readOwnerModeCheckpoint,
   readOwnerModeFreeze,
+  revokeOwnerModeCheckpoint,
   writeIsolatedBrowserProfile,
 } from './lib/read-web-production-backup.mjs'
 import {
@@ -729,9 +730,44 @@ function fixtureRows() {
   const resultTwo = { schema_version: 'fixture-result.v1', ok: true, record_count: 2, second: true }
   const receiptOne = receipt('fixture-receipt-alpha', resultOne, { seed: 'alpha' }, 'fixture-event-alpha')
   const receiptTwo = receipt('fixture-receipt-beta', resultTwo, { seed: 'beta' }, 'fixture-event-beta')
+  const acquisition = acquisitionStore()
+  const backupSourceRow = {
+    id: 'vocabulary.acquisition.store.v1',
+    content: clone(acquisition),
+    revision: 7,
+    timestamp: FIXTURE_TIME,
+  }
+  const backupRowId = 'vocabulary.acquisition.store.v1.backup:7'
+  const backupContent = {
+    schema_version: 'vocabulary-backup.v1',
+    sourceId: backupSourceRow.id,
+    sourceRow: backupSourceRow,
+    createdAt: FIXTURE_TIME,
+  }
+  const quarantineSourceRow = {
+    id: 'vocabulary.srs.store.v1',
+    content: { schemaVersion: 99, corrupt_fixture: true },
+    revision: 8,
+    timestamp: FIXTURE_TIME,
+    checksum: `sha256:${'0'.repeat(64)}`,
+  }
+  const quarantineReason = 'checksum-mismatch'
+  const quarantineRowId = `vocabulary.corrupt.quarantine.v1:${sha256Hex(canonical({
+    sourceId: quarantineSourceRow.id,
+    sourceRow: quarantineSourceRow,
+    reason: quarantineReason,
+  }))}`
+  const quarantineContent = {
+    schema_version: 'vocabulary-corrupt-quarantine.v1',
+    sourceId: quarantineSourceRow.id,
+    sourceRow: quarantineSourceRow,
+    reason: quarantineReason,
+    detectedAt: FIXTURE_TIME,
+    details: { code: 'CORRUPT', operation: 'vocabulary-learning-uow' },
+  }
   const contents = {
     'vocabulary.srs.store.v1': vocabularySnapshot(),
-    'vocabulary.acquisition.store.v1': acquisitionStore(),
+    'vocabulary.acquisition.store.v1': acquisition,
     'vocabulary.review.store.v2': reviewStore(),
     'vocabulary.review-session-ledgers.v1': {
       schema_version: 'review-session-ledger-store.v1',
@@ -755,6 +791,8 @@ function fixtureRows() {
     },
     [`${RECEIPT_PREFIX}fixture-receipt-alpha`]: receiptOne,
     [`${RECEIPT_PREFIX}fixture-receipt-beta`]: receiptTwo,
+    [backupRowId]: backupContent,
+    [quarantineRowId]: quarantineContent,
   }
   return Object.entries(contents).map(([id, content]) => ({
     id,
@@ -859,29 +897,60 @@ async function runBrowserCoreJourney(origin) {
       const { createWindowsOwnerApiClient } = await import('/src/services/windows-owner-api-client.js')
       const { createVocabularyService } = await import('/src/services/vocabulary/vocabulary-service.js')
       const { createSrsReviewUiService } = await import('/src/features/srs-review/srs-review-ui-service.js')
+      const { createIndexedDbSrsPendingCandidatesRepository } = await import('/src/services/vocabulary/srs-pending-candidates.js')
+      const { createWindowsOwnerDomainCutover } = await import('/src/services/windows-owner-domain-cutover.js')
       const {
         createWindowsOwnerVocabularySrsIntegration,
         getWindowsOwnerVocabularySrsIntegration,
       } = await import('/src/services/vocabulary/windows-owner-vocabulary-srs.js')
 
       const ownerClient = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 3000 })
+      const setupDatabase = () => new Promise((resolve, reject) => {
+        const request = indexedDB.open('SeekPlayerDB', 1)
+        request.onupgradeneeded = (event) => {
+          const database = event.target.result
+          if (!database.objectStoreNames.contains('files')) database.createObjectStore('files', { keyPath: 'id' })
+        }
+        request.onerror = () => reject(request.error || new Error('failed to create frozen-writer fixture database'))
+        request.onsuccess = () => {
+          request.result.close()
+          resolve()
+        }
+      })
+      await setupDatabase()
+      const preCutoverPendingRepository = createIndexedDbSrsPendingCandidatesRepository()
+      await preCutoverPendingRepository.loadStore()
+      let vocabularyAuthoritative = false
+      const writerFrozenError = (operation) => {
+        const error = new Error(`The vocabulary-srs browser writer is frozen for ${operation}`)
+        error.name = 'WindowsOwnerWriterFrozenError'
+        error.code = 'windows-owner-writer-frozen'
+        return error
+      }
       window.__windowsOwnerDomainCutover = {
-        isAuthoritative: (domain) => domain === 'vocabulary-srs',
+        isAuthoritative: (domain) => domain === 'vocabulary-srs' && vocabularyAuthoritative,
+        assertBrowserWriterAllowed: (domain, operation) => {
+          if (domain === 'vocabulary-srs' && vocabularyAuthoritative) throw writerFrozenError(operation)
+        },
         query: (request) => ownerClient.query(request),
         command: (request) => ownerClient.command(request),
       }
-      const integration = getWindowsOwnerVocabularySrsIntegration(window)
-      if (!integration) throw new Error('vocabulary Host integration was not selected')
 
       const originalOpen = IDBFactory.prototype.open
+      const originalPut = IDBObjectStore.prototype.put
       const originalGetItem = Storage.prototype.getItem
       const originalSetItem = Storage.prototype.setItem
       let indexedDbOpenCalls = 0
+      let indexedDbWrites = 0
       let storageReads = 0
       let storageWrites = 0
       IDBFactory.prototype.open = function blockedIndexedDbOpen(...args) {
         indexedDbOpenCalls += 1
         throw new Error(`authoritative vocabulary path opened IndexedDB: ${String(args[0])}`)
+      }
+      IDBObjectStore.prototype.put = function countedIndexedDbWrite(...args) {
+        indexedDbWrites += 1
+        return originalPut.apply(this, args)
       }
       Storage.prototype.getItem = function countedStorageRead(...args) {
         storageReads += 1
@@ -893,6 +962,54 @@ async function runBrowserCoreJourney(origin) {
       }
 
       try {
+        vocabularyAuthoritative = true
+        const integration = getWindowsOwnerVocabularySrsIntegration(window)
+        if (!integration) throw new Error('vocabulary Host integration was not selected')
+        let existingWriterBlocked = false
+        try {
+          await preCutoverPendingRepository.saveStore({ schemaVersion: 1, groups: {} })
+        } catch (error) {
+          existingWriterBlocked = error?.code === 'windows-owner-writer-frozen'
+        }
+        if (!existingWriterBlocked || indexedDbWrites !== 0) {
+          throw new Error('pre-cutover IndexedDB repository was not frozen before its first write')
+        }
+
+        const unavailableWindow = {}
+        const unavailableCutover = createWindowsOwnerDomainCutover({
+          windowObject: unavailableWindow,
+          health: {
+            profileId,
+            liveness: { ready: true },
+            contractValid: true,
+            profileEvidenceReady: true,
+            ownerRegistry: { valid: true },
+            domains: [{
+              domain: 'vocabulary-srs',
+              authority: 'authoritative',
+              queryCapability: 'read-only',
+              commandCapability: 'writable',
+            }],
+          },
+          authoritativeDomains: ['vocabulary-srs'],
+          ownerClient,
+          fetchImpl: async () => ({ ok: false }),
+        })
+        unavailableWindow.__windowsOwnerDomainCutover = unavailableCutover
+        const unavailableRefresh = await unavailableCutover.refresh()
+        if (!unavailableRefresh.authoritativeDomains.includes('vocabulary-srs')
+          || unavailableCutover.ownerReady !== false
+          || unavailableRefresh.status !== 'not-ready') {
+          throw new Error('authoritative owner health loss did not retain the freeze guard fail-closed')
+        }
+        let unavailableRejected = false
+        try {
+          getWindowsOwnerVocabularySrsIntegration(unavailableWindow)
+        } catch (error) {
+          unavailableRejected = error?.code === 'owner-not-ready'
+        }
+        if (!unavailableRejected) throw new Error('authoritative-but-unavailable reload fell back to IndexedDB')
+
         const vocabulary = createVocabularyService({
           ownerIntegration: integration,
           acquisitionEnabled: true,
@@ -1016,6 +1133,7 @@ async function runBrowserCoreJourney(origin) {
 
         return {
           indexedDbOpenCalls,
+          indexedDbWrites,
           storageReads,
           storageWrites,
           beforeWordId: beforeWord.id,
@@ -1028,9 +1146,12 @@ async function runBrowserCoreJourney(origin) {
           recordedRating: attempt.attempt.rating,
           addedWordId: added.id,
           failedClosed,
+          existingWriterBlocked,
+          unavailableRejected,
         }
       } finally {
         IDBFactory.prototype.open = originalOpen
+        IDBObjectStore.prototype.put = originalPut
         Storage.prototype.getItem = originalGetItem
         Storage.prototype.setItem = originalSetItem
       }
@@ -1125,6 +1246,22 @@ try {
     instanceId: host.instanceId,
   })
   await assertHostSnapshot(ownerClient, expectedRows, 'Host reopen')
+  const recoveryRows = Object.keys(expectedRows).filter((id) => (
+    /\.backup:\d+$/u.test(id) || /^vocabulary\.corrupt\.quarantine\.v1:/u.test(id)
+  ))
+  assert.equal(recoveryRows.length, 2, 'fixture must contain backup and quarantine recovery artifacts')
+  const reopenedSnapshot = await ownerClient.query({ domain: DOMAIN, operation: 'snapshot', payload: {} })
+  assert.deepEqual(
+    recoveryRows.map((id) => reopenedSnapshot.payload.records[id]?.content),
+    recoveryRows.map((id) => expectedRows[id]),
+    'Host reopen must preserve recovery artifact content',
+  )
+  const activeAcquisition = await ownerClient.query({ domain: DOMAIN, operation: 'acquisition', payload: {} })
+  assert.equal(
+    Object.keys(activeAcquisition.payload.records).some((id) => recoveryRows.includes(id)),
+    false,
+    'recovery artifacts must not be exposed as active acquisition state',
+  )
 
   browserServer = await startBrowserServer(host)
   const browserResult = await runBrowserCoreJourney(browserServer.origin)
@@ -1137,6 +1274,9 @@ try {
   assert.equal(browserResult.sessionEntryCount, 2)
   assert.equal(browserResult.recordedRating, 'good')
   assert.equal(browserResult.failedClosed, true)
+  assert.equal(browserResult.existingWriterBlocked, true)
+  assert.equal(browserResult.unavailableRejected, true)
+  assert.equal(browserResult.indexedDbWrites, 0, 'authoritative browser vocabulary/SRS path must not write IndexedDB')
   assert.ok(browserResult.queuedLearningUnitId)
 
   const finalResponse = await ownerClient.query({ domain: DOMAIN, operation: 'snapshot', payload: {} })
@@ -1155,6 +1295,20 @@ try {
   for (const [id, record] of Object.entries(finalRecords)) {
     assert.match(checksum(contentFromRecord(record)), /^sha256:[a-f0-9]{64}$/u, `final checksum is computable for ${id}`)
   }
+
+  const rollback = await revokeOwnerModeCheckpoint({
+    ...target,
+    profileId: PROFILE_ID,
+    domain: DOMAIN,
+    expectedRevision: checkpoint.repository.revision,
+    expectedRevisionEvidence: checkpoint.repository.revisionEvidence,
+  })
+  assert.equal(rollback.status, 'revoked', 'owner authority rollback must revoke the checkpoint')
+  assert.equal(
+    await readOwnerModeCheckpoint({ ...target, profileId: PROFILE_ID, domain: DOMAIN }),
+    null,
+    'owner authority rollback must remove the authoritative checkpoint',
+  )
 
   console.log('Windows owner C2c vocabulary/SRS cutover checks passed.')
 } finally {

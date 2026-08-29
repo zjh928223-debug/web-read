@@ -102,13 +102,15 @@
         {"keyPattern": "vocabulary-article-srs-settlement-progress:*", "schemaVersions": ["1"]},
         {"key": "vocabulary.revision-watermark.v1", "schemaVersions": ["vocabulary-revision-watermark.v1", "1"]},
         {"keyPattern": "vocabulary.learning-command-receipt.v1:*", "schemaVersions": ["command-receipt.v1", "1"]},
+        {"keyPattern": "vocabulary.*.backup:*", "schemaVersions": ["vocabulary-backup.v1", "1"]},
+        {"keyPattern": "vocabulary.corrupt.quarantine.v1:*", "schemaVersions": ["vocabulary-corrupt-quarantine.v1", "1"]},
         {"keyPattern": "vocabulary.*", "schemaVersions": ["1", "acquisition-store.v1", "review-store.v2", "review-state.v2", "review-session-ledger-store.v1", "session-ledger.v1", "learning-event-manifest.v1", "learning-event-shard.v1", "context-evidence-store.v1", "context-evidence.v1", "personalization-shadow-report-store.v1", "personalization-shadow-model-snapshot.v1", "vocabulary-revision-watermark.v1", "command-receipt.v1"]}
       ],
       "compatibilityRecords": [
         {"keyPattern": "legacy-migration:*", "schemaVersions": ["legacy-migration.v1"]}
       ],
       "queryOperations": ["snapshot", "entry", "acquisition", "review-queue", "learning-events", "context-evidence", "personalization"],
-      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "receipt-query"],
+      "commandOperations": ["entry-upsert", "acquisition-command", "review-attempt", "learning-event-append", "pending-candidates-update", "personalization-report", "learning-unit-of-work", "receipt-query"],
       "revisionSource": {
         "identity": "vocabulary-srs.revision-watermark",
         "source": "vocabulary.revision-watermark.v1 and learning-event manifest"
@@ -427,5 +429,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:5110c91cde0b215ec59b47373cd6d42570c5cb2c1ba23f015f272f41decc5ece"
+  "artifactChecksum": "sha256:69410941de30dbb5fca253649acea9ba4f1f076f63cd4c68e8aca7e3ac9356b1"
 }

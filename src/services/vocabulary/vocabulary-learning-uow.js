@@ -29,6 +29,10 @@ const rowPortMetadata = new WeakMap();
 let transactionSequence = 0;
 let highestObservedRevision = 0;
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 function clone(value) {
   if (value === undefined) return undefined;
   try {
@@ -357,6 +361,7 @@ export function createVocabularyLearningTransactionRowPort(transaction, transact
       return validated;
     },
     async putRow(row) {
+      assertVocabularyBrowserWriterAllowed('learning_unit_of_work_put');
       if (!isPlainObject(row)) fail('INVALID_FIELD_TYPE', 'FileRow must be an object', { field: 'row' });
       requiredId(row.id, 'row.id');
       utcTimestamp(row.timestamp, 'row.timestamp');
@@ -865,6 +870,7 @@ function recoveryTimestamp(now) {
 }
 
 async function recoverCorruptVocabularyRow(indexedDBApi, error, now) {
+  assertVocabularyBrowserWriterAllowed('recover_learning_unit_of_work');
   const sourceId = error.details?.row_id || error.details?.sourceRow?.id;
   if (typeof sourceId !== 'string' || sourceId.length === 0) {
     throw contractError('CORRUPT', 'Vocabulary learning row is corrupt', {
@@ -1056,6 +1062,7 @@ export async function runVocabularyLearningUnitOfWork(
   const now = dependencies.now ?? (() => new Date().toISOString());
   const indexedDBApi = dependencies.indexedDBApi
     ?? (typeof globalThis !== 'undefined' ? globalThis.indexedDB : null);
+  assertVocabularyBrowserWriterAllowed('learning_unit_of_work');
   const runAttempt = async (allowRecovery) => {
     const database = await openExistingDatabase(indexedDBApi);
     let transaction;
@@ -1105,6 +1112,7 @@ export async function runVocabularyLearningBatchSession(
   const indexedDBApi = dependencies.indexedDBApi
     ?? (typeof globalThis !== 'undefined' ? globalThis.indexedDB : null);
   const defaultNow = dependencies.now ?? (() => new Date().toISOString());
+  assertVocabularyBrowserWriterAllowed('learning_unit_of_work_batch');
   const runAttempt = async (allowRecovery) => {
     const database = await openExistingDatabase(indexedDBApi);
     let transaction;

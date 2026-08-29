@@ -634,44 +634,26 @@ function createAnnotationHostAdapter({ client, scope, scopes }) {
 }
 
 function createVocabularySrsHostAdapter({ client }) {
-  const restoreGroups = [
-    {
-      operation: 'entry-upsert',
-      keys: new Set(['vocabulary.srs.store.v1']),
-    },
-    {
-      operation: 'acquisition-command',
-      keys: new Set(['vocabulary.acquisition.store.v1']),
-    },
-    {
-      operation: 'review-attempt',
-      keys: new Set([
-        'vocabulary.review.store.v2',
-        'vocabulary.review-session-ledgers.v1',
-      ]),
-    },
-    {
-      operation: 'learning-event-append',
-      keys: new Set([
-        'vocabulary.learning-events.manifest.v1',
-        'vocabulary.context-evidence.store.v1',
-        'vocabulary.revision-watermark.v1',
-      ]),
-      dynamic: (key) => (
-        /^vocabulary\.learning-events\.v1\.\d{4}-(?:0[1-9]|1[0-2])(?:\.\d{4})?$/u.test(key)
-        || /^vocabulary-article-srs-settlement-progress:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(key)
-        || /^vocabulary\.learning-command-receipt\.v1:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(key)
-      ),
-    },
-    {
-      operation: 'pending-candidates-update',
-      keys: new Set(['vocabulary-srs-pending-candidates']),
-    },
-    {
-      operation: 'personalization-report',
-      keys: new Set(['vocabulary.personalization.shadow-reports.v1']),
-    },
-  ]
+  const canonicalKeys = new Set([
+    'vocabulary.srs.store.v1',
+    'vocabulary.acquisition.store.v1',
+    'vocabulary.review.store.v2',
+    'vocabulary.review-session-ledgers.v1',
+    'vocabulary.learning-events.manifest.v1',
+    'vocabulary.context-evidence.store.v1',
+    'vocabulary.personalization.shadow-reports.v1',
+    'vocabulary-srs-pending-candidates',
+    'vocabulary.revision-watermark.v1',
+  ])
+  const dynamicKey = (key) => (
+    /^vocabulary\.learning-events\.v1\.\d{4}-(?:0[1-9]|1[0-2])(?:\.\d{4})?$/u.test(key)
+    || /^vocabulary-article-srs-settlement-progress:[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(key)
+    || /^vocabulary\.learning-command-receipt\.v1:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u.test(key)
+  )
+  const recoveryKey = (key) => (
+    /^vocabulary\.[A-Za-z0-9][A-Za-z0-9._-]*\.backup:\d+$/u.test(key)
+    || /^vocabulary\.corrupt\.quarantine\.v1:[a-f0-9]{64}$/u.test(key)
+  )
   return {
     key: 'vocabulary-srs',
     schemaVersion: 1,
@@ -685,9 +667,7 @@ function createVocabularySrsHostAdapter({ client }) {
       const records = ownerRecordsPayload(snapshot)
       const keys = Object.keys(records)
       if (keys.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
-      const unsupported = keys.filter((key) => !restoreGroups.some((group) => (
-        group.keys.has(key) || group.dynamic?.(key)
-      )))
+      const unsupported = keys.filter((key) => !canonicalKeys.has(key) && !dynamicKey(key) && !recoveryKey(key))
       if (unsupported.length) {
         throw productionHostError(
           'OWNER_CUTOVER_HOST_IMPORT_INVALID',
@@ -695,32 +675,20 @@ function createVocabularySrsHostAdapter({ client }) {
         )
       }
 
-      let expectedRevision = context.expectedRevision
-      let lastResult = { ok: true, status: 'committed', revision: expectedRevision }
-      let commandIndex = 0
-      for (const group of restoreGroups) {
-        const selected = Object.fromEntries(Object.entries(records).filter(([key]) => (
-          group.keys.has(key) || group.dynamic?.(key)
-        )))
-        if (!Object.keys(selected).length) continue
-        const idempotencyKey = `${context.idempotencyKey || 'vocabulary-srs-import'}-${commandIndex}-${group.operation}`.slice(0, 255)
-        lastResult = await client.command({
-          domain: 'vocabulary-srs',
-          operation: group.operation,
-          payload: { records: selected },
-          expectedRevision,
-          idempotencyKey,
-        })
-        if (lastResult?.outcome !== 'committed' || lastResult?.commitStatus !== 'committed') {
-          throw productionHostError(
-            'OWNER_CUTOVER_HOST_IMPORT_FAILED',
-            `Vocabulary ${group.operation} did not commit`,
-          )
-        }
-        expectedRevision = lastResult.revision
-        commandIndex += 1
+      const result = await client.command({
+        domain: 'vocabulary-srs',
+        operation: 'learning-unit-of-work',
+        payload: { records },
+        expectedRevision: context.expectedRevision,
+        idempotencyKey: context.idempotencyKey || 'vocabulary-srs-import',
+      })
+      if (result?.outcome !== 'committed' || result?.commitStatus !== 'committed') {
+        throw productionHostError(
+          'OWNER_CUTOVER_HOST_IMPORT_FAILED',
+          `Vocabulary learning-unit-of-work did not commit (${result?.outcome || 'missing'}:${result?.error?.code || result?.commitStatus || 'unknown'})`,
+        )
       }
-      return lastResult
+      return result
     },
   }
 }

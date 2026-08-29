@@ -503,7 +503,7 @@ function requireOperationCapability(entry, domain, operation) {
 function requiresIdempotency(domain, operation) {
   if (READ_LIKE_COMMANDS.has(operation)) return false
   if (domain === 'reader-session') return ['commit', 'restore'].includes(operation)
-  if (domain === 'vocabulary-srs') return ['review-attempt', 'acquisition-command', 'learning-event-append', 'pending-candidates-update', 'personalization-report'].includes(operation)
+  if (domain === 'vocabulary-srs') return ['review-attempt', 'acquisition-command', 'learning-event-append', 'pending-candidates-update', 'personalization-report', 'learning-unit-of-work'].includes(operation)
   if (domain === 'passage-preview') return operation !== 'legacy-import'
   if (domain === 'annotation') return ['bundle-commit', 'lightweight-import', 'backfill-result-import'].includes(operation)
   if (domain === 'marks-activity') return ['marks-commit', 'activity-append'].includes(operation)

@@ -2,6 +2,10 @@ const DB_NAME = 'SeekPlayerDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 export const CONTEXT_EVIDENCE_STORE_KEY = 'vocabulary.context-evidence.store.v1';
 export const CONTEXT_EVIDENCE_SCHEMA_VERSION = 'context-evidence.v1';
 export const CONTEXT_EVIDENCE_STORE_SCHEMA_VERSION = 'context-evidence-store.v1';
@@ -906,6 +910,7 @@ export function createIndexedDbContextEvidenceRepository(options = {}) {
   }
 
   async function putEvidence(evidence, expectedRevision) {
+    assertVocabularyBrowserWriterAllowed('context_evidence_put');
     const database = await getDatabase();
     return new Promise((resolve, reject) => {
       let transaction;

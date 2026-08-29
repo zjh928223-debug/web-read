@@ -42,6 +42,8 @@ _LEGACY_MIGRATION = re.compile(r"^legacy-migration:[A-Za-z0-9][A-Za-z0-9._:-]{0,
 _LEARNING_RECEIPT = re.compile(
     r"^vocabulary\.learning-command-receipt\.v1:[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$"
 )
+_VOCABULARY_BACKUP = re.compile(r"^(.+)\.backup:[0-9]+$")
+_VOCABULARY_QUARANTINE = re.compile(r"^vocabulary\.corrupt\.quarantine\.v1:[a-f0-9]{64}$")
 _RECORD_FIELDS = frozenset({"id", "content", "timestamp", "revision", "contentId", "checksum"})
 
 CANONICAL_RECORD_KEYS = (
@@ -73,6 +75,7 @@ COMMAND_OPERATIONS = (
     "learning-event-append",
     "pending-candidates-update",
     "personalization-report",
+    "learning-unit-of-work",
 )
 
 _COMMAND_CAPABILITIES = {
@@ -82,6 +85,7 @@ _COMMAND_CAPABILITIES = {
     "learning-event-append": "vocabulary-srs.learning-command",
     "pending-candidates-update": "vocabulary-srs.learning-command",
     "personalization-report": "vocabulary-srs.learning-command",
+    "learning-unit-of-work": "vocabulary-srs.learning-command",
 }
 
 _COMMAND_RECORD_RULES = {
@@ -98,6 +102,7 @@ _COMMAND_RECORD_RULES = {
     }),
     "pending-candidates-update": frozenset({"vocabulary-srs-pending-candidates"}),
     "personalization-report": frozenset({"vocabulary.personalization.shadow-reports.v1"}),
+    "learning-unit-of-work": frozenset(CANONICAL_RECORD_KEYS),
 }
 
 
@@ -199,11 +204,27 @@ def _validate_json_value(value: Any, *, key_hint: str = "", allowed_sensitive_ke
 def _record_key(value: Any) -> str:
     if not isinstance(value, str):
         raise VocabularySrsOwnerError("invalid-request")
-    if value in CANONICAL_RECORD_KEYS or _EVENT_SHARD.fullmatch(value) or _SETTLEMENT.fullmatch(value):
+    if _is_active_record_key(value) or _is_recovery_artifact_key(value):
         return value
     if _LEGACY_MIGRATION.fullmatch(value) or _LEARNING_RECEIPT.fullmatch(value):
         return value
     raise VocabularySrsOwnerError("invalid-request")
+
+
+def _is_active_record_key(value: str) -> bool:
+    return value in CANONICAL_RECORD_KEYS or _EVENT_SHARD.fullmatch(value) or _SETTLEMENT.fullmatch(value) or _LEARNING_RECEIPT.fullmatch(value)
+
+
+def _recovery_source_id(value: str) -> str | None:
+    match = _VOCABULARY_BACKUP.fullmatch(value)
+    if not match:
+        return None
+    source_id = match.group(1)
+    return source_id if _is_active_record_key(source_id) else None
+
+
+def _is_recovery_artifact_key(value: str) -> bool:
+    return _VOCABULARY_QUARANTINE.fullmatch(value) is not None or _recovery_source_id(value) is not None
 
 
 def _expected_schema(key: str) -> tuple[str, Any] | None:
@@ -235,6 +256,46 @@ def _expected_schema(key: str) -> tuple[str, Any] | None:
 def _validate_record_content(key: str, content: Any) -> dict[str, Any]:
     if not isinstance(content, dict):
         raise VocabularySrsOwnerError("invalid-request")
+    source_id = _recovery_source_id(key)
+    if source_id is not None:
+        if content.get("schema_version") != "vocabulary-backup.v1":
+            raise VocabularySrsOwnerError("unsupported-schema")
+        if content.get("sourceId") != source_id or not isinstance(content.get("sourceRow"), dict):
+            raise VocabularySrsOwnerError("invalid-request")
+        source_row = content["sourceRow"]
+        if source_row.get("id") != source_id or "content" not in source_row:
+            raise VocabularySrsOwnerError("invalid-request")
+        if "checksum" in source_row and (
+            not isinstance(source_row["checksum"], str)
+            or _SHA256.fullmatch(source_row["checksum"]) is None
+            or source_row["checksum"] != _checksum(source_row["content"])
+        ):
+            raise VocabularySrsOwnerError("corrupt")
+        if not isinstance(content.get("createdAt"), (str, int, float)) or isinstance(content.get("createdAt"), bool):
+            raise VocabularySrsOwnerError("invalid-request")
+        _validate_json_value(
+            content,
+            allowed_sensitive_keys=frozenset({"attempt_token"}) if _SETTLEMENT.fullmatch(source_id) else frozenset(),
+        )
+        return deepcopy(content)
+    if _VOCABULARY_QUARANTINE.fullmatch(key):
+        required = {"schema_version", "sourceId", "sourceRow", "reason", "detectedAt", "details"}
+        if not required.issubset(content) or content.get("schema_version") != "vocabulary-corrupt-quarantine.v1":
+            raise VocabularySrsOwnerError("unsupported-schema")
+        if not isinstance(content.get("sourceId"), str) or not content["sourceId"]:
+            raise VocabularySrsOwnerError("invalid-request")
+        if not isinstance(content.get("reason"), str) or not content["reason"]:
+            raise VocabularySrsOwnerError("invalid-request")
+        if not isinstance(content.get("detectedAt"), str) or not content["detectedAt"]:
+            raise VocabularySrsOwnerError("invalid-request")
+        if not isinstance(content.get("details"), dict):
+            raise VocabularySrsOwnerError("invalid-request")
+        _validate_json_value(
+            content,
+            allowed_sensitive_keys=frozenset({"attempt_token"})
+            if _SETTLEMENT.fullmatch(str(content.get("sourceId") or "")) else frozenset(),
+        )
+        return deepcopy(content)
     if _SETTLEMENT.fullmatch(key):
         # The current browser repository stores one normalized progress object
         # per article row.  Unlike the legacy whole-store fallback, that row
@@ -475,7 +536,15 @@ class VocabularySrsOwner:
         result = {}
         for raw_key, raw_record in raw_records.items():
             key = _record_key(raw_key)
-            if operation == "learning-event-append":
+            if operation == "learning-unit-of-work":
+                allowed_key = (
+                    key in allowed
+                    or _EVENT_SHARD.fullmatch(key)
+                    or _SETTLEMENT.fullmatch(key)
+                    or _LEARNING_RECEIPT.fullmatch(key)
+                    or _is_recovery_artifact_key(key)
+                )
+            elif operation == "learning-event-append":
                 allowed_key = (
                     key in allowed
                     or _EVENT_SHARD.fullmatch(key)

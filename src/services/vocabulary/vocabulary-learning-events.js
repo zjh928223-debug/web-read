@@ -157,6 +157,10 @@ const DEFAULT_EXPORT_LOCATOR_INTEGER_FIELDS = new Set([
 const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 const EVENT_PARTITION_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
+function assertVocabularyBrowserWriterAllowed(operation) {
+  globalThis?.__windowsOwnerDomainCutover?.assertBrowserWriterAllowed?.('vocabulary-srs', operation);
+}
+
 export class VocabularyLearningContractError extends Error {
   constructor(code, message, details = {}) {
     super(message);
@@ -1286,6 +1290,7 @@ async function ensureIndexedDbManifest(database) {
     .filter((candidate) => typeof candidate === 'string')
     .sort()
     .at(-1) || '1970-01-01T00:00:00.000Z';
+  assertVocabularyBrowserWriterAllowed('recover_learning_event_manifest');
   const writeTransaction = database.transaction(['files'], 'readwrite');
   const writeCompletion = transactionCompletion(
     writeTransaction,
@@ -1309,6 +1314,7 @@ export function createIndexedDbLearningEventRepository(options = {}) {
   };
 
   async function append(input) {
+    assertVocabularyBrowserWriterAllowed('learning_event_append');
     let transaction = null;
     let completion = null;
     try {

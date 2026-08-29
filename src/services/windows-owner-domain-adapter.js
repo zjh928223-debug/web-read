@@ -7,6 +7,7 @@ export function getAuthoritativeWindowsOwner(domain, windowObject = globalThis) 
   return cutover
     && typeof cutover.isAuthoritative === 'function'
     && cutover.isAuthoritative(domain)
+    && cutover.ownerReady !== false
     && typeof cutover.query === 'function'
     && typeof cutover.command === 'function'
     ? cutover
