@@ -12,6 +12,8 @@ export const WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS = Object.freeze([
 
 const DOMAIN_SET = new Set(WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS)
 const SAFE_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
+const SAFE_SOURCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
+const SAFE_REVISION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const MEDIA_DATA_URI = /^data:(?:audio|video|application\/octet-stream)\b/i
 const FORBIDDEN_STATE_KEY = /(?:^|[_-])(token|cookie|password|secret|authorization|(?:absolute|local|media)[_-]?path|blob|arraybuffer|typed[_-]?array|bytes|base64)(?:$|[_-])/iu
 
@@ -74,8 +76,37 @@ function domainKey(value) {
 }
 
 function safeRevision(value, field = 'revision') {
-  if (!Number.isInteger(value) || value < 0) throw migrationError('migration-revision-invalid', `${field} is invalid`)
-  return value
+  if (Number.isInteger(value) && value >= 0) return value
+  if (typeof value === 'string' && SAFE_REVISION_TOKEN.test(value)) return value
+  throw migrationError('migration-revision-invalid', `${field} is invalid`)
+}
+
+function isRevisionValue(value) {
+  return (Number.isInteger(value) && value >= 0)
+    || (typeof value === 'string' && SAFE_REVISION_TOKEN.test(value))
+}
+
+function normalizeSourceIds(value) {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value) || value.length === 0) throw migrationError('migration-source-selection-invalid')
+  const seen = new Set()
+  const sourceIds = []
+  for (const sourceId of value) {
+    if (typeof sourceId !== 'string' || !SAFE_SOURCE_ID.test(sourceId)
+      || sourceId.includes('..') || /^[\\/]{2}/u.test(sourceId)
+      || /^[\\/]/u.test(sourceId) || /^[A-Za-z]:[\\/]/u.test(sourceId)) {
+      throw migrationError('migration-source-selection-invalid')
+    }
+    if (!seen.has(sourceId)) {
+      seen.add(sourceId)
+      sourceIds.push(sourceId)
+    }
+  }
+  return sourceIds
+}
+
+function sourceSelectionRequest(sourceIds) {
+  return sourceIds === null ? {} : { sourceIds: [...sourceIds] }
 }
 
 function assertSafeJson(value, seen = new WeakSet(), keyHint = '') {
@@ -147,7 +178,7 @@ function safeFailure(domain, stage, reasonCode, details = {}) {
     outcome: reasonCode === 'migration-conflict' ? 'conflict' : 'not-ready',
     reasonCode,
   }
-  if (Number.isInteger(details.currentRevision)) result.currentRevision = details.currentRevision
+  if (isRevisionValue(details.currentRevision)) result.currentRevision = details.currentRevision
   if (typeof details.artifactChecksum === 'string') result.artifactChecksum = details.artifactChecksum
   return result
 }
@@ -155,11 +186,11 @@ function safeFailure(domain, stage, reasonCode, details = {}) {
 function safeResult(value, fallbackRevision = null) {
   const source = isPlainObject(value) ? value : {}
   const status = source.commitStatus || source.outcome || source.status || null
-  const revision = Number.isInteger(source.revision) ? source.revision : fallbackRevision
+  const revision = isRevisionValue(source.revision) ? source.revision : fallbackRevision
   const receipt = isPlainObject(source.receipt) ? source.receipt : null
   return {
     ...(status ? { status } : {}),
-    ...(Number.isInteger(revision) ? { revision } : {}),
+    ...(isRevisionValue(revision) ? { revision } : {}),
     ...(typeof source.receiptId === 'string' ? { receiptId: source.receiptId } : {}),
     ...(typeof receipt?.receiptId === 'string' ? { receiptId: receipt.receiptId } : {}),
     ...(typeof source.idempotent === 'boolean' ? { idempotent: source.idempotent } : {}),
@@ -170,8 +201,8 @@ function resultIsCommitted(value, method) {
   const source = isPlainObject(value) ? value : {}
   const status = source.commitStatus || source.outcome || source.status
   return status === 'committed'
-    || (method === 'restoreRecords' && Number.isInteger(source.revision) && source.ok !== false)
-    || (source.ok === true && Number.isInteger(source.revision))
+    || (method === 'restoreRecords' && isRevisionValue(source.revision) && source.ok !== false)
+    || (source.ok === true && isRevisionValue(source.revision))
 }
 
 function resultIsConflict(value) {
@@ -194,7 +225,7 @@ function normalizedHostSnapshot(value, domain) {
     : value
   const payload = isPlainObject(outer?.payload) && outer.records === undefined ? outer.payload : outer
   const records = recordArray(payload?.records)
-  if (!isPlainObject(payload) || !records || !Number.isInteger(payload.revision) || payload.revision < 0) {
+  if (!isPlainObject(payload) || !records || !isRevisionValue(payload.revision)) {
     throw migrationError('migration-host-snapshot-invalid', `Host snapshot for ${domain} is invalid`)
   }
   const normalized = {
@@ -210,7 +241,9 @@ function normalizedHostSnapshot(value, domain) {
 }
 
 function sourceDomainRevision(domain) {
-  return Number.isInteger(domain?.revision) && domain.revision >= 0 ? domain.revision : 0
+  return domain?.revision === undefined || domain?.revision === null
+    ? 0
+    : safeRevision(domain.revision)
 }
 
 function domainEquivalent(left, right) {
@@ -221,11 +254,23 @@ function domainEquivalent(left, right) {
   }
 }
 
-function maxNumericRevision(records) {
-  return records.reduce((maximum, record) => {
-    const revision = Number.isInteger(record?.revision) && record.revision >= 0 ? record.revision : 0
-    return Math.max(maximum, revision)
-  }, 0)
+function maxRevision(records) {
+  const revisions = records
+    .map((record) => record?.revision)
+    .filter((revision) => revision !== undefined && revision !== null)
+    .map((revision) => safeRevision(revision))
+  if (revisions.length === 0) return 0
+  if (revisions.every((revision) => Number.isInteger(revision))) return Math.max(...revisions)
+  if (revisions.every((revision) => typeof revision === 'string') && revisions.every((revision) => revision === revisions[0])) {
+    return revisions[0]
+  }
+  // Legacy inputs may mix numeric row versions with one opaque session row.
+  // Preserve the established numeric aggregate in that case; an all-opaque
+  // domain remains a string revision and is never coerced to a number.
+  if (revisions.some((revision) => Number.isInteger(revision))) {
+    return Math.max(...revisions.filter((revision) => Number.isInteger(revision)))
+  }
+  throw migrationError('migration-revision-invalid')
 }
 
 function inputAdapters(importInput) {
@@ -239,7 +284,9 @@ function inputAdapters(importInput) {
     grouped[domain].push({
       id: metadata.recordKey,
       schemaVersion: metadata.schemaVersion ?? 1,
-      revision: metadata.revision ?? 0,
+      revision: metadata.revision === undefined || metadata.revision === null
+        ? null
+        : safeRevision(metadata.revision, 'record revision'),
       contentId: metadata.contentId ?? null,
       payload: metadata.payload,
       references: Array.isArray(metadata.references) ? metadata.references : [],
@@ -257,10 +304,10 @@ function inputAdapters(importInput) {
         return {
           schemaVersion: 1,
           adapterVersion: 1,
-          revision: maxNumericRevision(records),
+          revision: maxRevision(records),
           records: clone(records),
-          references: [],
-          mediaReferences: [],
+          references: records.flatMap((record) => Array.isArray(record.references) ? clone(record.references) : []),
+          mediaReferences: records.flatMap((record) => Array.isArray(record.mediaReferences) ? clone(record.mediaReferences) : []),
         }
       },
     }]
@@ -333,17 +380,24 @@ function compareTarget(sourceDomain, target, expectedRevision, allowExistingTarg
   if (expectedRevision !== undefined && target.revision !== expectedRevision) {
     return { ok: false, reasonCode: 'migration-conflict', currentRevision: target.revision }
   }
-  if (target.revision > sourceRevision) {
+  const revisionRelation = compareRevisionValues(target.revision, sourceRevision)
+  if (revisionRelation !== null && revisionRelation > 0) {
     return { ok: false, reasonCode: 'migration-conflict', currentRevision: target.revision }
   }
   if (target.records.length && !domainEquivalent(target, sourceDomain) && allowExistingTarget !== true) {
     return { ok: false, reasonCode: 'migration-conflict', currentRevision: target.revision }
   }
-  if (target.revision === sourceRevision && !domainEquivalent(target, sourceDomain)
+  if (revisionRelation === 0 && !domainEquivalent(target, sourceDomain)
     && (target.records.length || sourceDomain.records.length)) {
     return { ok: false, reasonCode: 'migration-conflict', currentRevision: target.revision }
   }
   return { ok: true, sourceRevision, targetRevision: target.revision }
+}
+
+function compareRevisionValues(left, right) {
+  if (left === right) return 0
+  if (Number.isInteger(left) && Number.isInteger(right)) return left > right ? 1 : -1
+  return null
 }
 
 function domainSummaries(artifact) {
@@ -360,7 +414,7 @@ function domainSummaries(artifact) {
   })
 }
 
-async function createFinalManifest(domain, artifact, importIdentity, target) {
+async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds) {
   const core = {
     format: WINDOWS_DURABLE_STATE_MIGRATION_FORMAT,
     schemaVersion: WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION,
@@ -369,6 +423,7 @@ async function createFinalManifest(domain, artifact, importIdentity, target) {
     frozen: true,
     final: true,
     sourceImportIdentity: importIdentity,
+    sourceIds: sourceIds === null ? null : [...sourceIds],
     artifactChecksum: artifact.artifactChecksum,
     domains: domainSummaries(artifact),
     rollbackTarget: {
@@ -482,6 +537,36 @@ export function createWindowsDurableStateMigration(options = {}) {
     return normalizedHostSnapshot(result, domain)
   }
 
+  async function compensateHostSnapshot(domain, original, observed, reason) {
+    if (domainEquivalent(observed, original)) return { ok: true, snapshot: observed }
+    const adapter = adapterFor(domain)
+    const method = mutationMethod(adapter)
+    if (!method) return { ok: false, reasonCode: 'migration-compensation-unavailable' }
+    let result
+    try {
+      result = await invokeMutation(adapter, method, original, {
+        domain,
+        expectedRevision: observed.revision,
+        idempotencyKey: `migration-repair-${domain}-${String(observed.revision).slice(0, 24)}-${String(original.revision).slice(0, 24)}`,
+        reason,
+        migration: true,
+      })
+    } catch {
+      return { ok: false, reasonCode: 'migration-compensation-failed', currentRevision: observed.revision }
+    }
+    if (!resultIsCommitted(result, method)) {
+      return { ok: false, reasonCode: 'migration-compensation-failed', currentRevision: result?.currentRevision ?? observed.revision }
+    }
+    try {
+      const restored = await collectHost(domain)
+      return domainEquivalent(restored, original)
+        ? { ok: true, snapshot: restored }
+        : { ok: false, reasonCode: 'migration-compensation-failed', currentRevision: restored.revision }
+    } catch {
+      return { ok: false, reasonCode: 'migration-compensation-failed', currentRevision: observed.revision }
+    }
+  }
+
   async function inventory() {
     try {
       const value = await legacyBridge.inventory()
@@ -492,7 +577,7 @@ export function createWindowsDurableStateMigration(options = {}) {
         return {
           domain,
           recordCount: selected.length,
-          revision: maxNumericRevision(selected),
+          revision: maxRevision(selected),
           checksum: await digestCanonical(selected),
         }
       }))
@@ -529,7 +614,8 @@ export function createWindowsDurableStateMigration(options = {}) {
     const domain = domainKey(domainInput)
     let plan
     try {
-      plan = await legacyBridge.prepareImport(dryRunOptions.sourceIds === undefined ? {} : { sourceIds: dryRunOptions.sourceIds })
+      const sourceIds = normalizeSourceIds(dryRunOptions.sourceIds)
+      plan = await legacyBridge.prepareImport(sourceSelectionRequest(sourceIds))
       if (!isPlainObject(plan) || plan.status !== 'ready' || !plan.importInput) {
         return safeFailure(domain, 'dry-run', plan?.reasonCode || 'migration-import-blocked')
       }
@@ -555,6 +641,7 @@ export function createWindowsDurableStateMigration(options = {}) {
         targetChecksum: await digestCanonical(target),
         expectedRevision,
         capacity,
+        sourceIds: sourceIds === null ? null : [...sourceIds],
       }
       await writeState(state)
       return {
@@ -570,6 +657,7 @@ export function createWindowsDurableStateMigration(options = {}) {
         sourceChecksum: built.artifact.manifest.domainChecksums[domain],
         targetChecksum: await digestCanonical(target),
         capacity,
+        sourceIds: sourceIds === null ? null : [...sourceIds],
         domains: domainSummaries(built.artifact),
       }
     } catch (error) {
@@ -612,7 +700,8 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
     if (entry.frozen !== true) return safeFailure(domain, 'final-backup', 'migration-freeze-required')
     try {
-      const plan = await legacyBridge.prepareImport({})
+      const sourceIds = normalizeSourceIds(entry.preflight?.sourceIds)
+      const plan = await legacyBridge.prepareImport(sourceSelectionRequest(sourceIds))
       if (!isPlainObject(plan) || plan.status !== 'ready' || !plan.importInput) {
         return safeFailure(domain, 'final-backup', plan?.reasonCode || 'migration-import-blocked')
       }
@@ -626,7 +715,7 @@ export function createWindowsDurableStateMigration(options = {}) {
       }
       const capacity = await capacityCheck(adapterFor(domain), bytesOf(built.artifact), options)
       if (!capacity.ok) return safeFailure(domain, 'final-backup', 'migration-capacity-insufficient')
-      const finalBackup = await createFinalManifest(domain, built.artifact, built.importIdentity, target)
+      const finalBackup = await createFinalManifest(domain, built.artifact, built.importIdentity, target, sourceIds)
       entry.finalBackup = finalBackup
       entry.status = 'final-backup'
       await writeState(state)
@@ -651,7 +740,49 @@ export function createWindowsDurableStateMigration(options = {}) {
     const expectedRevision = importOptions.expectedRevision === undefined
       ? entry.preflight?.expectedRevision
       : safeRevision(importOptions.expectedRevision, 'expectedRevision')
-    if (!Number.isInteger(expectedRevision)) return safeFailure(domain, 'import', 'migration-revision-invalid')
+    if (!isRevisionValue(expectedRevision)) return safeFailure(domain, 'import', 'migration-revision-invalid')
+    const attempt = entry.importAttempt
+    if (isPlainObject(attempt)
+      && attempt.idempotencyKey === idempotencyKey
+      && attempt.expectedRevision === expectedRevision
+      && attempt.artifactChecksum === finalBackup.artifactChecksum) {
+      try {
+        const observed = await collectHost(domain)
+        if (domainEquivalent(observed, finalBackup.artifact.domains[domain])) {
+          entry.import = {
+            status: 'committed',
+            idempotencyKey,
+            expectedRevision,
+            artifactChecksum: finalBackup.artifactChecksum,
+            revision: observed.revision,
+            commitStatus: 'committed',
+            outcome: 'committed',
+          }
+          entry.status = 'imported'
+          delete entry.importAttempt
+          try {
+            await writeState(state)
+          } catch (error) {
+            return safeFailure(domain, 'import', error?.code || 'migration-commit-unknown', { currentRevision: observed.revision })
+          }
+          return {
+            ok: true,
+            domain,
+            stage: 'import',
+            status: 'committed',
+            outcome: 'committed',
+            commitStatus: 'committed',
+            revision: observed.revision,
+            receiptId: null,
+            idempotent: true,
+            artifactChecksum: finalBackup.artifactChecksum,
+          }
+        }
+      } catch {
+        // Fall through to the ordinary CAS/evidence path.  The pending
+        // attempt remains available for a later reopen when evidence exists.
+      }
+    }
     if (entry.import?.status === 'committed') {
       if (entry.import.idempotencyKey !== idempotencyKey || entry.import.expectedRevision !== expectedRevision
         || entry.import.artifactChecksum !== finalBackup.artifactChecksum) {
@@ -675,7 +806,8 @@ export function createWindowsDurableStateMigration(options = {}) {
     } catch (error) {
       return safeFailure(domain, 'import', error?.code || 'migration-state-write-failed')
     }
-    let result
+    let result = null
+    let mutationError = null
     try {
       result = await invokeMutation(adapterFor(domain), method, finalBackup.artifact.domains[domain], {
         domain,
@@ -685,28 +817,32 @@ export function createWindowsDurableStateMigration(options = {}) {
         migration: true,
       })
     } catch (error) {
-      try {
-        const afterFailure = await collectHost(domain)
-        if (domainEquivalent(afterFailure, finalBackup.artifact.domains[domain])) {
-          result = { status: 'committed', revision: afterFailure.revision, idempotent: true }
-        } else {
-          return safeFailure(domain, 'import', error?.code || 'migration-import-failed')
-        }
-      } catch {
-        return safeFailure(domain, 'import', error?.code || 'migration-import-failed')
-      }
+      mutationError = error
     }
-    if (resultIsConflict(result)) return safeFailure(domain, 'import', 'migration-conflict', { currentRevision: result?.currentRevision })
-    if (!resultIsCommitted(result, method)) return safeFailure(domain, 'import', 'migration-import-failed')
     let committed
     try {
       committed = await collectHost(domain)
     } catch (error) {
-      return safeFailure(domain, 'import', error?.code || 'migration-commit-evidence-unavailable')
+      return safeFailure(domain, 'import', mutationError?.code || error?.code || 'migration-commit-evidence-unavailable')
     }
-    if (!domainEquivalent(committed, finalBackup.artifact.domains[domain])) {
+    const targetSnapshot = finalBackup.artifact.domains[domain]
+    const targetMatches = domainEquivalent(committed, targetSnapshot)
+    const explicitCommit = !mutationError && resultIsCommitted(result, method)
+    if (!targetMatches || (!explicitCommit && !mutationError)) {
+      if (!domainEquivalent(committed, target)) {
+        const compensation = await compensateHostSnapshot(domain, target, committed, 'migration-import-failed')
+        if (!compensation.ok) {
+          return safeFailure(domain, 'import', compensation.reasonCode || 'migration-compensation-failed', {
+            currentRevision: compensation.currentRevision ?? committed.revision,
+          })
+        }
+      }
+      if (resultIsConflict(result)) return safeFailure(domain, 'import', 'migration-conflict', { currentRevision: result?.currentRevision ?? committed.revision })
+      if (mutationError) return safeFailure(domain, 'import', mutationError.code || 'migration-import-failed', { currentRevision: committed.revision })
+      if (!resultIsCommitted(result, method)) return safeFailure(domain, 'import', 'migration-import-failed', { currentRevision: committed.revision })
       return safeFailure(domain, 'import', 'migration-import-verification-failed', { currentRevision: committed.revision })
     }
+    if (mutationError) result = { status: 'committed', revision: committed.revision, idempotent: true }
     entry.import = {
       status: 'committed',
       idempotencyKey,
@@ -755,6 +891,7 @@ export function createWindowsDurableStateMigration(options = {}) {
       status: 'ready-to-switch',
       outcome: 'not-ready',
       authorityChanged: false,
+      frozen: true,
       reasonCode: 'cutover-deferred',
     }
     entry.status = 'ready-to-switch'
@@ -769,19 +906,15 @@ export function createWindowsDurableStateMigration(options = {}) {
     const state = await readState()
     const entry = state.domains[domain]
     if (!entry.switch) return safeFailure(domain, 'smoke', 'migration-switch-required')
-    if (entry.smoke) return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
+    if (entry.smoke) return { ok: false, domain, stage: 'smoke', ...clone(entry.smoke) }
     try {
-      const hook = options.smokeCheck || writerControls[domain]?.smokeCheck
-      const result = typeof hook === 'function'
-        ? await hook({ domain })
-        : { ok: true, status: 'not-run', reasonCode: 'cutover-deferred' }
-      if (result === false || result?.ok === false) return safeFailure(domain, 'smoke', 'migration-smoke-failed')
       entry.smoke = {
-        status: result?.status || 'not-run',
-        ok: true,
-        reasonCode: result?.reasonCode || 'cutover-deferred',
+        status: 'deferred',
+        ok: false,
+        outcome: 'not-ready',
+        reasonCode: 'cutover-deferred',
       }
-      entry.status = 'smoke-passed'
+      entry.status = 'ready-to-switch'
       await writeState(state)
       return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
     } catch (error) {
@@ -795,6 +928,21 @@ export function createWindowsDurableStateMigration(options = {}) {
     const entry = state.domains[domain]
     if (entry.rollback?.status === 'rolled-back') return { ok: true, domain, stage: 'rollback', ...clone(entry.rollback), idempotent: true }
     if (entry.import?.status !== 'committed' || !entry.preImport) return safeFailure(domain, 'rollback', 'migration-rollback-target-missing')
+    let preImport
+    try {
+      const finalBackup = await validateFinalBackup(entry.finalBackup, domain)
+      preImport = normalizedHostSnapshot(entry.preImport, domain)
+      const rollbackTarget = finalBackup.rollbackTarget
+      if (!isPlainObject(rollbackTarget)
+        || rollbackTarget.kind !== 'host-canonical-before-import'
+        || rollbackTarget.domain !== domain
+        || rollbackTarget.revision !== preImport.revision
+        || rollbackTarget.checksum !== await digestCanonical(preImport)) {
+        return safeFailure(domain, 'rollback', 'migration-state-corrupt')
+      }
+    } catch (error) {
+      return safeFailure(domain, 'rollback', error?.code || 'migration-state-corrupt')
+    }
     const adapter = adapterFor(domain)
     const method = mutationMethod(adapter, true)
     if (!method) return safeFailure(domain, 'rollback', 'migration-host-restore-unavailable')
@@ -808,7 +956,7 @@ export function createWindowsDurableStateMigration(options = {}) {
       : safeIdentity(rollbackOptions.idempotencyKey, 'idempotencyKey')
     let result
     try {
-      result = await invokeMutation(adapter, method, entry.preImport, {
+      result = await invokeMutation(adapter, method, preImport, {
         domain,
         expectedRevision: current.revision,
         idempotencyKey,
@@ -821,7 +969,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     if (!resultIsCommitted(result, method)) return safeFailure(domain, 'rollback', 'migration-rollback-failed')
     try {
       const restored = await collectHost(domain)
-      if (!domainEquivalent(restored, entry.preImport)) return safeFailure(domain, 'rollback', 'migration-rollback-verification-failed')
+      if (!domainEquivalent(restored, preImport)) return safeFailure(domain, 'rollback', 'migration-rollback-verification-failed')
       const control = writerControls[domain] || adapter
       if (typeof control.unfreeze === 'function') await control.unfreeze({ domain, reason: 'migration-rollback' })
       entry.rollback = { status: 'rolled-back', revision: restored.revision, idempotencyKey }
@@ -900,29 +1048,61 @@ export function createWindowsDurableStateMigration(options = {}) {
     const adapter = adapterFor(domain)
     const method = mutationMethod(adapter, true)
     if (!method) return safeFailure(domain, 'restore', 'migration-host-restore-unavailable')
+    let target
     try {
-      const result = await invokeMutation(adapter, method, backup.domains[domain], {
+      target = await collectHost(domain)
+    } catch (error) {
+      return safeFailure(domain, 'restore', error?.code || 'migration-host-snapshot-invalid')
+    }
+    if (target.revision !== dry.targetRevision) {
+      return safeFailure(domain, 'restore', 'migration-conflict', { currentRevision: target.revision })
+    }
+    let result = null
+    let mutationError = null
+    try {
+      result = await invokeMutation(adapter, method, backup.domains[domain], {
         domain,
-        expectedRevision: dry.targetRevision,
+        expectedRevision: target.revision,
         idempotencyKey,
         reason: 'migration-restore',
         migration: true,
       })
-      if (!resultIsCommitted(result, method)) return safeFailure(domain, 'restore', resultIsConflict(result) ? 'migration-conflict' : 'migration-restore-failed')
-      const current = await collectHost(domain)
-      if (!domainEquivalent(current, backup.domains[domain])) return safeFailure(domain, 'restore', 'migration-restore-verification-failed')
-      entry.restore = {
-        status: 'committed',
-        idempotencyKey,
-        artifactChecksum: backup.artifactChecksum,
-        revision: current.revision,
-        receiptId: safeResult(result).receiptId || null,
-      }
-      await writeState(state)
-      return { ok: true, domain, stage: 'restore', status: 'committed', revision: current.revision, receiptId: safeResult(result).receiptId || null, idempotent: false }
     } catch (error) {
-      return safeFailure(domain, 'restore', error?.code || 'migration-restore-failed')
+      mutationError = error
     }
+    let current
+    try {
+      current = await collectHost(domain)
+    } catch (error) {
+      return safeFailure(domain, 'restore', mutationError?.code || error?.code || 'migration-commit-evidence-unavailable')
+    }
+    const targetSnapshot = backup.domains[domain]
+    const targetMatches = domainEquivalent(current, targetSnapshot)
+    const explicitCommit = !mutationError && resultIsCommitted(result, method)
+    if (!targetMatches || (!explicitCommit && !mutationError)) {
+      if (!domainEquivalent(current, target)) {
+        const compensation = await compensateHostSnapshot(domain, target, current, 'migration-restore-failed')
+        if (!compensation.ok) {
+          return safeFailure(domain, 'restore', compensation.reasonCode || 'migration-compensation-failed', {
+            currentRevision: compensation.currentRevision ?? current.revision,
+          })
+        }
+      }
+      if (resultIsConflict(result)) return safeFailure(domain, 'restore', 'migration-conflict', { currentRevision: result?.currentRevision ?? current.revision })
+      if (mutationError) return safeFailure(domain, 'restore', 'migration-restore-failed', { currentRevision: current.revision })
+      if (!resultIsCommitted(result, method)) return safeFailure(domain, 'restore', 'migration-restore-failed', { currentRevision: current.revision })
+      return safeFailure(domain, 'restore', 'migration-restore-verification-failed', { currentRevision: current.revision })
+    }
+    if (mutationError) result = { status: 'committed', revision: current.revision, idempotent: true }
+    entry.restore = {
+      status: 'committed',
+      idempotencyKey,
+      artifactChecksum: backup.artifactChecksum,
+      revision: current.revision,
+      receiptId: safeResult(result).receiptId || null,
+    }
+    await writeState(state)
+    return { ok: true, domain, stage: 'restore', status: 'committed', revision: current.revision, receiptId: safeResult(result).receiptId || null, idempotent: false }
   }
 
   async function migrateDomain(domainInput, runOptions = {}) {
@@ -949,11 +1129,18 @@ export function createWindowsDurableStateMigration(options = {}) {
       return { ok: false, domain, stopped: true, steps }
     }
     steps.smoke = await smokeCheck(domain)
-    if (!steps.smoke.ok) {
+    if (!steps.smoke.ok && steps.smoke.reasonCode !== 'cutover-deferred') {
       steps.rollback = await rollback(domain)
       return { ok: false, domain, stopped: true, steps }
     }
-    return { ok: true, domain, stopped: false, steps }
+    return {
+      ok: true,
+      domain,
+      status: steps.smoke.reasonCode === 'cutover-deferred' ? 'ready-to-switch' : 'completed',
+      preCutover: steps.smoke.reasonCode === 'cutover-deferred',
+      stopped: false,
+      steps,
+    }
   }
 
   async function runAll(runOptions = {}) {
@@ -988,6 +1175,9 @@ export function createWindowsDurableStateMigration(options = {}) {
           importedRevision: entry.import?.revision ?? null,
           verified: Boolean(entry.verify),
           authorityChanged: entry.switch?.authorityChanged === true,
+          switchStatus: entry.switch?.status || null,
+          smokeStatus: entry.smoke?.status || null,
+          cutoverDeferred: entry.switch?.reasonCode === 'cutover-deferred',
         }]
       })),
     }

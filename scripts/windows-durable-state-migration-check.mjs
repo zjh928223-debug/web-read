@@ -69,9 +69,10 @@ function emptySnapshot() {
 }
 
 class HostAdapter {
-  constructor(initial = emptySnapshot(), { failImport = false } = {}) {
+  constructor(initial = emptySnapshot(), { failImport = false, mutationBehavior = null } = {}) {
     this.snapshot = clone(initial)
     this.failImport = failImport
+    this.mutationBehavior = mutationBehavior
     this.freezeCalls = 0
     this.unfreezeCalls = 0
     this.importCalls = 0
@@ -96,6 +97,28 @@ class HostAdapter {
   async importRecords({ snapshot, expectedRevision }) {
     this.importCalls += 1
     if (this.snapshot.revision !== expectedRevision) return { status: 'conflict', currentRevision: this.snapshot.revision }
+    if (this.mutationBehavior) {
+      const behavior = this.mutationBehavior
+      this.mutationBehavior = null
+      this.snapshot = {
+        ...emptySnapshot(),
+        revision: Number.isInteger(this.snapshot.revision)
+          ? this.snapshot.revision + 1
+          : `wrong-${String(this.snapshot.revision)}`,
+        records: [{ id: 'wrong', schemaVersion: 1, revision: 0, payload: { wrong: true } }],
+      }
+      if (behavior === 'throw-after-wrong') {
+        const error = new Error('isolated partial replace fault')
+        error.code = 'migration-import-failed'
+        throw error
+      }
+      return {
+        status: 'committed',
+        commitStatus: 'committed',
+        revision: this.snapshot.revision,
+        receiptId: `wrong-${this.snapshot.revision}`,
+      }
+    }
     if (this.failImport) {
       const error = new Error('isolated replace fault')
       error.code = 'migration-import-failed'
@@ -183,11 +206,52 @@ function createLegacyFixture({ includeUnknown = false, includeBadSchema = false 
   return { bridge: bridgeInstance, storage, getPersistenceReads: () => persistenceReads }
 }
 
-function createMigrationFixture({ stateStore, hostAdapters, includeUnknown = false, includeBadSchema = false, capacityBytes, writerControls } = {}) {
-  const legacy = createLegacyFixture({ includeUnknown, includeBadSchema })
+function createImportBridge(records, importIdentity = 'custom-import') {
+  return {
+    async inventory() {
+      return { status: 'ready', records: clone(records) }
+    },
+    async prepareImport() {
+      return {
+        status: 'ready',
+        importIdentity,
+        importInput: {
+          schemaVersion: 1,
+          mode: 'legacy-import-input',
+          profileId: 'optimization',
+          records: clone(records),
+        },
+      }
+    },
+  }
+}
+
+function createFailOnceStateStore() {
+  let value = null
+  let writes = 0
+  let failAt = null
+  return {
+    async read() { return value === null ? null : clone(value) },
+    async write(next) {
+      writes += 1
+      if (writes === failAt) {
+        failAt = null
+        const error = new Error('isolated migration state write fault')
+        error.code = 'migration-state-write-failed'
+        throw error
+      }
+      value = clone(next)
+    },
+    failAfterPreImport() { failAt = writes + 2 },
+    get writeCount() { return writes },
+  }
+}
+
+function createMigrationFixture({ stateStore, hostAdapters, legacyBridge, includeUnknown = false, includeBadSchema = false, capacityBytes, writerControls } = {}) {
+  const legacy = legacyBridge ? null : createLegacyFixture({ includeUnknown, includeBadSchema })
   const service = createWindowsDurableStateMigration({
     profileId: 'optimization',
-    legacyBridge: legacy.bridge,
+    legacyBridge: legacyBridge || legacy.bridge,
     hostAdapters: hostAdapters || createHostAdapters(),
     stateStore: stateStore || createMemoryMigrationStateStore(),
     ...(writerControls ? { writerControls } : {}),
@@ -195,7 +259,7 @@ function createMigrationFixture({ stateStore, hostAdapters, includeUnknown = fal
     now: () => 1_760_000_000_000,
     release: { applicationVersion: 'migration-check', releaseId: 'migration-check' },
   })
-  return { ...legacy, service, hostAdapters: hostAdapters || null }
+  return { ...(legacy || {}), service, hostAdapters: hostAdapters || null }
 }
 
 const fixture = createMigrationFixture()
@@ -242,6 +306,20 @@ assert.equal(JSON.stringify(finalBackup).includes('Blob'), false)
 assert.equal(JSON.stringify(finalBackup).includes('E:\\'), false)
 assert.equal(fixture.storage.writeCount, 0, 'final backup remains read-only over legacy storage')
 
+const subsetHost = createHostAdapters()
+const subsetFixture = createMigrationFixture({ hostAdapters: subsetHost })
+const subsetInventory = await subsetFixture.service.inventory()
+assert.ok(subsetInventory.sources.some((entry) => entry.sourceId === 'workflow-fixture' && entry.recordCount > 0))
+const subsetDryRun = await subsetFixture.service.dryRun('reader-session', { sourceIds: ['localStorage'] })
+assert.equal(subsetDryRun.ok, true)
+assert.deepEqual(subsetDryRun.sourceIds, ['localStorage'])
+assert.equal(subsetDryRun.domains.find((item) => item.domain === 'reader-session').recordCount, 0)
+assert.equal((await subsetFixture.service.freeze('reader-session')).ok, true)
+const subsetFinal = await subsetFixture.service.createFinalBackup('reader-session')
+assert.equal(subsetFinal.ok, true)
+assert.deepEqual(subsetFinal.finalBackup.sourceIds, ['localStorage'], 'final backup must reuse the preflight selection')
+assert.equal(subsetFinal.finalBackup.artifact.manifest.recordCounts['reader-session'], 0)
+
 const imported = await fixture.service.importDomain('reader-session', {
   expectedRevision: 0,
   idempotencyKey: 'migration-reader-session-1',
@@ -271,8 +349,14 @@ assert.equal(firstImport.receiptId, sameImport.receiptId)
 assert.equal(sameImport.idempotent, true)
 assert.equal(hostForRetry['reader-session'].importCalls, retryCount, 'same final import retry must not write twice')
 assert.equal((await retryFixture.service.verify('reader-session')).status, 'verified')
-assert.equal((await retryFixture.service.switchHostAuthoritative('reader-session')).authorityChanged, false)
-assert.equal((await retryFixture.service.smokeCheck('reader-session')).reasonCode, 'cutover-deferred')
+const retrySwitch = await retryFixture.service.switchHostAuthoritative('reader-session')
+assert.equal(retrySwitch.authorityChanged, false)
+assert.equal(retrySwitch.status, 'ready-to-switch')
+assert.equal(retrySwitch.frozen, true)
+const retrySmoke = await retryFixture.service.smokeCheck('reader-session')
+assert.equal(retrySmoke.ok, false)
+assert.equal(retrySmoke.status, 'deferred')
+assert.equal(retrySmoke.reasonCode, 'cutover-deferred')
 assert.equal(retryFinal.finalBackup.artifact.manifest.recordCounts.annotation, 0)
 
 const reopened = createWindowsDurableStateMigration({
@@ -291,6 +375,37 @@ const reopenedRetry = await reopened.importDomain('reader-session', {
 assert.equal(reopenedRetry.idempotent, true)
 assert.equal(hostForRetry['reader-session'].importCalls, retryCount, 'reopen must replay stored result without a second import')
 
+const stateFailureStore = createFailOnceStateStore()
+const stateFailureHost = createHostAdapters()
+const stateFailureFixture = createMigrationFixture({ stateStore: stateFailureStore, hostAdapters: stateFailureHost })
+await stateFailureFixture.service.dryRun('reader-session')
+await stateFailureFixture.service.freeze('reader-session')
+const stateFailureFinal = await stateFailureFixture.service.createFinalBackup('reader-session')
+stateFailureStore.failAfterPreImport()
+const stateFailureImport = await stateFailureFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-state-write-after-commit',
+})
+assert.equal(stateFailureImport.ok, false)
+assert.equal(stateFailureImport.reasonCode, 'migration-state-write-failed')
+assert.equal(stateFailureHost['reader-session'].importCalls, 1)
+assert.deepEqual(stateFailureHost['reader-session'].snapshot, stateFailureFinal.finalBackup.artifact.domains['reader-session'])
+const stateFailureReopen = createWindowsDurableStateMigration({
+  profileId: 'optimization',
+  legacyBridge: stateFailureFixture.bridge,
+  hostAdapters: stateFailureHost,
+  stateStore: stateFailureStore,
+  capacityBytes: 1_000_000,
+})
+const stateFailureRetry = await stateFailureReopen.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-state-write-after-commit',
+})
+assert.equal(stateFailureRetry.ok, true)
+assert.equal(stateFailureRetry.idempotent, true)
+assert.equal(stateFailureRetry.commitStatus, 'committed')
+assert.equal(stateFailureHost['reader-session'].importCalls, 1, 'reopen consumes canonical evidence without importing twice')
+
 const migrationRun = createMigrationFixture()
 const runResult = await migrationRun.service.migrateDomain('workflow', {
   expectedRevision: 0,
@@ -299,6 +414,31 @@ const runResult = await migrationRun.service.migrateDomain('workflow', {
 assert.equal(runResult.ok, true)
 assert.deepEqual(Object.keys(runResult.steps), ['inventory', 'dryRun', 'freeze', 'finalBackup', 'import', 'verify', 'switch', 'smoke'])
 assert.equal(runResult.steps.switch.authorityChanged, false)
+assert.equal(runResult.status, 'ready-to-switch')
+assert.equal(runResult.preCutover, true)
+assert.equal(runResult.steps.switch.status, 'ready-to-switch')
+assert.equal(runResult.steps.switch.frozen, true)
+assert.equal(runResult.steps.smoke.ok, false)
+assert.equal(runResult.steps.smoke.status, 'deferred')
+assert.equal((await migrationRun.service.status()).domains.workflow.status, 'ready-to-switch')
+
+const workflowRevision = 'w1:j123:0123456789abcdef:h456:fedcba9876543210:c0123456789abcdef:iabcdef0123456789'
+const workflowStringHost = createHostAdapters({
+  workflow: new HostAdapter({ ...emptySnapshot(), revision: workflowRevision }),
+})
+const workflowStringFixture = createMigrationFixture({ hostAdapters: workflowStringHost })
+const workflowStringDryRun = await workflowStringFixture.service.dryRun('workflow', { expectedRevision: workflowRevision })
+assert.equal(workflowStringDryRun.ok, true)
+assert.equal(workflowStringDryRun.targetRevision, workflowRevision, 'workflow opaque revision must remain an equality-only CAS token')
+await workflowStringFixture.service.freeze('workflow')
+const workflowStringFinal = await workflowStringFixture.service.createFinalBackup('workflow')
+assert.equal(workflowStringFinal.ok, true)
+assert.equal(workflowStringFinal.finalBackup.rollbackTarget.revision, workflowRevision)
+const workflowStringImport = await workflowStringFixture.service.importDomain('workflow', {
+  expectedRevision: workflowRevision,
+  idempotencyKey: 'migration-workflow-opaque-revision',
+})
+assert.equal(workflowStringImport.ok, true)
 
 const conflictHost = createHostAdapters({
   'reader-session': new HostAdapter({ ...emptySnapshot(), revision: 1, records: [{ id: 'old', revision: 1, payload: { value: 'old' } }] }),
@@ -406,6 +546,64 @@ assert.equal(failedImport.ok, false)
 assert.equal(faultHost['reader-session'].snapshot.revision, 0, 'failed replace keeps the old host value')
 assert.equal(faultHost['reader-session'].snapshot.records.length, 0)
 
+const partialThrowHost = createHostAdapters({
+  'reader-session': new HostAdapter(emptySnapshot(), { mutationBehavior: 'throw-after-wrong' }),
+})
+const partialThrowFixture = createMigrationFixture({ hostAdapters: partialThrowHost })
+await partialThrowFixture.service.dryRun('reader-session')
+await partialThrowFixture.service.freeze('reader-session')
+await partialThrowFixture.service.createFinalBackup('reader-session')
+const partialThrowImport = await partialThrowFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-partial-throw',
+})
+assert.equal(partialThrowImport.ok, false)
+assert.equal(partialThrowImport.reasonCode, 'migration-import-failed')
+assert.deepEqual(partialThrowHost['reader-session'].snapshot, emptySnapshot(), 'a thrown partial replace is compensated to the old snapshot')
+assert.equal(partialThrowHost['reader-session'].importCalls, 2)
+
+const wrongCommittedHost = createHostAdapters({
+  'reader-session': new HostAdapter(emptySnapshot(), { mutationBehavior: 'return-wrong-committed' }),
+})
+const wrongCommittedFixture = createMigrationFixture({ hostAdapters: wrongCommittedHost })
+await wrongCommittedFixture.service.dryRun('reader-session')
+await wrongCommittedFixture.service.freeze('reader-session')
+await wrongCommittedFixture.service.createFinalBackup('reader-session')
+const wrongCommittedImport = await wrongCommittedFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-wrong-committed',
+})
+assert.equal(wrongCommittedImport.ok, false)
+assert.equal(wrongCommittedImport.reasonCode, 'migration-import-verification-failed')
+assert.deepEqual(wrongCommittedHost['reader-session'].snapshot, emptySnapshot(), 'a wrong committed result is compensated before failure')
+assert.equal(wrongCommittedHost['reader-session'].importCalls, 2)
+
+const partialRestoreHost = createHostAdapters({
+  'reader-session': new HostAdapter(emptySnapshot(), { mutationBehavior: 'throw-after-wrong' }),
+})
+const partialRestoreFixture = createMigrationFixture({ hostAdapters: partialRestoreHost })
+const partialRestore = await partialRestoreFixture.service.restore('reader-session', finalBackup, {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-partial-restore',
+})
+assert.equal(partialRestore.ok, false)
+assert.equal(partialRestore.reasonCode, 'migration-restore-failed')
+assert.deepEqual(partialRestoreHost['reader-session'].snapshot, emptySnapshot(), 'a thrown partial restore is compensated to the old snapshot')
+assert.equal(partialRestoreHost['reader-session'].importCalls, 2)
+
+const wrongRestoreHost = createHostAdapters({
+  'reader-session': new HostAdapter(emptySnapshot(), { mutationBehavior: 'return-wrong-committed' }),
+})
+const wrongRestoreFixture = createMigrationFixture({ hostAdapters: wrongRestoreHost })
+const wrongRestore = await wrongRestoreFixture.service.restore('reader-session', finalBackup, {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-wrong-restore',
+})
+assert.equal(wrongRestore.ok, false)
+assert.equal(wrongRestore.reasonCode, 'migration-restore-verification-failed')
+assert.deepEqual(wrongRestoreHost['reader-session'].snapshot, emptySnapshot(), 'a wrong committed restore is compensated before failure')
+assert.equal(wrongRestoreHost['reader-session'].importCalls, 2)
+
 const rollbackHost = createHostAdapters()
 const rollbackStore = createMemoryMigrationStateStore()
 const rollbackFixture = createMigrationFixture({ hostAdapters: rollbackHost, stateStore: rollbackStore })
@@ -418,5 +616,54 @@ assert.equal(rollback.ok, true, JSON.stringify(rollback))
 assert.equal(rollback.status, 'rolled-back')
 assert.equal(rollbackHost['reader-session'].snapshot.records.length, 0)
 assert.equal(rollbackHost['reader-session'].unfreezeCalls, 1)
+
+const tamperedRollbackHost = createHostAdapters()
+const tamperedRollbackStore = createMemoryMigrationStateStore()
+const tamperedRollbackFixture = createMigrationFixture({ hostAdapters: tamperedRollbackHost, stateStore: tamperedRollbackStore })
+await tamperedRollbackFixture.service.dryRun('reader-session')
+await tamperedRollbackFixture.service.freeze('reader-session')
+await tamperedRollbackFixture.service.createFinalBackup('reader-session')
+await tamperedRollbackFixture.service.importDomain('reader-session', { expectedRevision: 0, idempotencyKey: 'migration-tamper-rollback' })
+const tamperedState = await tamperedRollbackStore.read()
+tamperedState.domains['reader-session'].preImport.revision = 99
+await tamperedRollbackStore.write(tamperedState)
+const tamperedRollback = await tamperedRollbackFixture.service.rollback('reader-session')
+assert.equal(tamperedRollback.ok, false)
+assert.equal(tamperedRollback.reasonCode, 'migration-state-corrupt')
+assert.equal(tamperedRollbackHost['reader-session'].importCalls, 1)
+assert.equal(tamperedRollbackHost['reader-session'].snapshot.records.length, finalBackup.artifact.domains['reader-session'].records.length)
+
+const referenceRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-meta',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { schemaVersion: 1, contentId: 'content-reference-check' },
+  references: [{ kind: 'content', id: 'content-reference-check' }],
+  mediaReferences: [{
+    mediaId: 'audio-reference-check',
+    kind: 'audio',
+    size: 12,
+    contentType: 'audio/mp4',
+    etag: '"audio-reference-v1"',
+    revision: 1,
+    authorizedReference: '/api/jobs/job-reference/media/audio',
+  }],
+}]
+const referenceHost = createHostAdapters()
+const referenceFixture = createMigrationFixture({
+  legacyBridge: createImportBridge(referenceRecords, 'reference-import'),
+  hostAdapters: referenceHost,
+})
+assert.equal((await referenceFixture.service.dryRun('reader-session')).ok, true)
+await referenceFixture.service.freeze('reader-session')
+const referenceFinal = await referenceFixture.service.createFinalBackup('reader-session')
+assert.equal(referenceFinal.ok, true)
+const referenceDomain = referenceFinal.finalBackup.artifact.domains['reader-session']
+assert.deepEqual(referenceDomain.references, referenceRecords[0].references)
+assert.equal(referenceDomain.mediaReferences.length, 1)
+assert.equal(referenceDomain.mediaReferences[0].mediaId, 'audio-reference-check')
+assert.deepEqual(referenceFinal.finalBackup.artifact.manifest.references['reader-session'], referenceDomain.references)
+assert.deepEqual(referenceFinal.finalBackup.artifact.manifest.mediaReferences['reader-session'], referenceDomain.mediaReferences)
 
 console.log('Windows durable-state migration checks passed.')

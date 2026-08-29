@@ -505,9 +505,18 @@ revision/media-reference metadata and a per-domain rollback target. Final backup
 before freeze. A matching import retry replays its saved result without another adapter write; a failed replace keeps
 the old Host value, and rollback restores the captured pre-import value when verification permits.
 
+The normalized `sourceIds` selected during dry-run are persisted and reused for the freeze-time final backup, so a
+subset migration cannot silently change its source set. If an adapter writes a wrong/partial value before failing or
+before post-commit verification, the controller performs one expected-revision compensation to the invocation
+snapshot; a failed compensation remains frozen and not-ready. If the canonical write succeeds but state persistence
+fails, reopen consumes the pending import attempt when the canonical snapshot matches the saved artifact instead of
+importing again. Numeric revisions retain numeric ordering and opaque owner revisions use strict equality/CAS.
+
 Only identity/reference media metadata is carried. Blob/ArrayBuffer/typed-array/bytes/data-URI/base64 media,
 credentials, arbitrary paths, and temporary UI state are excluded. `switchHostAuthoritative` records
 `ready-to-switch` with `cutover-deferred`; it does not change production writer authority, which remains a later C2
-operation. The focused gate is `npm run verify:windows-durable-state-migration`; it is standalone rather than part
-of `verify:fast` and covers representative six-domain inventory, dry-run, freeze ordering, final manifest, import/
-retry, restore, rollback, no-copy, failure retention, and reopen behavior.
+operation. It retains `frozen: true`, and its smoke result is explicitly deferred/not-ready; a successful B run means
+pre-cutover preparation is complete, not that authority or smoke has passed. The focused gate is
+`npm run verify:windows-durable-state-migration`; it is standalone rather than part of `verify:fast` and covers
+representative six-domain inventory, source selection, dry-run, freeze ordering, final manifest, import/retry,
+restore, rollback, no-copy, failure retention, and reopen behavior.

@@ -216,6 +216,12 @@ retry is a no-op with the same saved result. Failed replace or verification
 leaves the old value available, and the one-domain failure stops the remaining
 sequence.
 
+The selected source IDs are saved during dry-run and reused for final backup; post-write evidence can compensate a
+wrong/partial adapter mutation with the invocation snapshot, and a reopen can settle a canonical commit whose state
+receipt write was interrupted. Opaque owner revisions remain strict equality/CAS tokens rather than being numerically
+coerced. The B seam reports `ready-to-switch` with a deferred, not-passed smoke result, retains the old writer
+frozen, and leaves the actual authority change to the later cutover task.
+
 This seam is only tested with isolated fixtures. It keeps the legacy sources
 read-only, preserves `SeekPlayerDB` version 1 / `files` / `id`, carries media
 identity/reference metadata instead of media bytes, and records rather than
