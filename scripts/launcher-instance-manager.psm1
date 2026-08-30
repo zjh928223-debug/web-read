@@ -125,6 +125,13 @@ function Get-MatchingOwnedProcess {
   } catch {
     return $null
   }
+  $expectedFilePath = [string](Get-ManagedRecordValue -Object $State -Name 'filePath')
+  if ($expectedFilePath) {
+    $expectedArguments = @((Get-ManagedRecordValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
+    if (-not (Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $expectedFilePath -ExpectedArgumentFragments $expectedArguments)) {
+      return $null
+    }
+  }
   return $process
 }
 
@@ -164,7 +171,8 @@ function Test-ManagedPythonVenvInvocation {
   param(
     [Parameter(Mandatory)][string]$ExpectedFilePath,
     [Parameter(Mandatory)][string]$ActualFilePath,
-    [Parameter(Mandatory)][string]$CommandLine
+    [Parameter(Mandatory)][string]$CommandLine,
+    [int]$ParentProcessId = 0
   )
   # On Windows, venv\Scripts\python.exe is a launcher. The running process
   # can report the base Python executable even though the command line and its
@@ -182,8 +190,24 @@ function Test-ManagedPythonVenvInvocation {
     }
     $trimmed = $CommandLine.TrimStart()
     $quotedPath = '"' + $expectedFullPath + '"'
-    return $trimmed.StartsWith($quotedPath, [StringComparison]::OrdinalIgnoreCase) `
-      -or $trimmed.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase)
+    if ($trimmed.StartsWith($quotedPath, [StringComparison]::OrdinalIgnoreCase) `
+      -or $trimmed.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+      return $true
+    }
+    if ($ParentProcessId -gt 0) {
+      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$ParentProcessId" -ErrorAction SilentlyContinue
+      if ($null -ne $parent) {
+        $parentPath = [string]$parent.ExecutablePath
+        $parentCommandLine = ([string]$parent.CommandLine).TrimStart()
+        $parentQuotedPath = '"' + $expectedFullPath + '"'
+        if ([String]::Equals($parentPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase) `
+          -and ($parentCommandLine.StartsWith($parentQuotedPath, [StringComparison]::OrdinalIgnoreCase) `
+            -or $parentCommandLine.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase))) {
+          return $true
+        }
+      }
+    }
+    return $false
   } catch {
     return $false
   }
@@ -196,7 +220,9 @@ function Test-ManagedProcessExecutable {
     [string[]]$ExpectedArgumentFragments = @()
   )
   if ($null -eq $Process) { return $false }
-  $commandLine = Get-ProcessCommandLine -Process $Process
+  $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($Process.Id)" -ErrorAction SilentlyContinue
+  $commandLine = if ($null -ne $processInfo) { [string]$processInfo.CommandLine } else { '' }
+  $parentProcessId = if ($null -ne $processInfo) { [int]$processInfo.ParentProcessId } else { 0 }
   if ($ExpectedFilePath) {
     try {
       $actualPath = [string]$Process.Path
@@ -208,7 +234,8 @@ function Test-ManagedProcessExecutable {
         $pathMatches = Test-ManagedPythonVenvInvocation `
           -ExpectedFilePath $ExpectedFilePath `
           -ActualFilePath $actualPath `
-          -CommandLine $commandLine
+          -CommandLine $commandLine `
+          -ParentProcessId $parentProcessId
       }
       if (-not $pathMatches) {
         return $false
@@ -260,7 +287,8 @@ function Find-ManagedProcessByExecutable {
         -or (Test-ManagedPythonVenvInvocation `
           -ExpectedFilePath $expectedFullPath `
           -ActualFilePath $metadataPath `
-          -CommandLine $metadataCommandLine)
+          -CommandLine $metadataCommandLine `
+          -ParentProcessId ([int]$_.ParentProcessId))
       if ($pathMatches) {
         $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue
         if ($null -ne $process) {
@@ -604,7 +632,7 @@ function Get-ManagedStartSpecFromState {
   $metadata = @{}
   $reserved = @(
     'schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid',
-    'processStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
+    'processStartUtc', 'launcherPid', 'launcherProcessStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
     'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath',
     'healthUrl', 'launchIntentPath', 'reservedDailyPorts', 'allowReservedDailyPorts'
   )
@@ -779,6 +807,8 @@ function Start-ManagedRuntimeProcessCore {
       port = $Port
       pid = $process.Id
       processStartUtc = $processStartUtc
+      launcherPid = $process.Id
+      launcherProcessStartUtc = $processStartUtc
       startedAtUtc = ([DateTime]::UtcNow).ToString('O')
       executableIdentity = $ExecutableIdentity
       healthUrl = $HealthUrl
@@ -792,7 +822,7 @@ function Start-ManagedRuntimeProcessCore {
       launchIntentPath = $LaunchIntentPath
     }
     foreach ($metadataName in $Metadata.Keys) {
-      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'reservedDailyPorts', 'allowReservedDailyPorts', 'launchIntentPath')) {
+      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'launcherPid', 'launcherProcessStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'reservedDailyPorts', 'allowReservedDailyPorts', 'launchIntentPath')) {
         throw "Managed runtime metadata may not replace ownership field '$metadataName'."
       }
       $state[[string]$metadataName] = $Metadata[$metadataName]
@@ -837,7 +867,19 @@ function Start-ManagedRuntimeProcessCore {
     throw "Managed process did not become ready within $ReadyTimeoutSeconds seconds."
   } catch {
     $failure = $_
-    if ($null -ne $process) {
+    $stateStopped = $false
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+      try {
+        Stop-OwnedRuntimeInstance `
+          -StatePath $StatePath `
+          -ExpectedReleaseId $ReleaseId `
+          -ExpectedProfileId $ProfileId `
+          -ExpectedInstanceId $InstanceId `
+          -StopTimeoutSeconds 3 | Out-Null
+        $stateStopped = $true
+      } catch {}
+    }
+    if (-not $stateStopped -and $null -ne $process) {
       try {
         $process.Refresh()
         if (-not $process.HasExited) {
@@ -867,9 +909,60 @@ function Stop-OwnedRuntimeInstance {
   if ($ExpectedInstanceId -and [string]$state.instanceId -ne $ExpectedInstanceId) { throw 'Instance ownership mismatch; refusing to stop process.' }
   $process = Get-MatchingOwnedProcess -State $state
   if ($null -eq $process) { throw 'PID/start identity mismatch; refusing to stop process.' }
-  Stop-Process -Id $process.Id -ErrorAction Stop
-  try { $process.WaitForExit([Math]::Max(1, $StopTimeoutSeconds) * 1000) | Out-Null } catch {}
-  if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction Stop }
+  $expectedFilePath = [string](Get-ManagedRecordValue -Object $state -Name 'filePath')
+  $expectedArguments = @((Get-ManagedRecordValue -Object $state -Name 'argumentList') | ForEach-Object { [string]$_ })
+  $portProcess = $null
+  $portText = [string](Get-ManagedRecordValue -Object $state -Name 'port')
+  $port = 0
+  if ($expectedFilePath -and [int]::TryParse($portText, [ref]$port) -and $port -gt 0) {
+    if (Test-TcpPortOccupied -Port $port) {
+      $portProcess = Get-LoopbackPortOwnerProcess -Port $port
+      if ($null -eq $portProcess) {
+        throw "Managed runtime port $port is occupied but its owner could not be proven; refusing to stop any process."
+      }
+      if ($portProcess.Id -ne $process.Id -and -not (Test-ManagedProcessExecutable -Process $portProcess -ExpectedFilePath $expectedFilePath -ExpectedArgumentFragments $expectedArguments)) {
+        throw "Managed runtime port $port is occupied by an unproven process; refusing to stop any process."
+      }
+    }
+  }
+  $launcherProcess = $null
+  $launcherPidText = [string](Get-ManagedRecordValue -Object $state -Name 'launcherPid')
+  $launcherStartText = [string](Get-ManagedRecordValue -Object $state -Name 'launcherProcessStartUtc')
+  if ($launcherPidText -and $launcherStartText) {
+    $launcherPid = 0
+    if (-not [int]::TryParse($launcherPidText, [ref]$launcherPid) -or $launcherPid -lt 1) {
+      throw 'Launcher process receipt is invalid; refusing to stop process.'
+    }
+    if ($launcherPid -ne $process.Id) {
+      $launcherProcess = Find-ManagedProcessByReceipt `
+        -Pid $launcherPid `
+        -ProcessStartUtc $launcherStartText `
+        -ExpectedFilePath ([string](Get-ManagedRecordValue -Object $state -Name 'filePath')) `
+        -ExpectedArgumentFragments @((Get-ManagedRecordValue -Object $state -Name 'argumentList') | ForEach-Object { [string]$_ })
+      $liveLauncher = Get-Process -Id $launcherPid -ErrorAction SilentlyContinue
+      if ($null -ne $liveLauncher -and $null -eq $launcherProcess) {
+        throw 'Launcher process identity mismatch; refusing to stop process.'
+      }
+    }
+  }
+  $processesToStop = @()
+  foreach ($candidateProcess in @($portProcess, $process, $launcherProcess)) {
+    if ($null -ne $candidateProcess -and @($processesToStop | Where-Object { $_.Id -eq $candidateProcess.Id }).Count -eq 0) {
+      $processesToStop += $candidateProcess
+    }
+  }
+  foreach ($processToStop in $processesToStop) {
+    try {
+      $processToStop.Refresh()
+      if ($processToStop.HasExited) { continue }
+      Stop-Process -Id $processToStop.Id -ErrorAction Stop
+      try { $processToStop.WaitForExit([Math]::Max(1, $StopTimeoutSeconds) * 1000) | Out-Null } catch {}
+      $processToStop.Refresh()
+      if (-not $processToStop.HasExited) { Stop-Process -Id $processToStop.Id -Force -ErrorAction Stop }
+    } catch {
+      throw "Managed runtime process $($processToStop.Id) did not stop cleanly."
+    }
+  }
   Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
   return $true
 }

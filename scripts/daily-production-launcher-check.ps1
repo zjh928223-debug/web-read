@@ -122,6 +122,8 @@ $localAppDataRoot = Join-Path $testRoot 'local-app-data'
 $stablePythonRoot = Join-Path $localAppDataRoot 'Read-Web\optimization-python'
 $stablePython = Join-Path $stablePythonRoot 'Scripts\python.exe'
 $unknown = $null
+$common = @()
+$checkPassed = $false
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 try {
@@ -271,16 +273,30 @@ try {
     Assert-DailyFixtureStopped -StateRoot $stateRoot -ApplicationRoot $applicationRoot -FrontendPort $frontendPort -BackendPort $backendPort -MessagePrefix "daily Rollback recovery $phase"
   }
 
+  $checkPassed = $true
   Write-Host 'daily production launcher check passed'
 } finally {
   if ($null -ne $unknown) {
     try { $unknown.Refresh(); if (-not $unknown.HasExited) { Stop-Process -Id $unknown.Id -Force } } catch {}
   }
-  try {
-    $cleanupEnvironment = @{}
-    foreach ($name in $stableEnvironment.Keys) { $cleanupEnvironment[$name] = $stableEnvironment[$name] }
-    $cleanupEnvironment['READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE'] = $null
-    Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Stop') + $common) -Environment $cleanupEnvironment | Out-Null
-  } catch {}
-  Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+  if ($common.Count -gt 0) {
+    try {
+      $cleanupEnvironment = @{}
+      foreach ($name in $stableEnvironment.Keys) { $cleanupEnvironment[$name] = $stableEnvironment[$name] }
+      $cleanupEnvironment['READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE'] = $null
+      Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Stop') + $common) -Environment $cleanupEnvironment | Out-Null
+    } catch {}
+  }
+  $knownRuntimeProcesses = @()
+  if (Test-Path -LiteralPath $testRoot -PathType Container) {
+    $knownRuntimeProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+      ([string]$_.CommandLine).IndexOf($testRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+  }
+  $portsStillOccupied = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in @($frontendPort, $backendPort) })
+  if ($checkPassed -and $knownRuntimeProcesses.Count -eq 0 -and $portsStillOccupied.Count -eq 0) {
+    Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue
+  } else {
+    Write-Warning "Retaining daily launcher fixture for diagnostics: $testRoot"
+  }
 }

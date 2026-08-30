@@ -674,6 +674,10 @@ function Assert-DailyTargetIdentity {
   if (-not $builtDistRoot -or [IO.Path]::GetFullPath($builtIndex) -ne [IO.Path]::GetFullPath((Join-Path $builtDistRoot 'index.html'))) {
     throw 'Daily production target built-dist index identity mismatch.'
   }
+  $targetReleaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
+  if (-not $targetReleaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $targetReleaseRoot)) {
+    throw 'Daily production target release points outside its release root.'
+  }
   $health = Get-OptimizationObjectValue -Object $Target -Name 'health'
   $profileRelease = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId'
   foreach ($healthName in @('host', 'capability')) {
@@ -924,6 +928,10 @@ function Test-DailyApplyCandidateTarget {
     throw 'Daily production Apply candidate target instance mismatch; refusing recovery.'
   }
   Assert-DailyTargetIdentity -Context $Context -Target $Target
+  $releaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
+  if (-not $releaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $releaseRoot)) {
+    throw 'Daily production Apply candidate release points outside its release root.'
+  }
   $journalReleaseId = Get-OptimizationObjectText -Object $Journal -Name 'releaseId'
   $targetReleaseId = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId'
   if ($journalReleaseId -and $journalReleaseId -ne $targetReleaseId) {
@@ -937,6 +945,7 @@ function Test-DailyInterruptedTargetReady {
   try {
     Assert-DailyTargetIdentity -Context $Context -Target $Target
     $releaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
+    if (-not $releaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $releaseRoot)) { return $false }
     $release = Get-OptimizationReleaseDescriptor -ReleaseRoot $releaseRoot
     $nodePath = Resolve-OptimizationExecutablePath -Value 'node' -Label 'Node'
     $integrity = Test-OptimizationReleaseIntegrity -Release $release -NodePath $nodePath -ReleaseHealthScript $Context.releaseHealthScript
