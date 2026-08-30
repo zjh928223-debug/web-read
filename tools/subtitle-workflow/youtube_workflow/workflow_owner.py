@@ -20,6 +20,8 @@ import re
 from typing import Any, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from fastapi import HTTPException
+
 from .application_backup import WorkflowBackupAdapter
 from .durable_json import DurableJsonRepository, JsonValidationError
 from .history import (
@@ -34,6 +36,7 @@ from .windows_owner_receipts import (
     OwnerCommitReceiptStore,
     OwnerReceiptInputError,
     OwnerReceiptStoreError,
+    OwnerTransactionAbort,
     calculate_evidence_checksum,
 )
 
@@ -90,6 +93,7 @@ _QUERY_CAPABILITY_BY_OPERATION = {
 }
 
 _SAFE_IDENTITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_SAFE_SERVICE_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9._:-]{0,95}$")
 _SAFE_IDEMPOTENCY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
 _SAFE_OPERATION = re.compile(r"^[a-z][a-z0-9.-]{0,95}$")
 _SAFE_JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$")
@@ -172,6 +176,11 @@ _CONFIG_FIELDS = frozenset({
     "whisperxPath",
 })
 _CONFIG_PATH_FIELDS = frozenset({"cookiesPath", "outputDir", "ytDlpPath", "whisperxPath"})
+_SERVICE_ERROR_CODES = frozenset({
+    "MATERIAL_ALREADY_EXISTS",
+    "WORKFLOW_STATE_CONFLICT",
+    "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
+})
 _SNAPSHOT_PATH_OBJECT_FIELDS = frozenset({"manifest", "checkpoint"})
 _SNAPSHOT_RECORD_FIELDS = frozenset({
     *_SAFE_JOB_FIELDS,
@@ -422,11 +431,14 @@ def _typed_error(
     *,
     retryable: bool = False,
     current_revision: int | str | None = None,
+    details: Mapping[str, Any] | None = None,
+    message: str | None = None,
+    category: str | None = None,
 ) -> dict[str, Any]:
-    details: dict[str, Any] = {}
+    error_details = deepcopy(dict(details)) if isinstance(details, Mapping) else {}
     if current_revision is not None:
-        details["currentRevision"] = current_revision
-    category = {
+        error_details["currentRevision"] = current_revision
+    error_category = category or {
         "conflict": "conflict",
         "revision-conflict": "conflict",
         "invalid-request": "validation",
@@ -438,15 +450,37 @@ def _typed_error(
         "commit-unknown": "recovery",
         "not-ready": "readiness",
         "workflow-output-dir-busy": "readiness",
+        "MATERIAL_ALREADY_EXISTS": "conflict",
+        "WORKFLOW_STATE_CONFLICT": "conflict",
+        "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "conflict",
+        "WORKFLOW_RETRY_NOT_ALLOWED": "conflict",
+        "WORKFLOW_DELETE_NOT_ALLOWED": "conflict",
+        "WORKFLOW_PRIORITY_NOT_ALLOWED": "conflict",
+        "WORKFLOW_JOB_NOT_FOUND": "not-found",
+        "WORKFLOW_SERVICE_BAD_REQUEST": "validation",
+        "WORKFLOW_SERVICE_VALIDATION": "validation",
+        "WORKFLOW_SERVICE_CONFLICT": "conflict",
     }.get(code, "recovery")
+    error_message = message or {
+        "MATERIAL_ALREADY_EXISTS": "workflow material already exists",
+        "WORKFLOW_STATE_CONFLICT": "workflow state conflicts with the current revision",
+        "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "workflow idempotency key was already used for another request",
+        "WORKFLOW_RETRY_NOT_ALLOWED": "workflow job cannot be retried in its current state",
+        "WORKFLOW_DELETE_NOT_ALLOWED": "workflow job cannot be deleted in its current state",
+        "WORKFLOW_PRIORITY_NOT_ALLOWED": "workflow job cannot be prioritized in its current state",
+        "WORKFLOW_JOB_NOT_FOUND": "workflow job was not found",
+        "WORKFLOW_SERVICE_BAD_REQUEST": "workflow service rejected the request",
+        "WORKFLOW_SERVICE_VALIDATION": "workflow service rejected the request",
+        "WORKFLOW_SERVICE_CONFLICT": "workflow service rejected the mutation",
+    }.get(code, "workflow operation could not be completed")
     return {
         "type": "windows-thin-reader-error.v1",
         "code": code,
-        "category": category,
-        "message": "workflow operation could not be completed",
+        "category": error_category,
+        "message": error_message,
         "retryable": bool(retryable),
         "correlationId": correlation_id,
-        "details": details,
+        "details": error_details,
     }
 
 
@@ -598,6 +632,7 @@ class WorkflowOwner:
         state_path = Path(state_dir).expanduser().resolve(strict=False)
         output_path = Path(output_dir).expanduser().resolve(strict=False) if output_dir is not None else state_path.parent
         self.state_dir = state_path
+        self._default_output_dir = output_path
         self.output_dir = output_path
         self.profile_id = _identity(profile_id or "default-profile", "profileId")
         self.instance_id = _identity(instance_id or "default-instance", "instanceId")
@@ -661,12 +696,21 @@ class WorkflowOwner:
 
     def _sync_output_root(self, config: Mapping[str, Any] | None = None) -> Path:
         configured = config if isinstance(config, Mapping) else {}
-        candidates = [
-            configured.get("outputDir"),
-            getattr(getattr(self.service_manager, "config", None), "output_dir", None),
-            getattr(self.store, "output_dir", None),
-            self.output_dir,
-        ]
+        configured_output = configured.get("outputDir")
+        clear_override = "outputDir" in configured and not str(configured_output or "").strip()
+        if clear_override:
+            candidates = [
+                getattr(getattr(self.service_manager, "config", None), "output_dir", None),
+                self._default_output_dir,
+            ]
+        else:
+            candidates = [
+                configured_output,
+                getattr(getattr(self.service_manager, "config", None), "output_dir", None),
+                getattr(self.store, "output_dir", None),
+                self.output_dir,
+                self._default_output_dir,
+            ]
         output_root = next(
             (candidate for candidate in (self._resolved_local_path(value, dot_is_placeholder=True) for value in candidates) if candidate is not None),
             self.output_dir.resolve(strict=False),
@@ -682,6 +726,23 @@ class WorkflowOwner:
         if manager_store is not None and hasattr(manager_store, "output_dir"):
             manager_store.output_dir = output_root
         return output_root
+
+    def _effective_config_path(self, key: str, raw_value: Any) -> str:
+        text = str(raw_value or "").strip()
+        if text and text not in {".", "[REDACTED_PATH]"}:
+            return text
+        attribute = {
+            "cookiesPath": "cookies_path",
+            "outputDir": "output_dir",
+            "ytDlpPath": "yt_dlp_path",
+            "whisperxPath": "whisperx_path",
+        }[key]
+        current = getattr(getattr(self.service_manager, "config", None), attribute, None)
+        if current is not None:
+            return str(current)
+        if key == "outputDir":
+            return str(self._default_output_dir)
+        return ""
 
     def _effective_runtime_config_value(self, key: str, current_config: Mapping[str, Any] | None = None) -> str:
         attribute = {
@@ -870,14 +931,17 @@ class WorkflowOwner:
             return None
         error = result.get("error") or {}
         code = error.get("code", result.get("outcome", "manual-recovery"))
-        current_revision = (error.get("details") or {}).get("currentRevision")
-        if code != "conflict":
+        error_details = error.get("details") if isinstance(error.get("details"), Mapping) else {}
+        current_revision = error_details.get("currentRevision")
+        if code not in {"conflict", "WORKFLOW_STATE_CONFLICT"}:
             current_revision = None
         return _typed_error(
             code,
             correlation_id,
             retryable=bool(error.get("retryable", False)),
             current_revision=current_revision,
+            details=error_details,
+            message=error.get("message") if isinstance(error.get("message"), str) else None,
         )
 
     @staticmethod
@@ -1559,10 +1623,10 @@ class WorkflowOwner:
                 "model": str(raw.get("model") or ""),
                 "baseUrl": _redact_url(raw.get("baseUrl")),
                 "proxyUrl": _redact_url(raw.get("proxyUrl")),
-                "cookiesPath": str(raw.get("cookiesPath") or ""),
-                "outputDir": str(raw.get("outputDir") or ""),
-                "ytDlpPath": str(raw.get("ytDlpPath") or ""),
-                "whisperxPath": str(raw.get("whisperxPath") or ""),
+                "cookiesPath": self._effective_config_path("cookiesPath", raw.get("cookiesPath")),
+                "outputDir": self._effective_config_path("outputDir", raw.get("outputDir")),
+                "ytDlpPath": self._effective_config_path("ytDlpPath", raw.get("ytDlpPath")),
+                "whisperxPath": self._effective_config_path("whisperxPath", raw.get("whisperxPath")),
                 "configured": bool(any(raw.get(key) for key in _CONFIG_FIELDS)),
                 "present": not state["configMissing"],
             }
@@ -1738,6 +1802,70 @@ class WorkflowOwner:
         if operation == "job-clear-failed":
             return manager.clear_failed_jobs(expected_revision=expected_revision)
         raise RuntimeError("unsupported workflow service operation")
+
+    @staticmethod
+    def _service_http_error(operation: str, error: HTTPException) -> tuple[str, dict[str, Any]] | None:
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, bool) or not isinstance(status_code, int) or not 400 <= status_code < 500:
+            return None
+        detail = error.detail if isinstance(error.detail, Mapping) else {}
+        raw_code = detail.get("code") if isinstance(detail, Mapping) else None
+        code = raw_code if isinstance(raw_code, str) and _SAFE_SERVICE_CODE.fullmatch(raw_code) and raw_code in _SERVICE_ERROR_CODES else ""
+        if not code:
+            if status_code == 409:
+                code = {
+                    "job-retry": "WORKFLOW_RETRY_NOT_ALLOWED",
+                    "job-delete": "WORKFLOW_DELETE_NOT_ALLOWED",
+                    "job-prioritize": "WORKFLOW_PRIORITY_NOT_ALLOWED",
+                }.get(operation, "WORKFLOW_SERVICE_CONFLICT")
+            elif status_code == 404:
+                code = "WORKFLOW_JOB_NOT_FOUND"
+            elif status_code == 422:
+                code = "WORKFLOW_SERVICE_VALIDATION"
+            else:
+                code = "WORKFLOW_SERVICE_BAD_REQUEST"
+
+        details: dict[str, Any] = {}
+        if code == "MATERIAL_ALREADY_EXISTS":
+            material_key = detail.get("materialKey")
+            if isinstance(material_key, str) and _SAFE_SERVICE_CODE.fullmatch(material_key):
+                details["materialKey"] = material_key
+            existing = _public_value(detail.get("existing"))
+            if isinstance(existing, Mapping):
+                details["existing"] = dict(existing)
+        elif code == "WORKFLOW_STATE_CONFLICT":
+            current_revision = detail.get("currentRevision")
+            if (
+                isinstance(current_revision, int)
+                and not isinstance(current_revision, bool)
+                and current_revision >= 0
+            ) or (
+                isinstance(current_revision, str)
+                and _SAFE_REVISION.fullmatch(current_revision)
+            ):
+                details["currentRevision"] = current_revision
+
+        message = {
+            "MATERIAL_ALREADY_EXISTS": "workflow material already exists",
+            "WORKFLOW_STATE_CONFLICT": "workflow state conflicts with the current revision",
+            "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "workflow idempotency key was already used for another request",
+            "WORKFLOW_RETRY_NOT_ALLOWED": "workflow job cannot be retried in its current state",
+            "WORKFLOW_DELETE_NOT_ALLOWED": "workflow job cannot be deleted in its current state",
+            "WORKFLOW_PRIORITY_NOT_ALLOWED": "workflow job cannot be prioritized in its current state",
+            "WORKFLOW_JOB_NOT_FOUND": "workflow job was not found",
+            "WORKFLOW_SERVICE_VALIDATION": "workflow service rejected the request",
+            "WORKFLOW_SERVICE_BAD_REQUEST": "workflow service rejected the request",
+            "WORKFLOW_SERVICE_CONFLICT": "workflow service rejected the mutation",
+        }[code]
+        return (
+            "conflict" if status_code == 409 else "rejected",
+            {
+                "code": code,
+                "message": message,
+                "retryable": code == "WORKFLOW_STATE_CONFLICT",
+                "details": details,
+            },
+        )
 
     def _service_replay_result(self, operation: str, idempotency_key: str) -> dict[str, Any] | None:
         """Recover the first service result for an owner receipt replay.
@@ -2057,6 +2185,20 @@ class WorkflowOwner:
                     service_result = self._service_command_result(operation, mutation, current, context)
                     if not isinstance(service_result, Mapping):
                         raise RuntimeError("workflow service returned an invalid result")
+                except HTTPException as error:
+                    mapped = self._service_http_error(operation, error)
+                    if mapped is not None:
+                        status, service_error = mapped
+                        raise OwnerTransactionAbort(service_error, status=status) from None
+                    current_after = self._read_state()
+                    status = "conflict" if current_after["revision"] != context.expected_revision else "rejected"
+                    return self._evidence(
+                        context,
+                        status=status,
+                        revision=current_after["revision"],
+                        record_checksums=[],
+                        effect_fingerprint=_checksum({"operation": operation, "revision": current_after["revision"], "status": status}),
+                    )
                 except Exception:
                     current_after = self._read_state()
                     status = "conflict" if current_after["revision"] != context.expected_revision else "rejected"

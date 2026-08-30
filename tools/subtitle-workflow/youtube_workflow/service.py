@@ -1029,6 +1029,15 @@ class JobManager:
         event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
     ):
         self.config = config or WorkflowConfig()
+        # Keep the launcher/runtime baseline separate from the mutable config
+        # overlay.  An explicit empty optional path clears that overlay and
+        # must take effect in this process as well as after a restart.
+        self._runtime_default_paths = {
+            "cookiesPath": Path(self.config.cookies_path) if self.config.cookies_path is not None else None,
+            "outputDir": Path(self.config.output_dir) if self.config.output_dir is not None else None,
+            "ytDlpPath": Path(self.config.yt_dlp_path) if self.config.yt_dlp_path is not None else None,
+            "whisperxPath": Path(self.config.whisperx_path) if self.config.whisperx_path is not None else None,
+        }
         self.enforce_tool_preflight = runner_factory is None
         self.runner_factory = runner_factory or (lambda: LocalWorkflowRunner(self.config))
         self.credential_store = credential_store or default_credential_store()
@@ -1134,9 +1143,14 @@ class JobManager:
             self.config.proxy_url = str(payload.get("proxyUrl") or "").strip()
 
         def configured_path(key: str, *, dot_is_placeholder: bool = False) -> Path | None:
+            if key not in payload or payload.get(key) is None:
+                return None
             raw = payload.get(key)
-            text = str(raw or "").strip()
-            if not text or text == "[REDACTED_PATH]" or (dot_is_placeholder and text == "."):
+            text = str(raw).strip()
+            if not text:
+                default = self._runtime_default_paths.get(key)
+                return Path(default) if default is not None else None
+            if text == "[REDACTED_PATH]" or (dot_is_placeholder and text == "."):
                 return None
             return Path(text).expanduser().resolve(strict=False)
 

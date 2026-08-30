@@ -149,7 +149,18 @@
         "evidenceSource": { "$ref": "#/$defs/safeIdentity" },
         "createdAt": { "type": "string", "format": "date-time" },
         "committedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
-        "queryOperation": { "const": "receipt-query" }
+        "queryOperation": { "const": "receipt-query" },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable", "details"],
+          "properties": {
+            "code": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9._:-]{0,95}$" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "retryable": { "type": "boolean" },
+            "details": { "type": "object", "additionalProperties": true }
+          }
+        }
       }
     },
     "typedError": {
@@ -158,7 +169,7 @@
       "required": ["type", "code", "category", "message", "retryable", "correlationId", "details"],
       "properties": {
         "type": { "const": "windows-thin-reader-error.v1" },
-        "code": { "enum": ["invalid-request", "unauthorized", "forbidden", "not-ready", "not-found", "conflict", "revision-conflict", "unsupported-schema", "corrupt", "quota", "timeout", "upstream", "commit-unknown", "manual-recovery", "unsupported-operation", "path-not-allowed", "idempotency-required", "revision-required"] },
+        "code": { "enum": ["invalid-request", "unauthorized", "forbidden", "not-ready", "not-found", "conflict", "revision-conflict", "unsupported-schema", "corrupt", "quota", "timeout", "upstream", "commit-unknown", "manual-recovery", "unsupported-operation", "path-not-allowed", "idempotency-required", "revision-required", "MATERIAL_ALREADY_EXISTS", "WORKFLOW_STATE_CONFLICT", "WORKFLOW_IDEMPOTENCY_KEY_REUSED", "WORKFLOW_RETRY_NOT_ALLOWED", "WORKFLOW_DELETE_NOT_ALLOWED", "WORKFLOW_PRIORITY_NOT_ALLOWED", "WORKFLOW_JOB_NOT_FOUND", "WORKFLOW_SERVICE_BAD_REQUEST", "WORKFLOW_SERVICE_VALIDATION", "WORKFLOW_SERVICE_CONFLICT"] },
         "category": { "enum": ["validation", "authorization", "readiness", "not-found", "conflict", "schema", "storage", "capacity", "timeout", "upstream", "recovery", "unsupported"] },
         "message": { "type": "string", "minLength": 1, "maxLength": 512 },
         "retryable": { "type": "boolean" },
@@ -517,7 +528,17 @@
     { "code": "unsupported-operation", "category": "unsupported", "retryable": false },
     { "code": "path-not-allowed", "category": "authorization", "retryable": false },
     { "code": "idempotency-required", "category": "validation", "retryable": false },
-    { "code": "revision-required", "category": "validation", "retryable": false }
+    { "code": "revision-required", "category": "validation", "retryable": false },
+    { "code": "MATERIAL_ALREADY_EXISTS", "category": "conflict", "retryable": false },
+    { "code": "WORKFLOW_STATE_CONFLICT", "category": "conflict", "retryable": true },
+    { "code": "WORKFLOW_IDEMPOTENCY_KEY_REUSED", "category": "conflict", "retryable": false },
+    { "code": "WORKFLOW_RETRY_NOT_ALLOWED", "category": "conflict", "retryable": false },
+    { "code": "WORKFLOW_DELETE_NOT_ALLOWED", "category": "conflict", "retryable": false },
+    { "code": "WORKFLOW_PRIORITY_NOT_ALLOWED", "category": "conflict", "retryable": false },
+    { "code": "WORKFLOW_JOB_NOT_FOUND", "category": "not-found", "retryable": false },
+    { "code": "WORKFLOW_SERVICE_BAD_REQUEST", "category": "validation", "retryable": false },
+    { "code": "WORKFLOW_SERVICE_VALIDATION", "category": "validation", "retryable": false },
+    { "code": "WORKFLOW_SERVICE_CONFLICT", "category": "conflict", "retryable": false }
   ],
   "securityAndMediaBoundary": {
     "hostOriginTokenCapability": "Required at the shared owner request-policy boundary; CORS alone is insufficient",

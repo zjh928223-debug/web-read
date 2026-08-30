@@ -329,8 +329,9 @@ function validateReceipt(receipt, request) {
     'evidenceSource', 'createdAt', 'committedAt', 'queryOperation',
   ]
   for (const field of required) if (!(field in receipt)) invalidResponse(`receipt is missing ${field}`)
+  if (receipt.error !== undefined) validateReceiptError(receipt.error)
   for (const key of Object.keys(receipt)) {
-    if (!required.includes(key)) invalidResponse('receipt contains unsupported fields')
+    if (!required.includes(key) && key !== 'error') invalidResponse('receipt contains unsupported fields')
   }
   for (const field of ['receiptId', 'profileId', 'instanceId', 'requestId', 'correlationId', 'evidenceSource']) requireIdentity(receipt[field], `receipt.${field}`)
   if (receipt.contractVersion !== apiContract.contractVersion || receipt.queryOperation !== 'receipt-query') invalidResponse('receipt contract identity is invalid')
@@ -351,6 +352,17 @@ function validateReceipt(receipt, request) {
   if (!Array.isArray(receipt.recordChecksums) || receipt.recordChecksums.some((value) => typeof value !== 'string' || !FINGERPRINT.test(value))) invalidResponse('receipt.recordChecksums is invalid')
   if (typeof receipt.createdAt !== 'string' || Number.isNaN(Date.parse(receipt.createdAt))) invalidResponse('receipt.createdAt is invalid')
   if (receipt.committedAt !== null && (typeof receipt.committedAt !== 'string' || Number.isNaN(Date.parse(receipt.committedAt)))) invalidResponse('receipt.committedAt is invalid')
+}
+
+function validateReceiptError(error) {
+  if (!isPlainObject(error)) invalidResponse('receipt error must be an object')
+  const fields = ['code', 'message', 'retryable', 'details']
+  if (Object.keys(error).some((key) => !fields.includes(key))) invalidResponse('receipt error contains unsupported fields')
+  if (fields.some((field) => !(field in error))) invalidResponse('receipt error is incomplete')
+  if (!TYPED_ERROR_CODES.has(error.code) || typeof error.message !== 'string' || !error.message || error.message.length > 512 || typeof error.retryable !== 'boolean' || !isPlainObject(error.details)) {
+    invalidResponse('receipt error is invalid')
+  }
+  assertJsonSafe(error.details, 'receipt.error.details', new WeakSet(), responseValueError)
 }
 
 function validateTypedError(error, correlationId) {

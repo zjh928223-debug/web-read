@@ -90,6 +90,11 @@ class OwnerReceiptInputError(ValueError):
 class OwnerTransactionAbort(RuntimeError):
     """Adapter reports that no durable commit occurred."""
 
+    def __init__(self, error: Mapping[str, Any] | None = None, *, status: str = "rejected"):
+        super().__init__("owner transaction was rejected")
+        self.error = deepcopy(dict(error)) if isinstance(error, Mapping) else None
+        self.status = status if status in {"rejected", "conflict"} else "rejected"
+
 
 class OwnerProcessDeath(RuntimeError):
     """Test seam representing a process exit at a commit boundary."""
@@ -188,8 +193,49 @@ def _validate_record_checksums(value: Any) -> list[str]:
     return result
 
 
+def _validate_error_detail_value(value: Any, *, depth: int = 0) -> None:
+    if depth > 6:
+        raise OwnerReceiptInputError("receipt error details are too deep")
+    if value is None or isinstance(value, (bool, int, float)):
+        return
+    if isinstance(value, str):
+        if len(value) > 4096 or any(ord(char) < 0x20 and char not in "\t" for char in value):
+            raise OwnerReceiptInputError("receipt error details are invalid")
+        return
+    if isinstance(value, list):
+        if len(value) > 64:
+            raise OwnerReceiptInputError("receipt error details are invalid")
+        for item in value:
+            _validate_error_detail_value(item, depth=depth + 1)
+        return
+    if isinstance(value, dict):
+        if len(value) > 64:
+            raise OwnerReceiptInputError("receipt error details are invalid")
+        for key, item in value.items():
+            if not isinstance(key, str) or len(key) > 128:
+                raise OwnerReceiptInputError("receipt error details are invalid")
+            _validate_error_detail_value(item, depth=depth + 1)
+        return
+    raise OwnerReceiptInputError("receipt error details are invalid")
+
+
+def _validate_receipt_error(value: Any) -> dict[str, Any]:
+    required = {"code", "message", "retryable", "details"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise OwnerReceiptInputError("receipt error schema is invalid")
+    _safe_identity(value.get("code"), "error code")
+    message = value.get("message")
+    if not isinstance(message, str) or len(message) > 512 or any(ord(char) < 0x20 and char not in "\t" for char in message):
+        raise OwnerReceiptInputError("receipt error message is invalid")
+    if not isinstance(value.get("retryable"), bool):
+        raise OwnerReceiptInputError("receipt error retryable flag is invalid")
+    _validate_error_detail_value(value.get("details"))
+    return deepcopy(value)
+
+
 def _validate_receipt(value: Any, *, profile_id: str | None = None) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != _RECEIPT_FIELDS:
+    allowed_fields = {_RECEIPT_FIELDS, _RECEIPT_FIELDS | {"error"}}
+    if not isinstance(value, dict) or set(value) not in allowed_fields:
         raise OwnerReceiptInputError("receipt schema is invalid")
     if value.get("contractVersion") != "windows-thin-reader-api.v1":
         raise OwnerReceiptInputError("receipt contract version is unsupported")
@@ -214,6 +260,8 @@ def _validate_receipt(value: Any, *, profile_id: str | None = None) -> dict[str,
     _validate_timestamp(value.get("committedAt"), "committedAt", allow_none=True)
     if value.get("queryOperation") != "receipt-query":
         raise OwnerReceiptInputError("receipt query operation is invalid")
+    if "error" in value:
+        _validate_receipt_error(value["error"])
     copy = deepcopy(value)
     copy["recordChecksums"] = record_checksums
     expected_evidence_checksum = _sha256_value(
@@ -431,6 +479,7 @@ class OwnerCommitReceiptStore:
         created_at: str | None = None,
         committed_at: str | None = None,
         receipt_id: str | None = None,
+        error: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if status not in OWNER_RECEIPT_STATUSES:
             raise OwnerReceiptInputError("receipt status is invalid")
@@ -471,6 +520,8 @@ class OwnerCommitReceiptStore:
                 "source": source,
             }
         )
+        if error is not None:
+            receipt["error"] = _validate_receipt_error(error)
         return _validate_receipt(receipt, profile_id=self.profile_id)
 
     def _find_receipt(self, document: Mapping[str, Any], *, idempotency_key: str | None = None, receipt_id: str | None = None) -> dict[str, Any] | None:
@@ -527,7 +578,13 @@ class OwnerCommitReceiptStore:
         return result
 
     @staticmethod
-    def _status_error(status: str, revision: int | str | None = None) -> dict[str, Any] | None:
+    def _status_error(
+        status: str,
+        revision: int | str | None = None,
+        error: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        if error is not None:
+            return deepcopy(dict(error))
         if status == "committed":
             return None
         if status == "conflict":
@@ -543,7 +600,7 @@ class OwnerCommitReceiptStore:
 
     def _result_for_receipt(self, receipt: Mapping[str, Any]) -> dict[str, Any]:
         status = str(receipt["commitStatus"])
-        return self._result(status, receipt, self._status_error(status, receipt.get("revision")))
+        return self._result(status, receipt, self._status_error(status, receipt.get("revision"), receipt.get("error")))
 
     def _unknown_result(self, receipt: Mapping[str, Any] | None, message: str = "owner commit result is not yet known") -> dict[str, Any]:
         return self._result("commit-unknown", receipt, _error("commit-unknown", message, retryable=True))
@@ -705,6 +762,7 @@ class OwnerCommitReceiptStore:
         evidence_source: str,
         effect_fingerprint: str | None = None,
         record_checksums: list[str] | None = None,
+        error: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         return self._new_receipt(
             request_id=pending["requestId"],
@@ -723,6 +781,7 @@ class OwnerCommitReceiptStore:
             receipt_id=pending["receiptId"],
             created_at=pending["createdAt"],
             committed_at=self.clock() if status == "committed" else None,
+            error=error,
         )
 
     def commit(
@@ -840,9 +899,14 @@ class OwnerCommitReceiptStore:
                     evidence = adapter(context)
                 except OwnerProcessDeath:
                     raise
-                except OwnerTransactionAbort:
+                except OwnerTransactionAbort as abort:
+                    status = abort.status
                     rejected = self._transition_pending(
-                        pending, status="rejected", revision=baseline, evidence_source="owner.transaction"
+                        pending,
+                        status=status,
+                        revision=baseline,
+                        evidence_source="owner.transaction",
+                        error=abort.error,
                     )
                     try:
                         self._replace_receipt(document, rejected, "rejected")

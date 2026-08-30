@@ -125,6 +125,13 @@ function workflowMutationError(response, fallbackCode = 'workflow-owner-mutation
   error.category = response?.error?.category
     || (outcome === 'conflict' || response?.commitStatus === 'conflict' ? 'conflict' : 'recovery')
   error.retryable = response?.error?.retryable !== false
+  const responseDetails = response?.error?.details
+  if (responseDetails && typeof responseDetails === 'object' && !Array.isArray(responseDetails)) {
+    error.details = responseDetails
+    error.detail = { ...response.error, ...responseDetails }
+  } else if (response?.error && typeof response.error === 'object') {
+    error.detail = response.error
+  }
   const currentRevision = response?.error?.details?.currentRevision ?? response?.revision
   const numericRevision = workflowJobsRevision(currentRevision)
   if (numericRevision !== null) {

@@ -463,7 +463,7 @@ uvicorn.run(app, host='127.0.0.1', port=int(os.environ['C2C_PORT']), log_level='
 }
 
 async function stopLocalAppHost(host) {
-  if (!host?.child || host.child.exitCode !== null) return
+  if (!host?.child || host.child.exitCode !== null || host.child.killed) return
   host.child.kill()
   await once(host.child, 'exit').catch(() => {})
 }
@@ -734,7 +734,7 @@ try {
   const jobsRevision = async () => (await jobsSnapshot()).revision
   const importedConfig = await browserClient.getConfig()
   assert.equal(path.resolve(importedConfig.outputDir), path.resolve(target.pythonOutputDir))
-  assert.equal(importedConfig.cookiesPath, '')
+  assert.equal(path.resolve(importedConfig.cookiesPath), path.resolve(target.cookiesPath))
   assert.equal(importedConfig.ytDlpPath, target.ytDlpPath)
   assert.equal(importedConfig.whisperxPath, target.whisperxPath)
   await stopLocalAppHost(host)
@@ -770,7 +770,7 @@ try {
   browserGuard = reopenedBrowserComposition.cutover
   const reopenedImportedConfig = await browserClient.getConfig()
   assert.equal(path.resolve(reopenedImportedConfig.outputDir), path.resolve(target.pythonOutputDir))
-  assert.equal(reopenedImportedConfig.cookiesPath, '')
+  assert.equal(path.resolve(reopenedImportedConfig.cookiesPath), path.resolve(target.cookiesPath))
   assert.equal(reopenedImportedConfig.ytDlpPath, target.ytDlpPath)
   assert.equal(reopenedImportedConfig.whisperxPath, target.whisperxPath)
   const sanitizedStart = await browserClient.createJob(
@@ -830,7 +830,93 @@ try {
     { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-empty-optional-paths' },
   )
   const emptyPathConfig = await browserClient.getConfig()
-  for (const key of ['cookiesPath', 'outputDir', 'ytDlpPath', 'whisperxPath']) assert.equal(emptyPathConfig[key], '')
+  assert.equal(path.resolve(emptyPathConfig.cookiesPath), path.resolve(target.cookiesPath))
+  assert.equal(path.resolve(emptyPathConfig.outputDir), path.resolve(target.pythonOutputDir))
+  assert.equal(emptyPathConfig.ytDlpPath, target.ytDlpPath)
+  assert.equal(emptyPathConfig.whisperxPath, target.whisperxPath)
+  const emptyOwnerConfig = await ordinaryHostClient.query({
+    domain: 'workflow',
+    operation: 'config',
+    payload: {},
+  })
+  assert.equal(path.resolve(emptyOwnerConfig.payload.config.outputDir), path.resolve(target.pythonOutputDir))
+  const emptyDefaultStart = await browserClient.createJob(
+    {
+      url: 'https://www.youtube.com/watch?v=workflow-c2c-empty-default-immediate',
+      geminiMode: 'mock',
+      forceReprocess: true,
+    },
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-empty-default-immediate' },
+  )
+  assert.equal(emptyDefaultStart.status, 'queued')
+  await waitFor(async () => {
+    const job = (await jobsSnapshot()).jobs.find((item) => item.jobId === emptyDefaultStart.jobId)
+    return job?.status === 'ready' ? job : null
+  }, 'empty optional paths immediate default runner job')
+  assert.equal(
+    JSON.parse(await readFile(path.join(target.pythonOutputDir, emptyDefaultStart.jobId, 'runner-output.json'), 'utf8')).jobId,
+    emptyDefaultStart.jobId,
+  )
+
+  await stopLocalAppHost(host)
+  host = null
+  reopenedHost = await startLocalAppHost(target)
+  host = reopenedHost
+  assert.deepEqual(reopenedHost.health.ownerMode?.authoritativeDomains, ['workflow'])
+  const reopenedDefaultMigrationClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: reopenedHost.baseUrl,
+    accessToken: reopenedHost.accessToken,
+    profileId: reopenedHost.profileId,
+    instanceId: reopenedHost.instanceId,
+    migrationOnly: true,
+    mode: 'optimization',
+    explicitOptIn: true,
+  })
+  ordinaryHostClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: reopenedHost.baseUrl,
+    accessToken: reopenedHost.accessToken,
+    profileId: reopenedHost.profileId,
+    instanceId: reopenedHost.instanceId,
+  })
+  browserGuard?.dispose?.()
+  const reopenedDefaultBrowserComposition = await initializeWindowsOwnerDomainCutoverComposition({
+    windowObject: globalThis,
+    health: reopenedHost.health,
+    ownerClient: reopenedDefaultMigrationClient,
+    fetchImpl: (url, init) => hostFetch(reopenedHost, url, init),
+    healthPath: `${reopenedHost.baseUrl}/api/app/health`,
+    healthTimeoutMs: 500,
+  })
+  assert.ok(reopenedDefaultBrowserComposition.cutover)
+  browserGuard = reopenedDefaultBrowserComposition.cutover
+  const reopenedEmptyPathConfig = await browserClient.getConfig()
+  assert.equal(path.resolve(reopenedEmptyPathConfig.cookiesPath), path.resolve(target.cookiesPath))
+  assert.equal(path.resolve(reopenedEmptyPathConfig.outputDir), path.resolve(target.pythonOutputDir))
+  assert.equal(reopenedEmptyPathConfig.ytDlpPath, target.ytDlpPath)
+  assert.equal(reopenedEmptyPathConfig.whisperxPath, target.whisperxPath)
+  const reopenedEmptyOwnerConfig = await ordinaryHostClient.query({
+    domain: 'workflow',
+    operation: 'config',
+    payload: {},
+  })
+  assert.equal(path.resolve(reopenedEmptyOwnerConfig.payload.config.outputDir), path.resolve(target.pythonOutputDir))
+  const emptyDefaultRestartStart = await browserClient.createJob(
+    {
+      url: 'https://www.youtube.com/watch?v=workflow-c2c-empty-default-restart',
+      geminiMode: 'mock',
+      forceReprocess: true,
+    },
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-empty-default-restart' },
+  )
+  assert.equal(emptyDefaultRestartStart.status, 'queued')
+  await waitFor(async () => {
+    const job = (await jobsSnapshot()).jobs.find((item) => item.jobId === emptyDefaultRestartStart.jobId)
+    return job?.status === 'ready' ? job : null
+  }, 'empty optional paths reopened default runner job')
+  assert.equal(
+    JSON.parse(await readFile(path.join(target.pythonOutputDir, emptyDefaultRestartStart.jobId, 'runner-output.json'), 'utf8')).jobId,
+    emptyDefaultRestartStart.jobId,
+  )
   await browserClient.saveConfig(
     configuredConfig,
     { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-client-config-restored' },
@@ -838,6 +924,20 @@ try {
   const restoredConfig = await browserClient.getConfig()
   for (const [key, value] of Object.entries(configuredConfig)) assert.equal(restoredConfig[key], value)
   assert.equal(path.resolve(restoredConfig.outputDir), path.resolve(target.reconfiguredOutputDir))
+
+  await assert.rejects(
+    browserClient.createJob(
+      { url: fixture.jobs[0].url, geminiMode: 'mock' },
+      { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-duplicate-material' },
+    ),
+    (error) => {
+      assert.equal(error.code, 'MATERIAL_ALREADY_EXISTS')
+      assert.equal(error.status, 409)
+      assert.equal(error.detail?.materialKey, 'youtube:workflow-c2c-1')
+      assert.equal(error.detail?.existing?.jobId, 'workflow-job-1')
+      return true
+    },
+  )
 
   const createTypedJobWithKey = async (id, idempotencyKey, extra = {}) => {
     return browserClient.createJob(
@@ -899,6 +999,29 @@ try {
 
   const hold = await createTypedJob('hold-cancel', { url: 'https://www.youtube.com/watch?v=workflow-c2c-hold-cancel' })
   await waitFor(() => readRunnerEffects(target).then((effects) => effects.some((effect) => effect.jobId === hold.jobId && effect.status === 'accepted')), 'cancel runner acceptance')
+  await assert.rejects(
+    browserClient.retryJob(
+      hold.jobId,
+      {},
+      { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-retry-running-conflict' },
+    ),
+    (error) => {
+      assert.equal(error.code, 'WORKFLOW_RETRY_NOT_ALLOWED')
+      assert.equal(error.status, 409)
+      return true
+    },
+  )
+  await assert.rejects(
+    browserClient.deleteJob(
+      hold.jobId,
+      { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-delete-running-conflict' },
+    ),
+    (error) => {
+      assert.equal(error.code, 'WORKFLOW_DELETE_NOT_ALLOWED')
+      assert.equal(error.status, 409)
+      return true
+    },
+  )
   const pendingCancel = await createTypedJob('pending-cancel')
   const pendingCancelStartedAt = Date.now()
   const pendingCanceled = await browserClient.cancelJob(
