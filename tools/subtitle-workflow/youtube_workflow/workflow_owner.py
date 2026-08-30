@@ -1245,9 +1245,24 @@ class WorkflowOwner:
         if not isinstance(payload, Mapping):
             raise WorkflowOwnerError("invalid-request")
         value = dict(payload)
-        allowed_outer = {"job", "record", "transition", "jobId"} | _SAFE_JOB_FIELDS
+        allowed_outer = {"job", "record", "transition", "jobId", "ephemeral"} | _SAFE_JOB_FIELDS
         if set(value) - allowed_outer:
             raise WorkflowOwnerError("invalid-request")
+        ephemeral = value.get("ephemeral")
+        if "ephemeral" in value:
+            if operation not in {"job-start", "job-retry"} or not isinstance(ephemeral, Mapping) or set(ephemeral) != {"apiKey"}:
+                raise WorkflowOwnerError("invalid-request")
+            api_key = ephemeral["apiKey"]
+            if (
+                not isinstance(api_key, str)
+                or not api_key.strip()
+                or len(api_key) > 4096
+                or any(ord(char) < 0x20 and char not in "\t" for char in api_key)
+            ):
+                raise WorkflowOwnerError("invalid-request")
+            ephemeral = {"apiKey": api_key}
+        else:
+            ephemeral = None
         wrappers = [key for key in ("job", "record", "transition") if key in value]
         if len(wrappers) > 1:
             raise WorkflowOwnerError("invalid-request")
@@ -1257,11 +1272,11 @@ class WorkflowOwner:
                 raise WorkflowOwnerError("invalid-request")
             record = dict(raw)
             outer_job_id = value.get("jobId")
-            if set(value) - set(wrappers) - {"jobId"}:
+            if set(value) - set(wrappers) - {"jobId", "ephemeral"}:
                 raise WorkflowOwnerError("invalid-request")
         else:
             outer_job_id = value.get("jobId")
-            record = {key: item for key, item in value.items() if key != "jobId"}
+            record = {key: item for key, item in value.items() if key not in {"jobId", "ephemeral"}}
         if outer_job_id is not None:
             _identity(outer_job_id, "jobId", pattern=_SAFE_JOB_ID)
         raw_job_id = record.get("jobId", outer_job_id)
@@ -1274,7 +1289,12 @@ class WorkflowOwner:
             raise WorkflowOwnerError("invalid-request")
         _validate_safe_value(record)
         record["jobId"] = raw_job_id
-        return {"jobId": raw_job_id, "record": record, "operation": operation}
+        return {
+            "jobId": raw_job_id,
+            "record": record,
+            "operation": operation,
+            **({"ephemeral": ephemeral} if ephemeral is not None else {}),
+        }
 
     @staticmethod
     def _snapshot_record(value: Any) -> dict[str, Any]:
@@ -1727,7 +1747,10 @@ class WorkflowOwner:
         )
 
     @staticmethod
-    def _service_request_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    def _service_request_payload(
+        record: Mapping[str, Any],
+        ephemeral: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         request = record.get("request") if isinstance(record.get("request"), Mapping) else {}
         result = {
             key: deepcopy(request[key])
@@ -1746,6 +1769,8 @@ class WorkflowOwner:
         for key in ("url", "geminiMode", "model", "baseUrl", "videoPriority", "forceReprocess"):
             if key not in result and key in record:
                 result[key] = deepcopy(record[key])
+        if isinstance(ephemeral, Mapping) and "apiKey" in ephemeral:
+            result["apiKey"] = ephemeral["apiKey"]
         return result
 
     def _service_command_result(
@@ -1760,9 +1785,10 @@ class WorkflowOwner:
             raise RuntimeError("workflow service is unavailable")
         expected_revision = int(current["jobsRevision"])
         record = mutation.get("record") if isinstance(mutation.get("record"), Mapping) else {}
+        ephemeral = mutation.get("ephemeral") if isinstance(mutation.get("ephemeral"), Mapping) else None
         if operation == "job-start":
             return manager.create_job(
-                self._service_request_payload(record),
+                self._service_request_payload(record, ephemeral),
                 idempotency_key=context.idempotency_key,
                 expected_revision=expected_revision,
                 start_worker=False,
@@ -1775,10 +1801,10 @@ class WorkflowOwner:
                 wait_for_completion=True,
             )
         if operation == "job-retry":
-            request = self._service_request_payload(record)
+            request = self._service_request_payload(record, ephemeral)
             retry_payload = {
                 key: request[key]
-                for key in ("model", "baseUrl", "videoPriority")
+                for key in ("model", "baseUrl", "videoPriority", "apiKey")
                 if key in request
             }
             retry_stage = str(record.get("retryStage") or record.get("stage") or "").strip()
@@ -2063,7 +2089,12 @@ class WorkflowOwner:
             )
 
         payload_result = self._command_payload_result(operation, mutation)
-        receipt_payload = {"operation": operation, "mutation": mutation}
+        durable_mutation = {
+            key: deepcopy(value)
+            for key, value in mutation.items()
+            if key != "ephemeral"
+        }
+        receipt_payload = {"operation": operation, "mutation": durable_mutation}
         service_result: dict[str, Any] | None = None
         start_service_worker = False
         pause_service_worker = operation == "job-cancel" and self.service_manager is not None

@@ -334,7 +334,7 @@ export function createYoutubeWorkflowClient(options = {}) {
     for (const key of ['url', 'geminiMode', 'model', 'baseUrl', 'videoPriority', 'autoOpenWhenReady', 'replacePolicy', 'forceReprocess']) {
       if (input[key] !== undefined) request[key] = input[key]
     }
-    return {
+    const record = {
       jobId,
       status: 'queued',
       stage: 'queued',
@@ -343,6 +343,11 @@ export function createYoutubeWorkflowClient(options = {}) {
       sourceType: 'youtube',
       ...(input.videoPriority !== undefined ? { videoPriority: Boolean(input.videoPriority) } : {}),
       request,
+    }
+    const apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : ''
+    return {
+      record,
+      ...(apiKey ? { ephemeral: { apiKey } } : {}),
     }
   }
 
@@ -518,12 +523,12 @@ export function createYoutubeWorkflowClient(options = {}) {
       const cutover = activeWorkflowOwner()
       if (cutover) {
         const operationKey = String(options.idempotencyKey || options.operationKey || createYoutubeWorkflowOperationKey('workflow-job-start'))
-        const record = workflowJobRecord(payload, operationKey)
-        const response = await workflowCommand(cutover, 'job-start', { record }, {
+        const jobPayload = workflowJobRecord(payload, operationKey)
+        const response = await workflowCommand(cutover, 'job-start', jobPayload, {
           ...options,
           idempotencyKey: operationKey,
         })
-        return workflowCommandResult(response, record)
+        return workflowCommandResult(response, jobPayload.record)
       }
       return readJsonResponse(await fetchImpl(apiUrl('/api/jobs'), {
         method: 'POST',
@@ -628,6 +633,8 @@ export function createYoutubeWorkflowClient(options = {}) {
         const current = await workflowJob(cutover, jobId, options.signal)
         const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
         const request = { ...(current.request && typeof current.request === 'object' ? current.request : {}) }
+        delete request.apiKey
+        delete request.api_key
         for (const key of ['model', 'baseUrl', 'videoPriority']) {
           if (input[key] !== undefined) request[key] = input[key]
         }
@@ -640,7 +647,11 @@ export function createYoutubeWorkflowClient(options = {}) {
           retryStage,
           request,
         }
-        const response = await workflowCommand(cutover, 'job-retry', { record }, options)
+        const apiKey = typeof input.apiKey === 'string' ? input.apiKey.trim() : ''
+        const response = await workflowCommand(cutover, 'job-retry', {
+          record,
+          ...(apiKey ? { ephemeral: { apiKey } } : {}),
+        }, options)
         return workflowCommandResult(response, record)
       }
       return readJsonResponse(await fetchImpl(apiUrl(`/api/jobs/${encodeURIComponent(jobId)}/retry`), {

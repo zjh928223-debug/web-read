@@ -4,7 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
 from youtube_workflow.durable_json import DurableJsonRepository
+from youtube_workflow.service import JobManager
 from youtube_workflow.workflow_owner import WorkflowOwner
 from youtube_workflow.windows_owner_receipts import OwnerCommitReceiptStore
 
@@ -144,6 +146,119 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertEqual(retry["outcome"], "committed")
         self.assertEqual(first["receipt"]["receiptId"], retry["receipt"]["receiptId"])
         self.assertEqual(replacements, 1)
+
+    def test_authoritative_job_api_key_is_ephemeral_for_create_retry_and_replay(self):
+        config = WorkflowConfig(state_dir=self.state_dir, output_dir=self.output_dir)
+        class NonStartingJobManager(JobManager):
+            def start_pending_worker(self):
+                return None
+
+        manager = NonStartingJobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+        owner = WorkflowOwner(
+            self.state_dir,
+            self.output_dir,
+            "profile-1",
+            "instance-1",
+            service_manager=manager,
+        )
+        create_key = "ephemeral-create"
+        retry_key = "ephemeral-retry"
+        create_secret = "SECRET-AUTHORITATIVE-CREATE"
+        retry_secret = "SECRET-AUTHORITATIVE-RETRY"
+        create_record = self.job(job_id="client-create", title="ephemeral create")
+        create_record["request"] = {
+            "url": create_record["url"],
+            "geminiMode": "real",
+            "model": "gemini-test",
+            "baseUrl": "https://workflow.example/v1",
+            "forceReprocess": True,
+        }
+        try:
+            first = owner.command(
+                "job-start",
+                payload={"record": create_record, "ephemeral": {"apiKey": create_secret}},
+                expected_revision=0,
+                idempotency_key=create_key,
+                **self.ids(create_key),
+            )
+            self.assertEqual(first["outcome"], "committed")
+            self.assertEqual(first["commitStatus"], "committed")
+            created_job_id = first["payload"]["serviceResult"]["jobId"]
+            self.assertEqual(manager.jobs[created_job_id].request.api_key, create_secret)
+
+            create_replay = owner.command(
+                "job-start",
+                payload={"record": create_record},
+                expected_revision=0,
+                idempotency_key=create_key,
+                **self.ids(f"{create_key}-replay"),
+            )
+            self.assertEqual(create_replay["outcome"], "committed")
+            self.assertTrue(create_replay["payload"]["serviceResult"]["idempotent"])
+            self.assertEqual(len(manager.jobs), 1)
+
+            original = manager.jobs[created_job_id]
+            with original.lock:
+                original.status = "failed"
+                original.stage = "translating"
+                original.manifest = {"checkpoint": {}}
+            with manager.lock:
+                manager._persist_jobs_locked()
+
+            retry_record = {
+                "jobId": created_job_id,
+                "status": "queued",
+                "stage": "queued",
+                "retryOf": created_job_id,
+                "retryStage": "downloading",
+                "request": dict(create_record["request"]),
+            }
+            retry_expected = owner._read_state()["revision"]
+            retried = owner.command(
+                "job-retry",
+                payload={"record": retry_record, "ephemeral": {"apiKey": retry_secret}},
+                expected_revision=retry_expected,
+                idempotency_key=retry_key,
+                **self.ids(retry_key),
+            )
+            self.assertEqual(retried["outcome"], "committed")
+            retried_job_id = retried["payload"]["serviceResult"]["jobId"]
+            self.assertEqual(manager.jobs[retried_job_id].request.api_key, retry_secret)
+
+            retry_replay = owner.command(
+                "job-retry",
+                payload={"record": retry_record},
+                expected_revision=retry_expected,
+                idempotency_key=retry_key,
+                **self.ids(f"{retry_key}-replay"),
+            )
+            self.assertEqual(retry_replay["outcome"], "committed")
+            self.assertTrue(retry_replay["payload"]["serviceResult"]["idempotent"])
+            self.assertEqual(len(manager.jobs), 2)
+
+            query = owner.query("job", payload={}, **self.ids("ephemeral-query"))
+            history = owner.query("history", payload={}, **self.ids("ephemeral-history"))
+            receipt = owner.receipt(idempotency_key=create_key, **self.ids("ephemeral-receipt"))
+            diagnostics = manager.diagnostics_status()
+            diagnostics_package = manager.diagnostics_package()
+            response_text = json.dumps(
+                {"first": first, "createReplay": create_replay, "retried": retried, "retryReplay": retry_replay, "query": query, "history": history, "receipt": receipt, "diagnostics": diagnostics},
+                ensure_ascii=False,
+            )
+            self.assertNotIn(create_secret, response_text)
+            self.assertNotIn(retry_secret, response_text)
+            self.assertNotIn(create_secret.encode("utf-8"), diagnostics_package)
+            self.assertNotIn(retry_secret.encode("utf-8"), diagnostics_package)
+            persisted_text = "\n".join(
+                path.read_text(encoding="utf-8")
+                for root in (self.state_dir, self.output_dir)
+                for path in root.rglob("*")
+                if path.is_file()
+            )
+            self.assertNotIn(create_secret, persisted_text)
+            self.assertNotIn(retry_secret, persisted_text)
+        finally:
+            manager.close()
 
     def test_existing_config_and_reader_index_writes_do_not_look_like_receipt_ahead(self):
         owner = self.make_owner()

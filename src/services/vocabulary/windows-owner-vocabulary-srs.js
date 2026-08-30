@@ -59,15 +59,6 @@ function isAuthoritativeCheckpoint(windowObject) {
     || cutover?.authoritativeDomains?.includes?.(DOMAIN) === true
 }
 
-function ownerNotReadyError() {
-  const error = new Error('The vocabulary-srs Windows owner is authoritative but not ready')
-  error.name = 'WindowsOwnerNotReadyError'
-  error.code = 'owner-not-ready'
-  error.outcome = 'not-ready'
-  error.domain = DOMAIN
-  return error
-}
-
 function clone(value) {
   if (value === undefined) return undefined
   return JSON.parse(JSON.stringify(value))
@@ -631,9 +622,14 @@ export function createWindowsOwnerVocabularySrsIntegration(options = {}) {
 }
 
 export function getWindowsOwnerVocabularySrsIntegration(windowObject = globalThis) {
+  const cutover = windowObject?.__windowsOwnerDomainCutover
   const owner = getAuthoritativeWindowsOwner(DOMAIN, windowObject)
+    || (isAuthoritativeCheckpoint(windowObject)
+      && typeof cutover?.query === 'function'
+      && typeof cutover?.command === 'function'
+      ? cutover
+      : null)
   if (!owner) {
-    if (isAuthoritativeCheckpoint(windowObject)) throw ownerNotReadyError()
     return null
   }
   if (windowObject && typeof windowObject === 'object' && integrationCache.has(windowObject)) {

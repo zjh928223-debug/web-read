@@ -1006,12 +1006,9 @@ async function runBrowserCoreJourney(origin) {
         } catch (error) {
           firstLoadCommandRejected = error?.code === 'owner-not-ready'
         }
-        let firstLoadIntegrationRejected = false
-        try {
-          getWindowsOwnerVocabularySrsIntegration(window)
-        } catch (error) {
-          firstLoadIntegrationRejected = error?.code === 'owner-not-ready'
-        }
+        const firstLoadIntegration = getWindowsOwnerVocabularySrsIntegration(window)
+        const firstLoadIntegrationRetained = firstLoadIntegration?.owner === firstLoadComposition.cutover
+          && firstLoadIntegration.owner.ownerReady === false
         let firstLoadWriterBlocked = false
         try {
           await preCutoverPendingRepository.saveStore({ schemaVersion: 1, groups: {} })
@@ -1020,7 +1017,7 @@ async function runBrowserCoreJourney(origin) {
         }
         if (!firstLoadQueryRejected
           || !firstLoadCommandRejected
-          || !firstLoadIntegrationRejected
+          || !firstLoadIntegrationRetained
           || !firstLoadWriterBlocked
           || indexedDbWrites !== 0) {
           throw new Error('first-load degraded persisted authority did not fail closed before IndexedDB write')
@@ -1044,7 +1041,6 @@ async function runBrowserCoreJourney(origin) {
           || ordinaryPreCutoverComposition.authoritativeDomains.length) {
           throw new Error('ordinary degraded pre-cutover health was incorrectly frozen')
         }
-
         let vocabularyAuthoritative = false
         const writerFrozenError = (operation) => {
           const error = new Error(`The vocabulary-srs browser writer is frozen for ${operation}`)
@@ -1100,13 +1096,10 @@ async function runBrowserCoreJourney(origin) {
           || unavailableRefresh.status !== 'not-ready') {
           throw new Error('authoritative owner health loss did not retain the freeze guard fail-closed')
         }
-        let unavailableRejected = false
-        try {
-          getWindowsOwnerVocabularySrsIntegration(unavailableWindow)
-        } catch (error) {
-          unavailableRejected = error?.code === 'owner-not-ready'
-        }
-        if (!unavailableRejected) throw new Error('authoritative-but-unavailable reload fell back to IndexedDB')
+        const unavailableIntegration = getWindowsOwnerVocabularySrsIntegration(unavailableWindow)
+        const unavailableRetained = unavailableIntegration?.owner === unavailableCutover
+          && unavailableIntegration.owner.ownerReady === false
+        if (!unavailableRetained) throw new Error('authoritative-but-unavailable reload fell back to IndexedDB')
 
         const vocabulary = createVocabularyService({
           ownerIntegration: integration,
@@ -1245,10 +1238,10 @@ async function runBrowserCoreJourney(origin) {
           addedWordId: added.id,
           failedClosed,
           existingWriterBlocked,
-          unavailableRejected,
+          unavailableRetained,
           firstLoadQueryRejected,
           firstLoadCommandRejected,
-          firstLoadIntegrationRejected,
+          firstLoadIntegrationRetained,
           firstLoadWriterBlocked,
           ordinaryPreCutoverUnfrozen: ordinaryPreCutoverComposition.cutover === null,
         }
@@ -1262,6 +1255,94 @@ async function runBrowserCoreJourney(origin) {
   } finally {
     await context.close()
     await browser.close()
+  }
+}
+
+async function runAppOwnerRecoveryJourney(origin) {
+  const browser = await chromium.launch({ headless: true })
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const pageErrors = []
+  page.on('pageerror', (error) => pageErrors.push(error?.message || String(error)))
+  try {
+    await page.goto(origin, { waitUntil: 'domcontentloaded' })
+    const result = await page.evaluate(async () => {
+      document.body.innerHTML = [
+        '<div id="youtube-reader-controls-root"></div>',
+        '<div id="srs-review-entry-root"></div>',
+        '<div id="vue-root"></div>',
+      ].join('')
+
+      let hostReady = false
+      function ownerNotReadyError(operation) {
+        const error = new Error(`owner is not ready for ${operation}`)
+        error.code = 'owner-not-ready'
+        return error
+      }
+      const cutover = {
+        get ownerReady() { return hostReady },
+        isAuthoritative(domain) { return domain === 'vocabulary-srs' },
+        get authoritativeDomains() { return ['vocabulary-srs'] },
+        get frozenDomains() { return [] },
+        assertBrowserWriterAllowed() {},
+        async query() {
+          if (!hostReady) throw ownerNotReadyError('query')
+          return {
+            outcome: 'read',
+            revision: 0,
+            payload: { revision: 0, records: {} },
+          }
+        },
+        async command() {
+          if (!hostReady) throw ownerNotReadyError('command')
+          return {
+            outcome: 'committed',
+            commitStatus: 'committed',
+            revision: 1,
+            payload: { records: {} },
+          }
+        },
+      }
+      window.__windowsOwnerDomainCutover = cutover
+
+      const { default: App } = await import('/src/App.vue')
+      const dependencyUrl = (dependency) => performance.getEntriesByType('resource')
+        .map((entry) => entry.name)
+        .find((url) => {
+          try { return new URL(url).pathname.endsWith(`/node_modules/.vite/deps/${dependency}.js`) } catch (_error) { return false }
+        }) || `/node_modules/.vite/deps/${dependency}.js`
+      const { createApp } = await import(dependencyUrl('vue'))
+      const { createPinia } = await import(dependencyUrl('pinia'))
+      const app = createApp(App)
+      app.use(createPinia())
+      app.mount('#vue-root')
+
+      const hasNotReadyStatus = () => Boolean(
+        document.querySelector('[data-vocabulary-owner-status="not-ready"]'),
+      )
+      async function waitFor(predicate, timeoutMs = 2000) {
+        const deadline = Date.now() + timeoutMs
+        while (!predicate()) {
+          if (Date.now() >= deadline) throw new Error('timed out waiting for App owner recovery')
+          await new Promise((resolve) => setTimeout(resolve, 20))
+        }
+      }
+
+      await waitFor(hasNotReadyStatus)
+      const initialNotReady = hasNotReadyStatus()
+      hostReady = true
+      await waitFor(() => !hasNotReadyStatus())
+      const recovered = !hasNotReadyStatus()
+      const integration = (await import('/src/services/vocabulary/windows-owner-vocabulary-srs.js'))
+        .getWindowsOwnerVocabularySrsIntegration(window)
+      const ownerReadyAfterRecovery = integration?.owner?.ownerReady === true
+      app.unmount()
+      return { initialNotReady, recovered, ownerReadyAfterRecovery }
+    })
+    return { ...result, pageErrors }
+  } finally {
+    await context.close().catch(() => {})
+    await browser.close().catch(() => {})
   }
 }
 
@@ -1378,14 +1459,20 @@ try {
   assert.equal(browserResult.recordedRating, 'good')
   assert.equal(browserResult.failedClosed, true)
   assert.equal(browserResult.existingWriterBlocked, true)
-  assert.equal(browserResult.unavailableRejected, true)
+  assert.equal(browserResult.unavailableRetained, true)
   assert.equal(browserResult.indexedDbWrites, 0, 'authoritative browser vocabulary/SRS path must not write IndexedDB')
   assert.equal(browserResult.firstLoadQueryRejected, true)
   assert.equal(browserResult.firstLoadCommandRejected, true)
-  assert.equal(browserResult.firstLoadIntegrationRejected, true)
+  assert.equal(browserResult.firstLoadIntegrationRetained, true)
   assert.equal(browserResult.firstLoadWriterBlocked, true)
   assert.equal(browserResult.ordinaryPreCutoverUnfrozen, true)
   assert.ok(browserResult.queuedLearningUnitId)
+
+  const appRecoveryResult = await runAppOwnerRecoveryJourney(browserServer.origin)
+  assert.equal(appRecoveryResult.initialNotReady, true, 'App must retain a visible not-ready state while Host is unavailable')
+  assert.equal(appRecoveryResult.recovered, true, 'App must recover its owner-backed vocabulary integration after Host readiness')
+  assert.equal(appRecoveryResult.ownerReadyAfterRecovery, true, 'App recovery must observe the ready Host owner')
+  assert.deepEqual(appRecoveryResult.pageErrors, [], 'App owner recovery must not throw during mount or readiness transition')
 
   const finalResponse = await ownerClient.query({ domain: DOMAIN, operation: 'snapshot', payload: {} })
   assert.equal(finalResponse.outcome, 'read')

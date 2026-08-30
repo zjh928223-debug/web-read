@@ -1,5 +1,8 @@
 <template>
   <div>
+    <div v-if="vocabularySrsNotReady" class="vocabulary-owner-not-ready" data-vocabulary-owner-status="not-ready" role="status" aria-live="polite">
+      本机词汇/SRS Host 暂不可用，学习记录暂不保存；恢复后会自动重试。
+    </div>
     <ToastMessage />
     <YouTubeWorkflowPanel />
     <VideoPlayerFloat />
@@ -124,6 +127,9 @@ const passagePreviewPreloaded = ref({ sentences: {}, translations: {} })
 const isPassagePreviewCheckOpen = ref(false)
 const passagePreviewCheckItems = ref([])
 const vocabularySrsIntegration = getWindowsOwnerVocabularySrsIntegration()
+const vocabularySrsNotReady = ref(Boolean(
+  vocabularySrsIntegration?.owner && vocabularySrsIntegration.owner.ownerReady !== true,
+))
 const vocabularyService = createVocabularyService({
   acquisitionEnabled: true,
   ownerIntegration: vocabularySrsIntegration,
@@ -147,10 +153,39 @@ const srsReviewUiService = createSrsReviewSourceSelector({
 const dictionaryClient = createOptionalLocalDictionaryClient()
 let legacyMigrationTimer = null
 let legacyMigrationStopped = false
+let vocabularyOwnerRecoveryTimer = null
 let reviewWarmupTimer = null
 let articleReconciliationTimer = null
 let articleReconciliationStopped = false
 let articleReconciledSinceRefresh = false
+
+function refreshVocabularyOwnerReadiness() {
+  if (!vocabularySrsIntegration?.owner) return false
+  try {
+    const current = getWindowsOwnerVocabularySrsIntegration(window)
+    const owner = current?.owner || vocabularySrsIntegration.owner
+    const wasNotReady = vocabularySrsNotReady.value
+    vocabularySrsNotReady.value = owner.ownerReady !== true
+    if (wasNotReady && !vocabularySrsNotReady.value) {
+      void srsReviewV2Service.warmReviewData?.().catch(() => {})
+    }
+    return !vocabularySrsNotReady.value
+  } catch (_error) {
+    vocabularySrsNotReady.value = true
+    return false
+  }
+}
+
+function startVocabularyOwnerRecovery() {
+  if (!vocabularySrsNotReady.value || !vocabularySrsIntegration?.owner) return
+  refreshVocabularyOwnerReadiness()
+  vocabularyOwnerRecoveryTimer = window.setInterval(() => {
+    if (refreshVocabularyOwnerReadiness() && vocabularyOwnerRecoveryTimer !== null) {
+      window.clearInterval(vocabularyOwnerRecoveryTimer)
+      vocabularyOwnerRecoveryTimer = null
+    }
+  }, 250)
+}
 
 function openSrsReview() {
   if (articleReconciledSinceRefresh) {
@@ -243,6 +278,7 @@ async function reconcileArticleLearningInBackground() {
 onMounted(() => {
   console.log('[vue] Phase 9 — Vue components active')
   document.addEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
+  startVocabularyOwnerRecovery()
   if (document.hidden) scheduleLegacyVocabularyMigration(1000)
   reviewWarmupTimer = window.setTimeout(() => {
     reviewWarmupTimer = null
@@ -256,6 +292,7 @@ onBeforeUnmount(() => {
   articleReconciliationStopped = true
   document.removeEventListener('visibilitychange', handleLegacyMigrationVisibilityChange)
   if (legacyMigrationTimer !== null) window.clearTimeout(legacyMigrationTimer)
+  if (vocabularyOwnerRecoveryTimer !== null) window.clearInterval(vocabularyOwnerRecoveryTimer)
   if (reviewWarmupTimer !== null) window.clearTimeout(reviewWarmupTimer)
   if (articleReconciliationTimer !== null) window.clearTimeout(articleReconciliationTimer)
 })

@@ -116,6 +116,117 @@ async function main() {
   assert.ok(ownerCommands.every((request) => typeof request.idempotencyKey === 'string' && request.idempotencyKey.startsWith('marks-')));
   assert.equal(calls.filter((call) => call.url.includes('/api/reader/activity') || call.url.includes('/reader-marks')).length, 3);
 
+  const workflowCommands = [];
+  let workflowRevision = 0;
+  const workflowCommandReceipts = new Map();
+  const workflowRevisionToken = (revision) => `w1:j${revision}:${'a'.repeat(16)}:h0:${'b'.repeat(16)}:c${'c'.repeat(16)}:i${'d'.repeat(16)}`;
+  const workflowJob = {
+    jobId: 'workflow-real-retry',
+    status: 'failed',
+    stage: 'translating',
+    request: {
+      url: 'https://youtube.example/real-retry',
+      geminiMode: 'real',
+      model: 'gemini-test',
+      baseUrl: 'https://workflow.example/v1',
+      videoPriority: true,
+      apiKey: 'SERVER-PERSISTED-KEY-MUST-NOT-REENTER-RETRY',
+    },
+  };
+  const safeWorkflowRequest = { ...workflowJob.request };
+  delete safeWorkflowRequest.apiKey;
+  globalThis.__windowsOwnerDomainCutover = {
+    isAuthoritative(domain) { return domain === 'workflow'; },
+    async query(request) {
+      return {
+        outcome: 'read',
+        revision: workflowRevisionToken(workflowRevision),
+        payload: request.payload?.jobId
+          ? { job: workflowJob, records: [workflowJob] }
+          : { records: [workflowJob] },
+      };
+    },
+    async command(request) {
+      const capturedRequest = structuredClone(request);
+      workflowCommands.push(capturedRequest);
+      const receiptKey = `${request.operation}:${request.idempotencyKey}`;
+      const existing = workflowCommandReceipts.get(receiptKey);
+      if (existing) {
+        return {
+          ...existing,
+          payload: {
+            ...existing.payload,
+            serviceResult: { ...existing.payload.serviceResult, idempotent: true },
+          },
+        };
+      }
+      workflowRevision += 1;
+      const jobId = request.operation === 'job-start' ? 'workflow-real-created' : 'workflow-real-retried';
+      const response = {
+        outcome: 'committed',
+        commitStatus: 'committed',
+        revision: workflowRevisionToken(workflowRevision),
+        payload: {
+          serviceResult: {
+            jobId,
+            status: 'queued',
+            stage: 'queued',
+            request: safeWorkflowRequest,
+          },
+        },
+      };
+      workflowCommandReceipts.set(receiptKey, response);
+      return response;
+    },
+  };
+  try {
+    const createSecret = 'SECRET-WORKFLOW-CREATE-CLIENT';
+    const createdWorkflowJob = await client.createJob(
+      {
+        url: 'https://youtube.example/real-create',
+        geminiMode: 'real',
+        model: 'gemini-test',
+        baseUrl: 'https://workflow.example/v1',
+        apiKey: createSecret,
+      },
+      { expectedRevision: 0, idempotencyKey: 'workflow-client-create-secret' },
+    );
+    assert.equal(createdWorkflowJob.jobId, 'workflow-real-created');
+    assert.equal(workflowCommands[0].payload.record.request.apiKey, undefined);
+    assert.deepEqual(workflowCommands[0].payload.ephemeral, { apiKey: createSecret });
+
+    const createdReplay = await client.createJob(
+      {
+        url: 'https://youtube.example/real-create',
+        geminiMode: 'real',
+      },
+      { expectedRevision: workflowRevisionToken(1), idempotencyKey: 'workflow-client-create-secret' },
+    );
+    assert.equal(createdReplay.jobId, 'workflow-real-created');
+    assert.equal(workflowCommands[1].payload.ephemeral, undefined);
+
+    const retrySecret = 'SECRET-WORKFLOW-RETRY-CLIENT';
+    const retriedWorkflowJob = await client.retryJob(
+      'workflow-real-retry',
+      { stage: 'translating', apiKey: retrySecret },
+      { expectedRevision: 1, idempotencyKey: 'workflow-client-retry-secret' },
+    );
+    assert.equal(retriedWorkflowJob.jobId, 'workflow-real-retried');
+    assert.equal(workflowCommands[2].payload.record.request.apiKey, undefined);
+    assert.equal(workflowCommands[2].payload.record.request.api_key, undefined);
+    assert.deepEqual(workflowCommands[2].payload.ephemeral, { apiKey: retrySecret });
+
+    const retriedReplay = await client.retryJob(
+      'workflow-real-retry',
+      { stage: 'translating' },
+      { expectedRevision: workflowRevisionToken(2), idempotencyKey: 'workflow-client-retry-secret' },
+    );
+    assert.equal(retriedReplay.jobId, 'workflow-real-retried');
+    assert.equal(workflowCommands[3].payload.ephemeral, undefined);
+  } finally {
+    delete globalThis.__windowsOwnerDomainCutover;
+  }
+
   const failureCommands = [];
   let failureMode = 'conflict';
   globalThis.__windowsOwnerDomainCutover = {
