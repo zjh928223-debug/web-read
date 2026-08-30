@@ -1,8 +1,26 @@
-# Read-Web Current Project Status
+# Read-Web Optimization Current Project Status
 
-Last verified: 2026-08-16
+Last verified: 2026-08-30
 
-本文档只描述 `E:\read-web-next` 的当前事实。日常学习版仍在 `E:\read-web`；两者不得混用进程、端口或写数据目录。
+本文档描述 `E:\read-web-next-optimization` 的当前事实。`E:\read-web-next` 是受保护的日常 reader，`E:\read-web` 是历史只读参考；两者不得被本工作区读取、构建、启动或写入。
+
+## Optimization owner milestone (2026-08-30)
+
+六域 C2 已在临时 optimization profile 中按 `Reader Session → marks-activity → passage-preview →
+annotation → vocabulary-srs → workflow` 完成真实 Host cutover journey。每域都经过只读 inventory/dry-run、
+持久 freeze、freeze 后 final backup/checksum、唯一 import、verify、per-domain checkpoint、typed smoke 和
+Local App Host 重开读取；已打开 browser guard 能在 final backup 前观察 freeze。成功 checkpoint 后旧的
+browser canonical writer 由 domain guard 阻断，typed Host API 是 durable mutation path；未有 checkpoint 的
+普通 profile 仍保持 pre-cutover/not-ready。
+
+生产入口是显式 optimization-only 的 `runWindowsOwnerProductionCutover`，只使用隔离 profile，不自动迁移
+日常数据，不改变外部 shortcut，也不开放非-loopback transport。完整媒体仍只传 identity/reference 与授权
+Range URL，`SeekPlayerDB` 仍为 v1/files/id，`reader-runtime.js` 与 `session-init.js` 仍为薄入口。
+
+已通过的核心证据包括 `npm run verify:windows-owner-c2`、C1/C2b/C2c 与六域 owner focused gates、
+`npm run verify:windows-owner-focused-boundaries`、`npm run build`、`npm run verify:fast`、test inventory
+和 OpenSpec strict validation。`npm run verify:full` 在既有 Python dependency-health 阶段因安装环境中同时
+存在多个 `networkx` 与 `torchaudio` 版本而停止，未把该阻断后的阶段当作通过。
 
 ## 1. 产品与运行形态
 

@@ -9,6 +9,11 @@ async function importProjectApis(repoRoot) {
   const tempDir = fs.mkdtempSync(path.join(tempRoot, `read-web-srs-review-${process.pid}-`))
   try {
     const vocabularyDir = path.join(repoRoot, 'src', 'services', 'vocabulary')
+    const ownerDomainAdapterSource = fs.readFileSync(
+      path.join(repoRoot, 'src', 'services', 'windows-owner-domain-adapter.js'),
+      'utf8',
+    )
+    const ownerDomainAdapterUrl = `data:text/javascript;base64,${Buffer.from(ownerDomainAdapterSource).toString('base64')}`
     const ieltsPoolConfig = JSON.parse(fs.readFileSync(
       path.join(repoRoot, 'config', 'ielts-learning-pools.json'),
       'utf8',
@@ -24,6 +29,10 @@ async function importProjectApis(repoRoot) {
         path.join(tempDir, `vocab-${entry.name.replace(/\.js$/, '.mjs')}`),
         (source) => source
           .replace(/from\s+(['"])\.\/([^'"]+)\.js\1/g, "from './vocab-$2.mjs'")
+          .replace(
+            /from\s+['"]\.\.\/windows-owner-domain-adapter\.js['"]/g,
+            `from ${JSON.stringify(ownerDomainAdapterUrl)}`,
+          )
           .replace(
             /from\s+['"]\.\.\/\.\.\/\.\.\/config\/ielts-learning-pools\.json['"]/,
             "from './ielts-learning-pools-config.mjs'",

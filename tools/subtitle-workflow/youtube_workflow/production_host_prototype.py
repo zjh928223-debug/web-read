@@ -72,8 +72,8 @@ OWNER_MIGRATION_OPERATIONS = {
         "command": frozenset({"prepare", "commit", "restore"}),
     },
     "marks-activity": {
-        "query": frozenset({"marks"}),
-        "command": frozenset({"marks-commit"}),
+        "query": frozenset({"marks", "activity", "revision"}),
+        "command": frozenset({"marks-commit", "activity-append"}),
         "receipt-query": frozenset({"receipt-query"}),
     },
     "passage-preview": {

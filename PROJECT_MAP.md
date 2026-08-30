@@ -1,8 +1,32 @@
-# Read-Web Current Project Map
+# Read-Web Optimization Project Map
 
-Last verified: 2026-08-17
+Last verified: 2026-08-30
 
-本地图描述隔离工作区 `E:\read-web-next`；日常版 `E:\read-web` 不属于本轮修改范围。
+本地图描述隔离工作区 `E:\read-web-next-optimization`；`E:\read-web-next` 与 `E:\read-web` 均不属于本轮修改范围。
+
+## Windows owner cutover
+
+```text
+scripts/lib/windows-owner-cutover.mjs
+  -> explicit optimization-only production entry
+  -> existing B backup/migration controller and read-only legacy bridge
+  -> real Python Local App Host owners + typed owner client
+  -> per-domain freeze marker/checkpoint/rollback
+
+src/services/windows-owner-domain-cutover.js
+  -> health/readiness and per-domain browser guard
+  -> typed Host query/command after checkpoint
+  -> legacy canonical writes blocked for switched domains
+```
+
+The six-domain order is `reader-session → marks-activity → passage-preview → annotation → vocabulary-srs →
+workflow`. The cutover entry requires an explicit optimization opt-in and an isolated profile; a normal profile
+without a persisted domain checkpoint remains pre-cutover/not-ready. The old browser storage remains available
+only for legacy read/inventory/rollback boundaries after a domain switches, with no long-lived dual write.
+
+The reproducible journey is `npm run verify:windows-owner-c2`; C1, C2b and C2c add the Reader/media,
+passage/annotation and vocabulary/workflow browser and owner behavior checks. Host reopen queries read the
+profile-scoped canonical repositories, not the browser backup composition.
 
 ## Runtime entry
 

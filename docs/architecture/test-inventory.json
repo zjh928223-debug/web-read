@@ -9,8 +9,8 @@
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 274,
-  "executableScriptCount": 293,
+  "packageScriptCount": 275,
+  "executableScriptCount": 294,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",

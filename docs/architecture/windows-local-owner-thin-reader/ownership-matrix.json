@@ -7,7 +7,15 @@
     "currentOwner": "The component that currently owns the durable write boundary, not the future API authority",
     "futureOwnerFacade": "Stable semantic facade name only; no implementation or route is claimed by this milestone",
     "allReadWriteCallers": "The caller lists cover current source-backed durable reads/writes. UI-only preference and transient ECDICT readers are separately classified in the consumer map",
-    "migrationWave": "The first wave in which a domain may be cut over; later tasks must add independent backup, canary, drain, checkpoint, rollback, and writer-zero evidence"
+    "migrationWave": "The first wave in which a domain may be cut over; each domain uses its own backup, checkpoint, rollback and writer-guard evidence without canary, drain or global coordination"
+  },
+  "cutoverVerification": {
+    "status": "isolated-optimization-profile-validated",
+    "command": "npm run verify:windows-owner-c2",
+    "order": ["reader-session", "marks-activity", "passage-preview", "annotation", "vocabulary-srs", "workflow"],
+    "defaultProfile": "The per-domain hostSeam authority booleans below describe an uncheckpointed/default profile; an explicit checkpoint enables the corresponding Host mutation path",
+    "writerPolicy": "Switched-domain browser canonical writers are blocked by the existing guard; compatibility readers remain read-only",
+    "dailyProfileMigration": false
   },
   "domains": [
     {
@@ -254,5 +262,5 @@
       "milestoneStatus": "inventory plus isolated Host seam; current Python service remains owner and no migration"
     }
   ],
-  "artifactChecksum": "sha256:eb2e2e434508161ff0897d7da0419e6f81864d7633027c586988c7209a46d6b2"
+  "artifactChecksum": "sha256:4e9b489e0efee93a11e09bd694c0f8469257c856f512d4c138b1a23fcb62232a"
 }

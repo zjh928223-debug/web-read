@@ -16,11 +16,11 @@
 ## C. 先 Reader Session，再逐域切换 writer
 
 - [x] C1 将 Reader Session loader 与 media 使用接到已完成 owner seam，验证正常启动、材料切换、播放/seek、失效媒体 rebind、Host restart/reopen 和旧 session 保留；继续保持薄入口、script order 和 no-copy。
-- [ ] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；切换后 compatibility path 只读，不保留长期双写。验证使用显式 optimization-only production cutover 入口、真实 Local App Host owner handlers、逐域 freeze guard、typed Host smoke 和 Host reopen；不自动迁移日常 profile。
+- [x] C2 按 `Reader Session → marks-activity → passage-preview → annotation → vocabulary-srs → workflow` 逐域执行 `read-only inventory → dry-run/容量与格式检查 → freeze old writer → final backup/checksum → one-time final copy/import → verify → switch Host authoritative writer → smoke check → rollback if needed`；freeze 前只允许只读 inventory、预备 backup 或 dry-run，正式切换用的 final backup/checksum 和唯一正式 copy/import 必须在 freeze 后取得/执行；切换后 compatibility path 只读，不保留长期双写。验证使用显式 optimization-only production cutover 入口、真实 Local App Host owner handlers、逐域 freeze guard、typed Host smoke 和 Host reopen；不自动迁移日常 profile。六域 journey、marks/passage/annotation/vocabulary/workflow 的真实 typed consumer 与 focused checks 均通过。
 
 ## D. 核心验证、旧 writer 收敛与文档
 
-- [ ] D 运行正常 build/启动、核心 Reader/workflow journey、单用户 retry/CAS、backup/restore/reopen、Range/no-copy 和直接失败保留旧值检查；通过后删除或隔离已切换 domain 的 direct browser writer，更新 `CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md`、owner/API contract、backup/recovery 说明和本 change 实际状态；不执行外部 production shortcut。
+- [x] D 运行正常 build/启动、核心 Reader/workflow journey、单用户 retry/CAS、backup/restore/reopen、Range/no-copy 和直接失败保留旧值检查；已切换 domain 的 direct browser writer 由 per-domain guard 隔离为只读/不可写，typed Host consumer 成为切换后的 mutation path；已更新 `CURRENT_PROJECT_STATUS.md`、`PROJECT_MAP.md`、owner/API contract、backup/recovery 说明和本 change 实际状态；不执行外部 production shortcut。full 的既有 dependency-health 阻断单独记录，不影响本 change 的 focused 证据。
 
 ## 明确移出未来范围（不是已完成任务）
 

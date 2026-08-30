@@ -866,6 +866,7 @@ function marksRecordId(scope, kind) {
 }
 
 function marksEnvelope(scope, kind, payload, revision) {
+  if (payload?.found === false || payload?.empty === true) return null
   const isMarks = kind === 'marks'
   const value = isMarks ? payload?.marks : kind === 'activity' ? payload?.activity : payload?.journal
   if (!value || typeof value !== 'object') return null
@@ -883,7 +884,6 @@ function marksEnvelope(scope, kind, payload, revision) {
     revision: revision ?? 0,
     updatedAt,
     payload: envelopePayload,
-    ...(isMarks ? { marks: envelopePayload.marks } : {}),
   }
 }
 
@@ -908,7 +908,10 @@ function marksSnapshotForScope(scope, responses) {
   }))
   return {
     records,
-    revision: Math.max(marksRevision, activityRevision, revisionPayload.journalRevision ?? 0),
+    // The marks/activity owner uses marks/activity revisions for its CAS
+    // authority.  The journal revision is receipt evidence only and must not
+    // make an otherwise unchanged data snapshot appear newer.
+    revision: Math.max(marksRevision, activityRevision),
   }
 }
 

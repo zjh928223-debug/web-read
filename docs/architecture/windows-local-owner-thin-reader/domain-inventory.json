@@ -32,6 +32,15 @@
     "backupProjection": "Application backup independently computes record, domain, manifest, and artifact SHA-256 checksums",
     "annotationBundleCompatibility": "Current annotation bundle envelope also carries its legacy FNV-1a 32-bit checksum; backup projection uses SHA-256"
   },
+  "cutoverVerification": {
+    "status": "isolated-optimization-profile-validated",
+    "command": "npm run verify:windows-owner-c2",
+    "order": ["reader-session", "marks-activity", "passage-preview", "annotation", "vocabulary-srs", "workflow"],
+    "evidence": "real Local App Host owner handlers, freeze marker observation, final backup/import, verify, checkpoint, typed smoke and reopen query",
+    "records": "representative multi-record passage/annotation/workflow data plus the existing reader, marks and vocabulary owner records; no unclaimed records are silently dropped",
+    "media": "identity/reference metadata and authorized Range URLs only; complete media bytes are excluded",
+    "profilePolicy": "temporary optimization profile only; no daily profile migration"
+  },
   "domains": [
     {
       "domain": "reader-session",
@@ -422,5 +431,5 @@
       "sourceEvidence": ["src/composables/youtube-workflow-client.js:101-220", "tools/subtitle-workflow/youtube_workflow/history.py:329-405", "tools/subtitle-workflow/youtube_workflow/application_backup.py:298-520", "tools/subtitle-workflow/youtube_workflow/workflow_owner.py:1-1229"]
     }
   ],
-  "artifactChecksum": "sha256:6723251e28235808a43fe0b884550535d323503aeff27e88ef521461a569af4f"
+  "artifactChecksum": "sha256:e5bf9355be7f47ab3dd94abea0f95dca0ff923a2ca71f28b52c5ee8d869eb7c2"
 }

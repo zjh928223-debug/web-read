@@ -19,6 +19,16 @@
     "browserBridgeIsNeverCanonical": true,
     "hostRepositoryIsRequired": true
   },
+  "cutoverVerification": {
+    "status": "isolated-optimization-profile-validated",
+    "command": "npm run verify:windows-owner-c2",
+    "order": ["reader-session", "marks-activity", "passage-preview", "annotation", "vocabulary-srs", "workflow"],
+    "entry": "scripts/lib/windows-owner-cutover.mjs::runWindowsOwnerProductionCutover",
+    "perDomainCheckpoint": true,
+    "ordinaryDefault": "pre-cutover/not-ready until a persisted domain checkpoint exists",
+    "dailyProfileMigration": false,
+    "browserWriterAfterCheckpoint": "blocked by domain guard; typed Host mutation only"
+  },
   "registrations": [
     {
       "domain": "reader-session",
@@ -433,5 +443,5 @@
       }
     }
   ],
-  "artifactChecksum": "sha256:69410941de30dbb5fca253649acea9ba4f1f076f63cd4c68e8aca7e3ac9356b1"
+  "artifactChecksum": "sha256:b176a4efaabbfab4020f642b41b634b91a07093b297e187a94731f45a91afe46"
 }

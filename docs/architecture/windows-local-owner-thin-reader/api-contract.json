@@ -722,5 +722,16 @@
     "nextAllowedTask": "4.2+ domain owner facades",
     "authorityReady": false
   },
-  "artifactChecksum": "sha256:5f6557ef4e434e1c0f391334a9b596b53645473774de321f4553bf7395217e85"
+  "cutoverVerification": {
+    "status": "isolated-optimization-profile-validated",
+    "runner": "scripts/lib/windows-owner-cutover.mjs::runWindowsOwnerProductionCutover",
+    "command": "npm run verify:windows-owner-c2",
+    "order": ["reader-session", "marks-activity", "passage-preview", "annotation", "vocabulary-srs", "workflow"],
+    "sequence": "read-only inventory → dry-run → freeze → freeze-after final backup/checksum → one-time import → verify → per-domain checkpoint/switch → typed smoke → Host reopen",
+    "authorityRule": "A domain accepts ordinary durable commands only after its persisted per-domain checkpoint; an uncheckpointed/default profile remains pre-cutover/not-ready",
+    "writerRule": "After a checkpoint the existing browser canonical writer is blocked by the per-domain guard and the typed Host client is the mutation path; no long-lived dual write",
+    "dailyProfileMigration": false,
+    "mediaPolicy": "identity/reference metadata and authorized Range URL only"
+  },
+  "artifactChecksum": "sha256:a0d0a6e4543606686f3f082b17c71c89db8d6474b8f30443fb33b43e8cf51729"
 }

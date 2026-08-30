@@ -551,7 +551,7 @@ pre-cutover preparation is complete, not that authority or smoke has passed. The
 representative six-domain inventory, source selection, dry-run, freeze ordering, final manifest, import/retry,
 restore, rollback, no-copy, failure retention, and reopen behavior.
 
-## Task C2 isolated production cutover
+## Task C2 isolated production cutover (completed)
 
 `scripts/lib/windows-owner-cutover.mjs` now exposes the explicit optimization-only
 `runWindowsOwnerProductionCutover(...)` entry. It connects the existing backup/migration controller to the
@@ -565,5 +565,22 @@ freeze-time final backup. The controller then performs the single import, verify
 query/mutation smoke in sequence; a failed domain stops later domains and leaves the domain frozen or rolls back
 using its existing B evidence. After a successful checkpoint, the compatibility writer is read-only and the
 normal typed client can read the Host owner again after a Local App Host reopen. The C2 evidence is the isolated
-`npm run verify:windows-owner-c2` journey; it uses empty workflow state and representative records in the other
-domains, and never migrates a daily profile or copies complete media.
+`npm run verify:windows-owner-c2` journey, supplemented by the passage/annotation browser journey and the
+vocabulary/workflow C2c journeys. It exercises the fixed six-domain order with representative records, real
+Local App Host handlers, per-domain freeze observation, typed smoke, CAS/idempotency and reopen checks; it never
+migrates a daily profile or copies complete media.
+
+## Task D closeout
+
+The optimization workspace now has a completed isolated C2 cutover path for all six domains. A successful
+per-domain checkpoint makes the Host authoritative and blocks the old canonical browser writer through the
+existing domain guard; normal startup still keeps an uncheckpointed/pre-cutover domain not-ready, and the
+explicit optimization entry never auto-migrates a daily profile. Legacy readers needed for inventory or rollback
+remain read-only. `SeekPlayerDB` version 1 / `files` / `id`, the thin runtime entries, loopback-only transport,
+and identity/reference-only media handling remain unchanged.
+
+The closeout evidence is `npm run verify:windows-owner-c2`, the domain owner/C2c and C1 focused gates,
+`npm run verify:windows-owner-focused-boundaries`, `npm run build`, `npm run verify:fast`, and strict OpenSpec
+validation. `npm run verify:full` reaches the existing Python dependency-health gate and is blocked by duplicate
+installed `networkx` and `torchaudio` distributions before its remaining browser/restore stages; no authority or
+readiness claim is based on that blocked run.

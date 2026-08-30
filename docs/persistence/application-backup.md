@@ -227,3 +227,18 @@ read-only, preserves `SeekPlayerDB` version 1 / `files` / `id`, carries media
 identity/reference metadata instead of media bytes, and records rather than
 performs the future authority switch. Browser writer cutover remains a later
 task.
+
+## Task C2: isolated per-domain cutover evidence
+
+The explicit optimization-only `runWindowsOwnerProductionCutover` entry now uses the existing backup adapters,
+legacy read-only bridge, Python Host owners and typed Host client for the fixed six-domain order. For each domain
+it observes the persisted freeze marker in an already-open browser guard before taking the final backup, imports
+once, verifies the Host value, writes the per-domain checkpoint, runs a small typed query/mutation smoke, and
+reopens the Local App Host to read the committed value. A failed step stops later domains and leaves the domain
+frozen or uses the existing B rollback evidence; it does not start long-lived dual writes.
+
+This evidence is isolated to temporary optimization profiles. The normal uncheckpointed profile remains
+pre-cutover/not-ready, and the entry does not migrate daily data or change the external production shortcut.
+After a checkpoint, the old browser canonical writer is blocked by the existing domain guard and compatibility
+reads remain available only for read/inventory/rollback purposes. Media continues to cross the boundary as
+identity/reference metadata and authorized Range URLs, never as a complete Blob or byte payload.
