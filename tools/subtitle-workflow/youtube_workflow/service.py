@@ -1132,15 +1132,27 @@ class JobManager:
             return
         if payload.get("proxyUrl") is not None:
             self.config.proxy_url = str(payload.get("proxyUrl") or "").strip()
-        if payload.get("cookiesPath"):
-            self.config.cookies_path = Path(str(payload.get("cookiesPath")))
-        if payload.get("outputDir"):
-            self.config.output_dir = Path(str(payload.get("outputDir")))
-            self.store.output_dir = self.config.output_dir
-        if payload.get("ytDlpPath"):
-            self.config.yt_dlp_path = Path(str(payload.get("ytDlpPath")))
-        if payload.get("whisperxPath"):
-            self.config.whisperx_path = Path(str(payload.get("whisperxPath")))
+
+        def configured_path(key: str, *, dot_is_placeholder: bool = False) -> Path | None:
+            raw = payload.get(key)
+            text = str(raw or "").strip()
+            if not text or text == "[REDACTED_PATH]" or (dot_is_placeholder and text == "."):
+                return None
+            return Path(text).expanduser().resolve(strict=False)
+
+        cookies_path = configured_path("cookiesPath")
+        if cookies_path is not None:
+            self.config.cookies_path = cookies_path
+        output_dir = configured_path("outputDir", dot_is_placeholder=True)
+        if output_dir is not None:
+            self.config.output_dir = output_dir
+            self.store.output_dir = output_dir
+        yt_dlp_path = configured_path("ytDlpPath")
+        if yt_dlp_path is not None:
+            self.config.yt_dlp_path = yt_dlp_path
+        whisperx_path = configured_path("whisperxPath")
+        if whisperx_path is not None:
+            self.config.whisperx_path = whisperx_path
 
     def _jobs_revision_locked(self) -> int:
         return int(self.store._known_revisions.get("jobs", 0))
@@ -2003,20 +2015,23 @@ class JobManager:
         fingerprint = _mutation_fingerprint("cancel", job_id)
         record = None
         was_pending = False
+        running_target = False
         with self.lock:
             existing = self._find_mutation_receipt_locked(idempotency_key, fingerprint)
             if existing is not None:
                 return self._replay_mutation_receipt_locked(existing)
             record = self.get_job(job_id)
             self._check_expected_revision_locked(expected_revision)
-            if wait_for_completion:
+            was_pending = record in self.pending
+            running_target = self.current_job_id == job_id
+            wait_for_target = bool(wait_for_completion and running_target)
+            if wait_for_target:
                 self._dispatch_paused = True
             with record.lock:
                 record._defer_persistence = True
                 try:
                     record.cancel_event.set()
                     runner = getattr(record, "runner", None)
-                    was_pending = record in self.pending
                     if was_pending:
                         self.pending = [item for item in self.pending if item.job_id != job_id]
                         self._mark_canceled(record, "任务已取消。")
@@ -2036,16 +2051,12 @@ class JobManager:
                     snapshot["revision"] = self._jobs_revision_locked()
                 finally:
                     record._defer_persistence = False
-        if wait_for_completion and record is not None:
+        if wait_for_completion and running_target and record is not None:
             deadline = time.monotonic() + 5.0
             while time.monotonic() < deadline:
                 with record.lock:
                     target_settled = record.status in TERMINAL_STATUSES
-                with self.lock:
-                    worker_settled = self.current_job_id is None and not (
-                        self.worker_thread and self.worker_thread.is_alive()
-                    )
-                if target_settled and worker_settled:
+                if target_settled:
                     break
                 time.sleep(0.01)
             with record.lock:
@@ -2053,8 +2064,6 @@ class JobManager:
                     raise TimeoutError("workflow job cancellation did not settle")
                 snapshot = record.public_snapshot()
             with self.lock:
-                if self.current_job_id is not None or (self.worker_thread and self.worker_thread.is_alive()):
-                    raise TimeoutError("workflow queue did not settle after cancellation")
                 snapshot["revision"] = self._jobs_revision_locked()
         return snapshot
 

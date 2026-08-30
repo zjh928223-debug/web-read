@@ -323,7 +323,6 @@ export function createYoutubeWorkflowClient(options = {}) {
   function workflowJobRecord(payload, operationKey) {
     const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}
     const jobId = String(input.jobId || `workflow-${operationKey}`)
-    const now = new Date().toISOString()
     const request = {}
     for (const key of ['url', 'geminiMode', 'model', 'baseUrl', 'videoPriority', 'autoOpenWhenReady', 'replacePolicy', 'forceReprocess']) {
       if (input[key] !== undefined) request[key] = input[key]
@@ -332,8 +331,6 @@ export function createYoutubeWorkflowClient(options = {}) {
       jobId,
       status: 'queued',
       stage: 'queued',
-      createdAt: now,
-      updatedAt: now,
       title: String(input.title || input.url || jobId),
       url: String(input.url || ''),
       sourceType: 'youtube',

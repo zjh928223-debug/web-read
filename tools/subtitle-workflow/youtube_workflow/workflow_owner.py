@@ -344,7 +344,14 @@ def _validate_snapshot_safe_value(value: Any, *, key_hint: str = "", depth: int 
             if value is None:
                 return
             if isinstance(value, Mapping):
-                _validate_snapshot_safe_value(value, depth=depth + 1)
+                for child_key, child_value in value.items():
+                    if child_key == "files" and isinstance(child_value, Mapping):
+                        for file_key, file_value in child_value.items():
+                            if not isinstance(file_key, str) or len(file_key) > 128:
+                                raise WorkflowOwnerError("invalid-request")
+                            _safe_snapshot_path(file_value)
+                    else:
+                        _validate_snapshot_safe_value(child_value, key_hint=child_key, depth=depth + 1)
                 return
         if value is None:
             raise WorkflowOwnerError("invalid-request")
@@ -430,6 +437,7 @@ def _typed_error(
         "manual-recovery": "recovery",
         "commit-unknown": "recovery",
         "not-ready": "readiness",
+        "workflow-output-dir-busy": "readiness",
     }.get(code, "recovery")
     return {
         "type": "windows-thin-reader-error.v1",
@@ -491,7 +499,7 @@ def _safe_local_path_text(value: Any) -> str:
     if not isinstance(value, str) or len(value) > 4096 or any(ord(char) < 0x20 and char not in "\t" for char in value):
         raise WorkflowOwnerError("invalid-request")
     normalized = value.strip()
-    if not normalized or _FILE_URI.match(normalized) or _DATA_URI.match(normalized) or "://" in normalized:
+    if _FILE_URI.match(normalized) or _DATA_URI.match(normalized) or "://" in normalized:
         raise WorkflowOwnerError("invalid-request")
     return normalized
 
@@ -609,6 +617,7 @@ class WorkflowOwner:
         self.config_path = self.store.config_path
         self.backup_adapter = backup_adapter or WorkflowBackupAdapter(self.state_dir, self.output_dir)
         self.service_manager = service_manager
+        self._sync_output_root(self.store.load_config())
 
         if receipt_store is None:
             self.receipts = OwnerCommitReceiptStore(
@@ -634,6 +643,104 @@ class WorkflowOwner:
 
             self.receipts.revision_reader = read_revision
             self.receipts.authoritative_evidence_resolvers[WORKFLOW_DOMAIN] = self._resolve_receipt_evidence
+
+    @staticmethod
+    def _resolved_local_path(value: Any, *, dot_is_placeholder: bool = False) -> Path | None:
+        if isinstance(value, Path):
+            text = str(value).strip()
+        elif isinstance(value, str):
+            text = value.strip()
+        else:
+            return None
+        if not text or text == "[REDACTED_PATH]" or (dot_is_placeholder and text == "."):
+            return None
+        try:
+            return Path(text).expanduser().resolve(strict=False)
+        except (OSError, RuntimeError, ValueError):
+            return None
+
+    def _sync_output_root(self, config: Mapping[str, Any] | None = None) -> Path:
+        configured = config if isinstance(config, Mapping) else {}
+        candidates = [
+            configured.get("outputDir"),
+            getattr(getattr(self.service_manager, "config", None), "output_dir", None),
+            getattr(self.store, "output_dir", None),
+            self.output_dir,
+        ]
+        output_root = next(
+            (candidate for candidate in (self._resolved_local_path(value, dot_is_placeholder=True) for value in candidates) if candidate is not None),
+            self.output_dir.resolve(strict=False),
+        )
+        self.output_dir = output_root
+        self.store.output_dir = output_root
+        if hasattr(self.backup_adapter, "output_dir"):
+            self.backup_adapter.output_dir = output_root
+        manager_config = getattr(self.service_manager, "config", None)
+        if manager_config is not None:
+            manager_config.output_dir = output_root
+        manager_store = getattr(self.service_manager, "store", None)
+        if manager_store is not None and hasattr(manager_store, "output_dir"):
+            manager_store.output_dir = output_root
+        return output_root
+
+    def _effective_runtime_config_value(self, key: str, current_config: Mapping[str, Any] | None = None) -> str:
+        attribute = {
+            "cookiesPath": "cookies_path",
+            "ytDlpPath": "yt_dlp_path",
+            "whisperxPath": "whisperx_path",
+        }[key]
+        manager_value = getattr(getattr(self.service_manager, "config", None), attribute, None)
+        for value in (manager_value, (current_config or {}).get(key)):
+            text = str(value or "").strip()
+            if text and text != "[REDACTED_PATH]":
+                return text
+        return ""
+
+    def _rebind_snapshot_config(
+        self,
+        config: Mapping[str, Any],
+        current_config: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        rebound = self._rebind_snapshot_value(config)
+        if not isinstance(rebound, Mapping):
+            raise WorkflowOwnerStorageError("manual-recovery")
+        rebound = dict(rebound)
+        output_text = str(rebound.get("outputDir") or "").strip()
+        if "outputDir" in rebound and (not output_text or output_text in {".", "[REDACTED_PATH]"}):
+            rebound["outputDir"] = str(self.output_dir.resolve(strict=False))
+        for key in ("cookiesPath", "ytDlpPath", "whisperxPath"):
+            value = str(rebound.get(key) or "").strip()
+            if key in rebound and (not value or value == "[REDACTED_PATH]"):
+                rebound[key] = self._effective_runtime_config_value(key, current_config)
+        return self._config_payload({"config": rebound})["config"]
+
+    def _service_has_active_work(self) -> bool:
+        manager = self.service_manager
+        if manager is None:
+            return False
+
+        def active() -> bool:
+            worker = getattr(manager, "worker_thread", None)
+            return bool(
+                getattr(manager, "current_job_id", None)
+                or getattr(manager, "pending", None)
+                or (worker is not None and worker.is_alive())
+            )
+
+        lock = getattr(manager, "lock", None)
+        if lock is None:
+            return active()
+        with lock:
+            return active()
+
+    def _output_dir_change_is_busy(self, mutation: Mapping[str, Any]) -> bool:
+        config = mutation.get("config") if isinstance(mutation, Mapping) else None
+        if not isinstance(config, Mapping) or "outputDir" not in config:
+            return False
+        requested = self._resolved_local_path(config.get("outputDir"), dot_is_placeholder=True)
+        if requested is None or requested == self.output_dir.resolve(strict=False):
+            return False
+        return self._service_has_active_work()
 
     def _current_revision_for_receipt(self, domain: str) -> str:
         if domain != WORKFLOW_DOMAIN:
@@ -772,6 +879,23 @@ class WorkflowOwner:
             retryable=bool(error.get("retryable", False)),
             current_revision=current_revision,
         )
+
+    @staticmethod
+    def _replay_receipt_response(
+        receipt: Mapping[str, Any],
+        request_id: str,
+        correlation_id: str,
+    ) -> dict[str, Any]:
+        """Project a committed receipt onto the request that replayed it.
+
+        The durable receipt keeps the first request identity.  A replayed
+        command still needs a response receipt that matches the current
+        transport envelope so the typed client can validate it.
+        """
+        response = deepcopy(dict(receipt))
+        response["requestId"] = request_id
+        response["correlationId"] = correlation_id
+        return response
 
     def _evidence(
         self,
@@ -1615,6 +1739,79 @@ class WorkflowOwner:
             return manager.clear_failed_jobs(expected_revision=expected_revision)
         raise RuntimeError("unsupported workflow service operation")
 
+    def _service_replay_result(self, operation: str, idempotency_key: str) -> dict[str, Any] | None:
+        """Recover the first service result for an owner receipt replay.
+
+        The service's canonical job record already persists the idempotency
+        key.  Reading that record keeps a replay tied to the real service job
+        without adding another receipt/result store.
+        """
+        if operation not in {"job-start", "job-retry"} or self.service_manager is None:
+            return None
+        try:
+            state = self._read_state()
+        except WorkflowOwnerStorageError:
+            return None
+        matches = [
+            item for item in state["jobs"]
+            if isinstance(item, Mapping) and item.get("idempotencyKey") == idempotency_key
+        ]
+        if len(matches) != 1:
+            return None
+        persisted = matches[0]
+        job_id = str(persisted.get("jobId") or "").strip()
+        if not job_id:
+            return None
+
+        result = None
+        manager_jobs = getattr(self.service_manager, "jobs", None)
+        record = manager_jobs.get(job_id) if isinstance(manager_jobs, Mapping) else None
+        if record is not None and hasattr(record, "public_snapshot"):
+            try:
+                result = record.public_snapshot()
+            except Exception:
+                result = None
+        if not isinstance(result, Mapping):
+            result = {
+                key: deepcopy(persisted[key])
+                for key in (
+                    "jobId",
+                    "status",
+                    "stage",
+                    "createdAt",
+                    "updatedAt",
+                    "request",
+                    "error",
+                )
+                if key in persisted
+            }
+            terminal_summary = persisted.get("terminalSummary")
+            if isinstance(terminal_summary, list):
+                result["logSummary"] = deepcopy(terminal_summary)
+            manifest = persisted.get("manifest")
+            if isinstance(manifest, Mapping):
+                for key in ("title", "outputDir"):
+                    if key in manifest:
+                        result[key] = deepcopy(manifest[key])
+            if not result.get("jobId"):
+                return None
+        replay = deepcopy(dict(result))
+        replay["revision"] = state["jobsRevision"]
+        replay["idempotent"] = True
+        return replay
+
+    def _attach_service_replay_result(
+        self,
+        operation: str,
+        idempotency_key: str,
+        payload_result: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        replay = self._service_replay_result(operation, idempotency_key)
+        if replay is not None:
+            payload_result["serviceResult"] = deepcopy(replay)
+            payload_result["jobId"] = replay["jobId"]
+        return replay
+
     def _rebind_snapshot_value(self, value: Any) -> Any:
         """Rebind sanitized backup output references to this Host's root."""
         if isinstance(value, list):
@@ -1758,6 +1955,18 @@ class WorkflowOwner:
                     receipt_payload,
                 )
                 if existing_receipt.get("requestFingerprint") == request_fingerprint:
+                    replay = self._attach_service_replay_result(operation, idempotency_key, payload_result)
+                    if operation in {"job-start", "job-retry"} and self.service_manager is not None and replay is None:
+                        return self._envelope(
+                            operation,
+                            request_id,
+                            correlation_id,
+                            "manual-recovery",
+                            "manual-recovery",
+                            None,
+                            {"durableMutation": "not-submitted"},
+                            _typed_error("manual-recovery", correlation_id),
+                        )
                     return self._envelope(
                         operation,
                         request_id,
@@ -1767,7 +1976,7 @@ class WorkflowOwner:
                         existing.get("revision"),
                         payload_result,
                         self._receipt_error(existing, correlation_id),
-                        receipt=existing_receipt,
+                        receipt=self._replay_receipt_response(existing_receipt, request_id, correlation_id),
                     )
             elif existing_error.get("code") == "manual-recovery":
                 return self._envelope(
@@ -1781,6 +1990,18 @@ class WorkflowOwner:
                     self._receipt_error(existing, correlation_id),
                 )
 
+        if operation == "config-commit" and self._output_dir_change_is_busy(mutation):
+            return self._envelope(
+                operation,
+                request_id,
+                correlation_id,
+                "rejected",
+                "rejected",
+                state["revision"],
+                payload_result,
+                _typed_error("workflow-output-dir-busy", correlation_id, current_revision=state["revision"]),
+            )
+
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
             nonlocal service_result, start_service_worker
             current = self._read_state()
@@ -1791,11 +2012,12 @@ class WorkflowOwner:
                 rebound_jobs = [self._rebind_snapshot_value(item) for item in snapshot["jobs"]]
                 rebound_history = [self._rebind_snapshot_value(item) for item in snapshot["history"]]
                 rebound_index = self._rebind_snapshot_value(snapshot["readerIndex"])
+                rebound_config = self._rebind_snapshot_config(snapshot["config"], current["config"])
                 self.store.replace_snapshot(
                     rebound_jobs,
                     rebound_history,
                     rebound_index,
-                    snapshot["config"],
+                    rebound_config,
                 )
                 for output_record in snapshot.get("outputs", []):
                     relative = output_record["id"][len("output:"):]
@@ -1820,6 +2042,7 @@ class WorkflowOwner:
                 )
                 if self.service_manager is not None and hasattr(self.service_manager, "reload_persisted_state"):
                     self.service_manager.reload_persisted_state()
+                self._sync_output_root(rebound_config)
                 next_revision = self._read_state()["revision"]
                 record_checksums = self._snapshot_record_checksums(snapshot)
                 return self._evidence(
@@ -1891,9 +2114,10 @@ class WorkflowOwner:
             if operation == "config-commit":
                 next_config = deepcopy(current["config"])
                 next_config.update(deepcopy(mutation["config"]))
-                self.store.save_config(next_config)
+                saved_config = self.store.save_config(next_config)
                 if self.service_manager is not None and hasattr(self.service_manager, "reload_saved_config"):
                     self.service_manager.reload_saved_config()
+                self._sync_output_root(saved_config)
                 next_revision = self._read_state()["revision"]
                 record_checksums = [_checksum(mutation["config"])]
                 return self._evidence(
@@ -1937,6 +2161,20 @@ class WorkflowOwner:
             payload_result["serviceResult"] = deepcopy(dict(service_result))
             if start_service_worker:
                 self.service_manager.start_pending_worker()
+        elif result.get("outcome") == "committed" and operation in {"job-start", "job-retry"} and self.service_manager is not None:
+            replay = self._attach_service_replay_result(operation, idempotency_key, payload_result)
+            if replay is None:
+                return self._envelope(
+                    operation,
+                    request_id,
+                    correlation_id,
+                    "manual-recovery",
+                    "manual-recovery",
+                    None,
+                    {"durableMutation": "not-submitted"},
+                    _typed_error("manual-recovery", correlation_id),
+                    receipt=result.get("receipt"),
+                )
         return self._envelope(
             operation,
             request_id,

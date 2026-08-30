@@ -55,6 +55,10 @@ function makeLayout(root, name) {
     profileDir: path.join(isolationRoot, 'profile'),
     pythonStateDir: path.join(isolationRoot, 'python-state'),
     pythonOutputDir: path.join(isolationRoot, 'python-output'),
+    cookiesPath: path.join(isolationRoot, 'cookies.txt'),
+    ytDlpPath: path.join(isolationRoot, 'yt-dlp.exe'),
+    whisperxPath: path.join(isolationRoot, 'whisperx.exe'),
+    reconfiguredOutputDir: isolationRoot,
     profileAuthorityIsolationRoot,
     profileAuthorityRoot: path.join(profileAuthorityIsolationRoot, 'profile-authority'),
   }
@@ -227,10 +231,24 @@ async function writeJson(filePath, value) {
 async function seedSource(layout) {
   const fixture = workflowFixtures()
   const outputDir = path.join(layout.pythonOutputDir, 'workflow-job-1')
+  fixture.config.cookiesPath = layout.cookiesPath
+  fixture.config.outputDir = layout.pythonOutputDir
+  fixture.config.ytDlpPath = layout.ytDlpPath
+  fixture.config.whisperxPath = layout.whisperxPath
   fixture.jobs[0].outputDir = outputDir
   fixture.history[0].outputDir = outputDir
+  const audioPath = path.join(outputDir, 'fixture-audio.mp3')
+  const manifest = {
+    schemaVersion: 1,
+    jobId: 'workflow-job-1',
+    outputDir,
+    files: { audio: audioPath },
+  }
+  fixture.jobs[0].manifest = manifest
+  fixture.history[0].manifest = manifest
   await mkdir(layout.pythonOutputDir, { recursive: true })
   await mkdir(outputDir, { recursive: true })
+  await writeFile(audioPath, 'non-empty workflow media fixture', 'utf8')
   await writeJson(path.join(outputDir, 'output.json'), {
     schemaVersion: 1,
     revision: 1,
@@ -313,6 +331,31 @@ class C2cRunner:
         if 'fail' in request.url:
             self._effect(job_id, 'failed')
             raise RuntimeError('fixture runner failed')
+        output_dir = Path(self.config.output_dir) / job_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / 'fixture-audio.mp3').write_text(
+            'non-empty workflow runner audio fixture',
+            encoding='utf-8',
+        )
+        (output_dir / 'transcript.json').write_text(
+            json.dumps({
+                'segments': [
+                    {'start': 0, 'end': 1, 'text': 'workflow runner fixture'},
+                ],
+            }),
+            encoding='utf-8',
+        )
+        (output_dir / 'output.json').write_text(
+            json.dumps({
+                'revision': 1,
+                's': [{'chunks': [{'text': 'workflow runner fixture'}]}],
+            }),
+            encoding='utf-8',
+        )
+        (output_dir / 'runner-output.json').write_text(
+            json.dumps({'jobId': job_id, 'result': 'runner side effect'}, ensure_ascii=False),
+            encoding='utf-8',
+        )
         self._effect(job_id, 'ready')
         return {
             'schemaVersion': 1,
@@ -323,7 +366,11 @@ class C2cRunner:
             'stage': 'ready',
             'outputDir': str(Path(self.config.output_dir) / job_id),
             'request': request.safe_manifest_request(),
-            'files': {},
+            'files': {
+                'audio': str(output_dir / 'fixture-audio.mp3'),
+                'transcript': str(output_dir / 'transcript.json'),
+                'chunkData': str(output_dir / 'output.json'),
+            },
             'logSummary': ['fixture runner accepted'],
             'error': None,
         }
@@ -332,6 +379,9 @@ registry = load_owner_registry(Path(os.environ['C2C_REGISTRY']))
 config = WorkflowConfig(
     state_dir=Path(os.environ['C2C_STATE']),
     output_dir=Path(os.environ['C2C_OUTPUT']),
+    cookies_path=Path(os.environ['C2C_COOKIES']),
+    yt_dlp_path=Path(os.environ['C2C_YTDLP']),
+    whisperx_path=Path(os.environ['C2C_WHISPERX']),
 )
 manager = JobManager(
     config=config,
@@ -378,6 +428,9 @@ uvicorn.run(app, host='127.0.0.1', port=int(os.environ['C2C_PORT']), log_level='
       C2C_AUTHORITY_ROOT: layout.profileAuthorityRoot,
       C2C_STATE: layout.pythonStateDir,
       C2C_OUTPUT: layout.pythonOutputDir,
+      C2C_COOKIES: layout.cookiesPath,
+      C2C_YTDLP: layout.ytDlpPath,
+      C2C_WHISPERX: layout.whisperxPath,
       C2C_EFFECTS: path.join(layout.isolationRoot, 'runner-effects.jsonl'),
       C2C_PORT: String(port),
     },
@@ -535,7 +588,7 @@ try {
     mode: 'optimization',
     explicitOptIn: true,
   })
-  const ordinaryHostClient = await createWindowsOwnerProductionHostClient({
+  let ordinaryHostClient = await createWindowsOwnerProductionHostClient({
     baseUrl: host.baseUrl,
     accessToken: host.accessToken,
     profileId: host.profileId,
@@ -638,6 +691,10 @@ try {
   assert.deepEqual(finalRecords['output:workflow-job-1/output.json'].references, [
     { type: 'workflow-job', id: 'workflow-job-1' },
   ])
+  assert.equal(finalRecords.config.payload.outputDir, '.')
+  assert.equal(finalRecords.config.payload.ytDlpPath, '[REDACTED_PATH]')
+  assert.equal(finalRecords.config.payload.whisperxPath, '[REDACTED_PATH]')
+  assert.equal(Object.prototype.hasOwnProperty.call(finalRecords.config.payload, 'cookiesPath'), false)
 
   const checkpoint = await readOwnerModeCheckpoint({ ...target, profileId, domain: 'workflow' })
   assert.equal(checkpoint?.authorityMode, 'host-api=authoritative')
@@ -646,6 +703,9 @@ try {
   const authoritative = await browserGuard.refresh()
   assert.ok(authoritative.authoritativeDomains.includes('workflow'))
   assert.equal(browserGuard.isAuthoritative('workflow'), true)
+  const targetMediaDir = path.join(target.pythonOutputDir, 'workflow-job-1')
+  await mkdir(targetMediaDir, { recursive: true })
+  await writeFile(path.join(targetMediaDir, 'fixture-audio.mp3'), 'non-empty workflow media fixture', 'utf8')
 
   const clientSource = await readFile(path.join(repositoryRoot, 'src/composables/youtube-workflow-client.js'), 'utf8')
   const workflowClientModule = await import(dataUrl(
@@ -670,10 +730,70 @@ try {
   assert.equal((await browserClient.getConfig()).model, fixture.config.model)
   assert.equal((await browserClient.getHistory('workflow-history-only')).jobId, 'workflow-history-only')
 
-  const expectedRevision = clientSnapshot.revision
+  const jobsSnapshot = () => browserClient.getJobsSnapshot([], { includeAll: true })
+  const jobsRevision = async () => (await jobsSnapshot()).revision
+  const importedConfig = await browserClient.getConfig()
+  assert.equal(path.resolve(importedConfig.outputDir), path.resolve(target.pythonOutputDir))
+  assert.equal(importedConfig.cookiesPath, '')
+  assert.equal(importedConfig.ytDlpPath, target.ytDlpPath)
+  assert.equal(importedConfig.whisperxPath, target.whisperxPath)
+  await stopLocalAppHost(host)
+  host = null
+  reopenedHost = await startLocalAppHost(target)
+  host = reopenedHost
+  assert.deepEqual(reopenedHost.health.ownerMode?.authoritativeDomains, ['workflow'])
+  const reopenedMigrationClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: reopenedHost.baseUrl,
+    accessToken: reopenedHost.accessToken,
+    profileId: reopenedHost.profileId,
+    instanceId: reopenedHost.instanceId,
+    migrationOnly: true,
+    mode: 'optimization',
+    explicitOptIn: true,
+  })
+  ordinaryHostClient = await createWindowsOwnerProductionHostClient({
+    baseUrl: reopenedHost.baseUrl,
+    accessToken: reopenedHost.accessToken,
+    profileId: reopenedHost.profileId,
+    instanceId: reopenedHost.instanceId,
+  })
+  browserGuard?.dispose?.()
+  const reopenedBrowserComposition = await initializeWindowsOwnerDomainCutoverComposition({
+    windowObject: globalThis,
+    health: reopenedHost.health,
+    ownerClient: reopenedMigrationClient,
+    fetchImpl: (url, init) => hostFetch(reopenedHost, url, init),
+    healthPath: `${reopenedHost.baseUrl}/api/app/health`,
+    healthTimeoutMs: 500,
+  })
+  assert.ok(reopenedBrowserComposition.cutover)
+  browserGuard = reopenedBrowserComposition.cutover
+  const reopenedImportedConfig = await browserClient.getConfig()
+  assert.equal(path.resolve(reopenedImportedConfig.outputDir), path.resolve(target.pythonOutputDir))
+  assert.equal(reopenedImportedConfig.cookiesPath, '')
+  assert.equal(reopenedImportedConfig.ytDlpPath, target.ytDlpPath)
+  assert.equal(reopenedImportedConfig.whisperxPath, target.whisperxPath)
+  const sanitizedStart = await browserClient.createJob(
+    {
+      url: 'https://www.youtube.com/watch?v=workflow-c2c-sanitized-import-start',
+      geminiMode: 'mock',
+      forceReprocess: true,
+    },
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-sanitized-import-start' },
+  )
+  assert.equal(sanitizedStart.status, 'queued')
+  await waitFor(async () => {
+    const job = (await jobsSnapshot()).jobs.find((item) => item.jobId === sanitizedStart.jobId)
+    return job?.status === 'ready' ? job : null
+  }, 'sanitized config imported runner job')
+  assert.ok((await readRunnerEffects(target)).some((effect) => effect.jobId === sanitizedStart.jobId && effect.status === 'accepted'))
+  assert.equal(
+    JSON.parse(await readFile(path.join(target.pythonOutputDir, sanitizedStart.jobId, 'runner-output.json'), 'utf8')).jobId,
+    sanitizedStart.jobId,
+  )
   const configuredPaths = {
     cookiesPath: path.join(target.isolationRoot, 'cookies.txt'),
-    outputDir: target.pythonOutputDir,
+    outputDir: target.reconfiguredOutputDir,
     ytDlpPath: path.join(target.isolationRoot, 'yt-dlp.exe'),
     whisperxPath: path.join(target.isolationRoot, 'whisperx.exe'),
   }
@@ -685,24 +805,53 @@ try {
   }
   const savedConfig = await browserClient.saveConfig(
     configuredConfig,
-    { expectedRevision, idempotencyKey: 'workflow-c2c-client-config' },
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-client-config' },
   )
   assert.equal(savedConfig.model, 'workflow-c2c-client-model')
   const savedConfigQuery = await browserClient.getConfig()
   for (const [key, value] of Object.entries(configuredConfig)) assert.equal(savedConfigQuery[key], value)
+  const migratedMedia = await ordinaryHostClient.query({
+    domain: 'workflow',
+    operation: 'media-capability',
+    payload: { jobId: 'workflow-job-1', mediaKind: 'audio' },
+  })
+  assert.equal(migratedMedia.outcome, 'read')
+  assert.equal(migratedMedia.payload.found, true)
 
-  const jobsSnapshot = () => browserClient.getJobsSnapshot([], { includeAll: true })
-  const jobsRevision = async () => (await jobsSnapshot()).revision
-  const createTypedJob = async (id, extra = {}) => {
-    const job = await browserClient.createJob(
+  const emptyOptionalPaths = {
+    ...configuredConfig,
+    cookiesPath: '',
+    outputDir: '',
+    ytDlpPath: '',
+    whisperxPath: '',
+  }
+  await browserClient.saveConfig(
+    emptyOptionalPaths,
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-empty-optional-paths' },
+  )
+  const emptyPathConfig = await browserClient.getConfig()
+  for (const key of ['cookiesPath', 'outputDir', 'ytDlpPath', 'whisperxPath']) assert.equal(emptyPathConfig[key], '')
+  await browserClient.saveConfig(
+    configuredConfig,
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-client-config-restored' },
+  )
+  const restoredConfig = await browserClient.getConfig()
+  for (const [key, value] of Object.entries(configuredConfig)) assert.equal(restoredConfig[key], value)
+  assert.equal(path.resolve(restoredConfig.outputDir), path.resolve(target.reconfiguredOutputDir))
+
+  const createTypedJobWithKey = async (id, idempotencyKey, extra = {}) => {
+    return browserClient.createJob(
       {
         url: `https://www.youtube.com/watch?v=workflow-c2c-${id}`,
         geminiMode: 'mock',
         forceReprocess: true,
         ...extra,
       },
-      { expectedRevision: await jobsRevision(), idempotencyKey: `workflow-c2c-${id}-create` },
+      { expectedRevision: await jobsRevision(), idempotencyKey },
     )
+  }
+  const createTypedJob = async (id, extra = {}) => {
+    const job = await createTypedJobWithKey(id, `workflow-c2c-${id}-create`, extra)
     assert.equal(job.status, 'queued')
     return job
   }
@@ -712,13 +861,61 @@ try {
     return job?.status === status ? job : null
   }, `job ${jobId} to become ${status}`)
 
+  const outputRootJob = await createTypedJob('output-root')
+  await waitForJobStatus(outputRootJob.jobId, 'ready')
+  const outputRootFile = path.join(configuredPaths.outputDir, outputRootJob.jobId, 'runner-output.json')
+  assert.equal(JSON.parse(await readFile(outputRootFile, 'utf8')).jobId, outputRootJob.jobId)
+  const outputRootSnapshot = await jobsSnapshot()
+  assert.ok(outputRootSnapshot.jobs.some((job) => job.jobId === outputRootJob.jobId))
+  const outputBackupQuery = await ordinaryHostClient.query({
+    domain: 'workflow',
+    operation: 'job',
+    payload: {},
+  })
+  const outputBackup = outputBackupQuery.payload.backupRecords
+    .find((record) => record.contentId === outputRootJob.jobId && record.id === `output:${outputRootJob.jobId}/runner-output.json`)
+  assert.ok(outputBackup, JSON.stringify(outputBackupQuery.payload.backupRecords
+    .filter((record) => record.contentId === outputRootJob.jobId)
+    .map((record) => ({ id: record.id, payload: record.payload }))))
+  assert.equal(outputBackup.payload.result, 'runner side effect')
+  const outputMedia = await ordinaryHostClient.query({
+    domain: 'workflow',
+    operation: 'media-capability',
+    payload: { jobId: 'workflow-job-1', mediaKind: 'audio' },
+  })
+  assert.equal(outputMedia.payload.found, true)
+
   const created = await createTypedJob('create')
   await waitForJobStatus(created.jobId, 'ready')
   const createdEffects = await readRunnerEffects(target)
   assert.ok(createdEffects.some((effect) => effect.jobId === created.jobId && effect.status === 'accepted'))
+  const replayedCreated = await createTypedJobWithKey('create', 'workflow-c2c-create-create')
+  assert.equal(replayedCreated.jobId, created.jobId)
+  assert.equal(replayedCreated.idempotent, true)
+  assert.equal(
+    (await readRunnerEffects(target)).filter((effect) => effect.jobId === created.jobId && effect.status === 'accepted').length,
+    1,
+  )
 
   const hold = await createTypedJob('hold-cancel', { url: 'https://www.youtube.com/watch?v=workflow-c2c-hold-cancel' })
   await waitFor(() => readRunnerEffects(target).then((effects) => effects.some((effect) => effect.jobId === hold.jobId && effect.status === 'accepted')), 'cancel runner acceptance')
+  const pendingCancel = await createTypedJob('pending-cancel')
+  const pendingCancelStartedAt = Date.now()
+  const pendingCanceled = await browserClient.cancelJob(
+    pendingCancel.jobId,
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-pending-cancel-command' },
+  )
+  assert.ok(Date.now() - pendingCancelStartedAt < 1000, 'pending cancellation must not wait for another running job')
+  assert.equal(pendingCanceled.jobId, pendingCancel.jobId)
+  assert.equal(pendingCanceled.status, 'canceled')
+  assert.equal((await browserClient.getJob(pendingCancel.jobId)).status, 'canceled')
+  assert.equal(
+    (await readRunnerEffects(target)).filter((effect) => effect.jobId === pendingCancel.jobId && effect.status === 'accepted').length,
+    0,
+  )
+  const activeHold = await browserClient.getJob(hold.jobId)
+  assert.ok(!['ready', 'failed', 'canceled'].includes(activeHold.status))
+  assert.equal(activeHold.stage, 'downloading')
   const canceled = await browserClient.cancelJob(
     hold.jobId,
     { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-hold-cancel-command' },
@@ -760,6 +957,17 @@ try {
   assert.equal(retried.retryOf, failing.jobId)
   await waitForJobStatus(retried.jobId, 'failed')
   assert.ok((await readRunnerEffects(target)).some((effect) => effect.jobId === retried.jobId && effect.status === 'failed'))
+  const replayedRetry = await browserClient.retryJob(
+    failing.jobId,
+    { stage: 'downloading' },
+    { expectedRevision: await jobsRevision(), idempotencyKey: 'workflow-c2c-retry-command' },
+  )
+  assert.equal(replayedRetry.jobId, retried.jobId)
+  assert.equal(replayedRetry.idempotent, true)
+  assert.equal(
+    (await readRunnerEffects(target)).filter((effect) => effect.jobId === retried.jobId && effect.status === 'failed').length,
+    1,
+  )
 
   const deleted = await browserClient.deleteJob(
     retried.jobId,
@@ -800,12 +1008,15 @@ try {
   const reopenedQueries = await queryWorkflow(reopenedClient)
   assert.equal(reopenedQueries.jobs.outcome, 'read')
   assert.ok(reopenedQueries.jobs.payload.records.length >= 2)
-  assert.equal(reopenedQueries.history.payload.records.length, fixture.history.length)
+  assert.ok(reopenedQueries.history.payload.records.length >= fixture.history.length)
   assert.equal(reopenedQueries.index.payload.records.length, 2)
   for (const [key, value] of Object.entries(configuredConfig)) assert.equal(reopenedQueries.config.payload.config[key], value)
-  const reopenedOutput = reopenedQueries.jobs.payload.backupRecords.find((record) => record.id === 'output:workflow-job-1/output.json')
+  const reopenedOutput = reopenedQueries.jobs.payload.backupRecords.find(
+    (record) => record.contentId === 'workflow-job-1' && record.payload?.result === 'non-empty workflow output fixture',
+  )
   assert.equal(reopenedOutput?.payload?.result, 'non-empty workflow output fixture')
-  assert.equal(reopenedOutput?.checksum, finalRecords['output:workflow-job-1/output.json'].checksum)
+  assert.equal(reopenedOutput?.id, 'output:python-output/workflow-job-1/output.json')
+  assert.match(reopenedOutput?.checksum || '', /^sha256:/u)
   assert.ok(reopenedQueries.jobs.payload.records.some((record) => record.jobId === hold.jobId && record.status === 'canceled'))
   assert.ok(!reopenedQueries.jobs.payload.records.some((record) => record.jobId === retried.jobId))
   assert.ok(!reopenedQueries.jobs.payload.records.some((record) => record.status === 'failed'))
