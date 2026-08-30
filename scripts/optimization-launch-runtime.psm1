@@ -568,6 +568,11 @@ function Start-OptimizationOwnedPair {
   $capabilityStarted = $false
   $hostStarted = $false
   try {
+    # Start-ManagedRuntimeInstance redirects both children into this directory.
+    # The optimization preview creates it during context setup, but the daily
+    # launcher deliberately keeps context construction read-only.  Ensure the
+    # shared pair boundary is safe for either caller before the first spawn.
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_RELEASE_ID' -Value ([string]$Release.releaseId)
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PROFILE_ID' -Value $ProfileId
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_INSTANCE_ID' -Value $InstanceId

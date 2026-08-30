@@ -41,6 +41,22 @@ function Snapshot([string]$Path) {
 function Same($Left, $Right) {
   return $Left.target -eq $Right.target -and $Left.arguments -eq $Right.arguments -and $Left.workingDirectory -eq $Right.workingDirectory -and $Left.iconLocation -eq $Right.iconLocation
 }
+function Set-ProcessEnvironmentValue([string]$Name, [AllowNull()][string]$Value) {
+  if ($null -eq $Value) { Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue }
+  else { [Environment]::SetEnvironmentVariable($Name, $Value, 'Process') }
+}
+function Invoke-ShortcutChild {
+  param([Parameter(Mandatory)][string[]]$Arguments, [string]$KillPhase = '')
+  $previous = [Environment]::GetEnvironmentVariable('READ_WEB_SHORTCUT_TEST_KILL_PHASE', 'Process')
+  try {
+    Set-ProcessEnvironmentValue -Name 'READ_WEB_SHORTCUT_TEST_KILL_PHASE' -Value $KillPhase
+    $output = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+  } finally {
+    Set-ProcessEnvironmentValue -Name 'READ_WEB_SHORTCUT_TEST_KILL_PHASE' -Value $previous
+  }
+  return [pscustomobject]@{ exitCode = $exitCode; output = (($output | ForEach-Object { [string]$_ }) -join "`n") }
+}
 
 $sourceHashBefore = File-Sha256 $source
 $original = Snapshot $testShortcut
@@ -64,6 +80,34 @@ try {
 }
 $automaticRollback = Snapshot $failureShortcut
 if (-not (Same $failureOriginal $automaticRollback)) { throw 'Health-failure rollback did not restore the original target.' }
+
+$crashPhases = @('rollback-pending-written', 'rollback-shortcut-written')
+$crashReports = @()
+foreach ($phase in $crashPhases) {
+  $crashShortcut = Join-Path $root "read-web-$phase.lnk"
+  $crashState = Join-Path $root "$phase-state.json"
+  Copy-Item -LiteralPath $source -Destination $crashShortcut
+  $crashOriginal = Snapshot $crashShortcut
+  & $migration -Action Apply -ShortcutPath $crashShortcut -StatePath $crashState -NewScriptPath $targetScript -NewWorkingDirectory $projectRoot -NewLauncherArguments '-Action Start -NoOpen' | Out-Null
+  $crashSwitched = Snapshot $crashShortcut
+  $crashResult = Invoke-ShortcutChild -KillPhase $phase -Arguments @(
+    '-File', $migration, '-Action', 'Rollback', '-ShortcutPath', $crashShortcut, '-StatePath', $crashState
+  )
+  if ($crashResult.exitCode -eq 0) { throw "Synthetic shortcut crash phase did not terminate the child: $phase" }
+  $pendingPath = "$crashState.pending.json"
+  if (-not (Test-Path -LiteralPath $pendingPath -PathType Leaf)) { throw "Synthetic shortcut crash did not retain pending state: $phase" }
+  $pendingTransaction = Get-Content -LiteralPath $pendingPath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ([string]$pendingTransaction.operation -ne 'rollback' -or -not (Same $pendingTransaction.from $crashSwitched) -or -not (Same $pendingTransaction.to $crashOriginal)) {
+    throw "Shortcut rollback pending transaction endpoints are wrong after phase: $phase"
+  }
+  $recovery = Invoke-ShortcutChild -Arguments @(
+    '-File', $migration, '-Action', 'Rollback', '-ShortcutPath', $crashShortcut, '-StatePath', $crashState
+  )
+  if ($recovery.exitCode -ne 0) { throw "Shortcut rollback pending recovery failed after phase ${phase}: $($recovery.output)" }
+  if (-not (Same $crashOriginal (Snapshot $crashShortcut))) { throw "Shortcut rollback recovery did not restore the old target after phase: $phase" }
+  if (Test-Path -LiteralPath $pendingPath -PathType Leaf) { throw "Shortcut rollback pending state was not removed after phase: $phase" }
+  $crashReports += [ordered]@{ phase = $phase; status = 'recovered'; exitCode = $crashResult.exitCode }
+}
 $sourceHashAfter = File-Sha256 $source
 if ($sourceHashBefore -ne $sourceHashAfter) { throw 'The source fixture shortcut changed during rehearsal.' }
 
@@ -81,6 +125,7 @@ $report = [ordered]@{
   switched = $switched
   normalRollback = $rolledBack
   healthFailureRollback = $automaticRollback
+  crashWindowRecovery = @($crashReports)
 }
 $reportPath = Join-Path $root 'shortcut-rollback-rehearsal.json'
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8

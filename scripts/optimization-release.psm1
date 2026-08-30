@@ -440,6 +440,17 @@ function Get-OptimizationCommandPath {
   return [string]$command.Source
 }
 
+function Get-OptimizationDefaultPythonPath {
+  # Keep this convention in sync with scripts/lib/python-runtime.mjs. The
+  # launcher only discovers an existing venv here; it never installs one.
+  $localAppData = [string]$env:LOCALAPPDATA
+  if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+  }
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { return '' }
+  return Join-Path $localAppData 'Read-Web\optimization-python\Scripts\python.exe'
+}
+
 function Resolve-OptimizationSelectedPython {
   param(
     [Parameter(Mandatory)][string]$RuntimeConfigPath,
@@ -458,10 +469,13 @@ function Resolve-OptimizationSelectedPython {
   } catch {
     throw "Optimization RuntimeConfig file is invalid: $RuntimeConfigPath"
   }
+  $defaultVenv = Get-OptimizationDefaultPythonPath
   $configured = if ($env:READ_WEB_PYTHON) {
     [string]$env:READ_WEB_PYTHON
   } elseif ($env:READ_WEB_PYTHON_PATH) {
     [string]$env:READ_WEB_PYTHON_PATH
+  } elseif ($defaultVenv -and (Test-Path -LiteralPath $defaultVenv -PathType Leaf)) {
+    $defaultVenv
   } elseif ($null -ne $payload.python -and $payload.python.executable) {
     [string]$payload.python.executable
   } else {
@@ -1382,8 +1396,10 @@ Export-ModuleMember -Function `
   Test-OptimizationReleaseIntegrity, `
   Test-OptimizationReleaseCompatibility, `
   Assert-OptimizationReleaseToolchain, `
+  Resolve-OptimizationSelectedPython, `
   Get-OptimizationToolchainIdentity, `
   Get-OptimizationReleaseReuseKey, `
   Get-OptimizationExternalToolDescriptor, `
   Get-OptimizationExternalToolProbeResult, `
-  Assert-OptimizationExternalToolCompatibility
+  Assert-OptimizationExternalToolCompatibility, `
+  Get-OptimizationDefaultPythonPath

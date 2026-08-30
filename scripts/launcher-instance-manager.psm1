@@ -160,6 +160,35 @@ function Get-ProcessCommandLine {
   }
 }
 
+function Test-ManagedPythonVenvInvocation {
+  param(
+    [Parameter(Mandatory)][string]$ExpectedFilePath,
+    [Parameter(Mandatory)][string]$ActualFilePath,
+    [Parameter(Mandatory)][string]$CommandLine
+  )
+  # On Windows, venv\Scripts\python.exe is a launcher. The running process
+  # can report the base Python executable even though the command line and its
+  # import environment belong to the selected venv. Accept that one shape
+  # only when the command line starts with the exact selected venv executable.
+  try {
+    $expectedFullPath = [IO.Path]::GetFullPath($ExpectedFilePath)
+    $actualFullPath = [IO.Path]::GetFullPath($ActualFilePath)
+    $expectedLeaf = [IO.Path]::GetFileName($expectedFullPath)
+    $actualLeaf = [IO.Path]::GetFileName($actualFullPath)
+    if (-not [String]::Equals($expectedLeaf, 'python.exe', [StringComparison]::OrdinalIgnoreCase) `
+      -or -not [String]::Equals($actualLeaf, 'python.exe', [StringComparison]::OrdinalIgnoreCase) `
+      -or $expectedFullPath.IndexOf('\Scripts\', [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+      return $false
+    }
+    $trimmed = $CommandLine.TrimStart()
+    $quotedPath = '"' + $expectedFullPath + '"'
+    return $trimmed.StartsWith($quotedPath, [StringComparison]::OrdinalIgnoreCase) `
+      -or $trimmed.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase)
+  } catch {
+    return $false
+  }
+}
+
 function Test-ManagedProcessExecutable {
   param(
     $Process,
@@ -167,20 +196,27 @@ function Test-ManagedProcessExecutable {
     [string[]]$ExpectedArgumentFragments = @()
   )
   if ($null -eq $Process) { return $false }
+  $commandLine = Get-ProcessCommandLine -Process $Process
   if ($ExpectedFilePath) {
     try {
       $actualPath = [string]$Process.Path
-      if (-not $actualPath -or -not [String]::Equals(
+      $pathMatches = $actualPath -and [String]::Equals(
           [IO.Path]::GetFullPath($actualPath),
           [IO.Path]::GetFullPath($ExpectedFilePath),
-          [StringComparison]::OrdinalIgnoreCase)) {
+          [StringComparison]::OrdinalIgnoreCase)
+      if (-not $pathMatches -and $actualPath -and $commandLine) {
+        $pathMatches = Test-ManagedPythonVenvInvocation `
+          -ExpectedFilePath $ExpectedFilePath `
+          -ActualFilePath $actualPath `
+          -CommandLine $commandLine
+      }
+      if (-not $pathMatches) {
         return $false
       }
     } catch {
       return $false
     }
   }
-  $commandLine = Get-ProcessCommandLine -Process $Process
   foreach ($fragment in @($ExpectedArgumentFragments)) {
     if ($fragment -and (-not $commandLine -or $commandLine.IndexOf([string]$fragment, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { return $false }
   }
@@ -218,10 +254,17 @@ function Find-ManagedProcessByExecutable {
   }
   $candidates = if ($Pid -gt 0) { $processes | ForEach-Object { [pscustomobject]@{ process = $_; commandLine = $null; executablePath = $null } } } else {
     $processMetadata | ForEach-Object {
-      if ([String]::Equals([string]$_.ExecutablePath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+      $metadataPath = [string]$_.ExecutablePath
+      $metadataCommandLine = [string]$_.CommandLine
+      $pathMatches = [String]::Equals($metadataPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase) `
+        -or (Test-ManagedPythonVenvInvocation `
+          -ExpectedFilePath $expectedFullPath `
+          -ActualFilePath $metadataPath `
+          -CommandLine $metadataCommandLine)
+      if ($pathMatches) {
         $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue
         if ($null -ne $process) {
-          [pscustomobject]@{ process = $process; commandLine = [string]$_.CommandLine; executablePath = [string]$_.ExecutablePath }
+          [pscustomobject]@{ process = $process; commandLine = $metadataCommandLine; executablePath = $metadataPath }
         }
       }
     }
@@ -1096,6 +1139,7 @@ Export-ModuleMember -Function `
   Stop-OwnedRuntimeInstance, `
   Find-ManagedOrphanRuntime, `
   Stop-ManagedOrphanRuntime, `
+  Test-ManagedProcessExecutable, `
   Find-ManagedProcessByReceipt, `
   Find-ManagedProcessByExecutable, `
   Recover-ManagedRuntimeReplacement

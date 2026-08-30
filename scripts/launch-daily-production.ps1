@@ -219,13 +219,8 @@ function Test-DailyProcessReceipt {
     $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
     $expected = ([DateTimeOffset]::Parse($startText, [Globalization.CultureInfo]::InvariantCulture, $styles)).UtcDateTime
     if ([Math]::Abs(($process.StartTime.ToUniversalTime() - $expected).TotalMilliseconds) -gt 1000) { return $false }
-    if (-not [String]::Equals([IO.Path]::GetFullPath([string]$process.Path), [IO.Path]::GetFullPath($filePath), [StringComparison]::OrdinalIgnoreCase)) { return $false }
-    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction Stop
-    if ($null -eq $processInfo -or -not [String]::Equals([IO.Path]::GetFullPath([string]$processInfo.ExecutablePath), [IO.Path]::GetFullPath($filePath), [StringComparison]::OrdinalIgnoreCase)) { return $false }
-    $commandLine = [string]$processInfo.CommandLine
-    foreach ($argument in @((Get-OptimizationObjectValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })) {
-      if ($argument -and ($commandLine.IndexOf($argument, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { return $false }
-    }
+    $arguments = @((Get-OptimizationObjectValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
+    if (-not (Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $filePath -ExpectedArgumentFragments $arguments)) { return $false }
   } catch { return $false }
   return $true
 }
@@ -417,12 +412,22 @@ function Resolve-DailyConfiguredExecutable {
 function Get-DailyToolchain {
   param([Parameter(Mandatory)]$Context)
   $script:dailyContext = $Context
-  $pythonValue = Get-OptimizationObjectText -Object $Context.pythonConfig -Name 'executable'
-  if ($BootstrapPython) { $pythonValue = $BootstrapPython }
   $nodePath = Resolve-OptimizationExecutablePath -Value 'node' -Label 'Node'
   $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
   if ($null -eq $npmCommand) { $npmCommand = Get-Command npm -ErrorAction Stop }
-  $pythonPath = Resolve-DailyConfiguredExecutable -Value $pythonValue -Label 'Daily production Python'
+  $pythonPath = if ($BootstrapPython) {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $Context.runtimeConfigPath -RequestedPath $BootstrapPython
+  } else {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $Context.runtimeConfigPath
+  }
+  $toolchainCheck = Assert-OptimizationReleaseToolchain `
+    -ProjectRoot $Context.projectRoot `
+    -WorkflowRoot $Context.workflowRoot `
+    -RuntimeConfigPath $Context.runtimeConfigPath `
+    -NodePath $nodePath `
+    -NpmPath ([string]$npmCommand.Source) `
+    -PythonPath $pythonPath
+  $pythonPath = [string]$toolchainCheck.pythonPath
   $tools = $Context.tools
   return [pscustomobject]@{
     nodePath = $nodePath
@@ -731,12 +736,371 @@ function New-DailyTarget {
 
 function Write-DailyJournal {
   param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
+  if ($Journal -is [Collections.IDictionary]) {
+    $Journal['updatedAtUtc'] = ([DateTime]::UtcNow).ToString('O')
+  } else {
+    $Journal.updatedAtUtc = ([DateTime]::UtcNow).ToString('O')
+  }
   Write-DailyJson -Path $Context.journalPath -Value $Journal
 }
 
 function Remove-DailyJournal {
   param([Parameter(Mandatory)]$Context)
   if (Test-Path -LiteralPath $Context.journalPath -PathType Leaf) { Remove-Item -LiteralPath $Context.journalPath -Force }
+}
+
+function Invoke-DailyCrashPoint {
+  param([Parameter(Mandatory)][string]$Phase)
+  if ([string]$env:READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE -ne $Phase) { return }
+  Write-Host "Synthetic daily-production crash at phase: $Phase"
+  try { Stop-Process -Id $PID -Force -ErrorAction Stop } catch {}
+  throw "Synthetic daily-production crash at phase: $Phase"
+}
+
+function New-DailyEmptyTarget {
+  param([Parameter(Mandatory)]$Context)
+  return [ordered]@{
+    schemaVersion = 1
+    status = 'empty'
+    profileId = $profileId
+    clearedAtUtc = ([DateTime]::UtcNow).ToString('O')
+    rollbackStatePath = $Context.rollbackTargetPath
+    releasePreserved = $true
+    dataPreserved = $true
+  }
+}
+
+function New-DailyRollbackTarget {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target)
+  $rollback = [ordered]@{}
+  foreach ($property in $Target.PSObject.Properties) { $rollback[$property.Name] = $property.Value }
+  $rollback.status = 'rolled-back'
+  $rollback.rolledBackAtUtc = ([DateTime]::UtcNow).ToString('O')
+  $rollback.sourceTargetPath = $Context.activeTargetPath
+  return $rollback
+}
+
+function Assert-DailyJournalIdentity {
+  param(
+    [Parameter(Mandatory)]$Context,
+    [Parameter(Mandatory)]$Journal,
+    [Parameter(Mandatory)][string]$Operation
+  )
+  if ([int](Get-OptimizationObjectText -Object $Journal -Name 'schemaVersion') -ne 1) {
+    throw "Daily production journal schema is unsupported; refusing recovery at $($Context.journalPath)."
+  }
+  if ([string](Get-OptimizationObjectText -Object $Journal -Name 'operation') -ne $Operation) {
+    throw "Daily production journal operation is not $Operation; refusing recovery."
+  }
+  if ([string](Get-OptimizationObjectText -Object $Journal -Name 'profileId') -ne $profileId) {
+    throw 'Daily production journal profile identity mismatch; refusing recovery.'
+  }
+  $journalRuntimeMode = Get-OptimizationObjectText -Object $Journal -Name 'runtimeMode'
+  if ($journalRuntimeMode -and $journalRuntimeMode -ne $Context.runtimeMode) {
+    throw 'Daily production journal runtime-mode identity mismatch; refusing recovery.'
+  }
+  $journalConfig = Get-OptimizationObjectText -Object $Journal -Name 'runtimeConfigPath'
+  if ($journalConfig -and -not (Test-DailySamePath -Left $journalConfig -Right $Context.runtimeConfigPath)) {
+    throw 'Daily production journal runtime-config identity mismatch; refusing recovery.'
+  }
+  $journalDataRoot = Get-OptimizationObjectText -Object $Journal -Name 'dataRootIdentity'
+  if ($journalDataRoot -and $journalDataRoot -ne $Context.dataRootIdentity) {
+    throw 'Daily production journal data-root identity mismatch; refusing recovery.'
+  }
+}
+
+function Get-DailyJournalInstanceId {
+  param([Parameter(Mandatory)]$Journal)
+  $instanceId = Get-OptimizationObjectText -Object $Journal -Name 'instanceId'
+  $parsed = [Guid]::Empty
+  if (-not $instanceId -or -not [Guid]::TryParse($instanceId, [ref]$parsed) -or $parsed -eq [Guid]::Empty) {
+    throw 'Daily production journal has no valid instance identity; refusing recovery.'
+  }
+  return $instanceId
+}
+
+function Remove-DailyInterruptedStateArtifacts {
+  param([Parameter(Mandatory)][string]$StatePath)
+  foreach ($path in @($StatePath, "$StatePath.intent.json", "$StatePath.replacement.json", "$StatePath.lock")) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
+  }
+}
+
+function Stop-DailyInterruptedEndpoint {
+  param(
+    [Parameter(Mandatory)]$Context,
+    [Parameter(Mandatory)][string]$StatePath,
+    [Parameter(Mandatory)][int]$Port,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [string]$ExpectedReleaseId = '',
+    $Owner = $null
+  )
+  $state = Read-OptimizationJsonFile -Path $StatePath
+  if ($null -eq $state) {
+    if (Test-OptimizationTcpPortOccupied -Port $Port) {
+      throw "Daily production port $Port is occupied without an owned state; refusing recovery cleanup."
+    }
+    return
+  }
+  if ([string](Get-OptimizationObjectText -Object $state -Name 'profileId') -ne $profileId) {
+    throw "Daily production state profile mismatch at $StatePath; refusing recovery cleanup."
+  }
+  if ([string](Get-OptimizationObjectText -Object $state -Name 'instanceId') -ne $InstanceId) {
+    throw "Daily production state instance mismatch at $StatePath; refusing recovery cleanup."
+  }
+  if ([int](Get-OptimizationObjectText -Object $state -Name 'port') -ne $Port) {
+    throw "Daily production state port mismatch at $StatePath; refusing recovery cleanup."
+  }
+  if ($ExpectedReleaseId -and [string](Get-OptimizationObjectText -Object $state -Name 'releaseId') -ne $ExpectedReleaseId) {
+    throw "Daily production state release mismatch at $StatePath; refusing recovery cleanup."
+  }
+  if ($null -ne $Owner -and -not (Test-DailyOwnerRecordMatchesState -State $state -Owner $Owner)) {
+    throw "Daily production state owner receipt mismatch at $StatePath; refusing recovery cleanup."
+  }
+
+  $receiptMatches = Test-DailyProcessReceipt -State $state
+  if ($receiptMatches) {
+    Stop-OptimizationOwnedState -StatePath $StatePath -ProfileId $profileId | Out-Null
+    if (-not (Wait-OptimizationTcpPortFree -Port $Port -TimeoutSeconds 5)) {
+      throw "Owned daily-production port $Port did not close during recovery; no unknown process was stopped."
+    }
+    Remove-DailyInterruptedStateArtifacts -StatePath $StatePath
+    return
+  }
+
+  $pidNumber = 0
+  $pidText = Get-OptimizationObjectText -Object $state -Name 'pid'
+  if ([int]::TryParse($pidText, [ref]$pidNumber) -and $pidNumber -gt 0) {
+    $process = Get-Process -Id $pidNumber -ErrorAction SilentlyContinue
+    if ($null -ne $process) {
+      throw "Daily production state at $StatePath has an unproven live process; refusing recovery cleanup."
+    }
+  }
+  if (Test-OptimizationTcpPortOccupied -Port $Port) {
+    throw "Daily production port $Port remains occupied by an unproven process; refusing recovery cleanup."
+  }
+  Remove-DailyInterruptedStateArtifacts -StatePath $StatePath
+}
+
+function Stop-DailyInterruptedInstance {
+  param(
+    [Parameter(Mandatory)]$Context,
+    [Parameter(Mandatory)][string]$InstanceId,
+    [string]$ExpectedReleaseId = '',
+    $Target = $null
+  )
+  $targetHostOwner = if ($null -ne $Target) { Get-OptimizationObjectValue -Object $Target -Name 'hostOwner' } else { $null }
+  $targetCapabilityOwner = if ($null -ne $Target) { Get-OptimizationObjectValue -Object $Target -Name 'capabilityOwner' } else { $null }
+  $hostState = Read-OptimizationJsonFile -Path $Context.hostStatePath
+  if ($null -ne $hostState -and (Test-DailyProcessReceipt -State $hostState)) {
+    try { Invoke-OptimizationHostDrain -StatePath $Context.hostStatePath -TokenPath $Context.tokenPath -DeadlineSeconds 10 | Out-Null } catch {}
+  }
+  Stop-DailyInterruptedEndpoint `
+    -Context $Context `
+    -StatePath $Context.hostStatePath `
+    -Port $Context.frontendPort `
+    -InstanceId $InstanceId `
+    -ExpectedReleaseId $ExpectedReleaseId `
+    -Owner $targetHostOwner
+  Stop-DailyInterruptedEndpoint `
+    -Context $Context `
+    -StatePath $Context.capabilityStatePath `
+    -Port $Context.backendPort `
+    -InstanceId $InstanceId `
+    -ExpectedReleaseId $ExpectedReleaseId `
+    -Owner $targetCapabilityOwner
+  $instanceRoot = Join-Path $Context.applicationIsolationRoot "instances\$InstanceId"
+  Remove-DailyInstanceRoot -Context $Context -InstanceRoot $instanceRoot
+}
+
+function Test-DailyApplyCandidateTarget {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal, [Parameter(Mandatory)]$Target)
+  if ([string](Get-OptimizationObjectText -Object $Target -Name 'status') -ne 'active') {
+    throw 'Daily production Apply journal points to a non-active candidate target; refusing recovery.'
+  }
+  $instanceId = Get-DailyJournalInstanceId -Journal $Journal
+  $profile = Get-OptimizationObjectValue -Object $Target -Name 'profile'
+  if ([string](Get-OptimizationObjectText -Object $profile -Name 'instanceId') -ne $instanceId) {
+    throw 'Daily production Apply candidate target instance mismatch; refusing recovery.'
+  }
+  Assert-DailyTargetIdentity -Context $Context -Target $Target
+  $journalReleaseId = Get-OptimizationObjectText -Object $Journal -Name 'releaseId'
+  $targetReleaseId = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId'
+  if ($journalReleaseId -and $journalReleaseId -ne $targetReleaseId) {
+    throw 'Daily production Apply candidate release mismatch; refusing recovery.'
+  }
+  return $true
+}
+
+function Test-DailyInterruptedTargetReady {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target)
+  try {
+    Assert-DailyTargetIdentity -Context $Context -Target $Target
+    $releaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
+    $release = Get-OptimizationReleaseDescriptor -ReleaseRoot $releaseRoot
+    $nodePath = Resolve-OptimizationExecutablePath -Value 'node' -Label 'Node'
+    $integrity = Test-OptimizationReleaseIntegrity -Release $release -NodePath $nodePath -ReleaseHealthScript $Context.releaseHealthScript
+    if (-not $integrity.passed -or -not (Test-OptimizationReleaseCompatibility -Release $release)) { return $false }
+    if (-not (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf)) { return $false }
+    $hostState = Read-OptimizationJsonFile -Path $Context.hostStatePath
+    $capabilityState = Read-OptimizationJsonFile -Path $Context.capabilityStatePath
+    $hostHealth = Get-OptimizationHttpJson -Url (Get-DailyHealthUrl -HostName $Context.frontendHost -Port $Context.frontendPort)
+    $capabilityHealth = Get-OptimizationHttpJson -Url (Get-DailyHealthUrl -HostName $Context.backendHost -Port $Context.backendPort)
+    if (-not (Test-OptimizationPairReady `
+        -HostState $hostState `
+        -CapabilityState $capabilityState `
+        -HostHealth $hostHealth `
+        -CapabilityHealth $capabilityHealth `
+        -Release $release `
+        -ProfileId $profileId `
+        -TokenPath $Context.tokenPath `
+        -ExpectedDataRoot $Context.dataRoot)) { return $false }
+    if (-not (Test-DailyProcessReceipt -State $hostState) -or -not (Test-DailyProcessReceipt -State $capabilityState)) { return $false }
+    $index = Invoke-WebRequest -Uri "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/" -UseBasicParsing -TimeoutSec 2
+    return $index.StatusCode -eq 200 -and $index.Content -notmatch '@vite/client|src/main\.js'
+  } catch {
+    return $false
+  }
+}
+
+function Restore-DailyApplySnapshot {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
+  $oldActiveSnapshot = Get-OptimizationObjectText -Object $Journal -Name 'oldActiveTargetSnapshot'
+  Restore-OptimizationRuntimeSnapshot -Path $Context.activeTargetPath -Snapshot $oldActiveSnapshot
+  $oldTokenPresent = [bool](Get-OptimizationObjectValue -Object $Journal -Name 'oldTokenPresent')
+  if (-not $oldTokenPresent -and (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf)) {
+    Remove-Item -LiteralPath $Context.tokenPath -Force -ErrorAction Stop
+  }
+  if ($oldTokenPresent -and -not (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf)) {
+    throw 'Daily production Apply recovery cannot restore the previously present service token.'
+  }
+}
+
+function Invoke-DailyApplyRecovery {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
+  Assert-DailyJournalIdentity -Context $Context -Journal $Journal -Operation 'daily-production-apply'
+  $instanceId = Get-DailyJournalInstanceId -Journal $Journal
+  $oldActiveSnapshot = Get-OptimizationObjectText -Object $Journal -Name 'oldActiveTargetSnapshot'
+  $currentActiveSnapshot = Read-DailyText -Path $Context.activeTargetPath
+  $currentTarget = Read-OptimizationJsonFile -Path $Context.activeTargetPath
+  $isOldSnapshot = $currentActiveSnapshot -eq $oldActiveSnapshot
+  $candidateTarget = $null
+  if (-not $isOldSnapshot -and $null -ne $currentTarget) {
+    Test-DailyApplyCandidateTarget -Context $Context -Journal $Journal -Target $currentTarget | Out-Null
+    $candidateTarget = $currentTarget
+  } elseif (-not $isOldSnapshot -and $currentActiveSnapshot) {
+    throw 'Daily production Apply recovery found an unknown active-target state; refusing to overwrite it.'
+  }
+
+  $status = Get-OptimizationObjectText -Object $Journal -Name 'status'
+  if ($status -eq 'committed' -and $null -ne $candidateTarget -and (Test-DailyInterruptedTargetReady -Context $Context -Target $candidateTarget)) {
+    Remove-DailyJournal -Context $Context
+    return [ordered]@{ status = 'finalized'; operation = 'Apply'; sideEffects = @('kept the committed active target', 'removed the completed promotion journal') }
+  }
+  if ($status -notin @('prepared', 'committed')) {
+    throw "Daily production Apply journal status '$status' is unsupported; refusing recovery."
+  }
+
+  Stop-DailyInterruptedInstance `
+    -Context $Context `
+    -InstanceId $instanceId `
+    -ExpectedReleaseId (Get-OptimizationObjectText -Object $Journal -Name 'releaseId') `
+    -Target $candidateTarget
+  Restore-DailyApplySnapshot -Context $Context -Journal $Journal
+  Remove-DailyJournal -Context $Context
+  return [ordered]@{ status = 'rolled-back'; operation = 'Apply'; sideEffects = @('stopped only the journal-owned candidate pair', 'restored the previous active target snapshot', 'removed the recovered promotion journal') }
+}
+
+function Test-DailyEmptyActiveTarget {
+  param([Parameter(Mandatory)]$Context, $Target)
+  return $null -ne $Target `
+    -and [string](Get-OptimizationObjectText -Object $Target -Name 'status') -eq 'empty' `
+    -and [string](Get-OptimizationObjectText -Object $Target -Name 'profileId') -eq $profileId `
+    -and (Test-DailySamePath -Left (Get-OptimizationObjectText -Object $Target -Name 'rollbackStatePath') -Right $Context.rollbackTargetPath)
+}
+
+function Assert-DailyRollbackTargetIdentity {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target, [Parameter(Mandatory)]$SourceTarget)
+  if ([string](Get-OptimizationObjectText -Object $Target -Name 'status') -ne 'rolled-back') { throw 'Daily production rollback target status is invalid; refusing recovery.' }
+  if (-not (Test-DailySamePath -Left (Get-OptimizationObjectText -Object $Target -Name 'sourceTargetPath') -Right $Context.activeTargetPath)) { throw 'Daily production rollback target source mismatch; refusing recovery.' }
+  Assert-DailyTargetIdentity -Context $Context -Target $Target
+  $sourceRelease = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $SourceTarget -Name 'release') -Name 'releaseId'
+  $rollbackRelease = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId'
+  if ($sourceRelease -ne $rollbackRelease) { throw 'Daily production rollback target release mismatch; refusing recovery.' }
+  $sourceInstance = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $SourceTarget -Name 'profile') -Name 'instanceId'
+  $rollbackInstance = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'profile') -Name 'instanceId'
+  if ($sourceInstance -ne $rollbackInstance) { throw 'Daily production rollback target instance mismatch; refusing recovery.' }
+}
+
+function Invoke-DailyRollbackRecovery {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
+  Assert-DailyJournalIdentity -Context $Context -Journal $Journal -Operation 'daily-production-rollback'
+  $sourceSnapshot = Get-OptimizationObjectText -Object $Journal -Name 'activeTargetSnapshot'
+  if (-not $sourceSnapshot) { throw 'Daily production rollback journal has no active target snapshot; refusing recovery.' }
+  try { $sourceTarget = $sourceSnapshot | ConvertFrom-Json } catch { throw 'Daily production rollback target snapshot is invalid; refusing recovery.' }
+  Assert-DailyTargetIdentity -Context $Context -Target $sourceTarget
+  $instanceId = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $sourceTarget -Name 'profile') -Name 'instanceId'
+  $sourceReleaseId = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $sourceTarget -Name 'release') -Name 'releaseId'
+  $currentActive = Read-OptimizationJsonFile -Path $Context.activeTargetPath
+  $currentActiveSnapshot = Read-DailyText -Path $Context.activeTargetPath
+  $sourceStillActive = $currentActiveSnapshot -eq $sourceSnapshot
+  if (-not $sourceStillActive -and -not (Test-DailyEmptyActiveTarget -Context $Context -Target $currentActive)) {
+    throw 'Daily production rollback recovery found an unknown active-target state; refusing to overwrite it.'
+  }
+
+  $status = Get-OptimizationObjectText -Object $Journal -Name 'status'
+  if ($status -notin @('prepared', 'committed')) { throw "Daily production rollback journal status '$status' is unsupported; refusing recovery." }
+
+  $journalPhase = Get-OptimizationObjectText -Object $Journal -Name 'phase'
+  if ($journalPhase -notin @('services-stopped', 'rollback-target-written', 'active-target-cleared') -or $sourceStillActive) {
+    $Journal.phase = 'stopping'
+    Write-DailyJournal -Context $Context -Journal $Journal
+    Stop-DailyInterruptedInstance -Context $Context -InstanceId $instanceId -ExpectedReleaseId $sourceReleaseId -Target $sourceTarget
+    $Journal.phase = 'services-stopped'
+    Write-DailyJournal -Context $Context -Journal $Journal
+  } else {
+    Stop-DailyInterruptedInstance -Context $Context -InstanceId $instanceId -ExpectedReleaseId $sourceReleaseId -Target $sourceTarget
+  }
+
+  $rollback = Read-OptimizationJsonFile -Path $Context.rollbackTargetPath
+  $rollbackReady = $false
+  if ($null -ne $rollback) {
+    Assert-DailyRollbackTargetIdentity -Context $Context -Target $rollback -SourceTarget $sourceTarget
+    $rollbackReady = $true
+  }
+  if (-not $rollbackReady) {
+    $Journal.phase = 'rollback-target-pending'
+    Write-DailyJournal -Context $Context -Journal $Journal
+    Write-DailyJson -Path $Context.rollbackTargetPath -Value (New-DailyRollbackTarget -Context $Context -Target $sourceTarget)
+    $Journal.phase = 'rollback-target-written'
+    Write-DailyJournal -Context $Context -Journal $Journal
+  }
+
+  $currentActive = Read-OptimizationJsonFile -Path $Context.activeTargetPath
+  if (-not (Test-DailyEmptyActiveTarget -Context $Context -Target $currentActive)) {
+    $Journal.phase = 'active-target-pending'
+    Write-DailyJournal -Context $Context -Journal $Journal
+    Write-DailyJson -Path $Context.activeTargetPath -Value (New-DailyEmptyTarget -Context $Context)
+    $Journal.phase = 'active-target-cleared'
+    $Journal.status = 'committed'
+    Write-DailyJournal -Context $Context -Journal $Journal
+  } elseif ($status -ne 'committed' -or $journalPhase -ne 'active-target-cleared') {
+    $Journal.phase = 'active-target-cleared'
+    $Journal.status = 'committed'
+    Write-DailyJournal -Context $Context -Journal $Journal
+  }
+  Remove-DailyJournal -Context $Context
+  return [ordered]@{ status = 'finalized'; operation = 'Rollback'; sideEffects = @('stopped only the journal-owned pair', 'preserved the rollback target', 'cleared the active target', 'removed the completed rollback journal') }
+}
+
+function Invoke-DailyPromotionRecovery {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
+  $operation = Get-OptimizationObjectText -Object $Journal -Name 'operation'
+  switch ($operation) {
+    'daily-production-apply' { return Invoke-DailyApplyRecovery -Context $Context -Journal $Journal }
+    'daily-production-rollback' { return Invoke-DailyRollbackRecovery -Context $Context -Journal $Journal }
+    default { throw "Daily production journal operation '$operation' is unsupported; refusing recovery." }
+  }
 }
 
 function Remove-DailyInstanceRoot {
@@ -841,6 +1205,7 @@ function Invoke-DailyApply {
   }
   Write-DailyJournal -Context $Context -Journal $journal
   $pairStarted = $false
+  $transactionCommitted = $false
   $release = $null
   try {
     $candidate = New-OptimizationReleaseStaging `
@@ -885,11 +1250,16 @@ function Invoke-DailyApply {
     $journal.phase = 'pair-ready'
     Write-DailyJournal -Context $Context -Journal $journal
     $target = New-DailyTarget -Context $Context -Release $release -Pair $pairIdentity -InstanceId $instanceId -Toolchain $toolchain
+    Invoke-DailyCrashPoint -Phase 'apply-before-active-target'
     Write-DailyJson -Path $Context.activeTargetPath -Value $target
+    Invoke-DailyCrashPoint -Phase 'apply-after-active-target'
     $journal.phase = 'active-target-written'
     $journal.status = 'committed'
     Write-DailyJournal -Context $Context -Journal $journal
+    $transactionCommitted = $true
+    Invoke-DailyCrashPoint -Phase 'apply-before-journal-remove'
     Remove-DailyJournal -Context $Context
+    Invoke-DailyCrashPoint -Phase 'apply-after-journal-remove'
     if ($Open -and -not $NoOpen) { Start-Process "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/" }
     return [ordered]@{
       status = 'applied'
@@ -906,6 +1276,7 @@ function Invoke-DailyApply {
       sideEffects = @('built immutable dist', 'started owned Host/capability pair', 'wrote atomic target state')
     }
   } catch {
+    if ($transactionCommitted) { throw }
     if ($pairStarted) {
       try { Stop-DailyOwnedInstance -Context $Context -InstanceId $instanceId } catch {}
     } else {
@@ -927,7 +1298,6 @@ function Invoke-DailyStart {
   $target = Read-OptimizationJsonFile -Path $Context.activeTargetPath
   $targetStatus = Get-OptimizationObjectText -Object $target -Name 'status'
   if ($null -eq $target -or $targetStatus -notin @('active', 'stopped')) { throw "No retained daily-production target is available at $($Context.activeTargetPath). Apply first or inspect Rollback state." }
-  if (Read-OptimizationJsonFile -Path $Context.journalPath) { throw 'An unfinished daily-production transaction exists; refusing Start.' }
   $toolchain = Get-DailyToolchain -Context $Context
   $release = Get-DailyReleaseFromTarget -Context $Context -Target $target -Toolchain $toolchain
   $token = Get-DailyToken -Context $Context
@@ -962,7 +1332,6 @@ function Invoke-DailyStop {
   $targetStatus = Get-OptimizationObjectText -Object $target -Name 'status'
   if ($null -eq $target -or $targetStatus -notin @('active', 'stopped')) { return [ordered]@{ status = 'absent'; action = 'Stop'; sideEffects = @('none') } }
   Assert-DailyTargetIdentity -Context $Context -Target $target
-  if (Read-OptimizationJsonFile -Path $Context.journalPath) { throw 'An unfinished daily-production transaction exists; refusing Stop.' }
   if ($targetStatus -eq 'active') { Stop-DailyPair -Context $Context -Target $target }
   $stopped = [ordered]@{}
   foreach ($property in $target.PSObject.Properties) { $stopped[$property.Name] = $property.Value }
@@ -980,7 +1349,6 @@ function Invoke-DailyRollback {
   $targetStatus = Get-OptimizationObjectText -Object $target -Name 'status'
   if ($null -eq $target -or $targetStatus -notin @('active', 'stopped')) { return [ordered]@{ status = 'absent'; action = 'Rollback'; sideEffects = @('none') } }
   Assert-DailyTargetIdentity -Context $Context -Target $target
-  if (Read-OptimizationJsonFile -Path $Context.journalPath) { throw 'An unfinished daily-production transaction exists; refusing Rollback.' }
   $journal = [ordered]@{
     schemaVersion = 1
     operation = 'daily-production-rollback'
@@ -992,26 +1360,30 @@ function Invoke-DailyRollback {
   }
   Write-DailyJournal -Context $Context -Journal $journal
   try {
+    $journal.phase = 'stopping'
+    Write-DailyJournal -Context $Context -Journal $journal
     if ($targetStatus -eq 'active') { Stop-DailyPair -Context $Context -Target $target }
-    $rollback = [ordered]@{}
-    foreach ($property in $target.PSObject.Properties) { $rollback[$property.Name] = $property.Value }
-    $rollback.status = 'rolled-back'
-    $rollback.rolledBackAtUtc = ([DateTime]::UtcNow).ToString('O')
-    $rollback.sourceTargetPath = $Context.activeTargetPath
-    Write-DailyJson -Path $Context.rollbackTargetPath -Value $rollback
-    Write-DailyJson -Path $Context.activeTargetPath -Value ([ordered]@{
-      schemaVersion = 1
-      status = 'empty'
-      profileId = $profileId
-      clearedAtUtc = ([DateTime]::UtcNow).ToString('O')
-      rollbackStatePath = $Context.rollbackTargetPath
-      releasePreserved = $true
-      dataPreserved = $true
-    })
-    $journal.phase = 'rollback-state-written'
+    $journal.phase = 'services-stopped'
+    Write-DailyJournal -Context $Context -Journal $journal
+    Invoke-DailyCrashPoint -Phase 'rollback-after-stop'
+    $journal.phase = 'rollback-target-pending'
+    Write-DailyJournal -Context $Context -Journal $journal
+    Invoke-DailyCrashPoint -Phase 'rollback-before-rollback-target'
+    Write-DailyJson -Path $Context.rollbackTargetPath -Value (New-DailyRollbackTarget -Context $Context -Target $target)
+    Invoke-DailyCrashPoint -Phase 'rollback-after-rollback-target'
+    $journal.phase = 'rollback-target-written'
+    Write-DailyJournal -Context $Context -Journal $journal
+    $journal.phase = 'active-target-pending'
+    Write-DailyJournal -Context $Context -Journal $journal
+    Invoke-DailyCrashPoint -Phase 'rollback-before-active-target-clear'
+    Write-DailyJson -Path $Context.activeTargetPath -Value (New-DailyEmptyTarget -Context $Context)
+    Invoke-DailyCrashPoint -Phase 'rollback-after-active-target-clear'
+    $journal.phase = 'active-target-cleared'
     $journal.status = 'committed'
     Write-DailyJournal -Context $Context -Journal $journal
+    Invoke-DailyCrashPoint -Phase 'rollback-before-journal-remove'
     Remove-DailyJournal -Context $Context
+    Invoke-DailyCrashPoint -Phase 'rollback-after-journal-remove'
     return [ordered]@{ status = 'rolled-back'; action = 'Rollback'; rollbackStatePath = $Context.rollbackTargetPath; releasePreserved = $true; dataPreserved = $true; sideEffects = @('stopped only the identity-checked owned pair', 'cleared active target atomically', 'preserved immutable release and data root') }
   } catch {
     throw
@@ -1020,6 +1392,16 @@ function Invoke-DailyRollback {
 
 try {
   $script:dailyContext = Get-DailyContext
+  $authorizedRecovery = $Action -in @('Start', 'Stop') `
+    -or ($Action -eq 'Apply' -and $ConfirmDailyProductionApply) `
+    -or ($Action -eq 'Rollback' -and $ConfirmDailyProductionRollback)
+  if ($Action -ne 'Plan' -and $authorizedRecovery) {
+    $pendingJournal = Read-OptimizationJsonFile -Path $script:dailyContext.journalPath
+    if ($null -ne $pendingJournal) {
+      $recovery = Invoke-DailyPromotionRecovery -Context $script:dailyContext -Journal $pendingJournal
+      Write-Host ("Recovered daily-production $($recovery.operation) transaction: $($recovery.status).")
+    }
+  }
   switch ($Action) {
     'Plan' {
       $result = Get-DailyPreflight -Context $script:dailyContext

@@ -63,6 +63,64 @@ function Test-ShortcutEqual($Left, $Right) {
 function Remove-PendingState {
   if (Test-Path -LiteralPath $pending -PathType Leaf) { Remove-Item -LiteralPath $pending -Force }
 }
+function Invoke-ShortcutCrashPoint([string]$Phase) {
+  if ([string]$env:READ_WEB_SHORTCUT_TEST_KILL_PHASE -ne $Phase) { return }
+  Write-Host "Synthetic shortcut transaction crash at phase: $Phase"
+  try { Stop-Process -Id $PID -Force -ErrorAction Stop } catch {}
+  throw "Synthetic shortcut transaction crash at phase: $Phase"
+}
+function Assert-PendingTransaction([Parameter(Mandatory)]$PendingState) {
+  if ([string]$PendingState.schema -ne 'read-web.shortcut-migration.transaction' -or [int]$PendingState.schemaVersion -ne 1) {
+    throw "Pending shortcut transaction schema is invalid at $pending."
+  }
+  if ([IO.Path]::GetFullPath([string]$PendingState.shortcut) -ne $shortcut) {
+    throw "Pending shortcut transaction targets a different shortcut: $pending"
+  }
+  if ([string]$PendingState.operation -notin @('apply', 'rollback') -or $null -eq $PendingState.from -or $null -eq $PendingState.to) {
+    throw "Pending shortcut transaction operation or endpoints are invalid at $pending."
+  }
+}
+function Recover-PendingTransaction([Parameter(Mandatory)]$PendingState, [Parameter(Mandatory)]$Current, $ExistingState) {
+  Assert-PendingTransaction -PendingState $PendingState
+  if ([string]$PendingState.operation -ne $Action.ToLowerInvariant()) {
+    throw "An unfinished $($PendingState.operation) shortcut transaction exists at $pending; use the matching action to recover it."
+  }
+  $from = $PendingState.from
+  $to = $PendingState.to
+  if ([string]$PendingState.operation -eq 'rollback') {
+    if (Test-ShortcutEqual -Left $Current -Right $to) {
+      Remove-PendingState
+      return [pscustomobject]@{ status = 'recovered-pending-transaction'; operation = 'rollback'; shortcut = $shortcut; state = $state; sideEffects = @('confirmed the rollback target was already written', 'removed the pending transaction') }
+    }
+    if (Test-ShortcutEqual -Left $Current -Right $from) {
+      Write-ShortcutAtomic $shortcut $to
+      Remove-PendingState
+      return [pscustomobject]@{ status = 'recovered-pending-transaction'; operation = 'rollback'; shortcut = $shortcut; state = $state; sideEffects = @('restored the pending rollback destination', 'removed the pending transaction') }
+    }
+    throw "Pending shortcut rollback is ambiguous: current shortcut matches neither from nor to; transaction retained at $pending."
+  }
+
+  if (Test-ShortcutEqual -Left $Current -Right $from) {
+    if ($null -ne $ExistingState -and [string]$ExistingState.schema -eq 'read-web.shortcut-migration' -and (Test-ShortcutEqual -Left $ExistingState.next -Right $to)) {
+      throw "Pending shortcut Apply has committed rollback state but the current shortcut is still from; transaction retained at $pending."
+    }
+    Remove-PendingState
+    return [pscustomobject]@{ status = 'recovered-pending-transaction'; operation = 'apply'; shortcut = $shortcut; state = $state; sideEffects = @('confirmed the Apply shortcut was not written', 'removed the pending transaction') }
+  }
+  if (Test-ShortcutEqual -Left $Current -Right $to) {
+    if ($null -ne $ExistingState) {
+      if ([string]$ExistingState.schema -ne 'read-web.shortcut-migration' -or -not (Test-ShortcutEqual -Left $ExistingState.next -Right $to)) {
+        throw "Pending shortcut Apply conflicts with existing rollback state; transaction retained at $pending."
+      }
+      Remove-PendingState
+      return [pscustomobject]@{ status = 'recovered-pending-transaction'; operation = 'apply'; shortcut = $shortcut; state = $state; sideEffects = @('confirmed the Apply rollback state was already written', 'removed the pending transaction') }
+    }
+    Write-ShortcutAtomic $shortcut $from
+    Remove-PendingState
+    return [pscustomobject]@{ status = 'recovered-pending-transaction'; operation = 'apply'; shortcut = $shortcut; state = $state; sideEffects = @('restored the original shortcut after an incomplete Apply', 'removed the pending transaction') }
+  }
+  throw "Pending shortcut Apply is ambiguous: current shortcut matches neither from nor to; transaction retained at $pending."
+}
 
 $original = Read-Shortcut $shortcut
 $next = $null
@@ -105,13 +163,9 @@ if ($Action -eq 'Plan') {
 }
 
 if ($null -ne $existingPending) {
-  if ($Action -eq 'Rollback' -and [string]$existingPending.shortcut -eq $shortcut -and $null -ne $existingPending.from) {
-    Write-ShortcutAtomic $shortcut $existingPending.from
-    Remove-PendingState
-    [pscustomobject]@{ status = 'recovered-pending-transaction'; shortcut = $shortcut; state = $state; sideEffects = @('restored pending original shortcut') } | ConvertTo-Json
-    exit 0
-  }
-  throw "An unfinished shortcut transaction exists at $pending; refusing a new mutation."
+  $recovered = Recover-PendingTransaction -PendingState $existingPending -Current $original -ExistingState $existingState
+  $recovered | ConvertTo-Json -Depth 12
+  exit 0
 }
 
 if ($Action -eq 'Apply') {
@@ -186,10 +240,12 @@ $rollbackTransaction = [ordered]@{
   createdAt = [DateTime]::UtcNow.ToString('O')
 }
 Write-StateAtomic $pending $rollbackTransaction
+Invoke-ShortcutCrashPoint -Phase 'rollback-pending-written'
 $shortcutChanged = $false
 try {
   Write-ShortcutAtomic $shortcut $existingState.original
   $shortcutChanged = $true
+  Invoke-ShortcutCrashPoint -Phase 'rollback-shortcut-written'
   Remove-PendingState
   [pscustomobject]@{ status = 'rolled-back'; shortcut = $shortcut; state = $state; sideEffects = @('restored saved original shortcut', 'preserved rollback state') } | ConvertTo-Json
   exit 0
