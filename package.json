@@ -94,6 +94,7 @@
     "verify:release-differential": "node scripts/release-version-differential.mjs",
     "verify:release-control": "node scripts/release-control-check.mjs",
     "verify:release-shortcut-rollback": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-rollback-rehearsal.ps1",
+    "verify:daily-production-launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/daily-production-launcher-check.ps1 -LauncherPath scripts/launch-daily-production.ps1",
     "verify:release": "node scripts/verify-release.mjs",
     "verify:performance:backend": "node scripts/run-python-gate.mjs scripts/perf/backend-http-benchmark.py --config config/runtime.optimization.json",
     "verify:performance:browser": "node scripts/perf/run-browser-journeys.mjs",

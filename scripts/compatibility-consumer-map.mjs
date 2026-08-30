@@ -6,7 +6,6 @@ import net from 'node:net'
 import path from 'node:path'
 import process from 'node:process'
 import { createRequire } from 'node:module'
-import { chromium } from 'playwright'
 import { isBrowserSafePort } from './lib/browser-port-policy.mjs'
 import {
   createIsolatedRuntimeConfig,
@@ -24,6 +23,7 @@ const port = configuredPort ? Number(configuredPort) : await findFreePort()
 if (!isBrowserSafePort(port)) {
   throw new Error(`invalid compatibility map port: ${configuredPort || port}`)
 }
+const { chromium } = await import('playwright')
 const targetUrl = `http://127.0.0.1:${port}/`
 const updateMode = process.argv.includes('--update')
 const runtimeOutputPath = path.resolve(root, optionValue('--output') || 'output/architecture/compatibility-consumer-map.runtime.json')

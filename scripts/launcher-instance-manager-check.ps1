@@ -21,11 +21,19 @@ $owned = $null
 $unknown = $null
 $orphan = $null
 try {
-  foreach ($reserved in @(5173, 8765)) {
+  foreach ($reserved in @(5173, 8765, 5174, 8766)) {
     $threw = $false
     try { Assert-LauncherPortSafety -Port $reserved -ProfileId 'isolated-test' } catch { $threw = $true }
     Assert-True $threw "isolated launcher must reject reserved daily port $reserved"
   }
+  $dailyAllowanceRejected = $false
+  try { Assert-LauncherPortSafety -Port 5174 -ProfileId 'daily-production' } catch { $dailyAllowanceRejected = $true }
+  Assert-True $dailyAllowanceRejected 'daily-production must require explicit reserved-port allowance'
+  $legacyAliasRejected = $false
+  try { Assert-LauncherPortSafety -Port 5174 -ProfileId 'daily' } catch { $legacyAliasRejected = $true }
+  Assert-True $legacyAliasRejected 'legacy daily profile must not bypass the current daily-production ports'
+  Assert-LauncherPortSafety -Port 5174 -ProfileId 'daily-production' -AllowReservedDailyPorts
+  Assert-LauncherPortSafety -Port 8766 -ProfileId 'daily-production' -AllowReservedDailyPorts
 
   $unknownPort = Get-RandomLoopbackPort
   $unknown = Start-Process -FilePath $python -ArgumentList @('-m', 'http.server', "$unknownPort", '--bind', '127.0.0.1') -WorkingDirectory $testRoot -WindowStyle Hidden -PassThru

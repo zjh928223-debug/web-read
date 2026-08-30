@@ -7,7 +7,7 @@ for (const port of [1, 7, 80, 1723, 5060, 6000, 10080]) {
 for (const port of [1838, 4193, 43127]) {
   assert.equal(isBrowserSafePort(port), true, `ordinary browser port must remain available to the policy: ${port}`)
 }
-for (const port of [5173, 8765]) {
+for (const port of [5173, 8765, 5174, 8766]) {
   assert.equal(isBrowserSafePort(port), false, `daily application port must be rejected by the shared browser policy: ${port}`)
 }
 assert.equal(isBrowserSafePort(0), false)

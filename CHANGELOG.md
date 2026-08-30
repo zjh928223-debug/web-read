@@ -1,5 +1,13 @@
 # Changelog
 
+## Current daily promotion boundary — 2026-08-30
+
+The current daily origin remains the protected `E:\read-web-next` Vite/dev compatibility path on
+`5174/8766` with `E:\ReadWebData\SubtitleWorkflow-Next`. This optimization worktree adds an
+independent, opt-in daily-production candidate that serves built assets through
+`youtube_workflow.production_host_prototype`; it has not switched the desktop shortcut or claimed
+six-domain Host authority. The legacy `E:\read-web` `5173/8765` target remains available for rollback.
+
 ## Next workspace — migrated locally on 2026-08-17
 
 The stabilization and migration work is complete in `E:\read-web-next`. After the

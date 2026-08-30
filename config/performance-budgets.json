@@ -7,7 +7,7 @@
     "workspaceKind": "isolated-next-copy",
     "platform": "win32",
     "frontend": {
-      "developmentUrl": "http://127.0.0.1:5174",
+      "developmentUrl": "random loopback port owned by isolated Vite fixture",
       "measuredProductionUrl": "random loopback port owned by Local App Host",
       "buildMode": "built dist served by Local App Host"
     },

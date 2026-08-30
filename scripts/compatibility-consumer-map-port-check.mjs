@@ -4,11 +4,11 @@ import process from 'node:process'
 
 import { isBrowserSafePort } from './lib/browser-port-policy.mjs'
 
-for (const port of [5173, 8765, 6000, 10080]) {
+for (const port of [5173, 5174, 8765, 8766, 6000, 10080]) {
   assert.equal(isBrowserSafePort(port), false, `compatibility map must reject unsafe or daily port ${port}`)
 }
 
-for (const port of [6000, 10080]) {
+for (const port of [5174, 8766, 6000, 10080]) {
   const environment = { ...process.env, READ_WEB_COMPAT_MAP_PORT: String(port) }
   delete environment.READ_WEB_URL
   const result = spawnSync(process.execPath, ['scripts/compatibility-consumer-map.mjs'], {

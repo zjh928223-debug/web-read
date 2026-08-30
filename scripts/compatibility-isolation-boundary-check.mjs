@@ -13,7 +13,7 @@ const originalEnv = {
   ECDICT_DATABASE_PATH: 'E:\\read-web\\data\\ecdict.sqlite',
 }
 
-assert.deepEqual([...RESERVED_DAILY_PORTS].sort((a, b) => a - b), [5173, 8765])
+assert.deepEqual([...RESERVED_DAILY_PORTS].sort((a, b) => a - b), [5173, 5174, 8765, 8766])
 assert.throws(
   () => rejectExplicitReadWebUrl(originalEnv),
   (error) => error?.code === 'COMPATIBILITY_EXPLICIT_URL_FORBIDDEN',
@@ -57,6 +57,14 @@ assert.throws(
 assert.throws(
   () => createIsolatedViteEnvironment({ frontendPort: 43127, backendPort: 8765, dataRoot: 'x', runtimeConfigPath: 'x', serviceToken: 'x', env: {} }),
   /reserved daily port 8765/,
+)
+assert.throws(
+  () => createIsolatedViteEnvironment({ frontendPort: 5174, backendPort: 43128, dataRoot: 'x', runtimeConfigPath: 'x', serviceToken: 'x', env: {} }),
+  /reserved daily port 5174/,
+)
+assert.throws(
+  () => createIsolatedViteEnvironment({ frontendPort: 43127, backendPort: 8766, dataRoot: 'x', runtimeConfigPath: 'x', serviceToken: 'x', env: {} }),
+  /reserved daily port 8766/,
 )
 
 console.log('compatibility isolation boundary check passed')

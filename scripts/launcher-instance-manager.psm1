@@ -4,12 +4,15 @@ function Assert-LauncherPortSafety {
   param(
     [Parameter(Mandatory)][int]$Port,
     [Parameter(Mandatory)][string]$ProfileId,
-    [int[]]$ReservedDailyPorts = @(5173, 8765)
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
+    [switch]$AllowReservedDailyPorts
   )
   if ($Port -lt 1 -or $Port -gt 65535) {
     throw "Invalid launcher port: $Port"
   }
-  if ($ProfileId -ne 'daily' -and $ReservedDailyPorts -contains $Port) {
+  $legacyDailyPort = $ProfileId -eq 'daily' -and $Port -in @(5173, 8765)
+  $dailyProductionPort = $ProfileId -eq 'daily-production' -and $Port -in @(5174, 8766)
+  if ($ReservedDailyPorts -contains $Port -and -not ($legacyDailyPort -or ($dailyProductionPort -and $AllowReservedDailyPorts))) {
     throw "Isolated profile '$ProfileId' may not use reserved daily port $Port."
   }
 }
@@ -362,7 +365,8 @@ function ConvertTo-ManagedStartRecord {
     argumentList = @($Spec.ArgumentList)
     workingDirectory = [string]$Spec.WorkingDirectory
     readyTimeoutSeconds = [int]$Spec.ReadyTimeoutSeconds
-    reservedDailyPorts = @($Spec.ReservedDailyPorts)
+    reservedDailyPorts = if ($Spec.ContainsKey('ReservedDailyPorts')) { @($Spec.ReservedDailyPorts) } else { @(5173, 8765, 5174, 8766) }
+    allowReservedDailyPorts = if ($Spec.ContainsKey('AllowReservedDailyPorts')) { [bool]$Spec.AllowReservedDailyPorts } else { $false }
     standardOutputPath = [string]$Spec.StandardOutputPath
     standardErrorPath = [string]$Spec.StandardErrorPath
     executableIdentity = [string]$Spec.ExecutableIdentity
@@ -385,6 +389,7 @@ function ConvertFrom-ManagedStartRecord {
   if ($null -ne $recordMetadata) {
     foreach ($property in @($recordMetadata.PSObject.Properties)) { $metadata[$property.Name] = $property.Value }
   }
+  $reservedPorts = Get-ManagedRecordValue -Object $Record -Name 'reservedDailyPorts'
   return @{
     ReleaseId = [string](Get-ManagedRecordValue -Object $Record -Name 'releaseId')
     ProfileId = [string](Get-ManagedRecordValue -Object $Record -Name 'profileId')
@@ -396,7 +401,8 @@ function ConvertFrom-ManagedStartRecord {
     ArgumentList = @((Get-ManagedRecordValue -Object $Record -Name 'argumentList') | ForEach-Object { [string]$_ })
     WorkingDirectory = [string](Get-ManagedRecordValue -Object $Record -Name 'workingDirectory')
     ReadyTimeoutSeconds = [Math]::Max(1, [int](Get-ManagedRecordValue -Object $Record -Name 'readyTimeoutSeconds'))
-    ReservedDailyPorts = @((Get-ManagedRecordValue -Object $Record -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    ReservedDailyPorts = if ($null -eq $reservedPorts) { @(5173, 8765, 5174, 8766) } else { @($reservedPorts | ForEach-Object { [int]$_ }) }
+    AllowReservedDailyPorts = [bool](Get-ManagedRecordValue -Object $Record -Name 'allowReservedDailyPorts')
     StandardOutputPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardOutputPath')
     StandardErrorPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardErrorPath')
     ExecutableIdentity = [string](Get-ManagedRecordValue -Object $Record -Name 'executableIdentity')
@@ -557,7 +563,7 @@ function Get-ManagedStartSpecFromState {
     'schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid',
     'processStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
     'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath',
-    'healthUrl', 'launchIntentPath'
+    'healthUrl', 'launchIntentPath', 'reservedDailyPorts', 'allowReservedDailyPorts'
   )
   foreach ($property in @($State.PSObject.Properties)) {
     if ($reserved -notcontains $property.Name) { $metadata[$property.Name] = $property.Value }
@@ -573,7 +579,10 @@ function Get-ManagedStartSpecFromState {
     ArgumentList = $arguments
     WorkingDirectory = [string]$State.workingDirectory
     ReadyTimeoutSeconds = 30
-    ReservedDailyPorts = @(5173, 8765)
+    ReservedDailyPorts = if ($null -ne (Get-ManagedRecordValue -Object $State -Name 'reservedDailyPorts')) {
+      @((Get-ManagedRecordValue -Object $State -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    } else { @(5173, 8765, 5174, 8766) }
+    AllowReservedDailyPorts = [bool](Get-ManagedRecordValue -Object $State -Name 'allowReservedDailyPorts')
     StandardOutputPath = [string]$State.standardOutputPath
     StandardErrorPath = [string]$State.standardErrorPath
     ExecutableIdentity = [string](Get-ManagedRecordValue -Object $State -Name 'executableIdentity')
@@ -650,12 +659,13 @@ function Start-ManagedRuntimeProcessCore {
     [string[]]$ArgumentList = @(),
     [string]$WorkingDirectory = '',
     [int]$ReadyTimeoutSeconds = 30,
-    [int[]]$ReservedDailyPorts = @(5173, 8765),
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
     [string]$StandardOutputPath = '',
     [string]$StandardErrorPath = '',
     [string]$ExecutableIdentity = '',
     [hashtable]$Metadata = @{},
     [Parameter(Mandatory)][string]$LaunchIntentPath,
+    [switch]$AllowReservedDailyPorts,
     [switch]$SkipTestKillHook
   )
   $process = $null
@@ -734,10 +744,12 @@ function Start-ManagedRuntimeProcessCore {
       workingDirectory = $WorkingDirectory
       standardOutputPath = $StandardOutputPath
       standardErrorPath = $StandardErrorPath
+      reservedDailyPorts = @($ReservedDailyPorts)
+      allowReservedDailyPorts = [bool]$AllowReservedDailyPorts
       launchIntentPath = $LaunchIntentPath
     }
     foreach ($metadataName in $Metadata.Keys) {
-      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'launchIntentPath')) {
+      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'reservedDailyPorts', 'allowReservedDailyPorts', 'launchIntentPath')) {
         throw "Managed runtime metadata may not replace ownership field '$metadataName'."
       }
       $state[[string]$metadataName] = $Metadata[$metadataName]
@@ -830,7 +842,7 @@ function Start-ManagedRuntimeInstance {
     [string[]]$ArgumentList = @(),
     [string]$WorkingDirectory = '',
     [int]$ReadyTimeoutSeconds = 30,
-    [int[]]$ReservedDailyPorts = @(5173, 8765),
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
     [string]$StandardOutputPath = '',
     [string]$StandardErrorPath = '',
     [string]$InstanceId = '',
@@ -839,9 +851,10 @@ function Start-ManagedRuntimeInstance {
     [string]$LaunchIntentPath = '',
     [hashtable]$FallbackStart = $null,
     [hashtable]$PreflightStart = $null,
+    [switch]$AllowReservedDailyPorts,
     [switch]$SkipTestKillHook
   )
-  Assert-LauncherPortSafety -Port $Port -ProfileId $ProfileId -ReservedDailyPorts $ReservedDailyPorts
+  Assert-LauncherPortSafety -Port $Port -ProfileId $ProfileId -ReservedDailyPorts $ReservedDailyPorts -AllowReservedDailyPorts:$AllowReservedDailyPorts
   $stateDirectory = Split-Path -Parent $StatePath
   if (-not $stateDirectory) { $stateDirectory = (Get-Location).Path }
   New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
@@ -900,6 +913,7 @@ function Start-ManagedRuntimeInstance {
           $replacementFallback.LaunchIntentPath = $LaunchIntentPath
           $replacementFallback.ReadyTimeoutSeconds = [Math]::Max(1, $ReadyTimeoutSeconds)
           $replacementFallback.ReservedDailyPorts = @($ReservedDailyPorts)
+          $replacementFallback.AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           $replacementCandidateInstanceId = [string]$existing.instanceId
           $replacementCandidate = @{
             ReleaseId = $ReleaseId
@@ -916,6 +930,7 @@ function Start-ManagedRuntimeInstance {
             StandardOutputPath = $StandardOutputPath
             StandardErrorPath = $StandardErrorPath
             ExecutableIdentity = $ExecutableIdentity
+            AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
             Metadata = $Metadata
           }
           $replacementPreflight = $null
@@ -925,6 +940,7 @@ function Start-ManagedRuntimeInstance {
             $replacementPreflight.ProfileId = $ProfileId
             $replacementPreflight.ReleaseId = $ReleaseId
             $replacementPreflight.ExecutableIdentity = $ExecutableIdentity
+            $replacementPreflight.AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           }
           Write-ManagedReplacementRecord `
             -Path $replacementPath `
@@ -994,6 +1010,8 @@ function Start-ManagedRuntimeInstance {
           filePath = $FilePath
           argumentList = @($adoptedArguments)
           workingDirectory = $WorkingDirectory
+          reservedDailyPorts = @($ReservedDailyPorts)
+          allowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           standardOutputPath = $StandardOutputPath
           standardErrorPath = $StandardErrorPath
           launchIntentPath = $LaunchIntentPath
@@ -1029,6 +1047,7 @@ function Start-ManagedRuntimeInstance {
       -ExecutableIdentity $ExecutableIdentity `
       -Metadata $Metadata `
       -LaunchIntentPath $LaunchIntentPath `
+      -AllowReservedDailyPorts:$AllowReservedDailyPorts `
       -SkipTestKillHook:$SkipTestKillHook
     if (Test-Path -LiteralPath $replacementPath -PathType Leaf) { Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue }
     return $result

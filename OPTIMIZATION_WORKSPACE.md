@@ -40,7 +40,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-
 ```
 
 `-DevFallback` is an explicit Vite development escape hatch for source debugging; it is not the
-default path. The launcher never uses the daily reader data root or the daily `5173/8765` ports.
+default path. The launcher never uses the current daily `5174/8766` origin/data root or the legacy
+rollback `5173/8765` ports.
 
 The copy intentionally includes the source workspace's uncommitted WhisperX and
 language-processing changes. Generated output, browser artifacts, backups and

@@ -35,6 +35,8 @@ async function main() {
   rejectExplicitReadWebUrl(process.env);
   assert.throws(() => normalizeTargetUrl('http://127.0.0.1:5173/'), /reserved daily port/);
   assert.throws(() => normalizeTargetUrl('http://127.0.0.1:8765/'), /reserved daily port/);
+  assert.throws(() => normalizeTargetUrl('http://127.0.0.1:5174/'), /reserved daily port/);
+  assert.throws(() => normalizeTargetUrl('http://127.0.0.1:8766/'), /reserved daily port/);
   assert.throws(() => normalizeTargetUrl('http://localhost:4193/'), /requires 127\.0\.0\.1/);
   let serverProcess = null;
   const isolationRoot = fs.mkdtempSync(path.join(os.tmpdir(), `read-web-ui-compat-${process.pid}-`));

@@ -47,7 +47,7 @@ const included = [
 ]
 
 const excluded = [
-  ['ports 5173/8765', 'reserved for the current daily installation and never started or stopped by this gate'],
+  ['daily ports 5173/8765 and 5174/8766', 'reserved for the legacy rollback and current daily installations; never started, stopped, or reused by this gate'],
   ['live TTS, dictionary, AI, and YouTube checks', 'may use network, credentials, paid APIs, or external media'],
   ['performance and long-duration journeys', 'planned for verify-release after budgets and fixtures exist'],
   ['clean-room install, secret/license/SBOM, and release-only rollback drill', 'planned for verify-release'],
