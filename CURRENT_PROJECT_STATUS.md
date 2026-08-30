@@ -17,6 +17,10 @@ browser canonical writer 由 domain guard 阻断，typed Host API 是 durable mu
 日常数据，不改变外部 shortcut，也不开放非-loopback transport。完整媒体仍只传 identity/reference 与授权
 Range URL，`SeekPlayerDB` 仍为 v1/files/id，`reader-runtime.js` 与 `session-init.js` 仍为薄入口。
 
+受控的一次性 wrapper 是 `scripts/windows-owner-production-entry.mjs`，提供显式 `plan`、`inventory`、
+`dry-run`、`apply`、`resume`、`rollback` 命令。apply/resume 需要当前 browser guard 在每个 freeze 后提供
+evidence；wrapper 目前只做 fixture verification，不读取或迁移日常 profile。
+
 已通过的核心证据包括 `npm run verify:windows-owner-c2`、C1/C2b/C2c 与六域 owner focused gates、
 `npm run verify:windows-owner-focused-boundaries`、`npm run build`、`npm run verify:fast`、test inventory
 和 OpenSpec strict validation。`npm run verify:full` 在既有 Python dependency-health 阶段因安装环境中同时

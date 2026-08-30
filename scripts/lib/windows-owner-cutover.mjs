@@ -262,6 +262,7 @@ async function loadProductionModules() {
       ))
       return Object.freeze({
         createWindowsDurableStateMigration: migration.createWindowsDurableStateMigration,
+        createMemoryMigrationStateStore: migration.createMemoryMigrationStateStore,
         createWindowsOwnerLegacyCompatibilityBridge: bridge.createWindowsOwnerLegacyCompatibilityBridge,
         createWindowsOwnerApiClient: apiClient.createWindowsOwnerApiClient,
       })
@@ -1103,9 +1104,12 @@ function stateFileStore(filePath, containmentRoot) {
   }
 }
 
-function createProductionLegacyJsonSources(sourceComposition) {
+function createProductionLegacyJsonSources(sourceComposition, sourceDomainSnapshots = null) {
   return ['marks-activity', 'workflow'].flatMap((domain) => {
-    const adapter = sourceComposition?.pythonAdapters?.[domain]
+    const snapshot = sourceDomainSnapshots?.[domain]
+    const adapter = snapshot && typeof snapshot === 'object'
+      ? { async collect() { return clone(snapshot) } }
+      : sourceComposition?.pythonAdapters?.[domain]
     if (!adapter || typeof adapter.collect !== 'function') return []
     return [{
       kind: 'json',
@@ -1202,19 +1206,26 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     throw error
   }
 
+  const preflightOnly = options.operation === 'dry-run' || options.readOnly === true
   const sourceComposition = await createReadWebProductionBackupComposition({
     ...options.source,
     profileId,
     pythonCommand: options.pythonCommand || options.source.pythonCommand,
+    ...(preflightOnly ? { profileLeaseMode: 'standby' } : {}),
   })
   const targetComposition = await createReadWebProductionBackupComposition({
     ...options.target,
     profileId,
     pythonCommand: options.pythonCommand || options.target.pythonCommand,
+    ...(preflightOnly ? { profileLeaseMode: 'standby' } : {}),
   })
   const targetLayout = productionLayout(targetComposition)
 
-  const { createWindowsDurableStateMigration, createWindowsOwnerLegacyCompatibilityBridge } = await loadProductionModules()
+  const {
+    createWindowsDurableStateMigration,
+    createMemoryMigrationStateStore,
+    createWindowsOwnerLegacyCompatibilityBridge,
+  } = await loadProductionModules()
   const hostClient = await createWindowsOwnerProductionHostClient({
     client: options.hostClient,
     baseUrl: options.hostBaseUrl,
@@ -1231,7 +1242,7 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     profileId,
     applicationPersistence: sourceComposition.browserProfile.persistence,
     storage: sourceComposition.browserProfile.storage,
-    jsonSources: createProductionLegacyJsonSources(sourceComposition),
+    jsonSources: createProductionLegacyJsonSources(sourceComposition, options.sourceDomainSnapshots),
   })
   const sourceScopesByDomain = await discoverProductionScopes(
     legacyBridge,
@@ -1254,7 +1265,9 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     options.statePath || path.join(authorityRoot, 'owner-mode', 'c2a-migration-state.json'),
     'statePath',
   )
-  const stateStore = stateFileStore(statePath, authorityRoot)
+  const stateStore = preflightOnly
+    ? createMemoryMigrationStateStore()
+    : stateFileStore(statePath, authorityRoot)
   const browserGuard = options.browserGuard || null
   const refreshBrowserGuard = typeof options.refreshBrowserGuard === 'function'
     ? options.refreshBrowserGuard
@@ -1290,13 +1303,69 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     cutoverControls: controls,
     capacityBytes: options.capacityBytes,
   })
+  if (options.operation === 'dry-run' || options.readOnly === true) {
+    const results = []
+    for (const domain of domains) {
+      const result = await migration.dryRun(domain, {
+        sourceIds: options.sourceIdsByDomain?.[domain],
+        expectedRevision: options.expectedRevisionByDomain?.[domain],
+        allowExistingTarget: options.allowExistingTarget === true,
+      })
+      results.push(result)
+      if (!result.ok) break
+    }
+    return {
+      ok: results.length === domains.length && results.every((result) => result.ok),
+      mode: 'optimization',
+      operation: 'dry-run',
+      readOnly: true,
+      productionComposition: true,
+      domains: results,
+      status: await migration.status(),
+      sourceProfileId: sourceComposition.profileId,
+      targetProfileId: targetComposition.profileId,
+    }
+  }
+  if (options.operation === 'rollback') {
+    const domain = options.rollbackDomain
+    if (!domains.includes(domain)) {
+      const error = new Error('Production rollback domain must be in the fixed owner order')
+      error.code = 'OWNER_CUTOVER_PRODUCTION_DOMAIN_INVALID'
+      throw error
+    }
+    const result = await migration.rollback(domain, {
+      idempotencyKey: options.idempotencyKeyByDomain?.[domain],
+    })
+    return {
+      ok: result.ok === true,
+      mode: 'optimization',
+      operation: 'rollback',
+      productionComposition: true,
+      domains: [result],
+      status: await migration.status(),
+      sourceProfileId: sourceComposition.profileId,
+      targetProfileId: targetComposition.profileId,
+    }
+  }
   if (!refreshBrowserGuard) {
     const error = new Error('Production cutover requires a browser guard refresh before final backup')
     error.code = 'OWNER_CUTOVER_BROWSER_REFRESH_REQUIRED'
     throw error
   }
   const results = []
+  const beforeResume = options.resume === true ? await migration.status() : null
   for (const domain of domains) {
+    if (beforeResume?.domains?.[domain]?.authoritative === true) {
+      results.push({
+        ok: true,
+        domain,
+        status: 'completed',
+        resumed: true,
+        stopped: false,
+        steps: { resume: { ok: true, status: 'already-authoritative' } },
+      })
+      continue
+    }
     const current = await hostAdapters[domain].collect({ domain })
     const expectedRevision = options.expectedRevisionByDomain?.[domain] ?? current.revision
     const result = await migration.migrateDomain(domain, {
@@ -1325,10 +1394,26 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
   return {
     ok: results.length === domains.length && results.every((result) => result.ok),
     mode: 'optimization',
+    operation: options.resume === true ? 'resume' : 'apply',
     productionComposition: true,
     domains: results,
     status: await migration.status(),
     sourceProfileId: sourceComposition.profileId,
     targetProfileId: targetComposition.profileId,
   }
+}
+
+export async function runWindowsOwnerProductionDryRun(options = {}) {
+  return runWindowsOwnerProductionCutover({
+    ...options,
+    operation: 'dry-run',
+    readOnly: true,
+  })
+}
+
+export async function runWindowsOwnerProductionRollback(options = {}) {
+  return runWindowsOwnerProductionCutover({
+    ...options,
+    operation: 'rollback',
+  })
 }

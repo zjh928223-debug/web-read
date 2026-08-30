@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 114,
-    "browser": 31,
+    "behavior": 116,
+    "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 275,
-  "executableScriptCount": 294,
+  "packageScriptCount": 276,
+  "executableScriptCount": 297,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3254,6 +3254,19 @@
       "owner": "package.json#scripts.verify:windows-owner-passage-preview"
     },
     {
+      "name": "verify:windows-owner-production-entry",
+      "command": "node scripts/windows-owner-production-entry-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-production-entry-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-production-entry"
+    },
+    {
       "name": "verify:windows-owner-profile-provider",
       "command": "node scripts/windows-local-owner-profile-provider-check.mjs",
       "category": "architecture",
@@ -5856,6 +5869,30 @@
         "behaviorAssertions": false,
         "executesModule": false,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/lib/windows-owner-production-entry.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": true
       }
     },
     {
@@ -10925,6 +10962,55 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-production-entry-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-production-entry",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-production-entry"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/windows-owner-production-entry.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

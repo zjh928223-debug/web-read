@@ -16,6 +16,7 @@ import {
 import {
   createWindowsOwnerProductionHostClient,
   runWindowsOwnerProductionCutover,
+  runWindowsOwnerProductionDryRun,
 } from './lib/windows-owner-cutover.mjs'
 import { resolveSelectedPython } from './lib/python-runtime.mjs'
 
@@ -331,6 +332,7 @@ async function seedProfile(layout, { reader = false, marks = false } = {}) {
 const browserCutoverModule = await loadBrowserCutoverModule()
 const {
   assertWindowsOwnerBrowserWriterAllowed,
+  createWindowsOwnerBrowserFreezeEvidence,
   initializeWindowsOwnerDomainCutoverComposition,
 } = browserCutoverModule
 
@@ -373,6 +375,30 @@ try {
   assert.deepEqual(browserComposition.cutover.authoritativeDomains, [])
   browserGuard = browserComposition.cutover
 
+  const dryRunStatePath = path.join(target.profileAuthorityRoot, 'owner-mode', 'dry-run-state.json')
+  const dryRun = await runWindowsOwnerProductionDryRun({
+    mode: 'optimization',
+    explicitOptIn: true,
+    profileId: 'c2a-production-profile',
+    source,
+    target,
+    domains: PRODUCTION_DOMAINS,
+    sourceIdsByDomain: {
+      'reader-session': ['SeekPlayerDB/files'],
+      'marks-activity': ['backup.marks-activity'],
+    },
+    hostBaseUrl: host.baseUrl,
+    hostAccessToken: host.accessToken,
+    hostInstanceId: host.instanceId,
+    hostScopeByDomain: {
+      'marks-activity': { jobId: 'c2a-marks', contentId: 'c2a-marks' },
+    },
+    statePath: dryRunStatePath,
+  })
+  assert.equal(dryRun.ok, true, JSON.stringify(dryRun))
+  assert.equal(dryRun.readOnly, true)
+  await assert.rejects(readFile(dryRunStatePath, 'utf8'), (error) => error?.code === 'ENOENT')
+
   const refreshes = []
   const result = await runWindowsOwnerProductionCutover({
     mode: 'optimization',
@@ -411,6 +437,14 @@ try {
         () => assertWindowsOwnerBrowserWriterAllowed(domain, 'opened-browser-write', windowObject),
         /frozen after Host cutover/,
       )
+      const evidence = await createWindowsOwnerBrowserFreezeEvidence({
+        cutover: browserGuard,
+        domain,
+        challenge: 'c2a-browser-freeze',
+        sourceFingerprint: 'a'.repeat(64),
+        browserOrigin: 'http://127.0.0.1:5174',
+      })
+      assert.equal(evidence.guard.writerBlocked, true)
       refreshes.push(domain)
       return {
         ok: true,
