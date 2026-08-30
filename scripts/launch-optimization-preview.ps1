@@ -970,18 +970,11 @@ try {
   $workflowRoot = Resolve-OptimizationExistingPath -Value $workflowRoot -Label 'Workflow'
   $runtimeConfigPath = Resolve-OptimizationExistingPath -Value $runtimeConfigPath -Label 'Runtime config'
   $frontDoorScript = Resolve-OptimizationExistingPath -Value $frontDoorScript -Label 'Optimization front door'
-  try {
-    $runtimeConfigPayload = Get-Content -LiteralPath $runtimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-  } catch {
-    throw "Optimization RuntimeConfig file is invalid: $runtimeConfigPath"
+  $bootstrapPath = if ($BootstrapPython) {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $runtimeConfigPath -RequestedPath $BootstrapPython
+  } else {
+    Resolve-OptimizationSelectedPython -RuntimeConfigPath $runtimeConfigPath
   }
-  $configuredPython = if ($null -ne $runtimeConfigPayload.python) { [string]$runtimeConfigPayload.python.executable } else { '' }
-  if ($configuredPython -and -not [IO.Path]::IsPathRooted($configuredPython)) {
-    $configCandidate = Join-Path (Split-Path -Parent $runtimeConfigPath) $configuredPython
-    if (Test-Path -LiteralPath $configCandidate -PathType Leaf) { $configuredPython = $configCandidate }
-  }
-  $bootstrapValue = if ($BootstrapPython) { $BootstrapPython } elseif ($env:READ_WEB_PYTHON) { $env:READ_WEB_PYTHON } elseif ($env:READ_WEB_PYTHON_PATH) { $env:READ_WEB_PYTHON_PATH } elseif ($configuredPython) { $configuredPython } else { 'python' }
-  $bootstrapPath = Resolve-OptimizationExecutablePath -Value $bootstrapValue -Label 'Bootstrap Python'
 
   foreach ($name in @(
     'READ_WEB_FRONTEND_HOST', 'READ_WEB_FRONTEND_PORT', 'READ_WEB_BACKEND_HOST',

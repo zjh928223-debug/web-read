@@ -8,10 +8,10 @@ This directory contains the local FastAPI material-processing service used by Re
 - Default output directory: `E:\ReadWebData\SubtitleWorkflow\output`
 - Default state directory: `E:\ReadWebData\SubtitleWorkflow\.workflow_state`
 
-Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch. For a reproducible local run, create the venv outside the repository and select it explicitly:
+Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch. For a reproducible local run, create the venv outside the repository. The stable optimization launcher location keeps desktop cold starts on the same interpreter:
 
 ```powershell
-$venv = Join-Path $env:TEMP ('read-web-python-' + [Guid]::NewGuid().ToString('N'))
+$venv = Join-Path $env:LOCALAPPDATA 'Read-Web\optimization-python'
 python -m venv $venv
 $env:READ_WEB_PYTHON = Join-Path $venv 'Scripts\python.exe'
 $env:READ_WEB_PYTHON_PATH = $env:READ_WEB_PYTHON
@@ -50,6 +50,11 @@ audit the test-only additions as well.
 The health gate compares the complete installed distribution set with the
 production hashed lock and never installs packages. `READ_WEB_PYTHON` is the
 canonical interpreter selector; `READ_WEB_PYTHON_PATH` is a compatibility alias.
+When neither is set, the optimization launcher and Node Python gates prefer
+`%LOCALAPPDATA%\Read-Web\optimization-python\Scripts\python.exe` when it exists,
+then fall back to the RuntimeConfig/PATH selection. A global interpreter still
+has to pass the full health gate; duplicate or drifted distributions are not
+silently ignored.
 The release/launcher gates pass the same executable identity to health, OSV,
 the Production Host, and the release reuse key. `verify:fast` deliberately
 remains offline and checks lock structure only; OSV is a release/supply-chain

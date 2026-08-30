@@ -94,7 +94,7 @@ Remove-Item Env:READ_WEB_PRODUCTION_HOST_BROWSER
 Set-Location E:\read-web-next-optimization
 npm ci
 npm run verify:toolchain
-$venv = Join-Path $env:TEMP ('read-web-python-' + [Guid]::NewGuid().ToString('N'))
+$venv = Join-Path $env:LOCALAPPDATA 'Read-Web\optimization-python'
 python -m venv $venv
 $env:READ_WEB_PYTHON = Join-Path $venv 'Scripts\python.exe'
 $env:READ_WEB_PYTHON_PATH = $env:READ_WEB_PYTHON
@@ -104,11 +104,16 @@ npm run verify:python-health
 npm run verify:python-runtime-inventory
 ```
 
-venv 必须放在仓库外（这里使用系统临时目录），不提交也不复用于其他 release。`READ_WEB_PYTHON`
-是 canonical 选择；`READ_WEB_PYTHON_PATH` 仅为兼容别名，launcher、full/release gate 和
-Production Host 都使用同一个解析后的 executable。若不设置环境变量，optimization
-RuntimeConfig 的 `python.executable` 仍会被解析，但全局解释器只适合运行离线 lock 格式检查，
-不应通过 health/release 门禁。
+venv 必须放在仓库外，不提交也不与其他项目混用。上面的 `%LOCALAPPDATA%\Read-Web\optimization-python`
+是 optimization launcher 的稳定默认位置：桌面快捷方式冷启动时，即使没有继承当前 PowerShell
+会话的环境变量，也会选择这个解释器。`READ_WEB_PYTHON` 是 canonical 选择；
+`READ_WEB_PYTHON_PATH` 仅为兼容别名，显式环境变量和 `-BootstrapPython` 会优先于默认位置。
+launcher、full/release gate 和 Production Host 都使用同一个解析后的 executable。若默认 venv
+不存在，launcher 才回退到 RuntimeConfig/PATH；全局解释器若未通过完整 package-set health，仍会
+在 BuildAction 前 fail-fast。
+
+一次性验证或 CI 可以把 `$venv` 换成系统临时目录；这时必须在同一会话设置 `READ_WEB_PYTHON`，
+或启动 launcher 时显式传入 `-BootstrapPython <path-to-python.exe>`。
 
 `verify:fast` 只执行离线、确定性的 lock 格式和 RuntimeConfig 选择检查；`verify:full` 还会
 执行完整 package-set health。Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失
