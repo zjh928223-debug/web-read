@@ -8,9 +8,11 @@ import {
 } from './read-web-production-backup.mjs'
 import {
   collectReadOnlyWorkflowDomains,
+  clearWorkflowWriterFreeze,
   fingerprintChromiumOriginSource,
   fingerprintWorkflowSource,
   materializeRealProfileSource,
+  writeWorkflowWriterFreeze,
 } from './read-web-real-profile-rehearsal.mjs'
 import {
   runWindowsOwnerProductionCutover,
@@ -478,6 +480,75 @@ async function cleanupStage(stage, runRoot) {
   await rm(resolved, { recursive: true, force: true })
 }
 
+function createWorkflowLegacyWriterControl(config, manifest) {
+  return {
+    async freeze({ domain }) {
+      if (domain !== 'workflow') return { ok: true, status: 'not-applicable' }
+      return writeWorkflowWriterFreeze({
+        workflowStateDir: config.workflowStateDir,
+        profileId: config.profileId,
+        challenge: manifest.freezeChallenge,
+        sourceFingerprint: manifest.sourceFingerprint,
+      })
+    },
+    async unfreeze({ domain, reason }) {
+      if (domain !== 'workflow') return { ok: true, status: 'not-applicable' }
+      if (reason === 'migration-authoritative') {
+        return { ok: true, status: 'retired', writerBlocked: true }
+      }
+      return clearWorkflowWriterFreeze({
+        workflowStateDir: config.workflowStateDir,
+        profileId: config.profileId,
+        challenge: manifest.freezeChallenge,
+      })
+    },
+  }
+}
+
+async function refreshProductionSourceAfterFreeze(config, manifest, domain, refreshedStages) {
+  if (domain === 'workflow') {
+    await writeWorkflowWriterFreeze({
+      workflowStateDir: config.workflowStateDir,
+      profileId: config.profileId,
+      challenge: manifest.freezeChallenge,
+      sourceFingerprint: manifest.sourceFingerprint,
+    })
+  }
+  const stage = await materializeStage(config)
+  refreshedStages.push(stage)
+  const logicalBrowserChanged = manifest.sourceFingerprint.browserLogical
+    && stage.sourceFingerprint.browserLogical !== manifest.sourceFingerprint.browserLogical
+  if (stage.sourceFingerprint.browserPhysical !== manifest.sourceFingerprint.browserPhysical
+    || logicalBrowserChanged
+    || stage.sourceFingerprint.workflow !== manifest.sourceFingerprint.workflow) {
+    throw entryError(
+      'OWNER_PRODUCTION_ENTRY_SOURCE_CHANGED',
+      'live source changed after the writer freeze and before the final backup capture',
+      { domain },
+    )
+  }
+  const composition = await createReadWebProductionBackupComposition({
+    ...stage.source,
+    profileId: config.profileId,
+    pythonCommand: config.pythonCommand || undefined,
+    profileLeaseMode: 'standby',
+  })
+  return {
+    sourceComposition: composition,
+    sourceDomainSnapshots: stage.workflowDomains,
+    sourceCapture: {
+      kind: 'post-freeze-live-source-capture',
+      domain,
+      capturedAt: new Date().toISOString(),
+      fingerprints: {
+        browserPhysical: stage.sourceFingerprint.browserPhysical,
+        browserLogical: stage.sourceFingerprint.browserLogical,
+        workflow: stage.sourceFingerprint.workflow,
+      },
+    },
+  }
+}
+
 function sourceBinding(config) {
   return digest({
     browserProfileDir: config.browserProfileDir,
@@ -724,6 +795,14 @@ function summarizeStep(step) {
   ]) {
     if (step[key] !== undefined) summary[key] = step[key]
   }
+  if (step.sourceCapture?.kind) {
+    summary.sourceCapture = {
+      kind: step.sourceCapture.kind,
+      domain: step.sourceCapture.domain,
+      capturedAt: step.sourceCapture.capturedAt,
+      fingerprints: clone(step.sourceCapture.fingerprints),
+    }
+  }
   const finalBackup = step.finalBackup?.finalBackup || step.finalBackup
   if (finalBackup?.artifactChecksum) summary.finalBackupChecksum = finalBackup.artifactChecksum
   if (finalBackup?.rollbackTarget?.checksum) summary.rollbackTargetChecksum = finalBackup.rollbackTarget.checksum
@@ -848,6 +927,7 @@ async function persistReport(config, report) {
 async function executeMutation(config, operation) {
   let run
   let stage = null
+  const refreshedStages = []
   if (operation === 'apply') {
     if (await pathExists(config.manifestPath)
       || await pathExists(config.resultPath)
@@ -878,19 +958,30 @@ async function executeMutation(config, operation) {
     statePath: config.migrationStatePath,
     pythonCommand: config.pythonCommand || undefined,
     idempotencyKeyByDomain: idempotencyKeys(run.manifest),
+    legacyWriterControl: createWorkflowLegacyWriterControl(config, run.manifest),
   }
   let result
-  if (operation === 'rollback') {
-    result = await runWindowsOwnerProductionRollback({
-      ...baseOptions,
-      rollbackDomain: config.rollbackDomain,
-    })
-  } else {
-    result = await runWindowsOwnerProductionCutover({
-      ...baseOptions,
-      resume: operation === 'resume',
-      refreshBrowserGuard: createBrowserFreezeVerifier(config, run.manifest, token),
-    })
+  try {
+    if (operation === 'rollback') {
+      result = await runWindowsOwnerProductionRollback({
+        ...baseOptions,
+        rollbackDomain: config.rollbackDomain,
+      })
+    } else {
+      result = await runWindowsOwnerProductionCutover({
+        ...baseOptions,
+        resume: operation === 'resume',
+        refreshBrowserGuard: createBrowserFreezeVerifier(config, run.manifest, token),
+        refreshSourceAfterFreeze: ({ domain }) => refreshProductionSourceAfterFreeze(
+          config,
+          run.manifest,
+          domain,
+          refreshedStages,
+        ),
+      })
+    }
+  } finally {
+    await Promise.all(refreshedStages.map((refreshedStage) => cleanupStage(refreshedStage, config.runRoot)))
   }
   const report = commonReport(config, {
     status: result.ok ? 'completed' : 'blocked',

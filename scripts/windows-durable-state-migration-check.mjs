@@ -39,6 +39,7 @@ const {
   createWindowsDurableStateMigration,
 } = migration
 const { createWindowsOwnerLegacyCompatibilityBridge } = bridge
+const { createProductionHostAdapters } = await import('./lib/windows-owner-cutover.mjs')
 
 class MapStorage {
   constructor(entries = {}) {
@@ -444,6 +445,125 @@ assert.equal(runResult.steps.switch.frozen, true)
 assert.equal(runResult.steps.smoke.ok, false)
 assert.equal(runResult.steps.smoke.status, 'deferred')
 assert.equal((await migrationRun.service.status()).domains.workflow.status, 'ready-to-switch')
+
+let liveFinalRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-live',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { schemaVersion: 1, contentId: 'live-content', value: 'before-freeze' },
+}]
+const postFreezeBridge = {
+  async inventory() {
+    return { status: 'ready', records: clone(liveFinalRecords) }
+  },
+  async prepareImport() {
+    return {
+      status: 'ready',
+      importIdentity: 'stable-live-source-identity',
+      importInput: {
+        schemaVersion: 1,
+        mode: 'legacy-import-input',
+        profileId: 'optimization',
+        importIdentity: 'stable-live-source-identity',
+        records: clone(liveFinalRecords),
+      },
+    }
+  },
+}
+const postFreezeFixture = createMigrationFixture({ legacyBridge: postFreezeBridge })
+const postFreezeResult = await postFreezeFixture.service.migrateDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-post-freeze-reread',
+  beforeFinalBackup: async ({ freeze }) => {
+    assert.equal(freeze.status, 'frozen')
+    liveFinalRecords = [{
+      ...liveFinalRecords[0],
+      payload: { ...liveFinalRecords[0].payload, value: 'after-freeze-reread' },
+    }]
+    return {
+      ok: true,
+      sourceCapture: {
+        kind: 'post-freeze-live-source-capture',
+        domain: 'reader-session',
+        capturedAt: '2026-08-30T00:00:00.000Z',
+        fingerprints: {
+          browserPhysical: 'a'.repeat(64),
+          browserLogical: 'b'.repeat(64),
+          workflow: 'c'.repeat(64),
+        },
+      },
+    }
+  },
+})
+assert.equal(postFreezeResult.ok, true, JSON.stringify(postFreezeResult))
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.artifact.domains['reader-session'].records[0].payload.value,
+  'after-freeze-reread',
+  'final backup must collect the live source again after freeze',
+)
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.sourceCapture.kind,
+  'post-freeze-live-source-capture',
+)
+
+const fallbackHostClient = {
+  async query() {
+    return {
+      outcome: 'read',
+      revision: 0,
+      payload: {
+        records: [{ jobId: 'unsafe-public-fallback', outputDir: 'C:\\Users\\private-workflow-output' }],
+        config: {
+          configured: true,
+          cookiesPath: 'C:\\Users\\private\\cookies.txt',
+          outputDir: 'C:\\Users\\private-workflow-output',
+          ytDlpPath: 'C:\\Tools\\yt-dlp.exe',
+          whisperxPath: 'C:\\Tools\\whisperx.exe',
+        },
+      },
+    }
+  },
+  async command() {
+    throw new Error('fallback test must not issue a command')
+  },
+}
+const fallbackAdapters = createProductionHostAdapters({ client: fallbackHostClient, profileId: 'fallback-test' })
+await assert.rejects(
+  fallbackAdapters.workflow.collect(),
+  (error) => error?.code === 'OWNER_CUTOVER_HOST_BACKUP_UNAVAILABLE',
+  'missing backupRecords must block workflow migration instead of synthesizing paths',
+)
+
+const unsafeBackupHostClient = {
+  async query() {
+    return {
+      outcome: 'read',
+      revision: 0,
+      payload: {
+        backupRecords: [{
+          id: 'config',
+          schemaVersion: 1,
+          revision: 0,
+          contentId: null,
+          payload: { outputDir: 'C:\\Users\\private-workflow-output' },
+          references: [],
+          mediaReferences: [],
+        }],
+        backupMediaReferences: [],
+      },
+    }
+  },
+  async command() {
+    throw new Error('unsafe backup validation must not issue a command')
+  },
+}
+const unsafeBackupAdapters = createProductionHostAdapters({ client: unsafeBackupHostClient, profileId: 'unsafe-backup-test' })
+await assert.rejects(
+  unsafeBackupAdapters.workflow.collect(),
+  (error) => error?.code === 'OWNER_CUTOVER_HOST_BACKUP_INVALID',
+  'workflow backupRecords must reject absolute paths before they enter migration state',
+)
 
 const workflowRevision = 'w1:j123:0123456789abcdef:h456:fedcba9876543210:c0123456789abcdef:iabcdef0123456789'
 const workflowStringHost = createHostAdapters({

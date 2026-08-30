@@ -54,6 +54,7 @@ from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
 from .process_supervisor import ProcessSupervisor
 from .reader_marks_activity import ReaderPersistenceError
+from .workflow_writer_freeze import WorkflowWriterFreezeError
 from .windows_owner_request_policy import WindowsOwnerRequestPolicy, require_loopback_bind
 
 
@@ -1262,6 +1263,7 @@ class JobManager:
         expected_revision: int | None = None,
         start_worker: bool = True,
     ) -> dict:
+        self._require_workflow_writer_open()
         self._require_domain_writable("jobs")
         self._require_domain_writable("history")
         idempotency_key = _normalize_idempotency_key(
@@ -1382,6 +1384,7 @@ class JobManager:
         return {"selected": True, "path": str(path), "status": "selected"}
 
     def scan_import_root(self, payload: dict) -> dict:
+        self._require_workflow_writer_open()
         root_path = str((payload or {}).get("rootPath") or (payload or {}).get("path") or "").strip()
         if not root_path:
             raise HTTPException(status_code=400, detail="rootPath is required")
@@ -1493,6 +1496,7 @@ class JobManager:
         }
 
     def create_import_jobs(self, payload: dict) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         raw_items = payload.get("items")
         if not isinstance(raw_items, list):
@@ -1629,6 +1633,7 @@ class JobManager:
     def _save_video_probe_cache(self, cache: dict, updates: dict[str, dict]) -> None:
         if not updates:
             return
+        self._require_workflow_writer_open()
         folders = cache.setdefault("folders", {})
         folders.update(updates)
         cache["schemaVersion"] = 1
@@ -1853,6 +1858,18 @@ class JobManager:
                 detail={"code": "WORKFLOW_STATE_RECOVERY_REQUIRED", "domain": domain},
             )
 
+    def _require_workflow_writer_open(self) -> None:
+        try:
+            self.store.assert_writer_open()
+        except WorkflowWriterFreezeError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": error.code,
+                    "message": str(error),
+                },
+            ) from error
+
     def _mark_recovered_failed(self, record: JobRecord) -> None:
         message = "服务重启后恢复到可重试状态；未保存 API key，需重新发起阶段重试。"
         with record.lock:
@@ -1947,6 +1964,7 @@ class JobManager:
             self._flush_persistence_locked()
 
     def _persist_jobs_locked(self) -> None:
+        self.store.assert_writer_open()
         self._require_domain_writable("jobs")
         self.store.save_jobs([record.persisted_snapshot() for record in self.jobs.values()])
 
@@ -2025,6 +2043,7 @@ class JobManager:
         expected_revision: int | None = None,
         wait_for_completion: bool = False,
     ) -> dict:
+        self._require_workflow_writer_open()
         idempotency_key = _normalize_idempotency_key(idempotency_key)
         fingerprint = _mutation_fingerprint("cancel", job_id)
         record = None
@@ -2088,6 +2107,7 @@ class JobManager:
         idempotency_key: str | None = None,
         expected_revision: int | None = None,
     ) -> dict:
+        self._require_workflow_writer_open()
         idempotency_key = _normalize_idempotency_key(idempotency_key)
         fingerprint = _mutation_fingerprint("prioritize", job_id)
         with self.lock:
@@ -2120,6 +2140,7 @@ class JobManager:
                     record._defer_persistence = False
 
     def redo_job(self, job_id: str) -> dict:
+        self._require_workflow_writer_open()
         original = self.get_job(job_id)
         if original.status != "failed":
             raise HTTPException(status_code=409, detail="only failed jobs can be redone")
@@ -2154,6 +2175,7 @@ class JobManager:
         expected_revision: int | None = None,
         start_worker: bool = True,
     ) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         idempotency_key = _normalize_idempotency_key(
             idempotency_key if idempotency_key is not None else payload.get("idempotencyKey")
@@ -2257,6 +2279,7 @@ class JobManager:
             return list(self.recent[:limit])
 
     def clear_canceled_jobs(self) -> dict:
+        self._require_workflow_writer_open()
         with self.lock:
             canceled_ids = {
                 job_id
@@ -2271,6 +2294,7 @@ class JobManager:
         return {"cleared": len(canceled_ids)}
 
     def clear_failed_jobs(self, expected_revision: int | None = None) -> dict:
+        self._require_workflow_writer_open()
         with self.lock:
             self._check_expected_revision_locked(expected_revision)
             failed_ids = {
@@ -2288,6 +2312,7 @@ class JobManager:
         return {"cleared": len(failed_ids), "revision": revision}
 
     def delete_job(self, job_id: str, expected_revision: int | None = None) -> dict:
+        self._require_workflow_writer_open()
         with self.lock:
             self._check_expected_revision_locked(expected_revision)
             record = self.jobs.get(job_id)
@@ -2322,6 +2347,7 @@ class JobManager:
         )
 
     def record_reader_activity(self, payload: dict | None = None) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         job_id = str(payload.get("jobId") or payload.get("job_id") or "").strip()
         if not job_id:
@@ -2354,6 +2380,7 @@ class JobManager:
         return item
 
     def delete_history(self, job_id: str, delete_files: bool = False) -> dict:
+        self._require_workflow_writer_open()
         result = self.store.delete_history_item(job_id, delete_files=delete_files)
         if not result.get("deleted"):
             raise HTTPException(status_code=404, detail="history item not found")
@@ -2364,6 +2391,7 @@ class JobManager:
         return result
 
     def bind_video_source(self, job_id: str, payload: dict | None = None) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         manifest = self._manifest_for_job(job_id)
         video_path = Path(str(payload.get("videoPath") or ""))
@@ -2470,6 +2498,7 @@ class JobManager:
         return manifest
 
     def quality_report(self, job_id: str) -> dict:
+        self._require_workflow_writer_open()
         manifest = self._manifest_for_job(job_id)
         try:
             report = analyze_session_quality(manifest)
@@ -2484,6 +2513,7 @@ class JobManager:
         return report
 
     def run_annotation_backfill(self, job_id: str, payload: dict | None = None) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         template = payload.get("template")
         if not isinstance(template, dict) or not isinstance(template.get("items"), list):
@@ -2659,6 +2689,7 @@ class JobManager:
         }
 
     def start_annotation_backfill(self, job_id: str, payload: dict | None = None) -> dict:
+        self._require_workflow_writer_open()
         payload = dict(payload or {})
         template = payload.get("template")
         if not isinstance(template, dict) or not isinstance(template.get("items"), list):
@@ -2899,6 +2930,7 @@ class JobManager:
         }
 
     def save_reader_marks(self, job_id: str, payload: dict | None = None) -> dict:
+        self._require_workflow_writer_open()
         payload = payload or {}
         marks = normalize_reader_marks(payload.get("marks"))
         manifest = self._raw_manifest_for_reader_record(job_id)
@@ -2971,6 +3003,7 @@ class JobManager:
         expected_revision: int | None,
         operation_id: str | None,
     ) -> tuple[dict, list[dict], int, str, str, bool]:
+        self.store.assert_writer_open()
         journal_path = self.store.reader_marks_journal.path(path.parent.parent)
         journal = self.store.reader_marks_journal
         record = journal.get(journal_path, job_id, operation_id) if operation_id else None
@@ -3140,6 +3173,7 @@ class JobManager:
         }
 
     def save_config(self, payload: dict) -> dict:
+        self._require_workflow_writer_open()
         if payload and ("apiKey" in payload or "api_key" in payload):
             raise HTTPException(status_code=400, detail="apiKey is not stored in workflow config")
         saved = self.store.save_config(payload or {})
@@ -3489,6 +3523,8 @@ class JobManager:
     def cleanup_outputs(self, payload: dict | None = None) -> dict:
         payload = payload or {}
         dry_run = not bool(payload.get("confirm"))
+        if not dry_run:
+            self._require_workflow_writer_open()
         keep_days = max(1, int(payload.get("olderThanDays") or 30))
         cutoff = time.time() - keep_days * 86400
         protected = {

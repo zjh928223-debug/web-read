@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .durable_json import DurableJsonRepository
+from .workflow_writer_freeze import ensure_workflow_writer_open
 
 APPLICATION_BACKUP_FORMAT = "read-web.application-backup"
 APPLICATION_BACKUP_FORMAT_VERSION = 1
@@ -794,8 +795,10 @@ class WorkflowRestoreAdapter:
             relative = record_id[len("output:"):]
             target = _safe_restore_path(self.output_dir, relative)
             payload = self._payload(record, record_id)
+            ensure_workflow_writer_open(self.state_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
             self.repository.write(target, payload)
+            ensure_workflow_writer_open(self.state_dir)
 
     @staticmethod
     def _remove_path(path: Path) -> None:
@@ -829,7 +832,9 @@ class WorkflowRestoreAdapter:
             if not record_id.startswith("output:") or record_id in source_output_ids:
                 continue
             target = _safe_restore_path(self.output_dir, record_id[len("output:"):])
+            ensure_workflow_writer_open(self.state_dir)
             self._remove_path(target)
+            ensure_workflow_writer_open(self.state_dir)
 
         # A missing source state file is meaningful: leave no stale durable
         # file that the next collect would reinterpret as a new record.
@@ -844,9 +849,12 @@ class WorkflowRestoreAdapter:
             (self.state_dir / "config.json", source_has_config),
         ):
             if not present:
+                ensure_workflow_writer_open(self.state_dir)
                 self._remove_path(path)
+                ensure_workflow_writer_open(self.state_dir)
 
     def restore_snapshot(self, snapshot: dict, *, expected_revision: int | None = None) -> dict:
+        ensure_workflow_writer_open(self.state_dir)
         current = self.collect()
         actual_revision = int(current.get("revision") or 0)
         if expected_revision is not None and actual_revision != int(expected_revision):
@@ -905,21 +913,31 @@ class WorkflowRestoreAdapter:
 
         self._remove_stale_files(records, current)
 
+        ensure_workflow_writer_open(self.state_dir)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         if any(record_id.startswith("jobs:") for record_id in records):
+            ensure_workflow_writer_open(self.state_dir)
             self.repository.write(
                 self.state_dir / "jobs.json",
                 _restore_envelope("workflow.jobs", "jobs", jobs, domain_revision),
             )
+            ensure_workflow_writer_open(self.state_dir)
         if any(record_id.startswith("items:") for record_id in records):
+            ensure_workflow_writer_open(self.state_dir)
             self.repository.write(
                 self.state_dir / "history.json",
                 _restore_envelope("workflow.history", "items", history, domain_revision),
             )
+            ensure_workflow_writer_open(self.state_dir)
         if any(record_id.startswith("reader-index:") for record_id in records):
+            ensure_workflow_writer_open(self.state_dir)
             self.repository.write(self.state_dir / "reader-index.json", {"items": reader_index})
+            ensure_workflow_writer_open(self.state_dir)
         if config_record is not None:
+            ensure_workflow_writer_open(self.state_dir)
             self.repository.write(self.state_dir / "config.json", config)
+            ensure_workflow_writer_open(self.state_dir)
+        ensure_workflow_writer_open(self.state_dir)
         self.repository.write(
             self.state_dir / _RESTORED_MEDIA_REFERENCES_FILE,
             _restore_envelope(
@@ -929,6 +947,7 @@ class WorkflowRestoreAdapter:
                 domain_revision,
             ),
         )
+        ensure_workflow_writer_open(self.state_dir)
         self._write_output_records(output_records)
         return {"revision": max(actual_revision + 1, domain_revision, 1), "recordCount": len(records)}
 

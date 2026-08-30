@@ -478,7 +478,26 @@ function domainSummaries(artifact) {
   })
 }
 
-async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds) {
+function validateSourceCapture(value, domain) {
+  if (value === undefined || value === null) return null
+  if (!isPlainObject(value)
+    || value.kind !== 'post-freeze-live-source-capture'
+    || value.domain !== domain
+    || typeof value.capturedAt !== 'string'
+    || !isPlainObject(value.fingerprints)) {
+    throw migrationError('migration-source-capture-invalid')
+  }
+  for (const field of ['browserPhysical', 'browserLogical', 'workflow']) {
+    if (typeof value.fingerprints[field] !== 'string'
+      || !/^(?:sha256:)?[a-f0-9]{64}$/iu.test(value.fingerprints[field])) {
+      throw migrationError('migration-source-capture-invalid')
+    }
+  }
+  assertSafeJson(value)
+  return clone(value)
+}
+
+async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds, sourceCapture = null) {
   const core = {
     format: WINDOWS_DURABLE_STATE_MIGRATION_FORMAT,
     schemaVersion: WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION,
@@ -497,6 +516,8 @@ async function createFinalManifest(domain, artifact, importIdentity, target, sou
       checksum: await digestCanonical(target),
     },
   }
+  const validatedSourceCapture = validateSourceCapture(sourceCapture, domain)
+  if (validatedSourceCapture) core.sourceCapture = validatedSourceCapture
   return {
     ...core,
     manifestChecksum: await digestCanonical(core),
@@ -530,6 +551,7 @@ async function validateFinalBackup(value, domain) {
       || entry.checksum !== value.artifact.manifest.domainChecksums[entry.domain])) {
     throw migrationError('migration-backup-invalid')
   }
+  if (value.sourceCapture !== undefined) validateSourceCapture(value.sourceCapture, domain)
   return value
 }
 
@@ -760,7 +782,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
   }
 
-  async function createFinalBackup(domainInput) {
+  async function createFinalBackup(domainInput, finalBackupOptions = {}) {
     const domain = domainKey(domainInput)
     const state = await readState()
     const entry = state.domains[domain]
@@ -789,7 +811,14 @@ export function createWindowsDurableStateMigration(options = {}) {
       }
       const capacity = await capacityCheck(adapterFor(domain), bytesOf(built.artifact), options)
       if (!capacity.ok) return safeFailure(domain, 'final-backup', 'migration-capacity-insufficient')
-      const finalBackup = await createFinalManifest(domain, built.artifact, built.importIdentity, target, sourceIds)
+      const finalBackup = await createFinalManifest(
+        domain,
+        built.artifact,
+        built.importIdentity,
+        target,
+        sourceIds,
+        finalBackupOptions.sourceCapture,
+      )
       entry.finalBackup = finalBackup
       entry.status = 'final-backup'
       await writeState(state)
@@ -1307,7 +1336,9 @@ export function createWindowsDurableStateMigration(options = {}) {
         return { ok: false, domain, stopped: true, steps }
       }
     }
-    steps.finalBackup = await createFinalBackup(domain)
+    steps.finalBackup = await createFinalBackup(domain, {
+      sourceCapture: steps.beforeFinalBackup?.sourceCapture,
+    })
     if (!steps.finalBackup.ok) return { ok: false, domain, stopped: true, steps }
     steps.import = await importDomain(domain, runOptions)
     if (!steps.import.ok) return { ok: false, domain, stopped: true, steps }

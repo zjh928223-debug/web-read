@@ -15,6 +15,7 @@ from .durable_json import (
     JsonValidationError,
 )
 from .reader_marks_activity import ReaderMarksActivityRepository, ReaderMarksCommitJournal
+from .workflow_writer_freeze import ensure_workflow_writer_open
 
 
 _JSON_REPOSITORY = DurableJsonRepository()
@@ -345,6 +346,11 @@ class WorkflowHistoryStore:
         self._known_payloads = {"jobs": {}, "history": {}}
         self._protected_job_ids: set[str] = set()
 
+    def assert_writer_open(self) -> None:
+        """Enforce the migration freeze at the legacy durable-store boundary."""
+
+        ensure_workflow_writer_open(self.state_dir)
+
     def _validator(self, domain: str, key: str):
         return lambda value: _validate_envelope(value, domain=domain, key=key)
 
@@ -356,12 +362,14 @@ class WorkflowHistoryStore:
             self._known_payloads[domain] = deepcopy(_document_payload(outcome.value, key))
 
     def _save_domain(self, domain: str, path: Path, key: str, fallback: dict, transform) -> dict:
+        self.assert_writer_open()
         validator = self._validator(
             JOBS_DOMAIN if domain == "jobs" else HISTORY_DOMAIN,
             key,
         )
 
         def update(current, outcome):
+            self.assert_writer_open()
             if not isinstance(current, dict):
                 current = fallback
             current_payload = _document_payload(current, key)
@@ -402,6 +410,7 @@ class WorkflowHistoryStore:
                 raise WorkflowStatePersistenceError(domain, outcome, exc) from exc
             raise
         self._record_outcome(domain, outcome)
+        self.assert_writer_open()
         self._known_revisions[domain] = _document_revision(value)
         self._known_payloads[domain] = deepcopy(_document_payload(value, key))
         return value
@@ -422,11 +431,13 @@ class WorkflowHistoryStore:
 
     def save_jobs(self, jobs: list[dict]) -> None:
         with self.lock:
+            self.assert_writer_open()
             incoming = [item for item in jobs if isinstance(item, dict)]
             base_jobs = self._known_payloads.get("jobs", {}).get("jobs") or []
             expected_revision = self._known_revisions.get("jobs", 0)
 
             def transform(current, outcome):
+                self.assert_writer_open()
                 current_revision = _document_revision(outcome.value) if isinstance(outcome.value, dict) else 0
                 current_jobs = list(current.get("jobs") or []) if isinstance(current, dict) else []
                 if current_revision < expected_revision:
@@ -474,6 +485,7 @@ class WorkflowHistoryStore:
                     raise WorkflowStatePersistenceError("jobs", outcome, exc) from exc
                 raise
             self._record_outcome("jobs", outcome)
+            self.assert_writer_open()
             self._known_revisions["jobs"] = _document_revision(value)
             self._known_payloads["jobs"] = deepcopy(_document_payload(value, "jobs"))
             self._protected_job_ids.clear()
@@ -606,6 +618,7 @@ class WorkflowHistoryStore:
             return self._merge_reader_activity(item, current, payload, event_type, now)
 
         with self.lock:
+            self.assert_writer_open()
             result = self.reader_repository.update_activity(
                 activity_path,
                 job_id,
@@ -613,6 +626,7 @@ class WorkflowHistoryStore:
                 operation_id=operation_id,
                 update=update,
             )
+            self.assert_writer_open()
             activity = result["payload"]
             summary = self._reader_summary_from_activity(activity)
             summary.update({
@@ -835,16 +849,21 @@ class WorkflowHistoryStore:
             return
         items = [entry for entry in self.load_reader_index() if entry.get("jobId") != job_id]
         items.append(summary)
+        self.assert_writer_open()
         self.json_repository.write(self.reader_index_path, {"items": items})
+        self.assert_writer_open()
 
     def _remove_reader_index_item_locked(self, job_id: str) -> None:
         if not job_id:
             return
         items = [entry for entry in self.load_reader_index() if entry.get("jobId") != job_id]
+        self.assert_writer_open()
         self.json_repository.write(self.reader_index_path, {"items": items})
+        self.assert_writer_open()
 
     def _delete_output_dir(self, target: Path) -> bool:
         try:
+            self.assert_writer_open()
             resolved_output = self.output_dir.resolve()
             resolved_target = target.resolve()
             if resolved_target == resolved_output or resolved_output not in resolved_target.parents:
@@ -872,7 +891,9 @@ class WorkflowHistoryStore:
             "whisperxPath": str(config.get("whisperxPath", "")).strip(),
         }
         with self.lock:
+            self.assert_writer_open()
             self.json_repository.write(self.config_path, safe_config)
+            self.assert_writer_open()
         return safe_config
 
     def replace_snapshot(
@@ -890,6 +911,7 @@ class WorkflowHistoryStore:
         compensates already-written files if a later file replacement fails.
         """
         with self.lock:
+            self.assert_writer_open()
             current = {}
             for name, path, fallback, validator in (
                 ("jobs", self.jobs_path, {"jobs": []}, self._validator(JOBS_DOMAIN, "jobs")),
@@ -930,8 +952,10 @@ class WorkflowHistoryStore:
             written: list[str] = []
             try:
                 for name, document in documents:
+                    self.assert_writer_open()
                     self.json_repository.write(current[name]["path"], document, preserve_backup=True)
                     written.append(name)
+                    self.assert_writer_open()
             except BaseException:
                 for name in reversed(written):
                     previous = current[name]

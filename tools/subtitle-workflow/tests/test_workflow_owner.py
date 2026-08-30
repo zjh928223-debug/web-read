@@ -6,8 +6,13 @@ from unittest.mock import patch
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
 from youtube_workflow.durable_json import DurableJsonRepository
+from youtube_workflow.history import WorkflowHistoryStore
 from youtube_workflow.service import JobManager
 from youtube_workflow.workflow_owner import WorkflowOwner
+from youtube_workflow.workflow_writer_freeze import (
+    WorkflowWriterFreezeError,
+    make_workflow_writer_freeze_marker,
+)
 from youtube_workflow.windows_owner_receipts import OwnerCommitReceiptStore
 
 
@@ -392,6 +397,42 @@ class WorkflowOwnerTests(unittest.TestCase):
             )
             self.assertEqual(result["outcome"], "rejected")
             self.assertEqual(result["error"]["code"], "invalid-request")
+        self.assertFalse(owner.receipts.receipt_path.exists())
+
+    def test_legacy_workflow_writer_is_blocked_after_freeze_without_losing_canonical_state(self):
+        store = WorkflowHistoryStore(self.state_dir, self.output_dir)
+        store.save_jobs([self.job(title="before freeze")])
+        jobs_before = (self.state_dir / "jobs.json").read_text(encoding="utf-8")
+        marker = make_workflow_writer_freeze_marker(
+            profile_id="profile-1",
+            challenge="freeze-challenge-1",
+            source_fingerprint={"browserPhysical": "a" * 64, "workflow": "b" * 64},
+            frozen_at="2026-08-30T00:00:00+00:00",
+        )
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        (self.state_dir / ".read-web-workflow-writer-freeze.json").write_text(
+            json.dumps(marker, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(WorkflowWriterFreezeError) as raised:
+            store.save_jobs([self.job(title="must not be written")])
+        self.assertEqual(raised.exception.code, "WORKFLOW_WRITER_FROZEN")
+        self.assertEqual((self.state_dir / "jobs.json").read_text(encoding="utf-8"), jobs_before)
+        with self.assertRaises(WorkflowWriterFreezeError) as raised_config:
+            store.save_config({"model": "must not be written"})
+        self.assertEqual(raised_config.exception.code, "WORKFLOW_WRITER_FROZEN")
+
+        owner = self.make_owner()
+        rejected = self.command(
+            owner,
+            "job-start",
+            self.job(job_id="after-freeze", title="must be rejected"),
+            owner._read_state()["revision"],
+            "frozen-job-start",
+        )
+        self.assertEqual(rejected["outcome"], "rejected")
+        self.assertEqual(rejected["error"]["code"], "WORKFLOW_WRITER_FROZEN")
         self.assertFalse(owner.receipts.receipt_path.exists())
 
     def test_replace_failure_returns_manual_recovery_and_preserves_old_value(self):

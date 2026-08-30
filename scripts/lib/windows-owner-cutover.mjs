@@ -61,16 +61,52 @@ export function createWindowsOwnerCutoverControls(options = {}) {
     profileId: options.profileId,
   }
   const smokeCheck = typeof options.smokeCheck === 'function' ? options.smokeCheck : null
+  const legacyWriterControl = options.legacyWriterControl && typeof options.legacyWriterControl === 'object'
+    ? options.legacyWriterControl
+    : null
   return Object.fromEntries(DOMAINS.map((domain) => [domain, {
     async freeze({ domain: requestedDomain, reason }) {
       if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
-      const result = await writeOwnerModeFreeze({ ...common, domain, reason })
-      return { ok: true, status: result.status, frozen: true }
+      let legacyResult = null
+      let legacyFrozen = false
+      if (domain === 'workflow' && typeof legacyWriterControl?.freeze === 'function') {
+        legacyResult = await legacyWriterControl.freeze({ domain, reason })
+        if (legacyResult === false || legacyResult?.ok === false) {
+          return { ok: false, reasonCode: legacyResult?.reasonCode || 'OWNER_CUTOVER_LEGACY_WRITER_FREEZE_FAILED' }
+        }
+        legacyFrozen = true
+      }
+      try {
+        const result = await writeOwnerModeFreeze({ ...common, domain, reason })
+        return {
+          ok: true,
+          status: result.status,
+          frozen: true,
+          legacyWriter: legacyResult,
+        }
+      } catch (error) {
+        if (legacyFrozen && typeof legacyWriterControl?.unfreeze === 'function') {
+          await legacyWriterControl.unfreeze({ domain, reason: 'migration-freeze-failed' }).catch(() => {})
+        }
+        throw error
+      }
     },
-    async unfreeze({ domain: requestedDomain }) {
+    async unfreeze({ domain: requestedDomain, reason }) {
       if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
       const result = await clearOwnerModeFreeze({ ...common, domain })
-      return { ok: true, status: result.status, frozen: false }
+      if (domain === 'workflow'
+        && reason !== 'migration-authoritative'
+        && typeof legacyWriterControl?.unfreeze === 'function') {
+        await legacyWriterControl.unfreeze({ domain, reason: reason || 'migration-unfreeze' })
+      }
+      return {
+        ok: true,
+        status: result.status,
+        frozen: false,
+        legacyWriter: domain === 'workflow' && reason === 'migration-authoritative'
+          ? { ok: true, status: 'retired', writerBlocked: true }
+          : null,
+      }
     },
     async switch({ domain: requestedDomain, revision, checksum, frozen, finalBackup }) {
       if (requestedDomain !== domain || frozen !== true || !finalBackup?.final) {
@@ -706,12 +742,6 @@ function createVocabularySrsHostAdapter({ client }) {
   }
 }
 
-function workflowRecord(id, content, revision, contentId = null) {
-  return hostRecord(id, 1, revision, contentId, content, {
-    references: contentId ? [{ type: 'workflow-job', id: contentId }] : [],
-  })
-}
-
 function workflowSnapshotFromRecords(records, mediaReferences = []) {
   if (!Array.isArray(records)) {
     throw productionHostError('OWNER_CUTOVER_HOST_IMPORT_INVALID', 'Workflow migration snapshot records are invalid')
@@ -757,6 +787,102 @@ function workflowSnapshotFromRecords(records, mediaReferences = []) {
   }
 }
 
+const WORKFLOW_PATH_KEY = /(?:path|dir|directory|folder|filename|executable|binary)$/iu
+const WORKFLOW_ABSOLUTE_PATH = /^(?:[A-Za-z]:|[\\/])/u
+const WORKFLOW_FORBIDDEN_KEY = /(?:apikey|accesstoken|authorization|cookie|password|passwd|secret|credential|privatekey|proxyauth|sessiontoken|token|auth|jwt|bearer|signature|sig|blob|arraybuffer|typedarray|bytes|base64|binary|datauri|inlinedata|inlinemedia|mediad(?:ata|bytes|blob)|audiod(?:ata|blob)|videod(?:ata|blob))/iu
+
+function normalizedWorkflowKey(key) {
+  return String(key || '').replace(/[_-]/gu, '').toLowerCase()
+}
+
+function assertSafeWorkflowString(value, keyPath) {
+  const trimmed = value.trim()
+  if (/^data:/iu.test(trimmed) || /^file:/iu.test(trimmed) || WORKFLOW_ABSOLUTE_PATH.test(trimmed)) {
+    throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains a machine path or binary value: ${keyPath}`)
+  }
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed)
+      if (parsed.username || parsed.password) {
+        throw new Error('url-credentials')
+      }
+      for (const key of parsed.searchParams.keys()) {
+        if (WORKFLOW_FORBIDDEN_KEY.test(normalizedWorkflowKey(key))) throw new Error('url-sensitive-query')
+      }
+    } catch (error) {
+      throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains an unsafe URL: ${keyPath}`)
+    }
+  }
+}
+
+function assertSafeWorkflowBackupValue(value, keyPath = '$') {
+  if (value === null || typeof value === 'boolean') return
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup value is not finite: ${keyPath}`)
+    return
+  }
+  if (typeof value === 'string') {
+    assertSafeWorkflowString(value, keyPath)
+    return
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertSafeWorkflowBackupValue(item, `${keyPath}[${index}]`))
+    return
+  }
+  if (!value || typeof value !== 'object') {
+    throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup value is not JSON-safe: ${keyPath}`)
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const isPathKey = WORKFLOW_PATH_KEY.test(key)
+    const isRedactedPath = isPathKey && child === '[REDACTED_PATH]'
+    if (isRedactedPath) continue
+    if (WORKFLOW_FORBIDDEN_KEY.test(normalizedWorkflowKey(key))) {
+      throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains a forbidden field: ${key}`)
+    }
+    if (/^(?:cookiesPath|ytDlpPath|whisperxPath)$/iu.test(key)
+      && typeof child === 'string'
+      && child !== ''
+      && child !== '[REDACTED_PATH]') {
+      throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains an unredacted tool path: ${key}`)
+    }
+    if (isPathKey && typeof child === 'string'
+      && child !== '[REDACTED_PATH]'
+      && (WORKFLOW_ABSOLUTE_PATH.test(child.trim()) || child.split(/[\\/]+/u).some((part) => part === '..'))) {
+      throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup path is not portable: ${key}`)
+    }
+    assertSafeWorkflowBackupValue(child, `${keyPath}.${key}`)
+  }
+}
+
+function validateWorkflowBackupRecords(records, mediaReferences) {
+  if (!Array.isArray(records)) {
+    throw productionHostError(
+      'OWNER_CUTOVER_HOST_BACKUP_UNAVAILABLE',
+      'Workflow Host did not expose sanitized backupRecords',
+    )
+  }
+  for (const record of records) {
+    const recordId = typeof record?.id === 'string' ? record.id : ''
+    const outputRelative = recordId.startsWith('output:') ? recordId.slice('output:'.length) : ''
+    const validId = recordId === 'config'
+      || /^(?:jobs|items|reader-index):[^\\/\u0000-\u001f]+$/u.test(recordId)
+      || (Boolean(outputRelative)
+        && !/^[\\/]/u.test(outputRelative)
+        && !/^[A-Za-z]:[\\/]/u.test(outputRelative)
+        && !outputRelative.split(/[\\/]+/u).some((part) => part === '..'))
+    const payloadIsObject = record?.payload && typeof record.payload === 'object'
+    if (!record || typeof record !== 'object' || Array.isArray(record)
+      || !validId
+      || !payloadIsObject
+      || (!recordId.startsWith('output:') && Array.isArray(record.payload))) {
+      throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', 'Workflow Host backup record identity or payload is invalid')
+    }
+    assertSafeWorkflowBackupValue(record)
+  }
+  assertSafeWorkflowBackupValue(mediaReferences || [])
+  return { records: clone(records), mediaReferences: clone(mediaReferences || []) }
+}
+
 function createWorkflowHostAdapter({ client }) {
   return {
     key: 'workflow',
@@ -770,58 +896,20 @@ function createWorkflowHostAdapter({ client }) {
         operation,
         payload: {},
       })))
-      const records = []
       let revision = 0
-      const jobs = responses[0]?.payload?.records || []
-      const history = responses[1]?.payload?.records || []
-      const readerIndex = responses[2]?.payload?.records || []
-      const backupRecords = responses[0]?.payload?.backupRecords
-      if (Array.isArray(backupRecords)) {
-        for (const response of responses) revision = response.revision ?? revision
-        const records = clone(backupRecords)
-        return {
-          schemaVersion: 1,
-          adapterVersion: 1,
-          revision,
-          records,
-          references: records.flatMap((record) => Array.isArray(record.references) ? clone(record.references) : []),
-          mediaReferences: clone(responses[0]?.payload?.backupMediaReferences || []),
-        }
-      }
       for (const response of responses) revision = response.revision ?? revision
-      for (const item of jobs) {
-        const jobId = String(item?.jobId || '')
-        if (jobId) records.push(workflowRecord(`jobs:${jobId}`, item, responses[0].payload.sourceRevision ?? revision, jobId))
-      }
-      for (const item of history) {
-        const jobId = String(item?.jobId || '')
-        if (jobId) records.push(workflowRecord(`items:${jobId}`, item, responses[1].payload.sourceRevision ?? revision, jobId))
-      }
-      for (const [index, item] of readerIndex.entries()) {
-        const jobId = String(item?.jobId || `reader-index-${index}`)
-        records.push(workflowRecord(`reader-index:${jobId}`, item, 0, jobId))
-      }
-      const config = responses[3]?.payload?.config
-      if (config?.configured || responses[3]?.payload?.present) {
-        records.push(workflowRecord('config', {
-          model: config.model || '',
-          baseUrl: config.baseUrl || '',
-          proxyUrl: config.proxyUrl || '',
-          cookiesPath: config.cookiesPath || '',
-          outputDir: config.outputDir || '',
-          ytDlpPath: config.ytDlpPath || '',
-          whisperxPath: config.whisperxPath || '',
-        }, 0))
-      }
-      if (records.length === 0 && !config?.configured) revision = 0
-      records.sort((left, right) => left.id.localeCompare(right.id))
+      const selected = validateWorkflowBackupRecords(
+        responses[0]?.payload?.backupRecords,
+        responses[0]?.payload?.backupMediaReferences,
+      )
+      const records = selected.records
       return {
         schemaVersion: 1,
         adapterVersion: 1,
         revision,
         records,
         references: records.flatMap((record) => Array.isArray(record.references) ? clone(record.references) : []),
-        mediaReferences: records.flatMap((record) => Array.isArray(record.mediaReferences) ? clone(record.mediaReferences) : []),
+        mediaReferences: selected.mediaReferences,
       }
     },
     async restoreRecords(snapshot, context = {}) {
@@ -1008,7 +1096,7 @@ function createMarksHostAdapter({ client, scope, scopes }) {
   }
 }
 
-function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {}, sourceScopesByDomain = {} } = {}) {
+export function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {}, sourceScopesByDomain = {} } = {}) {
   if (!client || typeof client.query !== 'function' || typeof client.command !== 'function') {
     throw productionHostError('OWNER_CUTOVER_HOST_CLIENT_INVALID', 'Production Host typed client is required')
   }
@@ -1104,12 +1192,12 @@ function stateFileStore(filePath, containmentRoot) {
   }
 }
 
-function createProductionLegacyJsonSources(sourceComposition, sourceDomainSnapshots = null) {
+function createProductionLegacyJsonSources(sourceReference) {
   return ['marks-activity', 'workflow'].flatMap((domain) => {
-    const snapshot = sourceDomainSnapshots?.[domain]
+    const snapshot = sourceReference.workflowDomains?.[domain]
     const adapter = snapshot && typeof snapshot === 'object'
       ? { async collect() { return clone(snapshot) } }
-      : sourceComposition?.pythonAdapters?.[domain]
+      : sourceReference.composition?.pythonAdapters?.[domain]
     if (!adapter || typeof adapter.collect !== 'function') return []
     return [{
       kind: 'json',
@@ -1213,6 +1301,10 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     pythonCommand: options.pythonCommand || options.source.pythonCommand,
     ...(preflightOnly ? { profileLeaseMode: 'standby' } : {}),
   })
+  const sourceReference = {
+    composition: sourceComposition,
+    workflowDomains: options.sourceDomainSnapshots || null,
+  }
   const targetComposition = await createReadWebProductionBackupComposition({
     ...options.target,
     profileId,
@@ -1240,9 +1332,17 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
   })
   const legacyBridge = createWindowsOwnerLegacyCompatibilityBridge({
     profileId,
-    applicationPersistence: sourceComposition.browserProfile.persistence,
-    storage: sourceComposition.browserProfile.storage,
-    jsonSources: createProductionLegacyJsonSources(sourceComposition, options.sourceDomainSnapshots),
+    applicationPersistence: {
+      async getAllRows() {
+        return sourceReference.composition.browserProfile.persistence.getAllRows()
+      },
+    },
+    storage: {
+      get length() { return sourceReference.composition.browserProfile.storage.length },
+      key(index) { return sourceReference.composition.browserProfile.storage.key(index) },
+      getItem(key) { return sourceReference.composition.browserProfile.storage.getItem(key) },
+    },
+    jsonSources: createProductionLegacyJsonSources(sourceReference),
   })
   const sourceScopesByDomain = await discoverProductionScopes(
     legacyBridge,
@@ -1281,6 +1381,7 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     profileAuthorityIsolationRoot: authorityIsolationRoot,
     profileAuthorityRoot: authorityRoot,
     profileId,
+    legacyWriterControl: options.legacyWriterControl,
     smokeCheck: async ({ domain, revision }) => {
       const current = await hostAdapters[domain].collect({ domain })
       const state = await stateStore.read()
@@ -1385,7 +1486,38 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
             reasonCode: refreshed?.reasonCode || 'migration-browser-freeze-not-observed',
           }
         }
-        return { ok: true, status: 'browser-frozen-observed', ...(refreshed && typeof refreshed === 'object' ? refreshed : {}) }
+        let sourceCapture = null
+        if (typeof options.refreshSourceAfterFreeze === 'function') {
+          const source = await options.refreshSourceAfterFreeze({
+            domain,
+            stage: 'before-final-backup',
+            freeze: context.freeze,
+            sourceReference,
+          })
+          if (!source || typeof source !== 'object' || !source.sourceComposition) {
+            throw productionHostError(
+              'OWNER_CUTOVER_PRODUCTION_SOURCE_REFRESH_INVALID',
+              'Production source refresh did not return a fresh source composition',
+            )
+          }
+          if (!source.sourceCapture || source.sourceCapture.kind !== 'post-freeze-live-source-capture') {
+            throw productionHostError(
+              'OWNER_CUTOVER_PRODUCTION_SOURCE_REFRESH_INVALID',
+              'Production source refresh did not return post-freeze capture evidence',
+            )
+          }
+          sourceReference.composition = source.sourceComposition
+          if (source.sourceDomainSnapshots !== undefined) {
+            sourceReference.workflowDomains = source.sourceDomainSnapshots
+          }
+          sourceCapture = source.sourceCapture || null
+        }
+        return {
+          ok: true,
+          status: 'browser-frozen-observed',
+          ...(refreshed && typeof refreshed === 'object' ? refreshed : {}),
+          ...(sourceCapture ? { sourceCapture } : {}),
+        }
       },
     })
     results.push(result)
