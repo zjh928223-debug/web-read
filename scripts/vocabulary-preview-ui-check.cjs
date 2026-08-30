@@ -143,6 +143,76 @@ async function runRepeatedClickCheck() {
   }
 }
 
+async function runPreviewAnnotationClickCheck() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(targetUrl, { waitUntil: 'networkidle' });
+    return await page.evaluate(async () => {
+      const module = await import('/src/composables/vocabulary-preview-module.js');
+      const originalStorage = window.AnnotationGenerationStorage;
+      const generatedItem = {
+        id: 'preview-deliberations',
+        targetId: 'preview-deliberations-target',
+        markedText: 'deliberations',
+        boundary: 'deliberations',
+        meaning: 'careful discussion',
+        source: 'preview-scan',
+        occurrenceKey: 'preview::deliberations',
+        occurrenceGlobalStart: 0,
+        occurrenceGlobalEnd: 0,
+      };
+      window.AnnotationGenerationStorage = {
+        async loadBundle() {
+          return { generated: { items: [generatedItem] }, status: {} };
+        },
+      };
+      window.AnnotationGeneratedResultStore.clear();
+      const toggleButton = document.createElement('button');
+      toggleButton.type = 'button';
+      toggleButton.textContent = '显示预习词';
+      document.body.appendChild(toggleButton);
+      const controller = module.createVocabularyPreviewController({
+        togglePreviewButton: toggleButton,
+        state: {
+          currentAudioMeta: { source: 'youtube-workflow', jobId: 'preview-click-check' },
+          currentAudioKey: 'preview-click-audio',
+        },
+        windowObject: window,
+        documentObject: document,
+        settlementProgressRepository: {
+          async getProgress() { return null; },
+        },
+      });
+      try {
+        const previewIndexes = await controller.togglePreviewWords();
+        const indexedItems = window.AnnotationGeneratedResultStore.getItems();
+        const hit = window.AnnotationClickResolver.resolveClick({
+          span: { textContent: 'deliberations' },
+          wordIndex: 0,
+          words: [{ word: 'deliberations' }],
+          generatedStore: window.AnnotationGeneratedResultStore,
+        });
+        return {
+          previewIndexes,
+          indexedItemCount: indexedItems.length,
+          hitTargetId: hit && hit.targetId,
+          hitMeaning: hit && hit.meaning,
+        };
+      } finally {
+        controller.dispose();
+        toggleButton.remove();
+        window.AnnotationGeneratedResultStore.clear();
+        window.AnnotationGenerationStorage = originalStorage;
+      }
+    });
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 async function main() {
   let server = null;
   const output = { value: '' };
@@ -167,6 +237,11 @@ async function main() {
     assert.equal(result.perWordLookupCalls, 0);
     assert.equal(result.buttonDisabledAfter, false, 'preview button should be restored after scanning');
     assert.equal(result.sameResult, true, 'all repeated callers should receive the same scan result');
+    const annotationClickResult = await runPreviewAnnotationClickCheck();
+    assert.deepEqual(annotationClickResult.previewIndexes, [0], 'displaying preview words should expose the persisted occurrence');
+    assert.equal(annotationClickResult.indexedItemCount, 1, 'displaying preview words should refresh the generated annotation index');
+    assert.equal(annotationClickResult.hitTargetId, 'preview-deliberations-target', 'a displayed preview word should resolve its persisted explanation');
+    assert.equal(annotationClickResult.hitMeaning, 'careful discussion');
     console.log('vocabulary preview UI check passed');
   } finally {
     if (server && server.exitCode === null) server.kill();

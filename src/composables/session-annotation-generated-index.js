@@ -195,7 +195,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
   function scheduleGeneratedAnnotationIndexRefresh() {
     const scheduledScopeKey = getAnnotationGenerationScopeKey();
-    observeBestEffort(refreshGeneratedAnnotationIndexForCurrentDocument(), {
+    return observeBestEffort(refreshGeneratedAnnotationIndexForCurrentDocument(), {
       operationId: 'annotation-generated-index-refresh',
       reason: 'failed background refresh clears only the matching transient index and remains retryable',
       logger: consoleApi,

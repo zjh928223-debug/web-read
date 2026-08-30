@@ -1261,6 +1261,7 @@ export function createVocabularyPreviewController(deps = {}) {
         return [];
       }
       const { bundle } = await loadCurrentAnnotationBundle(windowObject);
+      await Promise.resolve(scheduleGeneratedAnnotationIndexRefresh());
       const indexes = getPreviewWordIndexesFromGeneratedItems(getGeneratedItemsFromBundle(bundle));
       setPreviewWordIndexes(windowObject, indexes);
       showToast(indexes.length ? `已显示 ${indexes.length} 个预习提示位置` : '当前文章还没有已解释的预习词', indexes.length ? 'success' : 'info');
