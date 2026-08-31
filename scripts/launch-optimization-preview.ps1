@@ -192,6 +192,27 @@ function Start-OptimizationHostFromSnapshot {
   if ($null -eq $spec) {
     throw 'Previous optimization Host has no stable profile authority restart receipt; refusing rollback.'
   }
+  if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
+    throw 'Previous optimization Host restart requires the retained service-token receipt.'
+  }
+  $serviceToken = (Read-OptimizationRuntimeText -Path $tokenPath).Trim()
+  if (-not $serviceToken) {
+    throw 'Previous optimization Host restart requires a non-empty service-token receipt.'
+  }
+  # Recovery runs before the normal launch environment is rebuilt. Restore the
+  # same runtime contract that Start-OptimizationOwnedPair gives a Host so a
+  # rollback cannot restart it with a missing token or the wrong data root.
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_RUNTIME_CONFIG' -Value $runtimeConfigPath
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_SUBTITLE_DATA_ROOT' -Value $defaultOptimizationDataRoot
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PYTHON' -Value ([string]$State.filePath)
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PYTHON_PATH' -Value ([string]$State.filePath)
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_RELEASE_ID' -Value ([string]$State.releaseId)
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PROFILE_ID' -Value ([string]$State.profileId)
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_INSTANCE_ID' -Value ([string]$State.instanceId)
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_SERVICE_TOKEN' -Value $serviceToken
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_ALLOWED_ORIGIN' -Value "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$($State.port)"
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_HOST' -Value $backendHost
+  Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_PORT' -Value ([string]$fixedBackendPort)
   Start-ManagedRuntimeInstance @spec | Out-Null
   $health = Wait-OptimizationHttpJson -Url $spec.HealthUrl -TimeoutSeconds $ReadyTimeoutSeconds -Predicate {
     param($value)

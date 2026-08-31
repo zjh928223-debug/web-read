@@ -1047,7 +1047,14 @@ function Assert-RealLauncherLifecycle {
         Assert-True ($recoveredHealth.status -eq 'ready' -and $recoveredHealth.releaseId -eq $commitPointerTarget.releaseId -and $recoveredHealth.instanceId -eq $commitPointerTarget.instanceId) 'commit-pointer recovery rolled back a committed replacement'
         Assert-True ($recoveredHost.instanceId -eq $commitPointerTarget.instanceId -and $recoveredHost.releaseId -eq $commitPointerTarget.releaseId) 'commit-pointer recovery did not retain the committed Host'
         Assert-True ($recoveredManagerState.instanceId -eq $commitPointerTarget.instanceId -and $recoveredManagerState.releaseId -eq $commitPointerTarget.releaseId -and [int]$recoveredManagerState.pid -gt 0) 'commit-pointer recovery did not retain a live committed Host state'
-        Assert-True ((Read-OptimizationRuntimeText -Path $frontDoorTargetPath) -eq (Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath)) 'commit-pointer recovery left target and committed target divergent'
+        $recoveredTarget = Read-OptimizationFrontDoorTarget -Path $frontDoorTargetPath
+        $recoveredCommittedTarget = Read-OptimizationFrontDoorTarget -Path $frontDoorCommittedTargetPath
+        Assert-True ($null -ne $recoveredTarget -and $null -ne $recoveredCommittedTarget `
+          -and $recoveredTarget.host -eq $recoveredCommittedTarget.host `
+          -and [int]$recoveredTarget.port -eq [int]$recoveredCommittedTarget.port `
+          -and $recoveredTarget.releaseId -eq $recoveredCommittedTarget.releaseId `
+          -and $recoveredTarget.profileId -eq $recoveredCommittedTarget.profileId `
+          -and $recoveredTarget.instanceId -eq $recoveredCommittedTarget.instanceId) 'commit-pointer recovery left target and committed target divergent'
         Assert-True ((Read-OptimizationRuntimeText -Path (Join-Path $stateRoot 'active-release.json')) -match [regex]::Escape([string]$commitPointerTarget.releaseId)) 'commit-pointer recovery rolled back the active release'
         $committedCapabilityState = Read-OptimizationJsonFile -Path $capabilityStatePath
         Assert-True ($null -ne $committedCapabilityState) 'commit-pointer recovery lost the capability Host state'
@@ -1089,12 +1096,12 @@ function Assert-RealLauncherLifecycle {
         Assert-True (Wait-OptimizationTcpPortFree -Port $interruptedCandidatePort -TimeoutSeconds 5) 'process-start boundary recovery left an orphan Host port occupied'
       }
       $currentActiveIsolationRoot = Get-OptimizationObjectText -Object $recoveredManagerState -Name 'applicationIsolationRoot'
-      Assert-True ($currentActiveIsolationRoot) "$crashPhase recovery did not publish the active application isolation root"
+      Assert-True (-not [string]::IsNullOrWhiteSpace($currentActiveIsolationRoot)) "$crashPhase recovery did not publish the active application isolation root"
       $resolvedApplicationInstancesRoot = [IO.Path]::GetFullPath($applicationInstancesRoot).TrimEnd('\', '/')
       $resolvedCurrentActiveIsolationRoot = [IO.Path]::GetFullPath($currentActiveIsolationRoot).TrimEnd('\', '/')
       Assert-True ($resolvedCurrentActiveIsolationRoot.StartsWith("$resolvedApplicationInstancesRoot\", [StringComparison]::OrdinalIgnoreCase)) "$crashPhase recovery published an active application root outside the optimization instances root"
       $currentActiveInstanceName = Split-Path -Leaf $resolvedCurrentActiveIsolationRoot
-      Assert-True ($currentActiveInstanceName) "$crashPhase recovery published an empty active application instance identity"
+      Assert-True (-not [string]::IsNullOrWhiteSpace($currentActiveInstanceName)) "$crashPhase recovery published an empty active application instance identity"
       # The recovered manager receipt identifies the sole active instance:
       # rollback points back to the old baseline, while committed
       # forward-recovery points to the new committed instance.  Permit only

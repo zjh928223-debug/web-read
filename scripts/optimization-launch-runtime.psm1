@@ -477,7 +477,10 @@ function Invoke-OptimizationHostDrain {
   }
   $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $DeadlineSeconds))
   do {
-    $health = Get-OptimizationHttpJson -Url "$baseUrl/api/app/health"
+    # Health is counted as an in-flight request by the ASGI host itself, so
+    # polling it can never observe inflightRequests=0.  Drain-status is the
+    # dedicated non-counted lifecycle endpoint.
+    $health = Get-OptimizationHttpJson -Url "$baseUrl/api/app/drain-status"
     $inflight = 0
     $inflightText = Get-OptimizationObjectText -Object $health -Name 'inflightRequests'
     [int]::TryParse($inflightText, [ref]$inflight) | Out-Null
