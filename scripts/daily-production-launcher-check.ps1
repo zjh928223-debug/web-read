@@ -43,6 +43,10 @@ function Invoke-PowerShellJson {
   foreach ($name in $Environment.Keys) { $environmentSnapshot[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
   $previousErrorAction = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
+  $stdoutPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.stdout.log')
+  $stderrPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.stderr.log')
+  $statusPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.exit.log')
+  $batchPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.cmd')
   $stdoutText = ''
   $stderrText = ''
   $exitCode = -1
@@ -50,27 +54,28 @@ function Invoke-PowerShellJson {
   try {
     foreach ($name in $Environment.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $Environment[$name] }
     $argumentString = ($Arguments | ForEach-Object { '"' + ([string]$_ -replace '"', '\\"') + '"' }) -join ' '
+    $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $batchText = "@echo off`r`n`"$powershellPath`" $argumentString 1> `"$stdoutPath`" 2> `"$stderrPath`"`r`nset `"exitCode=%ERRORLEVEL%`"`r`necho %exitCode%> `"$statusPath`"`r`n"
+    [IO.File]::WriteAllText($batchPath, $batchText, [Text.UTF8Encoding]::new($false))
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $startInfo.Arguments = $argumentString
+    $startInfo.FileName = (Get-Command cmd.exe -ErrorAction Stop).Source
+    $startInfo.Arguments = "/d /s /c call `"$batchPath`""
     $startInfo.WorkingDirectory = $projectRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
     $child = [Diagnostics.Process]::new()
     $child.StartInfo = $startInfo
-    if (-not $child.Start()) { throw 'Could not start the daily launcher child process.' }
-    $stdoutTask = $child.StandardOutput.ReadToEndAsync()
-    $stderrTask = $child.StandardError.ReadToEndAsync()
+    if (-not $child.Start()) { throw 'Could not start the daily launcher command wrapper.' }
     $child.WaitForExit()
     $child.Refresh()
-    $exitCode = $child.ExitCode
-    $stdoutText = $stdoutTask.Result
-    $stderrText = $stderrTask.Result
+    $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { (Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8).Trim() } else { '' }
+    if (-not [int]::TryParse($statusText, [ref]$exitCode)) { $exitCode = [int]$child.ExitCode }
+    if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 }
+    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 }
   } finally {
     foreach ($name in $environmentSnapshot.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $environmentSnapshot[$name] }
     $ErrorActionPreference = $previousErrorAction
+    Remove-Item -LiteralPath $stdoutPath,$stderrPath,$statusPath,$batchPath -Force -ErrorAction SilentlyContinue
     if ($null -ne $child) { $child.Dispose() }
   }
   $text = @($stdoutText, $stderrText) -join "`n"
@@ -85,6 +90,7 @@ function Invoke-PowerShellJson {
       } catch {}
     }
   }
+  if ($exitCode -eq 0 -and $null -eq $json) { $exitCode = 1 }
   return [pscustomobject]@{ exitCode = $exitCode; text = $text; json = $json }
 }
 
