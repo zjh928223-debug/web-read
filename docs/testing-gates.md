@@ -188,9 +188,10 @@ preflight 真正通过才会报告 READY。快捷方式和进程切换由 12.7 �
 launcher arguments，并把旧目标写入独立 rollback state。
 
 daily-production launcher 的临时 fixture 证据由 `npm run verify:daily-production-launcher` 执行：
-它只使用临时 data root、随机安全端口、仓库外的临时 stable venv 和临时 `.lnk`，验证默认 Plan、
-未授权 Apply、未知端口保护、built-dist Host 与 pre-cutover owner 状态，以及 shortcut arguments
-的 Apply/Rollback。它还会在 Apply 的 active-target/journal 提交窗口和 Rollback 的 service-stop、
+它先验证专用 external venv 缺失时 daily Python 选择 fail-closed、显式 Bootstrap/environment
+override 仍可用，再只使用临时 data root、随机安全端口、仓库外的临时 stable venv 和临时 `.lnk`，
+验证默认 Plan、未授权 Apply、未知端口保护、built-dist Host 与 pre-cutover owner 状态，以及
+shortcut arguments 的 Apply/Rollback。它还会在 Apply 的 active-target/journal 提交窗口和 Rollback 的 service-stop、
 rollback-target、active-target-clear、journal cleanup 每个 before/after 窗口强制中断子进程，随后
 用真实 launcher 重启/回退，证明恢复是确定、幂等且不触碰未知占用者。
 

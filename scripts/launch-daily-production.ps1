@@ -415,11 +415,7 @@ function Get-DailyToolchain {
   $nodePath = Resolve-OptimizationExecutablePath -Value 'node' -Label 'Node'
   $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
   if ($null -eq $npmCommand) { $npmCommand = Get-Command npm -ErrorAction Stop }
-  $pythonPath = if ($BootstrapPython) {
-    Resolve-OptimizationSelectedPython -RuntimeConfigPath $Context.runtimeConfigPath -RequestedPath $BootstrapPython
-  } else {
-    Resolve-OptimizationSelectedPython -RuntimeConfigPath $Context.runtimeConfigPath
-  }
+  $pythonPath = Resolve-OptimizationDailyPython -RuntimeConfigPath $Context.runtimeConfigPath -RequestedPath $BootstrapPython
   $toolchainCheck = Assert-OptimizationReleaseToolchain `
     -ProjectRoot $Context.projectRoot `
     -WorkflowRoot $Context.workflowRoot `

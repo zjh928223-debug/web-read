@@ -123,11 +123,12 @@ identity-checked owned process，Rollback 需要 `-ConfirmDailyProductionRollbac
 和 data root。Rollback 不会访问或重启受保护的 Vite/dev 进程；完成回退后，用户可以手动返回保留的
 旧 launcher/target，现有 shortcut target 不会被丢弃。
 
-Daily cold start、Apply/Start 以及 shortcut 指向的 launcher 使用同一套 Python 解析：若外部稳定
-环境已存在，优先使用 `%LOCALAPPDATA%\Read-Web\optimization-python\Scripts\python.exe`；
-`READ_WEB_PYTHON`/`READ_WEB_PYTHON_PATH` 只作为显式 override/CI 注入。launcher 不会修改全局
-Python，也不会用不健康的全局解释器继续启动；完整 Python health、built Host 和 runtime
-preflight 任一失败都会 fail-closed。
+Daily cold start、Apply/Start 以及 shortcut 指向的 launcher 使用同一套 Python 解析：正式
+daily 在没有 `-BootstrapPython` 或 `READ_WEB_PYTHON`/`READ_WEB_PYTHON_PATH` 显式 override 时，
+只允许使用 `%LOCALAPPDATA%\Read-Web\optimization-python\Scripts\python.exe`；该 venv 缺失时
+直接 fail-closed，不会把 daily RuntimeConfig 中的裸 `python` 解析成全局回退。显式 override
+只用于 fixture/CI 等明确场景。launcher 不会修改全局 Python，也不会用不健康的全局解释器继续
+启动；完整 Python health、built Host 和 runtime preflight 任一失败都会 fail-closed。
 
 快捷方式另有独立、显式的 Plan/Apply/Rollback 工具；验证只使用临时 `.lnk`，不会读取或改写桌面
 快捷方式。正式切换时必须显式提供新的 script、working directory 和 launcher arguments，并保留

@@ -9,8 +9,10 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $launcherPathValue = if ([IO.Path]::IsPathRooted($LauncherPath)) { $LauncherPath } else { Join-Path $projectRoot $LauncherPath }
 $launcherPath = (Resolve-Path -LiteralPath $launcherPathValue).Path
 $shortcutMigrationPath = Join-Path $PSScriptRoot 'release-shortcut-migration.ps1'
+$optimizationReleaseModulePath = Join-Path $PSScriptRoot 'optimization-release.psm1'
 $launcherSource = Get-Content -LiteralPath $launcherPath -Raw -Encoding UTF8
 $dailyConfig = Get-Content -LiteralPath (Join-Path $projectRoot 'config\runtime.daily-production.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+Import-Module $optimizationReleaseModulePath -Force -DisableNameChecking
 
 function Assert-True($Value, [string]$Message) {
   if (-not $Value) { throw $Message }
@@ -19,6 +21,33 @@ function Assert-True($Value, [string]$Message) {
 function Set-ProcessEnvironmentValue([string]$Name, [AllowNull()][string]$Value) {
   if ($null -eq $Value) { Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue }
   else { [Environment]::SetEnvironmentVariable($Name, $Value, 'Process') }
+}
+
+function Assert-DailyPythonSelectionBoundary {
+  $dailyConfigPath = Join-Path $projectRoot 'config\runtime.daily-production.json'
+  $environmentNames = @('LOCALAPPDATA', 'READ_WEB_PYTHON', 'READ_WEB_PYTHON_PATH')
+  $environmentSnapshot = @{}
+  foreach ($name in $environmentNames) { $environmentSnapshot[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+  $missingDefaultRoot = Join-Path ([IO.Path]::GetTempPath()) ('read-web-python-missing-' + [Guid]::NewGuid().ToString('N'))
+  try {
+    Set-ProcessEnvironmentValue -Name 'LOCALAPPDATA' -Value $missingDefaultRoot
+    Set-ProcessEnvironmentValue -Name 'READ_WEB_PYTHON' -Value $null
+    Set-ProcessEnvironmentValue -Name 'READ_WEB_PYTHON_PATH' -Value $null
+    $defaultPath = Get-OptimizationDefaultPythonPath
+    Assert-True (-not (Test-Path -LiteralPath $defaultPath -PathType Leaf)) 'daily Python selection regression must start without the dedicated external venv'
+    $missingError = $null
+    try { Resolve-OptimizationDailyPython -RuntimeConfigPath $dailyConfigPath | Out-Null } catch { $missingError = $_.Exception.Message }
+    Assert-True ($missingError -and $missingError -match 'external optimization Python venv') 'formal daily selection must fail closed when its dedicated external venv is missing'
+
+    $systemPython = (Get-Command python.exe -ErrorAction Stop).Source
+    $bootstrapSelection = Resolve-OptimizationDailyPython -RuntimeConfigPath $dailyConfigPath -RequestedPath $systemPython
+    Assert-True ([IO.Path]::GetFullPath($bootstrapSelection) -ieq [IO.Path]::GetFullPath($systemPython)) 'explicit daily BootstrapPython selection must remain available for fixture/CI use'
+    Set-ProcessEnvironmentValue -Name 'READ_WEB_PYTHON' -Value $systemPython
+    $environmentSelection = Resolve-OptimizationDailyPython -RuntimeConfigPath $dailyConfigPath
+    Assert-True ([IO.Path]::GetFullPath($environmentSelection) -ieq [IO.Path]::GetFullPath($systemPython)) 'explicit daily READ_WEB_PYTHON selection must remain available for fixture/CI use'
+  } finally {
+    foreach ($name in $environmentSnapshot.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $environmentSnapshot[$name] }
+  }
 }
 
 function Get-RandomSafePort {
@@ -139,7 +168,7 @@ Assert-True ($dailyConfig.frontend.port -eq 5174 -and $dailyConfig.backend.port 
 Assert-True ($dailyConfig.dataRoot -eq 'E:\ReadWebData\SubtitleWorkflow-Next') 'daily-production config must preserve the existing daily workflow root identity'
 Assert-True ($launcherSource -match 'runtime\.daily-production\.json' -and $launcherSource -notmatch 'runtime\.optimization\.json') 'daily-production launcher must not widen or reuse runtime.optimization.json'
 Assert-True ($launcherSource -match 'youtube_workflow\.production_host_prototype' -and $launcherSource -match 'legacy-browser-owner/pre-cutover') 'daily-production launcher must require built Host and expose pre-cutover owner status'
-Assert-True ($launcherSource -match 'Resolve-OptimizationSelectedPython' -and $launcherSource -match 'Assert-OptimizationReleaseToolchain') 'daily-production launcher must select and health-check the external Python runtime before startup'
+Assert-True ($launcherSource -match 'Resolve-OptimizationDailyPython' -and $launcherSource -notmatch 'Resolve-OptimizationSelectedPython' -and $launcherSource -match 'Assert-OptimizationReleaseToolchain') 'daily-production launcher must use the strict external Python selector and health-check it before startup'
 foreach ($phase in @(
   'apply-before-active-target',
   'apply-after-active-target',
@@ -159,6 +188,8 @@ foreach ($phase in @(
 foreach ($domain in @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')) {
   Assert-True ($launcherSource -match [regex]::Escape($domain)) "daily-production owner contract is missing domain: $domain"
 }
+
+Assert-DailyPythonSelectionBoundary
 
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('read-web-daily-production-' + [Guid]::NewGuid().ToString('N'))
 $dataRoot = Join-Path $testRoot 'workflow-data'
