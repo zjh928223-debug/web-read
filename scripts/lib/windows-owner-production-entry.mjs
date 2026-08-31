@@ -171,6 +171,47 @@ function assertNoOverlap(left, right, leftField, rightField) {
   }
 }
 
+function assertWorkflowSourceTargetSeparation({
+  workflowDataRoot,
+  workflowStateDir,
+  workflowOutputDir,
+  targetIsolationRoot,
+  targetProfileAuthorityIsolationRoot,
+}) {
+  const targetRoots = [
+    ['target-isolation-root', targetIsolationRoot],
+    ['target-profile-authority-isolation-root', targetProfileAuthorityIsolationRoot],
+  ]
+  for (const [targetField, targetRoot] of targetRoots) {
+    assertNoOverlap(workflowStateDir, targetRoot, 'workflow-state-dir', targetField)
+    assertNoOverlap(workflowOutputDir, targetRoot, 'workflow-output-dir', targetField)
+    if (!overlaps(workflowDataRoot, targetRoot)) continue
+    const relative = path.relative(workflowDataRoot, targetRoot)
+    const firstSegment = relative.split(path.sep)[0]
+    if (firstSegment !== '.read-web-application') {
+      throw entryError(
+        'OWNER_PRODUCTION_ENTRY_PATH_INVALID',
+        `workflow-data-root may contain only the isolated .read-web-application target area`,
+        { workflowDataRoot, targetField },
+      )
+    }
+  }
+}
+
+function assertTargetAuthorityIsolationLayout(targetIsolationRoot, targetProfileAuthorityIsolationRoot) {
+  if (path.resolve(targetIsolationRoot) === path.resolve(targetProfileAuthorityIsolationRoot)
+    || overlaps(targetIsolationRoot, targetProfileAuthorityIsolationRoot)) {
+    throw entryError(
+      'OWNER_PRODUCTION_ENTRY_PATH_INVALID',
+      'target-isolation-root may not contain target-profile-authority-isolation-root',
+      {
+        targetIsolationRoot,
+        targetProfileAuthorityIsolationRoot,
+      },
+    )
+  }
+}
+
 function origin(value, field) {
   const raw = requireString(value, field)
   let parsed
@@ -318,10 +359,15 @@ export async function validateWindowsOwnerProductionEntryOptions(parsed) {
   assertNoOverlap(runRoot, targetIsolationRoot, 'run-root', 'target-isolation-root')
   assertNoOverlap(runRoot, targetProfileAuthorityIsolationRoot, 'run-root', 'target-profile-authority-isolation-root')
   assertNoOverlap(browserProfileDir, targetIsolationRoot, 'browser-profile-dir', 'target-isolation-root')
-  assertNoOverlap(workflowDataRoot, targetIsolationRoot, 'workflow-data-root', 'target-isolation-root')
+  assertWorkflowSourceTargetSeparation({
+    workflowDataRoot,
+    workflowStateDir,
+    workflowOutputDir,
+    targetIsolationRoot,
+    targetProfileAuthorityIsolationRoot,
+  })
   assertNoOverlap(browserProfileDir, targetProfileAuthorityIsolationRoot, 'browser-profile-dir', 'target-profile-authority-isolation-root')
-  assertNoOverlap(workflowDataRoot, targetProfileAuthorityIsolationRoot, 'workflow-data-root', 'target-profile-authority-isolation-root')
-  assertNoOverlap(targetIsolationRoot, targetProfileAuthorityIsolationRoot, 'target-isolation-root', 'target-profile-authority-isolation-root')
+  assertTargetAuthorityIsolationLayout(targetIsolationRoot, targetProfileAuthorityIsolationRoot)
   for (const [index, root] of additionalRoots.entries()) {
     assertNoOverlap(runRoot, root, 'run-root', `additional-output-root[${index}]`)
     assertNoOverlap(targetIsolationRoot, root, 'target-isolation-root', `additional-output-root[${index}]`)
@@ -860,6 +906,10 @@ function summarizeDomain(domainResult) {
     domain: domainResult?.domain || null,
     ok: domainResult?.ok === true,
     status: domainResult?.status || null,
+    stage: domainResult?.stage || null,
+    outcome: domainResult?.outcome || null,
+    reasonCode: domainResult?.reasonCode || null,
+    currentRevision: domainResult?.currentRevision,
     stopped: domainResult?.stopped === true,
     resumed: domainResult?.resumed === true,
     steps,
@@ -999,6 +1049,7 @@ async function executeMutation(config, operation) {
     target: config.target,
     domains: WINDOWS_OWNER_CUTOVER_DOMAINS,
     sourceDomainSnapshots: run.workflowDomains,
+    sourceWorkflowOutputDir: config.workflowOutputDir,
     hostBaseUrl: config.hostBaseUrl,
     hostAccessToken: token,
     hostInstanceId: config.hostInstanceId,

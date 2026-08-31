@@ -143,11 +143,12 @@ function assertSafeJson(value, seen = new WeakSet(), keyHint = '', options = {})
   } else {
     for (const [key, child] of Object.entries(value)) {
       const normalizedKey = key.replace(/[_-]/gu, '').toLowerCase()
-      if (FORBIDDEN_NORMALIZED_MEDIA_KEY.test(normalizedKey)) {
+      if (FORBIDDEN_NORMALIZED_MEDIA_KEY.test(normalizedKey) && !isSafeByteCountMetadata(key, child)) {
         throw migrationError('migration-media-payload-rejected')
       }
       if ((FORBIDDEN_STATE_KEY.test(key) || FORBIDDEN_NORMALIZED_STATE_KEY.test(normalizedKey))
-        && !(allowSettlementToken && key === 'attempt_token')) {
+        && !(allowSettlementToken && key === 'attempt_token')
+        && !isSafeByteCountMetadata(key, child)) {
         throw migrationError('migration-sensitive-value-rejected')
       }
       assertSafeJson(child, seen, key, {
@@ -158,6 +159,16 @@ function assertSafeJson(value, seen = new WeakSet(), keyHint = '', options = {})
     }
   }
   seen.delete(value)
+}
+
+function isSafeByteCountMetadata(key, value) {
+  // Workflow integrity envelopes use numeric `bytes`/`sizeBytes` fields as
+  // file-size metadata. Permit only a non-negative safe integer; byte arrays,
+  // encoded strings, and other media-shaped values remain fail-closed.
+  const normalizedKey = String(key).replace(/[_-]/gu, '').toLowerCase()
+  return (normalizedKey === 'bytes' || normalizedKey === 'sizebytes')
+    && Number.isSafeInteger(value)
+    && value >= 0
 }
 
 function emptyState(profileId) {
@@ -279,10 +290,55 @@ function domainEquivalent(left, right, domain = null) {
       if (!isPlainObject(value) || !Array.isArray(value.records)) return value
       const normalized = {
         ...value,
-        records: value.records.map((record) => {
+        records: value.records
+          .filter((record) => {
+            if (domain !== 'reader-session') return true
+            const id = String(record?.id || '')
+            // These rows remain in the retained application-backup artifact,
+            // but they are compatibility evidence rather than Host canonical
+            // reader-session state.
+            return !id.startsWith('readerSessionQuarantine:')
+              && !id.startsWith('read-web.reader-save-outbox.')
+          })
+          .filter((record) => {
+            if (domain !== 'marks-activity') return true
+            // The Host keeps its commit journal privately and exposes only
+            // its revision in the query contract; legacy journal rows are
+            // receipt evidence, not canonical import records.
+            return !String(record?.id || '').startsWith('reader-marks-commit-journal.json:')
+          })
+          .map((record) => {
           if (!isPlainObject(record)) return record
           const { checksum: _checksum, ...recordContent } = record
           const content = { ...recordContent }
+          if (domain === 'workflow' || domain === 'passage-preview' || domain === 'annotation') {
+            // The source backup revision is the legacy document/file revision;
+            // the Host owns a separate outer CAS revision for its snapshot.
+            delete content.revision
+          }
+          if (domain === 'reader-session') {
+            // Browser row revisions are opaque session evidence; the Host
+            // assigns a numeric owner revision.  Normalize the marks and
+            // readerSession shapes to the five-row Host candidate contract.
+            delete content.revision
+            const sessionContentId = value.records.find((item) => (
+              item?.id === 'audioMeta' || item?.id === 'readerSession'
+            ))?.contentId || null
+            if (content.id === 'marks') {
+              const marks = Array.isArray(content.payload) ? content.payload : content.payload?.marks
+              content.contentId = content.contentId || sessionContentId
+              content.payload = {
+                schemaVersion: 1,
+                contentId: content.contentId,
+                marks: Array.isArray(marks) ? marks : [],
+              }
+            } else if (content.id === 'readerSession' && isPlainObject(content.payload)) {
+              content.payload = {
+                schemaVersion: content.payload.schemaVersion,
+                contentId: content.payload.contentId || content.contentId || sessionContentId,
+              }
+            }
+          }
           if (/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json:/u.test(String(content.id || ''))
             && isPlainObject(content.payload)
             && typeof content.payload.schemaVersion === 'string'
@@ -292,19 +348,69 @@ function domainEquivalent(left, right, domain = null) {
             // reader-marks.v1/reader-activity.v1 marker.
             // Its checksum and timestamps are regenerated on each owner
             // write, so compare the durable marks payload only.
-            content.payload = clone(content.payload)
-            delete content.payload.checksum
-            delete content.payload.updatedAt
-            if (isPlainObject(content.payload.payload)) {
-              delete content.payload.payload.updatedAt
-              delete content.payload.payload.checksum
+            const legacyEnvelope = clone(content.payload)
+            const durablePayload = isPlainObject(legacyEnvelope.payload)
+              ? clone(legacyEnvelope.payload)
+              : (String(content.id || '').startsWith('reader-marks.json:')
+                ? { jobId: legacyEnvelope.jobId, marks: Array.isArray(legacyEnvelope.marks) ? legacyEnvelope.marks : [] }
+                : { ...legacyEnvelope })
+            delete durablePayload.updatedAt
+            delete durablePayload.checksum
+            delete durablePayload.revision
+            if (String(content.id || '').startsWith('reader-activity.json:')) {
+              // Legacy activity keeps operation-id receipts in the JSON row;
+              // the Host keeps those receipts in its private commit journal.
+              delete durablePayload._activityOperationIds
             }
+            content.payload = {
+              schemaVersion: legacyEnvelope.schemaVersion,
+              domain: legacyEnvelope.domain,
+              jobId: legacyEnvelope.jobId || durablePayload.jobId,
+              payload: durablePayload,
+            }
+            delete content.revision
             delete content.schemaVersion
           }
+          if (domain === 'workflow') {
+            for (const field of ['references', 'mediaReferences']) {
+              if (Array.isArray(content[field])) {
+                content[field] = content[field].slice().sort((left, right) => (
+                  canonicalize(left).localeCompare(canonicalize(right))
+                ))
+              }
+            }
+          }
           return content
-        }).sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
+        })
+          .sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
       }
-      if (domain === 'vocabulary-srs') delete normalized.revision
+      if (domain === 'marks-activity') {
+        // Source file revisions and Host owner CAS revisions are different
+        // coordinate systems.  References are aggregated once per legacy
+        // record and may contain duplicates in the source artifact.
+        delete normalized.revision
+        const references = Array.isArray(normalized.references) ? normalized.references : []
+        normalized.references = references.filter((reference, index) => (
+          references.findIndex((candidate) => canonicalize(candidate) === canonicalize(reference)) === index
+        ))
+      }
+      if (domain === 'workflow') {
+        // Workflow references are derived from the records and may be
+        // repeated once per output file.  Media references are derived
+        // metadata: the staged source excludes media bytes, while the Host
+        // may rebind an identity reference from the real output root.  Media
+        // integrity is checked separately through the authorized media range
+        // smoke check, so it must not turn equivalent durable JSON into a
+        // false migration mismatch.
+        const references = Array.isArray(normalized.references) ? normalized.references : []
+        normalized.references = references
+          .filter((reference, index) => (
+            references.findIndex((candidate) => canonicalize(candidate) === canonicalize(reference)) === index
+          ))
+          .sort((left, right) => canonicalize(left).localeCompare(canonicalize(right)))
+        normalized.mediaReferences = []
+      }
+      if (domain === 'passage-preview' || domain === 'annotation' || domain === 'vocabulary-srs') delete normalized.revision
       return normalized
     }
     const leftComparable = comparable(left)
@@ -765,11 +871,14 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
   }
 
-  async function freeze(domainInput) {
+  async function freeze(domainInput, freezeOptions = {}) {
     const domain = domainKey(domainInput)
     const state = await readState()
     const entry = state.domains[domain]
-    if (entry.frozen === true) return { ok: true, domain, stage: 'freeze', status: 'frozen', idempotent: true }
+    const reconcile = freezeOptions?.reconcile === true
+    if (entry.frozen === true && !reconcile) {
+      return { ok: true, domain, stage: 'freeze', status: 'frozen', idempotent: true }
+    }
     if (entry.preflight?.sourceImportIdentity === undefined) return safeFailure(domain, 'freeze', 'migration-preflight-required')
     const writerControl = writerControls[domain] || adapterFor(domain)
     const cutoverControl = cutoverControls[domain]
@@ -784,9 +893,9 @@ export function createWindowsDurableStateMigration(options = {}) {
       }
       entry.frozen = true
       entry.status = 'frozen'
-      entry.freeze = { status: 'frozen' }
+      entry.freeze = { status: 'frozen', ...(reconcile ? { reconciled: true } : {}) }
       await writeState(state)
-      return { ok: true, domain, stage: 'freeze', status: 'frozen' }
+      return { ok: true, domain, stage: 'freeze', status: 'frozen', ...(reconcile ? { reconciled: true } : {}) }
     } catch (error) {
       return safeFailure(domain, 'freeze', error?.code || 'migration-freeze-failed')
     }
@@ -915,6 +1024,40 @@ export function createWindowsDurableStateMigration(options = {}) {
     } catch (error) {
       return safeFailure(domain, 'import', error?.code || 'migration-host-snapshot-invalid')
     }
+    const targetSnapshot = finalBackup.artifact.domains[domain]
+    // A previous process may have committed the Host mutation and then
+    // stopped before recording the migration receipt.  If the observed Host
+    // state already equals the retained final artifact, reconcile that effect
+    // before applying another CAS mutation, even when its revision advanced.
+    if (domainEquivalent(target, targetSnapshot, domain)) {
+      entry.import = {
+        status: 'committed',
+        idempotencyKey,
+        expectedRevision,
+        artifactChecksum: finalBackup.artifact.artifactChecksum,
+        revision: target.revision,
+        commitStatus: 'committed',
+        outcome: 'committed',
+        idempotent: true,
+      }
+      entry.status = 'imported'
+      delete entry.importAttempt
+      try { await writeState(state) } catch (error) {
+        return safeFailure(domain, 'import', error?.code || 'migration-commit-unknown', { currentRevision: target.revision })
+      }
+      return {
+        ok: true,
+        domain,
+        stage: 'import',
+        status: 'committed',
+        outcome: 'committed',
+        commitStatus: 'committed',
+        revision: target.revision,
+        receiptId: null,
+        idempotent: true,
+        artifactChecksum: finalBackup.artifactChecksum,
+      }
+    }
     if (target.revision !== expectedRevision) return safeFailure(domain, 'import', 'migration-conflict', { currentRevision: target.revision })
     const method = mutationMethod(adapterFor(domain))
     if (!method) return safeFailure(domain, 'import', 'migration-host-import-unavailable')
@@ -944,7 +1087,6 @@ export function createWindowsDurableStateMigration(options = {}) {
     } catch (error) {
       return safeFailure(domain, 'import', mutationError?.code || error?.code || 'migration-commit-evidence-unavailable')
     }
-    const targetSnapshot = finalBackup.artifact.domains[domain]
     const targetMatches = domainEquivalent(committed, targetSnapshot, domain)
     const explicitCommit = !mutationError && resultIsCommitted(result, method)
     if (!targetMatches || (!explicitCommit && !mutationError)) {
@@ -1341,7 +1483,9 @@ export function createWindowsDurableStateMigration(options = {}) {
     if (steps.inventory.status !== 'ready') return { ok: false, domain, stopped: true, steps }
     steps.dryRun = await dryRun(domain, runOptions)
     if (!steps.dryRun.ok) return { ok: false, domain, stopped: true, steps }
-    steps.freeze = await freeze(domain)
+    steps.freeze = await freeze(domain, {
+      reconcile: runOptions.reconcilePhysicalFreeze === true,
+    })
     if (!steps.freeze.ok) return { ok: false, domain, stopped: true, steps }
     if (typeof runOptions.beforeFinalBackup === 'function') {
       try {

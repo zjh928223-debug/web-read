@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -181,10 +182,60 @@ function equivalentDomain(left, right, domain = null) {
     if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.records)) return value
     const normalized = {
       ...value,
-      records: value.records.map((record) => {
+      records: value.records
+        .filter((record) => {
+          if (domain !== 'reader-session') return true
+          const id = String(record?.id || '')
+          // Quarantine evidence and retry outbox rows remain in the retained
+          // migration artifact, but they are not part of the Host reader
+          // session candidate contract.  The Host owns the five canonical
+          // session rows; compatibility-only rows are intentionally not
+          // replayed as canonical state.
+          return !id.startsWith('readerSessionQuarantine:')
+            && !id.startsWith('read-web.reader-save-outbox.')
+        })
+        .filter((record) => {
+          if (domain !== 'marks-activity') return true
+          // The legacy commit journal is receipt evidence.  The Host keeps
+          // its own journal internally and exposes only its revision through
+          // the marks-activity query contract, so it is not a canonical
+          // migration record to compare or replay.
+          return !String(record?.id || '').startsWith('reader-marks-commit-journal.json:')
+        })
+        .map((record) => {
         if (!record || typeof record !== 'object' || Array.isArray(record)) return record
         const { checksum: _checksum, ...recordContent } = record
         const content = { ...recordContent }
+        if (domain === 'workflow' || domain === 'passage-preview' || domain === 'annotation') {
+          // The source backup revision is the legacy document/file revision;
+          // the Host owns a separate outer CAS revision for its snapshot.
+          delete content.revision
+        }
+        if (domain === 'reader-session') {
+          // The browser backup adapter retains the source row revision, while
+          // the Host assigns a new numeric owner revision.  The owner reader
+          // candidate also wraps the browser marks array and keeps only the
+          // manifest identity fields in readerSession.
+          delete content.revision
+          const sessionContentId = value.records.find((item) => (
+            item?.id === 'audioMeta' || item?.id === 'readerSession'
+          ))?.contentId || null
+          if (content.id === 'marks') {
+            const marks = Array.isArray(content.payload) ? content.payload : content.payload?.marks
+            content.contentId = content.contentId || sessionContentId
+            content.payload = {
+              schemaVersion: 1,
+              contentId: content.contentId,
+              marks: Array.isArray(marks) ? marks : [],
+            }
+          } else if (content.id === 'readerSession' && content.payload && typeof content.payload === 'object'
+            && !Array.isArray(content.payload)) {
+            content.payload = {
+              schemaVersion: content.payload.schemaVersion,
+              contentId: content.payload.contentId || content.contentId || sessionContentId,
+            }
+          }
+        }
         if (/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json:/u.test(String(content.id || ''))
           && content.payload && typeof content.payload === 'object' && !Array.isArray(content.payload)
           && typeof content.payload.schemaVersion === 'string'
@@ -192,20 +243,70 @@ function equivalentDomain(left, right, domain = null) {
           // The Python owner creates a fresh updatedAt/checksum when a legacy
           // marks envelope is imported.  Compare the durable marks payload,
           // not those derived write-time fields.
-          content.payload = clone(content.payload)
-          delete content.payload.checksum
-          delete content.payload.updatedAt
-          if (content.payload.payload && typeof content.payload.payload === 'object'
-            && !Array.isArray(content.payload.payload)) {
-            delete content.payload.payload.updatedAt
-            delete content.payload.payload.checksum
+          const legacyEnvelope = clone(content.payload)
+          const durablePayload = legacyEnvelope.payload && typeof legacyEnvelope.payload === 'object'
+            && !Array.isArray(legacyEnvelope.payload)
+            ? clone(legacyEnvelope.payload)
+            : (String(content.id || '').startsWith('reader-marks.json:')
+              ? { jobId: legacyEnvelope.jobId, marks: Array.isArray(legacyEnvelope.marks) ? legacyEnvelope.marks : [] }
+              : { ...legacyEnvelope })
+          delete durablePayload.updatedAt
+          delete durablePayload.checksum
+          delete durablePayload.revision
+          if (String(content.id || '').startsWith('reader-activity.json:')) {
+            // Legacy activity keeps operation-id receipts in the JSON row;
+            // the Host keeps those receipts in its private commit journal.
+            delete durablePayload._activityOperationIds
           }
+          content.payload = {
+            schemaVersion: legacyEnvelope.schemaVersion,
+            domain: legacyEnvelope.domain,
+            jobId: legacyEnvelope.jobId || durablePayload.jobId,
+            payload: durablePayload,
+          }
+          delete content.revision
           delete content.schemaVersion
         }
+        if (domain === 'workflow') {
+          for (const field of ['references', 'mediaReferences']) {
+            if (Array.isArray(content[field])) {
+              content[field] = content[field].slice().sort((left, right) => (
+                canonical(left).localeCompare(canonical(right))
+              ))
+            }
+          }
+        }
         return content
-      }).sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
+      })
+        .sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || ''))),
     }
-    if (domain === 'vocabulary-srs') delete normalized.revision
+    if (domain === 'marks-activity') {
+      // Source files carry per-file and aggregate revisions, while the Host
+      // exposes owner-local CAS revisions after the import.  References are
+      // collected once per legacy record and therefore may contain duplicates.
+      delete normalized.revision
+      const references = Array.isArray(normalized.references) ? normalized.references : []
+      normalized.references = references.filter((reference, index) => (
+        references.findIndex((candidate) => canonical(candidate) === canonical(reference)) === index
+      ))
+    }
+    if (domain === 'workflow') {
+      // Workflow references are derived from the records and may be repeated
+      // once per output file.  Media references are also derived metadata:
+      // the staged source deliberately excludes media bytes, while the Host
+      // may rebind an identity reference from the real output root.  Media
+      // integrity is checked separately through the authorized media range
+      // smoke check, so it must not turn equivalent durable JSON into a
+      // false migration mismatch.
+      const references = Array.isArray(normalized.references) ? normalized.references : []
+      normalized.references = references
+        .filter((reference, index) => (
+          references.findIndex((candidate) => canonical(candidate) === canonical(reference)) === index
+        ))
+        .sort((left, right) => canonical(left).localeCompare(canonical(right)))
+      normalized.mediaReferences = []
+    }
+    if (domain === 'passage-preview' || domain === 'annotation' || domain === 'vocabulary-srs') delete normalized.revision
     return normalized
   }
   const leftComparable = comparable(left)
@@ -406,13 +507,103 @@ function recordById(snapshot, id) {
     : null
 }
 
-function readerCandidate(snapshot, profileId, expectedRevision) {
+const MEDIA_CONTENT_TYPES = Object.freeze({
+  '.m4a': 'audio/mp4',
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.webm': 'video/webm',
+})
+
+function safeRelativeMediaPath(value) {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const normalized = value.trim().replaceAll('\\', '/')
+  if (normalized.startsWith('/') || /^[A-Za-z]:\//u.test(normalized)) return null
+  const parts = normalized.split('/')
+  if (parts.some((part) => !part || part === '..')) return null
+  return parts.join('/')
+}
+
+function sourceWorkflowRecord(snapshot, jobId) {
+  return recordById(snapshot, `jobs:${jobId}`) || recordById(snapshot, `items:${jobId}`)
+}
+
+function sourceWorkflowMediaPath(snapshot, jobId) {
+  const record = sourceWorkflowRecord(snapshot, jobId)
+  const payload = record?.payload
+  const manifest = payload?.manifest
+  const files = manifest?.files || payload?.files || manifest?.checkpoint?.files || payload?.checkpoint?.files
+  if (!files || typeof files !== 'object' || Array.isArray(files)) return null
+  const mediaKind = typeof files.audio === 'string' && files.audio ? 'audio'
+    : (typeof files.video === 'string' && files.video ? 'video' : null)
+  if (!mediaKind) return null
+  const relativePath = safeRelativeMediaPath(files[mediaKind])
+  if (!relativePath) return null
+  const references = Array.isArray(snapshot?.mediaReferences) ? snapshot.mediaReferences : []
+  const reference = references.find((item) => (
+    safeRelativeMediaPath(item?.relativePath) === relativePath
+      || safeRelativeMediaPath(item?.identity) === relativePath
+  ))
+  if (!reference) return null
+  return { mediaKind, relativePath, reference }
+}
+
+async function deriveReaderMediaDescriptor(snapshot, sourceWorkflowSnapshot, sourceWorkflowOutputDir) {
+  if (!sourceWorkflowSnapshot || typeof sourceWorkflowSnapshot !== 'object'
+    || !sourceWorkflowOutputDir || typeof sourceWorkflowOutputDir !== 'string') return null
+  const audioRecord = recordById(snapshot, 'audioMeta')
+  const contentId = String(audioRecord?.contentId || audioRecord?.payload?.contentId || '')
+  const audioMeta = audioRecord?.payload
+  const jobId = String(audioMeta?.jobId || contentId.replace(/^youtube-workflow:/u, ''))
+  if (!/^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/u.test(jobId)) return null
+  const sourceMedia = sourceWorkflowMediaPath(sourceWorkflowSnapshot, jobId)
+  if (!sourceMedia) return null
+  const outputRoot = path.resolve(sourceWorkflowOutputDir)
+  const mediaPath = path.resolve(outputRoot, ...sourceMedia.relativePath.split('/'))
+  const relative = path.relative(outputRoot, mediaPath)
+  if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative)) return null
+  let mediaStat
+  try {
+    mediaStat = await stat(mediaPath, { bigint: true })
+  } catch {
+    return null
+  }
+  if (!mediaStat.isFile() || mediaStat.size < 0n || mediaStat.size > BigInt(Number.MAX_SAFE_INTEGER)) return null
+  const mediaSize = Number(mediaStat.size)
+  if (Number.isSafeInteger(sourceMedia.reference?.sizeBytes)
+    && sourceMedia.reference.sizeBytes !== mediaSize) return null
+  const extension = path.extname(mediaPath).toLowerCase()
+  const contentType = MEDIA_CONTENT_TYPES[extension]
+  if (!contentType) return null
+  const mediaId = `workflow:${jobId}:${sourceMedia.mediaKind}`
+  const modifiedNs = mediaStat.mtimeNs.toString()
+  const etag = `sha256:${createHash('sha256').update(`${mediaId}:${mediaSize}:${modifiedNs}`, 'utf8').digest('hex')}`
+  const revision = sourceWorkflowSnapshot.revision
+  if (!Number.isInteger(revision) || revision < 0) return null
+  return {
+    mediaId,
+    kind: sourceMedia.mediaKind,
+    size: mediaSize,
+    contentType,
+    etag,
+    revision,
+    authorizedUrl: `/api/jobs/${jobId}/media/${sourceMedia.mediaKind}`,
+  }
+}
+
+async function readerCandidate(snapshot, profileId, expectedRevision, options = {}) {
   const audioRecord = recordById(snapshot, 'audioMeta')
   const transcriptRecord = recordById(snapshot, 'transcript')
   const chunkRecord = recordById(snapshot, 'chunkData')
   const marksRecord = recordById(snapshot, 'marks')
   const audioMeta = audioRecord?.payload
+  const sourceWorkflowSnapshot = typeof options.sourceWorkflowSnapshot === 'function'
+    ? options.sourceWorkflowSnapshot()
+    : options.sourceWorkflowSnapshot
   const mediaSource = audioMeta?.mediaIdentity || audioMeta?.media || snapshot?.media
+    || await deriveReaderMediaDescriptor(snapshot, sourceWorkflowSnapshot, options.sourceWorkflowOutputDir)
   const marksPayload = marksRecord?.payload
   const marks = Array.isArray(marksPayload) ? marksPayload : marksPayload?.marks
   if (!audioMeta || !transcriptRecord?.payload || !chunkRecord?.payload || !marksRecord
@@ -439,7 +630,7 @@ function readerCandidate(snapshot, profileId, expectedRevision) {
   }
 }
 
-function createReaderHostAdapter({ client, profileId }) {
+function createReaderHostAdapter({ client, profileId, sourceWorkflowSnapshot, sourceWorkflowOutputDir }) {
   return {
     key: 'reader-session',
     schemaVersion: 1,
@@ -450,7 +641,10 @@ function createReaderHostAdapter({ client, profileId }) {
       return readerHostSnapshot(response)
     },
     async restoreRecords(snapshot, context = {}) {
-      const candidate = readerCandidate(snapshot, profileId, context.expectedRevision)
+      const candidate = await readerCandidate(snapshot, profileId, context.expectedRevision, {
+        sourceWorkflowSnapshot,
+        sourceWorkflowOutputDir,
+      })
       const prepared = await client.command({
         domain: 'reader-session',
         operation: 'prepare',
@@ -838,7 +1032,11 @@ function assertSafeWorkflowBackupValue(value, keyPath = '$') {
     const isPathKey = WORKFLOW_PATH_KEY.test(key)
     const isRedactedPath = isPathKey && child === '[REDACTED_PATH]'
     if (isRedactedPath) continue
-    if (WORKFLOW_FORBIDDEN_KEY.test(normalizedWorkflowKey(key))) {
+    const normalizedKey = normalizedWorkflowKey(key)
+    const isSafeByteCount = (normalizedKey === 'bytes' || normalizedKey === 'sizebytes')
+      && Number.isSafeInteger(child)
+      && child >= 0
+    if (WORKFLOW_FORBIDDEN_KEY.test(normalizedKey) && !isSafeByteCount) {
       throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains a forbidden field: ${key}`)
     }
     if (/^(?:cookiesPath|ytDlpPath|whisperxPath)$/iu.test(key)
@@ -1098,12 +1296,24 @@ function createMarksHostAdapter({ client, scope, scopes }) {
   }
 }
 
-export function createProductionHostAdapters({ client, profileId, hostScopeByDomain = {}, sourceScopesByDomain = {} } = {}) {
+export function createProductionHostAdapters({
+  client,
+  profileId,
+  hostScopeByDomain = {},
+  sourceScopesByDomain = {},
+  sourceWorkflowSnapshot,
+  sourceWorkflowOutputDir,
+} = {}) {
   if (!client || typeof client.query !== 'function' || typeof client.command !== 'function') {
     throw productionHostError('OWNER_CUTOVER_HOST_CLIENT_INVALID', 'Production Host typed client is required')
   }
   const adapters = {
-    'reader-session': createReaderHostAdapter({ client, profileId }),
+    'reader-session': createReaderHostAdapter({
+      client,
+      profileId,
+      sourceWorkflowSnapshot,
+      sourceWorkflowOutputDir,
+    }),
     'marks-activity': createMarksHostAdapter({
       client,
       scope: hostScopeByDomain['marks-activity'],
@@ -1208,11 +1418,17 @@ function createProductionLegacyJsonSources(sourceReference) {
       read: async () => {
         const snapshot = await adapter.collect({ domain })
         return {
-          records: (Array.isArray(snapshot?.records) ? snapshot.records : []).map((record) => ({
-            ...record,
-            key: record?.id,
-            schemaVersion: record?.payload?.schemaVersion ?? record?.schemaVersion,
-          })),
+          records: (Array.isArray(snapshot?.records) ? snapshot.records : []).map((record) => {
+            const key = record?.id
+            const schemaVersion = domain === 'marks-activity'
+              ? record?.payload?.schemaVersion ?? record?.schemaVersion
+              : record?.schemaVersion
+            return {
+              ...record,
+              key,
+              schemaVersion,
+            }
+          }),
         }
       },
     }]
@@ -1364,6 +1580,8 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     profileId,
     hostScopeByDomain: options.hostScopeByDomain,
     sourceScopesByDomain,
+    sourceWorkflowSnapshot: () => sourceReference.workflowDomains?.workflow,
+    sourceWorkflowOutputDir: options.sourceWorkflowOutputDir,
   })
   if (domains.some((domain) => !hostAdapters[domain])) {
     throw productionHostError('OWNER_CUTOVER_PRODUCTION_COMPOSITION_INVALID', 'Production Host owner adapter is missing')
@@ -1480,10 +1698,14 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     }
     const current = await hostAdapters[domain].collect({ domain })
     const expectedRevision = options.expectedRevisionByDomain?.[domain] ?? current.revision
+    const pendingImportRecovery = options.resume === true
+      && beforeResume?.domains?.[domain]?.importAttemptStatus === 'pending'
     const result = await migration.migrateDomain(domain, {
       sourceIds: options.sourceIdsByDomain?.[domain],
       expectedRevision,
+      allowExistingTarget: pendingImportRecovery,
       idempotencyKey: options.idempotencyKeyByDomain?.[domain] || `optimization-c2a-${domain}`,
+      reconcilePhysicalFreeze: options.resume === true,
       beforeFinalBackup: async (context) => {
         if (!refreshBrowserGuard) {
           return { ok: false, reasonCode: 'migration-browser-refresh-required' }

@@ -271,7 +271,7 @@ function createFailOnceStateStore() {
   }
 }
 
-function createMigrationFixture({ stateStore, hostAdapters, legacyBridge, includeUnknown = false, includeBadSchema = false, capacityBytes, writerControls } = {}) {
+function createMigrationFixture({ stateStore, hostAdapters, legacyBridge, includeUnknown = false, includeBadSchema = false, capacityBytes, writerControls, cutoverControls } = {}) {
   const legacy = legacyBridge ? null : createLegacyFixture({ includeUnknown, includeBadSchema })
   const service = createWindowsDurableStateMigration({
     profileId: 'optimization',
@@ -279,6 +279,7 @@ function createMigrationFixture({ stateStore, hostAdapters, legacyBridge, includ
     hostAdapters: hostAdapters || createHostAdapters(),
     stateStore: stateStore || createMemoryMigrationStateStore(),
     ...(writerControls ? { writerControls } : {}),
+    ...(cutoverControls ? { cutoverControls } : {}),
     capacityBytes: capacityBytes ?? 1_000_000,
     now: () => 1_760_000_000_000,
     release: { applicationVersion: 'migration-check', releaseId: 'migration-check' },
@@ -398,6 +399,42 @@ const reopenedRetry = await reopened.importDomain('reader-session', {
 })
 assert.equal(reopenedRetry.idempotent, true)
 assert.equal(hostForRetry['reader-session'].importCalls, retryCount, 'reopen must replay stored result without a second import')
+
+const physicalFreezeState = createMemoryMigrationStateStore()
+let initialPhysicalFreezeCalls = 0
+const physicalFreezeFixture = createMigrationFixture({
+  stateStore: physicalFreezeState,
+  writerControls: {
+    'reader-session': {
+      async freeze() {
+        initialPhysicalFreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+await physicalFreezeFixture.service.dryRun('reader-session')
+assert.equal((await physicalFreezeFixture.service.freeze('reader-session')).ok, true)
+assert.equal(initialPhysicalFreezeCalls, 1)
+let resumedPhysicalFreezeCalls = 0
+const resumedPhysicalFreezeFixture = createMigrationFixture({
+  stateStore: physicalFreezeState,
+  writerControls: {
+    'reader-session': {
+      async freeze() {
+        resumedPhysicalFreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+const stalePhysicalFreeze = await resumedPhysicalFreezeFixture.service.freeze('reader-session')
+assert.equal(stalePhysicalFreeze.idempotent, true)
+assert.equal(resumedPhysicalFreezeCalls, 0, 'ordinary repeated freeze should remain idempotent')
+const reconciledPhysicalFreeze = await resumedPhysicalFreezeFixture.service.freeze('reader-session', { reconcile: true })
+assert.equal(reconciledPhysicalFreeze.ok, true)
+assert.equal(reconciledPhysicalFreeze.reconciled, true)
+assert.equal(resumedPhysicalFreezeCalls, 1, 'resume must reassert the physical writer freeze')
 
 const stateFailureStore = createFailOnceStateStore()
 const stateFailureHost = createHostAdapters()
@@ -647,6 +684,35 @@ const mediaBytesDryRun = await mediaBytesFixture.dryRun('reader-session')
 assert.equal(mediaBytesDryRun.ok, false)
 assert.equal(mediaBytesDryRun.reasonCode, 'migration-media-payload-rejected')
 assert.equal(mediaBytesHost['reader-session'].importCalls, 0, 'media bytes are rejected before host writes')
+
+const byteCountBridge = {
+  async inventory() { return { status: 'ready', records: [] } },
+  async prepareImport() {
+    return {
+      status: 'ready',
+      importInput: {
+        schemaVersion: 1,
+        mode: 'legacy-import-input',
+        profileId: 'optimization',
+        records: [{
+          domain: 'workflow',
+          recordKey: 'jobs:job-1',
+          schemaVersion: 1,
+          revision: 1,
+          payload: { schemaVersion: 1, manifest: { integrity: { audio: { bytes: 12 } } } },
+        }],
+      },
+    }
+  },
+}
+const byteCountHost = createHostAdapters()
+const byteCountFixture = createWindowsDurableStateMigration({
+  profileId: 'optimization',
+  legacyBridge: byteCountBridge,
+  hostAdapters: byteCountHost,
+  capacityBytes: 1_000_000,
+})
+assert.equal((await byteCountFixture.dryRun('workflow')).ok, true, 'numeric byte counts are metadata, not media payload')
 
 const embeddedPathRecords = [{
   domain: 'reader-session',

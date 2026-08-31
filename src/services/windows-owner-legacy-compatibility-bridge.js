@@ -41,6 +41,8 @@ const LEGACY_LOCAL_STORAGE_SCOPE_PREFIXES = Object.freeze([
   'read-web.reader-save-outbox',
   'read-web.workflow-operation-receipt',
 ])
+const READER_SAVE_OUTBOX_V1_KEY = 'read-web.reader-save-outbox.v1'
+const READER_SAVE_OUTBOX_V2_PREFIX = 'read-web.reader-save-outbox.v2.'
 const CLAIM_CLASSIFICATIONS = Object.freeze({
   canonicalRecords: 'canonical',
   compatibilityRecords: 'compatibility',
@@ -506,6 +508,20 @@ function readSchemaVersion(record, payload, claim, source) {
     && payload.schema_version !== null) {
     return payload.schema_version
   }
+  // Reader save outbox records are intentionally stored as numeric wire
+  // envelopes (1 and 2), while the owner registry names those compatibility
+  // schemas with stable string identifiers. Keep the raw payload unchanged,
+  // but normalize the version only at this claim boundary. A key/version
+  // mismatch remains unsupported and therefore still fails closed below.
+  if (source.kind === 'localStorage' && isPlainObject(payload)) {
+    const key = String(record?.key ?? record?.id ?? record?.sourceKey ?? '')
+    if (key === READER_SAVE_OUTBOX_V1_KEY && payload.schemaVersion === 1) {
+      return 'reader-save-outbox.v1'
+    }
+    if (key.startsWith(READER_SAVE_OUTBOX_V2_PREFIX) && payload.schemaVersion === 2) {
+      return 'reader-save-outbox.v2'
+    }
+  }
   if (record.schemaVersion !== undefined && record.schemaVersion !== null) return record.schemaVersion
   if (isPlainObject(payload) && payload.schemaVersion !== undefined && payload.schemaVersion !== null) return payload.schemaVersion
   if (source.defaultSchemaVersion !== undefined && source.defaultSchemaVersion !== null
@@ -557,6 +573,8 @@ function claimKeyCandidates(key) {
   if (separator <= 0) return [value]
   const filename = value.slice(0, separator)
   if (!/^(?:reader-marks|reader-activity|reader-marks-commit-journal)\.json$/u.test(filename)) return [value]
+  const workflowMarker = value.indexOf('/_workflow/', separator + 1)
+  if (workflowMarker > separator) return [value, value.slice(workflowMarker + 1)]
   return [value, value.slice(separator + 1)]
 }
 
@@ -904,10 +922,20 @@ function cloneSafeValue(value, path, options = {}) {
       && !(options.allowVocabularySettlementAttemptToken === true && key === 'attempt_token')) {
       throw bridgeError('legacy-sensitive-field', 'Legacy sensitive fields are not importable')
     }
-    if (MEDIA_PAYLOAD_KEY.test(key)) throw bridgeError('legacy-media-payload', 'Legacy media bytes are outside the compatibility bridge')
+    if (isMediaPayloadField(key, child)) throw bridgeError('legacy-media-payload', 'Legacy media bytes are outside the compatibility bridge')
     result[key] = cloneSafeValue(child, nextPath, options)
   }
   return result
+}
+
+function isMediaPayloadField(key, value) {
+  if (!MEDIA_PAYLOAD_KEY.test(key)) return false
+  // Workflow integrity envelopes use a numeric `bytes` field as file-size
+  // metadata. Preserve that safe identity/size evidence; any non-numeric
+  // value under the same key remains blocked, as do all actual media fields.
+  return !(String(key).toLowerCase() === 'bytes'
+    && Number.isSafeInteger(value)
+    && value >= 0)
 }
 
 function hasSensitiveUrlMaterial(value) {

@@ -2,6 +2,7 @@ param(
   [switch]$NoOpen,
   [switch]$Stop,
   [switch]$DevFallback,
+  [switch]$EnableOwnerMigration,
   [string]$BootstrapPython = '',
   [int]$StartupTimeoutSeconds = 45
 )
@@ -16,6 +17,8 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $workflowRoot = Join-Path $projectRoot 'tools\subtitle-workflow'
 $runtimeConfigPath = Join-Path $projectRoot 'config\runtime.optimization.json'
 $defaultOptimizationDataRoot = 'E:\ReadWebData\SubtitleWorkflow-Optimization'
+$ownerWorkflowOutputDir = Join-Path $defaultOptimizationDataRoot 'output'
+$ownerWorkflowStateDir = Join-Path $defaultOptimizationDataRoot '.workflow_state'
 $profileId = 'optimization'
 $stateRoot = Join-Path $projectRoot ".codex\runtime-state\$profileId"
 $hostStatePath = Join-Path $stateRoot 'production-host.json'
@@ -1138,6 +1141,19 @@ try {
   if ($testFailure -in @('capability', 'host', 'readiness', 'promotion', 'active-pointer', 'host-state', 'switch', 'front-door', 'front-door-health-identity') -or $testKillPhase -in @('target', 'active-release', 'active-host', 'commit-pointer', 'host-process-started')) {
     $activeReusable = $false
   }
+  if ($EnableOwnerMigration) {
+    $existingArguments = @((Get-OptimizationObjectValue -Object $existingHostState -Name 'argumentList') | ForEach-Object { [string]$_ })
+    $migrationDomains = @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')
+    $migrationEnabled = $existingArguments -contains '--owner-migration-mode' `
+      -and $existingArguments -contains 'optimization'
+    foreach ($domain in $migrationDomains) {
+      if (-not ($existingArguments -contains '--owner-migration-domain') -or -not ($existingArguments -contains $domain)) {
+        $migrationEnabled = $false
+        break
+      }
+    }
+    if (-not $migrationEnabled) { $activeReusable = $false }
+  }
 
   # Migrate an already-running pre-commit-marker installation before the
   # front door starts.  Once present, this file is the only public routing
@@ -1394,6 +1410,8 @@ try {
     -NodePath $nodePath `
     -CapabilityScript $capabilityScript `
     -WorkflowRoot $workflowRoot `
+    -OwnerWorkflowStateDir $ownerWorkflowStateDir `
+    -OwnerWorkflowOutputDir $ownerWorkflowOutputDir `
     -ProjectRoot $projectRoot `
     -ApplicationIsolationRoot $newApplicationIsolationRoot `
     -ApplicationProfileDir $newApplicationProfileDir `
@@ -1412,7 +1430,8 @@ try {
     -ReservedPorts $reservedDailyPorts `
     -ExpectedDataRoot $defaultOptimizationDataRoot `
     -ApplicationProfileLeaseMode 'standby-if-busy' `
-    -AllowStandbyReadiness
+    -AllowStandbyReadiness `
+    -EnableOwnerMigration:$EnableOwnerMigration
   $newPairStarted = $true
   $newCapabilityStarted = [string]$newPair.capability.status -eq 'started'
   $activationJournal.newCapabilityStarted = $newCapabilityStarted
@@ -1466,6 +1485,8 @@ try {
       -NodePath $nodePath `
       -CapabilityScript $capabilityScript `
       -WorkflowRoot $workflowRoot `
+      -OwnerWorkflowStateDir $ownerWorkflowStateDir `
+      -OwnerWorkflowOutputDir $ownerWorkflowOutputDir `
       -ProjectRoot $projectRoot `
       -ApplicationIsolationRoot $newApplicationIsolationRoot `
       -ApplicationProfileDir $newApplicationProfileDir `
@@ -1483,7 +1504,8 @@ try {
       -StartupTimeoutSeconds $StartupTimeoutSeconds `
       -ReservedPorts $reservedDailyPorts `
       -ExpectedDataRoot $defaultOptimizationDataRoot `
-      -ApplicationProfileLeaseMode 'authoritative'
+      -ApplicationProfileLeaseMode 'authoritative' `
+      -EnableOwnerMigration:$EnableOwnerMigration
     $newHostState = Read-OptimizationJsonFile -Path $newHostManagerStatePath
     if ($null -eq $newHostState) { throw 'Promoted optimization Host returned ready without an owned state file.' }
     if ((Get-OptimizationObjectText -Object $newPair.health -Name 'profileLeaseMode') -ne 'authoritative' `

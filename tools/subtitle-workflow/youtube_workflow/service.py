@@ -2440,14 +2440,39 @@ class JobManager:
         raise HTTPException(status_code=404, detail="job manifest not found")
 
     @staticmethod
-    def _enrich_session_identity(manifest: dict) -> dict:
+    def _session_identity_changed_only_in_marks(before: dict, after: dict) -> bool:
+        if before.get("contentId") != after.get("contentId"):
+            return False
+        previous = before.get("integrity")
+        current = after.get("integrity")
+        if not isinstance(previous, dict) or not isinstance(current, dict):
+            return False
+        for key in ("algorithm", "transcript", "chunkData"):
+            if previous.get(key) != current.get(key):
+                return False
+        return previous.get("marks") != current.get("marks")
+
+    @classmethod
+    def _enrich_session_identity(cls, manifest: dict) -> dict:
         if manifest.get("status") != "ready":
             return manifest
         if all(key in manifest for key in ("contentId", "revision", "integrity")):
             try:
                 validate_session_files(manifest)
             except Exception as exc:
-                raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}")
+                # Marks are a separate authoritative owner.  A marks commit
+                # can therefore make the workflow job's derived session
+                # identity stale without changing the transcript/chunk
+                # resources.  Reconcile that narrow case while continuing to
+                # reject changes to the actual session resources.
+                refreshed = dict(manifest)
+                try:
+                    validate_session_files(refreshed, refresh_identity=True)
+                except Exception:
+                    raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}") from exc
+                if not cls._session_identity_changed_only_in_marks(manifest, refreshed):
+                    raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}") from exc
+                return refreshed
             return manifest
         enriched = dict(manifest)
         try:

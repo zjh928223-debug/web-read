@@ -1698,13 +1698,15 @@ async function runPythonRestore({ pythonCommand, stateDir, outputDir, domain, sn
 
 function createPythonDomainAdapters(options) {
   const pythonCommand = options.pythonCommand || process.env.READ_WEB_PYTHON || process.env.PYTHON || 'python'
+  const stateDir = options.workflowStateDir || options.stateDir
+  const outputDir = options.workflowOutputDir || options.outputDir
   let batchPromise = null
   async function collect(key) {
     if (!batchPromise) {
       const currentBatch = runPythonBackup({
         pythonCommand,
-        stateDir: options.stateDir,
-        outputDir: options.outputDir,
+        stateDir,
+        outputDir,
       })
       batchPromise = currentBatch
       queueMicrotask(() => {
@@ -1724,8 +1726,8 @@ function createPythonDomainAdapters(options) {
       async restoreRecords(snapshot, context = {}) {
         return runPythonRestore({
           pythonCommand,
-          stateDir: options.stateDir,
-          outputDir: options.outputDir,
+          stateDir,
+          outputDir,
           domain: 'marks-activity',
           snapshot,
           expectedRevision: context.expectedRevision,
@@ -1741,8 +1743,8 @@ function createPythonDomainAdapters(options) {
       async restoreRecords(snapshot, context = {}) {
         return runPythonRestore({
           pythonCommand,
-          stateDir: options.stateDir,
-          outputDir: options.outputDir,
+          stateDir,
+          outputDir,
           domain: 'workflow',
           snapshot,
           expectedRevision: context.expectedRevision,
@@ -2229,7 +2231,10 @@ function ownerProfileRowsFromArtifact(browser, artifact) {
         ownerProfileRow(rows, {
           domain,
           key,
-          schemaVersion: record.schemaVersion,
+          // The generic backup record uses schema 1, while the registry
+          // claims the legacy marks/activity payload schema carried inside
+          // the record envelope.
+          schemaVersion: record.payload?.schemaVersion ?? record.schemaVersion,
           source: 'python.application_backup.marks-activity',
           sourceKey: recordId,
         })
@@ -2514,6 +2519,17 @@ export async function createReadWebProductionBackupComposition(options = {}) {
   const pythonAdapters = createPythonDomainAdapters({
     stateDir: canonicalPaths.pythonStateDir,
     outputDir: canonicalPaths.pythonOutputDir,
+    workflowStateDir: options.ownerWorkflowStateDir,
+    workflowOutputDir: options.ownerWorkflowOutputDir,
+    pythonCommand,
+  })
+  // Owner workflow roots are read-only source evidence for the live profile.
+  // Restore/recovery must always target the isolated application roots; using
+  // the source override here can replay a pending target restore into the
+  // user's workflow output directory.
+  const targetPythonAdapters = createPythonDomainAdapters({
+    stateDir: canonicalPaths.pythonStateDir,
+    outputDir: canonicalPaths.pythonOutputDir,
     pythonCommand,
   })
   const adapters = readWebBackup.createReadWebApplicationBackupAdapters({
@@ -2569,7 +2585,7 @@ export async function createReadWebProductionBackupComposition(options = {}) {
     })
   }
   let migrationAdapters = null
-  const restoreTarget = createApplicationRestoreTarget(browser, pythonAdapters, adapters, {
+  const restoreTarget = createApplicationRestoreTarget(browser, targetPythonAdapters, adapters, {
     capacityBytes: options.capacityBytes,
     faults: options.faults,
     rollbackStore: options.rollbackStore,

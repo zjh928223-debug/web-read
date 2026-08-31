@@ -168,6 +168,18 @@ class WindowsOwnerHealthTests(unittest.TestCase):
         self.assertFalse(pre_cutover["durableOwnerReadiness"]["ready"])
         self.assertFalse(pre_cutover["profileLeaseState"]["authoritativeOperationsAllowed"])
 
+        checkpointed_status = owner_status()
+        checkpointed_status["ownerMode"] = {
+            "schemaVersion": 1,
+            "status": "authoritative",
+            "authoritativeDomains": list(WINDOWS_OWNER_DOMAINS),
+            "invalidDomains": [],
+        }
+        checkpointed = build_health_snapshot(**health_kwargs(checkpointed_status))
+        self.assertTrue(checkpointed["durableOwnerReadiness"]["ready"])
+        self.assertTrue(checkpointed["ownerRegistry"]["ownerApiReady"])
+        self.assertTrue(checkpointed["profileLeaseState"]["authoritativeOperationsAllowed"])
+
         authoritative_status = owner_status()
         authoritative_status.update(
             {

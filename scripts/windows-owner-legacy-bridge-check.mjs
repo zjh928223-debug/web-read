@@ -168,6 +168,14 @@ const validRows = [
 const validStorage = new FakeStorage({
   'vocabulary.passage-preview.data.v2': JSON.stringify([{ id: 'preview-1', text: 'hello' }]),
   'vocabulary.passage-preview.shortcut.translation.v1': 'translation preference',
+  'read-web.reader-save-outbox.v2.job-1.marks.op-1': JSON.stringify({
+    schemaVersion: 2,
+    jobId: 'job-1',
+    kind: 'marks',
+    operationId: 'op-1',
+    expectedRevision: 0,
+    intent: { marks: [] },
+  }),
 })
 const validPersistence = {
   async getAllRows() {
@@ -189,6 +197,18 @@ const validBridge = createWindowsOwnerLegacyCompatibilityBridge({
         schemaVersion: 'reader-marks.v1',
         revision: 4,
         payload: { schemaVersion: 'reader-marks.v1', marks: [] },
+      },
+      {
+        key: 'reader-marks.json:job-1/_workflow/reader-marks.json',
+        schemaVersion: 'reader-marks.v1',
+        revision: 5,
+        payload: { schemaVersion: 'reader-marks.v1', jobId: 'job-1', marks: [] },
+      },
+      {
+        key: 'output:job-1/manifest.json',
+        schemaVersion: 1,
+        revision: 6,
+        payload: { schemaVersion: 2, integrity: { chunkData: { bytes: 128 } } },
       },
       {
         key: 'AnnotationGenerationStorage::audio-1::doc-1::annotation.bundle.v2.json',
@@ -233,6 +253,8 @@ assert.ok(firstPlan.importInput)
 assert.equal(firstPlan.importInput.mode, 'legacy-import-input')
 assert.ok(firstPlan.importInput.records.some((record) => record.recordKey === 'audioMeta'))
 assert.ok(firstPlan.importInput.records.some((record) => record.recordKey === 'jobs.json'))
+assert.ok(firstPlan.importInput.records.some((record) => record.recordKey === 'read-web.reader-save-outbox.v2.job-1.marks.op-1'
+  && record.schemaVersion === 'reader-save-outbox.v2'))
 assert.ok(firstPlan.excludedRecords.some((record) => record.recordKey === 'vocabulary.passage-preview.shortcut.translation.v1'))
 assert.ok(!JSON.stringify(firstPlan).includes('must-not-run'))
 assert.equal(JSON.stringify(firstPlan).includes('mediaBytes'), false)

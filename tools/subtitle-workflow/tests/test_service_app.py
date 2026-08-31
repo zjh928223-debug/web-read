@@ -206,6 +206,36 @@ class ServiceAppTests(unittest.TestCase):
                 client.close()
                 manager.close()
 
+    def test_session_api_reconciles_stale_marks_only_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+            try:
+                created = client.post(
+                    "/api/jobs",
+                    json={"url": "https://example.com/stale-marks", "geminiMode": "mock"},
+                ).json()
+                ready = self._wait_ready(client, created["jobId"])
+                output_dir = Path(ready["outputDir"])
+                marks_path = output_dir / "_workflow" / "reader-marks.json"
+                manager.store.reader_repository.write_marks(
+                    marks_path,
+                    created["jobId"],
+                    [{"globalIndex": 1, "word": "hello"}],
+                    expected_revision=0,
+                )
+
+                session = client.get(f"/api/jobs/{created['jobId']}/session")
+
+                self.assertEqual(session.status_code, 200)
+                self.assertIsNotNone(session.json()["integrity"]["marks"])
+                self.assertEqual(session.json()["integrity"]["marks"]["representation"], "marks-fields.v1")
+                self.assertRegex(session.json()["integrity"]["marks"]["sha256"], r"^[0-9a-f]{64}$")
+            finally:
+                client.close()
+                manager.close()
+
     def test_annotation_backfill_returns_202_and_exposes_background_operation(self):
         with tempfile.TemporaryDirectory() as tmp:
             provider_started = Event()

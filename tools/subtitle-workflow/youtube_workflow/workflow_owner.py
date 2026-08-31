@@ -350,8 +350,20 @@ def _validate_snapshot_safe_value(value: Any, *, key_hint: str = "", depth: int 
         raise WorkflowOwnerError("invalid-request")
     classification = _key_class(key_hint) if key_hint else None
     if classification in {"sensitive", "binary", "ui"}:
+        # Sanitized workflow snapshots retain relative media references and
+        # numeric integrity/file-size metadata.  They are not embedded media;
+        # absolute paths, data URIs, and actual binary payloads remain blocked.
+        if classification == "binary" and isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 2**53:
+            return
         raise WorkflowOwnerError("invalid-request")
-    if classification == "path":
+    snapshot_path_key = key_hint.lower() if key_hint else ""
+    if classification == "path" or snapshot_path_key in _SNAPSHOT_PATH_OBJECT_FIELDS or snapshot_path_key == "files":
+        if snapshot_path_key == "files" and isinstance(value, Mapping):
+            for file_key, file_value in value.items():
+                if not isinstance(file_key, str) or len(file_key) > 128:
+                    raise WorkflowOwnerError("invalid-request")
+                _safe_snapshot_path(file_value)
+            return
         if key_hint.lower() in _SNAPSHOT_PATH_OBJECT_FIELDS:
             if value is None:
                 return

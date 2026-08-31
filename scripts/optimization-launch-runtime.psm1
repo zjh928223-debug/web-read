@@ -545,6 +545,8 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][string]$NodePath,
     [Parameter(Mandatory)][string]$CapabilityScript,
     [Parameter(Mandatory)][string]$WorkflowRoot,
+    [string]$OwnerWorkflowStateDir = '',
+    [string]$OwnerWorkflowOutputDir = '',
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$ApplicationIsolationRoot,
     [Parameter(Mandatory)][string]$ApplicationProfileDir,
@@ -566,6 +568,7 @@ function Start-OptimizationOwnedPair {
     [ValidateSet('authoritative', 'standby-if-busy')]
     [string]$ApplicationProfileLeaseMode = 'authoritative',
     [switch]$AllowStandbyReadiness,
+    [switch]$EnableOwnerMigration,
     [switch]$AllowReservedDailyPorts
   )
   $capabilityStarted = $false
@@ -674,6 +677,21 @@ function Start-OptimizationOwnedPair {
       '--application-python-output-dir', $ApplicationPythonOutputDir
     )
     if ($AllowStandbyReadiness) { $hostArgumentList += '--allow-standby-readiness' }
+    if ($EnableOwnerMigration) {
+      if ($OwnerWorkflowStateDir) {
+        $hostArgumentList += @('--owner-workflow-state-dir', $OwnerWorkflowStateDir)
+      }
+      if ($OwnerWorkflowOutputDir) {
+        $hostArgumentList += @('--owner-workflow-output-dir', $OwnerWorkflowOutputDir)
+      }
+      $hostArgumentList += @('--owner-migration-mode', 'optimization')
+      foreach ($domain in @(
+          'reader-session', 'marks-activity', 'passage-preview',
+          'annotation', 'vocabulary-srs', 'workflow'
+        )) {
+        $hostArgumentList += @('--owner-migration-domain', $domain)
+      }
+    }
     $hostResult = Start-ManagedRuntimeInstance `
       -ReleaseId ([string]$Release.releaseId) `
       -ProfileId $ProfileId `
@@ -697,6 +715,12 @@ function Start-OptimizationOwnedPair {
         applicationProfileAuthorityIsolationRoot = $ApplicationProfileAuthorityIsolationRoot
         applicationProfileLeaseMode = $ApplicationProfileLeaseMode
         standbyPreflight = [bool]$AllowStandbyReadiness
+        ownerMigrationMode = if ($EnableOwnerMigration) { 'optimization' } else { $null }
+        ownerMigrationDomains = if ($EnableOwnerMigration) {
+          @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')
+        } else { @() }
+        ownerWorkflowStateDir = if ($EnableOwnerMigration -and $OwnerWorkflowStateDir) { $OwnerWorkflowStateDir } else { $null }
+        ownerWorkflowOutputDir = if ($EnableOwnerMigration -and $OwnerWorkflowOutputDir) { $OwnerWorkflowOutputDir } else { $null }
         applicationPythonStateDir = $ApplicationPythonStateDir
         applicationPythonOutputDir = $ApplicationPythonOutputDir
       }

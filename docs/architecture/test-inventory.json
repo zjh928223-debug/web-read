@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 117,
+    "behavior": 118,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 277,
-  "executableScriptCount": 298,
+  "packageScriptCount": 278,
+  "executableScriptCount": 299,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -3266,6 +3266,18 @@
         "scripts/run-python-command.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-passage-preview"
+    },
+    {
+      "name": "verify:windows-owner-production-backup-limit",
+      "command": "node scripts/windows-owner-production-backup-limit-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-production-backup-limit-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-production-backup-limit"
     },
     {
       "name": "verify:windows-owner-production-entry",
@@ -10992,6 +11004,30 @@
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-focused-boundaries",
         "package.json#scripts.verify:windows-owner-media-capability"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-production-backup-limit-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-production-backup-limit",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-production-backup-limit"
       ],
       "invocation": "direct",
       "evidence": {

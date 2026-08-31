@@ -497,6 +497,7 @@ def build_health_snapshot(
     inflight_requests: int = 0,
     drain_started_at: str | None = None,
     startup_ms: float | None = None,
+    owner_migration_mode: str | None = None,
 ) -> dict[str, Any]:
     owner_status = owner_registry_status if isinstance(owner_registry_status, Mapping) else {}
     config = _safe_config(config_compatibility)
@@ -508,6 +509,8 @@ def build_health_snapshot(
     lease = _lease_snapshot(owner_status, profile_id=profile_id, mode=lease_mode, process=lease_process)
     contract_valid = owner_status.get("contractValid") is True
     profile_ready = owner_status.get("profileEvidenceReady") is True
+    empty_host_candidate = owner_status.get("profileEvidenceMode") == "empty-host-candidate"
+    migration_enabled = owner_migration_mode == "optimization"
     profile_lease_ready = lease["held"]
     standby_evidence_ready = (
         isinstance(owner_profile_evidence, Mapping)
@@ -558,6 +561,35 @@ def build_health_snapshot(
         schema_compatible=schema["compatible"],
         pending_ready=pending["ready"] and not unresolved_receipts,
     )
+    owner_mode = owner_status.get("ownerMode") if isinstance(owner_status.get("ownerMode"), Mapping) else {}
+    authoritative_domains = {
+        domain
+        for domain in owner_mode.get("authoritativeDomains", [])
+        if domain in WINDOWS_OWNER_DOMAINS
+    }
+    invalid_domains = {
+        domain
+        for domain in owner_mode.get("invalidDomains", [])
+        if domain in WINDOWS_OWNER_DOMAINS
+    }
+    frozen_domains = {
+        domain
+        for domain in owner_mode.get("frozenDomains", [])
+        if domain in WINDOWS_OWNER_DOMAINS
+    }
+    # The checked-in registry intentionally remains contract-ready/pre-cutover.
+    # Once the live profile evidence and persisted owner-mode checkpoints prove
+    # all six domains authoritative, health must promote the runtime API gate
+    # without mutating that static contract artifact.
+    runtime_owner_api_ready = bool(
+        contract_valid
+        and profile_ready
+        and (not empty_host_candidate or migration_enabled)
+        and owner_mode.get("status") == "authoritative"
+        and authoritative_domains == set(WINDOWS_OWNER_DOMAINS)
+        and not invalid_domains
+        and not frozen_domains
+    )
     durable_reasons: list[str] = []
     if not contract_valid:
         durable_reasons.append("OWNER_REGISTRY_INVALID")
@@ -573,10 +605,7 @@ def build_health_snapshot(
         durable_reasons.append("OWNER_RECEIPTS_UNRESOLVED")
     if not schema["compatible"]:
         durable_reasons.extend(schema["reasonCodes"] or ["OWNER_SCHEMA_INCOMPATIBLE"])
-    if (
-        owner_status.get("ownerApiReady") is not True
-        or owner_status.get("acceptingApiAuthoritativeOperations") is not True
-    ):
+    if not runtime_owner_api_ready:
         durable_reasons.append("OWNER_PRE_CUTOVER")
     if any(item["commandCapability"] != "writable" for item in domain_status):
         durable_reasons.append("DOMAIN_OWNER_NOT_READY")
@@ -586,8 +615,7 @@ def build_health_snapshot(
         durable_ready
         and lease["held"]
         and lease["mode"] == "authoritative"
-        and owner_status.get("ownerApiReady") is True
-        and owner_status.get("acceptingApiAuthoritativeOperations") is True
+        and runtime_owner_api_ready
     )
     application_reasons: list[str] = []
     if not dist_ready:
@@ -643,8 +671,8 @@ def build_health_snapshot(
             "registryVersion": _safe_text(owner_status.get("registryVersion")),
             "domainCount": owner_status.get("domainCount") if isinstance(owner_status.get("domainCount"), int) else 0,
             "validatedRowCount": owner_status.get("validatedRowCount") if isinstance(owner_status.get("validatedRowCount"), int) else 0,
-            "ownerApiReady": owner_status.get("ownerApiReady") is True,
-            "acceptingApiAuthoritativeOperations": owner_status.get("acceptingApiAuthoritativeOperations") is True,
+            "ownerApiReady": runtime_owner_api_ready,
+            "acceptingApiAuthoritativeOperations": runtime_owner_api_ready,
         },
         "domains": domain_status,
         # Keep the pre-2.7 nullable compatibility field stable for the

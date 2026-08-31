@@ -365,6 +365,11 @@ class PathPreservingAsgiDispatch:
         return False
 
     def _domain_is_authoritative(self, domain: str) -> bool:
+        if (
+            self.owner_registry_status.get("profileEvidenceMode") == "empty-host-candidate"
+            and self.owner_migration_mode != OWNER_MIGRATION_MODE
+        ):
+            return False
         owner_mode = self.owner_registry_status.get("ownerMode")
         authoritative = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
         if domain in authoritative and domain in self.owner_domain_handlers:
@@ -1141,6 +1146,7 @@ def create_local_app_host(
             dist_ready=dist_ready,
             owner_registry_status=owner_registry_status,
             owner_profile_evidence=owner_profile_evidence,
+            owner_migration_mode=migration_mode,
             lease_mode=application_profile_lease_mode,
             lease_process=application_profile_lease_process,
             standby_preflight=application_profile_standby_preflight,
@@ -1218,6 +1224,10 @@ def _start_application_profile_lock(args, parser: argparse.ArgumentParser):
         options["profileAuthorityIsolationRoot"] = str(
             (args.application_profile_authority_isolation_root or args.application_isolation_root).resolve()
         )
+    if args.owner_workflow_state_dir:
+        options["ownerWorkflowStateDir"] = str(args.owner_workflow_state_dir.resolve())
+    if args.owner_workflow_output_dir:
+        options["ownerWorkflowOutputDir"] = str(args.owner_workflow_output_dir.resolve())
     if args.application_profile_lease_mode == "standby":
         options["profileLeaseMode"] = "standby"
     elif args.application_profile_lease_mode == "standby-if-busy":
@@ -1294,12 +1304,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--application-profile-dir", type=Path, required=True)
     parser.add_argument("--application-python-state-dir", type=Path, required=True)
     parser.add_argument("--application-python-output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--owner-workflow-state-dir",
+        type=Path,
+        help="optional workflow state root used by the explicit optimization migration observer",
+    )
+    parser.add_argument(
+        "--owner-workflow-output-dir",
+        type=Path,
+        help="optional workflow output root used by the explicit optimization migration observer",
+    )
     parser.add_argument("--application-profile-authority-root", type=Path)
     parser.add_argument("--application-profile-authority-isolation-root", type=Path)
     parser.add_argument(
         "--application-profile-lease-mode",
         choices=("authoritative", "standby-if-busy", "standby"),
         default="authoritative",
+    )
+    parser.add_argument(
+        "--owner-migration-mode",
+        choices=(OWNER_MIGRATION_MODE,),
+        help="enable the explicit optimization-only migration request gate",
+    )
+    parser.add_argument(
+        "--owner-migration-domain",
+        dest="owner_migration_domains",
+        action="append",
+        choices=tuple(sorted(OWNER_MIGRATION_DOMAINS)),
+        help="allow one registered domain through the optimization-only migration gate",
     )
     parser.add_argument(
         "--allow-standby-readiness",
@@ -1382,14 +1414,16 @@ def main(argv: list[str] | None = None) -> int:
             application_startup_recovery=startup_recovery,
             owner_profile_rows=owner_profile_rows,
             owner_profile_evidence=owner_profile_evidence,
+            owner_migration_mode=args.owner_migration_mode,
+            owner_migration_domains=args.owner_migration_domains,
             application_profile_lease_process=profile_lock,
             application_profile_lease_mode=profile_lease_mode,
             application_profile_standby_preflight=args.allow_standby_readiness,
             owner_receipt_root=args.application_profile_authority_root,
             owner_repository_root=args.application_profile_authority_root or args.application_profile_dir,
             owner_freeze_root=args.application_profile_authority_root,
-            owner_workflow_state_dir=args.application_python_state_dir,
-            owner_workflow_output_dir=args.application_python_output_dir,
+            owner_workflow_state_dir=args.owner_workflow_state_dir or args.application_python_state_dir,
+            owner_workflow_output_dir=args.owner_workflow_output_dir or args.application_python_output_dir,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

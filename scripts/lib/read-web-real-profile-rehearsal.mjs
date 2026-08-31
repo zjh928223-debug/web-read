@@ -547,6 +547,7 @@ export async function materializeRealProfileSource(options = {}) {
     if (browserSnapshot.networkRequests !== 0) {
       throw unsafePath('browser source collection attempted to use a service network')
     }
+    const browserLogicalBefore = browserSnapshotChecksum(browserSnapshot)
     const excludedIds = new Set([...EXCLUDED_BROWSER_ROWS.media, ...EXCLUDED_BROWSER_ROWS.retired])
     const unexpectedRow = browserSnapshot.indexedDbRows.find((row) => (
       !isLiveBrowserRowId(row?.id) && !excludedIds.has(String(row?.id || ''))
@@ -565,17 +566,27 @@ export async function materializeRealProfileSource(options = {}) {
       localStorage: browserSnapshot.localStorage,
     })
     await writeFile(workflowSnapshotsPath, `${JSON.stringify(workflowDomains)}\n`, 'utf8')
+    const afterBrowserSnapshot = await exportChromiumOriginSnapshot({
+      browserProfileDir: layout.browserProfileDir,
+      browserOrigin: options.browserOrigin,
+      isolatedRoot: runRoot,
+    })
+    if (afterBrowserSnapshot.networkRequests !== 0) {
+      throw unsafePath('browser stability collection attempted to use a service network')
+    }
     const after = {
       browserPhysical: await fingerprintChromiumOriginSource({
         browserProfileDir: layout.browserProfileDir,
         browserOrigin: options.browserOrigin,
       }),
+      browserLogical: browserSnapshotChecksum(afterBrowserSnapshot),
       workflow: await fingerprintWorkflowSource({ workflowStateDir, workflowOutputDir, additionalOutputRoots }),
     }
-    if (before.browserPhysical !== after.browserPhysical || before.workflow !== after.workflow) {
+    if (browserLogicalBefore !== after.browserLogical || before.workflow !== after.workflow) {
       const error = new Error('Real profile source changed during source materialization')
       error.code = 'REAL_PROFILE_SOURCE_CHANGED'
       error.details = {
+        browserLogicalStable: browserLogicalBefore === after.browserLogical,
         browserPhysicalStable: before.browserPhysical === after.browserPhysical,
         workflowStable: before.workflow === after.workflow,
       }
