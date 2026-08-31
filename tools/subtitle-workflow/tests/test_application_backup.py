@@ -32,7 +32,12 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
                 state_dir / "jobs.json",
                 "workflow.jobs",
                 "jobs",
-                [{"jobId": "job-1", "outputDir": str(job_dir), "url": "https://example.test/watch?token=secret"}],
+                [{
+                    "jobId": "job-1",
+                    "outputDir": str(job_dir),
+                    "url": "https://example.test/watch?token=secret",
+                    "message": r"WhisperX failed at C:\Users\private-machine\clip.wav",
+                }],
             )
             self._write_envelope(
                 state_dir / "history.json",
@@ -61,6 +66,7 @@ class WorkflowApplicationBackupTests(unittest.TestCase):
             self.assertNotIn("password", serialized)
             self.assertNotIn("cookies.txt", serialized)
             self.assertNotIn("private-machine", serialized)
+            self.assertNotIn("clip.wav", serialized)
             self.assertIn("[REDACTED_PATH]", serialized)
             self.assertNotIn("not copied into backup", serialized)
             self.assertTrue(any(snapshot_ref["strategy"] == "identity-metadata-rebind" for snapshot_ref in snapshot["mediaReferences"]))

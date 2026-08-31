@@ -39,6 +39,7 @@ from .windows_owner_receipts import (
     OwnerTransactionAbort,
     calculate_evidence_checksum,
 )
+from .workflow_writer_freeze import WorkflowWriterFreezeError
 
 
 WORKFLOW_DOMAIN = "workflow"
@@ -180,6 +181,8 @@ _SERVICE_ERROR_CODES = frozenset({
     "MATERIAL_ALREADY_EXISTS",
     "WORKFLOW_STATE_CONFLICT",
     "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
+    "WORKFLOW_WRITER_FROZEN",
+    "WORKFLOW_WRITER_FREEZE_INVALID",
 })
 _SNAPSHOT_PATH_OBJECT_FIELDS = frozenset({"manifest", "checkpoint"})
 _SNAPSHOT_RECORD_FIELDS = frozenset({
@@ -2062,6 +2065,20 @@ class WorkflowOwner:
             )
 
         try:
+            self.store.assert_writer_open()
+        except WorkflowWriterFreezeError as error:
+            return self._envelope(
+                operation,
+                request_id,
+                correlation_id,
+                "rejected",
+                "rejected",
+                None,
+                {},
+                _typed_error(error.code, correlation_id, message=str(error)),
+            )
+
+        try:
             state = self._read_state()
             expected = self._bind_expected_revision(expected, state["revision"], idempotency_key)
             latest = self._latest_committed_revision()
@@ -2163,6 +2180,13 @@ class WorkflowOwner:
 
         def apply(context: OwnerCommitContext) -> Mapping[str, Any]:
             nonlocal service_result, start_service_worker
+            try:
+                self.store.assert_writer_open()
+            except WorkflowWriterFreezeError as error:
+                raise OwnerTransactionAbort(
+                    _typed_error(error.code, correlation_id, message=str(error)),
+                    status="rejected",
+                ) from error
             current = self._read_state()
             if current["revision"] != context.expected_revision:
                 return self._evidence(context, status="conflict", revision=current["revision"], record_checksums=[])
@@ -2179,6 +2203,7 @@ class WorkflowOwner:
                     rebound_config,
                 )
                 for output_record in snapshot.get("outputs", []):
+                    self.store.assert_writer_open()
                     relative = output_record["id"][len("output:"):]
                     target = (self.output_dir / relative).resolve(strict=False)
                     output_root = self.output_dir.resolve(strict=False)
@@ -2188,6 +2213,7 @@ class WorkflowOwner:
                     self.repository.write(target, deepcopy(output_record["payload"]))
                 media_references = snapshot.get("mediaReferences", [])
                 media_payload = {"mediaReferences": deepcopy(media_references)}
+                self.store.assert_writer_open()
                 self.repository.write(
                     self.state_dir / "application-backup-media-references.json",
                     {
@@ -2301,6 +2327,7 @@ class WorkflowOwner:
                     effect_fingerprint=_checksum({"operation": operation, "revision": next_revision, "recordChecksums": record_checksums}),
                 )
             next_index = deepcopy(mutation["readerIndex"])
+            self.store.assert_writer_open()
             self.repository.write(self.reader_index_path, next_index, preserve_backup=True)
             next_revision = self._read_state()["revision"]
             record_checksums = [_checksum(next_index)]

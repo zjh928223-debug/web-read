@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import {
   createReadWebProductionBackupComposition,
+  writeJsonAtomic,
   writeIsolatedBrowserProfile,
 } from './read-web-production-backup.mjs'
 import { resolveExecutable, resolveSelectedPython } from './python-runtime.mjs'
@@ -21,6 +22,10 @@ const EXCLUDED_BROWSER_ROWS = Object.freeze({
 })
 const REAL_PROFILE_MAX_RECORD_BYTES = 16 * 1024 * 1024
 const REAL_PROFILE_MAX_BACKUP_BYTES = 128 * 1024 * 1024
+export const WORKFLOW_WRITER_FREEZE_FILE = '.read-web-workflow-writer-freeze.json'
+export const WORKFLOW_WRITER_ACTIVITY_FILE = '.read-web-workflow-writer-active.json'
+const WORKFLOW_WRITER_FREEZE_SCHEMA_VERSION = 1
+const WORKFLOW_WRITER_FREEZE_KIND = 'read-web.workflow-writer-freeze'
 
 function canonicalize(value) {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value)
@@ -34,6 +39,137 @@ function canonicalize(value) {
 
 function checksum(value) {
   return createHash('sha256').update(canonicalize(value)).digest('hex')
+}
+
+function workflowFreezeError(message, details = {}) {
+  const error = new Error(message)
+  error.code = 'REAL_PROFILE_WORKFLOW_FREEZE_INVALID'
+  error.details = details
+  return error
+}
+
+function workflowFreezePath(workflowStateDir) {
+  return path.join(workflowStateDir, WORKFLOW_WRITER_FREEZE_FILE)
+}
+
+function workflowFreezeCore({ profileId, challenge, sourceFingerprint, frozenAt }) {
+  return {
+    schemaVersion: WORKFLOW_WRITER_FREEZE_SCHEMA_VERSION,
+    kind: WORKFLOW_WRITER_FREEZE_KIND,
+    domain: 'workflow',
+    profileId,
+    challenge,
+    status: 'frozen',
+    frozenAt,
+    sourceFingerprint,
+  }
+}
+
+async function readWorkflowWriterFreeze(workflowStateDir) {
+  const markerPath = workflowFreezePath(workflowStateDir)
+  let marker
+  try {
+    marker = JSON.parse(await readFile(markerPath, 'utf8'))
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null
+    throw workflowFreezeError('workflow writer freeze marker could not be read', {
+      markerPath,
+      cause: error,
+    })
+  }
+  if (!marker || typeof marker !== 'object' || Array.isArray(marker)) {
+    throw workflowFreezeError('workflow writer freeze marker is not an object', { markerPath })
+  }
+  const { checksum: markerChecksum, ...core } = marker
+  if (core.schemaVersion !== WORKFLOW_WRITER_FREEZE_SCHEMA_VERSION
+    || core.kind !== WORKFLOW_WRITER_FREEZE_KIND
+    || core.domain !== 'workflow'
+    || core.status !== 'frozen'
+    || typeof core.profileId !== 'string'
+    || !core.profileId
+    || typeof core.challenge !== 'string'
+    || !core.challenge
+    || typeof core.frozenAt !== 'string'
+    || !core.frozenAt
+    || !core.sourceFingerprint
+    || typeof core.sourceFingerprint !== 'object'
+    || Array.isArray(core.sourceFingerprint)
+    || typeof markerChecksum !== 'string'
+    || markerChecksum !== `sha256:${checksum(core)}`) {
+    throw workflowFreezeError('workflow writer freeze marker failed validation', { markerPath })
+  }
+  return Object.freeze({ ...core, checksum: markerChecksum, markerPath })
+}
+
+export async function writeWorkflowWriterFreeze({
+  workflowStateDir,
+  profileId,
+  challenge,
+  sourceFingerprint,
+} = {}) {
+  const stateDir = await existingDirectory(workflowStateDir, 'workflowStateDir')
+  if (typeof profileId !== 'string' || !profileId.trim() || typeof challenge !== 'string' || !challenge.trim()) {
+    throw workflowFreezeError('workflow writer freeze identity is invalid')
+  }
+  if (!sourceFingerprint || typeof sourceFingerprint !== 'object' || Array.isArray(sourceFingerprint)) {
+    throw workflowFreezeError('workflow writer freeze source fingerprint is invalid')
+  }
+  const existing = await readWorkflowWriterFreeze(stateDir)
+  if (existing) {
+    if (existing.profileId !== profileId || existing.challenge !== challenge) {
+      throw workflowFreezeError('workflow writer is frozen by a different migration challenge', {
+        markerPath: existing.markerPath,
+      })
+    }
+    return Object.freeze({
+      ok: true,
+      status: 'frozen',
+      writerBlocked: true,
+      idempotent: true,
+      markerPath: existing.markerPath,
+      challenge: existing.challenge,
+      sourceFingerprint: existing.sourceFingerprint,
+    })
+  }
+  const core = workflowFreezeCore({
+    profileId,
+    challenge,
+    sourceFingerprint,
+    frozenAt: new Date().toISOString(),
+  })
+  const markerPath = workflowFreezePath(stateDir)
+  await writeJsonAtomic(markerPath, { ...core, checksum: `sha256:${checksum(core)}` }, { containmentRoot: stateDir })
+  const written = await readWorkflowWriterFreeze(stateDir)
+  if (!written || written.profileId !== profileId || written.challenge !== challenge) {
+    throw workflowFreezeError('workflow writer freeze marker changed during creation', { markerPath })
+  }
+  return Object.freeze({
+    ok: true,
+    status: 'frozen',
+    writerBlocked: true,
+    idempotent: false,
+    markerPath,
+    challenge,
+    sourceFingerprint: written.sourceFingerprint,
+  })
+}
+
+export async function clearWorkflowWriterFreeze({ workflowStateDir, profileId, challenge } = {}) {
+  const stateDir = await existingDirectory(workflowStateDir, 'workflowStateDir')
+  const existing = await readWorkflowWriterFreeze(stateDir)
+  if (!existing) return Object.freeze({ ok: true, status: 'absent', writerBlocked: false })
+  if ((profileId && existing.profileId !== profileId) || (challenge && existing.challenge !== challenge)) {
+    throw workflowFreezeError('workflow writer freeze challenge does not match the marker', {
+      markerPath: existing.markerPath,
+    })
+  }
+  await rm(existing.markerPath, { force: true })
+  if (await readWorkflowWriterFreeze(stateDir)) {
+    throw workflowFreezeError('workflow writer freeze marker could not be cleared', {
+      markerPath: existing.markerPath,
+    })
+  }
+  return Object.freeze({ ok: true, status: 'cleared', writerBlocked: false, markerPath: existing.markerPath })
 }
 
 function browserSnapshotChecksum(snapshot) {
@@ -256,7 +392,7 @@ export async function exportChromiumOriginSnapshot({ browserProfileDir, browserO
           const claimed = (id) => ['audioMeta', 'transcript', 'chunkData', 'marks', 'readerSession'].includes(id)
             || String(id || '').startsWith('readerSessionQuarantine:')
             || String(id || '').startsWith('vocabulary.')
-            || id === VOCABULARY_PENDING_CANDIDATES_ROW_ID
+            || id === 'vocabulary-srs-pending-candidates'
             || String(id || '').startsWith('vocabulary-article-srs-settlement-progress:')
           const indexedDbRows = []
           for (const id of rowIds) {
@@ -321,7 +457,9 @@ async function digestWorkflowTree(directory, { includeContent }) {
     const entries = await readdir(current, { withFileTypes: true })
     entries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
     for (const entry of entries) {
-      if (entry.name === 'LOCK' || entry.name.endsWith('.lock')) continue
+      if (entry.name === 'LOCK' || entry.name.endsWith('.lock')
+        || entry.name === WORKFLOW_WRITER_FREEZE_FILE
+        || entry.name === WORKFLOW_WRITER_ACTIVITY_FILE) continue
       const childRelative = relative ? path.join(relative, entry.name) : entry.name
       const absolute = path.join(current, entry.name)
       if (entry.isDirectory()) {
@@ -344,6 +482,135 @@ async function digestWorkflowTree(directory, { includeContent }) {
 async function resolveAdditionalOutputRoots(values = []) {
   const roots = await Promise.all([...new Set(values)].map((value) => existingDirectory(value, 'additionalOutputRoot')))
   return [...new Set(roots)].sort((left, right) => left.localeCompare(right, 'en'))
+}
+
+/**
+ * Read the selected browser origin and workflow roots into a disposable,
+ * JSON-only source profile for the owner migration entry. The live roots are
+ * fingerprinted before and after collection; only the explicit durable
+ * domain rows and sanitized workflow snapshots are materialized. Chromium
+ * cookies, Local State secrets, and media blobs never enter the staged source.
+ */
+export async function materializeRealProfileSource(options = {}) {
+  const layout = await validateRealProfileRehearsalLayout(options)
+  const workflowStateDir = await existingDirectory(
+    options.workflowStateDir || path.join(layout.workflowDataRoot, '.workflow_state'),
+    'workflowStateDir',
+  )
+  const workflowOutputDir = await existingDirectory(
+    options.workflowOutputDir || path.join(layout.workflowDataRoot, 'output'),
+    'workflowOutputDir',
+  )
+  const additionalOutputRoots = await resolveAdditionalOutputRoots(options.additionalOutputRoots || [])
+  const pythonCommand = options.pythonCommand || (await resolveSelectedPython({
+    repoRoot: repositoryRoot,
+    configPath: process.env.READ_WEB_RUNTIME_CONFIG || 'config/runtime.optimization.json',
+  })).executable
+  const before = {
+    browserPhysical: await fingerprintChromiumOriginSource({
+      browserProfileDir: layout.browserProfileDir,
+      browserOrigin: options.browserOrigin,
+    }),
+    workflow: await fingerprintWorkflowSource({ workflowStateDir, workflowOutputDir, additionalOutputRoots }),
+  }
+  const runRoot = options.sourceRoot
+    ? path.resolve(options.sourceRoot)
+    : await mkdtemp(path.join(layout.isolatedRoot, 'real-profile-source-'))
+  const ownsRunRoot = !options.sourceRoot
+  try {
+    if (!overlaps(layout.isolatedRoot, runRoot) || runRoot === layout.isolatedRoot) {
+      throw unsafePath('sourceRoot must be a strict descendant of isolatedRoot')
+    }
+    const sourceProfileDir = path.join(runRoot, 'browser-profile')
+    const sourceStateDir = path.join(runRoot, 'workflow-data', '.workflow_state')
+    const sourceOutputDir = path.join(runRoot, 'workflow-data', 'output')
+    const workflowSnapshotsPath = path.join(runRoot, 'workflow-domain-snapshots.json')
+    await Promise.all([
+      mkdir(sourceProfileDir, { recursive: true }),
+      mkdir(sourceStateDir, { recursive: true }),
+      mkdir(sourceOutputDir, { recursive: true }),
+    ])
+
+    const [browserSnapshot, workflowDomains] = await Promise.all([
+      exportChromiumOriginSnapshot({
+        browserProfileDir: layout.browserProfileDir,
+        browserOrigin: options.browserOrigin,
+        isolatedRoot: runRoot,
+      }),
+      collectReadOnlyWorkflowDomains({
+        workflowStateDir,
+        workflowOutputDir,
+        additionalOutputRoots,
+        pythonCommand,
+      }),
+    ])
+    if (browserSnapshot.networkRequests !== 0) {
+      throw unsafePath('browser source collection attempted to use a service network')
+    }
+    const excludedIds = new Set([...EXCLUDED_BROWSER_ROWS.media, ...EXCLUDED_BROWSER_ROWS.retired])
+    const unexpectedRow = browserSnapshot.indexedDbRows.find((row) => (
+      !isLiveBrowserRowId(row?.id) && !excludedIds.has(String(row?.id || ''))
+    ))
+    if (unexpectedRow) {
+      const error = new Error('Browser source contains an unregistered durable row')
+      error.code = 'REAL_PROFILE_BROWSER_ROW_UNREGISTERED'
+      error.details = { rowId: String(unexpectedRow?.id || '') }
+      throw error
+    }
+    const restorableBrowserRows = browserSnapshot.indexedDbRows.filter((row) => (
+      !excludedIds.has(String(row?.id || ''))
+    ))
+    await writeIsolatedBrowserProfile(sourceProfileDir, {
+      indexedDbRows: restorableBrowserRows,
+      localStorage: browserSnapshot.localStorage,
+    })
+    await writeFile(workflowSnapshotsPath, `${JSON.stringify(workflowDomains)}\n`, 'utf8')
+    const after = {
+      browserPhysical: await fingerprintChromiumOriginSource({
+        browserProfileDir: layout.browserProfileDir,
+        browserOrigin: options.browserOrigin,
+      }),
+      workflow: await fingerprintWorkflowSource({ workflowStateDir, workflowOutputDir, additionalOutputRoots }),
+    }
+    if (before.browserPhysical !== after.browserPhysical || before.workflow !== after.workflow) {
+      const error = new Error('Real profile source changed during source materialization')
+      error.code = 'REAL_PROFILE_SOURCE_CHANGED'
+      error.details = {
+        browserPhysicalStable: before.browserPhysical === after.browserPhysical,
+        workflowStable: before.workflow === after.workflow,
+      }
+      throw error
+    }
+    return Object.freeze({
+      runRoot,
+      source: Object.freeze({
+        isolationRoot: runRoot,
+        profileDir: sourceProfileDir,
+        pythonStateDir: sourceStateDir,
+        pythonOutputDir: sourceOutputDir,
+      }),
+      workflowSnapshotsPath,
+      sourceFingerprint: Object.freeze({
+        browserPhysical: before.browserPhysical,
+        workflow: before.workflow,
+        browserLogical: browserSnapshotChecksum(browserSnapshot),
+      }),
+      sourceRecordCounts: Object.freeze(Object.fromEntries(
+        Object.entries(workflowDomains).map(([domain, snapshot]) => [domain, snapshot?.records?.length || 0]),
+      )),
+      browserEvidence: Object.freeze({
+        databaseVersion: browserSnapshot.databaseVersion,
+        blockedRequests: browserSnapshot.blockedRequests,
+        networkRequests: browserSnapshot.networkRequests,
+        excludedRows: EXCLUDED_BROWSER_ROWS,
+        stagedIndexedDbRowCount: restorableBrowserRows.length,
+        stagedLocalStorageKeyCount: Object.keys(browserSnapshot.localStorage || {}).length,
+      }),
+    })
+  } catch (error) {
+    if (ownsRunRoot) await rm(runRoot, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
 }
 
 export async function fingerprintWorkflowSource({ workflowStateDir, workflowOutputDir, additionalOutputRoots = [] }) {

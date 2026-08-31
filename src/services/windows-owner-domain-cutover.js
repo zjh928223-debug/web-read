@@ -11,6 +11,7 @@ const DOMAINS = Object.freeze([
   'workflow',
 ])
 const SAFE_IDENTITY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
+const SAFE_FREEZE_FINGERPRINT = /^(?:sha256:)?[a-f0-9]{64}$/u
 
 function cutoverError(domain, operation) {
   const error = new Error(`The ${domain} browser writer is frozen after Host cutover`)
@@ -29,6 +30,63 @@ function ownerNotReadyError(domain, operation) {
   error.domain = domain
   error.operation = operation
   return error
+}
+
+function browserFreezeEvidenceError(code, message, details = {}) {
+  const error = new Error(message)
+  error.name = 'WindowsOwnerBrowserFreezeEvidenceError'
+  error.code = code
+  error.details = details
+  return error
+}
+
+function safeFreezeEvidenceIdentity(value, field) {
+  if (typeof value !== 'string' || !SAFE_IDENTITY.test(value)) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      `${field} is invalid`,
+      { field },
+    )
+  }
+  return value
+}
+
+function safeFreezeEvidenceFingerprint(value) {
+  if (typeof value !== 'string' || !SAFE_FREEZE_FINGERPRINT.test(value)) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'source fingerprint is invalid',
+      { field: 'sourceFingerprint' },
+    )
+  }
+  return value
+}
+
+function safeFreezeEvidenceOrigin(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'browser origin is required',
+      { field: 'browserOrigin' },
+    )
+  }
+  let origin
+  try { origin = new URL(value) } catch {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'browser origin is invalid',
+      { field: 'browserOrigin' },
+    )
+  }
+  if (!['http:', 'https:'].includes(origin.protocol)
+    || origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'browser origin must not contain a path, query, or hash',
+      { field: 'browserOrigin' },
+    )
+  }
+  return origin.origin
 }
 
 function readyDomains(health) {
@@ -168,6 +226,13 @@ export function createWindowsOwnerDomainCutover(options = {}) {
     assertBrowserWriterAllowed(domain, operation = 'write') {
       if (state.authoritative.has(domain) || state.frozen.has(domain)) throw cutoverError(domain, operation)
     },
+    collectFreezeEvidence(options = {}) {
+      return createWindowsOwnerBrowserFreezeEvidence({
+        ...options,
+        cutover,
+        windowObject,
+      })
+    },
     async query(request) {
       if (!state.authoritative.has(request?.domain)) throw cutoverError(request?.domain || 'unknown', 'query')
       if (!ownerClient || state.readiness !== 'ready') throw ownerNotReadyError(request?.domain || 'unknown', 'query')
@@ -250,6 +315,87 @@ export function createWindowsOwnerDomainCutover(options = {}) {
     cutover.pollHandle?.unref?.()
   }
   return Object.freeze(cutover)
+}
+
+/**
+ * Produce an operator-consumable assertion from a live guarded browser page.
+ * The CLI deliberately cannot synthesize this object: the page must refresh
+ * Host state and prove that its own writer gate rejects a mutation.
+ */
+export async function createWindowsOwnerBrowserFreezeEvidence(options = {}) {
+  const windowObject = options.windowObject || globalThis
+  const cutover = options.cutover || windowObject?.__windowsOwnerDomainCutover
+  const domain = options.domain
+  if (!DOMAINS.includes(domain)) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'freeze evidence domain is not registered',
+      { field: 'domain' },
+    )
+  }
+  if (!cutover || typeof cutover.refresh !== 'function'
+    || typeof cutover.assertBrowserWriterAllowed !== 'function') {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-guard-unavailable',
+      'the current browser page does not expose a live owner freeze guard',
+      { domain },
+    )
+  }
+  const challenge = safeFreezeEvidenceIdentity(options.challenge, 'challenge')
+  const sourceFingerprint = safeFreezeEvidenceFingerprint(options.sourceFingerprint)
+  const browserOrigin = safeFreezeEvidenceOrigin(
+    options.browserOrigin || windowObject?.location?.origin,
+  )
+  const refreshed = await cutover.refresh(options.refreshOptions || {})
+  const frozenDomains = Array.isArray(refreshed?.frozenDomains)
+    ? [...new Set(refreshed.frozenDomains)].filter((value) => DOMAINS.includes(value))
+    : []
+  if (!frozenDomains.includes(domain) || cutover.isAuthoritative?.(domain) === true) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-not-observed',
+      'the live browser guard did not observe the requested domain frozen',
+      { domain },
+    )
+  }
+  let writerBlocked = false
+  try {
+    cutover.assertBrowserWriterAllowed(domain, 'production-migration-evidence')
+  } catch (error) {
+    if (error?.code !== 'windows-owner-writer-frozen') throw error
+    writerBlocked = true
+  }
+  if (!writerBlocked) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-not-enforced',
+      'the live browser guard observed a marker but did not block the writer',
+      { domain },
+    )
+  }
+  const profileId = refreshed?.health?.profileId || cutover.health?.profileId
+  if (!SAFE_IDENTITY.test(String(profileId || ''))) {
+    throw browserFreezeEvidenceError(
+      'windows-owner-browser-freeze-evidence-invalid',
+      'live owner health did not expose a safe profile id',
+      { field: 'profileId' },
+    )
+  }
+  return Object.freeze({
+    schemaVersion: 'read-web.browser-writer-freeze-evidence.v1',
+    kind: 'live-browser-owner-freeze',
+    profileId,
+    browserOrigin,
+    domain,
+    challenge,
+    sourceFingerprint,
+    capturedAt: new Date().toISOString(),
+    guard: Object.freeze({
+      implementation: 'windows-owner-domain-cutover',
+      status: 'frozen',
+      writerBlocked: true,
+      assertion: 'assertBrowserWriterAllowed-rejected',
+      observedFrozenDomains: Object.freeze(frozenDomains),
+    }),
+  })
 }
 
 export async function initializeWindowsOwnerDomainCutoverComposition(options = {}) {

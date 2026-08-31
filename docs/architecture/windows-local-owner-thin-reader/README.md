@@ -579,7 +579,12 @@ explicit optimization entry never auto-migrates a daily profile. Legacy readers 
 remain read-only. `SeekPlayerDB` version 1 / `files` / `id`, the thin runtime entries, loopback-only transport,
 and identity/reference-only media handling remain unchanged.
 
-The closeout evidence is `npm run verify:windows-owner-c2`, the domain owner/C2c and C1 focused gates,
+The controlled one-time operator wrapper is documented in
+[`production-migration-entry.md`](./production-migration-entry.md). It adds explicit plan/inventory/dry-run and
+apply/resume/rollback commands around the isolated C2 path; apply/resume require live evidence from the current
+browser guard before each freeze-time final backup. It is fixture-verified only and is not part of normal startup.
+
+The closeout evidence is `npm run verify:windows-owner-production-entry`, `npm run verify:windows-owner-c2`, the domain owner/C2c and C1 focused gates,
 `npm run verify:windows-owner-focused-boundaries`, `npm run build`, `npm run verify:fast`, and strict OpenSpec
 validation. `npm run verify:full` reaches the existing Python dependency-health gate and is blocked by duplicate
 installed `networkx` and `torchaudio` distributions before its remaining browser/restore stages; no authority or

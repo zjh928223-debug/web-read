@@ -39,6 +39,7 @@ const {
   createWindowsDurableStateMigration,
 } = migration
 const { createWindowsOwnerLegacyCompatibilityBridge } = bridge
+const { createProductionHostAdapters } = await import('./lib/windows-owner-cutover.mjs')
 
 class MapStorage {
   constructor(entries = {}) {
@@ -445,6 +446,137 @@ assert.equal(runResult.steps.smoke.ok, false)
 assert.equal(runResult.steps.smoke.status, 'deferred')
 assert.equal((await migrationRun.service.status()).domains.workflow.status, 'ready-to-switch')
 
+let liveFinalRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-live',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { schemaVersion: 1, contentId: 'live-content', value: 'before-freeze' },
+}]
+const postFreezeBridge = {
+  async inventory() {
+    return { status: 'ready', records: clone(liveFinalRecords) }
+  },
+  async prepareImport() {
+    const importIdentity = `live-source-${liveFinalRecords[0].payload.value}`
+    return {
+      status: 'ready',
+      importIdentity,
+      importInput: {
+        schemaVersion: 1,
+        mode: 'legacy-import-input',
+        profileId: 'optimization',
+        importIdentity,
+        records: clone(liveFinalRecords),
+      },
+    }
+  },
+}
+const postFreezeStore = createMemoryMigrationStateStore()
+const postFreezeFixture = createMigrationFixture({ legacyBridge: postFreezeBridge, stateStore: postFreezeStore })
+const postFreezeResult = await postFreezeFixture.service.migrateDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-post-freeze-reread',
+  beforeFinalBackup: async ({ freeze }) => {
+    assert.equal(freeze.status, 'frozen')
+    liveFinalRecords = [{
+      ...liveFinalRecords[0],
+      payload: { ...liveFinalRecords[0].payload, value: 'after-freeze-reread' },
+    }]
+    return {
+      ok: true,
+      sourceCapture: {
+        kind: 'post-freeze-live-source-capture',
+        domain: 'reader-session',
+        capturedAt: '2026-08-30T00:00:00.000Z',
+        fingerprints: {
+          browserPhysical: 'a'.repeat(64),
+          browserLogical: 'b'.repeat(64),
+          workflow: 'c'.repeat(64),
+        },
+      },
+    }
+  },
+})
+assert.equal(postFreezeResult.ok, true, JSON.stringify(postFreezeResult))
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.artifact.domains['reader-session'].records[0].payload.value,
+  'after-freeze-reread',
+  'final backup must collect the live source again after freeze',
+)
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.sourceCapture.kind,
+  'post-freeze-live-source-capture',
+)
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.sourceImportIdentity,
+  'live-source-after-freeze-reread',
+  'post-freeze capture must rebind the final source identity instead of rejecting a pre-freeze write',
+)
+assert.equal(
+  (await postFreezeStore.read()).domains['reader-session'].preflight.sourceImportIdentity,
+  'live-source-after-freeze-reread',
+  'persisted preflight evidence must follow the post-freeze source binding',
+)
+
+const fallbackHostClient = {
+  async query() {
+    return {
+      outcome: 'read',
+      revision: 0,
+      payload: {
+        records: [{ jobId: 'unsafe-public-fallback', outputDir: 'C:\\Users\\private-workflow-output' }],
+        config: {
+          configured: true,
+          cookiesPath: 'C:\\Users\\private\\cookies.txt',
+          outputDir: 'C:\\Users\\private-workflow-output',
+          ytDlpPath: 'C:\\Tools\\yt-dlp.exe',
+          whisperxPath: 'C:\\Tools\\whisperx.exe',
+        },
+      },
+    }
+  },
+  async command() {
+    throw new Error('fallback test must not issue a command')
+  },
+}
+const fallbackAdapters = createProductionHostAdapters({ client: fallbackHostClient, profileId: 'fallback-test' })
+await assert.rejects(
+  fallbackAdapters.workflow.collect(),
+  (error) => error?.code === 'OWNER_CUTOVER_HOST_BACKUP_UNAVAILABLE',
+  'missing backupRecords must block workflow migration instead of synthesizing paths',
+)
+
+const unsafeBackupHostClient = {
+  async query() {
+    return {
+      outcome: 'read',
+      revision: 0,
+      payload: {
+        backupRecords: [{
+          id: 'config',
+          schemaVersion: 1,
+          revision: 0,
+          contentId: null,
+          payload: { outputDir: 'C:\\Users\\private-workflow-output' },
+          references: [],
+          mediaReferences: [],
+        }],
+        backupMediaReferences: [],
+      },
+    }
+  },
+  async command() {
+    throw new Error('unsafe backup validation must not issue a command')
+  },
+}
+const unsafeBackupAdapters = createProductionHostAdapters({ client: unsafeBackupHostClient, profileId: 'unsafe-backup-test' })
+await assert.rejects(
+  unsafeBackupAdapters.workflow.collect(),
+  (error) => error?.code === 'OWNER_CUTOVER_HOST_BACKUP_INVALID',
+  'workflow backupRecords must reject absolute paths before they enter migration state',
+)
+
 const workflowRevision = 'w1:j123:0123456789abcdef:h456:fedcba9876543210:c0123456789abcdef:iabcdef0123456789'
 const workflowStringHost = createHostAdapters({
   workflow: new HostAdapter({ ...emptySnapshot(), revision: workflowRevision }),
@@ -515,6 +647,30 @@ const mediaBytesDryRun = await mediaBytesFixture.dryRun('reader-session')
 assert.equal(mediaBytesDryRun.ok, false)
 assert.equal(mediaBytesDryRun.reasonCode, 'migration-media-payload-rejected')
 assert.equal(mediaBytesHost['reader-session'].importCalls, 0, 'media bytes are rejected before host writes')
+
+const embeddedPathRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-embedded-path',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { message: 'WhisperX failed at C:\\Users\\private\\clip.wav' },
+}]
+const embeddedPathFixture = createMigrationFixture({ legacyBridge: createImportBridge(embeddedPathRecords, 'embedded-path') })
+const embeddedPathDryRun = await embeddedPathFixture.service.dryRun('reader-session')
+assert.equal(embeddedPathDryRun.ok, false)
+assert.equal(embeddedPathDryRun.reasonCode, 'migration-machine-path-rejected')
+
+const camelCredentialRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-credential',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { accessToken: 'must-never-enter-artifact' },
+}]
+const camelCredentialFixture = createMigrationFixture({ legacyBridge: createImportBridge(camelCredentialRecords, 'camel-credential') })
+const camelCredentialDryRun = await camelCredentialFixture.service.dryRun('reader-session')
+assert.equal(camelCredentialDryRun.ok, false)
+assert.equal(camelCredentialDryRun.reasonCode, 'migration-sensitive-value-rejected')
 
 const stoppedHost = createHostAdapters()
 const stoppedFixture = createMigrationFixture({
@@ -663,6 +819,27 @@ assert.equal(rollback.ok, true, JSON.stringify(rollback))
 assert.equal(rollback.status, 'rolled-back')
 assert.equal(rollbackHost['reader-session'].snapshot.records.length, 0)
 assert.equal(rollbackHost['reader-session'].unfreezeCalls, 1)
+
+const interruptedRollbackHost = createHostAdapters()
+const interruptedRollbackStore = createMemoryMigrationStateStore()
+const interruptedRollbackFixture = createMigrationFixture({
+  hostAdapters: interruptedRollbackHost,
+  stateStore: interruptedRollbackStore,
+})
+await interruptedRollbackFixture.service.dryRun('reader-session')
+await interruptedRollbackFixture.service.freeze('reader-session')
+await interruptedRollbackFixture.service.createFinalBackup('reader-session')
+await interruptedRollbackFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-interrupted-rollback-import',
+})
+const interruptedRollbackState = await interruptedRollbackStore.read()
+interruptedRollbackHost['reader-session'].snapshot = clone(interruptedRollbackState.domains['reader-session'].preImport)
+const interruptedRollbackRetry = await interruptedRollbackFixture.service.rollback('reader-session')
+assert.equal(interruptedRollbackRetry.ok, true, JSON.stringify(interruptedRollbackRetry))
+assert.equal(interruptedRollbackRetry.status, 'rolled-back')
+assert.equal(interruptedRollbackHost['reader-session'].importCalls, 1, 'retry must not restore an already-restored Host twice')
+assert.equal(interruptedRollbackHost['reader-session'].unfreezeCalls, 1, 'retry must finish unfreeze after an interrupted rollback')
 
 const tamperedRollbackHost = createHostAdapters()
 const tamperedRollbackStore = createMemoryMigrationStateStore()

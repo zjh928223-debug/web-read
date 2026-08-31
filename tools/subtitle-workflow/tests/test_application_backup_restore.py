@@ -15,9 +15,35 @@ from youtube_workflow.application_backup import (
     _canonical_json,
 )
 from youtube_workflow.reader_marks_activity import ReaderMarksActivityRepository
+from youtube_workflow.workflow_writer_freeze import make_workflow_writer_freeze_marker
 
 
 class WorkflowApplicationRestoreTests(unittest.TestCase):
+    def test_workflow_restore_is_blocked_after_legacy_writer_freeze(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_state = root / "source-state"
+            source_output = root / "source-output"
+            target_state = root / "target-state"
+            target_output = root / "target-output"
+            self._write_workflow_fixture(source_state, source_output, "job-1")
+            source = WorkflowBackupAdapter(source_state, source_output).collect()
+            target_state.mkdir()
+            marker = make_workflow_writer_freeze_marker(
+                profile_id="profile-1",
+                challenge="freeze-1",
+                source_fingerprint={"workflow": "a" * 64},
+                frozen_at="2026-08-30T00:00:00+00:00",
+            )
+            (target_state / ".read-web-workflow-writer-freeze.json").write_text(
+                json.dumps(marker),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "frozen"):
+                WorkflowRestoreAdapter(target_state, target_output).restore_snapshot(source)
+            self.assertFalse((target_state / "jobs.json").exists())
+
     def test_workflow_restore_rebinds_paths_and_replaces_stale_files(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -13,6 +13,10 @@ scripts/lib/windows-owner-cutover.mjs
   -> real Python Local App Host owners + typed owner client
   -> per-domain freeze marker/checkpoint/rollback
 
+scripts/windows-owner-production-entry.mjs
+  -> explicit plan/inventory/dry-run/apply/resume/rollback wrapper
+  -> JSON-only staged source snapshot and live browser-freeze evidence gate
+
 src/services/windows-owner-domain-cutover.js
   -> health/readiness and per-domain browser guard
   -> typed Host query/command after checkpoint

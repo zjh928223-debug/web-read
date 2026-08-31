@@ -16,6 +16,9 @@ const SAFE_SOURCE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u
 const SAFE_REVISION_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u
 const MEDIA_DATA_URI = /^data:(?:audio|video|application\/octet-stream)\b/i
 const FORBIDDEN_STATE_KEY = /(?:^|[_-])(token|cookie|password|secret|authorization|(?:absolute|local|media)[_-]?path|blob|arraybuffer|typed[_-]?array|bytes|base64)(?:$|[_-])/iu
+const FORBIDDEN_NORMALIZED_STATE_KEY = /^(?:apikey|accesstoken|authorization|cookie|cookies|cookiepath|cookiespath|password|passwd|secret|credential|privatekey|proxyauth|sessiontoken|token|auth|jwt|bearer|signature|sig)$/iu
+const FORBIDDEN_NORMALIZED_MEDIA_KEY = /^(?:blob|arraybuffer|typedarray|bytes|base64|binary|datauri|inlinedata|inlinemedia|mediadata|mediabytes|mediablob|audiodata|audioblob|videodata|videoblob)$/iu
+const EMBEDDED_ABSOLUTE_MACHINE_PATH = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/][^\s"'<>|]+|\\\\[^\\\s]+\\[^\s"'<>|]+|\/(?:Users|home|private|var|tmp|opt|mnt|Volumes|root)(?:\/[^\s"'<>]+)+)/iu
 const VOCABULARY_SETTLEMENT_PREFIX = 'vocabulary-article-srs-settlement-progress:'
 
 function migrationError(code, message = 'Windows durable-state migration request is invalid', details = {}) {
@@ -113,6 +116,7 @@ function sourceSelectionRequest(sourceIds) {
 function assertSafeJson(value, seen = new WeakSet(), keyHint = '', options = {}) {
   if (value === null || value === undefined || typeof value === 'string' || typeof value === 'boolean') {
     if (typeof value === 'string' && MEDIA_DATA_URI.test(value.trim())) throw migrationError('migration-media-payload-rejected')
+    if (typeof value === 'string' && EMBEDDED_ABSOLUTE_MACHINE_PATH.test(value)) throw migrationError('migration-machine-path-rejected')
     return
   }
   if (typeof value === 'number') {
@@ -138,7 +142,11 @@ function assertSafeJson(value, seen = new WeakSet(), keyHint = '', options = {})
     }))
   } else {
     for (const [key, child] of Object.entries(value)) {
-      if (FORBIDDEN_STATE_KEY.test(key)
+      const normalizedKey = key.replace(/[_-]/gu, '').toLowerCase()
+      if (FORBIDDEN_NORMALIZED_MEDIA_KEY.test(normalizedKey)) {
+        throw migrationError('migration-media-payload-rejected')
+      }
+      if ((FORBIDDEN_STATE_KEY.test(key) || FORBIDDEN_NORMALIZED_STATE_KEY.test(normalizedKey))
         && !(allowSettlementToken && key === 'attempt_token')) {
         throw migrationError('migration-sensitive-value-rejected')
       }
@@ -478,7 +486,26 @@ function domainSummaries(artifact) {
   })
 }
 
-async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds) {
+function validateSourceCapture(value, domain) {
+  if (value === undefined || value === null) return null
+  if (!isPlainObject(value)
+    || value.kind !== 'post-freeze-live-source-capture'
+    || value.domain !== domain
+    || typeof value.capturedAt !== 'string'
+    || !isPlainObject(value.fingerprints)) {
+    throw migrationError('migration-source-capture-invalid')
+  }
+  for (const field of ['browserPhysical', 'browserLogical', 'workflow']) {
+    if (typeof value.fingerprints[field] !== 'string'
+      || !/^(?:sha256:)?[a-f0-9]{64}$/iu.test(value.fingerprints[field])) {
+      throw migrationError('migration-source-capture-invalid')
+    }
+  }
+  assertSafeJson(value)
+  return clone(value)
+}
+
+async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds, sourceCapture = null) {
   const core = {
     format: WINDOWS_DURABLE_STATE_MIGRATION_FORMAT,
     schemaVersion: WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION,
@@ -497,6 +524,8 @@ async function createFinalManifest(domain, artifact, importIdentity, target, sou
       checksum: await digestCanonical(target),
     },
   }
+  const validatedSourceCapture = validateSourceCapture(sourceCapture, domain)
+  if (validatedSourceCapture) core.sourceCapture = validatedSourceCapture
   return {
     ...core,
     manifestChecksum: await digestCanonical(core),
@@ -530,6 +559,7 @@ async function validateFinalBackup(value, domain) {
       || entry.checksum !== value.artifact.manifest.domainChecksums[entry.domain])) {
     throw migrationError('migration-backup-invalid')
   }
+  if (value.sourceCapture !== undefined) validateSourceCapture(value.sourceCapture, domain)
   return value
 }
 
@@ -760,7 +790,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
   }
 
-  async function createFinalBackup(domainInput) {
+  async function createFinalBackup(domainInput, finalBackupOptions = {}) {
     const domain = domainKey(domainInput)
     const state = await readState()
     const entry = state.domains[domain]
@@ -780,8 +810,14 @@ export function createWindowsDurableStateMigration(options = {}) {
         return safeFailure(domain, 'final-backup', plan?.reasonCode || 'migration-import-blocked')
       }
       const built = await buildArtifact(plan.importInput, options)
+      const sourceCapture = validateSourceCapture(finalBackupOptions.sourceCapture, domain)
       if (built.importIdentity !== entry.preflight?.sourceImportIdentity) {
-        return safeFailure(domain, 'final-backup', 'migration-source-changed')
+        if (!sourceCapture) return safeFailure(domain, 'final-backup', 'migration-source-changed')
+        const reboundDomain = built.artifact.domains[domain]
+        entry.preflight.sourceImportIdentity = built.importIdentity
+        entry.preflight.artifactChecksum = built.artifact.artifactChecksum
+        entry.preflight.sourceRevision = reboundDomain.revision
+        entry.preflight.sourceChecksum = built.artifact.manifest.domainChecksums[domain]
       }
       const target = await collectHost(domain)
       if (target.revision !== entry.preflight?.targetRevision) {
@@ -789,7 +825,14 @@ export function createWindowsDurableStateMigration(options = {}) {
       }
       const capacity = await capacityCheck(adapterFor(domain), bytesOf(built.artifact), options)
       if (!capacity.ok) return safeFailure(domain, 'final-backup', 'migration-capacity-insufficient')
-      const finalBackup = await createFinalManifest(domain, built.artifact, built.importIdentity, target, sourceIds)
+      const finalBackup = await createFinalManifest(
+        domain,
+        built.artifact,
+        built.importIdentity,
+        target,
+        sourceIds,
+        sourceCapture,
+      )
       entry.finalBackup = finalBackup
       entry.status = 'final-backup'
       await writeState(state)
@@ -1097,9 +1140,12 @@ export function createWindowsDurableStateMigration(options = {}) {
     try { current = await collectHost(domain) } catch (error) {
       return safeFailure(domain, 'rollback', error?.code || 'migration-host-snapshot-invalid')
     }
-    if (current.revision !== entry.import.revision) return safeFailure(domain, 'rollback', 'migration-conflict', { currentRevision: current.revision })
+    const alreadyRestored = domainEquivalent(current, preImport, domain)
+    if (current.revision !== entry.import.revision && !alreadyRestored) {
+      return safeFailure(domain, 'rollback', 'migration-conflict', { currentRevision: current.revision })
+    }
     const cutover = cutoverControls[domain]
-    if (cutover && typeof cutover.rollback === 'function') {
+    if (!alreadyRestored && cutover && typeof cutover.rollback === 'function') {
       let checkpointResult
       try {
         checkpointResult = await cutover.rollback({
@@ -1123,19 +1169,21 @@ export function createWindowsDurableStateMigration(options = {}) {
     const idempotencyKey = rollbackOptions.idempotencyKey === undefined
       ? `rollback-${domain}-${entry.import.artifactChecksum.slice(7, 39)}`
       : safeIdentity(rollbackOptions.idempotencyKey, 'idempotencyKey')
-    let result
-    try {
-      result = await invokeMutation(adapter, method, preImport, {
-        domain,
-        expectedRevision: current.revision,
-        idempotencyKey,
-        reason: 'migration-rollback',
-        migration: true,
-      })
-    } catch (error) {
-      return safeFailure(domain, 'rollback', error?.code || 'migration-rollback-failed')
+    let result = { status: 'committed', revision: current.revision, idempotent: true }
+    if (!alreadyRestored) {
+      try {
+        result = await invokeMutation(adapter, method, preImport, {
+          domain,
+          expectedRevision: current.revision,
+          idempotencyKey,
+          reason: 'migration-rollback',
+          migration: true,
+        })
+      } catch (error) {
+        return safeFailure(domain, 'rollback', error?.code || 'migration-rollback-failed')
+      }
+      if (!resultIsCommitted(result, method)) return safeFailure(domain, 'rollback', 'migration-rollback-failed')
     }
-    if (!resultIsCommitted(result, method)) return safeFailure(domain, 'rollback', 'migration-rollback-failed')
     try {
       const restored = await collectHost(domain)
       if (!domainEquivalent(restored, preImport, domain)) return safeFailure(domain, 'rollback', 'migration-rollback-verification-failed')
@@ -1307,7 +1355,9 @@ export function createWindowsDurableStateMigration(options = {}) {
         return { ok: false, domain, stopped: true, steps }
       }
     }
-    steps.finalBackup = await createFinalBackup(domain)
+    steps.finalBackup = await createFinalBackup(domain, {
+      sourceCapture: steps.beforeFinalBackup?.sourceCapture,
+    })
     if (!steps.finalBackup.ok) return { ok: false, domain, stopped: true, steps }
     steps.import = await importDomain(domain, runOptions)
     if (!steps.import.ok) return { ok: false, domain, stopped: true, steps }
@@ -1368,6 +1418,12 @@ export function createWindowsDurableStateMigration(options = {}) {
           status: entry.status,
           frozen: entry.frozen === true,
           finalBackupChecksum: entry.finalBackup?.artifactChecksum || null,
+          rollbackTargetRevision: entry.finalBackup?.rollbackTarget?.revision ?? null,
+          rollbackTargetChecksum: entry.finalBackup?.rollbackTarget?.checksum || null,
+          importStatus: entry.import?.status || null,
+          importAttemptStatus: entry.importAttempt ? 'pending' : null,
+          rollbackStatus: entry.rollback?.status || null,
+          rollbackRevision: entry.rollback?.revision ?? null,
           importedRevision: entry.import?.revision ?? null,
           verified: Boolean(entry.verify),
           authorityChanged: entry.switch?.authorityChanged === true,
