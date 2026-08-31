@@ -568,7 +568,7 @@ function Start-OptimizationOwnedPair {
   $capabilityStarted = $false
   $hostStarted = $false
   try {
-    # Start-ManagedRuntimeInstance redirects both children into this directory.
+    # The managed runtime launcher redirects both children into this directory.
     # The optimization preview creates it during context setup, but the daily
     # launcher deliberately keeps context construction read-only.  Ensure the
     # shared pair boundary is safe for either caller before the first spawn.
