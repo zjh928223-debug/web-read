@@ -128,8 +128,13 @@ function Test-PortFree([int]$Port) {
 }
 
 function Assert-DailyFixtureStopped([string]$StateRoot, [string]$ApplicationRoot, [int]$FrontendPort, [int]$BackendPort, [string]$MessagePrefix) {
-  foreach ($name in @('production-host.json', 'capability-host.json', 'production-host.token', 'active-target.json', 'promotion-journal.json')) {
+  foreach ($name in @('production-host.json', 'capability-host.json', 'production-host.token', 'promotion-journal.json')) {
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $StateRoot $name) -PathType Leaf)) "$MessagePrefix retained $name"
+  }
+  $activeTargetPath = Join-Path $StateRoot 'active-target.json'
+  if (Test-Path -LiteralPath $activeTargetPath -PathType Leaf) {
+    $activeTarget = Get-Content -LiteralPath $activeTargetPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    Assert-True ([string]$activeTarget.status -eq 'empty' -and [string]$activeTarget.profileId -eq 'daily-production') "$MessagePrefix retained an invalid empty active target marker"
   }
   Assert-True (Test-PortFree $FrontendPort -and Test-PortFree $BackendPort) "$MessagePrefix left a fixture port occupied"
   $instancesRoot = Join-Path $ApplicationRoot 'instances'
