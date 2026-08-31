@@ -72,6 +72,7 @@ _EMBEDDED_MEDIA_KEY = re.compile(
     r"media(?:data|bytes)|audio(?:data|blob)|video(?:data|blob))",
     re.IGNORECASE,
 )
+_SAFE_OUTPUT_REVISION_TOKEN = re.compile(r"^sha256:[0-9A-Fa-f]{64}$")
 
 
 class WorkflowBackupError(RuntimeError):
@@ -211,6 +212,15 @@ def _normalize_javascript_json_numbers(value):
     return value
 
 
+def _normalize_record_revision(value):
+    """Normalize legacy output revisions without weakening domain CAS values."""
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str) and _SAFE_OUTPUT_REVISION_TOKEN.fullmatch(value):
+        return value
+    raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", "workflow file revision is invalid")
+
+
 def _read_json(path: Path):
     def evidence(raw_value=None, reason="WORKFLOW_BACKUP_CORRUPT", checksum=None):
         return {
@@ -278,16 +288,17 @@ def _validate_envelope(value, *, domain: str, collection: str):
     return value
 
 
-def _record(record_id: str, payload, *, revision: int = 0, content_id: str | None = None,
+def _record(record_id: str, payload, *, revision: int | str = 0, content_id: str | None = None,
             references: list | None = None, media_references: list | None = None,
             output_root: Path | None = None, max_record_bytes: int = DEFAULT_MAX_RECORD_BYTES,
             pre_sanitized: bool = False) -> dict:
     normalized_payload = payload if pre_sanitized else _sanitize(payload, output_root=output_root)
     _reject_binary(normalized_payload)
+    normalized_revision = _normalize_record_revision(revision)
     record = {
         "id": record_id,
         "schemaVersion": WORKFLOW_DOMAIN_SCHEMA_VERSION,
-        "revision": int(revision),
+        "revision": normalized_revision,
         "contentId": content_id,
         "payload": normalized_payload,
         "references": references or [],
@@ -441,8 +452,13 @@ class WorkflowBackupAdapter:
                     continue
                 relative = self._output_identity(path)
                 revision = value.get("revision", 0) if isinstance(value, dict) else 0
-                if not isinstance(revision, int) or revision < 0:
-                    raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", f"workflow file revision is invalid: {relative}")
+                try:
+                    revision = _normalize_record_revision(revision)
+                except WorkflowBackupError as exc:
+                    raise WorkflowBackupError(
+                        exc.code,
+                        f"workflow file revision is invalid: {relative}",
+                    ) from exc
                 records.append(_record(
                     f"output:{relative}",
                     value,
@@ -1061,6 +1077,9 @@ def verify_workflow_records(snapshot: dict, *, max_record_bytes: int = DEFAULT_M
     records = snapshot.get("records")
     if not isinstance(records, list):
         raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", "workflow backup records are missing")
+    domain_revision = snapshot.get("revision", 0)
+    if type(domain_revision) is not int or domain_revision < 0:
+        raise WorkflowBackupError("WORKFLOW_BACKUP_CORRUPT", "workflow backup domain revision is invalid")
     ids = set()
     for record in records:
         if not isinstance(record, dict) or not record.get("id") or record["id"] in ids:
@@ -1068,6 +1087,13 @@ def verify_workflow_records(snapshot: dict, *, max_record_bytes: int = DEFAULT_M
         ids.add(record["id"])
         if len(_canonical_json(record).encode("utf-8")) > max_record_bytes:
             raise WorkflowBackupError("WORKFLOW_BACKUP_RECORD_TOO_LARGE", "workflow backup record exceeds its size ceiling")
+        try:
+            _normalize_record_revision(record.get("revision", 0))
+        except WorkflowBackupError as exc:
+            raise WorkflowBackupError(
+                exc.code,
+                f"workflow backup record revision is invalid: {record['id']}",
+            ) from exc
         checksum = record.get("checksum")
         unsigned = dict(record)
         unsigned.pop("checksum", None)

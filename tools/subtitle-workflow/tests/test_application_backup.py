@@ -19,6 +19,117 @@ from youtube_workflow.reader_marks_activity import ReaderMarksActivityRepository
 
 
 class WorkflowApplicationBackupTests(unittest.TestCase):
+    def test_output_record_with_missing_revision_defaults_to_zero_without_mutating_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_dir = root / "state"
+            output_dir = root / "output"
+            job_dir = output_dir / "job-1"
+            state_dir.mkdir()
+            job_dir.mkdir(parents=True)
+            self._write_envelope(
+                state_dir / "jobs.json",
+                "workflow.jobs",
+                "jobs",
+                [{"jobId": "job-1", "outputDir": str(job_dir)}],
+            )
+            manifest = job_dir / "manifest.json"
+            manifest.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
+            source_bytes = manifest.read_bytes()
+
+            snapshot = WorkflowBackupAdapter(state_dir, output_dir).collect()
+            record = next(item for item in snapshot["records"] if item["id"] == "output:job-1/manifest.json")
+
+            self.assertEqual(record["revision"], 0)
+            self.assertTrue(verify_workflow_records(snapshot)["valid"])
+            self.assertEqual(manifest.read_bytes(), source_bytes)
+
+    def test_output_record_preserves_legal_sha256_revision_through_restore_and_cas(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source_state = root / "source-state"
+            source_output = root / "source-output"
+            target_state = root / "target-state"
+            target_output = root / "target-output"
+            job_dir = source_output / "job-1"
+            source_state.mkdir()
+            job_dir.mkdir(parents=True)
+            self._write_envelope(
+                source_state / "jobs.json",
+                "workflow.jobs",
+                "jobs",
+                [{"jobId": "job-1", "outputDir": str(job_dir)}],
+            )
+            revision = "sha256:" + ("a" * 64)
+            (job_dir / "manifest.json").write_text(
+                json.dumps({"schemaVersion": 1, "revision": revision, "status": "complete"}),
+                encoding="utf-8",
+            )
+
+            source = WorkflowBackupAdapter(source_state, source_output).collect()
+            output_record = next(item for item in source["records"] if item["id"] == "output:job-1/manifest.json")
+
+            self.assertIsInstance(source["revision"], int)
+            self.assertEqual(output_record["revision"], revision)
+            self.assertEqual(output_record["payload"]["revision"], revision)
+            self.assertTrue(verify_workflow_records(source)["valid"])
+
+            restore = WorkflowRestoreAdapter(target_state, target_output)
+            self.assertEqual(restore.restore_snapshot(source, expected_revision=0)["revision"], 1)
+            reopened = WorkflowBackupAdapter(target_state, target_output).collect()
+            reopened_record = next(item for item in reopened["records"] if item["id"] == "output:job-1/manifest.json")
+            self.assertEqual(reopened_record["revision"], revision)
+            self.assertEqual(reopened_record["payload"]["revision"], revision)
+            self.assertEqual(reopened["revision"], source["revision"])
+
+            with self.assertRaises(WorkflowBackupError) as conflict:
+                restore.restore_snapshot(source, expected_revision=0)
+            self.assertEqual(conflict.exception.code, "WORKFLOW_RESTORE_REVISION_CONFLICT")
+
+    def test_output_record_rejects_unsafe_revision_string_without_mutating_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state_dir = root / "state"
+            output_dir = root / "output"
+            job_dir = output_dir / "job-1"
+            state_dir.mkdir()
+            job_dir.mkdir(parents=True)
+            self._write_envelope(
+                state_dir / "jobs.json",
+                "workflow.jobs",
+                "jobs",
+                [{"jobId": "job-1", "outputDir": str(job_dir)}],
+            )
+            manifest = job_dir / "manifest.json"
+            manifest.write_text(
+                json.dumps({"schemaVersion": 1, "revision": "revision-unsafe"}),
+                encoding="utf-8",
+            )
+            source_bytes = manifest.read_bytes()
+
+            with self.assertRaises(WorkflowBackupError) as failure:
+                WorkflowBackupAdapter(state_dir, output_dir).collect()
+            self.assertEqual(failure.exception.code, "WORKFLOW_BACKUP_CORRUPT")
+            self.assertEqual(manifest.read_bytes(), source_bytes)
+
+    def test_verifier_rejects_invalid_record_revision_even_with_valid_checksum(self):
+        record = {
+            "id": "output:job-1/manifest.json",
+            "schemaVersion": 1,
+            "revision": "C:\\Users\\private\\secret",
+            "contentId": "job-1",
+            "payload": {"schemaVersion": 1},
+            "references": [],
+            "mediaReferences": [],
+        }
+        record["checksum"] = "sha256:" + hashlib.sha256(
+            json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+        with self.assertRaises(WorkflowBackupError) as failure:
+            verify_workflow_records({"schemaVersion": 1, "revision": 1, "records": [record]})
+        self.assertEqual(failure.exception.code, "WORKFLOW_BACKUP_CORRUPT")
+
     def test_collects_durable_workflow_state_without_secrets_or_media_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
