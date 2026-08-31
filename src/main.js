@@ -73,15 +73,24 @@ themeStore.init()
 // Host-backed domains are optional until the Host explicitly reports a
 // per-domain authoritative checkpoint.  A degraded/pre-cutover Host leaves
 // the existing browser path unchanged.
-const ownerDomainComposition = await initializeWindowsOwnerDomainCutoverComposition({
-  windowObject: window,
-  documentObject: document,
-  pollIntervalMs: 750,
-})
+const ownerServiceBaseUrl = typeof import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL === 'string'
+  ? import.meta.env.VITE_LOCAL_SERVICE_BASE_URL.trim().replace(/\/$/u, '')
+  : ''
+// The production front door and the browser share one origin. Keep the
+// health probe relative so the owner health-path guard remains in force.
+const ownerHealthPath = ownerServiceBaseUrl ? '/api/app/health' : null
+const ownerDomainComposition = ownerHealthPath
+  ? await initializeWindowsOwnerDomainCutoverComposition({
+    windowObject: window,
+    documentObject: document,
+    healthPath: ownerHealthPath,
+    pollIntervalMs: 750,
+  })
+  : { health: null, ownerClient: null }
 await initializeWindowsOwnerReaderSessionComposition({
   windowObject: window,
   documentObject: document,
-  health: ownerDomainComposition.health,
+  health: ownerHealthPath ? ownerDomainComposition.health : {},
   ownerClient: ownerDomainComposition.ownerClient,
 })
 

@@ -283,12 +283,14 @@ function Find-ManagedProcessByExecutable {
     $processMetadata | ForEach-Object {
       $metadataPath = [string]$_.ExecutablePath
       $metadataCommandLine = [string]$_.CommandLine
-      $pathMatches = [String]::Equals($metadataPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase) `
-        -or (Test-ManagedPythonVenvInvocation `
+      $pathMatches = [String]::Equals($metadataPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase)
+      if (-not $pathMatches -and $metadataPath) {
+        $pathMatches = Test-ManagedPythonVenvInvocation `
           -ExpectedFilePath $expectedFullPath `
           -ActualFilePath $metadataPath `
           -CommandLine $metadataCommandLine `
-          -ParentProcessId ([int]$_.ParentProcessId))
+          -ParentProcessId ([int]$_.ParentProcessId)
+      }
       if ($pathMatches) {
         $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue
         if ($null -ne $process) {

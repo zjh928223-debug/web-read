@@ -7,6 +7,7 @@ import { listenOnBrowserSafePort } from './lib/browser-port-policy.mjs'
 
 const repoRoot = path.resolve(import.meta.dirname, '..')
 const sessionRequests = new Map()
+const ownerApiContractPath = '/docs/architecture/windows-local-owner-thin-reader/api-contract.json'
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -16,6 +17,14 @@ const server = http.createServer(async (request, response) => {
       const target = path.resolve(repoRoot, url.pathname.slice(1))
       if (!target.startsWith(`${repoRoot}${path.sep}`)) return send(response, 404, 'text/plain', 'not found')
       return send(response, 200, 'text/javascript', await readFile(target))
+    }
+    if (url.pathname === ownerApiContractPath) {
+      return send(
+        response,
+        200,
+        'text/javascript',
+        `export default ${await readFile(path.join(repoRoot, ownerApiContractPath.slice(1)), 'utf8')}`,
+      )
     }
     const sessionMatch = url.pathname.match(/^\/api\/jobs\/([^/]+)\/session$/)
     if (sessionMatch) {
