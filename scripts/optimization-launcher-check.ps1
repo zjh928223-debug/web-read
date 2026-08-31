@@ -14,15 +14,12 @@ $capabilityScript = Join-Path $projectRoot 'tools\local-capability-host.mjs'
 $backupScript = Join-Path $projectRoot 'scripts\lib\read-web-production-backup.mjs'
 $releaseHealthScript = Join-Path $projectRoot 'scripts\release-health-check.mjs'
 $launcher = Join-Path $projectRoot 'scripts\launch-optimization-preview.ps1'
+Import-Module (Join-Path $projectRoot 'scripts\launcher-instance-manager.psm1') -Force
+Import-Module (Join-Path $projectRoot 'scripts\optimization-launch-runtime.psm1') -Force -DisableNameChecking
+Import-Module (Join-Path $projectRoot 'scripts\optimization-release.psm1') -Force -DisableNameChecking
 $nodePath = (Get-Command node -ErrorAction Stop).Source
 $npmPath = if ($null -ne (Get-Command npm.cmd -ErrorAction SilentlyContinue)) { (Get-Command npm.cmd -ErrorAction Stop).Source } else { (Get-Command npm -ErrorAction Stop).Source }
-$runtimePayload = Get-Content -LiteralPath $runtimeConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
-$pythonSelection = if ($env:READ_WEB_PYTHON) { $env:READ_WEB_PYTHON } elseif ($env:READ_WEB_PYTHON_PATH) { $env:READ_WEB_PYTHON_PATH } else { [string]$runtimePayload.python.executable }
-if (-not [IO.Path]::IsPathRooted($pythonSelection)) {
-  $configPython = Join-Path (Split-Path -Parent $runtimeConfigPath) $pythonSelection
-  if (Test-Path -LiteralPath $configPython -PathType Leaf) { $pythonSelection = $configPython }
-}
-$pythonPath = if (Test-Path -LiteralPath $pythonSelection -PathType Leaf) { (Resolve-Path -LiteralPath $pythonSelection).Path } else { (Get-Command $pythonSelection -ErrorAction Stop).Source }
+$pythonPath = Resolve-OptimizationSelectedPython -RuntimeConfigPath $runtimeConfigPath
 $shellPath = switch ($PowerShellKind) {
   'powershell' { (Get-Command powershell -ErrorAction Stop).Source; break }
   'pwsh' { (Get-Command pwsh -ErrorAction Stop).Source; break }
@@ -31,10 +28,6 @@ $shellPath = switch ($PowerShellKind) {
     if ($null -ne $preferred) { $preferred.Source } else { (Get-Command powershell -ErrorAction Stop).Source }
   }
 }
-
-Import-Module (Join-Path $projectRoot 'scripts\launcher-instance-manager.psm1') -Force
-Import-Module (Join-Path $projectRoot 'scripts\optimization-launch-runtime.psm1') -Force -DisableNameChecking
-Import-Module (Join-Path $projectRoot 'scripts\optimization-release.psm1') -Force -DisableNameChecking
 
 function Assert-True {
   param([bool]$Value, [Parameter(Mandatory)][string]$Message)
@@ -591,6 +584,24 @@ function Assert-OptimizationConfigAndHealthSafety {
   $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('read-web-optimization-config-' + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
   try {
+    $defaultPython = Join-Path $testRoot 'local-app-data\Read-Web\optimization-python\Scripts\python.exe'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $defaultPython) | Out-Null
+    [IO.File]::WriteAllText($defaultPython, 'fixture interpreter')
+    $oldLocalAppData = [Environment]::GetEnvironmentVariable('LOCALAPPDATA', 'Process')
+    $oldPython = [Environment]::GetEnvironmentVariable('READ_WEB_PYTHON', 'Process')
+    $oldPythonPath = [Environment]::GetEnvironmentVariable('READ_WEB_PYTHON_PATH', 'Process')
+    try {
+      [Environment]::SetEnvironmentVariable('LOCALAPPDATA', (Join-Path $testRoot 'local-app-data'), 'Process')
+      [Environment]::SetEnvironmentVariable('READ_WEB_PYTHON', $null, 'Process')
+      [Environment]::SetEnvironmentVariable('READ_WEB_PYTHON_PATH', $null, 'Process')
+      $selectedDefaultPython = Resolve-OptimizationSelectedPython -RuntimeConfigPath $runtimeConfigPath
+      Assert-True ([IO.Path]::GetFullPath($selectedDefaultPython) -eq [IO.Path]::GetFullPath($defaultPython)) 'PowerShell optimization resolver did not prefer the stable external venv'
+    } finally {
+      [Environment]::SetEnvironmentVariable('LOCALAPPDATA', $oldLocalAppData, 'Process')
+      [Environment]::SetEnvironmentVariable('READ_WEB_PYTHON', $oldPython, 'Process')
+      [Environment]::SetEnvironmentVariable('READ_WEB_PYTHON_PATH', $oldPythonPath, 'Process')
+    }
+
     $jsPath = Join-Path $testRoot 'vite.config.js'
     $mjsPath = Join-Path $testRoot 'vite.config.mjs'
     [IO.File]::WriteAllText($jsPath, 'export default {}')

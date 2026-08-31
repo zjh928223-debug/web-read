@@ -440,6 +440,17 @@ function Get-OptimizationCommandPath {
   return [string]$command.Source
 }
 
+function Get-OptimizationDefaultPythonPath {
+  # Keep this convention in sync with scripts/lib/python-runtime.mjs. The
+  # launcher only discovers an existing venv here; it never installs one.
+  $localAppData = [string]$env:LOCALAPPDATA
+  if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    $localAppData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+  }
+  if ([string]::IsNullOrWhiteSpace($localAppData)) { return '' }
+  return Join-Path $localAppData 'Read-Web\optimization-python\Scripts\python.exe'
+}
+
 function Resolve-OptimizationSelectedPython {
   param(
     [Parameter(Mandatory)][string]$RuntimeConfigPath,
@@ -458,10 +469,13 @@ function Resolve-OptimizationSelectedPython {
   } catch {
     throw "Optimization RuntimeConfig file is invalid: $RuntimeConfigPath"
   }
+  $defaultVenv = Get-OptimizationDefaultPythonPath
   $configured = if ($env:READ_WEB_PYTHON) {
     [string]$env:READ_WEB_PYTHON
   } elseif ($env:READ_WEB_PYTHON_PATH) {
     [string]$env:READ_WEB_PYTHON_PATH
+  } elseif ($defaultVenv -and (Test-Path -LiteralPath $defaultVenv -PathType Leaf)) {
+    $defaultVenv
   } elseif ($null -ne $payload.python -and $payload.python.executable) {
     [string]$payload.python.executable
   } else {
@@ -601,7 +615,13 @@ function Invoke-OptimizationPythonDependencyHealth {
     -Environment @{ READ_WEB_PYTHON = $PythonPath; READ_WEB_PYTHON_PATH = $PythonPath; READ_WEB_RUNTIME_CONFIG = $RuntimeConfigPath }
   $details = ($process.stderr + "`n" + $process.stdout).Trim()
   if ($process.exitCode -ne 0) {
-    throw "Optimization Python dependency health blocked the release before BuildAction: exit $($process.exitCode); $details"
+    $defaultVenv = Get-OptimizationDefaultPythonPath
+    $hint = if ($defaultVenv) {
+      "Use the repository-external optimization venv at $defaultVenv, or set READ_WEB_PYTHON / pass -BootstrapPython."
+    } else {
+      'Use a repository-external CPython 3.10 venv and set READ_WEB_PYTHON or pass -BootstrapPython.'
+    }
+    throw "Optimization Python dependency health blocked the release before BuildAction: exit $($process.exitCode); selected=$PythonPath; $details $hint"
   }
   try { $report = $process.stdout | ConvertFrom-Json } catch { throw "Optimization Python dependency health returned invalid JSON: $details" }
   if ([string]$report.status -ne 'passed') {
@@ -1382,8 +1402,10 @@ Export-ModuleMember -Function `
   Test-OptimizationReleaseIntegrity, `
   Test-OptimizationReleaseCompatibility, `
   Assert-OptimizationReleaseToolchain, `
+  Resolve-OptimizationSelectedPython, `
   Get-OptimizationToolchainIdentity, `
   Get-OptimizationReleaseReuseKey, `
   Get-OptimizationExternalToolDescriptor, `
   Get-OptimizationExternalToolProbeResult, `
-  Assert-OptimizationExternalToolCompatibility
+  Assert-OptimizationExternalToolCompatibility, `
+  Get-OptimizationDefaultPythonPath
