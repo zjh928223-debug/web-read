@@ -43,15 +43,32 @@ function Invoke-PowerShellJson {
   foreach ($name in $Environment.Keys) { $environmentSnapshot[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
   $previousErrorAction = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
+  $stdoutPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.stdout.log')
+  $stderrPath = Join-Path ([IO.Path]::GetTempPath()) ('.read-web-daily-production-' + [Guid]::NewGuid().ToString('N') + '.stderr.log')
+  $stdoutText = ''
+  $stderrText = ''
+  $exitCode = -1
   try {
     foreach ($name in $Environment.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $Environment[$name] }
-    $output = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+    $child = Start-Process `
+      -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
+      -ArgumentList $Arguments `
+      -WorkingDirectory $projectRoot `
+      -RedirectStandardOutput $stdoutPath `
+      -RedirectStandardError $stderrPath `
+      -WindowStyle Hidden `
+      -PassThru `
+      -Wait
+    $exitCode = $child.ExitCode
+    if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 }
+    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 }
   } finally {
     foreach ($name in $environmentSnapshot.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $environmentSnapshot[$name] }
     $ErrorActionPreference = $previousErrorAction
+    Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
   }
-  $text = ($output | ForEach-Object { [string]$_ }) -join "`n"
+  $text = @($stdoutText, $stderrText) -join "`n"
   $jsonStart = $text.IndexOf('{')
   $jsonEnd = $text.LastIndexOf('}')
   $json = $null
