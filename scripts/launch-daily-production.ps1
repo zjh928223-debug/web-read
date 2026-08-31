@@ -1336,9 +1336,12 @@ function Invoke-DailyStart {
   foreach ($endpoint in @($preflight.frontend, $preflight.backend)) {
     if ($endpoint.occupied) { throw "Daily production Start blocked by $($endpoint.classification) on $($endpoint.name) port $($endpoint.port); no process was stopped." }
   }
+  $oldTokenSnapshot = Read-DailyText -Path $Context.tokenPath
+  $tokenNeedsWrite = ([string]$oldTokenSnapshot).Trim() -ne $token
   $instanceId = [Guid]::NewGuid().ToString('N')
-  $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId
   try {
+    if ($tokenNeedsWrite) { Write-DailyText -Path $Context.tokenPath -Text "$token`n" }
+    $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $nextTarget = New-DailyTarget -Context $Context -Release $release -Pair $pairIdentity -InstanceId $instanceId -Toolchain $toolchain
     Write-DailyJson -Path $Context.activeTargetPath -Value $nextTarget
@@ -1346,6 +1349,7 @@ function Invoke-DailyStart {
     return [ordered]@{ status = 'started'; action = 'Start'; targetPath = $Context.activeTargetPath; ownerAuthority = $nextTarget.ownerAuthority; sideEffects = @('started owned Host/capability pair', 'updated atomic target owner receipt') }
   } catch {
     try { Stop-DailyOwnedInstance -Context $Context -InstanceId $instanceId } catch {}
+    try { Restore-OptimizationRuntimeSnapshot -Path $Context.tokenPath -Snapshot $oldTokenSnapshot } catch {}
     throw
   }
 }
