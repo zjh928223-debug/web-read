@@ -50,9 +50,10 @@ function Invoke-PowerShellJson {
   $exitCode = -1
   try {
     foreach ($name in $Environment.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $Environment[$name] }
+    $argumentString = ($Arguments | ForEach-Object { '"' + ([string]$_ -replace '"', '\\"') + '"' }) -join ' '
     $child = Start-Process `
       -FilePath (Get-Command powershell.exe -ErrorAction Stop).Source `
-      -ArgumentList $Arguments `
+      -ArgumentList $argumentString `
       -WorkingDirectory $projectRoot `
       -RedirectStandardOutput $stdoutPath `
       -RedirectStandardError $stderrPath `
