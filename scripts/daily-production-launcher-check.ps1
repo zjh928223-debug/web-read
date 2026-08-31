@@ -70,11 +70,16 @@ function Invoke-PowerShellJson {
     Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
   }
   $text = @($stdoutText, $stderrText) -join "`n"
-  $jsonStart = $text.IndexOf('{')
-  $jsonEnd = $text.LastIndexOf('}')
   $json = $null
-  if ($jsonStart -ge 0 -and $jsonEnd -gt $jsonStart) {
-    try { $json = $text.Substring($jsonStart, $jsonEnd - $jsonStart + 1) | ConvertFrom-Json } catch {}
+  foreach ($candidateText in @($stdoutText, $stderrText, $text)) {
+    $jsonStart = $candidateText.IndexOf('{')
+    $jsonEnd = $candidateText.LastIndexOf('}')
+    if ($jsonStart -ge 0 -and $jsonEnd -gt $jsonStart) {
+      try {
+        $json = $candidateText.Substring($jsonStart, $jsonEnd - $jsonStart + 1) | ConvertFrom-Json
+        if ($null -ne $json) { break }
+      } catch {}
+    }
   }
   return [pscustomobject]@{ exitCode = $exitCode; text = $text; json = $json }
 }
