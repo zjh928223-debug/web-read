@@ -411,6 +411,7 @@ async function buildArtifact(importInput, options) {
   })
   const verification = await verifyBackupArtifact(artifact, {
     requiredDomains: WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS,
+    ...(isPlainObject(options.backupLimits) ? options.backupLimits : {}),
   })
   if (!verification.valid) throw migrationError('migration-backup-invalid')
   return {
@@ -533,7 +534,7 @@ async function createFinalManifest(domain, artifact, importIdentity, target, sou
   }
 }
 
-async function validateFinalBackup(value, domain) {
+async function validateFinalBackup(value, domain, backupLimits = {}) {
   if (!isPlainObject(value)
     || value.format !== WINDOWS_DURABLE_STATE_MIGRATION_FORMAT
     || value.schemaVersion !== WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION
@@ -552,6 +553,7 @@ async function validateFinalBackup(value, domain) {
   if (await digestCanonical(core) !== value.manifestChecksum) throw migrationError('migration-backup-invalid')
   const verification = await verifyBackupArtifact(value.artifact, {
     requiredDomains: WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS,
+    ...(isPlainObject(backupLimits) ? backupLimits : {}),
   })
   if (!verification.valid) throw migrationError('migration-backup-invalid')
   if (!Array.isArray(value.domains) || value.domains.length !== WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS.length
@@ -563,9 +565,9 @@ async function validateFinalBackup(value, domain) {
   return value
 }
 
-async function resolveRestoreArtifact(value, domain) {
+async function resolveRestoreArtifact(value, domain, backupLimits = {}) {
   if (isPlainObject(value) && value.format === WINDOWS_DURABLE_STATE_MIGRATION_FORMAT) {
-    return (await validateFinalBackup(value, domain)).artifact
+    return (await validateFinalBackup(value, domain, backupLimits)).artifact
   }
   return value?.artifact ? value.artifact : value
 }
@@ -796,7 +798,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     const entry = state.domains[domain]
     if (entry.finalBackup) {
       try {
-        const finalBackup = await validateFinalBackup(entry.finalBackup, domain)
+        const finalBackup = await validateFinalBackup(entry.finalBackup, domain, options.backupLimits)
         return { ok: true, domain, stage: 'final-backup', status: 'final-backup', finalBackup }
       } catch (error) {
         return safeFailure(domain, 'final-backup', error?.code || 'migration-backup-invalid')
@@ -848,7 +850,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     const entry = state.domains[domain]
     if (!entry.finalBackup || entry.frozen !== true) return safeFailure(domain, 'import', 'migration-final-backup-required')
     let finalBackup
-    try { finalBackup = await validateFinalBackup(entry.finalBackup, domain) } catch (error) {
+    try { finalBackup = await validateFinalBackup(entry.finalBackup, domain, options.backupLimits) } catch (error) {
       return safeFailure(domain, 'import', error?.code || 'migration-backup-invalid')
     }
     const idempotencyKey = importOptions.idempotencyKey === undefined
@@ -982,7 +984,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     const entry = state.domains[domain]
     if (entry.import?.status !== 'committed' || !entry.finalBackup) return safeFailure(domain, 'verify', 'migration-import-required')
     try {
-      const finalBackup = await validateFinalBackup(entry.finalBackup, domain)
+      const finalBackup = await validateFinalBackup(entry.finalBackup, domain, options.backupLimits)
       const current = await collectHost(domain)
       if (!domainEquivalent(current, finalBackup.artifact.domains[domain], domain)) {
         return safeFailure(domain, 'verify', 'migration-verify-failed', { currentRevision: current.revision })
@@ -1120,7 +1122,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     if (entry.import?.status !== 'committed' || !entry.preImport) return safeFailure(domain, 'rollback', 'migration-rollback-target-missing')
     let preImport
     try {
-      const finalBackup = await validateFinalBackup(entry.finalBackup, domain)
+      const finalBackup = await validateFinalBackup(entry.finalBackup, domain, options.backupLimits)
       preImport = normalizedHostSnapshot(entry.preImport, domain)
       const rollbackTarget = finalBackup.rollbackTarget
       if (!isPlainObject(rollbackTarget)
@@ -1209,9 +1211,10 @@ export function createWindowsDurableStateMigration(options = {}) {
   async function dryRunRestore(domainInput, backupInput, restoreOptions = {}) {
     const domain = domainKey(domainInput)
     try {
-      const backup = await resolveRestoreArtifact(backupInput, domain)
+      const backup = await resolveRestoreArtifact(backupInput, domain, options.backupLimits)
       const verification = await verifyBackupArtifact(backup, {
         requiredDomains: WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS,
+        ...(isPlainObject(options.backupLimits) ? options.backupLimits : {}),
       })
       if (!verification.valid) return safeFailure(domain, 'restore-dry-run', 'migration-backup-invalid')
       const sourceDomain = backup.domains[domain]
@@ -1242,7 +1245,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     const domain = domainKey(domainInput)
     let backup
     try {
-      backup = await resolveRestoreArtifact(backupInput, domain)
+      backup = await resolveRestoreArtifact(backupInput, domain, options.backupLimits)
     } catch (error) {
       return safeFailure(domain, 'restore', error?.code || 'migration-backup-invalid')
     }
@@ -1252,6 +1255,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     try {
       const verification = await verifyBackupArtifact(backup, {
         requiredDomains: WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS,
+        ...(isPlainObject(options.backupLimits) ? options.backupLimits : {}),
       })
       if (!verification.valid) return safeFailure(domain, 'restore', 'migration-backup-invalid')
     } catch (error) {

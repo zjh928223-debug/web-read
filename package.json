@@ -67,6 +67,7 @@
     "verify:windows-owner-handoff": "node scripts/windows-local-owner-handoff-check.mjs",
     "verify:windows-durable-state-migration": "node scripts/windows-durable-state-migration-check.mjs",
     "verify:windows-owner-production-entry": "node scripts/windows-owner-production-entry-check.mjs",
+    "verify:windows-owner-production-backup-limit": "node scripts/windows-owner-production-backup-limit-check.mjs",
     "verify:windows-owner-reader-session": "node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_reader_session_owner",
     "verify:windows-owner-reader-session-c1": "node scripts/windows-owner-reader-session-c1-check.mjs",
     "verify:windows-owner-c2a": "node scripts/windows-owner-c2a-cutover-check.mjs && node scripts/youtube-workflow-client-check.cjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_c2a",

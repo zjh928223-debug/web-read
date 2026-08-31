@@ -9,6 +9,8 @@ import { chromium } from 'playwright'
 import {
   executeWindowsOwnerProductionEntry,
   parseWindowsOwnerProductionEntryArguments,
+  validateWindowsOwnerProductionEntryOptions,
+  WINDOWS_OWNER_PRODUCTION_DEFAULT_MAX_BACKUP_BYTES,
   waitForWorkflowWriterQuiescence,
 } from './lib/windows-owner-production-entry.mjs'
 import {
@@ -130,7 +132,21 @@ async function testEntryContract(layout) {
   assert.equal(plan.result.operation, 'plan')
   assert.equal(plan.result.noWrites, true)
   assert.equal(plan.write, false)
+  assert.equal(plan.backupLimits.maxBackupBytes, WINDOWS_OWNER_PRODUCTION_DEFAULT_MAX_BACKUP_BYTES)
   assert.deepEqual(await readdir(layout.runRoot), before)
+
+  const explicit = await validateWindowsOwnerProductionEntryOptions(
+    parseWindowsOwnerProductionEntryArguments(entryArgs(layout, 'plan', [
+      '--max-backup-bytes', String(WINDOWS_OWNER_PRODUCTION_DEFAULT_MAX_BACKUP_BYTES),
+    ])),
+  )
+  assert.equal(explicit.maxBackupBytes, 256 * 1024 * 1024)
+  await assert.rejects(
+    validateWindowsOwnerProductionEntryOptions(
+      parseWindowsOwnerProductionEntryArguments(entryArgs(layout, 'plan', ['--max-backup-bytes', '0'])),
+    ),
+    (error) => error?.code === 'OWNER_PRODUCTION_ENTRY_CONFIGURATION',
+  )
 
   const cliPlan = await execFileAsync(process.execPath, [
     'scripts/windows-owner-production-entry.mjs',

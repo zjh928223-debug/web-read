@@ -21,6 +21,7 @@ import {
 } from './windows-owner-cutover.mjs'
 
 export const WINDOWS_OWNER_PRODUCTION_ENTRY_SCHEMA_VERSION = 1
+export const WINDOWS_OWNER_PRODUCTION_DEFAULT_MAX_BACKUP_BYTES = 256 * 1024 * 1024
 export const WINDOWS_OWNER_PRODUCTION_ENTRY_COMMANDS = Object.freeze([
   'plan',
   'inventory',
@@ -58,6 +59,7 @@ const KNOWN_ENTRY_ARGUMENTS = new Set([
   'migration-state-path',
   'browser-freeze-evidence',
   'browser-evidence-timeout-ms',
+  'max-backup-bytes',
   'host-scope-file',
   'python-command',
   'rollback-domain',
@@ -101,6 +103,14 @@ function requireString(value, field) {
     throw entryError('OWNER_PRODUCTION_ENTRY_CONFIGURATION', `${field} is required`, { field })
   }
   return value.trim()
+}
+
+function positiveSafeInteger(value, field) {
+  const candidate = Number(value)
+  if (!Number.isSafeInteger(candidate) || candidate < 1) {
+    throw entryError('OWNER_PRODUCTION_ENTRY_CONFIGURATION', `${field} must be a positive safe integer`, { field })
+  }
+  return candidate
 }
 
 function requireAbsolutePath(value, field) {
@@ -337,6 +347,9 @@ export async function validateWindowsOwnerProductionEntryOptions(parsed) {
     ? await existingFile(values['host-scope-file'], 'host-scope-file')
     : null
   const pythonCommand = values['python-command'] ? requireString(values['python-command'], 'python-command') : null
+  const maxBackupBytes = values['max-backup-bytes'] === undefined
+    ? WINDOWS_OWNER_PRODUCTION_DEFAULT_MAX_BACKUP_BYTES
+    : positiveSafeInteger(values['max-backup-bytes'], 'max-backup-bytes')
   const evidenceWaitMs = values['browser-evidence-timeout-ms'] === undefined
     ? 30_000
     : Number(values['browser-evidence-timeout-ms'])
@@ -372,6 +385,7 @@ export async function validateWindowsOwnerProductionEntryOptions(parsed) {
     browserEvidenceTimeoutMs: evidenceWaitMs,
     hostScopeFile,
     pythonCommand,
+    maxBackupBytes,
     rollbackDomain,
   })
 }
@@ -440,16 +454,18 @@ async function sourceArtifact(stage, config) {
     ...stage.source,
     profileId: config.profileId,
     pythonCommand: config.pythonCommand || undefined,
+    maxBackupBytes: config.maxBackupBytes,
     profileLeaseMode: 'standby',
   })
   const artifact = await composition.service.createBackup({
+    limits: { maxBackupBytes: config.maxBackupBytes },
     adapters: {
       ...composition.adapters,
       'marks-activity': snapshotAdapter('marks-activity', stage.workflowDomains['marks-activity']),
       workflow: snapshotAdapter('workflow', stage.workflowDomains.workflow),
     },
   })
-  const verification = await composition.service.verifyBackup(artifact)
+  const verification = await composition.service.verifyBackup(artifact, { maxBackupBytes: config.maxBackupBytes })
   if (!verification.valid) throw entryError('OWNER_PRODUCTION_ENTRY_INVENTORY_INVALID', 'source artifact verification failed')
   return artifact
 }
@@ -563,6 +579,7 @@ async function refreshProductionSourceAfterFreeze(config, manifest, domain, refr
     ...stage.source,
     profileId: config.profileId,
     pythonCommand: config.pythonCommand || undefined,
+    maxBackupBytes: config.maxBackupBytes,
     profileLeaseMode: 'standby',
   })
   return {
@@ -608,6 +625,7 @@ function createRunManifest(config, stage) {
     browserOrigin: config.browserOrigin,
     sourceBinding: sourceBinding(config),
     targetBinding: targetBinding(config),
+    maxBackupBytes: config.maxBackupBytes,
     sourceFingerprint: clone(stage.sourceFingerprint),
     freezeChallenge: runId,
     idempotencyPrefix: `owner-${runId}`,
@@ -632,6 +650,7 @@ async function loadRun(config) {
     || manifest.browserOrigin !== config.browserOrigin
     || manifest.sourceBinding !== sourceBinding(config)
     || manifest.targetBinding !== targetBinding(config)
+    || manifest.maxBackupBytes !== config.maxBackupBytes
     || !SAFE_CHECKSUM.test(String(manifest.sourceFingerprint?.browserPhysical || ''))
     || !SAFE_CHECKSUM.test(String(manifest.sourceFingerprint?.workflow || ''))
     || !manifest.source || typeof manifest.source !== 'object'
@@ -874,6 +893,9 @@ function commonReport(config, extra = {}) {
       mediaPolicy: 'identity-reference-metadata-only',
       indexedDbSchema: 'SeekPlayerDB v1/files/id frozen',
     },
+    backupLimits: {
+      maxBackupBytes: config.maxBackupBytes,
+    },
     ...extra,
   }
 }
@@ -926,6 +948,7 @@ async function executeDryRun(config) {
       hostAccessToken: token,
       hostInstanceId: config.hostInstanceId,
       hostScopeByDomain,
+      maxBackupBytes: config.maxBackupBytes,
       statePath: config.migrationStatePath,
       pythonCommand: config.pythonCommand || undefined,
     })
@@ -975,6 +998,7 @@ async function executeMutation(config, operation) {
     hostAccessToken: token,
     hostInstanceId: config.hostInstanceId,
     hostScopeByDomain,
+    maxBackupBytes: config.maxBackupBytes,
     statePath: config.migrationStatePath,
     pythonCommand: config.pythonCommand || undefined,
     idempotencyKeyByDomain: idempotencyKeys(run.manifest),

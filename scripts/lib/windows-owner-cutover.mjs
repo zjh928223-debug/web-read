@@ -1295,12 +1295,19 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     error.code = 'OWNER_CUTOVER_PRODUCTION_CONFIGURATION'
     throw error
   }
+  const configuredMaxBackupBytes = options.maxBackupBytes
+    ?? options.source.maxBackupBytes
+    ?? options.target.maxBackupBytes
+  const backupLimits = configuredMaxBackupBytes === undefined
+    ? {}
+    : { maxBackupBytes: configuredMaxBackupBytes }
 
   const preflightOnly = options.operation === 'dry-run' || options.readOnly === true
   const sourceComposition = await createReadWebProductionBackupComposition({
     ...options.source,
     profileId,
     pythonCommand: options.pythonCommand || options.source.pythonCommand,
+    ...backupLimits,
     ...(preflightOnly ? { profileLeaseMode: 'standby' } : {}),
   })
   const sourceReference = {
@@ -1311,6 +1318,7 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     ...options.target,
     profileId,
     pythonCommand: options.pythonCommand || options.target.pythonCommand,
+    ...backupLimits,
     ...(preflightOnly ? { profileLeaseMode: 'standby' } : {}),
   })
   const targetLayout = productionLayout(targetComposition)
@@ -1405,6 +1413,7 @@ export async function runWindowsOwnerProductionCutover(options = {}) {
     stateStore,
     cutoverControls: controls,
     capacityBytes: options.capacityBytes,
+    backupLimits,
   })
   if (options.operation === 'dry-run' || options.readOnly === true) {
     const results = []
