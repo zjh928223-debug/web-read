@@ -49,6 +49,14 @@ _ABSOLUTE_MACHINE_PATH = re.compile(
     r"^(?:[a-zA-Z]:[\\/]|\\\\|/(?:Users|home|private|var|tmp)/)",
     re.IGNORECASE,
 )
+_EMBEDDED_ABSOLUTE_MACHINE_PATH = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"[A-Za-z]:[\\/][^\s\"'<>|]+|"
+    r"\\\\[^\\\s]+\\[^\s\"'<>|]+|"
+    r"/(?:Users|home|private|var|tmp|opt|mnt|Volumes|root)(?:/[^\s\"'<>]+)+"
+    r")",
+    re.IGNORECASE,
+)
 _MEDIA_SUFFIXES = {
     ".mp3", ".m4a", ".wav", ".ogg", ".flac", ".mp4", ".webm", ".mkv", ".mov", ".avi",
 }
@@ -130,6 +138,10 @@ def _looks_like_absolute_machine_path(value: str) -> bool:
         return False
 
 
+def _redact_embedded_machine_paths(value: str) -> str:
+    return _EMBEDDED_ABSOLUTE_MACHINE_PATH.sub("[REDACTED_PATH]", value)
+
+
 def _reject_binary(value, path: str = "$") -> None:
     if isinstance(value, (bytes, bytearray, memoryview)):
         raise WorkflowBackupError(
@@ -156,7 +168,7 @@ def _sanitize(value, *, output_root: Path | None = None, key: str = ""):
         if _looks_like_absolute_machine_path(value):
             relative = _safe_relative(value, output_root)
             return relative if relative is not None else "[REDACTED_PATH]"
-        return value
+        return _redact_embedded_machine_paths(value)
     if isinstance(value, list):
         return [_sanitize(item, output_root=output_root, key=key) for item in value]
     if isinstance(value, dict):

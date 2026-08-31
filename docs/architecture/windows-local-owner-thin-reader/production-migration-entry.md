@@ -53,9 +53,12 @@ await window.__windowsOwnerDomainCutover.collectFreezeEvidence({
 ```
 
 Save the returned object, or an `{ entries: [...] }` collection of objects, to
-the explicit `--browser-freeze-evidence` path inside the run root. The CLI also
-re-fingerprints the live browser/workflow source and checks Host health before
-allowing the final backup. A page without the current
+the explicit `--browser-freeze-evidence` path inside the run root. The CLI
+checks Host health, waits for an already-running workflow worker to drain, and
+then rebuilds the final source identity from a fresh post-freeze capture. A
+legitimate write between the initial inventory and the freeze is included in
+that final capture instead of making Resume permanently reuse a stale source
+identity. A page without the current
 `windows-owner-domain-cutover` guard is rejected; the old daily 5174 page is
 not silently treated as frozen. Do not hand-author evidence JSON.
 

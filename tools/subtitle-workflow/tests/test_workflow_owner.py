@@ -10,8 +10,10 @@ from youtube_workflow.history import WorkflowHistoryStore
 from youtube_workflow.service import JobManager
 from youtube_workflow.workflow_owner import WorkflowOwner
 from youtube_workflow.workflow_writer_freeze import (
+    WORKFLOW_WRITER_ACTIVITY_FILE,
     WorkflowWriterFreezeError,
     make_workflow_writer_freeze_marker,
+    workflow_writer_activity,
 )
 from youtube_workflow.windows_owner_receipts import OwnerCommitReceiptStore
 
@@ -453,6 +455,27 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertEqual(current["payload"]["job"]["title"], "old")
         receipt = owner.receipt(idempotency_key="write-fails", **self.ids("write-receipt"))
         self.assertEqual(receipt["outcome"], "manual-recovery")
+
+    def test_freeze_drains_registered_worker_and_blocks_new_worker(self):
+        marker = make_workflow_writer_freeze_marker(
+            profile_id="profile-1",
+            challenge="drain-challenge",
+            source_fingerprint={"browserPhysical": "a" * 64, "workflow": "b" * 64},
+            frozen_at="2026-08-30T00:00:00+00:00",
+        )
+        freeze_path = self.state_dir / ".read-web-workflow-writer-freeze.json"
+        activity_path = self.state_dir / WORKFLOW_WRITER_ACTIVITY_FILE
+
+        with workflow_writer_activity(self.state_dir, "already-running"):
+            self.assertTrue(activity_path.exists())
+            freeze_path.write_text(json.dumps(marker), encoding="utf-8")
+            WorkflowHistoryStore(self.state_dir, self.output_dir).save_jobs([self.job(job_id="already-running")])
+        self.assertFalse(activity_path.exists())
+
+        with self.assertRaises(WorkflowWriterFreezeError):
+            with workflow_writer_activity(self.state_dir, "must-not-start"):
+                self.fail("a worker registered after freeze must not run")
+        self.assertFalse(activity_path.exists())
 
     def test_receipt_ahead_of_recovered_canonical_is_manual_recovery(self):
         owner = self.make_owner()

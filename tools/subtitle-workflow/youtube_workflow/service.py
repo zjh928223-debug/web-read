@@ -54,7 +54,7 @@ from .credentials import CredentialStoreError, default_credential_store
 from .history import WorkflowHistoryStore, WorkflowStateRecoveryError
 from .process_supervisor import ProcessSupervisor
 from .reader_marks_activity import ReaderPersistenceError
-from .workflow_writer_freeze import WorkflowWriterFreezeError
+from .workflow_writer_freeze import WorkflowWriterFreezeError, workflow_writer_activity
 from .windows_owner_request_policy import WindowsOwnerRequestPolicy, require_loopback_bind
 
 
@@ -1992,7 +1992,16 @@ class JobManager:
             if record.cancel_event.is_set():
                 self._mark_canceled(record, "任务已取消。")
             else:
-                self._run_job(record)
+                try:
+                    with workflow_writer_activity(self.config.state_dir, record.job_id):
+                        self._run_job(record)
+                except WorkflowWriterFreezeError:
+                    with self.lock:
+                        self.pending.insert(0, record)
+                        self._dispatch_paused = True
+                        self.current_job_id = None
+                        self.worker_thread = None
+                    return
             with self.lock:
                 if self.current_job_id == record.job_id:
                     self.current_job_id = None

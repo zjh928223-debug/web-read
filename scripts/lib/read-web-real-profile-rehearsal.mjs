@@ -23,6 +23,7 @@ const EXCLUDED_BROWSER_ROWS = Object.freeze({
 const REAL_PROFILE_MAX_RECORD_BYTES = 16 * 1024 * 1024
 const REAL_PROFILE_MAX_BACKUP_BYTES = 128 * 1024 * 1024
 export const WORKFLOW_WRITER_FREEZE_FILE = '.read-web-workflow-writer-freeze.json'
+export const WORKFLOW_WRITER_ACTIVITY_FILE = '.read-web-workflow-writer-active.json'
 const WORKFLOW_WRITER_FREEZE_SCHEMA_VERSION = 1
 const WORKFLOW_WRITER_FREEZE_KIND = 'read-web.workflow-writer-freeze'
 
@@ -456,7 +457,9 @@ async function digestWorkflowTree(directory, { includeContent }) {
     const entries = await readdir(current, { withFileTypes: true })
     entries.sort((left, right) => left.name.localeCompare(right.name, 'en'))
     for (const entry of entries) {
-      if (entry.name === 'LOCK' || entry.name.endsWith('.lock') || entry.name === WORKFLOW_WRITER_FREEZE_FILE) continue
+      if (entry.name === 'LOCK' || entry.name.endsWith('.lock')
+        || entry.name === WORKFLOW_WRITER_FREEZE_FILE
+        || entry.name === WORKFLOW_WRITER_ACTIVITY_FILE) continue
       const childRelative = relative ? path.join(relative, entry.name) : entry.name
       const absolute = path.join(current, entry.name)
       if (entry.isDirectory()) {

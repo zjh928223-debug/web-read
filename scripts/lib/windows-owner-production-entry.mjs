@@ -9,9 +9,8 @@ import {
 import {
   collectReadOnlyWorkflowDomains,
   clearWorkflowWriterFreeze,
-  fingerprintChromiumOriginSource,
-  fingerprintWorkflowSource,
   materializeRealProfileSource,
+  WORKFLOW_WRITER_ACTIVITY_FILE,
   writeWorkflowWriterFreeze,
 } from './read-web-real-profile-rehearsal.mjs'
 import {
@@ -505,6 +504,49 @@ function createWorkflowLegacyWriterControl(config, manifest) {
   }
 }
 
+export async function waitForWorkflowWriterQuiescence(config) {
+  const activityPath = path.join(config.workflowStateDir, WORKFLOW_WRITER_ACTIVITY_FILE)
+  const deadline = Date.now() + config.browserEvidenceTimeoutMs
+  while (await pathExists(activityPath)) {
+    let activity = null
+    try {
+      activity = JSON.parse(await readFile(activityPath, 'utf8'))
+      if (!activity || typeof activity !== 'object' || Array.isArray(activity)) throw new Error('not-object')
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue
+      throw entryError('OWNER_PRODUCTION_ENTRY_WORKFLOW_ACTIVITY_INVALID', 'workflow writer activity marker is invalid')
+    }
+    const activityPid = Number(activity?.pid)
+    if (Number.isInteger(activityPid) && activityPid > 0) {
+      let processAlive = true
+      try { process.kill(activityPid, 0) } catch (error) {
+        if (error?.code === 'ESRCH') processAlive = false
+      }
+      if (!processAlive) {
+        let currentActivity = null
+        try { currentActivity = JSON.parse(await readFile(activityPath, 'utf8')) } catch (error) {
+          if (error?.code === 'ENOENT') continue
+          throw error
+        }
+        if (Number(currentActivity?.pid) === activityPid
+          && currentActivity?.jobId === activity?.jobId) {
+          await rm(activityPath, { force: true })
+        }
+        continue
+      }
+    }
+    if (Date.now() >= deadline) {
+      throw entryError(
+        'OWNER_PRODUCTION_ENTRY_WORKFLOW_ACTIVE',
+        'workflow writer freeze is waiting for an already-running worker to finish',
+        { jobId: typeof activity?.jobId === 'string' ? activity.jobId : null },
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(100, Math.max(1, deadline - Date.now()))))
+  }
+  return { ok: true, status: 'quiescent', activityPath }
+}
+
 async function refreshProductionSourceAfterFreeze(config, manifest, domain, refreshedStages) {
   if (domain === 'workflow') {
     await writeWorkflowWriterFreeze({
@@ -513,20 +555,10 @@ async function refreshProductionSourceAfterFreeze(config, manifest, domain, refr
       challenge: manifest.freezeChallenge,
       sourceFingerprint: manifest.sourceFingerprint,
     })
+    await waitForWorkflowWriterQuiescence(config)
   }
   const stage = await materializeStage(config)
   refreshedStages.push(stage)
-  const logicalBrowserChanged = manifest.sourceFingerprint.browserLogical
-    && stage.sourceFingerprint.browserLogical !== manifest.sourceFingerprint.browserLogical
-  if (stage.sourceFingerprint.browserPhysical !== manifest.sourceFingerprint.browserPhysical
-    || logicalBrowserChanged
-    || stage.sourceFingerprint.workflow !== manifest.sourceFingerprint.workflow) {
-    throw entryError(
-      'OWNER_PRODUCTION_ENTRY_SOURCE_CHANGED',
-      'live source changed after the writer freeze and before the final backup capture',
-      { domain },
-    )
-  }
   const composition = await createReadWebProductionBackupComposition({
     ...stage.source,
     profileId: config.profileId,
@@ -545,6 +577,7 @@ async function refreshProductionSourceAfterFreeze(config, manifest, domain, refr
         browserLogical: stage.sourceFingerprint.browserLogical,
         workflow: stage.sourceFingerprint.workflow,
       },
+      initialFingerprints: clone(manifest.sourceFingerprint),
     },
   }
 }
@@ -755,19 +788,6 @@ function assertHostFreeze(health, config, domain) {
 function createBrowserFreezeVerifier(config, manifest, token) {
   return async ({ domain }) => {
     const evidence = await waitForBrowserEvidence(config, manifest, domain)
-    const browserPhysical = await fingerprintChromiumOriginSource({
-      browserProfileDir: config.browserProfileDir,
-      browserOrigin: config.browserOrigin,
-    })
-    const workflow = await fingerprintWorkflowSource({
-      workflowStateDir: config.workflowStateDir,
-      workflowOutputDir: config.workflowOutputDir,
-      additionalOutputRoots: config.additionalOutputRoots,
-    })
-    if (browserPhysical !== manifest.sourceFingerprint.browserPhysical
-      || workflow !== manifest.sourceFingerprint.workflow) {
-      throw entryError('OWNER_PRODUCTION_ENTRY_SOURCE_CHANGED', 'live source changed after the staged snapshot')
-    }
     const health = assertHostFreeze(await readHostHealth(config, token), config, domain)
     return {
       ok: true,

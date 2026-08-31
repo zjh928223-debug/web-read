@@ -458,20 +458,22 @@ const postFreezeBridge = {
     return { status: 'ready', records: clone(liveFinalRecords) }
   },
   async prepareImport() {
+    const importIdentity = `live-source-${liveFinalRecords[0].payload.value}`
     return {
       status: 'ready',
-      importIdentity: 'stable-live-source-identity',
+      importIdentity,
       importInput: {
         schemaVersion: 1,
         mode: 'legacy-import-input',
         profileId: 'optimization',
-        importIdentity: 'stable-live-source-identity',
+        importIdentity,
         records: clone(liveFinalRecords),
       },
     }
   },
 }
-const postFreezeFixture = createMigrationFixture({ legacyBridge: postFreezeBridge })
+const postFreezeStore = createMemoryMigrationStateStore()
+const postFreezeFixture = createMigrationFixture({ legacyBridge: postFreezeBridge, stateStore: postFreezeStore })
 const postFreezeResult = await postFreezeFixture.service.migrateDomain('reader-session', {
   expectedRevision: 0,
   idempotencyKey: 'migration-post-freeze-reread',
@@ -505,6 +507,16 @@ assert.equal(
 assert.equal(
   postFreezeResult.steps.finalBackup.finalBackup.sourceCapture.kind,
   'post-freeze-live-source-capture',
+)
+assert.equal(
+  postFreezeResult.steps.finalBackup.finalBackup.sourceImportIdentity,
+  'live-source-after-freeze-reread',
+  'post-freeze capture must rebind the final source identity instead of rejecting a pre-freeze write',
+)
+assert.equal(
+  (await postFreezeStore.read()).domains['reader-session'].preflight.sourceImportIdentity,
+  'live-source-after-freeze-reread',
+  'persisted preflight evidence must follow the post-freeze source binding',
 )
 
 const fallbackHostClient = {
@@ -635,6 +647,30 @@ const mediaBytesDryRun = await mediaBytesFixture.dryRun('reader-session')
 assert.equal(mediaBytesDryRun.ok, false)
 assert.equal(mediaBytesDryRun.reasonCode, 'migration-media-payload-rejected')
 assert.equal(mediaBytesHost['reader-session'].importCalls, 0, 'media bytes are rejected before host writes')
+
+const embeddedPathRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-embedded-path',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { message: 'WhisperX failed at C:\\Users\\private\\clip.wav' },
+}]
+const embeddedPathFixture = createMigrationFixture({ legacyBridge: createImportBridge(embeddedPathRecords, 'embedded-path') })
+const embeddedPathDryRun = await embeddedPathFixture.service.dryRun('reader-session')
+assert.equal(embeddedPathDryRun.ok, false)
+assert.equal(embeddedPathDryRun.reasonCode, 'migration-machine-path-rejected')
+
+const camelCredentialRecords = [{
+  domain: 'reader-session',
+  recordKey: 'reader-session-credential',
+  schemaVersion: 1,
+  revision: 1,
+  payload: { accessToken: 'must-never-enter-artifact' },
+}]
+const camelCredentialFixture = createMigrationFixture({ legacyBridge: createImportBridge(camelCredentialRecords, 'camel-credential') })
+const camelCredentialDryRun = await camelCredentialFixture.service.dryRun('reader-session')
+assert.equal(camelCredentialDryRun.ok, false)
+assert.equal(camelCredentialDryRun.reasonCode, 'migration-sensitive-value-rejected')
 
 const stoppedHost = createHostAdapters()
 const stoppedFixture = createMigrationFixture({
@@ -783,6 +819,27 @@ assert.equal(rollback.ok, true, JSON.stringify(rollback))
 assert.equal(rollback.status, 'rolled-back')
 assert.equal(rollbackHost['reader-session'].snapshot.records.length, 0)
 assert.equal(rollbackHost['reader-session'].unfreezeCalls, 1)
+
+const interruptedRollbackHost = createHostAdapters()
+const interruptedRollbackStore = createMemoryMigrationStateStore()
+const interruptedRollbackFixture = createMigrationFixture({
+  hostAdapters: interruptedRollbackHost,
+  stateStore: interruptedRollbackStore,
+})
+await interruptedRollbackFixture.service.dryRun('reader-session')
+await interruptedRollbackFixture.service.freeze('reader-session')
+await interruptedRollbackFixture.service.createFinalBackup('reader-session')
+await interruptedRollbackFixture.service.importDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-interrupted-rollback-import',
+})
+const interruptedRollbackState = await interruptedRollbackStore.read()
+interruptedRollbackHost['reader-session'].snapshot = clone(interruptedRollbackState.domains['reader-session'].preImport)
+const interruptedRollbackRetry = await interruptedRollbackFixture.service.rollback('reader-session')
+assert.equal(interruptedRollbackRetry.ok, true, JSON.stringify(interruptedRollbackRetry))
+assert.equal(interruptedRollbackRetry.status, 'rolled-back')
+assert.equal(interruptedRollbackHost['reader-session'].importCalls, 1, 'retry must not restore an already-restored Host twice')
+assert.equal(interruptedRollbackHost['reader-session'].unfreezeCalls, 1, 'retry must finish unfreeze after an interrupted rollback')
 
 const tamperedRollbackHost = createHostAdapters()
 const tamperedRollbackStore = createMemoryMigrationStateStore()

@@ -8,12 +8,18 @@ direct ``WorkflowHistoryStore`` and worker writes outside the freeze protocol.
 
 import hashlib
 import json
+import os
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 WORKFLOW_WRITER_FREEZE_FILE = ".read-web-workflow-writer-freeze.json"
+WORKFLOW_WRITER_ACTIVITY_FILE = ".read-web-workflow-writer-active.json"
 WORKFLOW_WRITER_FREEZE_SCHEMA_VERSION = 1
 WORKFLOW_WRITER_FREEZE_KIND = "read-web.workflow-writer-freeze"
+_WRITER_ACTIVITY = threading.local()
 
 
 class WorkflowWriterFreezeError(RuntimeError):
@@ -62,6 +68,55 @@ def make_workflow_writer_freeze_marker(
 
 def _marker_path(state_dir: Path | str) -> Path:
     return Path(state_dir) / WORKFLOW_WRITER_FREEZE_FILE
+
+
+def _activity_path(state_dir: Path | str) -> Path:
+    return Path(state_dir) / WORKFLOW_WRITER_ACTIVITY_FILE
+
+
+def _same_state_dir(left: Path | str, right: Path | str) -> bool:
+    try:
+        return Path(left).resolve(strict=False) == Path(right).resolve(strict=False)
+    except OSError:
+        return False
+
+
+@contextmanager
+def workflow_writer_activity(state_dir: Path | str, job_id: str):
+    """Register one already-started worker so a freeze can drain it safely.
+
+    The activity marker is created before checking the freeze marker.  That
+    ordering closes the race where the migration could otherwise observe no
+    worker immediately before a new runner starts.  A worker that registered
+    before the freeze may finish its own durable writes; new workers are
+    rejected and remove their activity marker without running.
+    """
+
+    root = Path(state_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    activity_path = _activity_path(root)
+    temporary_path = activity_path.with_name(f"{activity_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    payload = {
+        "schemaVersion": 1,
+        "kind": "read-web.workflow-writer-activity",
+        "jobId": str(job_id),
+        "pid": os.getpid(),
+        "threadId": threading.get_ident(),
+        "startedAt": datetime.now(timezone.utc).isoformat(),
+    }
+    temporary_path.write_text(_canonical_json(payload), encoding="utf-8")
+    temporary_path.replace(activity_path)
+    previous = getattr(_WRITER_ACTIVITY, "state_dir", None)
+    try:
+        ensure_workflow_writer_open(root)
+        _WRITER_ACTIVITY.state_dir = root
+        yield payload
+    finally:
+        _WRITER_ACTIVITY.state_dir = previous
+        try:
+            activity_path.unlink(missing_ok=True)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
 
 def _invalid_marker(path: Path, message: str) -> WorkflowWriterFreezeError:
@@ -116,6 +171,9 @@ def ensure_workflow_writer_open(state_dir: Path | str) -> None:
 
     marker = read_workflow_writer_freeze(state_dir)
     if marker is None:
+        return
+    active_state_dir = getattr(_WRITER_ACTIVITY, "state_dir", None)
+    if active_state_dir is not None and _same_state_dir(active_state_dir, state_dir):
         return
     raise WorkflowWriterFreezeError(
         "WORKFLOW_WRITER_FROZEN",

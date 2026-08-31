@@ -5892,7 +5892,7 @@
         "release": false,
         "behaviorAssertions": false,
         "executesModule": false,
-        "startsBrowser": true
+        "startsBrowser": false
       }
     },
     {

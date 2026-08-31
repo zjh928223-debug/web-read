@@ -789,6 +789,7 @@ function workflowSnapshotFromRecords(records, mediaReferences = []) {
 
 const WORKFLOW_PATH_KEY = /(?:path|dir|directory|folder|filename|executable|binary)$/iu
 const WORKFLOW_ABSOLUTE_PATH = /^(?:[A-Za-z]:|[\\/])/u
+const WORKFLOW_EMBEDDED_ABSOLUTE_PATH = /(?:^|[^A-Za-z0-9])(?:[A-Za-z]:[\\/][^\s"'<>|]+|\\\\[^\\\s]+\\[^\s"'<>|]+|\/(?:Users|home|private|var|tmp|opt|mnt|Volumes|root)(?:\/[^\s"'<>]+)+)/iu
 const WORKFLOW_FORBIDDEN_KEY = /(?:apikey|accesstoken|authorization|cookie|password|passwd|secret|credential|privatekey|proxyauth|sessiontoken|token|auth|jwt|bearer|signature|sig|blob|arraybuffer|typedarray|bytes|base64|binary|datauri|inlinedata|inlinemedia|mediad(?:ata|bytes|blob)|audiod(?:ata|blob)|videod(?:ata|blob))/iu
 
 function normalizedWorkflowKey(key) {
@@ -797,7 +798,8 @@ function normalizedWorkflowKey(key) {
 
 function assertSafeWorkflowString(value, keyPath) {
   const trimmed = value.trim()
-  if (/^data:/iu.test(trimmed) || /^file:/iu.test(trimmed) || WORKFLOW_ABSOLUTE_PATH.test(trimmed)) {
+  if (/^data:/iu.test(trimmed) || /^file:/iu.test(trimmed)
+    || WORKFLOW_ABSOLUTE_PATH.test(trimmed) || WORKFLOW_EMBEDDED_ABSOLUTE_PATH.test(trimmed)) {
     throw productionHostError('OWNER_CUTOVER_HOST_BACKUP_INVALID', `Workflow backup contains a machine path or binary value: ${keyPath}`)
   }
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//u.test(trimmed)) {

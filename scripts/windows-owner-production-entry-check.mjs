@@ -9,6 +9,7 @@ import { chromium } from 'playwright'
 import {
   executeWindowsOwnerProductionEntry,
   parseWindowsOwnerProductionEntryArguments,
+  waitForWorkflowWriterQuiescence,
 } from './lib/windows-owner-production-entry.mjs'
 import {
   fingerprintChromiumOriginSource,
@@ -146,6 +147,52 @@ async function testEntryContract(layout) {
     (error) => error?.code === 'OWNER_PRODUCTION_ENTRY_EVIDENCE_REQUIRED',
   )
   assert.equal(await readdir(layout.runRoot).then((entries) => entries.length), 0)
+}
+
+async function testWorkflowQuiescence(layout) {
+  const activityPath = path.join(layout.workflowStateDir, '.read-web-workflow-writer-active.json')
+  await writeFile(activityPath, JSON.stringify({
+    schemaVersion: 1,
+    kind: 'read-web.workflow-writer-activity',
+    jobId: 'fixture-active-job',
+  }), 'utf8')
+  const removal = new Promise((resolve, reject) => {
+    setTimeout(() => rm(activityPath, { force: true }).then(resolve, reject), 25)
+  })
+  const drained = await waitForWorkflowWriterQuiescence({
+    workflowStateDir: layout.workflowStateDir,
+    browserEvidenceTimeoutMs: 500,
+  })
+  await removal
+  assert.equal(drained.status, 'quiescent')
+
+  await writeFile(activityPath, JSON.stringify({
+    schemaVersion: 1,
+    kind: 'read-web.workflow-writer-activity',
+    jobId: 'fixture-crashed-job',
+    pid: 2_147_483_647,
+  }), 'utf8')
+  const stale = await waitForWorkflowWriterQuiescence({
+    workflowStateDir: layout.workflowStateDir,
+    browserEvidenceTimeoutMs: 500,
+  })
+  assert.equal(stale.status, 'quiescent')
+  assert.equal(await readdir(layout.workflowStateDir).then((entries) => entries.includes('.read-web-workflow-writer-active.json')), false)
+
+  await writeFile(activityPath, JSON.stringify({
+    schemaVersion: 1,
+    kind: 'read-web.workflow-writer-activity',
+    jobId: 'fixture-stuck-job',
+  }), 'utf8')
+  await assert.rejects(
+    waitForWorkflowWriterQuiescence({
+      workflowStateDir: layout.workflowStateDir,
+      browserEvidenceTimeoutMs: 0,
+    }),
+    (error) => error?.code === 'OWNER_PRODUCTION_ENTRY_WORKFLOW_ACTIVE'
+      && error?.details?.jobId === 'fixture-stuck-job',
+  )
+  await rm(activityPath, { force: true })
 }
 
 async function testLiveFreezeEvidence() {
@@ -296,6 +343,7 @@ const layout = makeLayout(root)
 try {
   await prepareLayout(layout)
   await testEntryContract(layout)
+  await testWorkflowQuiescence(layout)
   await testLiveFreezeEvidence()
   await testStagingBoundary(layout)
   console.log('Windows owner production entry checks passed.')
