@@ -753,6 +753,13 @@ function Remove-DailyJournal {
   if (Test-Path -LiteralPath $Context.journalPath -PathType Leaf) { Remove-Item -LiteralPath $Context.journalPath -Force }
 }
 
+function Remove-DailyServiceToken {
+  param([Parameter(Mandatory)]$Context)
+  if (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf) {
+    Remove-Item -LiteralPath $Context.tokenPath -Force -ErrorAction Stop
+  }
+}
+
 function Invoke-DailyCrashPoint {
   param([Parameter(Mandatory)][string]$Phase)
   if ([string]$env:READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE -ne $Phase) { return }
@@ -1120,6 +1127,7 @@ function Invoke-DailyRollbackRecovery {
     $Journal.status = 'committed'
     Write-DailyJournal -Context $Context -Journal $Journal
   }
+  Remove-DailyServiceToken -Context $Context
   Remove-DailyJournal -Context $Context
   return [ordered]@{ status = 'finalized'; operation = 'Rollback'; sideEffects = @('stopped only the journal-owned pair', 'preserved the rollback target', 'cleared the active target', 'removed the completed rollback journal') }
 }
@@ -1413,6 +1421,7 @@ function Invoke-DailyRollback {
     $journal.phase = 'active-target-cleared'
     $journal.status = 'committed'
     Write-DailyJournal -Context $Context -Journal $journal
+    Remove-DailyServiceToken -Context $Context
     Invoke-DailyCrashPoint -Phase 'rollback-before-journal-remove'
     Remove-DailyJournal -Context $Context
     Invoke-DailyCrashPoint -Phase 'rollback-after-journal-remove'
