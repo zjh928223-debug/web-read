@@ -58,8 +58,8 @@ function Invoke-PowerShellJson {
       -RedirectStandardOutput $stdoutPath `
       -RedirectStandardError $stderrPath `
       -WindowStyle Hidden `
-      -PassThru `
-      -Wait
+      -PassThru
+    $child.WaitForExit()
     $exitCode = $child.ExitCode
     if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 }
     if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 }
