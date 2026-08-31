@@ -70,8 +70,8 @@ function Invoke-PowerShellJson {
     $child.Refresh()
     $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { (Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8).Trim() } else { '' }
     if (-not [int]::TryParse($statusText, [ref]$exitCode)) { $exitCode = [int]$child.ExitCode }
-    if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8 }
-    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8 }
+    if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = [string](Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8) }
+    if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = [string](Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8) }
   } finally {
     foreach ($name in $environmentSnapshot.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $environmentSnapshot[$name] }
     $ErrorActionPreference = $previousErrorAction
@@ -81,6 +81,7 @@ function Invoke-PowerShellJson {
   $text = @($stdoutText, $stderrText) -join "`n"
   $json = $null
   foreach ($candidateText in @($stdoutText, $stderrText, $text)) {
+    $candidateText = if ($null -eq $candidateText) { '' } else { [string]$candidateText }
     $jsonStart = $candidateText.IndexOf('{')
     $jsonEnd = $candidateText.LastIndexOf('}')
     if ($jsonStart -ge 0 -and $jsonEnd -gt $jsonStart) {
