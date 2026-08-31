@@ -942,19 +942,26 @@ function Test-DailyApplyCandidateTarget {
 
 function Test-DailyInterruptedTargetReady {
   param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target)
+  $stage = 'target identity'
   try {
     Assert-DailyTargetIdentity -Context $Context -Target $Target
+    $stage = 'release descriptor'
     $releaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
-    if (-not $releaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $releaseRoot)) { return $false }
+    if (-not $releaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $releaseRoot)) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: release root is missing or outside the release root"; return $false }
     $release = Get-OptimizationReleaseDescriptor -ReleaseRoot $releaseRoot
+    $stage = 'release integrity'
     $nodePath = Resolve-OptimizationExecutablePath -Value 'node' -Label 'Node'
     $integrity = Test-OptimizationReleaseIntegrity -Release $release -NodePath $nodePath -ReleaseHealthScript $Context.releaseHealthScript
-    if (-not $integrity.passed -or -not (Test-OptimizationReleaseCompatibility -Release $release)) { return $false }
-    if (-not (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf)) { return $false }
+    if (-not $integrity.passed -or -not (Test-OptimizationReleaseCompatibility -Release $release)) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: integrity=$($integrity.passed) compatibility=$(Test-OptimizationReleaseCompatibility -Release $release)"; return $false }
+    $stage = 'service token'
+    if (-not (Test-Path -LiteralPath $Context.tokenPath -PathType Leaf)) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: token is missing"; return $false }
+    $stage = 'service states'
     $hostState = Read-OptimizationJsonFile -Path $Context.hostStatePath
     $capabilityState = Read-OptimizationJsonFile -Path $Context.capabilityStatePath
+    $stage = 'service health'
     $hostHealth = Get-OptimizationHttpJson -Url (Get-DailyHealthUrl -HostName $Context.frontendHost -Port $Context.frontendPort)
     $capabilityHealth = Get-OptimizationHttpJson -Url (Get-DailyHealthUrl -HostName $Context.backendHost -Port $Context.backendPort)
+    $stage = 'pair readiness'
     if (-not (Test-OptimizationPairReady `
         -HostState $hostState `
         -CapabilityState $capabilityState `
@@ -963,11 +970,16 @@ function Test-DailyInterruptedTargetReady {
         -Release $release `
         -ProfileId $profileId `
         -TokenPath $Context.tokenPath `
-        -ExpectedDataRoot $Context.dataRoot)) { return $false }
-    if (-not (Test-DailyProcessReceipt -State $hostState) -or -not (Test-DailyProcessReceipt -State $capabilityState)) { return $false }
+        -ExpectedDataRoot $Context.dataRoot)) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: pair readiness false"; return $false }
+    $stage = 'process receipts'
+    if (-not (Test-DailyProcessReceipt -State $hostState) -or -not (Test-DailyProcessReceipt -State $capabilityState)) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: process receipt false"; return $false }
+    $stage = 'built host index'
     $index = Invoke-WebRequest -Uri "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/" -UseBasicParsing -TimeoutSec 2
-    return $index.StatusCode -eq 200 -and $index.Content -notmatch '@vite/client|src/main\.js'
+    $ready = $index.StatusCode -eq 200 -and $index.Content -notmatch '@vite/client|src/main\.js'
+    if (-not $ready) { Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: status=$($index.StatusCode) built=$ready" }
+    return $ready
   } catch {
+    Write-DailyReadinessDiagnostic -Context $Context -Message "${stage}: exception=$($_.Exception.Message)"
     return $false
   }
 }
@@ -985,6 +997,15 @@ function Restore-DailyApplySnapshot {
   }
 }
 
+function Write-DailyReadinessDiagnostic {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Message)
+  try {
+    $path = Join-Path $Context.logRoot 'daily-readiness-diagnostic.log'
+    New-Item -ItemType Directory -Force -Path $Context.logRoot | Out-Null
+    Add-Content -LiteralPath $path -Value $Message
+  } catch {}
+}
+
 function Invoke-DailyApplyRecovery {
   param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
   Assert-DailyJournalIdentity -Context $Context -Journal $Journal -Operation 'daily-production-apply'
@@ -993,6 +1014,7 @@ function Invoke-DailyApplyRecovery {
   $currentActiveSnapshot = Read-DailyText -Path $Context.activeTargetPath
   $currentTarget = Read-OptimizationJsonFile -Path $Context.activeTargetPath
   $isOldSnapshot = $currentActiveSnapshot -eq $oldActiveSnapshot
+  Write-DailyReadinessDiagnostic -Context $Context -Message "apply recovery: status=$(Get-OptimizationObjectText -Object $Journal -Name 'status') oldSnapshotLength=$($oldActiveSnapshot.Length) currentSnapshotLength=$($currentActiveSnapshot.Length) currentTargetPresent=$($null -ne $currentTarget) isOldSnapshot=$isOldSnapshot"
   $candidateTarget = $null
   if (-not $isOldSnapshot -and $null -ne $currentTarget) {
     Test-DailyApplyCandidateTarget -Context $Context -Journal $Journal -Target $currentTarget | Out-Null

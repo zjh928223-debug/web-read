@@ -51,11 +51,15 @@ function Invoke-PowerShellJson {
   $stderrText = ''
   $exitCode = -1
   $child = $null
+  $stage = 'initialize'
   try {
+    $stage = 'set environment'
     foreach ($name in $Environment.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $Environment[$name] }
+    $stage = 'build command'
     $argumentString = ($Arguments | ForEach-Object { '"' + ([string]$_ -replace '"', '\\"') + '"' }) -join ' '
     $powershellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
     $batchText = "@echo off`r`n`"$powershellPath`" $argumentString 1> `"$stdoutPath`" 2> `"$stderrPath`"`r`nset `"exitCode=%ERRORLEVEL%`"`r`necho %exitCode%> `"$statusPath`"`r`n"
+    $stage = 'write command wrapper'
     [IO.File]::WriteAllText($batchPath, $batchText, [Text.UTF8Encoding]::new($false))
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = (Get-Command cmd.exe -ErrorAction Stop).Source
@@ -65,13 +69,19 @@ function Invoke-PowerShellJson {
     $startInfo.CreateNoWindow = $true
     $child = [Diagnostics.Process]::new()
     $child.StartInfo = $startInfo
+    $stage = 'wait for command wrapper'
     if (-not $child.Start()) { throw 'Could not start the daily launcher command wrapper.' }
     $child.WaitForExit()
     $child.Refresh()
-    $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { ([string](Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8)).Trim() } else { '' }
+    $stage = 'read command result'
+    $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8 } else { '' }
+    if ($null -eq $statusText) { $statusText = '' }
+    $statusText = $statusText -replace '^\s+|\s+$', ''
     if (-not [int]::TryParse($statusText, [ref]$exitCode)) { $exitCode = [int]$child.ExitCode }
     if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = [string](Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8) }
     if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = [string](Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8) }
+  } catch {
+    throw "Invoke-PowerShellJson failed at ${stage}: $($_.Exception.Message)"
   } finally {
     foreach ($name in $environmentSnapshot.Keys) { Set-ProcessEnvironmentValue -Name $name -Value $environmentSnapshot[$name] }
     $ErrorActionPreference = $previousErrorAction
@@ -271,6 +281,12 @@ try {
     foreach ($name in $stableEnvironment.Keys) { $crashEnvironment[$name] = $stableEnvironment[$name] }
     $crashEnvironment['READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE'] = $phase
     $crashApply = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Apply', '-ConfirmDailyProductionApply') + $common) -Environment $crashEnvironment
+    try {
+      $crashDiagnosticPath = Join-Path $testRoot 'crash-apply-diagnostics.log'
+      $journalDiagnostic = if (Test-Path -LiteralPath (Join-Path $stateRoot 'promotion-journal.json') -PathType Leaf) { Get-Content -LiteralPath (Join-Path $stateRoot 'promotion-journal.json') -Raw -Encoding UTF8 } else { '<journal-absent>' }
+      $activeDiagnostic = if (Test-Path -LiteralPath (Join-Path $stateRoot 'active-target.json') -PathType Leaf) { Get-Content -LiteralPath (Join-Path $stateRoot 'active-target.json') -Raw -Encoding UTF8 } else { '<active-target-absent>' }
+      Add-Content -LiteralPath $crashDiagnosticPath -Value "phase=$phase exit=$($crashApply.exitCode)`ntext=$($crashApply.text)`njournal=$journalDiagnostic`nactive=$activeDiagnostic`n"
+    } catch {}
     Assert-True ($crashApply.exitCode -ne 0) "synthetic daily Apply crash phase did not terminate the child: $phase"
     $journalPath = Join-Path $stateRoot 'promotion-journal.json'
     if ($phase -eq 'apply-after-journal-remove') {
