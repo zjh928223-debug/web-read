@@ -68,7 +68,7 @@ function Invoke-PowerShellJson {
     if (-not $child.Start()) { throw 'Could not start the daily launcher command wrapper.' }
     $child.WaitForExit()
     $child.Refresh()
-    $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { (Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8).Trim() } else { '' }
+    $statusText = if (Test-Path -LiteralPath $statusPath -PathType Leaf) { ([string](Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8)).Trim() } else { '' }
     if (-not [int]::TryParse($statusText, [ref]$exitCode)) { $exitCode = [int]$child.ExitCode }
     if (Test-Path -LiteralPath $stdoutPath -PathType Leaf) { $stdoutText = [string](Get-Content -LiteralPath $stdoutPath -Raw -Encoding UTF8) }
     if (Test-Path -LiteralPath $stderrPath -PathType Leaf) { $stderrText = [string](Get-Content -LiteralPath $stderrPath -Raw -Encoding UTF8) }
