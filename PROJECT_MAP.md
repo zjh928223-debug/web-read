@@ -96,8 +96,12 @@ tools/subtitle-workflow/
 ```text
 config/runtime-config.schema.json
 config/runtime.next.json
+config/runtime.daily-production.json
 config/performance-budgets.json
 scripts/launch-next-preview.ps1
+scripts/launch-daily-production.ps1
+scripts/initialize-daily-production-application-profile.mjs
+scripts/release-shortcut-migration.ps1
 scripts/verify-fast.mjs
 scripts/verify-full.mjs
 scripts/perf/
@@ -125,6 +129,7 @@ docs/NEXT_WORKSPACE.md
 - `scripts/ui-compatibility-store-check.cjs`：UI Pinia owner 与 retired `__uiStore` 浏览器行为门禁。
 - `scripts/verify-fast.mjs`：快速行为门禁。
 - `scripts/verify-full.mjs`：隔离浏览器、build 和后端总门禁。
+- `scripts/daily-production-launcher-check.ps1`：只使用临时 data root、随机安全端口和临时快捷方式，验证 Plan/授权边界/未知占用者保护/快捷方式 Apply-Rollback。
 - `scripts/perf/`：性能与本地 HTTP 基准。
 - `openspec/changes/archive/2026-08-17-stabilize-and-simplify-read-web/`：已完成稳定化工作的规格、设计与任务记录。
 

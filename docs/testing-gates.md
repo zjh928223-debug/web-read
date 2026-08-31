@@ -118,7 +118,7 @@ behavior 两层；随后增加 persistence fault matrix、production build、固
 production host/browser journeys、reader-session/compatibility browser fault
 journeys、compatibility consumer-map deterministic capture 和 Python backend
 unittest suite。除固定 Vite owner 外，自拥有 browser journeys 使用随机
-browser-safe 端口；所有 browser 端口都排除 `5173/8765`。不得把 architecture
+browser-safe 端口；所有 browser 端口都排除旧回退 `5173/8765` 和当前日常 `5174/8766`。不得把 architecture
 source-shape 通过写成 browser/full 行为通过。
 
 Full 不启动真实 Material Workflow service，也不包含实时外部 API。长时间性能
@@ -177,17 +177,23 @@ manifest 可直接作为下一轮 previous source。manifest 包含 Git/版本/�
 preflight 真正通过才会报告 READY。快捷方式和进程切换由 12.7 隔离演练消费，不在本阶段触碰
 日用版。
 
-12.7 由 `npm run verify:release-shortcut-rollback` 执行。它只读并哈希当前桌面学习
-快捷方式，将副本放到系统临时目录，再对副本执行原子 Next 切换、正常 rollback 和
-模拟 health failure 自动 rollback；最后要求桌面源快捷方式哈希完全不变。底层迁移
-入口默认拒绝 Desktop 写入，实际迁移必须额外提供显式确认参数并受 12.8 用户确认约束。
+12.7 由 `npm run verify:release-shortcut-rollback` 执行。它默认创建临时 source `.lnk`，再对
+临时副本执行显式 daily-production launcher 切换、正常 rollback 和模拟 health failure rollback；
+不会读取、改写或哈希桌面快捷方式。底层迁移入口默认拒绝 Desktop 写入，实际迁移必须额外提供
+显式确认参数并受用户确认约束。
 
-桌面 `英语学习.lnk` 当前指向 `E:\read-web-next\scripts\launch-next-preview.ps1`，
-工作目录为 `E:\read-web-next`。原始目标保存在 ignored release state 中；需要恢复时运行：
+当前日常 origin 是 `E:\read-web-next` 的受保护 Vite/dev 兼容路径（`5174/8766`）；daily-production
+候选才是本 worktree 生成的 built Host。旧回退目标是 `E:\read-web`（`5173/8765`）。快捷方式的真实状态不是本 worktree 的验证输入；若用户要切换，
+必须用 `scripts/release-shortcut-migration.ps1` 明确提供新的 script、working directory 和
+launcher arguments，并把旧目标写入独立 rollback state。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-migration.ps1 -Action Rollback -ShortcutPath "$env:USERPROFILE\Desktop\英语学习.lnk" -StatePath output\release\desktop-shortcut-migration.json -AllowDesktopMutation
-```
+daily-production launcher 的临时 fixture 证据由 `npm run verify:daily-production-launcher` 执行：
+它先验证专用 external venv 缺失时 daily Python 选择 fail-closed、显式 Bootstrap/environment
+override 仍可用，再只使用临时 data root、随机安全端口、仓库外的临时 stable venv 和临时 `.lnk`，
+验证默认 Plan、未授权 Apply、未知端口保护、built-dist Host 与 pre-cutover owner 状态，以及
+shortcut arguments 的 Apply/Rollback。它还会在 Apply 的 active-target/journal 提交窗口和 Rollback 的 service-stop、
+rollback-target、active-target-clear、journal cleanup 每个 before/after 窗口强制中断子进程，随后
+用真实 launcher 重启/回退，证明恢复是确定、幂等且不触碰未知占用者。
 
 ## 入口和 owner 规则
 

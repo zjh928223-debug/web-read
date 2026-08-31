@@ -2,10 +2,19 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+
+import { isBrowserSafePort } from '../lib/browser-port-policy.mjs'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-const baseUrl = process.env.READ_WEB_PERF_BASE_URL || 'http://127.0.0.1:5174'
+const baseUrl = String(process.env.READ_WEB_PERF_BASE_URL || '').trim()
+if (!baseUrl) {
+  throw new Error('READ_WEB_PERF_BASE_URL is required; point the journey runner at a temporary fixture on a random browser-safe loopback port')
+}
+const parsedBaseUrl = new URL(baseUrl)
+if (parsedBaseUrl.protocol !== 'http:' || parsedBaseUrl.hostname !== '127.0.0.1' || !isBrowserSafePort(parsedBaseUrl.port)) {
+  throw new Error(`Performance browser journeys require an explicit 127.0.0.1 browser-safe port: ${baseUrl}`)
+}
+const { chromium } = await import('playwright')
 const baseOrigin = new URL(baseUrl).origin
 const outputDirectory = path.resolve(process.env.READ_WEB_PERF_OUTPUT || path.join(repoRoot, 'output', 'performance'))
 const fixtureRoot = path.join(repoRoot, 'scripts', 'fixtures')

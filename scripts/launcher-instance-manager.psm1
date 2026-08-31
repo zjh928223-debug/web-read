@@ -4,12 +4,15 @@ function Assert-LauncherPortSafety {
   param(
     [Parameter(Mandatory)][int]$Port,
     [Parameter(Mandatory)][string]$ProfileId,
-    [int[]]$ReservedDailyPorts = @(5173, 8765)
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
+    [switch]$AllowReservedDailyPorts
   )
   if ($Port -lt 1 -or $Port -gt 65535) {
     throw "Invalid launcher port: $Port"
   }
-  if ($ProfileId -ne 'daily' -and $ReservedDailyPorts -contains $Port) {
+  $legacyDailyPort = $ProfileId -eq 'daily' -and $Port -in @(5173, 8765)
+  $dailyProductionPort = $ProfileId -eq 'daily-production' -and $Port -in @(5174, 8766)
+  if ($ReservedDailyPorts -contains $Port -and -not ($legacyDailyPort -or ($dailyProductionPort -and $AllowReservedDailyPorts))) {
     throw "Isolated profile '$ProfileId' may not use reserved daily port $Port."
   }
 }
@@ -122,6 +125,13 @@ function Get-MatchingOwnedProcess {
   } catch {
     return $null
   }
+  $expectedFilePath = [string](Get-ManagedRecordValue -Object $State -Name 'filePath')
+  if ($expectedFilePath) {
+    $expectedArguments = @((Get-ManagedRecordValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
+    if (-not (Test-ManagedProcessExecutable -Process $process -ExpectedFilePath $expectedFilePath -ExpectedArgumentFragments $expectedArguments)) {
+      return $null
+    }
+  }
   return $process
 }
 
@@ -157,6 +167,52 @@ function Get-ProcessCommandLine {
   }
 }
 
+function Test-ManagedPythonVenvInvocation {
+  param(
+    [Parameter(Mandatory)][string]$ExpectedFilePath,
+    [Parameter(Mandatory)][string]$ActualFilePath,
+    [Parameter(Mandatory)][string]$CommandLine,
+    [int]$ParentProcessId = 0
+  )
+  # On Windows, venv\Scripts\python.exe is a launcher. The running process
+  # can report the base Python executable even though the command line and its
+  # import environment belong to the selected venv. Accept that one shape
+  # only when the command line starts with the exact selected venv executable.
+  try {
+    $expectedFullPath = [IO.Path]::GetFullPath($ExpectedFilePath)
+    $actualFullPath = [IO.Path]::GetFullPath($ActualFilePath)
+    $expectedLeaf = [IO.Path]::GetFileName($expectedFullPath)
+    $actualLeaf = [IO.Path]::GetFileName($actualFullPath)
+    if (-not [String]::Equals($expectedLeaf, 'python.exe', [StringComparison]::OrdinalIgnoreCase) `
+      -or -not [String]::Equals($actualLeaf, 'python.exe', [StringComparison]::OrdinalIgnoreCase) `
+      -or $expectedFullPath.IndexOf('\Scripts\', [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+      return $false
+    }
+    $trimmed = $CommandLine.TrimStart()
+    $quotedPath = '"' + $expectedFullPath + '"'
+    if ($trimmed.StartsWith($quotedPath, [StringComparison]::OrdinalIgnoreCase) `
+      -or $trimmed.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+      return $true
+    }
+    if ($ParentProcessId -gt 0) {
+      $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$ParentProcessId" -ErrorAction SilentlyContinue
+      if ($null -ne $parent) {
+        $parentPath = [string]$parent.ExecutablePath
+        $parentCommandLine = ([string]$parent.CommandLine).TrimStart()
+        $parentQuotedPath = '"' + $expectedFullPath + '"'
+        if ([String]::Equals($parentPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase) `
+          -and ($parentCommandLine.StartsWith($parentQuotedPath, [StringComparison]::OrdinalIgnoreCase) `
+            -or $parentCommandLine.StartsWith($expectedFullPath, [StringComparison]::OrdinalIgnoreCase))) {
+          return $true
+        }
+      }
+    }
+    return $false
+  } catch {
+    return $false
+  }
+}
+
 function Test-ManagedProcessExecutable {
   param(
     $Process,
@@ -164,20 +220,30 @@ function Test-ManagedProcessExecutable {
     [string[]]$ExpectedArgumentFragments = @()
   )
   if ($null -eq $Process) { return $false }
+  $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$($Process.Id)" -ErrorAction SilentlyContinue
+  $commandLine = if ($null -ne $processInfo) { [string]$processInfo.CommandLine } else { '' }
+  $parentProcessId = if ($null -ne $processInfo) { [int]$processInfo.ParentProcessId } else { 0 }
   if ($ExpectedFilePath) {
     try {
       $actualPath = [string]$Process.Path
-      if (-not $actualPath -or -not [String]::Equals(
+      $pathMatches = $actualPath -and [String]::Equals(
           [IO.Path]::GetFullPath($actualPath),
           [IO.Path]::GetFullPath($ExpectedFilePath),
-          [StringComparison]::OrdinalIgnoreCase)) {
+          [StringComparison]::OrdinalIgnoreCase)
+      if (-not $pathMatches -and $actualPath -and $commandLine) {
+        $pathMatches = Test-ManagedPythonVenvInvocation `
+          -ExpectedFilePath $ExpectedFilePath `
+          -ActualFilePath $actualPath `
+          -CommandLine $commandLine `
+          -ParentProcessId $parentProcessId
+      }
+      if (-not $pathMatches) {
         return $false
       }
     } catch {
       return $false
     }
   }
-  $commandLine = Get-ProcessCommandLine -Process $Process
   foreach ($fragment in @($ExpectedArgumentFragments)) {
     if ($fragment -and (-not $commandLine -or $commandLine.IndexOf([string]$fragment, [StringComparison]::OrdinalIgnoreCase) -lt 0)) { return $false }
   }
@@ -215,10 +281,18 @@ function Find-ManagedProcessByExecutable {
   }
   $candidates = if ($Pid -gt 0) { $processes | ForEach-Object { [pscustomobject]@{ process = $_; commandLine = $null; executablePath = $null } } } else {
     $processMetadata | ForEach-Object {
-      if ([String]::Equals([string]$_.ExecutablePath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase)) {
+      $metadataPath = [string]$_.ExecutablePath
+      $metadataCommandLine = [string]$_.CommandLine
+      $pathMatches = [String]::Equals($metadataPath, $expectedFullPath, [StringComparison]::OrdinalIgnoreCase) `
+        -or (Test-ManagedPythonVenvInvocation `
+          -ExpectedFilePath $expectedFullPath `
+          -ActualFilePath $metadataPath `
+          -CommandLine $metadataCommandLine `
+          -ParentProcessId ([int]$_.ParentProcessId))
+      if ($pathMatches) {
         $process = Get-Process -Id ([int]$_.ProcessId) -ErrorAction SilentlyContinue
         if ($null -ne $process) {
-          [pscustomobject]@{ process = $process; commandLine = [string]$_.CommandLine; executablePath = [string]$_.ExecutablePath }
+          [pscustomobject]@{ process = $process; commandLine = $metadataCommandLine; executablePath = $metadataPath }
         }
       }
     }
@@ -362,7 +436,8 @@ function ConvertTo-ManagedStartRecord {
     argumentList = @($Spec.ArgumentList)
     workingDirectory = [string]$Spec.WorkingDirectory
     readyTimeoutSeconds = [int]$Spec.ReadyTimeoutSeconds
-    reservedDailyPorts = @($Spec.ReservedDailyPorts)
+    reservedDailyPorts = if ($Spec.ContainsKey('ReservedDailyPorts')) { @($Spec.ReservedDailyPorts) } else { @(5173, 8765, 5174, 8766) }
+    allowReservedDailyPorts = if ($Spec.ContainsKey('AllowReservedDailyPorts')) { [bool]$Spec.AllowReservedDailyPorts } else { $false }
     standardOutputPath = [string]$Spec.StandardOutputPath
     standardErrorPath = [string]$Spec.StandardErrorPath
     executableIdentity = [string]$Spec.ExecutableIdentity
@@ -385,6 +460,7 @@ function ConvertFrom-ManagedStartRecord {
   if ($null -ne $recordMetadata) {
     foreach ($property in @($recordMetadata.PSObject.Properties)) { $metadata[$property.Name] = $property.Value }
   }
+  $reservedPorts = Get-ManagedRecordValue -Object $Record -Name 'reservedDailyPorts'
   return @{
     ReleaseId = [string](Get-ManagedRecordValue -Object $Record -Name 'releaseId')
     ProfileId = [string](Get-ManagedRecordValue -Object $Record -Name 'profileId')
@@ -396,7 +472,8 @@ function ConvertFrom-ManagedStartRecord {
     ArgumentList = @((Get-ManagedRecordValue -Object $Record -Name 'argumentList') | ForEach-Object { [string]$_ })
     WorkingDirectory = [string](Get-ManagedRecordValue -Object $Record -Name 'workingDirectory')
     ReadyTimeoutSeconds = [Math]::Max(1, [int](Get-ManagedRecordValue -Object $Record -Name 'readyTimeoutSeconds'))
-    ReservedDailyPorts = @((Get-ManagedRecordValue -Object $Record -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    ReservedDailyPorts = if ($null -eq $reservedPorts) { @(5173, 8765, 5174, 8766) } else { @($reservedPorts | ForEach-Object { [int]$_ }) }
+    AllowReservedDailyPorts = [bool](Get-ManagedRecordValue -Object $Record -Name 'allowReservedDailyPorts')
     StandardOutputPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardOutputPath')
     StandardErrorPath = [string](Get-ManagedRecordValue -Object $Record -Name 'standardErrorPath')
     ExecutableIdentity = [string](Get-ManagedRecordValue -Object $Record -Name 'executableIdentity')
@@ -555,9 +632,9 @@ function Get-ManagedStartSpecFromState {
   $metadata = @{}
   $reserved = @(
     'schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid',
-    'processStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
+    'processStartUtc', 'launcherPid', 'launcherProcessStartUtc', 'startedAtUtc', 'executableIdentity', 'filePath',
     'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath',
-    'healthUrl', 'launchIntentPath'
+    'healthUrl', 'launchIntentPath', 'reservedDailyPorts', 'allowReservedDailyPorts'
   )
   foreach ($property in @($State.PSObject.Properties)) {
     if ($reserved -notcontains $property.Name) { $metadata[$property.Name] = $property.Value }
@@ -573,7 +650,10 @@ function Get-ManagedStartSpecFromState {
     ArgumentList = $arguments
     WorkingDirectory = [string]$State.workingDirectory
     ReadyTimeoutSeconds = 30
-    ReservedDailyPorts = @(5173, 8765)
+    ReservedDailyPorts = if ($null -ne (Get-ManagedRecordValue -Object $State -Name 'reservedDailyPorts')) {
+      @((Get-ManagedRecordValue -Object $State -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    } else { @(5173, 8765, 5174, 8766) }
+    AllowReservedDailyPorts = [bool](Get-ManagedRecordValue -Object $State -Name 'allowReservedDailyPorts')
     StandardOutputPath = [string]$State.standardOutputPath
     StandardErrorPath = [string]$State.standardErrorPath
     ExecutableIdentity = [string](Get-ManagedRecordValue -Object $State -Name 'executableIdentity')
@@ -650,12 +730,13 @@ function Start-ManagedRuntimeProcessCore {
     [string[]]$ArgumentList = @(),
     [string]$WorkingDirectory = '',
     [int]$ReadyTimeoutSeconds = 30,
-    [int[]]$ReservedDailyPorts = @(5173, 8765),
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
     [string]$StandardOutputPath = '',
     [string]$StandardErrorPath = '',
     [string]$ExecutableIdentity = '',
     [hashtable]$Metadata = @{},
     [Parameter(Mandatory)][string]$LaunchIntentPath,
+    [switch]$AllowReservedDailyPorts,
     [switch]$SkipTestKillHook
   )
   $process = $null
@@ -726,6 +807,8 @@ function Start-ManagedRuntimeProcessCore {
       port = $Port
       pid = $process.Id
       processStartUtc = $processStartUtc
+      launcherPid = $process.Id
+      launcherProcessStartUtc = $processStartUtc
       startedAtUtc = ([DateTime]::UtcNow).ToString('O')
       executableIdentity = $ExecutableIdentity
       healthUrl = $HealthUrl
@@ -734,10 +817,12 @@ function Start-ManagedRuntimeProcessCore {
       workingDirectory = $WorkingDirectory
       standardOutputPath = $StandardOutputPath
       standardErrorPath = $StandardErrorPath
+      reservedDailyPorts = @($ReservedDailyPorts)
+      allowReservedDailyPorts = [bool]$AllowReservedDailyPorts
       launchIntentPath = $LaunchIntentPath
     }
     foreach ($metadataName in $Metadata.Keys) {
-      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'launchIntentPath')) {
+      if ([string]$metadataName -in @('schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid', 'processStartUtc', 'launcherPid', 'launcherProcessStartUtc', 'startedAtUtc', 'executableIdentity', 'healthUrl', 'filePath', 'argumentList', 'workingDirectory', 'standardOutputPath', 'standardErrorPath', 'reservedDailyPorts', 'allowReservedDailyPorts', 'launchIntentPath')) {
         throw "Managed runtime metadata may not replace ownership field '$metadataName'."
       }
       $state[[string]$metadataName] = $Metadata[$metadataName]
@@ -782,7 +867,19 @@ function Start-ManagedRuntimeProcessCore {
     throw "Managed process did not become ready within $ReadyTimeoutSeconds seconds."
   } catch {
     $failure = $_
-    if ($null -ne $process) {
+    $stateStopped = $false
+    if (Test-Path -LiteralPath $StatePath -PathType Leaf) {
+      try {
+        Stop-OwnedRuntimeInstance `
+          -StatePath $StatePath `
+          -ExpectedReleaseId $ReleaseId `
+          -ExpectedProfileId $ProfileId `
+          -ExpectedInstanceId $InstanceId `
+          -StopTimeoutSeconds 3 | Out-Null
+        $stateStopped = $true
+      } catch {}
+    }
+    if (-not $stateStopped -and $null -ne $process) {
       try {
         $process.Refresh()
         if (-not $process.HasExited) {
@@ -812,9 +909,60 @@ function Stop-OwnedRuntimeInstance {
   if ($ExpectedInstanceId -and [string]$state.instanceId -ne $ExpectedInstanceId) { throw 'Instance ownership mismatch; refusing to stop process.' }
   $process = Get-MatchingOwnedProcess -State $state
   if ($null -eq $process) { throw 'PID/start identity mismatch; refusing to stop process.' }
-  Stop-Process -Id $process.Id -ErrorAction Stop
-  try { $process.WaitForExit([Math]::Max(1, $StopTimeoutSeconds) * 1000) | Out-Null } catch {}
-  if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction Stop }
+  $expectedFilePath = [string](Get-ManagedRecordValue -Object $state -Name 'filePath')
+  $expectedArguments = @((Get-ManagedRecordValue -Object $state -Name 'argumentList') | ForEach-Object { [string]$_ })
+  $portProcess = $null
+  $portText = [string](Get-ManagedRecordValue -Object $state -Name 'port')
+  $port = 0
+  if ($expectedFilePath -and [int]::TryParse($portText, [ref]$port) -and $port -gt 0) {
+    if (Test-TcpPortOccupied -Port $port) {
+      $portProcess = Get-LoopbackPortOwnerProcess -Port $port
+      if ($null -eq $portProcess) {
+        throw "Managed runtime port $port is occupied but its owner could not be proven; refusing to stop any process."
+      }
+      if ($portProcess.Id -ne $process.Id -and -not (Test-ManagedProcessExecutable -Process $portProcess -ExpectedFilePath $expectedFilePath -ExpectedArgumentFragments $expectedArguments)) {
+        throw "Managed runtime port $port is occupied by an unproven process; refusing to stop any process."
+      }
+    }
+  }
+  $launcherProcess = $null
+  $launcherPidText = [string](Get-ManagedRecordValue -Object $state -Name 'launcherPid')
+  $launcherStartText = [string](Get-ManagedRecordValue -Object $state -Name 'launcherProcessStartUtc')
+  if ($launcherPidText -and $launcherStartText) {
+    $launcherPid = 0
+    if (-not [int]::TryParse($launcherPidText, [ref]$launcherPid) -or $launcherPid -lt 1) {
+      throw 'Launcher process receipt is invalid; refusing to stop process.'
+    }
+    if ($launcherPid -ne $process.Id) {
+      $launcherProcess = Find-ManagedProcessByReceipt `
+        -Pid $launcherPid `
+        -ProcessStartUtc $launcherStartText `
+        -ExpectedFilePath ([string](Get-ManagedRecordValue -Object $state -Name 'filePath')) `
+        -ExpectedArgumentFragments @((Get-ManagedRecordValue -Object $state -Name 'argumentList') | ForEach-Object { [string]$_ })
+      $liveLauncher = Get-Process -Id $launcherPid -ErrorAction SilentlyContinue
+      if ($null -ne $liveLauncher -and $null -eq $launcherProcess) {
+        throw 'Launcher process identity mismatch; refusing to stop process.'
+      }
+    }
+  }
+  $processesToStop = @()
+  foreach ($candidateProcess in @($portProcess, $process, $launcherProcess)) {
+    if ($null -ne $candidateProcess -and @($processesToStop | Where-Object { $_.Id -eq $candidateProcess.Id }).Count -eq 0) {
+      $processesToStop += $candidateProcess
+    }
+  }
+  foreach ($processToStop in $processesToStop) {
+    try {
+      $processToStop.Refresh()
+      if ($processToStop.HasExited) { continue }
+      Stop-Process -Id $processToStop.Id -ErrorAction Stop
+      try { $processToStop.WaitForExit([Math]::Max(1, $StopTimeoutSeconds) * 1000) | Out-Null } catch {}
+      $processToStop.Refresh()
+      if (-not $processToStop.HasExited) { Stop-Process -Id $processToStop.Id -Force -ErrorAction Stop }
+    } catch {
+      throw "Managed runtime process $($processToStop.Id) did not stop cleanly."
+    }
+  }
   Remove-Item -LiteralPath $StatePath -Force -ErrorAction SilentlyContinue
   return $true
 }
@@ -830,7 +978,7 @@ function Start-ManagedRuntimeInstance {
     [string[]]$ArgumentList = @(),
     [string]$WorkingDirectory = '',
     [int]$ReadyTimeoutSeconds = 30,
-    [int[]]$ReservedDailyPorts = @(5173, 8765),
+    [int[]]$ReservedDailyPorts = @(5173, 8765, 5174, 8766),
     [string]$StandardOutputPath = '',
     [string]$StandardErrorPath = '',
     [string]$InstanceId = '',
@@ -839,9 +987,10 @@ function Start-ManagedRuntimeInstance {
     [string]$LaunchIntentPath = '',
     [hashtable]$FallbackStart = $null,
     [hashtable]$PreflightStart = $null,
+    [switch]$AllowReservedDailyPorts,
     [switch]$SkipTestKillHook
   )
-  Assert-LauncherPortSafety -Port $Port -ProfileId $ProfileId -ReservedDailyPorts $ReservedDailyPorts
+  Assert-LauncherPortSafety -Port $Port -ProfileId $ProfileId -ReservedDailyPorts $ReservedDailyPorts -AllowReservedDailyPorts:$AllowReservedDailyPorts
   $stateDirectory = Split-Path -Parent $StatePath
   if (-not $stateDirectory) { $stateDirectory = (Get-Location).Path }
   New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null
@@ -900,6 +1049,7 @@ function Start-ManagedRuntimeInstance {
           $replacementFallback.LaunchIntentPath = $LaunchIntentPath
           $replacementFallback.ReadyTimeoutSeconds = [Math]::Max(1, $ReadyTimeoutSeconds)
           $replacementFallback.ReservedDailyPorts = @($ReservedDailyPorts)
+          $replacementFallback.AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           $replacementCandidateInstanceId = [string]$existing.instanceId
           $replacementCandidate = @{
             ReleaseId = $ReleaseId
@@ -916,6 +1066,7 @@ function Start-ManagedRuntimeInstance {
             StandardOutputPath = $StandardOutputPath
             StandardErrorPath = $StandardErrorPath
             ExecutableIdentity = $ExecutableIdentity
+            AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
             Metadata = $Metadata
           }
           $replacementPreflight = $null
@@ -925,6 +1076,7 @@ function Start-ManagedRuntimeInstance {
             $replacementPreflight.ProfileId = $ProfileId
             $replacementPreflight.ReleaseId = $ReleaseId
             $replacementPreflight.ExecutableIdentity = $ExecutableIdentity
+            $replacementPreflight.AllowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           }
           Write-ManagedReplacementRecord `
             -Path $replacementPath `
@@ -994,6 +1146,8 @@ function Start-ManagedRuntimeInstance {
           filePath = $FilePath
           argumentList = @($adoptedArguments)
           workingDirectory = $WorkingDirectory
+          reservedDailyPorts = @($ReservedDailyPorts)
+          allowReservedDailyPorts = [bool]$AllowReservedDailyPorts
           standardOutputPath = $StandardOutputPath
           standardErrorPath = $StandardErrorPath
           launchIntentPath = $LaunchIntentPath
@@ -1029,6 +1183,7 @@ function Start-ManagedRuntimeInstance {
       -ExecutableIdentity $ExecutableIdentity `
       -Metadata $Metadata `
       -LaunchIntentPath $LaunchIntentPath `
+      -AllowReservedDailyPorts:$AllowReservedDailyPorts `
       -SkipTestKillHook:$SkipTestKillHook
     if (Test-Path -LiteralPath $replacementPath -PathType Leaf) { Remove-Item -LiteralPath $replacementPath -Force -ErrorAction SilentlyContinue }
     return $result
@@ -1077,6 +1232,7 @@ Export-ModuleMember -Function `
   Stop-OwnedRuntimeInstance, `
   Find-ManagedOrphanRuntime, `
   Stop-ManagedOrphanRuntime, `
+  Test-ManagedProcessExecutable, `
   Find-ManagedProcessByReceipt, `
   Find-ManagedProcessByExecutable, `
   Recover-ManagedRuntimeReplacement

@@ -495,11 +495,16 @@ function Initialize-OptimizationApplicationProfile {
     [Parameter(Mandatory)][string]$NodePath,
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$ApplicationIsolationRoot,
-    [Parameter(Mandatory)][string]$ApplicationProfileDir
+    [Parameter(Mandatory)][string]$ApplicationProfileDir,
+    [string]$InitializerPath = ''
   )
-  $initializer = Join-Path $ProjectRoot 'scripts\initialize-optimization-application-profile.mjs'
+  $initializer = if ($InitializerPath) {
+    [IO.Path]::GetFullPath($InitializerPath)
+  } else {
+    Join-Path $ProjectRoot 'scripts\initialize-optimization-application-profile.mjs'
+  }
   if (-not (Test-Path -LiteralPath $initializer -PathType Leaf)) {
-    throw "Optimization application profile initializer is missing: $initializer"
+    throw "Application profile initializer is missing: $initializer"
   }
   $output = & $NodePath $initializer `
     '--isolation-root' $ApplicationIsolationRoot `
@@ -507,18 +512,18 @@ function Initialize-OptimizationApplicationProfile {
   $exitCode = $LASTEXITCODE
   $outputText = ($output -join "`n").Trim()
   if ($exitCode -ne 0) {
-    throw "Optimization application profile initialization failed with exit code ${exitCode}: $outputText"
+    throw "Application profile initialization failed with exit code ${exitCode}: $outputText"
   }
   try {
     $result = $outputText | ConvertFrom-Json
   } catch {
-    throw "Optimization application profile initializer returned invalid JSON: $outputText"
+    throw "Application profile initializer returned invalid JSON: $outputText"
   }
   if ($null -eq $result -or [int]$result.schemaVersion -ne 1 -or [string]$result.status -notin @('existing', 'initialized-empty-candidate')) {
-    throw 'Optimization application profile initializer returned an invalid result.'
+    throw 'Application profile initializer returned an invalid result.'
   }
   if ([IO.Path]::GetFullPath([string]$result.profilePath) -ne [IO.Path]::GetFullPath((Join-Path $ApplicationProfileDir 'browser-profile.json'))) {
-    throw 'Optimization application profile initializer returned an unexpected profile path.'
+    throw 'Application profile initializer returned an unexpected profile path.'
   }
   return $result
 }
@@ -554,13 +559,20 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][int]$StartupTimeoutSeconds,
     [Parameter(Mandatory)][int[]]$ReservedPorts,
     [string]$ExpectedDataRoot = '',
+    [string]$ApplicationProfileInitializer = '',
     [ValidateSet('authoritative', 'standby-if-busy')]
     [string]$ApplicationProfileLeaseMode = 'authoritative',
-    [switch]$AllowStandbyReadiness
+    [switch]$AllowStandbyReadiness,
+    [switch]$AllowReservedDailyPorts
   )
   $capabilityStarted = $false
   $hostStarted = $false
   try {
+    # Start-ManagedRuntimeInstance redirects both children into this directory.
+    # The optimization preview creates it during context setup, but the daily
+    # launcher deliberately keeps context construction read-only.  Ensure the
+    # shared pair boundary is safe for either caller before the first spawn.
+    New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_RELEASE_ID' -Value ([string]$Release.releaseId)
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_PROFILE_ID' -Value $ProfileId
     Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_INSTANCE_ID' -Value $InstanceId
@@ -577,7 +589,8 @@ function Start-OptimizationOwnedPair {
       -NodePath $NodePath `
       -ProjectRoot $ProjectRoot `
       -ApplicationIsolationRoot $ApplicationIsolationRoot `
-      -ApplicationProfileDir $ApplicationProfileDir
+      -ApplicationProfileDir $ApplicationProfileDir `
+      -InitializerPath $ApplicationProfileInitializer
     $profileMode = if ([string]$profileInitialization.status -eq 'initialized-empty-candidate') {
       'empty-host-candidate'
     } else {
@@ -611,6 +624,7 @@ function Start-OptimizationOwnedPair {
         -WorkingDirectory $ProjectRoot `
         -ReadyTimeoutSeconds $StartupTimeoutSeconds `
         -ReservedDailyPorts $ReservedPorts `
+        -AllowReservedDailyPorts:$AllowReservedDailyPorts `
         -StandardOutputPath (Join-Path $LogRoot 'read-web-capability-host.out.log') `
         -StandardErrorPath (Join-Path $LogRoot 'read-web-capability-host.err.log') `
         -Metadata @{ runtimeRole = 'capability-host' }
@@ -627,6 +641,7 @@ function Start-OptimizationOwnedPair {
         -WorkingDirectory $ProjectRoot `
         -ReadyTimeoutSeconds $StartupTimeoutSeconds `
         -ReservedDailyPorts $ReservedPorts `
+        -AllowReservedDailyPorts:$AllowReservedDailyPorts `
         -StandardOutputPath (Join-Path $LogRoot 'read-web-capability-host.out.log') `
         -StandardErrorPath (Join-Path $LogRoot 'read-web-capability-host.err.log') `
         -Metadata @{ runtimeRole = 'capability-host' }
@@ -668,6 +683,7 @@ function Start-OptimizationOwnedPair {
       -WorkingDirectory $WorkflowRoot `
       -ReadyTimeoutSeconds $StartupTimeoutSeconds `
       -ReservedDailyPorts $ReservedPorts `
+      -AllowReservedDailyPorts:$AllowReservedDailyPorts `
       -StandardOutputPath (Join-Path $LogRoot 'read-web-production-host.out.log') `
       -StandardErrorPath (Join-Path $LogRoot 'read-web-production-host.err.log') `
       -Metadata @{

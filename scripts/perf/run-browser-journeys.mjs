@@ -5,11 +5,42 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
+import { isBrowserSafePort } from '../lib/browser-port-policy.mjs'
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(import.meta.url)
 const host = '127.0.0.1'
-const port = Number(process.env.READ_WEB_PERF_PORT || 4196)
-const baseUrl = process.env.READ_WEB_PERF_BASE_URL || `http://${host}:${port}`
+
+const explicitBaseUrl = String(process.env.READ_WEB_PERF_BASE_URL || '').trim()
+const explicitPort = String(process.env.READ_WEB_PERF_PORT || '').trim()
+const port = explicitPort
+  ? Number(explicitPort)
+  : explicitBaseUrl
+    ? null
+    : await findFreeBrowserPort()
+if (explicitPort && !isBrowserSafePort(port)) {
+  throw new Error(`READ_WEB_PERF_PORT must be a browser-safe loopback port: ${explicitPort}`)
+}
+const baseUrl = explicitBaseUrl || `http://${host}:${port}`
+const parsedBaseUrl = new URL(baseUrl)
+if (parsedBaseUrl.protocol !== 'http:' || parsedBaseUrl.hostname !== host || !isBrowserSafePort(parsedBaseUrl.port)) {
+  throw new Error(`Performance browser journeys require a 127.0.0.1 browser-safe base URL: ${baseUrl}`)
+}
+
+async function findFreeBrowserPort() {
+  while (true) {
+    const candidate = await new Promise((resolve, reject) => {
+      const server = http.createServer()
+      server.once('error', reject)
+      server.listen(0, host, () => {
+        const address = server.address()
+        const value = typeof address === 'object' && address ? address.port : 0
+        server.close((error) => error ? reject(error) : resolve(value))
+      })
+    })
+    if (isBrowserSafePort(candidate)) return candidate
+  }
+}
 
 function canReach(url) {
   return new Promise((resolve) => {
@@ -56,6 +87,9 @@ function runHarness() {
 let server = null
 try {
   if (!await canReach(baseUrl)) {
+    if (explicitBaseUrl) {
+      throw new Error(`Explicit performance browser journey base URL is not reachable; the wrapper will not start a service for it: ${baseUrl}`)
+    }
     const viteBin = path.join(path.dirname(require.resolve('vite/package.json')), 'bin', 'vite.js')
     server = spawn(process.execPath, [viteBin, '--host', host, '--port', String(port), '--strictPort', '--clearScreen', 'false'], {
       cwd: repoRoot,

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Benchmark isolated Read-Web workflow HTTP endpoints.
 
-The default mode owns a temporary workflow service on 127.0.0.1:8766. It never
-connects to, starts, or stops the daily service on port 8765.
+The default mode owns a temporary workflow service on a random loopback port.
+It never connects to, starts, or stops a daily or optimization installation.
 """
 
 from __future__ import annotations
@@ -49,13 +49,14 @@ ENDPOINTS = (
     {"name": "reader_marks_read", "method": "GET", "route": f"/api/jobs/{FIXTURE_JOB_ID}/reader-marks"},
     {"name": "tts_cache_hit", "method": "POST", "route": "/api/tts/edge", "payload": {"text": FIXTURE_TTS_TEXT}},
 )
+RESERVED_RUNTIME_PORTS = frozenset({4193, 4194, 5173, 5174, 8765, 8766, 5184, 8776})
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Start an isolated workflow service and benchmark deterministic local HTTP endpoints."
     )
-    parser.add_argument("--port", type=int, default=8766, help="isolated service port (default: 8766)")
+    parser.add_argument("--port", type=int, default=0, help="isolated service port (default: random safe loopback port)")
     parser.add_argument("--warmup", type=int, default=5, help="warmup requests per endpoint")
     parser.add_argument("--rounds", type=int, default=30, help="measured requests per endpoint")
     parser.add_argument("--timeout", type=float, default=3.0, help="per-request timeout in seconds")
@@ -66,10 +67,10 @@ def parse_args() -> argparse.Namespace:
         help="JSON file or output directory (default: output/performance)",
     )
     args = parser.parse_args()
-    if args.port == 8765:
-        parser.error("port 8765 is reserved for the daily service and is never permitted")
-    if not (1 <= args.port <= 65535):
-        parser.error("port must be between 1 and 65535")
+    if args.port != 0 and not (1 <= args.port <= 65535):
+        parser.error("port must be 0 or between 1 and 65535")
+    if args.port in RESERVED_RUNTIME_PORTS:
+        parser.error(f"port {args.port} is reserved for a Read-Web installation and is never permitted")
     if args.warmup < 0 or args.rounds < 1:
         parser.error("warmup must be >= 0 and rounds must be >= 1")
     if args.timeout <= 0 or args.startup_timeout <= 0:
@@ -85,6 +86,18 @@ def port_has_listener(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(0.25)
         return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def choose_isolated_port(requested: int) -> int:
+    if requested:
+        return requested
+    for _ in range(20):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", 0))
+            candidate = int(probe.getsockname()[1])
+        if candidate not in RESERVED_RUNTIME_PORTS and not port_has_listener(candidate):
+            return candidate
+    raise RuntimeError("could not allocate a random safe loopback port for the isolated benchmark")
 
 
 def git_sha() -> str | None:
@@ -322,6 +335,7 @@ def stop_owned_process(process: subprocess.Popen[bytes]) -> None:
 
 def main() -> int:
     args = parse_args()
+    args.port = choose_isolated_port(args.port)
     if not WORKFLOW_ROOT.is_dir():
         raise FileNotFoundError(f"workflow root not found: {WORKFLOW_ROOT}")
     if port_has_listener(args.port):
@@ -407,7 +421,7 @@ def main() -> int:
                 "isolation": {
                     "host": "127.0.0.1",
                     "port": args.port,
-                    "dailyPort8765Accessed": False,
+                    "reservedRuntimePortsAccessed": [],
                     "temporaryDataRoot": True,
                     "fixtureGeneratedLocally": True,
                     "externalNetworkRequested": False,

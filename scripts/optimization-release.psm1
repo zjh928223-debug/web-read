@@ -490,6 +490,31 @@ function Resolve-OptimizationSelectedPython {
   return $resolved
 }
 
+function Resolve-OptimizationDailyPython {
+  param(
+    [Parameter(Mandatory)][string]$RuntimeConfigPath,
+    [string]$RequestedPath = ''
+  )
+  $explicit = if ($RequestedPath) {
+    $RequestedPath
+  } elseif ($env:READ_WEB_PYTHON) {
+    [string]$env:READ_WEB_PYTHON
+  } elseif ($env:READ_WEB_PYTHON_PATH) {
+    [string]$env:READ_WEB_PYTHON_PATH
+  } else {
+    ''
+  }
+  if ($explicit) {
+    return Resolve-OptimizationSelectedPython -RuntimeConfigPath $RuntimeConfigPath -RequestedPath $explicit
+  }
+
+  $defaultVenv = Get-OptimizationDefaultPythonPath
+  if (-not $defaultVenv -or -not (Test-Path -LiteralPath $defaultVenv -PathType Leaf)) {
+    throw "Daily production requires the external optimization Python venv at $defaultVenv. Provide -BootstrapPython or READ_WEB_PYTHON/READ_WEB_PYTHON_PATH only for an explicit fixture/CI override."
+  }
+  return Resolve-OptimizationSelectedPython -RuntimeConfigPath $RuntimeConfigPath -RequestedPath $defaultVenv
+}
+
 function Get-OptimizationToolchainIdentity {
   param(
     [Parameter(Mandatory)][string]$ProjectRoot,
@@ -1403,6 +1428,7 @@ Export-ModuleMember -Function `
   Test-OptimizationReleaseCompatibility, `
   Assert-OptimizationReleaseToolchain, `
   Resolve-OptimizationSelectedPython, `
+  Resolve-OptimizationDailyPython, `
   Get-OptimizationToolchainIdentity, `
   Get-OptimizationReleaseReuseKey, `
   Get-OptimizationExternalToolDescriptor, `

@@ -13,8 +13,8 @@ const [readme, operations, testingGates, verifyFull] = await Promise.all([
   readProjectFile('scripts/verify-full.mjs'),
 ])
 
-assert.deepEqual([...RESERVED_DAILY_PORTS].sort((left, right) => left - right), [5173, 8765])
-for (const port of [5173, 8765]) {
+assert.deepEqual([...RESERVED_DAILY_PORTS].sort((left, right) => left - right), [5173, 5174, 8765, 8766])
+for (const port of [5173, 8765, 5174, 8766]) {
   assert.equal(isBrowserSafePort(port), false, `${port} must remain excluded from browser-owned ports`)
 }
 for (const port of [4193, 4194]) {
@@ -23,11 +23,13 @@ for (const port of [4193, 4194]) {
 
 assert.match(verifyFull, /dev:\s*'4193'/)
 assert.match(verifyFull, /preview:\s*'4194'/)
+assert.match(verifyFull, /5173\/8765 and 5174\/8766/)
 assert.match(verifyFull, /independent production host lifecycle and browser journeys/)
 assert.match(verifyFull, /compatibility consumer map browser capture/)
 
 for (const [name, contents] of Object.entries({ README: readme, OPERATIONS: operations, 'testing-gates': testingGates })) {
   assert.match(contents, /5173\/8765/, `${name} must name both daily ports`)
+  assert.match(contents, /5174\/8766/, `${name} must name the current daily ports`)
   assert.match(contents, /随机/, `${name} must explain random owned journey ports`)
   assert.match(contents, /browser-safe/, `${name} must identify the shared browser-safe policy`)
   assert.doesNotMatch(contents, /只(?:使用|用)[^\n。]*4193\/4194(?:\/4195)?/, `${name} must not claim all browser checks use only fixed ports`)

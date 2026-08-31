@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 114,
-    "behavior": 116,
+    "behavior": 117,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 276,
-  "executableScriptCount": 297,
+  "packageScriptCount": 277,
+  "executableScriptCount": 298,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -622,7 +622,8 @@
       "category": "browser",
       "layers": [
         "architecture",
-        "browser"
+        "browser",
+        "behavior"
       ],
       "invokes": [
         "scripts/compatibility-consumer-map.mjs"
@@ -706,6 +707,19 @@
         "scripts/current-documentation-check.mjs"
       ],
       "owner": "package.json#scripts.verify:current-documentation"
+    },
+    {
+      "name": "verify:daily-production-launcher",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/daily-production-launcher-check.ps1 -LauncherPath scripts/launch-daily-production.ps1",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/daily-production-launcher-check.ps1",
+        "scripts/launch-daily-production.ps1"
+      ],
+      "owner": "package.json#scripts.verify:daily-production-launcher"
     },
     {
       "name": "verify:dialog-controller",
@@ -4619,7 +4633,8 @@
       "category": "browser",
       "layers": [
         "architecture",
-        "browser"
+        "browser",
+        "behavior"
       ],
       "aggregates": [],
       "architectureEvidence": [],
@@ -4639,7 +4654,7 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": false,
-        "executesModule": false,
+        "executesModule": true,
         "startsBrowser": true
       }
     },
@@ -5208,6 +5223,30 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/initialize-daily-production-application-profile.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
         "startsBrowser": false
       }
     },
@@ -6407,7 +6446,8 @@
       "category": "performance",
       "layers": [
         "browser",
-        "performance"
+        "performance",
+        "behavior"
       ],
       "aggregates": [],
       "architectureEvidence": [],
@@ -6423,7 +6463,7 @@
         "performance": true,
         "release": false,
         "behaviorAssertions": false,
-        "executesModule": false,
+        "executesModule": true,
         "startsBrowser": true
       }
     },

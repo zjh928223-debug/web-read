@@ -3,7 +3,10 @@ const CHROMIUM_UNSAFE_PORTS = new Set([
   6665, 6666, 6667, 6668, 6669, 6697, 10080,
 ])
 
-const RESERVED_DAILY_PORTS = new Set([5173, 8765])
+// Keep both the legacy reader pair and the current daily-production pair out
+// of browser-owned ephemeral allocation.  The production launcher may use the
+// current pair only after its explicit daily-production authorization path.
+const RESERVED_DAILY_PORTS = new Set([5173, 8765, 5174, 8766])
 
 function isBrowserSafePort(port) {
   const numericPort = Number(port)

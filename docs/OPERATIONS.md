@@ -5,11 +5,12 @@
 
 ## Safety boundary
 
-- 不停止、复用或改写日常版 `E:\read-web` 的 `5173/8765`。
-- Next 手工预览使用 `5174/8766`。
-- `verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口，全部排除 `5173/8765`。
+- 不停止、复用或改写当前日常 `E:\read-web-next` 的 `5174/8766`。
+- 旧日常回退参考为 `E:\read-web` 的 `5173/8765`；两组端口都属于保留端口。
+- 本 worktree 的 optimization 手工运行只使用 `5184/8776` 与 `E:\ReadWebData\SubtitleWorkflow-Optimization`。
+- `verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口，全部排除 `5173/8765` 和 `5174/8766`。
 - 不把凭据、浏览器 profile、媒体、工作流 data root 或词典数据库写入仓库。
-- 桌面快捷方式已在 2026-08-17 获得用户明确确认后迁移；后续验证不得自动改写，旧目标必须保留用于回滚。
+- 桌面快捷方式不属于本 worktree 的实现或验证范围；后续验证不得读取或改写，正式切换必须单独获得用户明确确认并保留旧目标用于回滚。
 
 ## Optimization worktree: built production launch
 
@@ -66,8 +67,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-
 `-DevFallback` 是显式源代码调试逃生路径，会调用现有 Vite launcher，不能作为默认日常启动。
 若 built Host 启动或蓝绿切换失败，launcher 会清理本次 staging/新 owned instance，并保留
 当前 active release、旧 target、旧 Host 可用性及数据目录；先查看上述日志，再修复或回到
-上一提交重新 build。需要临时恢复可用 reader 时，可明确运行 `-DevFallback`，确认后再用
-`-Stop` 清理旧的 production pair。
+上一提交重新 build。需要临时恢复可用 reader 时，可明确运行 `-DevFallback`；它仍使用 optimization
+RuntimeConfig 的 `5184/8776`，只是返回 Vite dev content，不能当作 built production Host。
 
 launcher focused check（包含真实 start → health → reuse(PID/instance 不变) → stop，以及 staging
 构建/发布失败安全性）使用优化端口并拒绝接管已有 owned pair：
@@ -87,6 +88,63 @@ Remove-Item Env:READ_WEB_PRODUCTION_HOST_BROWSER
 ```
 
 该模式会在随机 loopback 端口运行，明确记录 `browserJourneys: skipped`；默认验证仍保留浏览器旅程。
+
+## Daily production promotion: explicit takeover entry
+
+这是从本优化 worktree 产出 built-dist Host、接管现有日常 origin 的最小入口，不是第二套
+workflow 数据迁移。它固定使用 `config/runtime.daily-production.json`、`5174/8766`、
+`E:\ReadWebData\SubtitleWorkflow-Next` 和 profile `daily-production`；不会复制约 4.67 GB
+workflow/media，也不会改变 optimization 的 `5184/8776` 与
+`E:\ReadWebData\SubtitleWorkflow-Optimization` 隔离约束。
+
+默认只做安全 Plan：
+
+```powershell
+Set-Location E:\read-web-next-optimization
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-daily-production.ps1 -Action Plan -NoOpen
+```
+
+Plan 不写 state、release、profile 或数据；它只报告端口是否空闲、已有 process/health/profile
+身份、root identity、built-dist 要求和 owner 状态。旧进程或未知占用者不会被自动停止或接管。
+
+只有用户在确认 Plan、确认当前日常进程已由用户自行处理且允许使用现有 `SubtitleWorkflow-Next`
+后，才可执行正式 Apply：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-daily-production.ps1 `
+  -Action Apply -ConfirmDailyProductionApply -NoOpen
+```
+
+Apply 会构建不可变 release、启动 `youtube_workflow.production_host_prototype` built-dist Host
+和 capability pair，并原子写入 `.codex/runtime-state/daily-production/`。状态保存 PID/start
+time/executable/argument、health、release、profile、data-root identity 与 rollback state；失败
+只清理本次新 owned instance，不删除旧 release 或数据。`Start`/`Stop`/`Rollback` 也只接受
+identity-checked owned process，Rollback 需要 `-ConfirmDailyProductionRollback`，并保留 release
+和 data root。Rollback 不会访问或重启受保护的 Vite/dev 进程；完成回退后，用户可以手动返回保留的
+旧 launcher/target，现有 shortcut target 不会被丢弃。
+
+Daily cold start、Apply/Start 以及 shortcut 指向的 launcher 使用同一套 Python 解析：正式
+daily 在没有 `-BootstrapPython` 或 `READ_WEB_PYTHON`/`READ_WEB_PYTHON_PATH` 显式 override 时，
+只允许使用 `%LOCALAPPDATA%\Read-Web\optimization-python\Scripts\python.exe`；该 venv 缺失时
+直接 fail-closed，不会把 daily RuntimeConfig 中的裸 `python` 解析成全局回退。显式 override
+只用于 fixture/CI 等明确场景。launcher 不会修改全局 Python，也不会用不健康的全局解释器继续
+启动；完整 Python health、built Host 和 runtime preflight 任一失败都会 fail-closed。
+
+快捷方式另有独立、显式的 Plan/Apply/Rollback 工具；验证只使用临时 `.lnk`，不会读取或改写桌面
+快捷方式。正式切换时必须显式提供新的 script、working directory 和 launcher arguments，并保留
+旧目标：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-shortcut-migration.ps1 `
+  -Action Plan -ShortcutPath <explicit-shortcut> -StatePath <explicit-state> `
+  -NewScriptPath E:\read-web-next-optimization\scripts\launch-daily-production.ps1 `
+  -NewWorkingDirectory E:\read-web-next-optimization `
+  -NewLauncherArguments '-Action Start -NoOpen'
+```
+
+若 Host health 的六域 `ownerMode.authoritativeDomains` 未全部覆盖
+`reader-session`、`marks-activity`、`passage-preview`、`annotation`、`vocabulary-srs`、`workflow`，
+结果必须诚实显示 `legacy-browser-owner/pre-cutover`，不能宣称 authoritative。
 
 ## Optimization install and diagnose
 
@@ -108,9 +166,12 @@ venv 必须放在仓库外，不提交也不与其他项目混用。上面的 `%
 是 optimization launcher 的稳定默认位置：桌面快捷方式冷启动时，即使没有继承当前 PowerShell
 会话的环境变量，也会选择这个解释器。`READ_WEB_PYTHON` 是 canonical 选择；
 `READ_WEB_PYTHON_PATH` 仅为兼容别名，显式环境变量和 `-BootstrapPython` 会优先于默认位置。
-launcher、full/release gate 和 Production Host 都使用同一个解析后的 executable。若默认 venv
-不存在，launcher 才回退到 RuntimeConfig/PATH；全局解释器若未通过完整 package-set health，仍会
-在 BuildAction 前 fail-fast。
+optimization launcher、full/release gate 和 Production Host 都使用同一个解析后的 executable。
+optimization 默认 venv 不存在时，optimization launcher 才回退到 RuntimeConfig/PATH；全局解释器
+若未通过完整 package-set health，仍会在 BuildAction 前 fail-fast。daily-production launcher
+使用更严格的 daily resolver：没有显式 `-BootstrapPython` 或 `READ_WEB_PYTHON`/
+`READ_WEB_PYTHON_PATH` 时，默认 venv 缺失就 fail-closed，不会把 daily RuntimeConfig 中的裸
+`python` 解析成全局回退；显式 override 只用于 fixture/CI 等明确场景。
 
 一次性验证或 CI 可以把 `$venv` 换成系统临时目录；这时必须在同一会话设置 `READ_WEB_PYTHON`，
 或启动 launcher 时显式传入 `-BootstrapPython <path-to-python.exe>`。
@@ -181,7 +242,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-
 - workflow health `http://127.0.0.1:5184/api/health`
 
 若端口已被未知进程占用，停止并核对 PID ownership；不要结束日常版进程来腾端口。需要源代码调试时，必须显式传入
-`-DevFallback`，它仍使用隔离的 `5174/8766`，不改变 built production 默认路径。
+`-DevFallback`，它仍使用 optimization 隔离的 `5184/8776`，不改变 built production 默认路径。
 
 ## Verification
 
@@ -200,7 +261,7 @@ git diff --check
 
 ```powershell
 Set-Location E:\read-web-next-optimization
-Get-NetTCPConnection -State Listen -LocalPort 4193,4194,5174,8766 -ErrorAction SilentlyContinue
+Get-NetTCPConnection -State Listen -LocalPort 4193,4194 -ErrorAction SilentlyContinue
 ```
 
 `E:\read-web-next` 是受保护的日常 reader 树，本节不提供在那里执行 `npm ci`、build、verify 或 launch
@@ -220,7 +281,8 @@ Set-Location E:\read-web-next-optimization\tools\subtitle-workflow
 & $env:READ_WEB_PYTHON -m unittest discover -s tests -p 'test_*.py'
 ```
 
-后端测试必须使用临时 data root 或 in-process adapter，不得读取或清理真实 `E:\ReadWebData\SubtitleWorkflow`。
+后端测试必须使用临时 data root 或 in-process adapter，不得读取或清理真实
+`E:\ReadWebData\SubtitleWorkflow-Next` 或 `E:\ReadWebData\SubtitleWorkflow`。
 
 ## Failure artifacts
 
