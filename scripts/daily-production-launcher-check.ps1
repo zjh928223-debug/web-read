@@ -99,7 +99,20 @@ Assert-True ($dailyConfig.dataRoot -eq 'E:\ReadWebData\SubtitleWorkflow-Next') '
 Assert-True ($launcherSource -match 'runtime\.daily-production\.json' -and $launcherSource -notmatch 'runtime\.optimization\.json') 'daily-production launcher must not widen or reuse runtime.optimization.json'
 Assert-True ($launcherSource -match 'youtube_workflow\.production_host_prototype' -and $launcherSource -match 'legacy-browser-owner/pre-cutover') 'daily-production launcher must require built Host and expose pre-cutover owner status'
 Assert-True ($launcherSource -match 'Resolve-OptimizationSelectedPython' -and $launcherSource -match 'Assert-OptimizationReleaseToolchain') 'daily-production launcher must select and health-check the external Python runtime before startup'
-foreach ($phase in @('apply-before-active-target', 'apply-after-active-target', 'rollback-after-stop', 'rollback-after-rollback-target', 'rollback-after-active-target-clear', 'rollback-before-journal-remove', 'rollback-after-journal-remove')) {
+foreach ($phase in @(
+  'apply-before-active-target',
+  'apply-after-active-target',
+  'apply-before-journal-remove',
+  'apply-after-journal-remove',
+  'rollback-before-stop',
+  'rollback-after-stop',
+  'rollback-before-rollback-target',
+  'rollback-after-rollback-target',
+  'rollback-before-active-target-clear',
+  'rollback-after-active-target-clear',
+  'rollback-before-journal-remove',
+  'rollback-after-journal-remove'
+)) {
   Assert-True ($launcherSource -match [regex]::Escape($phase)) "daily-production launcher is missing crash recovery phase: $phase"
 }
 foreach ($domain in @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')) {
@@ -213,17 +226,40 @@ try {
   Assert-True ($shortcutRollback.exitCode -eq 0 -and $shortcutRollback.json.status -eq 'rolled-back') "shortcut Rollback failed: $($shortcutRollback.text)"
   Assert-ShortcutEqual (Read-TestShortcut -Path $shortcutPath) $originalSpec 'shortcut Rollback must restore the saved original fixture shortcut'
 
-  $applyCrashPhases = @('apply-before-active-target', 'apply-after-active-target')
+  $applyCrashPhases = @(
+    'apply-before-active-target',
+    'apply-after-active-target',
+    'apply-before-journal-remove',
+    'apply-after-journal-remove'
+  )
   foreach ($phase in $applyCrashPhases) {
     $crashEnvironment = @{}
     foreach ($name in $stableEnvironment.Keys) { $crashEnvironment[$name] = $stableEnvironment[$name] }
     $crashEnvironment['READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE'] = $phase
     $crashApply = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Apply', '-ConfirmDailyProductionApply') + $common) -Environment $crashEnvironment
     Assert-True ($crashApply.exitCode -ne 0) "synthetic daily Apply crash phase did not terminate the child: $phase"
-    Assert-True (Test-Path -LiteralPath (Join-Path $stateRoot 'promotion-journal.json') -PathType Leaf) "synthetic daily Apply crash did not retain its journal: ${phase}: $($crashApply.text)"
+    $journalPath = Join-Path $stateRoot 'promotion-journal.json'
+    if ($phase -eq 'apply-after-journal-remove') {
+      Assert-True (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) "synthetic daily Apply retained a journal after its cleanup phase: $phase"
+    } else {
+      Assert-True (Test-Path -LiteralPath $journalPath -PathType Leaf) "synthetic daily Apply crash did not retain its journal: ${phase}: $($crashApply.text)"
+    }
     $crashRecovery = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Start') + $common) -Environment $stableEnvironment
-    Assert-True ($crashRecovery.exitCode -ne 0 -and $crashRecovery.text -match 'Recovered daily-production Apply transaction') "daily Apply recovery did not converge after phase ${phase}: $($crashRecovery.text)"
-    Assert-DailyFixtureStopped -StateRoot $stateRoot -ApplicationRoot $applicationRoot -FrontendPort $frontendPort -BackendPort $backendPort -MessagePrefix "daily Apply recovery $phase"
+    if ($phase -in @('apply-before-active-target', 'apply-after-active-target')) {
+      Assert-True ($crashRecovery.exitCode -ne 0 -and $crashRecovery.text -match 'Recovered daily-production Apply transaction') "daily Apply recovery did not roll back after phase ${phase}: $($crashRecovery.text)"
+      Assert-DailyFixtureStopped -StateRoot $stateRoot -ApplicationRoot $applicationRoot -FrontendPort $frontendPort -BackendPort $backendPort -MessagePrefix "daily Apply recovery $phase"
+    } else {
+      Assert-True ($crashRecovery.exitCode -eq 0 -and $crashRecovery.json.status -eq 'reused') "daily Apply recovery did not finalize the committed target after phase ${phase}: $($crashRecovery.text)"
+      if ($phase -eq 'apply-before-journal-remove') {
+        Assert-True ($crashRecovery.text -match 'Recovered daily-production Apply transaction') "daily Apply committed-journal recovery did not report finalization after phase ${phase}: $($crashRecovery.text)"
+      } else {
+        Assert-True ($crashRecovery.text -notmatch 'Recovered daily-production Apply transaction') "daily Apply post-journal crash unexpectedly reported journal recovery after phase ${phase}: $($crashRecovery.text)"
+      }
+      Assert-True (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) "daily Apply finalization retained its journal after phase $phase"
+      $applyCleanup = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Rollback', '-ConfirmDailyProductionRollback') + $common) -Environment $stableEnvironment
+      Assert-True ($applyCleanup.exitCode -eq 0 -and $applyCleanup.json.status -eq 'rolled-back') "daily Apply committed-target cleanup failed after phase ${phase}: $($applyCleanup.text)"
+      Assert-DailyFixtureStopped -StateRoot $stateRoot -ApplicationRoot $applicationRoot -FrontendPort $frontendPort -BackendPort $backendPort -MessagePrefix "daily Apply committed-target cleanup $phase"
+    }
   }
 
   $stableApply = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Apply', '-ConfirmDailyProductionApply') + $common) -Environment $stableEnvironment
@@ -241,6 +277,7 @@ try {
   }
 
   $rollbackCrashPhases = @(
+    'rollback-before-stop',
     'rollback-after-stop',
     'rollback-before-rollback-target',
     'rollback-after-rollback-target',

@@ -123,6 +123,12 @@ identity-checked owned process，Rollback 需要 `-ConfirmDailyProductionRollbac
 和 data root。Rollback 不会访问或重启受保护的 Vite/dev 进程；完成回退后，用户可以手动返回保留的
 旧 launcher/target，现有 shortcut target 不会被丢弃。
 
+Daily cold start、Apply/Start 以及 shortcut 指向的 launcher 使用同一套 Python 解析：若外部稳定
+环境已存在，优先使用 `%LOCALAPPDATA%\Read-Web\optimization-python\Scripts\python.exe`；
+`READ_WEB_PYTHON`/`READ_WEB_PYTHON_PATH` 只作为显式 override/CI 注入。launcher 不会修改全局
+Python，也不会用不健康的全局解释器继续启动；完整 Python health、built Host 和 runtime
+preflight 任一失败都会 fail-closed。
+
 快捷方式另有独立、显式的 Plan/Apply/Rollback 工具；验证只使用临时 `.lnk`，不会读取或改写桌面
 快捷方式。正式切换时必须显式提供新的 script、working directory 和 launcher arguments，并保留
 旧目标：
@@ -155,11 +161,11 @@ npm run verify:python-health
 npm run verify:python-runtime-inventory
 ```
 
-venv 必须放在仓库外（这里使用系统临时目录），不提交也不复用于其他 release。`READ_WEB_PYTHON`
-是 canonical 选择；`READ_WEB_PYTHON_PATH` 仅为兼容别名，launcher、full/release gate 和
-Production Host 都使用同一个解析后的 executable。若不设置环境变量，optimization
-RuntimeConfig 的 `python.executable` 仍会被解析，但全局解释器只适合运行离线 lock 格式检查，
-不应通过 health/release 门禁。
+该诊断示例的 venv 放在仓库外（这里使用系统临时目录），不提交也不复用于其他 release。
+`READ_WEB_PYTHON` 是 canonical 选择；`READ_WEB_PYTHON_PATH` 仅为兼容别名，launcher、
+full/release gate 和 Production Host 都使用同一个解析后的 executable。日常 cold start 不会
+因为全局 Python 可执行而绕过 health/release 门禁；没有健康的显式 runtime 或稳定外部 venv
+时必须停止并报告原因。
 
 `verify:fast` 只执行离线、确定性的 lock 格式和 RuntimeConfig 选择检查；`verify:full` 还会
 执行完整 package-set health。Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失

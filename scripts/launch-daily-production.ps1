@@ -1371,6 +1371,7 @@ function Invoke-DailyRollback {
   try {
     $journal.phase = 'stopping'
     Write-DailyJournal -Context $Context -Journal $journal
+    Invoke-DailyCrashPoint -Phase 'rollback-before-stop'
     if ($targetStatus -eq 'active') { Stop-DailyPair -Context $Context -Target $target }
     $journal.phase = 'services-stopped'
     Write-DailyJournal -Context $Context -Journal $journal
