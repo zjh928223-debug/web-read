@@ -492,7 +492,12 @@ async function cleanupStage(stage, runRoot) {
   if (!stage?.runRoot) return
   const resolved = path.resolve(stage.runRoot)
   if (!overlaps(path.resolve(runRoot), resolved) || resolved === path.resolve(runRoot)) return
-  await rm(resolved, { recursive: true, force: true })
+  await rm(resolved, {
+    recursive: true,
+    force: true,
+    maxRetries: 8,
+    retryDelay: 250,
+  })
 }
 
 function createWorkflowLegacyWriterControl(config, manifest) {
