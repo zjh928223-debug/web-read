@@ -280,6 +280,16 @@ function sourceDomainRevision(domain) {
     : safeRevision(domain.revision)
 }
 
+function normalizeWorkflowConfigPayload(payload) {
+  if (!isPlainObject(payload) || typeof payload.proxyUrl !== 'string') return payload
+  // The backup sanitizer serializes an origin URL with its conventional
+  // trailing slash, while the Python workflow Host stores the same origin
+  // without it.  Only normalize a bare origin; a path, query, or fragment is
+  // meaningful proxy configuration and must remain an exact comparison.
+  const proxyUrl = payload.proxyUrl.replace(/^(https?|wss?):\/\/([^/?#]+)\/$/iu, '$1://$2')
+  return proxyUrl === payload.proxyUrl ? payload : { ...payload, proxyUrl }
+}
+
 function domainEquivalent(left, right, domain = null) {
   try {
     // Application backup adapters expose the durable record fields, while
@@ -372,6 +382,7 @@ function domainEquivalent(left, right, domain = null) {
             delete content.schemaVersion
           }
           if (domain === 'workflow') {
+            if (content.id === 'config') content.payload = normalizeWorkflowConfigPayload(content.payload)
             for (const field of ['references', 'mediaReferences']) {
               if (Array.isArray(content[field])) {
                 content[field] = content[field].slice().sort((left, right) => (

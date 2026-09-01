@@ -632,6 +632,34 @@ const workflowStringImport = await workflowStringFixture.service.importDomain('w
 })
 assert.equal(workflowStringImport.ok, true)
 
+const proxyUrlSource = createImportBridge([{
+  domain: 'workflow',
+  recordKey: 'config',
+  schemaVersion: 1,
+  revision: 0,
+  contentId: null,
+  payload: { proxyUrl: 'http://127.0.0.1:7897' },
+  references: [],
+  mediaReferences: [],
+}])
+const proxyUrlHost = createHostAdapters({
+  workflow: new HostAdapter({
+    ...emptySnapshot(),
+    records: [{
+      id: 'config',
+      schemaVersion: 1,
+      revision: 0,
+      contentId: null,
+      payload: { proxyUrl: 'http://127.0.0.1:7897' },
+      references: [],
+      mediaReferences: [],
+    }],
+  }),
+})
+const proxyUrlFixture = createMigrationFixture({ legacyBridge: proxyUrlSource, hostAdapters: proxyUrlHost })
+const proxyUrlDryRun = await proxyUrlFixture.service.dryRun('workflow', { expectedRevision: 0 })
+assert.equal(proxyUrlDryRun.ok, true, 'workflow origin proxy URLs must compare equal across slash normalization')
+
 const conflictHost = createHostAdapters({
   'reader-session': new HostAdapter({ ...emptySnapshot(), revision: 1, records: [{ id: 'old', revision: 1, payload: { value: 'old' } }] }),
 })
