@@ -324,6 +324,8 @@ try {
     foreach ($name in $stableEnvironment.Keys) { $crashEnvironment[$name] = $stableEnvironment[$name] }
     $crashEnvironment['READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE'] = $phase
     $crashApply = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Apply', '-ConfirmDailyProductionApply') + $common) -Environment $crashEnvironment
+    $crashMarker = "Synthetic daily-production crash at phase: $phase"
+    Assert-True ($crashApply.text -match [regex]::Escape($crashMarker)) "synthetic daily Apply did not reach crash phase ${phase}: $($crashApply.text)"
     Assert-True ($crashApply.exitCode -ne 0) "synthetic daily Apply crash phase did not terminate the child: $phase"
     $journalPath = Join-Path $stateRoot 'promotion-journal.json'
     $committedTargetInstanceId = ''

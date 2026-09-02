@@ -777,8 +777,10 @@ function Invoke-DailyCrashPoint {
   param([Parameter(Mandatory)][string]$Phase)
   if ([string]$env:READ_WEB_DAILY_PRODUCTION_TEST_KILL_PHASE -ne $Phase) { return }
   Write-Host "Synthetic daily-production crash at phase: $Phase"
-  try { Stop-Process -Id $PID -Force -ErrorAction Stop } catch {}
-  throw "Synthetic daily-production crash at phase: $Phase"
+  # Exit this launcher process synchronously.  A self Stop-Process can return
+  # before the command wrapper observes termination, allowing cleanup to race
+  # the durable journal/target assertions.
+  exit 137
 }
 
 function New-DailyEmptyTarget {
@@ -1283,7 +1285,7 @@ function Invoke-DailyApply {
       -BackendHost $Context.backendHost `
       -BackendPort $Context.backendPort `
       -DataRoot $Context.dataRoot `
-      -RequireClean
+      -RequireClean:(!$Context.fixtureMode)
     $journal.phase = 'release-staged'
     $journal.candidateReleaseId = $candidate.releaseId
     Write-DailyJournal -Context $Context -Journal $journal
