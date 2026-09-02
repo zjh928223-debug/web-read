@@ -125,6 +125,214 @@ function Get-HostHealthUrl {
   return "http://127.0.0.1:$port/api/app/health"
 }
 
+function Test-OptimizationSamePath {
+  param([AllowEmptyString()][string]$Left, [AllowEmptyString()][string]$Right)
+  if (-not $Left -or -not $Right) { return $false }
+  try {
+    return [String]::Equals(
+      [IO.Path]::GetFullPath($Left).TrimEnd('\', '/'),
+      [IO.Path]::GetFullPath($Right).TrimEnd('\', '/'),
+      [StringComparison]::OrdinalIgnoreCase)
+  } catch { return $false }
+}
+
+function Get-OptimizationManagedStateArguments {
+  param([Parameter(Mandatory)]$State)
+  return @((Get-OptimizationObjectValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
+}
+
+function Get-OptimizationManagedStateMetadata {
+  param([Parameter(Mandatory)]$State)
+  $reserved = @(
+    'schemaVersion', 'releaseId', 'profileId', 'instanceId', 'port', 'pid',
+    'processStartUtc', 'launcherPid', 'launcherProcessStartUtc', 'startedAtUtc',
+    'executableIdentity', 'healthUrl', 'filePath', 'argumentList',
+    'workingDirectory', 'standardOutputPath', 'standardErrorPath',
+    'reservedDailyPorts', 'allowReservedDailyPorts', 'launchIntentPath'
+  )
+  $metadata = @{}
+  foreach ($property in @($State.PSObject.Properties)) {
+    if ($reserved -notcontains $property.Name) { $metadata[$property.Name] = $property.Value }
+  }
+  return $metadata
+}
+
+function Remove-OptimizationStaleHostArtifacts {
+  param(
+    [Parameter(Mandatory)][string]$ManagerStatePath,
+    [Parameter(Mandatory)]$State,
+    $ActiveDescriptor = $null
+  )
+  $resolvedRoot = [IO.Path]::GetFullPath($stateRoot).TrimEnd('\', '/')
+  $resolvedManagerStatePath = [IO.Path]::GetFullPath($ManagerStatePath)
+  if (-not $resolvedManagerStatePath.StartsWith("$resolvedRoot\", [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Stale optimization Host state points outside its state root: $ManagerStatePath"
+  }
+  $stateProfile = Get-OptimizationObjectText -Object $State -Name 'profileId'
+  if ($stateProfile -and $stateProfile -ne $profileId) {
+    throw "Stale optimization Host state profile mismatch at $ManagerStatePath; refusing cleanup."
+  }
+  $instanceId = Get-OptimizationObjectText -Object $State -Name 'instanceId'
+  $port = 0
+  [int]::TryParse((Get-OptimizationObjectText -Object $State -Name 'port'), [ref]$port) | Out-Null
+
+  if ($null -ne $ActiveDescriptor) {
+    $descriptorProfile = Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'profileId'
+    if ($descriptorProfile -and $descriptorProfile -ne $profileId) {
+      throw 'Stale optimization Host descriptor belongs to another profile; refusing cleanup.'
+    }
+    $descriptorManagerPath = Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'managerStatePath'
+    if ($descriptorManagerPath -and -not (Test-OptimizationSamePath -Left $descriptorManagerPath -Right $ManagerStatePath)) {
+      throw 'Stale optimization Host descriptor points to a different manager state; refusing cleanup.'
+    }
+    if ($instanceId -and (Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'instanceId') -and (Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'instanceId') -ne $instanceId) {
+      throw 'Stale optimization Host descriptor instance mismatch; refusing cleanup.'
+    }
+  }
+
+  foreach ($path in @(
+      $ManagerStatePath,
+      "$ManagerStatePath.intent.json",
+      "$ManagerStatePath.replacement.json",
+      "$ManagerStatePath.lock"
+    )) {
+    if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force -ErrorAction Stop }
+  }
+  if (Test-Path -LiteralPath $hostStatePath -PathType Leaf) {
+    $removeDescriptor = Test-OptimizationSamePath -Left $ManagerStatePath -Right $hostStatePath
+    if (-not $removeDescriptor -and $null -ne $ActiveDescriptor) {
+      $activePath = Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'managerStatePath'
+      $removeDescriptor = -not $activePath -or (Test-OptimizationSamePath -Left $activePath -Right $ManagerStatePath)
+    }
+    if ($removeDescriptor) { Remove-Item -LiteralPath $hostStatePath -Force -ErrorAction Stop }
+  }
+  foreach ($targetPath in @($frontDoorTargetPath, $frontDoorCommittedTargetPath)) {
+    $target = Read-OptimizationFrontDoorTarget -Path $targetPath
+    if ($null -ne $target `
+      -and [string](Get-OptimizationObjectText -Object $target -Name 'profileId') -eq $profileId `
+      -and $instanceId `
+      -and [string](Get-OptimizationObjectText -Object $target -Name 'instanceId') -eq $instanceId `
+      -and $port -gt 0 `
+      -and [int](Get-OptimizationObjectText -Object $target -Name 'port') -eq $port) {
+      Remove-Item -LiteralPath $targetPath -Force -ErrorAction Stop
+    }
+  }
+}
+
+function Resolve-OptimizationExistingHostState {
+  param(
+    [Parameter(Mandatory)][string]$ManagerStatePath,
+    $ManagerState = $null,
+    $ActiveDescriptor = $null
+  )
+  if ($null -eq $ManagerState) {
+    $descriptorStatus = Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'status'
+    if ($descriptorStatus -ne 'active') {
+      return [pscustomobject]@{ state = $null; managerStatePath = ''; descriptor = $ActiveDescriptor; status = 'absent' }
+    }
+    $descriptorPid = 0
+    [int]::TryParse((Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'pid'), [ref]$descriptorPid) | Out-Null
+    $descriptorProcess = if ($descriptorPid -gt 0) { Get-Process -Id $descriptorPid -ErrorAction SilentlyContinue } else { $null }
+    if ($null -ne $descriptorProcess) {
+      throw "Optimization Host descriptor $ManagerStatePath has a live but unproven PID $descriptorPid; refusing cleanup."
+    }
+    $descriptorPort = 0
+    [int]::TryParse((Get-OptimizationObjectText -Object $ActiveDescriptor -Name 'port'), [ref]$descriptorPort) | Out-Null
+    if ($descriptorPort -gt 0 -and (Test-OptimizationTcpPortOccupied -Port $descriptorPort)) {
+      throw "Optimization Host descriptor $ManagerStatePath is stale while port $descriptorPort is occupied; refusing cleanup."
+    }
+    Remove-OptimizationStaleHostArtifacts -ManagerStatePath $ManagerStatePath -State $ActiveDescriptor -ActiveDescriptor $ActiveDescriptor
+    Write-Host "Recovered stale optimization Host descriptor without an owned manager state: $ManagerStatePath"
+    return [pscustomobject]@{ state = $null; managerStatePath = ''; descriptor = $null; status = 'stale-cleared' }
+  }
+
+  if ((Get-OptimizationObjectText -Object $ManagerState -Name 'profileId') -ne $profileId) {
+    throw "Optimization Host manager state profile mismatch at $ManagerStatePath; refusing cleanup."
+  }
+  $instanceId = Get-OptimizationObjectText -Object $ManagerState -Name 'instanceId'
+  $releaseId = Get-OptimizationObjectText -Object $ManagerState -Name 'releaseId'
+  $executableIdentity = Get-OptimizationObjectText -Object $ManagerState -Name 'executableIdentity'
+  $filePath = Get-OptimizationObjectText -Object $ManagerState -Name 'filePath'
+  $arguments = Get-OptimizationManagedStateArguments -State $ManagerState
+  $pidNumber = 0
+  [int]::TryParse((Get-OptimizationObjectText -Object $ManagerState -Name 'pid'), [ref]$pidNumber) | Out-Null
+  $processStartUtc = Get-OptimizationObjectText -Object $ManagerState -Name 'processStartUtc'
+  $receipt = Find-ManagedProcessByReceipt `
+    -Pid $pidNumber `
+    -ProcessStartUtc $processStartUtc `
+    -ExpectedFilePath $filePath `
+    -ExpectedArgumentFragments $arguments
+  if ($null -ne $receipt) {
+    return [pscustomobject]@{ state = $ManagerState; managerStatePath = $ManagerStatePath; descriptor = $ActiveDescriptor; status = 'live' }
+  }
+
+  $livePid = if ($pidNumber -gt 0) { Get-Process -Id $pidNumber -ErrorAction SilentlyContinue } else { $null }
+  if ($null -ne $livePid) {
+    throw "Optimization Host manager state $ManagerStatePath has a live but unproven PID $pidNumber; refusing cleanup."
+  }
+  $port = 0
+  if (-not [int]::TryParse((Get-OptimizationObjectText -Object $ManagerState -Name 'port'), [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+    throw "Optimization Host manager state $ManagerStatePath has no valid port; refusing cleanup."
+  }
+  $healthUrl = Get-HostHealthUrl -State $ManagerState
+  $portOccupied = Test-OptimizationTcpPortOccupied -Port $port
+  $orphan = if ($portOccupied) {
+    Find-ManagedOrphanRuntime `
+      -Port $port `
+      -HealthUrl $healthUrl `
+      -ReleaseId $releaseId `
+      -ProfileId $profileId `
+      -InstanceId $instanceId `
+      -ExecutableIdentity $executableIdentity `
+      -ExpectedFilePath $filePath `
+      -ExpectedArgumentFragments $arguments
+  } else { $null }
+  if ($portOccupied -and $null -eq $orphan) {
+    throw "Optimization Host manager state $ManagerStatePath is stale while port $port is occupied by an unproven process; refusing cleanup."
+  }
+  if ($null -ne $orphan) {
+    $metadata = Get-OptimizationManagedStateMetadata -State $ManagerState
+    $reservedPorts = @((Get-OptimizationObjectValue -Object $ManagerState -Name 'reservedDailyPorts') | ForEach-Object { [int]$_ })
+    if ($reservedPorts.Count -eq 0) { $reservedPorts = @(5173, 8765, 5174, 8766) }
+    Start-ManagedRuntimeInstance `
+      -ReleaseId $releaseId `
+      -ProfileId $profileId `
+      -InstanceId $instanceId `
+      -Port $port `
+      -HealthUrl $healthUrl `
+      -StatePath $ManagerStatePath `
+      -FilePath $filePath `
+      -ArgumentList $arguments `
+      -WorkingDirectory (Get-OptimizationObjectText -Object $ManagerState -Name 'workingDirectory') `
+      -ReadyTimeoutSeconds $StartupTimeoutSeconds `
+      -ReservedDailyPorts $reservedPorts `
+      -StandardOutputPath (Get-OptimizationObjectText -Object $ManagerState -Name 'standardOutputPath') `
+      -StandardErrorPath (Get-OptimizationObjectText -Object $ManagerState -Name 'standardErrorPath') `
+      -ExecutableIdentity $executableIdentity `
+      -Metadata $metadata `
+      -LaunchIntentPath "${ManagerStatePath}.intent.json" `
+      -AllowReservedDailyPorts:([bool](Get-OptimizationObjectValue -Object $ManagerState -Name 'allowReservedDailyPorts')) | Out-Null
+    $repairedState = Read-OptimizationJsonFile -Path $ManagerStatePath
+    if ($null -eq $repairedState) { throw "Optimization Host manager state could not be rebuilt at $ManagerStatePath." }
+    if (-not (Test-OptimizationSamePath -Left $ManagerStatePath -Right $hostStatePath)) {
+      Write-OptimizationActiveHostState -Path $hostStatePath -ManagerStatePath $ManagerStatePath -ProfileId $profileId
+      $ActiveDescriptor = Read-OptimizationJsonFile -Path $hostStatePath
+    }
+    Write-Host "Repaired stale optimization Host receipt by adopting its proven listener: $ManagerStatePath"
+    return [pscustomobject]@{ state = $repairedState; managerStatePath = $ManagerStatePath; descriptor = $ActiveDescriptor; status = 'receipt-repaired' }
+  }
+
+  Remove-OptimizationStaleHostArtifacts -ManagerStatePath $ManagerStatePath -State $ManagerState -ActiveDescriptor $ActiveDescriptor
+  $instanceRoot = Get-OptimizationObjectText -Object $ManagerState -Name 'applicationIsolationRoot'
+  if ($instanceRoot -and -not (Remove-OptimizationApplicationIsolation `
+      -Root (Join-Path $defaultOptimizationDataRoot '.read-web-application\instances') `
+      -Path $instanceRoot)) {
+    throw "Stale optimization Host application isolation could not be removed: $instanceRoot"
+  }
+  Write-Host "Recovered stale optimization Host state and restarted from a clean receipt: $ManagerStatePath"
+  return [pscustomobject]@{ state = $null; managerStatePath = ''; descriptor = $null; status = 'stale-cleared' }
+}
+
 function Get-OptimizationHostRestartSpec {
   param(
     [Parameter(Mandatory)]$State,
@@ -1084,6 +1292,13 @@ try {
   $existingHostManagerStatePath = Get-ManagedHostStatePath
   $existingHostState = Read-OptimizationJsonFile -Path $existingHostManagerStatePath
   $existingHostDescriptor = Read-OptimizationJsonFile -Path $hostStatePath
+  $existingHostResolution = Resolve-OptimizationExistingHostState `
+    -ManagerStatePath $existingHostManagerStatePath `
+    -ManagerState $existingHostState `
+    -ActiveDescriptor $existingHostDescriptor
+  $existingHostManagerStatePath = [string]$existingHostResolution.managerStatePath
+  $existingHostState = $existingHostResolution.state
+  $existingHostDescriptor = $existingHostResolution.descriptor
   $existingFrontDoorState = Read-OptimizationJsonFile -Path $frontDoorStatePath
   $existingHostPort = 0
   [int]::TryParse((Get-OptimizationObjectText -Object $existingHostState -Name 'port'), [ref]$existingHostPort) | Out-Null
