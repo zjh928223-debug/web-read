@@ -326,10 +326,22 @@ try {
     $crashApply = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Apply', '-ConfirmDailyProductionApply') + $common) -Environment $crashEnvironment
     Assert-True ($crashApply.exitCode -ne 0) "synthetic daily Apply crash phase did not terminate the child: $phase"
     $journalPath = Join-Path $stateRoot 'promotion-journal.json'
+    $committedTargetInstanceId = ''
+    $committedTargetReleaseId = ''
     if ($phase -eq 'apply-after-journal-remove') {
       Assert-True (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) "synthetic daily Apply retained a journal after its cleanup phase: $phase"
     } else {
       Assert-True (Test-Path -LiteralPath $journalPath -PathType Leaf) "synthetic daily Apply crash did not retain its journal: ${phase}: $($crashApply.text)"
+      if ($phase -eq 'apply-before-journal-remove') {
+        $committedJournal = Get-Content -LiteralPath $journalPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Assert-True ([string]$committedJournal.status -eq 'committed' -and [string]$committedJournal.phase -eq 'active-target-written') "daily Apply crash did not retain committed journal evidence after phase ${phase}"
+        $committedTargetPath = Join-Path $stateRoot 'active-target.json'
+        Assert-True (Test-Path -LiteralPath $committedTargetPath -PathType Leaf) "daily Apply crash did not retain the committed active target after phase ${phase}"
+        $committedTarget = Get-Content -LiteralPath $committedTargetPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $committedTargetInstanceId = [string]$committedTarget.profile.instanceId
+        $committedTargetReleaseId = [string]$committedTarget.release.releaseId
+        Assert-True ([string]$committedTarget.status -eq 'active' -and [string]$committedTarget.profileId -eq 'daily-production' -and $committedTargetInstanceId -and $committedTargetReleaseId) "daily Apply crash retained an invalid committed active target after phase ${phase}"
+      }
     }
     $crashRecovery = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Start') + $common) -Environment $stableEnvironment
     if ($phase -in @('apply-before-active-target', 'apply-after-active-target')) {
@@ -338,7 +350,14 @@ try {
     } else {
       Assert-True ($crashRecovery.exitCode -eq 0 -and $crashRecovery.json.status -eq 'reused') "daily Apply recovery did not finalize the committed target after phase ${phase}: $($crashRecovery.text)"
       if ($phase -eq 'apply-before-journal-remove') {
-        Assert-True ($crashRecovery.text -match 'Recovered daily-production Apply transaction') "daily Apply committed-journal recovery did not report finalization after phase ${phase}: $($crashRecovery.text)"
+        Assert-True ($crashRecovery.text -match 'Recovered daily-production Apply transaction: finalized\.') "daily Apply committed-journal recovery did not report finalization after phase ${phase}: $($crashRecovery.text)"
+        $recoveredTargetPath = Join-Path $stateRoot 'active-target.json'
+        Assert-True (Test-Path -LiteralPath $recoveredTargetPath -PathType Leaf) "daily Apply committed-journal recovery lost the committed active target after phase ${phase}"
+        $recoveredTarget = Get-Content -LiteralPath $recoveredTargetPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        Assert-True ([string]$recoveredTarget.status -eq 'active' `
+          -and [string]$recoveredTarget.profileId -eq 'daily-production' `
+          -and [string]$recoveredTarget.profile.instanceId -eq $committedTargetInstanceId `
+          -and [string]$recoveredTarget.release.releaseId -eq $committedTargetReleaseId) "daily Apply committed-journal recovery changed the committed active target after phase ${phase}"
       } else {
         Assert-True ($crashRecovery.text -notmatch 'Recovered daily-production Apply transaction') "daily Apply post-journal crash unexpectedly reported journal recovery after phase ${phase}: $($crashRecovery.text)"
       }

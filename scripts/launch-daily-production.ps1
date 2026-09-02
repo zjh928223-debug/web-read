@@ -992,6 +992,20 @@ function Test-DailyInterruptedTargetReady {
   }
 }
 
+function Wait-DailyInterruptedTargetReady {
+  param(
+    [Parameter(Mandatory)]$Context,
+    [Parameter(Mandatory)]$Target,
+    [Parameter(Mandatory)][int]$TimeoutSeconds
+  )
+  $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(1, $TimeoutSeconds))
+  do {
+    if (Test-DailyInterruptedTargetReady -Context $Context -Target $Target) { return $true }
+    Start-Sleep -Milliseconds 200
+  } while ([DateTime]::UtcNow -lt $deadline)
+  return $false
+}
+
 function Restore-DailyApplySnapshot {
   param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Journal)
   $oldActiveSnapshot = Get-OptimizationObjectText -Object $Journal -Name 'oldActiveTargetSnapshot'
@@ -1022,7 +1036,10 @@ function Invoke-DailyApplyRecovery {
   }
 
   $status = Get-OptimizationObjectText -Object $Journal -Name 'status'
-  if ($status -eq 'committed' -and $null -ne $candidateTarget -and (Test-DailyInterruptedTargetReady -Context $Context -Target $candidateTarget)) {
+  if ($status -eq 'committed' -and $null -ne $candidateTarget) {
+    if (-not (Wait-DailyInterruptedTargetReady -Context $Context -Target $candidateTarget -TimeoutSeconds $StartupTimeoutSeconds)) {
+      throw 'Daily production Apply committed target is not ready for forward recovery; retaining the committed target and journal.'
+    }
     Remove-DailyJournal -Context $Context
     return [ordered]@{ status = 'finalized'; operation = 'Apply'; sideEffects = @('kept the committed active target', 'removed the completed promotion journal') }
   }
