@@ -173,7 +173,7 @@
   --pru-accent-hover: #3b82f6;
   --pru-info: #2563eb;
   --pru-focus-ring: rgba(37, 99, 235, 0.22);
-  --pru-shell-bg: color-mix(in srgb, var(--bg-color) 92%, transparent);
+  --pru-shell-bg: var(--card-bg);
   --pru-shell-surface: var(--card-bg);
   --pru-shell-row: color-mix(in srgb, var(--card-bg) 88%, var(--bg-color));
   --pru-shell-row-hover: color-mix(in srgb, var(--btn-hover) 74%, var(--card-bg));
@@ -193,7 +193,7 @@
   justify-content: flex-end;
   align-items: stretch;
   padding: 14px;
-  background: transparent;
+  background: color-mix(in srgb, #000 28%, transparent);
 }
 
 .youtube-workflow .youtube-workflow-panel {
@@ -205,7 +205,7 @@
   grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--glass-border);
   border-radius: 22px;
-  background: var(--pru-shell-bg);
+  background: var(--pru-shell-surface);
   box-shadow: var(--glass-shadow-lg);
   backdrop-filter: var(--glass-blur-md);
   -webkit-backdrop-filter: var(--glass-blur-md);
@@ -454,7 +454,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  background: transparent;
+  background: color-mix(in srgb, #000 28%, transparent);
   color: var(--text-sub);
   font-size: 17px;
   cursor: pointer;
@@ -4958,7 +4958,7 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
   border: 1px solid var(--glass-border);
   border-radius: 22px;
-  background: var(--pru-shell-bg);
+  background: var(--pru-shell-surface);
   box-shadow: var(--glass-shadow-lg);
   backdrop-filter: var(--glass-blur-md);
   -webkit-backdrop-filter: var(--glass-blur-md);

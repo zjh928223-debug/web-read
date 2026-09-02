@@ -184,6 +184,7 @@ _SERVICE_ERROR_CODES = frozenset({
     "WORKFLOW_IDEMPOTENCY_KEY_REUSED",
     "WORKFLOW_WRITER_FROZEN",
     "WORKFLOW_WRITER_FREEZE_INVALID",
+    "WORKFLOW_TOOL_MISSING",
 })
 _SNAPSHOT_PATH_OBJECT_FIELDS = frozenset({"manifest", "checkpoint"})
 _SNAPSHOT_RECORD_FIELDS = frozenset({
@@ -505,6 +506,7 @@ def _typed_error(
         "MATERIAL_ALREADY_EXISTS": "conflict",
         "WORKFLOW_STATE_CONFLICT": "conflict",
         "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "conflict",
+        "WORKFLOW_TOOL_MISSING": "readiness",
         "WORKFLOW_RETRY_NOT_ALLOWED": "conflict",
         "WORKFLOW_DELETE_NOT_ALLOWED": "conflict",
         "WORKFLOW_PRIORITY_NOT_ALLOWED": "conflict",
@@ -517,6 +519,7 @@ def _typed_error(
         "MATERIAL_ALREADY_EXISTS": "workflow material already exists",
         "WORKFLOW_STATE_CONFLICT": "workflow state conflicts with the current revision",
         "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "workflow idempotency key was already used for another request",
+        "WORKFLOW_TOOL_MISSING": "素材处理工具未安装或配置路径无效，请先修复 Windows 后端设置。",
         "WORKFLOW_RETRY_NOT_ALLOWED": "workflow job cannot be retried in its current state",
         "WORKFLOW_DELETE_NOT_ALLOWED": "workflow job cannot be deleted in its current state",
         "WORKFLOW_PRIORITY_NOT_ALLOWED": "workflow job cannot be prioritized in its current state",
@@ -1919,10 +1922,16 @@ class WorkflowOwner:
     @staticmethod
     def _service_http_error(operation: str, error: HTTPException) -> tuple[str, dict[str, Any]] | None:
         status_code = getattr(error, "status_code", None)
-        if isinstance(status_code, bool) or not isinstance(status_code, int) or not 400 <= status_code < 500:
-            return None
         detail = error.detail if isinstance(error.detail, Mapping) else {}
         raw_code = detail.get("code") if isinstance(detail, Mapping) else None
+        is_client_error = (
+            isinstance(status_code, int)
+            and not isinstance(status_code, bool)
+            and 400 <= status_code < 500
+        )
+        is_missing_tool = status_code == 503 and raw_code == "WORKFLOW_TOOL_MISSING"
+        if not is_client_error and not is_missing_tool:
+            return None
         code = raw_code if isinstance(raw_code, str) and _SAFE_SERVICE_CODE.fullmatch(raw_code) and raw_code in _SERVICE_ERROR_CODES else ""
         if not code:
             if status_code == 409:
@@ -1958,18 +1967,27 @@ class WorkflowOwner:
             ):
                 details["currentRevision"] = current_revision
 
-        message = {
-            "MATERIAL_ALREADY_EXISTS": "workflow material already exists",
-            "WORKFLOW_STATE_CONFLICT": "workflow state conflicts with the current revision",
-            "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "workflow idempotency key was already used for another request",
-            "WORKFLOW_RETRY_NOT_ALLOWED": "workflow job cannot be retried in its current state",
-            "WORKFLOW_DELETE_NOT_ALLOWED": "workflow job cannot be deleted in its current state",
-            "WORKFLOW_PRIORITY_NOT_ALLOWED": "workflow job cannot be prioritized in its current state",
-            "WORKFLOW_JOB_NOT_FOUND": "workflow job was not found",
-            "WORKFLOW_SERVICE_VALIDATION": "workflow service rejected the request",
-            "WORKFLOW_SERVICE_BAD_REQUEST": "workflow service rejected the request",
-            "WORKFLOW_SERVICE_CONFLICT": "workflow service rejected the mutation",
-        }[code]
+        elif code == "WORKFLOW_TOOL_MISSING":
+            tool = detail.get("tool")
+            if isinstance(tool, str) and _SAFE_SERVICE_CODE.fullmatch(tool):
+                details["tool"] = tool
+
+        if code == "WORKFLOW_TOOL_MISSING":
+            tool = details.get("tool", "素材处理工具")
+            message = f"{tool} 未安装或配置路径无效，请先修复 Windows 后端设置。"
+        else:
+            message = {
+                "MATERIAL_ALREADY_EXISTS": "workflow material already exists",
+                "WORKFLOW_STATE_CONFLICT": "workflow state conflicts with the current revision",
+                "WORKFLOW_IDEMPOTENCY_KEY_REUSED": "workflow idempotency key was already used for another request",
+                "WORKFLOW_RETRY_NOT_ALLOWED": "workflow job cannot be retried in its current state",
+                "WORKFLOW_DELETE_NOT_ALLOWED": "workflow job cannot be deleted in its current state",
+                "WORKFLOW_PRIORITY_NOT_ALLOWED": "workflow job cannot be prioritized in its current state",
+                "WORKFLOW_JOB_NOT_FOUND": "workflow job was not found",
+                "WORKFLOW_SERVICE_VALIDATION": "workflow service rejected the request",
+                "WORKFLOW_SERVICE_BAD_REQUEST": "workflow service rejected the request",
+                "WORKFLOW_SERVICE_CONFLICT": "workflow service rejected the mutation",
+            }[code]
         return (
             "conflict" if status_code == 409 else "rejected",
             {

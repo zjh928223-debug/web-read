@@ -41,6 +41,17 @@ try {
   assert.equal(runtime.dataRoot, path.join(root, 'workflow-data'))
   assert.equal(runtime.python.executable, path.join(root, 'python', 'python.exe'))
   assert.equal(runtime.ai.model, 'fixture-model')
+  const portableToolRuntime = loadRuntimeConfig({
+    configPath,
+    env: {
+      READ_WEB_TOOL_ROOT: path.join(root, 'external-tools'),
+      WHISPERX_PATH: '%READ_WEB_TOOL_ROOT%\\whisperx\\Scripts\\whisperx.exe',
+    },
+  })
+  assert.equal(
+    portableToolRuntime.tools.whisperx,
+    path.join(root, 'external-tools', 'whisperx', 'Scripts', 'whisperx.exe'),
+  )
   const selectedByCanonicalEnv = loadRuntimeConfig({
     configPath,
     env: {

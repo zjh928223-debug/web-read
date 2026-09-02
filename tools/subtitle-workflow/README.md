@@ -11,7 +11,7 @@ This directory contains the local FastAPI material-processing service used by Re
 - Legacy default output directory: `E:\ReadWebData\SubtitleWorkflow\output`
 - Legacy default state directory: `E:\ReadWebData\SubtitleWorkflow\.workflow_state`
 
-Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch. For a reproducible local run, create the venv outside the repository. The stable optimization launcher location keeps desktop cold starts on the same interpreter:
+Do not commit generated materials, local state, credentials, caches, or Python bytecode. The reader startup script owns service launch. For a reproducible local run, create the service venv outside the repository. The stable optimization launcher location keeps desktop cold starts on the same interpreter:
 
 ```powershell
 $venv = Join-Path $env:LOCALAPPDATA 'Read-Web\optimization-python'
@@ -21,6 +21,31 @@ $env:READ_WEB_PYTHON_PATH = $env:READ_WEB_PYTHON
 $env:READ_WEB_RUNTIME_CONFIG = (Resolve-Path .\config\runtime.optimization.json).Path
 & $env:READ_WEB_PYTHON -m pip install --require-hashes --only-binary=:all: -r .\tools\subtitle-workflow\requirements-service.lock
 ```
+
+WhisperX is deliberately installed in a second venv because it is an external
+workflow tool and its Torch/pyannote dependency tree must not be added to the
+locked HTTP service environment. On Windows, create it at the stable path used
+by `config/runtime.optimization.json` and install the current stable PyPI
+release (the CUDA Torch wheels are selected separately when GPU inference is
+available):
+
+```powershell
+$whisperxVenv = Join-Path $env:LOCALAPPDATA 'Read-Web\whisperx'
+python -m venv $whisperxVenv
+$whisperxPython = Join-Path $whisperxVenv 'Scripts\python.exe'
+& $whisperxPython -m pip install whisperx
+& $whisperxPython -m pip install --force-reinstall --no-deps --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0
+$nltkData = Join-Path $whisperxVenv 'nltk_data'
+New-Item -ItemType Directory -Force -Path $nltkData | Out-Null
+$env:NLTK_ALLOW_PROXIED_URLOPEN = '1' # only when using a trusted local proxy
+& $whisperxPython -c "import nltk; nltk.download('punkt_tab', download_dir=r'$nltkData')"
+```
+
+The optimization RuntimeConfig resolves
+`%LOCALAPPDATA%\Read-Web\whisperx\Scripts\whisperx.exe` at startup, so a
+normal launcher restart does not depend on the current shell PATH or a
+temporary worktree. The service venv remains subject to the production lock
+health gate; the WhisperX venv is probed separately as an executable.
 
 Run the production health check before adding test-only packages. The health
 gate compares the complete environment with the production lock, so it must

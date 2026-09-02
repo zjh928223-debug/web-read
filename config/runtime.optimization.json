@@ -14,7 +14,7 @@
   },
   "tools": {
     "ytDlp": "yt-dlp",
-    "whisperx": "whisperx",
+    "whisperx": "%LOCALAPPDATA%\\Read-Web\\whisperx\\Scripts\\whisperx.exe",
     "ffmpeg": "ffmpeg"
   },
   "network": {

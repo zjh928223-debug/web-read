@@ -1281,8 +1281,25 @@ export function createWindowsDurableStateMigration(options = {}) {
     const state = await readState()
     const entry = state.domains[domain]
     if (!entry.switch) return safeFailure(domain, 'smoke', 'migration-switch-required')
-    if (entry.smoke?.status === 'passed') return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
     const cutover = cutoverControls[domain]
+    // A prior process may have persisted the successful smoke result after
+    // switching authority but before its unfreeze side effect completed.  A
+    // retry must replay that idempotent cleanup instead of treating the
+    // persisted result as proof that the writer gate is clear.
+    if (entry.smoke?.status === 'passed') {
+      if (cutover && typeof cutover.unfreeze === 'function') {
+        let unfreezeResult
+        try {
+          unfreezeResult = await cutover.unfreeze({ domain, reason: 'migration-authoritative' })
+        } catch (error) {
+          return safeFailure(domain, 'smoke', error?.code || 'migration-unfreeze-failed')
+        }
+        if (unfreezeResult === false || unfreezeResult?.ok === false) {
+          return safeFailure(domain, 'smoke', unfreezeResult?.reasonCode || 'migration-unfreeze-failed')
+        }
+      }
+      return { ok: true, domain, stage: 'smoke', ...clone(entry.smoke) }
+    }
     if (cutover && typeof cutover.smoke === 'function') {
       let result
       try {

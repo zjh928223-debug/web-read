@@ -56,6 +56,24 @@ class RuntimeConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeConfigError, "backend.secret"):
                 load_runtime_config(unknown_path, env={})
 
+    def test_windows_style_environment_variables_resolve_portable_tool_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = self.write_config(root, {
+                "schemaVersion": 1,
+                "tools": {
+                    "whisperx": "%READ_WEB_TOOL_ROOT%\\whisperx\\Scripts\\whisperx.exe",
+                },
+            })
+            runtime = load_runtime_config(
+                config_path,
+                env={"READ_WEB_TOOL_ROOT": str(root / "external-tools")},
+            )
+            self.assertEqual(
+                runtime.whisperx_path,
+                (root / "external-tools" / "whisperx" / "Scripts" / "whisperx.exe").resolve(),
+            )
+
     def test_diagnostics_redact_credentials_queries_and_user_home(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

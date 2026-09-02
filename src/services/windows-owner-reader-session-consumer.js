@@ -369,7 +369,13 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     } catch (error) {
       return rejectedResult(error, 'reader-session-commit-unknown')
     }
-    if (isNotFound(receiptResult)) return null
+    // The host receipt store represents an unobserved idempotency key as
+    // commit-unknown with no receipt. There is no dispatched commit to
+    // recover in that shape, so the normal prepare -> commit flow may start.
+    if (isNotFound(receiptResult)
+      || (receiptResult?.outcome === 'commit-unknown' && !receiptResult.receipt)) {
+      return null
+    }
     if (receiptResult.outcome === 'conflict'
       || receiptResult.outcome === 'not-ready'
       || receiptResult.outcome === 'manual-recovery') {

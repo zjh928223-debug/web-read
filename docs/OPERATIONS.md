@@ -176,6 +176,14 @@ optimization 默认 venv 不存在时，optimization launcher 才回退到 Runti
 一次性验证或 CI 可以把 `$venv` 换成系统临时目录；这时必须在同一会话设置 `READ_WEB_PYTHON`，
 或启动 launcher 时显式传入 `-BootstrapPython <path-to-python.exe>`。
 
+WhisperX 使用独立的仓库外 venv，不加入服务 lock。Windows 上固定使用
+`%LOCALAPPDATA%\Read-Web\whisperx\Scripts\whisperx.exe`；该路径由
+`config/runtime.optimization.json` 在每次启动时解析，因此冷启动不依赖临时 worktree 或当前
+PowerShell 会话的 PATH。安装方式是先执行 `python -m venv`，再在该 venv 中执行
+`pip install whisperx`，并在同一个 venv 的 `nltk_data` 目录下载 `punkt_tab`；有 NVIDIA GPU 时按
+WhisperX 官方建议选择匹配的 CUDA Torch wheels。optimization launcher 会把该目录注入
+`NLTK_DATA`，并在启动前检查它，避免任务运行到对齐阶段才因缺少 NLTK 数据失败。
+
 `verify:fast` 只执行离线、确定性的 lock 格式和 RuntimeConfig 选择检查；`verify:full` 还会
 执行完整 package-set health。Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失
 会报告，但只有使用对应能力时才阻塞；Production Host 的 Python lock/package 漂移、缺包和

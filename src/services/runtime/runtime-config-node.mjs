@@ -42,7 +42,7 @@ export function loadRuntimeConfig(options = {}) {
     return payload[section]?.[key] ?? fallback
   }
   const resolvePath = (input) => {
-    const text = String(input || '')
+    const text = expandPathVariables(String(input || ''), env)
     if (!text || (!text.includes('/') && !text.includes('\\') && !text.startsWith('.'))) return text
     return path.isAbsolute(text) ? path.normalize(text) : path.resolve(baseDir, text)
   }
@@ -74,6 +74,15 @@ export function loadRuntimeConfig(options = {}) {
       baseUrl: String(value('GEMINI_BASE_URL', 'ai', 'baseUrl', DEFAULTS.ai.baseUrl)),
     },
   })
+}
+
+function expandPathVariables(input, env) {
+  return input
+    .replace(/%([^%]+)%/g, (match, name) => env[name] ?? match)
+    .replace(/\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)/g, (match, bracedName, plainName) => {
+      const name = bracedName || plainName
+      return env[name] ?? match
+    })
 }
 
 function readPayload(sourcePath) {

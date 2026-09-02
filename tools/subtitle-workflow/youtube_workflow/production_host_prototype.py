@@ -773,7 +773,10 @@ class PathPreservingAsgiDispatch:
             self._domain_is_authoritative(owner_request.domain)
             or self._migration_owner_request_allowed(scope, owner_request)
         ):
-            if self._owner_promotion_blocks_command(owner_request):
+            if (
+                self._owner_promotion_blocks_command(owner_request)
+                and not self._migration_owner_request_allowed(scope, owner_request)
+            ):
                 await JSONResponse(
                     self._promotion_error_payload(
                         "owner-promotion-source-frozen",

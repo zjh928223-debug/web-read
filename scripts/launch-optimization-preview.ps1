@@ -70,6 +70,7 @@ $environmentNames = @(
   'YOUTUBE_COOKIES_PATH',
   'YT_DLP_PATH',
   'WHISPERX_PATH',
+  'NLTK_DATA',
   'FFMPEG_PATH',
   'GEMINI_MODEL',
   'GEMINI_BASE_URL',
@@ -1218,7 +1219,7 @@ try {
     'READ_WEB_RELEASE_ID', 'READ_WEB_PROFILE_ID', 'READ_WEB_INSTANCE_ID',
     'READ_WEB_SERVICE_TOKEN', 'READ_WEB_ALLOWED_ORIGIN', 'READ_WEB_CAPABILITY_HOST',
     'READ_WEB_CAPABILITY_PORT', 'READ_WEB_PROXY_URL', 'YOUTUBE_COOKIES_PATH',
-    'YT_DLP_PATH', 'WHISPERX_PATH', 'FFMPEG_PATH', 'GEMINI_MODEL', 'GEMINI_BASE_URL'
+    'YT_DLP_PATH', 'WHISPERX_PATH', 'NLTK_DATA', 'FFMPEG_PATH', 'GEMINI_MODEL', 'GEMINI_BASE_URL'
   )) {
     Set-OptimizationProcessEnvironmentValue -Name $name -Value $null
   }
@@ -1289,6 +1290,17 @@ try {
   $configuredFfmpegPath = Get-OptimizationObjectText -Object $runtimeTools -Name 'ffmpeg'
   $configuredYtDlpPath = Get-OptimizationObjectText -Object $runtimeTools -Name 'ytDlp'
   $configuredWhisperxPath = Get-OptimizationObjectText -Object $runtimeTools -Name 'whisperx'
+  $whisperxNltkDataPath = ''
+  if ($configuredWhisperxPath -and (Test-Path -LiteralPath $configuredWhisperxPath -PathType Leaf)) {
+    $whisperxRoot = Split-Path -Parent (Split-Path -Parent $configuredWhisperxPath)
+    if ($whisperxRoot) {
+      $whisperxNltkDataPath = Join-Path $whisperxRoot 'nltk_data'
+      $punktTabPath = Join-Path $whisperxNltkDataPath 'tokenizers\punkt_tab'
+      if (-not (Test-Path -LiteralPath $punktTabPath -PathType Container)) {
+        throw "WhisperX runtime is missing the NLTK punkt_tab resource. Run the isolated venv setup from tools\subtitle-workflow\README.md before launching optimization: $whisperxNltkDataPath"
+      }
+    }
+  }
   $existingHostManagerStatePath = Get-ManagedHostStatePath
   $existingHostState = Read-OptimizationJsonFile -Path $existingHostManagerStatePath
   $existingHostDescriptor = Read-OptimizationJsonFile -Path $hostStatePath
@@ -1523,6 +1535,7 @@ try {
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_BACKEND_PORT' -Value ([string]$backendPort)
   Set-OptimizationProcessEnvironmentValue -Name 'VITE_LOCAL_SERVICE_BASE_URL' -Value ("http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontendPort")
   Set-OptimizationProcessEnvironmentValue -Name 'ECDICT_ENABLED' -Value 'false'
+  Set-OptimizationProcessEnvironmentValue -Name 'NLTK_DATA' -Value $whisperxNltkDataPath
 
   if ($null -ne $activeRelease) {
     $oldRelease = $activeRelease

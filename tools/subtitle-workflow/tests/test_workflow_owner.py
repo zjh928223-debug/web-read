@@ -411,6 +411,93 @@ class WorkflowOwnerTests(unittest.TestCase):
         finally:
             manager.close()
 
+    def test_missing_workflow_tool_503_stays_typed_through_owner_boundary(self):
+        config = WorkflowConfig(
+            state_dir=self.state_dir,
+            output_dir=self.output_dir,
+            yt_dlp_path=Path(__file__),
+            whisperx_path=self.root / "missing-whisperx.exe",
+        )
+        manager = JobManager(config=config)
+        owner = WorkflowOwner(
+            self.state_dir,
+            self.output_dir,
+            "profile-1",
+            "instance-tool-missing",
+            store=manager.store,
+            service_manager=manager,
+        )
+        try:
+            rejected = owner.command(
+                "job-start",
+                payload={"record": self.job(title="tool missing")},
+                expected_revision=owner._read_state()["revision"],
+                idempotency_key="tool-missing",
+                **self.ids("tool-missing"),
+            )
+            self.assertEqual(rejected["outcome"], "rejected")
+            self.assertEqual(rejected["commitStatus"], "rejected")
+            self.assertEqual(rejected["error"]["code"], "WORKFLOW_TOOL_MISSING")
+            self.assertEqual(rejected["error"]["category"], "readiness")
+            self.assertIn("WhisperX", rejected["error"]["message"])
+            self.assertIn("Windows 后端设置", rejected["error"]["message"])
+            self.assertNotIn("owner transaction was rejected", json.dumps(rejected, ensure_ascii=False))
+        finally:
+            manager.close()
+
+    def test_snapshot_rebind_keeps_bare_workflow_commands_bare_after_service_reload(self):
+        config = WorkflowConfig(
+            state_dir=self.state_dir,
+            output_dir=self.output_dir,
+            yt_dlp_path=Path("yt-dlp"),
+            whisperx_path=Path("whisperx"),
+        )
+
+        class NonStartingJobManager(JobManager):
+            def start_pending_worker(self):
+                return None
+
+        manager = NonStartingJobManager(
+            config=config,
+            runner_factory=lambda: FakeWorkflowRunner(config),
+        )
+        owner = WorkflowOwner(
+            self.state_dir,
+            self.output_dir,
+            "profile-1",
+            "instance-rebind-tools",
+            store=manager.store,
+            service_manager=manager,
+        )
+        try:
+            imported = owner.command(
+                "snapshot-commit",
+                payload={"snapshot": {
+                    "jobs": [],
+                    "history": [],
+                    "readerIndex": {"items": []},
+                    "config": {
+                        "model": "gemini-test",
+                        "outputDir": ".",
+                        "ytDlpPath": "[REDACTED_PATH]",
+                        "whisperxPath": "[REDACTED_PATH]",
+                    },
+                    "outputs": [],
+                    "mediaReferences": [],
+                }},
+                expected_revision=owner._read_state()["revision"],
+                idempotency_key="rebind-tools",
+                **self.ids("rebind-tools"),
+            )
+            self.assertEqual(imported["outcome"], "committed")
+            self.assertEqual(manager.config.yt_dlp_path, Path("yt-dlp"))
+            self.assertEqual(manager.config.whisperx_path, Path("whisperx"))
+            persisted = json.loads(owner.config_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["ytDlpPath"], "yt-dlp")
+            self.assertEqual(persisted["whisperxPath"], "whisperx")
+        finally:
+            manager.close()
+
     def test_existing_config_and_reader_index_writes_do_not_look_like_receipt_ahead(self):
         owner = self.make_owner()
         first = self.command(owner, "job-start", self.job(title="before external writes"), 0, "external-writes-first")

@@ -10,6 +10,7 @@ from youtube_workflow.core import (
     LocalWorkflowRunner,
     WorkflowConfig,
     WorkflowRequest,
+    safe_title_from_url,
     assert_manifest_has_no_secret,
     classify_error,
     classify_error_code,
@@ -86,6 +87,9 @@ class VideoImportCommandRunner:
 
 
 class WorkflowCoreTests(unittest.TestCase):
+    def test_safe_title_removes_windows_unsafe_trailing_dot(self):
+        self.assertEqual(safe_title_from_url("Zebras Look Like Horses."), "Zebras-Look-Like-Horses")
+
     def test_marks_integrity_uses_cross_language_stable_business_field_projection(self):
         first = marks_integrity([{
             "globalIndex": 2,
@@ -315,7 +319,7 @@ class WorkflowCoreTests(unittest.TestCase):
             ).run(request, job_id="job-audio-first")
 
             yt_dlp_cmd = command_runner.calls[0][1]
-            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestaudio/best")
+            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
             self.assertEqual(manifest["request"]["videoPriority"], False)
 
     def test_retry_with_downloaded_video_and_no_transcript_resumes_at_whisperx(self):

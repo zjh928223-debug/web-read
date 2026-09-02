@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -122,8 +123,26 @@ def _port(value, name: str) -> int:
     return port
 
 
-def _path(value, base_dir: Path) -> Path:
-    path = Path(str(value)).expanduser()
+_WINDOWS_ENVIRONMENT_VARIABLE = re.compile(r"%([^%]+)%")
+_POSIX_ENVIRONMENT_VARIABLE = re.compile(r"\$(?:\{([^}]+)\}|([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def _expand_path_variables(value, environment: Mapping[str, str]) -> str:
+    text = str(value)
+
+    def replace_windows(match: re.Match[str]) -> str:
+        name = match.group(1)
+        return str(environment.get(name, match.group(0)))
+
+    def replace_posix(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(2)
+        return str(environment.get(name, match.group(0)))
+
+    return _POSIX_ENVIRONMENT_VARIABLE.sub(replace_posix, _WINDOWS_ENVIRONMENT_VARIABLE.sub(replace_windows, text))
+
+
+def _path(value, base_dir: Path, environment: Mapping[str, str]) -> Path:
+    path = Path(_expand_path_variables(value, environment)).expanduser()
     if path.is_absolute():
         return path
     if any(separator in str(value) for separator in ("/", "\\")) or str(value).startswith("."):
@@ -178,7 +197,11 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
     backend_host = str(env_or("READ_WEB_BACKEND_HOST", _value(payload, "backend", "host", "127.0.0.1"))).strip()
     if not frontend_host or not backend_host:
         raise RuntimeConfigError("frontend.host and backend.host must not be empty")
-    data_root = _path(env_or("READ_WEB_SUBTITLE_DATA_ROOT", payload.get("dataRoot", DEFAULT_DATA_ROOT)), base_dir)
+    data_root = _path(
+        env_or("READ_WEB_SUBTITLE_DATA_ROOT", payload.get("dataRoot", DEFAULT_DATA_ROOT)),
+        base_dir,
+        environment,
+    )
     return RuntimeConfig(
         schema_version=version,
         frontend_host=frontend_host,
@@ -192,11 +215,28 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
                 env_or("READ_WEB_PYTHON_PATH", _value(payload, "python", "executable", sys.executable)),
             ),
             base_dir,
+            environment,
         ),
-        yt_dlp_path=_path(env_or("YT_DLP_PATH", _value(payload, "tools", "ytDlp", "yt-dlp")), base_dir),
-        whisperx_path=_path(env_or("WHISPERX_PATH", _value(payload, "tools", "whisperx", "whisperx")), base_dir),
-        ffmpeg_path=_path(env_or("FFMPEG_PATH", _value(payload, "tools", "ffmpeg", "ffmpeg")), base_dir),
-        cookies_path=_path(env_or("YOUTUBE_COOKIES_PATH", _value(payload, "tools", "cookies", data_root / "cookies.txt")), base_dir),
+        yt_dlp_path=_path(
+            env_or("YT_DLP_PATH", _value(payload, "tools", "ytDlp", "yt-dlp")),
+            base_dir,
+            environment,
+        ),
+        whisperx_path=_path(
+            env_or("WHISPERX_PATH", _value(payload, "tools", "whisperx", "whisperx")),
+            base_dir,
+            environment,
+        ),
+        ffmpeg_path=_path(
+            env_or("FFMPEG_PATH", _value(payload, "tools", "ffmpeg", "ffmpeg")),
+            base_dir,
+            environment,
+        ),
+        cookies_path=_path(
+            env_or("YOUTUBE_COOKIES_PATH", _value(payload, "tools", "cookies", data_root / "cookies.txt")),
+            base_dir,
+            environment,
+        ),
         proxy_url=str(env_or("READ_WEB_PROXY_URL", _value(payload, "network", "proxyUrl", "http://127.0.0.1:7897"))),
         model=str(env_or("GEMINI_MODEL", _value(payload, "ai", "model", "gemini-2.5-flash"))),
         gemini_base_url=str(env_or("GEMINI_BASE_URL", _value(payload, "ai", "baseUrl", ""))),

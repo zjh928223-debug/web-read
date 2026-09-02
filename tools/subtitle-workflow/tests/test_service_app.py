@@ -1,5 +1,6 @@
 import json
 import io
+import hashlib
 import os
 import tempfile
 import threading
@@ -2246,8 +2247,11 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(full.status_code, 200)
             self.assertEqual(full.content, b"0123456789")
             self.assertEqual(full.headers["accept-ranges"], "bytes")
-            self.assertTrue(full.headers["etag"])
-            self.assertEqual(full.headers["x-read-web-media-identity"], f"{ready['jobId']}:video")
+            expected_etag = "sha256:" + hashlib.sha256(
+                f"workflow:{ready['jobId']}:video:10:{video.stat().st_mtime_ns}".encode("utf-8")
+            ).hexdigest()
+            self.assertEqual(full.headers["etag"], expected_etag)
+            self.assertEqual(full.headers["x-read-web-media-identity"], f"workflow:{ready['jobId']}:video")
 
             head = client.head(f"/api/jobs/{ready['jobId']}/media/video")
             self.assertEqual(head.status_code, 200)
@@ -2414,7 +2418,41 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(response.status_code, 503)
             self.assertEqual(response.json()["detail"]["code"], "WORKFLOW_TOOL_MISSING")
             self.assertEqual(response.json()["detail"]["tool"], "WhisperX")
+            self.assertIn("Windows 后端设置", response.json()["detail"]["message"])
             self.assertEqual(client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["jobs"], [])
+
+    def test_saved_bare_workflow_tool_names_survive_reload_and_stale_path_repair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = Path(tmp) / "state"
+            output_dir = Path(tmp) / "output"
+            config = WorkflowConfig(
+                state_dir=state_dir,
+                output_dir=output_dir,
+                yt_dlp_path=Path("yt-dlp"),
+                whisperx_path=Path("whisperx"),
+            )
+            manager = JobManager(config=config, runner_factory=lambda: WaitingRunner())
+            try:
+                manager.store.save_config({
+                    "ytDlpPath": "yt-dlp",
+                    "whisperxPath": "whisperx",
+                })
+                manager.reload_saved_config()
+                self.assertEqual(manager.config.yt_dlp_path, Path("yt-dlp"))
+                self.assertEqual(manager.config.whisperx_path, Path("whisperx"))
+
+                # This is the exact persisted shape produced by the old
+                # owner-rebind -> service-reload path for a bare command.
+                stale_config = {
+                    "ytDlpPath": str((Path.cwd() / "yt-dlp").resolve(strict=False)),
+                    "whisperxPath": str((Path.cwd() / "whisperx").resolve(strict=False)),
+                }
+                manager.store.save_config(stale_config)
+                manager.reload_saved_config()
+                self.assertEqual(manager.config.yt_dlp_path, Path("yt-dlp"))
+                self.assertEqual(manager.config.whisperx_path, Path("whisperx"))
+            finally:
+                manager.close()
 
     def test_cancel_marks_running_job_canceled(self):
         with tempfile.TemporaryDirectory() as tmp:

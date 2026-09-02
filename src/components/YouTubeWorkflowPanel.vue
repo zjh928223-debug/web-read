@@ -227,7 +227,8 @@
             <section v-if="workflowView === 'settings'" class="youtube-workflow-settings-view youtube-workflow-page">
               <div class="youtube-workflow-page-head">
                 <div>
-                  <h3>设置</h3>
+                  <h3>Windows 后端设置</h3>
+                  <p>这里配置运行在 Windows 上的素材处理服务。</p>
                 </div>
               </div>
               <section v-if="geminiMode === 'real'" class="youtube-api-key-settings">

@@ -112,7 +112,11 @@ STAGES = (
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm", ".wmv"}
-YOUTUBE_VIDEO_FORMAT_SELECTOR = "best[ext=mp4]/best"
+# YouTube's current GVS rollout rejects split bestvideo/bestaudio downloads
+# with HTTP 403 in this local environment. Keep both audio-first and
+# video-priority jobs on one progressive, authorized media URL.
+YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR = "best[ext=mp4]/best"
+YOUTUBE_VIDEO_FORMAT_SELECTOR = YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
 YOUTUBE_PLAYER_CLIENT = "mweb"
 
 
@@ -342,7 +346,10 @@ def _write_json(path: Path, data: dict) -> None:
 
 def safe_title_from_url(url: str) -> str:
     tail = re.sub(r"[^A-Za-z0-9._-]+", "-", url.strip()).strip("-")
-    return (tail[-72:] or "youtube-job").strip("-")
+    # Windows treats a trailing dot/space as an equivalent path spelling;
+    # remove it before persisting the manifest so every returned artifact path
+    # can be reopened by both Python and browser-side tooling.
+    return (tail[-72:] or "youtube-job").strip(" .-")
 
 
 def safe_filename_stem(value: str, fallback: str = "youtube-job") -> str:
@@ -892,7 +899,11 @@ class LocalWorkflowRunner:
         # The local yt-dlp WPC provider supplies it.  A progressive MP4 keeps
         # video and audio on the same authorized URL; split bestvideo/bestaudio
         # streams are rejected with HTTP 403 on the current YouTube rollout.
-        format_selector = YOUTUBE_VIDEO_FORMAT_SELECTOR if request.video_priority else "bestaudio/best"
+        # The local yt-dlp WPC provider supplies the per-video token. A
+        # progressive MP4 keeps video and audio on the same authorized URL;
+        # split bestvideo/bestaudio streams are rejected with HTTP 403 on the
+        # current YouTube rollout, including for audio-first jobs.
+        format_selector = YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
         download_cmd.extend(["-f", format_selector, "--newline", "-o", str(temp_folder / "%(title)s.%(ext)s"), request.url])
         self.command_runner.run(download_cmd, "yt-dlp", lambda line: command_line("yt-dlp", line), cancel_event=cancel_event)
 

@@ -796,11 +796,14 @@ async function handleOwnerRequest(request, response) {
     const receipt = fixture.receipts.get(body.idempotencyKey)
     if (!receipt) {
       return sendJson(response, 200, ownerResponse(body, {
-        outcome: 'read',
-        commitStatus: 'not-applicable',
+        // The production receipt store uses this response for an
+        // idempotency key that has never been observed. Keep the C1 fixture
+        // aligned so the browser consumer exercises the real preflight path.
+        outcome: 'commit-unknown',
+        commitStatus: 'commit-unknown',
         revision: fixture.snapshot?.revision || 0,
         payload: { found: false },
-        error: typedError(body, 'not-found', 'not-found'),
+        error: typedError(body, 'commit-unknown', 'recovery'),
       }))
     }
     return sendJson(response, 200, ownerResponse(body, {

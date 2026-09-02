@@ -559,14 +559,15 @@ function createWorkflowLegacyWriterControl(config, manifest) {
     },
     async unfreeze({ domain, reason }) {
       if (domain !== 'workflow') return { ok: true, status: 'not-applicable' }
-      if (reason === 'migration-authoritative') {
-        return { ok: true, status: 'retired', writerBlocked: true }
-      }
-      return clearWorkflowWriterFreeze({
+      const cleared = await clearWorkflowWriterFreeze({
         workflowStateDir: config.workflowStateDir,
         profileId: config.profileId,
         challenge: manifest.freezeChallenge,
       })
+      if (reason === 'migration-authoritative') {
+        return { ...cleared, status: 'retired', writerBlocked: true }
+      }
+      return cleared
     },
   }
 }

@@ -400,6 +400,44 @@ const reopenedRetry = await reopened.importDomain('reader-session', {
 assert.equal(reopenedRetry.idempotent, true)
 assert.equal(hostForRetry['reader-session'].importCalls, retryCount, 'reopen must replay stored result without a second import')
 
+const completedCutoverStore = createMemoryMigrationStateStore()
+let completedCutoverUnfreezeCalls = 0
+const completedCutoverFixture = createMigrationFixture({
+  stateStore: completedCutoverStore,
+  cutoverControls: {
+    'reader-session': {
+      async switch() { return { ok: true, authorityChanged: true } },
+      async smoke() { return { ok: true } },
+      async unfreeze() {
+        completedCutoverUnfreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+const completedCutover = await completedCutoverFixture.service.migrateDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-completed-cutover-replay',
+})
+assert.equal(completedCutover.ok, true)
+assert.equal(completedCutover.steps.smoke.status, 'passed')
+assert.equal(completedCutoverUnfreezeCalls, 1)
+const reopenedCutover = createMigrationFixture({
+  stateStore: completedCutoverStore,
+  cutoverControls: {
+    'reader-session': {
+      async unfreeze() {
+        completedCutoverUnfreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+const replayedCutoverSmoke = await reopenedCutover.service.smokeCheck('reader-session')
+assert.equal(replayedCutoverSmoke.ok, true)
+assert.equal(replayedCutoverSmoke.status, 'passed')
+assert.equal(completedCutoverUnfreezeCalls, 2, 'a reopened completed cutover must replay the unfreeze cleanup')
+
 const physicalFreezeState = createMemoryMigrationStateStore()
 let initialPhysicalFreezeCalls = 0
 const physicalFreezeFixture = createMigrationFixture({

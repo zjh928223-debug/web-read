@@ -95,18 +95,20 @@ export function createWindowsOwnerCutoverControls(options = {}) {
     async unfreeze({ domain: requestedDomain, reason }) {
       if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
       const result = await clearOwnerModeFreeze({ ...common, domain })
-      if (domain === 'workflow'
-        && reason !== 'migration-authoritative'
-        && typeof legacyWriterControl?.unfreeze === 'function') {
-        await legacyWriterControl.unfreeze({ domain, reason: reason || 'migration-unfreeze' })
+      let legacyResult = null
+      if (domain === 'workflow' && typeof legacyWriterControl?.unfreeze === 'function') {
+        // The authoritative workflow owner uses the same durable files as
+        // the legacy service manager. Clear the legacy process freeze after
+        // the owner-mode checkpoint is committed, otherwise the new owner
+        // can only read its own canonical repository and every mutation is
+        // rejected as WORKFLOW_WRITER_FROZEN.
+        legacyResult = await legacyWriterControl.unfreeze({ domain, reason: reason || 'migration-unfreeze' })
       }
       return {
         ok: true,
         status: result.status,
         frozen: false,
-        legacyWriter: domain === 'workflow' && reason === 'migration-authoritative'
-          ? { ok: true, status: 'retired', writerBlocked: true }
-          : null,
+        legacyWriter: legacyResult,
       }
     },
     async switch({ domain: requestedDomain, revision, checksum, frozen, finalBackup }) {

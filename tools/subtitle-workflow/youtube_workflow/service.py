@@ -99,6 +99,14 @@ def _normalize_idempotency_key(value: object) -> str:
     return key
 
 
+def _workflow_media_etag(media_identity: str, path: Path) -> str:
+    """Return the stable ETag shared by media routes and owner descriptors."""
+    stat = path.stat()
+    return "sha256:" + hashlib.sha256(
+        f"{media_identity}:{stat.st_size}:{stat.st_mtime_ns}".encode("utf-8")
+    ).hexdigest()
+
+
 def _request_fingerprint(request: WorkflowRequest, *, operation: str, subject: str = "", payload: dict | None = None) -> str:
     descriptor = {
         "operation": operation,
@@ -1155,6 +1163,13 @@ class JobManager:
         if payload.get("proxyUrl") is not None:
             self.config.proxy_url = str(payload.get("proxyUrl") or "").strip()
 
+        def is_bare_executable_command(text: str, path: Path) -> bool:
+            return (
+                path.parent == Path(".")
+                and not path.is_absolute()
+                and not text.startswith((".", "/", "\\"))
+            )
+
         def configured_path(key: str, *, dot_is_placeholder: bool = False) -> Path | None:
             if key not in payload or payload.get(key) is None:
                 return None
@@ -1165,7 +1180,22 @@ class JobManager:
                 return Path(default) if default is not None else None
             if text == "[REDACTED_PATH]" or (dot_is_placeholder and text == "."):
                 return None
-            return Path(text).expanduser().resolve(strict=False)
+            candidate = Path(text).expanduser()
+            if key in {"ytDlpPath", "whisperxPath"}:
+                if is_bare_executable_command(text, candidate):
+                    return candidate
+                # Older owner rebinds resolved a redacted bare command against
+                # the workflow process directory before persisting it. Repair
+                # only that exact derived shape; an explicitly configured
+                # absolute path must remain visible for normal diagnostics.
+                default = self._runtime_default_paths.get(key)
+                if default is not None:
+                    default_path = Path(default).expanduser()
+                    if is_bare_executable_command(str(default_path), default_path):
+                        stale_path = (Path.cwd() / default_path).resolve(strict=False)
+                        if candidate.is_absolute() and candidate == stale_path:
+                            return default_path
+            return candidate.resolve(strict=False)
 
         cookies_path = configured_path("cookiesPath")
         if cookies_path is not None:
@@ -1233,7 +1263,7 @@ class JobManager:
                     "code": "WORKFLOW_TOOL_MISSING",
                     "tool": label,
                     "configuredPath": str(configured_path or ""),
-                    "message": f"{label} 未安装或配置路径无效，请先修复设置。",
+                    "message": f"{label} 未安装或配置路径无效，请先修复 Windows 后端设置。",
                 },
             )
 
@@ -4216,14 +4246,18 @@ def create_app(
     @app.api_route("/api/jobs/{job_id}/media/{media_kind}", methods=["GET", "HEAD"])
     def job_media(job_id: str, media_kind: str):
         path = manager.registered_media_path(job_id, media_kind)
-        media_identity = f"{job_id}:{media_kind}"
+        media_identity = f"workflow:{job_id}:{media_kind}"
         if len(media_identity) > 256 or any(ord(char) < 0x20 or ord(char) == 0x7f for char in media_identity):
             raise HTTPException(status_code=404, detail="media identity not found")
+        media_etag = _workflow_media_etag(media_identity, path)
         return FileResponse(
             path,
             filename=path.name,
             content_disposition_type="inline",
-            headers={"X-Read-Web-Media-Identity": media_identity},
+            headers={
+                "ETag": media_etag,
+                "X-Read-Web-Media-Identity": media_identity,
+            },
         )
 
     @app.get("/api/recent")
