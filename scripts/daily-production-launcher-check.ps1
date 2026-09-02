@@ -169,6 +169,7 @@ Assert-True ($dailyConfig.dataRoot -eq 'E:\ReadWebData\SubtitleWorkflow-Next') '
 Assert-True ($launcherSource -match 'runtime\.daily-production\.json' -and $launcherSource -notmatch 'runtime\.optimization\.json') 'daily-production launcher must not widen or reuse runtime.optimization.json'
 Assert-True ($launcherSource -match 'youtube_workflow\.production_host_prototype' -and $launcherSource -match 'legacy-browser-owner/pre-cutover') 'daily-production launcher must require built Host and expose pre-cutover owner status'
 Assert-True ($launcherSource -match 'Resolve-OptimizationDailyPython' -and $launcherSource -notmatch 'Resolve-OptimizationSelectedPython' -and $launcherSource -match 'Assert-OptimizationReleaseToolchain') 'daily-production launcher must use the strict external Python selector and health-check it before startup'
+Assert-True ($launcherSource -match 'Resolve-DailyChromePath' -and $launcherSource -match [regex]::Escape("'--new-window'")) 'daily-production launcher must open Chrome in an explicit visible window instead of relying only on the URL association'
 foreach ($phase in @(
   'apply-before-active-target',
   'apply-after-active-target',

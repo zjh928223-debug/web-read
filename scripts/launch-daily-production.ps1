@@ -577,11 +577,27 @@ function Start-DailyPair {
     -AllowReservedDailyPorts:$Context.allowReservedDailyPorts
 }
 
+function Resolve-DailyChromePath {
+  $candidates = @()
+  if ($env:ProgramFiles) { $candidates += Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe' }
+  if (${env:ProgramFiles(x86)}) { $candidates += Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe' }
+  if ($env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe' }
+  foreach ($candidate in $candidates) {
+    if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return [IO.Path]::GetFullPath($candidate) }
+  }
+  return $null
+}
+
 function Open-DailyFrontend {
   param([Parameter(Mandatory)]$Context)
   $url = "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/"
   if ($Context.fixtureMode -and $Context.openMarkerPath) {
     Write-DailyText -Path $Context.openMarkerPath -Text "$url`n"
+    return
+  }
+  $chromePath = Resolve-DailyChromePath
+  if ($chromePath) {
+    Start-Process -FilePath $chromePath -ArgumentList @('--new-window', $url)
     return
   }
   Start-Process $url
