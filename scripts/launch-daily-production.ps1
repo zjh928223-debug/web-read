@@ -597,7 +597,7 @@ function Open-DailyFrontend {
   }
   $chromePath = Resolve-DailyChromePath
   if ($chromePath) {
-    Start-Process -FilePath $chromePath -ArgumentList @('--new-window', $url)
+    Start-Process -FilePath $chromePath -ArgumentList @('--new-window', $url) -WindowStyle Normal
     return
   }
   Start-Process $url
