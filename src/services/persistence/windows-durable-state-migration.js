@@ -290,6 +290,13 @@ function normalizeWorkflowConfigPayload(payload) {
   return proxyUrl === payload.proxyUrl ? payload : { ...payload, proxyUrl }
 }
 
+function normalizeWorkflowDerivedSessionIdentity(value) {
+  if (!isPlainObject(value)) return value
+  const result = { ...value }
+  for (const field of ['contentId', 'revision', 'integrity']) delete result[field]
+  return result
+}
+
 function domainEquivalent(left, right, domain = null) {
   try {
     // Application backup adapters expose the durable record fields, while
@@ -383,6 +390,17 @@ function domainEquivalent(left, right, domain = null) {
           }
           if (domain === 'workflow') {
             if (content.id === 'config') content.payload = normalizeWorkflowConfigPayload(content.payload)
+            if (isPlainObject(content.payload?.manifest)) {
+              content.payload = {
+                ...content.payload,
+                manifest: normalizeWorkflowDerivedSessionIdentity(content.payload.manifest),
+              }
+            }
+            if (String(content.id || '').startsWith('output:')
+              && String(content.id || '').replace(/\\/gu, '/').endsWith('/manifest.json')
+              && isPlainObject(content.payload)) {
+              content.payload = normalizeWorkflowDerivedSessionIdentity(content.payload)
+            }
             for (const field of ['references', 'mediaReferences']) {
               if (Array.isArray(content[field])) {
                 content[field] = content[field].slice().sort((left, right) => (
@@ -441,6 +459,14 @@ function domainEquivalent(left, right, domain = null) {
   } catch {
     return false
   }
+}
+
+function domainEquivalentIgnoringRevision(left, right, domain = null) {
+  const leftCopy = isPlainObject(left) ? clone(left) : left
+  const rightCopy = isPlainObject(right) ? clone(right) : right
+  if (isPlainObject(leftCopy)) delete leftCopy.revision
+  if (isPlainObject(rightCopy)) delete rightCopy.revision
+  return domainEquivalent(leftCopy, rightCopy, domain)
 }
 
 function maxRevision(records) {
@@ -623,7 +649,35 @@ function validateSourceCapture(value, domain) {
   return clone(value)
 }
 
-async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds, sourceCapture = null) {
+function validateSourceHostFreezeEvidence(value) {
+  if (value === undefined || value === null) return null
+  if (!isPlainObject(value)
+    || value.kind !== 'host-promotion-freeze-evidence.v1'
+    || value.frozen !== true
+    || value.drained !== true
+    || typeof value.capturedAt !== 'string'
+    || !SAFE_IDENTITY.test(String(value.sourceProfileId || ''))
+    || !SAFE_IDENTITY.test(String(value.sourceInstanceId || ''))
+    || !SAFE_SOURCE_ID.test(String(value.challenge || ''))
+    || !Array.isArray(value.domains)
+    || value.domains.length !== WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS.length) {
+    throw migrationError('migration-source-host-freeze-invalid')
+  }
+  const expected = WINDOWS_DURABLE_STATE_MIGRATION_DOMAINS
+  for (const [index, entry] of value.domains.entries()) {
+    if (!isPlainObject(entry)
+      || entry.domain !== expected[index]
+      || !isRevisionValue(entry.revision)
+      || typeof entry.checksum !== 'string'
+      || !/^sha256:[a-f0-9]{64}$/u.test(entry.checksum)) {
+      throw migrationError('migration-source-host-freeze-invalid')
+    }
+  }
+  assertSafeJson(value)
+  return clone(value)
+}
+
+async function createFinalManifest(domain, artifact, importIdentity, target, sourceIds, sourceCapture = null, sourceHostFreezeEvidence = null) {
   const core = {
     format: WINDOWS_DURABLE_STATE_MIGRATION_FORMAT,
     schemaVersion: WINDOWS_DURABLE_STATE_MIGRATION_SCHEMA_VERSION,
@@ -644,6 +698,8 @@ async function createFinalManifest(domain, artifact, importIdentity, target, sou
   }
   const validatedSourceCapture = validateSourceCapture(sourceCapture, domain)
   if (validatedSourceCapture) core.sourceCapture = validatedSourceCapture
+  const validatedSourceHostFreeze = validateSourceHostFreezeEvidence(sourceHostFreezeEvidence)
+  if (validatedSourceHostFreeze) core.sourceHostFreezeEvidence = validatedSourceHostFreeze
   return {
     ...core,
     manifestChecksum: await digestCanonical(core),
@@ -679,6 +735,7 @@ async function validateFinalBackup(value, domain, backupLimits = {}) {
     throw migrationError('migration-backup-invalid')
   }
   if (value.sourceCapture !== undefined) validateSourceCapture(value.sourceCapture, domain)
+  if (value.sourceHostFreezeEvidence !== undefined) validateSourceHostFreezeEvidence(value.sourceHostFreezeEvidence)
   return value
 }
 
@@ -839,28 +896,39 @@ export function createWindowsDurableStateMigration(options = {}) {
       const built = await buildArtifact(plan.importInput, options)
       const sourceDomain = built.artifact.domains[domain]
       const target = await collectHost(domain)
+      const existingImport = stateStore && typeof stateStore.read === 'function'
+        ? await readState()
+        : null
+      const existingEntry = existingImport?.domains?.[domain]
       const expectedRevision = dryRunOptions.expectedRevision === undefined
         ? target.revision
         : safeRevision(dryRunOptions.expectedRevision, 'expectedRevision')
-      const targetDecision = compareTarget(sourceDomain, target, expectedRevision, dryRunOptions.allowExistingTarget, domain)
+      const repeatableImport = existingEntry?.import?.status === 'committed'
+        && existingEntry?.preflight?.sourceImportIdentity === built.importIdentity
+        && domainEquivalentIgnoringRevision(target, sourceDomain, domain)
+      const targetDecision = repeatableImport
+        ? { ok: true, sourceRevision: sourceDomainRevision(sourceDomain), targetRevision: target.revision, idempotent: true }
+        : compareTarget(sourceDomain, target, expectedRevision, dryRunOptions.allowExistingTarget, domain)
       const capacity = await capacityCheck(adapterFor(domain), bytesOf(built.artifact), options)
       if (!targetDecision.ok) return safeFailure(domain, 'dry-run', targetDecision.reasonCode, targetDecision)
       if (!capacity.ok) return safeFailure(domain, 'dry-run', 'migration-capacity-insufficient')
-      const state = await readState()
+      const state = existingImport || await readState()
       const entry = state.domains[domain]
-      entry.status = 'preflight-ready'
-      entry.preflight = {
-        sourceImportIdentity: built.importIdentity,
-        artifactChecksum: built.artifact.artifactChecksum,
-        sourceRevision: sourceDomain.revision,
-        sourceChecksum: built.artifact.manifest.domainChecksums[domain],
-        targetRevision: target.revision,
-        targetChecksum: await digestCanonical(target),
-        expectedRevision,
-        capacity,
-        sourceIds: sourceIds === null ? null : [...sourceIds],
+      if (!repeatableImport) {
+        entry.status = 'preflight-ready'
+        entry.preflight = {
+          sourceImportIdentity: built.importIdentity,
+          artifactChecksum: built.artifact.artifactChecksum,
+          sourceRevision: sourceDomain.revision,
+          sourceChecksum: built.artifact.manifest.domainChecksums[domain],
+          targetRevision: target.revision,
+          targetChecksum: await digestCanonical(target),
+          expectedRevision,
+          capacity,
+          sourceIds: sourceIds === null ? null : [...sourceIds],
+        }
+        await writeState(state)
       }
-      await writeState(state)
       return {
         ok: true,
         domain,
@@ -876,6 +944,7 @@ export function createWindowsDurableStateMigration(options = {}) {
         capacity,
         sourceIds: sourceIds === null ? null : [...sourceIds],
         domains: domainSummaries(built.artifact),
+        idempotent: repeatableImport,
       }
     } catch (error) {
       return safeFailure(domain, 'dry-run', error?.code || 'migration-dry-run-failed')
@@ -933,6 +1002,7 @@ export function createWindowsDurableStateMigration(options = {}) {
       }
       const built = await buildArtifact(plan.importInput, options)
       const sourceCapture = validateSourceCapture(finalBackupOptions.sourceCapture, domain)
+      const sourceHostFreezeEvidence = validateSourceHostFreezeEvidence(finalBackupOptions.sourceHostFreezeEvidence)
       if (built.importIdentity !== entry.preflight?.sourceImportIdentity) {
         if (!sourceCapture) return safeFailure(domain, 'final-backup', 'migration-source-changed')
         const reboundDomain = built.artifact.domains[domain]
@@ -954,6 +1024,7 @@ export function createWindowsDurableStateMigration(options = {}) {
         target,
         sourceIds,
         sourceCapture,
+        sourceHostFreezeEvidence,
       )
       entry.finalBackup = finalBackup
       entry.status = 'final-backup'
@@ -1271,7 +1342,11 @@ export function createWindowsDurableStateMigration(options = {}) {
     const domain = domainKey(domainInput)
     const state = await readState()
     const entry = state.domains[domain]
-    if (entry.rollback?.status === 'rolled-back') return { ok: true, domain, stage: 'rollback', ...clone(entry.rollback), idempotent: true }
+    // A prior rollback may have restored the canonical repository while a
+    // target authority checkpoint revoke was interrupted.  Keep walking the
+    // rollback transaction so the cutover side effect is retried; returning
+    // early here leaves the target checkpoint authoritative forever.
+    const previouslyRolledBack = entry.rollback?.status === 'rolled-back'
     if (entry.import?.status !== 'committed' || !entry.preImport) return safeFailure(domain, 'rollback', 'migration-rollback-target-missing')
     let preImport
     try {
@@ -1296,16 +1371,27 @@ export function createWindowsDurableStateMigration(options = {}) {
       return safeFailure(domain, 'rollback', error?.code || 'migration-host-snapshot-invalid')
     }
     const alreadyRestored = domainEquivalent(current, preImport, domain)
-    if (current.revision !== entry.import.revision && !alreadyRestored) {
+    const acceptedPostImportRevisions = [entry.import.revision, entry.verify?.revision]
+      .filter((revision) => revision !== undefined && revision !== null)
+    if (!acceptedPostImportRevisions.includes(current.revision) && !alreadyRestored) {
       return safeFailure(domain, 'rollback', 'migration-conflict', { currentRevision: current.revision })
     }
     const cutover = cutoverControls[domain]
-    if (!alreadyRestored && cutover && typeof cutover.rollback === 'function') {
+    // A previous rollback attempt may have restored the canonical repository
+    // before failing while revoking the target authority checkpoint.  The
+    // repository CAS is then already satisfied, but the cutover side effect
+    // is still required whenever this migration actually switched authority.
+    const authorityWasChanged = entry.switch?.authorityChanged === true
+    if ((!alreadyRestored || authorityWasChanged) && cutover && typeof cutover.rollback === 'function') {
       let checkpointResult
       try {
         checkpointResult = await cutover.rollback({
           domain,
-          revision: entry.import.revision,
+          // The target checkpoint is committed during switch using the
+          // verified Host revision.  The import revision can be lower when
+          // the target restore itself advances more than once (for example,
+          // marks restore writes one receipt per source scope).
+          revision: entry.verify?.revision ?? entry.import.revision,
           checksum: entry.verify?.checksum || null,
           reason: 'migration-rollback',
           frozen: true,
@@ -1355,7 +1441,13 @@ export function createWindowsDurableStateMigration(options = {}) {
       entry.rollback = { status: 'rolled-back', revision: restored.revision, idempotencyKey }
       entry.status = 'rolled-back'
       await writeState(state)
-      return { ok: true, domain, stage: 'rollback', ...clone(entry.rollback) }
+      return {
+        ok: true,
+        domain,
+        stage: 'rollback',
+        ...clone(entry.rollback),
+        idempotent: previouslyRolledBack,
+      }
     } catch (error) {
       return safeFailure(domain, 'rollback', error?.code || 'migration-rollback-verification-failed')
     }
@@ -1516,6 +1608,7 @@ export function createWindowsDurableStateMigration(options = {}) {
     }
     steps.finalBackup = await createFinalBackup(domain, {
       sourceCapture: steps.beforeFinalBackup?.sourceCapture,
+      sourceHostFreezeEvidence: steps.beforeFinalBackup?.sourceHostFreezeEvidence,
     })
     if (!steps.finalBackup.ok) return { ok: false, domain, stopped: true, steps }
     steps.import = await importDomain(domain, runOptions)

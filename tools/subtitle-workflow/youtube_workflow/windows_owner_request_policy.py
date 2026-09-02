@@ -205,8 +205,11 @@ def allows_query_token(method: object, path: object) -> bool:
 
 def is_owner_path(path: object) -> bool:
     normalized = str(path or "")
-    return normalized in {"/api/app/owner", "/api/owner"} or normalized.startswith(
-        ("/api/app/owner/", "/api/owner/")
+    return (
+        normalized in {"/api/app/owner", "/api/owner"}
+        or normalized.startswith(("/api/app/owner/", "/api/owner/"))
+        or normalized == "/api/app/owner-promotion"
+        or normalized.startswith("/api/app/owner-promotion/")
     )
 
 

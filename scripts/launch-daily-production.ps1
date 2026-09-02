@@ -3,6 +3,7 @@ param(
   [string]$Action = 'Plan',
   [switch]$ConfirmDailyProductionApply,
   [switch]$ConfirmDailyProductionRollback,
+  [switch]$EnableOwnerPromotion,
   [switch]$FixtureMode,
   [switch]$Open,
   [switch]$NoOpen,
@@ -19,11 +20,15 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($EnableOwnerPromotion -and -not $ConfirmDailyProductionApply) {
+  throw 'Owner promotion requires -ConfirmDailyProductionApply.'
+}
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $workflowRoot = Join-Path $projectRoot 'tools\subtitle-workflow'
 $defaultRuntimeConfigPath = Join-Path $projectRoot 'config\runtime.daily-production.json'
 $defaultDataRoot = 'E:\ReadWebData\SubtitleWorkflow-Next'
+$ownerMediaFallbackRoot = 'E:\ReadWebData\SubtitleWorkflow-Optimization\output'
 $profileId = 'daily-production'
 $dailyDomains = @(
   'reader-session',
@@ -158,6 +163,9 @@ function Get-DailyContext {
   $stagingRoot = Resolve-DailyPath -Value $stagingRootValue -Label 'Daily production staging root'
   $applicationRoot = Resolve-DailyPath -Value $applicationRootValue -Label 'Daily production application isolation root'
   $logRoot = Resolve-DailyPath -Value $logRootValue -Label 'Daily production log root'
+  $applicationProfileAuthorityRoot = Join-Path $applicationRoot "profiles\$profileId"
+  $ownerWorkflowStateDir = Join-Path $applicationProfileAuthorityRoot 'workflow-state'
+  $ownerWorkflowOutputDir = Join-Path $applicationProfileAuthorityRoot 'workflow-output'
 
   $runtimeTools = Get-OptimizationObjectValue -Object $config -Name 'tools'
   $pythonConfig = Get-OptimizationObjectValue -Object $config -Name 'python'
@@ -173,12 +181,15 @@ function Get-DailyContext {
     backendHost = $backendHost
     backendPort = $backendPort
     dataRoot = $dataRoot
+    ownerMediaFallbackRoot = $ownerMediaFallbackRoot
     dataRootIdentity = Get-OptimizationPathIdentity -Value $dataRoot
     stateRoot = $stateRoot
     releaseRoot = $releaseRoot
     stagingRoot = $stagingRoot
     applicationIsolationRoot = $applicationRoot
-    applicationProfileAuthorityRoot = Join-Path $applicationRoot "profiles\$profileId"
+    applicationProfileAuthorityRoot = $applicationProfileAuthorityRoot
+    ownerWorkflowStateDir = $ownerWorkflowStateDir
+    ownerWorkflowOutputDir = $ownerWorkflowOutputDir
     logRoot = $logRoot
     runtimeMode = if ($defaultContract) { 'daily-production' } else { 'fixture' }
     fixtureMode = [bool]$FixtureMode
@@ -505,7 +516,8 @@ function Start-DailyPair {
     [Parameter(Mandatory)]$Release,
     [Parameter(Mandatory)]$Toolchain,
     [Parameter(Mandatory)][string]$Token,
-    [Parameter(Mandatory)][string]$InstanceId
+    [Parameter(Mandatory)][string]$InstanceId,
+    [switch]$OwnerPromotion
   )
   $instanceRoot = Join-Path $Context.applicationIsolationRoot "instances\$InstanceId"
   if (-not (Test-DailyChildPath -Root (Join-Path $Context.applicationIsolationRoot 'instances') -Candidate $instanceRoot)) {
@@ -540,6 +552,8 @@ function Start-DailyPair {
     -ApplicationProfileAuthorityIsolationRoot $Context.applicationIsolationRoot `
     -ApplicationPythonStateDir $pythonStateDir `
     -ApplicationPythonOutputDir $pythonOutputDir `
+    -OwnerWorkflowStateDir $Context.ownerWorkflowStateDir `
+    -OwnerWorkflowOutputDir $Context.ownerWorkflowOutputDir `
     -HostStatePath $Context.hostStatePath `
     -CapabilityStatePath $Context.capabilityStatePath `
     -LogRoot $Context.logRoot `
@@ -550,8 +564,11 @@ function Start-DailyPair {
     -StartupTimeoutSeconds $StartupTimeoutSeconds `
     -ReservedPorts $Context.reservedPorts `
     -ExpectedDataRoot $Context.dataRoot `
+    -OwnerMediaFallbackRoot $Context.ownerMediaFallbackRoot `
     -ApplicationProfileInitializer $Context.dailyProfileInitializer `
     -ApplicationProfileLeaseMode 'authoritative' `
+    -EnableOwnerMigration:$OwnerPromotion `
+    -EnableOwnerPromotion:$OwnerPromotion `
     -AllowReservedDailyPorts:$Context.allowReservedDailyPorts
 }
 
@@ -1264,7 +1281,7 @@ function Invoke-DailyApply {
     $journal.releaseRoot = $release.releaseRoot
     Write-DailyJournal -Context $Context -Journal $journal
     Write-DailyText -Path $Context.tokenPath -Text "$token`n"
-    $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId
+    $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId -OwnerPromotion:$EnableOwnerPromotion
     $pairStarted = $true
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $journal.phase = 'pair-ready'
@@ -1337,7 +1354,7 @@ function Invoke-DailyStart {
   $instanceId = [Guid]::NewGuid().ToString('N')
   try {
     if ($tokenNeedsWrite) { Write-DailyText -Path $Context.tokenPath -Text "$token`n" }
-    $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId
+    $pair = Start-DailyPair -Context $Context -Release $release -Toolchain $toolchain -Token $token -InstanceId $instanceId -OwnerPromotion:$EnableOwnerPromotion
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $nextTarget = New-DailyTarget -Context $Context -Release $release -Pair $pairIdentity -InstanceId $instanceId -Toolchain $toolchain
     Write-DailyJson -Path $Context.activeTargetPath -Value $nextTarget

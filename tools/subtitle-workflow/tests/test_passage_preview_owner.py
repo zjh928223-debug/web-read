@@ -229,6 +229,22 @@ class PassagePreviewOwnerTests(unittest.TestCase):
         receipt = reopened.receipt(idempotency_key="write-0", **self.ids("reopen-receipt"))
         self.assertEqual(receipt["outcome"], "committed")
 
+    def test_empty_legacy_import_clears_existing_records(self):
+        owner = self.make_owner()
+        key = "vocabulary.passage-preview.data.v1"
+        seeded = self.command(owner, "legacy-import", key, self.row(key, [{"id": "old"}]), 0, request_key="seed")
+        self.assertEqual(seeded["outcome"], "committed")
+
+        cleared = owner.command(
+            "legacy-import",
+            payload={"records": {}},
+            expected_revision=1,
+            idempotency_key="clear",
+            **self.ids("clear"),
+        )
+        self.assertEqual(cleared["outcome"], "committed")
+        self.assertEqual(owner.query("durable-state", **self.ids("after-clear"))["payload"]["records"], {})
+
     def test_same_idempotency_key_retries_without_a_second_canonical_replace(self):
         replacements = 0
 

@@ -294,7 +294,22 @@ try {
   Assert-True ($appliedSpec.arguments -match [regex]::Escape($launcherPath) -and $appliedSpec.arguments -match '-Action Start -NoOpen') 'shortcut Apply must preserve the explicit launcher path and arguments'
   Assert-True ((Test-Path -LiteralPath $shortcutStatePath) -and -not (Test-Path -LiteralPath "$shortcutStatePath.pending.json")) 'shortcut Apply must leave a committed rollback state without a pending transaction'
 
-  $shortcutRollback = Invoke-PowerShellJson -Arguments (@('-File', $shortcutMigrationPath, '-Action', 'Rollback') + $shortcutCommon)
+  $openArguments = '-Action Start -Open'
+  $updateShortcutCommon = @(
+    '-ShortcutPath', $shortcutPath,
+    '-StatePath', $shortcutStatePath,
+    '-NewScriptPath', $launcherPath,
+    '-NewWorkingDirectory', $projectRoot,
+    '-NewLauncherArguments', $openArguments
+  )
+  $shortcutUpdate = Invoke-PowerShellJson -Arguments (@('-File', $shortcutMigrationPath, '-Action', 'Update', '-AllowDesktopMutation') + $updateShortcutCommon)
+  Assert-True ($shortcutUpdate.exitCode -eq 0 -and $shortcutUpdate.json.status -eq 'updated') "shortcut Update failed: $($shortcutUpdate.text)"
+  $updatedSpec = Read-TestShortcut -Path $shortcutPath
+  Assert-True ($updatedSpec.arguments -match [regex]::Escape($launcherPath) -and $updatedSpec.arguments -match '-Action Start -Open') 'shortcut Update must change only the launcher mode'
+  $updatedState = Get-Content -LiteralPath $shortcutStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  Assert-ShortcutEqual $updatedState.original $originalSpec 'shortcut Update must preserve the saved original rollback target'
+
+  $shortcutRollback = Invoke-PowerShellJson -Arguments (@('-File', $shortcutMigrationPath, '-Action', 'Rollback') + $updateShortcutCommon)
   Assert-True ($shortcutRollback.exitCode -eq 0 -and $shortcutRollback.json.status -eq 'rolled-back') "shortcut Rollback failed: $($shortcutRollback.text)"
   Assert-ShortcutEqual (Read-TestShortcut -Path $shortcutPath) $originalSpec 'shortcut Rollback must restore the saved original fixture shortcut'
 

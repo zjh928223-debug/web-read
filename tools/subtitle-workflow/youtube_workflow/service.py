@@ -1028,6 +1028,7 @@ class JobManager:
         annotation_retry_jitter: Callable[[float], float] | None = None,
         persistence_delay_seconds: float = 0.2,
         event_limit: int = DEFAULT_JOB_EVENT_LIMIT,
+        media_fallback_root: Path | None = None,
     ):
         self.config = config or WorkflowConfig()
         # Keep the launcher/runtime baseline separate from the mutable config
@@ -1087,6 +1088,16 @@ class JobManager:
         self.current_job_id: str | None = None
         self.recent: list[dict] = []
         self.store = WorkflowHistoryStore(self.config.state_dir, self.config.output_dir)
+        # Imported workflow metadata intentionally keeps media references as
+        # relative paths.  During the Windows owner handoff the daily Host
+        # may serve an existing optimization-owned media file through this
+        # read-only fallback, without copying media bytes into the daily
+        # data root or allowing an arbitrary caller path.
+        self.media_fallback_root = (
+            Path(media_fallback_root).expanduser().resolve(strict=False)
+            if media_fallback_root is not None
+            else None
+        )
         self.recovery_status = {
             "jobs": {"status": "ok", "writable": True},
             "history": {"status": "ok", "writable": True},
@@ -1106,7 +1117,7 @@ class JobManager:
         with self.lock:
             self._apply_saved_config()
 
-    def reload_persisted_state(self) -> None:
+    def reload_persisted_state(self, *, flush: bool = True) -> None:
         """Reload jobs/history after the owner imports a durable snapshot.
 
         The production Host creates this manager before the one-time owner
@@ -1116,7 +1127,8 @@ class JobManager:
         with self.lock:
             if self.current_job_id or self.pending or (self.worker_thread and self.worker_thread.is_alive()):
                 raise RuntimeError("workflow service cannot reload while a job is active")
-            self._flush_persistence_locked()
+            if flush:
+                self._flush_persistence_locked()
             self.jobs.clear()
             self.recent = []
             self.recovery_status = {
@@ -2452,13 +2464,73 @@ class JobManager:
                 return False
         return previous.get("marks") != current.get("marks")
 
-    @classmethod
-    def _enrich_session_identity(cls, manifest: dict) -> dict:
+    def _fallback_media_path(self, registered_path: str | Path) -> Path | None:
+        """Resolve a missing target media path into the read-only fallback root.
+
+        Workflow metadata is rebound to the target output root during owner
+        promotion, while the media bytes intentionally remain in the source
+        output root.  Keep the registered target path in the manifest and use
+        this resolver only for validation or serving.
+        """
+        fallback_root = self.media_fallback_root
+        if fallback_root is None:
+            return None
+        try:
+            output_root = self.config.output_dir.expanduser().resolve(strict=False)
+            registered = Path(str(registered_path)).expanduser()
+            if not registered.is_absolute():
+                registered = output_root / registered
+            registered = registered.resolve(strict=False)
+            relative = registered.relative_to(output_root)
+            if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+                return None
+            fallback = (fallback_root / relative).resolve(strict=False)
+            if fallback == fallback_root or fallback_root not in fallback.parents:
+                return None
+            if not fallback.exists() or not fallback.is_file() or fallback.stat().st_size <= 0:
+                return None
+            return fallback
+        except (AttributeError, OSError, RuntimeError, ValueError):
+            return None
+
+    def _session_validation_manifest(self, manifest: dict) -> dict:
+        """Return a validation view with source media substituted read-only."""
+        if self.media_fallback_root is None:
+            return manifest
+        files = manifest.get("files") if isinstance(manifest.get("files"), dict) else None
+        if files is None:
+            return manifest
+        rebound_files = dict(files)
+        changed = False
+        for media_kind in ("audio", "video"):
+            registered_path = str(rebound_files.get(media_kind) or "").strip()
+            if not registered_path:
+                continue
+            try:
+                candidate = Path(registered_path).expanduser()
+                if not candidate.is_absolute():
+                    candidate = self.config.output_dir / candidate
+                if candidate.exists() and candidate.is_file() and candidate.stat().st_size > 0:
+                    continue
+            except (AttributeError, OSError, RuntimeError, ValueError):
+                pass
+            fallback = self._fallback_media_path(registered_path)
+            if fallback is not None:
+                rebound_files[media_kind] = str(fallback)
+                changed = True
+        if not changed:
+            return manifest
+        result = dict(manifest)
+        result["files"] = rebound_files
+        return result
+
+    def _enrich_session_identity(self, manifest: dict) -> dict:
         if manifest.get("status") != "ready":
             return manifest
+        validation_manifest = self._session_validation_manifest(manifest)
         if all(key in manifest for key in ("contentId", "revision", "integrity")):
             try:
-                validate_session_files(manifest)
+                validate_session_files(validation_manifest)
             except Exception as exc:
                 # Marks are a separate authoritative owner.  A marks commit
                 # can therefore make the workflow job's derived session
@@ -2466,19 +2538,26 @@ class JobManager:
                 # resources.  Reconcile that narrow case while continuing to
                 # reject changes to the actual session resources.
                 refreshed = dict(manifest)
+                refreshed_validation = self._session_validation_manifest(refreshed)
                 try:
-                    validate_session_files(refreshed, refresh_identity=True)
+                    validate_session_files(refreshed_validation, refresh_identity=True)
                 except Exception:
                     raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}") from exc
-                if not cls._session_identity_changed_only_in_marks(manifest, refreshed):
+                if not self._session_identity_changed_only_in_marks(manifest, refreshed_validation):
                     raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}") from exc
+                for key in ("contentId", "revision", "integrity"):
+                    if key in refreshed_validation:
+                        refreshed[key] = refreshed_validation[key]
                 return refreshed
             return manifest
         enriched = dict(manifest)
         try:
-            validate_session_files(enriched)
+            validate_session_files(validation_manifest)
         except Exception as exc:
             raise HTTPException(status_code=409, detail=f"session resources are invalid: {exc}")
+        for key in ("contentId", "revision", "integrity"):
+            if key in validation_manifest:
+                enriched[key] = validation_manifest[key]
         return enriched
 
     def registered_media_path(self, job_id: str, media_kind: str) -> Path:
@@ -2489,10 +2568,16 @@ class JobManager:
         registered_path = str(files.get(media_kind) or "").strip()
         if not registered_path:
             raise HTTPException(status_code=404, detail="registered media not found")
-        path = Path(registered_path)
-        if not path.exists() or not path.is_file():
+        path = Path(registered_path).expanduser()
+        if not path.is_absolute():
+            path = self.config.output_dir / path
+        path = path.resolve(strict=False)
+        if path.exists() and path.is_file():
+            return path
+        fallback = self._fallback_media_path(registered_path)
+        if fallback is None:
             raise HTTPException(status_code=404, detail="registered media not found")
-        return path
+        return fallback
 
     def _normalize_legacy_video_priority_media(self, manifest: dict) -> dict:
         files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}

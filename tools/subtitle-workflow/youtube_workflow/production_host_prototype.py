@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -11,6 +12,7 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from time import perf_counter
 
 import httpx
@@ -66,6 +68,14 @@ OWNER_MIGRATION_MODE = "optimization"
 OWNER_MIGRATION_HEADER = "x-read-web-owner-migration"
 OWNER_MIGRATION_HEADER_VALUE = "optimization"
 OWNER_MIGRATION_DOMAINS = frozenset(WINDOWS_OWNER_DOMAINS)
+OWNER_PROMOTION_MODE = "optimization"
+OWNER_PROMOTION_HEADER = "x-read-web-owner-promotion"
+OWNER_PROMOTION_HEADER_VALUE = "optimization"
+OWNER_PROMOTION_ROUTE_PREFIX = "/api/app/owner-promotion"
+OWNER_PROMOTION_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$")
+OWNER_PROMOTION_CHECKSUM = re.compile(r"^sha256:[a-f0-9]{64}$")
+OWNER_PROMOTION_REVISION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+OWNER_PROMOTION_MUTATING_KINDS = frozenset({"command", "backup-command"})
 OWNER_MIGRATION_OPERATIONS = {
     "reader-session": {
         "query": frozenset({"snapshot"}),
@@ -97,6 +107,174 @@ OWNER_MIGRATION_OPERATIONS = {
         "receipt-query": frozenset({"receipt-query"}),
     },
 }
+
+
+def _promotion_canonical_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _promotion_checksum(value: dict) -> str:
+    core = {key: nested for key, nested in value.items() if key != "checksum"}
+    return f"sha256:{sha256(_promotion_canonical_json(core).encode('utf-8')).hexdigest()}"
+
+
+def _promotion_marker_path(root: Path | None, domain: str) -> Path | None:
+    if root is None or domain not in WINDOWS_OWNER_DOMAINS:
+        return None
+    return Path(root).resolve() / "owner-mode" / "frozen" / f"{domain}.json"
+
+
+def _promotion_checkpoint_path(root: Path | None, domain: str) -> Path | None:
+    if root is None or domain not in WINDOWS_OWNER_DOMAINS:
+        return None
+    return Path(root).resolve() / "owner-mode" / "checkpoints" / f"{domain}.json"
+
+
+def _promotion_read_json(path: Path | None):
+    if path is None:
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"_invalid": True}
+
+
+def _promotion_write_json(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            descriptor = None
+            json.dump(value, handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+
+
+def _promotion_valid_marker(value, *, profile_id: str, domain: str, instance_id: str | None = None) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("_invalid") is not True
+        and value.get("schemaVersion") == 1
+        and value.get("profileId") == profile_id
+        and value.get("domain") == domain
+        and value.get("status") == "frozen"
+        and isinstance(value.get("frozenAt"), str)
+        and isinstance(value.get("challenge"), str)
+        and value.get("drained") is True
+        and isinstance(value.get("inFlight"), int)
+        and value.get("inFlight") == 0
+        and (instance_id is None or value.get("instanceId") == instance_id)
+        and value.get("checksum") == _promotion_checksum(value)
+    )
+
+
+def _promotion_marker_state(root: Path | None, profile_id: str, domains) -> dict:
+    result = {}
+    for domain in domains:
+        value = _promotion_read_json(_promotion_marker_path(root, domain))
+        if value is None:
+            result[domain] = None
+        elif _promotion_valid_marker(value, profile_id=profile_id, domain=domain):
+            result[domain] = value
+        else:
+            result[domain] = {"_invalid": True}
+    return result
+
+
+def _promotion_revision_is_valid(value) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+    ) or (
+        isinstance(value, str)
+        and OWNER_PROMOTION_REVISION.fullmatch(value) is not None
+    )
+
+
+def _promotion_valid_checkpoint(value, *, profile_id: str, domain: str, instance_id: str | None = None) -> bool:
+    repository = value.get("repository") if isinstance(value, dict) else None
+    lease = value.get("lease") if isinstance(value, dict) else None
+    return (
+        isinstance(value, dict)
+        and value.get("_invalid") is not True
+        and value.get("schemaVersion") == 1
+        and value.get("profileId") == profile_id
+        and value.get("domain") == domain
+        and value.get("oldWriterBlocked") is True
+        and value.get("compatibilityMode") == "read-only"
+        and value.get("inFlight") == 0
+        and value.get("authorityMode") == "host-api=authoritative"
+        and isinstance(lease, dict)
+        and lease.get("schemaVersion") == 1
+        and OWNER_PROMOTION_CHECKSUM.fullmatch(str(lease.get("profileKeyHash", ""))) is not None
+        and OWNER_PROMOTION_CHECKSUM.fullmatch(str(lease.get("leaseIdHash", ""))) is not None
+        and (instance_id is None or value.get("instanceId") in {None, instance_id})
+        and isinstance(repository, dict)
+        and repository.get("identity") == f"windows-host.repository.{domain}.v1"
+        and repository.get("type") == "host-managed"
+        and _promotion_revision_is_valid(repository.get("revision"))
+        and repository.get("baseRevision") == repository.get("revision")
+        and OWNER_PROMOTION_CHECKSUM.fullmatch(str(repository.get("baseEvidence", ""))) is not None
+        and OWNER_PROMOTION_CHECKSUM.fullmatch(str(repository.get("revisionEvidence", ""))) is not None
+        and isinstance(value.get("committedAt"), str)
+        and value.get("checksum") == _promotion_checksum(value)
+    )
+
+
+def _promotion_checkpoint_state(root: Path | None, profile_id: str, domains) -> dict:
+    result = {}
+    for domain in domains:
+        value = _promotion_read_json(_promotion_checkpoint_path(root, domain))
+        if value is None:
+            result[domain] = None
+        elif _promotion_valid_checkpoint(value, profile_id=profile_id, domain=domain):
+            result[domain] = value
+        else:
+            result[domain] = {"_invalid": True}
+    return result
+
+
+def _promotion_safe_identity(value, field: str, *, max_length: int = 255) -> str:
+    candidate = str(value or "").strip()
+    pattern = OWNER_PROMOTION_SAFE_ID if max_length == 255 else re.compile(
+        rf"^[A-Za-z0-9][A-Za-z0-9._:-]{{0,{max(0, max_length - 1)}}}$"
+    )
+    if not candidate or len(candidate) > max_length or pattern.fullmatch(candidate) is None:
+        raise ValueError(f"{field} is invalid")
+    return candidate
+
+
+def _promotion_safe_revision(value, field: str = "revision"):
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    if isinstance(value, str) and OWNER_PROMOTION_REVISION.fullmatch(value):
+        return value
+    raise ValueError(f"{field} is invalid")
+
+
+def _promotion_safe_checksum(value, field: str) -> str:
+    if not isinstance(value, str) or OWNER_PROMOTION_CHECKSUM.fullmatch(value) is None:
+        raise ValueError(f"{field} is invalid")
+    return value
 
 
 class LocalCapabilityProxy:
@@ -177,8 +355,11 @@ class PathPreservingAsgiDispatch:
         owner_domain_handlers: dict | None = None,
         owner_freeze_root: Path | None = None,
         owner_profile_id: str = "",
+        owner_instance_id: str = "",
         owner_migration_mode: str | None = None,
         owner_migration_domains=None,
+        owner_promotion_mode: str | None = None,
+        owner_promotion_domains=None,
         application_profile_lease_process=None,
         application_profile_lease_mode: str = "authoritative",
         capability_snapshot_provider=None,
@@ -193,8 +374,11 @@ class PathPreservingAsgiDispatch:
         self.owner_domain_handlers = dict(owner_domain_handlers or {})
         self.owner_freeze_root = Path(owner_freeze_root).resolve() if owner_freeze_root is not None else None
         self.owner_profile_id = str(owner_profile_id or "")
+        self.owner_instance_id = str(owner_instance_id or "")
         self.owner_migration_mode = owner_migration_mode
         self.owner_migration_domains = frozenset(owner_migration_domains or ())
+        self.owner_promotion_mode = owner_promotion_mode
+        self.owner_promotion_domains = frozenset(owner_promotion_domains or ())
         self.application_profile_lease_process = application_profile_lease_process
         self.application_profile_lease_mode = application_profile_lease_mode
         self.capability_snapshot_provider = capability_snapshot_provider
@@ -206,6 +390,13 @@ class PathPreservingAsgiDispatch:
             "draining": False,
             "inflight": 0,
             "drainStartedAt": None,
+            "ownerWrites": 0,
+        }
+        self.drain_state.setdefault("ownerWrites", 0)
+        self.owner_promotion_state = {
+            "status": "unfrozen",
+            "challenge": None,
+            "frozenAt": None,
         }
         self.owner_registry_status = dict(owner_registry_status or {
             "valid": False,
@@ -248,6 +439,9 @@ class PathPreservingAsgiDispatch:
                 return
             if path == "/api/app/drain-status" and str(scope.get("method", "GET")).upper() in {"GET", "HEAD"}:
                 await self._handle_drain_status(scope, send)
+                return
+            if self._is_owner_promotion_path(path):
+                await self._handle_owner_promotion(scope, receive, send)
                 return
             if self.drain_state["draining"] and self._is_side_effect_path(path):
                 await Response(
@@ -351,6 +545,10 @@ class PathPreservingAsgiDispatch:
     def _is_owner_api_path(path: str) -> bool:
         return is_owner_path(path)
 
+    @staticmethod
+    def _is_owner_promotion_path(path: str) -> bool:
+        return path == OWNER_PROMOTION_ROUTE_PREFIX or path.startswith(f"{OWNER_PROMOTION_ROUTE_PREFIX}/")
+
     def _legacy_writer_is_frozen(self, path: str, method: str) -> bool:
         if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
             return False
@@ -365,11 +563,6 @@ class PathPreservingAsgiDispatch:
         return False
 
     def _domain_is_authoritative(self, domain: str) -> bool:
-        if (
-            self.owner_registry_status.get("profileEvidenceMode") == "empty-host-candidate"
-            and self.owner_migration_mode != OWNER_MIGRATION_MODE
-        ):
-            return False
         owner_mode = self.owner_registry_status.get("ownerMode")
         authoritative = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
         if domain in authoritative and domain in self.owner_domain_handlers:
@@ -378,6 +571,12 @@ class PathPreservingAsgiDispatch:
             self.owner_freeze_root,
             self.owner_profile_id,
         )
+        if (
+            self.owner_registry_status.get("profileEvidenceMode") == "empty-host-candidate"
+            and self.owner_migration_mode != OWNER_MIGRATION_MODE
+            and domain not in checkpointed
+        ):
+            return False
         return (
             domain in checkpointed
             and domain in self.owner_domain_handlers
@@ -574,7 +773,25 @@ class PathPreservingAsgiDispatch:
             self._domain_is_authoritative(owner_request.domain)
             or self._migration_owner_request_allowed(scope, owner_request)
         ):
-            await self._handle_domain_owner_request(scope, receive, send, owner_request)
+            if self._owner_promotion_blocks_command(owner_request):
+                await JSONResponse(
+                    self._promotion_error_payload(
+                        "owner-promotion-source-frozen",
+                        "source Host owner writes are frozen for promotion",
+                    ),
+                    status_code=409,
+                )(scope, receive, send)
+                return
+            tracks_write = owner_request.kind in OWNER_PROMOTION_MUTATING_KINDS
+            if tracks_write:
+                self.drain_state["ownerWrites"] = int(self.drain_state.get("ownerWrites", 0)) + 1
+                self.drain_state["inflight"] += 1
+            try:
+                await self._handle_domain_owner_request(scope, receive, send, owner_request)
+            finally:
+                if tracks_write:
+                    self.drain_state["ownerWrites"] = max(0, int(self.drain_state.get("ownerWrites", 0)) - 1)
+                    self.drain_state["inflight"] = max(0, self.drain_state["inflight"] - 1)
             return
 
         if owner_request.kind == "receipt-query":
@@ -730,6 +947,481 @@ class PathPreservingAsgiDispatch:
             "error": typed,
         }
         await JSONResponse(response, status_code=status_code)(scope, receive, send)
+
+    def _owner_promotion_enabled(self) -> bool:
+        return (
+            self.owner_promotion_mode == OWNER_PROMOTION_MODE
+            and self.owner_migration_mode == OWNER_MIGRATION_MODE
+            and self.owner_promotion_domains == frozenset(WINDOWS_OWNER_DOMAINS)
+        )
+
+    def _owner_promotion_header_allowed(self, scope) -> bool:
+        return _headers(scope).get(OWNER_PROMOTION_HEADER) == OWNER_PROMOTION_HEADER_VALUE
+
+    def _owner_promotion_blocks_command(self, owner_request) -> bool:
+        return (
+            owner_request.kind in OWNER_PROMOTION_MUTATING_KINDS
+            and self._domain_is_frozen(owner_request.domain)
+        )
+
+    @staticmethod
+    def _promotion_error_payload(code: str, message: str, *, operation: str | None = None) -> dict:
+        safe_code = code if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", str(code)) else "owner-promotion-failed"
+        return {
+            "status": "not-ready" if safe_code not in {"invalid-request", "forbidden"} else safe_code,
+            "operation": operation,
+            "error": {
+                "type": "read-web-owner-promotion-error.v1",
+                "code": safe_code,
+                "message": message,
+            },
+        }
+
+    @staticmethod
+    def _promotion_json_body(raw_body: bytes) -> dict:
+        if not raw_body:
+            return {}
+        try:
+            value = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("promotion request body is not valid JSON") from None
+        if not isinstance(value, dict):
+            raise ValueError("promotion request body must be an object")
+        return value
+
+    def _promotion_validate_common(self, payload: dict) -> None:
+        if payload.get("profileId") != self.owner_profile_id:
+            raise ValueError("profileId is invalid")
+        if payload.get("instanceId") != self.owner_instance_id:
+            raise ValueError("instanceId is invalid")
+
+    def _promotion_validate_domains(self, payload: dict, *, field: str = "domains") -> list[str]:
+        values = payload.get(field)
+        expected = list(WINDOWS_OWNER_DOMAINS)
+        if values != expected:
+            raise ValueError(f"{field} must contain the fixed owner domain order")
+        return expected
+
+    def _promotion_marker_values(self) -> dict[str, dict | None]:
+        return {
+            domain: _promotion_read_json(_promotion_marker_path(self.owner_freeze_root, domain))
+            for domain in WINDOWS_OWNER_DOMAINS
+        }
+
+    def _promotion_checkpoint_values(self) -> dict[str, dict | None]:
+        return {
+            domain: _promotion_read_json(_promotion_checkpoint_path(self.owner_freeze_root, domain))
+            for domain in WINDOWS_OWNER_DOMAINS
+        }
+
+    def _promotion_status_payload(self) -> dict:
+        marker_values = self._promotion_marker_values()
+        frozen_domains: list[str] = []
+        drained_domains: list[str] = []
+        invalid_domains: list[str] = []
+        challenges: set[str] = set()
+        for domain, value in marker_values.items():
+            if value is None:
+                continue
+            if _promotion_valid_marker(
+                value,
+                profile_id=self.owner_profile_id,
+                domain=domain,
+                instance_id=self.owner_instance_id,
+            ):
+                frozen_domains.append(domain)
+                if value.get("drained") is True:
+                    drained_domains.append(domain)
+                if isinstance(value.get("challenge"), str):
+                    challenges.add(value["challenge"])
+            else:
+                invalid_domains.append(domain)
+
+        checkpoint_values = self._promotion_checkpoint_values()
+        checkpointed_domains = [
+            domain
+            for domain, value in checkpoint_values.items()
+            if _promotion_valid_checkpoint(
+                value,
+                profile_id=self.owner_profile_id,
+                domain=domain,
+                instance_id=self.owner_instance_id,
+            )
+        ]
+        expected = set(WINDOWS_OWNER_DOMAINS)
+        if invalid_domains:
+            status = "invalid"
+        elif set(frozen_domains) == expected and set(drained_domains) == expected:
+            status = "frozen"
+        elif frozen_domains:
+            status = "freezing"
+        else:
+            status = "unfrozen"
+        challenge = next(iter(challenges)) if len(challenges) == 1 else None
+        return {
+            "schemaVersion": 1,
+            "status": status,
+            "mode": self.owner_promotion_mode,
+            "profileId": self.owner_profile_id,
+            "instanceId": self.owner_instance_id,
+            "domains": list(WINDOWS_OWNER_DOMAINS),
+            "frozenDomains": frozen_domains,
+            "drainedDomains": drained_domains,
+            "invalidDomains": invalid_domains,
+            "checkpointedDomains": checkpointed_domains,
+            "challenge": challenge,
+            "drained": set(drained_domains) == expected,
+            "inflightOwnerWrites": int(self.drain_state.get("ownerWrites", 0)),
+        }
+
+    def _promotion_lease(self) -> dict:
+        lease = self.owner_registry_status.get("profileLease")
+        if not isinstance(lease, dict):
+            raise RuntimeError("owner profile lease evidence is unavailable")
+        profile_key_hash = lease.get("profileKeyHash")
+        lease_id_hash = lease.get("leaseIdHash")
+        if (
+            not isinstance(profile_key_hash, str)
+            or OWNER_PROMOTION_CHECKSUM.fullmatch(profile_key_hash) is None
+            or not isinstance(lease_id_hash, str)
+            or OWNER_PROMOTION_CHECKSUM.fullmatch(lease_id_hash) is None
+        ):
+            raise RuntimeError("owner profile lease evidence is invalid")
+        return {
+            "schemaVersion": 1,
+            "profileKeyHash": profile_key_hash,
+            "leaseIdHash": lease_id_hash,
+        }
+
+    def _promotion_marker_candidate(
+        self,
+        domain: str,
+        *,
+        challenge: str,
+        frozen_at: str,
+        drained: bool,
+        inflight: int,
+    ) -> dict:
+        value = {
+            "schemaVersion": 1,
+            "profileId": self.owner_profile_id,
+            "domain": domain,
+            "lease": self._promotion_lease(),
+            "status": "frozen",
+            "frozenAt": frozen_at,
+            "instanceId": self.owner_instance_id,
+            "challenge": challenge,
+            "drained": bool(drained),
+            "inFlight": max(0, int(inflight)),
+        }
+        return {**value, "checksum": _promotion_checksum(value)}
+
+    async def _promotion_freeze(self, payload: dict) -> dict:
+        domains = self._promotion_validate_domains(payload)
+        self._promotion_validate_common(payload)
+        raw_markers = self._promotion_marker_values()
+        present = [value for value in raw_markers.values() if value is not None]
+        if any(value.get("_invalid") is True for value in present):
+            raise RuntimeError("owner promotion freeze marker is invalid")
+        existing_challenges = {
+            value.get("challenge")
+            for value in present
+            if isinstance(value, dict) and isinstance(value.get("challenge"), str)
+        }
+        requested_challenge = payload.get("challenge")
+        if requested_challenge is not None:
+            challenge = _promotion_safe_identity(requested_challenge, "challenge", max_length=128)
+        elif len(existing_challenges) == 1:
+            challenge = next(iter(existing_challenges))
+        else:
+            challenge = secrets.token_urlsafe(24)
+        if existing_challenges and existing_challenges != {challenge}:
+            raise RuntimeError("owner promotion freeze challenge conflicts with an existing freeze")
+
+        already_drained = all(
+            isinstance(value, dict)
+            and value.get("schemaVersion") == 1
+            and value.get("profileId") == self.owner_profile_id
+            and value.get("domain") == domain
+            and value.get("status") == "frozen"
+            and value.get("challenge") == challenge
+            and value.get("drained") is True
+            and value.get("checksum") == _promotion_checksum(value)
+            for domain, value in raw_markers.items()
+        )
+        if already_drained:
+            self.owner_promotion_state.update({"status": "frozen", "challenge": challenge})
+            return {**self._promotion_status_payload(), "idempotent": True}
+
+        owner_mode = self.owner_registry_status.get("ownerMode")
+        authoritative = set(owner_mode.get("authoritativeDomains", [])) if isinstance(owner_mode, dict) else set()
+        if not isinstance(owner_mode, dict) or owner_mode.get("status") != "authoritative" or authoritative != set(domains):
+            raise RuntimeError("source Host must be authoritative for all six domains before freeze")
+        if self.application_profile_lease_mode != "authoritative":
+            raise RuntimeError("source Host profile lease is not authoritative")
+        if self.application_profile_lease_process is not None and self.application_profile_lease_process.poll() is not None:
+            raise RuntimeError("source Host profile lease is no longer alive")
+
+        frozen_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        self.owner_promotion_state.update({
+            "status": "freezing",
+            "challenge": challenge,
+            "frozenAt": frozen_at,
+        })
+        try:
+            for domain in domains:
+                _promotion_write_json(
+                    _promotion_marker_path(self.owner_freeze_root, domain),
+                    self._promotion_marker_candidate(
+                        domain,
+                        challenge=challenge,
+                        frozen_at=frozen_at,
+                        drained=False,
+                        inflight=int(self.drain_state.get("ownerWrites", 0)),
+                    ),
+                )
+            timeout_ms = payload.get("timeoutMs", 10000)
+            if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, (int, float)) or not 10 <= timeout_ms <= 60000:
+                raise ValueError("timeoutMs is invalid")
+            deadline = perf_counter() + float(timeout_ms) / 1000
+            while int(self.drain_state.get("ownerWrites", 0)) > 0 and perf_counter() < deadline:
+                await asyncio.sleep(0.01)
+            if int(self.drain_state.get("ownerWrites", 0)) > 0:
+                raise TimeoutError("source Host owner writes did not drain")
+            for domain in domains:
+                _promotion_write_json(
+                    _promotion_marker_path(self.owner_freeze_root, domain),
+                    self._promotion_marker_candidate(
+                        domain,
+                        challenge=challenge,
+                        frozen_at=frozen_at,
+                        drained=True,
+                        inflight=0,
+                    ),
+                )
+        except TimeoutError:
+            await self._promotion_clear_markers(challenge)
+            self.owner_promotion_state.update({"status": "unfrozen", "challenge": None, "frozenAt": None})
+            return {
+                **self._promotion_status_payload(),
+                "status": "not-ready",
+                "error": {"code": "promotion-drain-timeout"},
+            }
+        except Exception:
+            # A failed source freeze must not strand a partially-written gate.
+            # The caller may retry with the same challenge, but ordinary
+            # failures leave the source writable again.
+            await self._promotion_clear_markers(challenge)
+            self.owner_promotion_state.update({"status": "unfrozen", "challenge": None, "frozenAt": None})
+            raise
+        self.owner_promotion_state.update({"status": "frozen", "challenge": challenge})
+        return {**self._promotion_status_payload(), "idempotent": False}
+
+    async def _promotion_clear_markers(self, challenge: str) -> None:
+        for domain in WINDOWS_OWNER_DOMAINS:
+            path = _promotion_marker_path(self.owner_freeze_root, domain)
+            value = _promotion_read_json(path)
+            if value is None:
+                continue
+            if isinstance(value, dict) and value.get("challenge") == challenge:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+
+    async def _promotion_unfreeze(self, payload: dict) -> dict:
+        self._promotion_validate_domains(payload)
+        self._promotion_validate_common(payload)
+        raw_markers = self._promotion_marker_values()
+        present = [value for value in raw_markers.values() if value is not None]
+        if not present:
+            self.owner_promotion_state.update({"status": "unfrozen", "challenge": None, "frozenAt": None})
+            return {**self._promotion_status_payload(), "idempotent": True}
+        challenge = _promotion_safe_identity(payload.get("challenge"), "challenge", max_length=128)
+        if any(
+            not isinstance(value, dict)
+            or value.get("_invalid") is True
+            or value.get("challenge") != challenge
+            for value in present
+        ):
+            raise RuntimeError("owner promotion unfreeze challenge does not match the source freeze")
+        if int(self.drain_state.get("ownerWrites", 0)) > 0:
+            raise RuntimeError("source Host owner writes are still in flight")
+        await self._promotion_clear_markers(challenge)
+        self.owner_promotion_state.update({"status": "unfrozen", "challenge": None, "frozenAt": None})
+        return {**self._promotion_status_payload(), "idempotent": False}
+
+    def _promotion_checkpoint_candidate(
+        self,
+        domain: str,
+        *,
+        revision,
+        artifact_checksum: str,
+        revision_evidence: str,
+    ) -> dict:
+        value = {
+            "schemaVersion": 1,
+            "profileId": self.owner_profile_id,
+            "domain": domain,
+            "instanceId": self.owner_instance_id,
+            "lease": self._promotion_lease(),
+            "oldWriterBlocked": True,
+            "compatibilityMode": "read-only",
+            "inFlight": 0,
+            "repository": {
+                "identity": f"windows-host.repository.{domain}.v1",
+                "type": "host-managed",
+                "baseRevision": revision,
+                "revision": revision,
+                "baseEvidence": artifact_checksum,
+                "revisionEvidence": revision_evidence,
+            },
+            "authorityMode": "host-api=authoritative",
+            "committedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        return {**value, "checksum": _promotion_checksum(value)}
+
+    async def _promotion_commit(self, payload: dict) -> dict:
+        self._promotion_validate_common(payload)
+        domain = payload.get("domain")
+        if domain not in WINDOWS_OWNER_DOMAINS:
+            raise ValueError("domain is invalid")
+        revision = _promotion_safe_revision(payload.get("revision"))
+        artifact_checksum = _promotion_safe_checksum(payload.get("artifactChecksum"), "artifactChecksum")
+        revision_evidence = _promotion_safe_checksum(payload.get("revisionEvidence"), "revisionEvidence")
+        if domain not in self.owner_domain_handlers:
+            raise RuntimeError("target Host owner handler is unavailable")
+        if self.application_profile_lease_mode != "authoritative":
+            raise RuntimeError("target Host profile lease is not authoritative")
+        if self.application_profile_lease_process is not None and self.application_profile_lease_process.poll() is not None:
+            raise RuntimeError("target Host profile lease is no longer alive")
+        checkpoint_path = _promotion_checkpoint_path(self.owner_freeze_root, domain)
+        existing = _promotion_read_json(checkpoint_path)
+        if existing is not None:
+            if not _promotion_valid_checkpoint(existing, profile_id=self.owner_profile_id, domain=domain):
+                raise RuntimeError("target owner checkpoint is invalid")
+            repository = existing.get("repository", {})
+            if (
+                repository.get("revision") == revision
+                and repository.get("baseEvidence") == artifact_checksum
+                and repository.get("revisionEvidence") == revision_evidence
+            ):
+                return {
+                    **self._promotion_status_payload(),
+                    "domain": domain,
+                    "revision": revision,
+                    "artifactChecksum": artifact_checksum,
+                    "revisionEvidence": revision_evidence,
+                    "idempotent": True,
+                }
+            raise RuntimeError("target owner checkpoint already exists with different evidence")
+        candidate = self._promotion_checkpoint_candidate(
+            domain,
+            revision=revision,
+            artifact_checksum=artifact_checksum,
+            revision_evidence=revision_evidence,
+        )
+        _promotion_write_json(checkpoint_path, candidate)
+        reread = _promotion_read_json(checkpoint_path)
+        if not _promotion_valid_checkpoint(reread, profile_id=self.owner_profile_id, domain=domain):
+            raise RuntimeError("target owner checkpoint could not be verified")
+        return {
+            **self._promotion_status_payload(),
+            "domain": domain,
+            "revision": revision,
+            "artifactChecksum": artifact_checksum,
+            "revisionEvidence": revision_evidence,
+            "idempotent": False,
+        }
+
+    async def _promotion_revoke(self, payload: dict) -> dict:
+        self._promotion_validate_common(payload)
+        domain = payload.get("domain")
+        if domain not in WINDOWS_OWNER_DOMAINS:
+            raise ValueError("domain is invalid")
+        artifact_checksum = _promotion_safe_checksum(payload.get("artifactChecksum"), "artifactChecksum")
+        revision_evidence = _promotion_safe_checksum(payload.get("revisionEvidence"), "revisionEvidence")
+        expected_revision = payload.get("revision")
+        if expected_revision is not None:
+            expected_revision = _promotion_safe_revision(expected_revision)
+        checkpoint_path = _promotion_checkpoint_path(self.owner_freeze_root, domain)
+        existing = _promotion_read_json(checkpoint_path)
+        if existing is None:
+            return {**self._promotion_status_payload(), "domain": domain, "idempotent": True}
+        if not _promotion_valid_checkpoint(existing, profile_id=self.owner_profile_id, domain=domain):
+            raise RuntimeError("target owner checkpoint is invalid")
+        repository = existing.get("repository", {})
+        if (
+            repository.get("baseEvidence") != artifact_checksum
+            or repository.get("revisionEvidence") != revision_evidence
+            or (expected_revision is not None and repository.get("revision") != expected_revision)
+        ):
+            raise RuntimeError("target owner checkpoint evidence does not match rollback")
+        try:
+            checkpoint_path.unlink()
+        except FileNotFoundError:
+            pass
+        return {**self._promotion_status_payload(), "domain": domain, "idempotent": False}
+
+    async def _handle_owner_promotion(self, scope, receive, send):
+        method = str(scope.get("method", "GET")).upper()
+        operation = str(scope.get("path", ""))[len(OWNER_PROMOTION_ROUTE_PREFIX):].strip("/") or "status"
+        if not self._owner_promotion_enabled():
+            await JSONResponse(
+                self._promotion_error_payload("not-found", "owner promotion is not enabled", operation=operation),
+                status_code=404,
+            )(scope, receive, send)
+            return
+        if not self._owner_promotion_header_allowed(scope):
+            await JSONResponse(
+                self._promotion_error_payload("forbidden", "owner promotion authorization is required", operation=operation),
+                status_code=403,
+            )(scope, receive, send)
+            return
+        if operation == "status":
+            if method not in {"GET", "HEAD"}:
+                await JSONResponse(
+                    self._promotion_error_payload("invalid-request", "owner promotion status is read-only", operation=operation),
+                    status_code=405,
+                )(scope, receive, send)
+                return
+            await JSONResponse(self._promotion_status_payload())(scope, receive, send)
+            return
+        if method != "POST" or operation not in {"freeze", "unfreeze", "commit", "revoke"}:
+            await JSONResponse(
+                self._promotion_error_payload("not-found", "owner promotion operation is unavailable", operation=operation),
+                status_code=404,
+            )(scope, receive, send)
+            return
+        try:
+            payload = self._promotion_json_body(await Request(scope, receive=receive).body())
+            if operation == "freeze":
+                result = await self._promotion_freeze(payload)
+            elif operation == "unfreeze":
+                result = await self._promotion_unfreeze(payload)
+            elif operation == "commit":
+                result = await self._promotion_commit(payload)
+            else:
+                result = await self._promotion_revoke(payload)
+            await JSONResponse(result)(scope, receive, send)
+        except ValueError:
+            await JSONResponse(
+                self._promotion_error_payload("invalid-request", "owner promotion request is invalid", operation=operation),
+                status_code=400,
+            )(scope, receive, send)
+        except TimeoutError:
+            await JSONResponse(
+                self._promotion_error_payload("promotion-drain-timeout", "source Host owner writes did not drain", operation=operation),
+                status_code=409,
+            )(scope, receive, send)
+        except Exception as error:
+            code = getattr(error, "code", None)
+            if not isinstance(code, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", code) is None:
+                code = "owner-promotion-failed"
+            await JSONResponse(
+                self._promotion_error_payload(code, "owner promotion operation could not be completed", operation=operation),
+                status_code=409 if "conflict" in code or "exists" in str(error).lower() else 503,
+            )(scope, receive, send)
 
     async def _handle_drain(self, scope, send):
         self.drain_state["draining"] = True
@@ -995,12 +1687,15 @@ def create_local_app_host(
     owner_repository_root: Path | None = None,
     owner_workflow_state_dir: Path | None = None,
     owner_workflow_output_dir: Path | None = None,
+    owner_media_fallback_root: Path | None = None,
     owner_receipt_store: OwnerCommitReceiptStore | None = None,
     owner_receipt_revision_reader=None,
     owner_receipt_evidence_resolvers=None,
     owner_domain_handlers: dict | None = None,
     owner_migration_mode: str | None = None,
     owner_migration_domains=None,
+    owner_promotion_mode: str | None = None,
+    owner_promotion_domains=None,
     health_dependency_status: dict | None = None,
     health_range_status: dict | None = None,
     health_schema_status: dict | None = None,
@@ -1016,6 +1711,8 @@ def create_local_app_host(
     root = Path(dist_dir).resolve()
     migration_mode = str(owner_migration_mode or "").strip() or None
     migration_domains = frozenset(str(domain).strip() for domain in (owner_migration_domains or ()) if str(domain).strip())
+    promotion_mode = str(owner_promotion_mode or "").strip() or None
+    promotion_domains = frozenset(str(domain).strip() for domain in (owner_promotion_domains or ()) if str(domain).strip())
     if migration_mode is not None and migration_mode != OWNER_MIGRATION_MODE:
         raise ValueError("Local App Host migration mode is limited to optimization")
     if migration_domains - OWNER_MIGRATION_DOMAINS:
@@ -1024,6 +1721,16 @@ def create_local_app_host(
         raise ValueError("Local App Host migration domains require explicit optimization mode")
     if migration_mode is not None and not str(profile_id or "").strip():
         raise ValueError("Local App Host migration mode requires a profile id")
+    if promotion_mode is not None and promotion_mode != OWNER_PROMOTION_MODE:
+        raise ValueError("Local App Host promotion mode is limited to optimization")
+    if promotion_mode is not None and migration_mode != OWNER_MIGRATION_MODE:
+        raise ValueError("Local App Host promotion mode requires explicit optimization migration mode")
+    if promotion_domains - OWNER_MIGRATION_DOMAINS:
+        raise ValueError("Local App Host promotion access is limited to registered owner domains")
+    if promotion_mode is not None and promotion_domains != OWNER_MIGRATION_DOMAINS:
+        raise ValueError("Local App Host promotion mode requires all registered owner domains")
+    if promotion_mode is not None and not str(instance_id or "").strip():
+        raise ValueError("Local App Host promotion mode requires an instance id")
     configured_allowed_origin = str(os.environ.get("READ_WEB_ALLOWED_ORIGIN") or "").strip()
     policy_roots = {"dist": root}
     configured_data_root = str(os.environ.get("READ_WEB_SUBTITLE_DATA_ROOT") or "").strip()
@@ -1061,7 +1768,12 @@ def create_local_app_host(
             config_kwargs["state_dir"] = Path(owner_workflow_state_dir)
         if owner_workflow_output_dir is not None:
             config_kwargs["output_dir"] = Path(owner_workflow_output_dir)
-        service_manager = JobManager(config=WorkflowConfig(**config_kwargs))
+        service_manager = JobManager(
+            config=WorkflowConfig(**config_kwargs),
+            media_fallback_root=owner_media_fallback_root,
+        )
+    elif owner_media_fallback_root is not None and service_manager is not None and hasattr(service_manager, "media_fallback_root"):
+        service_manager.media_fallback_root = Path(owner_media_fallback_root).expanduser().resolve(strict=False)
     if owner_domain_handlers is None and owner_repository_root is not None:
         owner_mode = owner_registry_status.get("ownerMode")
         authoritative_domains = owner_mode.get("authoritativeDomains", []) if isinstance(owner_mode, dict) else []
@@ -1198,8 +1910,11 @@ def create_local_app_host(
         owner_domain_handlers=owner_domain_handlers,
         owner_freeze_root=freeze_root,
         owner_profile_id=profile_id,
+        owner_instance_id=instance_id,
         owner_migration_mode=migration_mode,
         owner_migration_domains=migration_domains,
+        owner_promotion_mode=promotion_mode,
+        owner_promotion_domains=promotion_domains,
         application_profile_lease_process=application_profile_lease_process,
         application_profile_lease_mode=application_profile_lease_mode,
         capability_snapshot_provider=lambda: build_capability_snapshot(current_health_snapshot()),
@@ -1314,6 +2029,11 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="optional workflow output root used by the explicit optimization migration observer",
     )
+    parser.add_argument(
+        "--owner-media-fallback-root",
+        type=Path,
+        help="read-only optimization media root used by the daily Host after metadata-only owner promotion",
+    )
     parser.add_argument("--application-profile-authority-root", type=Path)
     parser.add_argument("--application-profile-authority-isolation-root", type=Path)
     parser.add_argument(
@@ -1332,6 +2052,18 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         choices=tuple(sorted(OWNER_MIGRATION_DOMAINS)),
         help="allow one registered domain through the optimization-only migration gate",
+    )
+    parser.add_argument(
+        "--owner-promotion-mode",
+        choices=(OWNER_PROMOTION_MODE,),
+        help="enable the explicit optimization-only Host owner promotion control plane",
+    )
+    parser.add_argument(
+        "--owner-promotion-domain",
+        dest="owner_promotion_domains",
+        action="append",
+        choices=tuple(sorted(OWNER_MIGRATION_DOMAINS)),
+        help="allow one registered domain through the optimization-only promotion control plane",
     )
     parser.add_argument(
         "--allow-standby-readiness",
@@ -1389,6 +2121,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("config schema version must be positive")
     if args.allow_standby_readiness and args.application_profile_lease_mode == "authoritative":
         parser.error("standby readiness is only valid for a standby candidate mode")
+    if args.owner_promotion_mode and (
+        args.application_profile_lease_mode != "authoritative"
+        or args.owner_migration_mode != OWNER_MIGRATION_MODE
+        or set(args.owner_promotion_domains or ()) != OWNER_MIGRATION_DOMAINS
+        or set(args.owner_migration_domains or ()) != OWNER_MIGRATION_DOMAINS
+    ):
+        parser.error("owner promotion requires authoritative lease, optimization migration, and all six domains")
+    if args.owner_promotion_domains and not args.owner_promotion_mode:
+        parser.error("owner promotion domains require owner promotion mode")
     profile_lock, startup_recovery, owner_profile_evidence, profile_lease_mode = _start_application_profile_lock(args, parser)
     try:
         owner_profile_rows = (
@@ -1416,6 +2157,8 @@ def main(argv: list[str] | None = None) -> int:
             owner_profile_evidence=owner_profile_evidence,
             owner_migration_mode=args.owner_migration_mode,
             owner_migration_domains=args.owner_migration_domains,
+            owner_promotion_mode=args.owner_promotion_mode,
+            owner_promotion_domains=args.owner_promotion_domains,
             application_profile_lease_process=profile_lock,
             application_profile_lease_mode=profile_lease_mode,
             application_profile_standby_preflight=args.allow_standby_readiness,
@@ -1424,6 +2167,7 @@ def main(argv: list[str] | None = None) -> int:
             owner_freeze_root=args.application_profile_authority_root,
             owner_workflow_state_dir=args.owner_workflow_state_dir or args.application_python_state_dir,
             owner_workflow_output_dir=args.owner_workflow_output_dir or args.application_python_output_dir,
+            owner_media_fallback_root=args.owner_media_fallback_root,
         )
         uvicorn.run(app, host=args.host, port=args.port, log_level="warning", access_log=False)
     finally:

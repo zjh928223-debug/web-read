@@ -537,6 +537,7 @@ class AnnotationOwner:
     def _records_from_payload(
         payload: Any,
         *,
+        operation: str,
         explicit_scope: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, str], dict[str, Any]]:
         if not isinstance(payload, dict):
@@ -554,7 +555,10 @@ class AnnotationOwner:
             raw_records = payload["records"]
         else:
             raise AnnotationOwnerError("invalid-request")
-        if not raw_records:
+        # An empty lightweight import is the typed rollback operation used to
+        # clear a target snapshot.  All other annotation mutations still
+        # require at least one record.
+        if not raw_records and not (operation == "lightweight-import" and keys == {"records"}):
             raise AnnotationOwnerError("invalid-request")
         result = {}
         record_scopes = []
@@ -566,7 +570,7 @@ class AnnotationOwner:
                 raise AnnotationOwnerError("corrupt")
             result[key] = _validate_record(key, raw_record, scope=record_scope, suffix=suffix)
             record_scopes.append(record_scope)
-        if scope is None:
+        if scope is None and record_scopes:
             scope = record_scopes[0]
             # A migration/import payload may contain several complete scopes.
             # Keep the public single-scope shape when possible, but do not
@@ -846,7 +850,11 @@ class AnnotationOwner:
             if not isinstance(idempotency_key, str):
                 raise AnnotationOwnerError("invalid-request")
             _identity(idempotency_key, "idempotencyKey")
-            normalized_scope, updates = self._records_from_payload(payload, explicit_scope=scope)
+            normalized_scope, updates = self._records_from_payload(
+                payload,
+                operation=operation,
+                explicit_scope=scope,
+            )
         except AnnotationOwnerError as error:
             return self._envelope(
                 operation,
@@ -909,7 +917,9 @@ class AnnotationOwner:
                     revision=current_document["revision"],
                     record_checksums=[],
                 )
-            next_records = deepcopy(current_document["records"])
+            # Empty lightweight import is an explicit migration rollback
+            # clear, while ordinary annotation commands remain merge-based.
+            next_records = {} if not updates and operation == "lightweight-import" else deepcopy(current_document["records"])
             next_records.update(deepcopy(updates))
             next_revision = current_document["revision"] + 1
             core = {
@@ -1052,6 +1062,11 @@ class AnnotationOwner:
         record_checksums: list[str],
         effect_fingerprint: str | None = None,
     ) -> dict[str, Any]:
+        checksums = sorted(set(record_checksums))
+        if status == "committed" and not checksums:
+            # Empty lightweight import is a clear operation, so its receipt
+            # uses a stable empty-record marker in place of a row checksum.
+            checksums = [_checksum({"records": {}})]
         evidence = {
             "status": status,
             "domain": ANNOTATION_DOMAIN,
@@ -1059,7 +1074,7 @@ class AnnotationOwner:
             "revision": revision,
             "requestFingerprint": context.request_fingerprint,
             "effectFingerprint": effect_fingerprint or _checksum({"revision": revision, "status": status}),
-            "recordChecksums": sorted(set(record_checksums)),
+            "recordChecksums": checksums,
             "source": "annotation.owner",
         }
         evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)

@@ -408,6 +408,10 @@ async function loadProductionModules() {
   return productionModulesPromise
 }
 
+export async function loadWindowsOwnerProductionModules() {
+  return loadProductionModules()
+}
+
 function productionHostError(code, message) {
   const error = new Error(message)
   error.code = code
@@ -580,7 +584,14 @@ async function deriveReaderMediaDescriptor(snapshot, sourceWorkflowSnapshot, sou
   const mediaId = `workflow:${jobId}:${sourceMedia.mediaKind}`
   const modifiedNs = mediaStat.mtimeNs.toString()
   const etag = `sha256:${createHash('sha256').update(`${mediaId}:${mediaSize}:${modifiedNs}`, 'utf8').digest('hex')}`
-  const revision = sourceWorkflowSnapshot.revision
+  // Workflow owns a compound revision token (for example w1:j...:h...:i...),
+  // while the reader-session Host candidate requires its own numeric owner
+  // revision.  The reader snapshot is the authoritative source for that
+  // descriptor revision; only retain the workflow fallback for older numeric
+  // snapshots.
+  const revision = Number.isInteger(snapshot?.revision)
+    ? snapshot.revision
+    : sourceWorkflowSnapshot.revision
   if (!Number.isInteger(revision) || revision < 0) return null
   return {
     mediaId,
@@ -641,6 +652,15 @@ function createReaderHostAdapter({ client, profileId, sourceWorkflowSnapshot, so
       return readerHostSnapshot(response)
     },
     async restoreRecords(snapshot, context = {}) {
+      if (!Array.isArray(snapshot?.records) || snapshot.records.length === 0) {
+        return client.command({
+          domain: 'reader-session',
+          operation: 'restore',
+          payload: { source: 'empty' },
+          expectedRevision: context.expectedRevision,
+          idempotencyKey: context.idempotencyKey,
+        })
+      }
       const candidate = await readerCandidate(snapshot, profileId, context.expectedRevision, {
         sourceWorkflowSnapshot,
         sourceWorkflowOutputDir,
@@ -746,6 +766,22 @@ function ownerRecordsHostSnapshot(records, revision, references = [], mediaRefer
   }
 }
 
+function ownerRecordsHostSnapshotOrEmpty(records, revision, references = [], mediaReferences = []) {
+  return Object.keys(records || {}).length
+    ? ownerRecordsHostSnapshot(records, revision, references, mediaReferences)
+    : emptyHostDomain()
+}
+
+async function currentOwnerRevision(client, domain, operation, payload = {}) {
+  const response = await client.query({ domain, operation, payload })
+  const body = hostResponsePayload(response, domain)
+  const revision = body.revision ?? response.revision ?? 0
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw productionHostError('OWNER_CUTOVER_HOST_REVISION_INVALID', `${domain} Host revision is invalid`)
+  }
+  return revision
+}
+
 function responseRecords(response, operation) {
   const payload = hostResponsePayload(response, operation)
   return {
@@ -798,14 +834,15 @@ function createPassagePreviewHostAdapter({ client }) {
     supportedSchemaVersions: [1],
     async collect() {
       const selected = await queryOwnerRecords(client, 'passage-preview', queryOperations)
-      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+      return ownerRecordsHostSnapshotOrEmpty(selected.records, selected.revision)
     },
     async restoreRecords(snapshot, context = {}) {
+      const expectedRevision = await currentOwnerRevision(client, 'passage-preview', 'durable-state')
       return client.command({
         domain: 'passage-preview',
         operation: 'legacy-import',
         payload: { records: recordsPayload(snapshot) },
-        expectedRevision: context.expectedRevision,
+        expectedRevision,
         idempotencyKey: context.idempotencyKey,
       })
     },
@@ -862,14 +899,15 @@ function createAnnotationHostAdapter({ client, scope, scopes }) {
         revision = selected.revision > revision ? selected.revision : revision
         Object.assign(records, selected.records)
       }
-      return ownerRecordsHostSnapshot(records, revision)
+      return ownerRecordsHostSnapshotOrEmpty(records, revision)
     },
     async restoreRecords(snapshot, context = {}) {
+      const expectedRevision = await currentOwnerRevision(client, 'annotation', 'scope')
       return client.command({
         domain: 'annotation',
         operation: 'lightweight-import',
         payload: { records: recordsPayload(snapshot) },
-        expectedRevision: context.expectedRevision,
+        expectedRevision,
         idempotencyKey: context.idempotencyKey,
       })
     },
@@ -904,12 +942,11 @@ function createVocabularySrsHostAdapter({ client }) {
     supportedSchemaVersions: [1],
     async collect() {
       const selected = await queryOwnerRecords(client, 'vocabulary-srs', ['snapshot'])
-      return ownerRecordsHostSnapshot(selected.records, selected.revision)
+      return ownerRecordsHostSnapshotOrEmpty(selected.records, selected.revision)
     },
     async restoreRecords(snapshot, context = {}) {
       const records = ownerRecordsPayload(snapshot)
       const keys = Object.keys(records)
-      if (keys.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
       const unsupported = keys.filter((key) => !canonicalKeys.has(key) && !dynamicKey(key) && !recoveryKey(key))
       if (unsupported.length) {
         throw productionHostError(
@@ -918,11 +955,12 @@ function createVocabularySrsHostAdapter({ client }) {
         )
       }
 
+      const expectedRevision = await currentOwnerRevision(client, 'vocabulary-srs', 'snapshot')
       const result = await client.command({
         domain: 'vocabulary-srs',
         operation: 'learning-unit-of-work',
         payload: { records },
-        expectedRevision: context.expectedRevision,
+        expectedRevision,
         idempotencyKey: context.idempotencyKey || 'vocabulary-srs-import',
       })
       if (result?.outcome !== 'committed' || result?.commitStatus !== 'committed') {
@@ -1114,7 +1152,6 @@ function createWorkflowHostAdapter({ client }) {
     },
     async restoreRecords(snapshot, context = {}) {
       const records = Array.isArray(snapshot?.records) ? snapshot.records : []
-      if (records.length === 0) return { ok: true, status: 'committed', revision: context.expectedRevision }
       return client.command({
         domain: 'workflow',
         operation: 'snapshot-commit',
@@ -1160,6 +1197,13 @@ function marksEnvelope(scope, kind, payload, revision) {
   const value = isMarks ? payload?.marks : kind === 'activity' ? payload?.activity : payload?.journal
   if (!value || typeof value !== 'object') return null
   if (kind === 'journal') return value
+  if (isMarks && (!Array.isArray(value) || value.length === 0)) return null
+  if (!isMarks) {
+    const durableKeys = Object.keys(value).filter((key) => (
+      key !== 'jobId' && key !== '_activityOperationIds'
+    ))
+    if (durableKeys.length === 0) return null
+  }
   const schemaVersion = isMarks ? 'reader-marks.v1' : 'reader-activity.v1'
   const domain = isMarks ? 'reader-marks' : 'reader-activity'
   const updatedAt = value.updatedAt || payload?.updatedAt || ''
@@ -1195,12 +1239,13 @@ function marksSnapshotForScope(scope, responses) {
   if (journal) records.push(hostRecord(marksRecordId(scope, 'journal'), 1, revisionPayload.journalRevision ?? 0, scope.jobId, journal, {
     references: [{ type: 'workflow-job', id: scope.jobId }],
   }))
+  const hasDurableRecords = Boolean(marks || activity)
   return {
     records,
     // The marks/activity owner uses marks/activity revisions for its CAS
     // authority.  The journal revision is receipt evidence only and must not
     // make an otherwise unchanged data snapshot appear newer.
-    revision: Math.max(marksRevision, activityRevision),
+    revision: hasDurableRecords ? Math.max(marksRevision, activityRevision) : 0,
   }
 }
 
@@ -1252,6 +1297,43 @@ function createMarksHostAdapter({ client, scope, scopes }) {
         groups.set(jobId, group)
       }
       let last = { status: 'committed', commitStatus: 'committed', outcome: 'committed', revision: context.expectedRevision }
+      if (groups.size === 0) {
+        // Empty rollback snapshots still need to clear every source scope
+        // that may have been imported into the target owner.
+        for (const fixedScope of fixedScopes) {
+          const current = await client.query({
+            domain: 'marks-activity',
+            operation: 'revision',
+            payload: fixedScope,
+          })
+          const currentPayload = hostResponsePayload(current, 'marks-activity')
+          last = await client.command({
+            domain: 'marks-activity',
+            operation: 'marks-commit',
+            payload: {
+              jobId: fixedScope.jobId,
+              contentId: fixedScope.contentId,
+              marks: [],
+            },
+            expectedRevision: currentPayload.marksRevision ?? 0,
+            idempotencyKey: `${context.idempotencyKey}-clear-marks-${fixedScope.jobId}`.slice(0, 255),
+          })
+          if (last.outcome !== 'committed') return last
+          last = await client.command({
+            domain: 'marks-activity',
+            operation: 'activity-append',
+            payload: {
+              jobId: fixedScope.jobId,
+              contentId: fixedScope.contentId,
+              clear: true,
+            },
+            expectedRevision: currentPayload.activityRevision ?? 0,
+            idempotencyKey: `${context.idempotencyKey}-clear-activity-${fixedScope.jobId}`.slice(0, 255),
+          })
+          if (last.outcome !== 'committed') return last
+        }
+        return last
+      }
       for (const group of groups.values()) {
         if (group.marks) {
           const current = await client.query({

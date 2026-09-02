@@ -522,7 +522,9 @@ class VocabularySrsOwner:
             raw_records = payload["records"]
         else:
             raise VocabularySrsOwnerError("invalid-request")
-        if not raw_records:
+        # Authoritative migration rollback represents an empty owner as an
+        # empty learning-unit-of-work.  Keep every other command non-empty.
+        if not raw_records and not (operation == "learning-unit-of-work" and keys == {"records"}):
             raise VocabularySrsOwnerError("invalid-request")
         allows_settlement_attempt_token = any(
             isinstance(key, str) and _SETTLEMENT.fullmatch(key)
@@ -694,7 +696,9 @@ class VocabularySrsOwner:
                     revision=document["revision"],
                     record_checksums=[],
                 )
-            next_records = deepcopy(document["records"])
+            # A migration clear replaces the owner document; regular
+            # vocabulary commands retain the existing merge semantics.
+            next_records = {} if not updates and operation == "learning-unit-of-work" else deepcopy(document["records"])
             next_records.update(deepcopy(updates))
             next_revision = document["revision"] + 1
             core = {
@@ -823,6 +827,11 @@ class VocabularySrsOwner:
         record_checksums: list[str],
         effect_fingerprint: str | None = None,
     ) -> dict[str, Any]:
+        checksums = sorted(set(record_checksums))
+        if status == "committed" and not checksums:
+            # Empty learning-unit-of-work is the migration clear operation;
+            # retain the receipt contract with a stable empty-record marker.
+            checksums = [_checksum({"records": {}})]
         evidence = {
             "status": status,
             "domain": VOCABULARY_SRS_DOMAIN,
@@ -830,7 +839,7 @@ class VocabularySrsOwner:
             "revision": revision,
             "requestFingerprint": context.request_fingerprint,
             "effectFingerprint": effect_fingerprint or _checksum({"revision": revision, "status": status}),
-            "recordChecksums": sorted(set(record_checksums)),
+            "recordChecksums": checksums,
             "source": "vocabulary-srs.owner",
         }
         evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)

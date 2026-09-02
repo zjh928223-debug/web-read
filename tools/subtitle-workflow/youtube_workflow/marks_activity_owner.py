@@ -301,6 +301,12 @@ class MarksActivityOwner:
     def _default_activity_updater(current: dict[str, Any], request: Mapping[str, Any]) -> dict[str, Any]:
         """Declarative fallback; existing service aggregation stays elsewhere."""
 
+        if request.get("clear") is True:
+            # Migration rollback needs a durable empty activity envelope.  The
+            # repository still adds its private operation-id evidence and
+            # keeps the required job identity in the payload.
+            return {"jobId": str(request.get("jobId") or current.get("jobId") or "")}
+
         update = request.get("update", request.get("activity"))
         if update is None:
             update = {key: deepcopy(value) for key, value in request.items() if key not in {"jobId", "contentId"}}
@@ -760,7 +766,11 @@ class MarksActivityOwner:
             return None
         current_payload = deepcopy(current.get("payload") or {})
         try:
-            candidate = self._activity_updater(deepcopy(current_payload), command_payload)
+            candidate = (
+                {"jobId": job_id}
+                if command_payload.get("clear") is True
+                else self._activity_updater(deepcopy(current_payload), command_payload)
+            )
             if not isinstance(candidate, Mapping):
                 raise MarksActivityOwnerError("invalid-request")
             candidate = dict(candidate)
@@ -1039,7 +1049,7 @@ class MarksActivityOwner:
 
             if operation == "marks":
                 result = self._read(paths[0], job, "marks")
-                found = paths[0].exists() or bool(result["payload"].get("marks"))
+                found = bool(result["payload"].get("marks"))
                 payload_result = {
                     "empty": not found,
                     "found": found,
@@ -1054,7 +1064,7 @@ class MarksActivityOwner:
             if operation == "activity":
                 result = self._read(paths[1], job, "activity")
                 activity = _public_value(result["payload"])
-                found = paths[1].exists() or len(activity) > 1
+                found = any(key != "jobId" for key in activity)
                 payload_result = {
                     "empty": not found,
                     "found": found,
@@ -1142,11 +1152,16 @@ class MarksActivityOwner:
                     raise MarksActivityOwnerError("invalid-request")
                 command_payload = {"jobId": job, "contentId": content, "marks": deepcopy(raw["marks"])}
             else:
-                if not any(field in raw for field in ("update", "activity", "event")):
+                if raw.get("clear") is True:
+                    if set(raw) - {"jobId", "contentId", "clear"}:
+                        raise MarksActivityOwnerError("invalid-request")
+                    command_payload = {"jobId": job, "contentId": content, "clear": True}
+                elif not any(field in raw for field in ("update", "activity", "event")):
                     raise MarksActivityOwnerError("invalid-request")
-                command_payload = raw
-                command_payload["jobId"] = job
-                command_payload["contentId"] = content
+                else:
+                    command_payload = raw
+                    command_payload["jobId"] = job
+                    command_payload["contentId"] = content
             paths = self._paths(job)
         except MarksActivityOwnerError as error:
             return self._error_response(operation, safe_request, safe_correlation, error.code, payload={"jobId": payload.get("jobId")} if isinstance(payload, Mapping) and isinstance(payload.get("jobId"), str) else {}, details=error.details)
@@ -1242,7 +1257,11 @@ class MarksActivityOwner:
                     job,
                     expected_revision=expected,
                     operation_id=key,
-                    update=lambda current_payload: dict(self._activity_updater(deepcopy(current_payload), command_payload)),
+                    update=(
+                        (lambda _current_payload: {"jobId": job})
+                        if command_payload.get("clear") is True
+                        else (lambda current_payload: dict(self._activity_updater(deepcopy(current_payload), command_payload)))
+                    ),
                 )
         except ReaderPersistenceError as error:
             code, details, retryable = _reader_error(error)

@@ -584,7 +584,7 @@ def build_health_snapshot(
     runtime_owner_api_ready = bool(
         contract_valid
         and profile_ready
-        and (not empty_host_candidate or migration_enabled)
+        and (not empty_host_candidate or migration_enabled or authoritative_domains == set(WINDOWS_OWNER_DOMAINS))
         and owner_mode.get("status") == "authoritative"
         and authoritative_domains == set(WINDOWS_OWNER_DOMAINS)
         and not invalid_domains

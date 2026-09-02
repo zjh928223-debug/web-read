@@ -537,6 +537,40 @@ class ReaderSessionOwnerTests(unittest.TestCase):
         self.assertEqual(rejected["error"]["code"], "invalid-request")
         self.assertEqual(owner.snapshot_path.read_text(encoding="utf-8"), before)
 
+    def test_restore_empty_clears_current_and_previous_with_receipt_evidence(self):
+        owner = self.make_owner()
+        self.commit(owner, self.candidate(), key="restore-empty-source")
+
+        uncertain = owner.restore(
+            source="empty",
+            expected_revision=1,
+            idempotency_key="restore-empty",
+            fault="response-loss-before-receipt",
+            **self.request_ids("restore-empty"),
+        )
+        self.assertEqual(uncertain["outcome"], "commit-unknown")
+        self.assertFalse(owner.snapshot_path.exists())
+        self.assertFalse(owner.previous_snapshot_path.exists())
+        self.assertEqual(len(list(self.root.glob("reader-session-owner.json.cleared-*"))), 1)
+
+        reconciled = owner.receipt(
+            idempotency_key="restore-empty",
+            **self.request_ids("restore-empty-receipt"),
+        )
+        self.assertEqual(reconciled["outcome"], "committed")
+        self.assertEqual(reconciled["revision"], 0)
+        self.assertEqual(reconciled["payload"]["current"]["contentId"], None)
+        self.assertEqual(owner.query("restore-status")["payload"]["status"], "empty")
+
+        replay = owner.restore(
+            source="empty",
+            expected_revision=1,
+            idempotency_key="restore-empty",
+            **self.request_ids("restore-empty-replay"),
+        )
+        self.assertEqual(replay["outcome"], "committed")
+        self.assertEqual(replay["receipt"]["receiptId"], reconciled["receipt"]["receiptId"])
+
     def test_restore_accepts_validated_full_snapshot_and_rejects_checksum_tamper(self):
         owner = self.make_owner()
         self.commit(owner, self.candidate(), key="full-restore-1")

@@ -480,13 +480,17 @@ class PassagePreviewOwner:
         if not isinstance(payload, dict):
             raise PassagePreviewOwnerError("invalid-request")
         _validate_json_value(payload)
-        if set(payload) == {"recordKey", "record"}:
+        keys = set(payload)
+        if keys == {"recordKey", "record"}:
             raw_records = {payload["recordKey"]: payload["record"]}
-        elif set(payload) == {"records"} and isinstance(payload["records"], dict):
+        elif keys == {"records"} and isinstance(payload["records"], dict):
             raw_records = payload["records"]
         else:
             raise PassagePreviewOwnerError("invalid-request")
-        if not raw_records:
+        # The authoritative owner migration protocol uses an empty legacy
+        # import to clear a previously imported target snapshot during
+        # rollback.  Keep ordinary mutation commands non-empty.
+        if not raw_records and not (operation == "legacy-import" and keys == {"records"}):
             raise PassagePreviewOwnerError("invalid-request")
         allowed = _COMMAND_RECORD_RULES[operation]
         result = {}
@@ -660,7 +664,9 @@ class PassagePreviewOwner:
                     revision=document["revision"],
                     record_checksums=[],
                 )
-            next_records = deepcopy(document["records"])
+            # An empty legacy import is the migration rollback clear; normal
+            # commands continue to merge their validated records.
+            next_records = {} if not updates and operation == "legacy-import" else deepcopy(document["records"])
             next_records.update(deepcopy(updates))
             next_revision = document["revision"] + 1
             core = {
@@ -800,6 +806,12 @@ class PassagePreviewOwner:
         record_checksums: list[str],
         effect_fingerprint: str | None = None,
     ) -> dict[str, Any]:
+        checksums = sorted(set(record_checksums))
+        if status == "committed" and not checksums:
+            # The receipt contract requires committed evidence to carry at
+            # least one checksum.  A clear has no row checksum, so use the
+            # canonical empty-record marker as its durable effect evidence.
+            checksums = [_checksum({"records": {}})]
         evidence = {
             "status": status,
             "domain": PASSAGE_PREVIEW_DOMAIN,
@@ -807,7 +819,7 @@ class PassagePreviewOwner:
             "revision": revision,
             "requestFingerprint": context.request_fingerprint,
             "effectFingerprint": effect_fingerprint or _checksum({"revision": revision, "status": status}),
-            "recordChecksums": sorted(set(record_checksums)),
+            "recordChecksums": checksums,
             "source": "passage-preview.owner",
         }
         evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)

@@ -547,6 +547,7 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][string]$WorkflowRoot,
     [string]$OwnerWorkflowStateDir = '',
     [string]$OwnerWorkflowOutputDir = '',
+    [string]$OwnerMediaFallbackRoot = '',
     [Parameter(Mandatory)][string]$ProjectRoot,
     [Parameter(Mandatory)][string]$ApplicationIsolationRoot,
     [Parameter(Mandatory)][string]$ApplicationProfileDir,
@@ -569,8 +570,12 @@ function Start-OptimizationOwnedPair {
     [string]$ApplicationProfileLeaseMode = 'authoritative',
     [switch]$AllowStandbyReadiness,
     [switch]$EnableOwnerMigration,
+    [switch]$EnableOwnerPromotion,
     [switch]$AllowReservedDailyPorts
   )
+  if ($EnableOwnerPromotion -and -not $EnableOwnerMigration) {
+    throw 'Owner promotion requires the explicit optimization owner migration gate.'
+  }
   $capabilityStarted = $false
   $hostStarted = $false
   try {
@@ -610,6 +615,7 @@ function Start-OptimizationOwnedPair {
       throw 'Synthetic capability start failure.'
     }
     $capabilityReusable = $null -ne $existingCapabilityState `
+      -and -not $EnableOwnerPromotion `
       -and (Get-OptimizationObjectText -Object $existingCapabilityState -Name 'profileId') -eq $ProfileId `
       -and [int](Get-OptimizationObjectText -Object $existingCapabilityState -Name 'port') -eq $BackendPort `
       -and (Get-OptimizationObjectText -Object $existingCapabilityState -Name 'instanceId') `
@@ -677,19 +683,34 @@ function Start-OptimizationOwnedPair {
       '--application-python-output-dir', $ApplicationPythonOutputDir
     )
     if ($AllowStandbyReadiness) { $hostArgumentList += '--allow-standby-readiness' }
+    # Workflow owner state and the read-only media fallback are durable
+    # profile inputs, not per-instance scratch.  Pass them on every startup
+    # so an authoritative import remains available after a normal restart.
+    if ($OwnerWorkflowStateDir) {
+      $hostArgumentList += @('--owner-workflow-state-dir', $OwnerWorkflowStateDir)
+    }
+    if ($OwnerWorkflowOutputDir) {
+      $hostArgumentList += @('--owner-workflow-output-dir', $OwnerWorkflowOutputDir)
+    }
+    if ($OwnerMediaFallbackRoot) {
+      $hostArgumentList += @('--owner-media-fallback-root', $OwnerMediaFallbackRoot)
+    }
     if ($EnableOwnerMigration) {
-      if ($OwnerWorkflowStateDir) {
-        $hostArgumentList += @('--owner-workflow-state-dir', $OwnerWorkflowStateDir)
-      }
-      if ($OwnerWorkflowOutputDir) {
-        $hostArgumentList += @('--owner-workflow-output-dir', $OwnerWorkflowOutputDir)
-      }
       $hostArgumentList += @('--owner-migration-mode', 'optimization')
       foreach ($domain in @(
           'reader-session', 'marks-activity', 'passage-preview',
           'annotation', 'vocabulary-srs', 'workflow'
         )) {
         $hostArgumentList += @('--owner-migration-domain', $domain)
+      }
+      if ($EnableOwnerPromotion) {
+        $hostArgumentList += @('--owner-promotion-mode', 'optimization')
+        foreach ($domain in @(
+            'reader-session', 'marks-activity', 'passage-preview',
+            'annotation', 'vocabulary-srs', 'workflow'
+          )) {
+          $hostArgumentList += @('--owner-promotion-domain', $domain)
+        }
       }
     }
     $hostResult = Start-ManagedRuntimeInstance `
@@ -716,11 +737,13 @@ function Start-OptimizationOwnedPair {
         applicationProfileLeaseMode = $ApplicationProfileLeaseMode
         standbyPreflight = [bool]$AllowStandbyReadiness
         ownerMigrationMode = if ($EnableOwnerMigration) { 'optimization' } else { $null }
+        ownerPromotionMode = if ($EnableOwnerPromotion) { 'optimization' } else { $null }
         ownerMigrationDomains = if ($EnableOwnerMigration) {
           @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')
         } else { @() }
-        ownerWorkflowStateDir = if ($EnableOwnerMigration -and $OwnerWorkflowStateDir) { $OwnerWorkflowStateDir } else { $null }
-        ownerWorkflowOutputDir = if ($EnableOwnerMigration -and $OwnerWorkflowOutputDir) { $OwnerWorkflowOutputDir } else { $null }
+        ownerWorkflowStateDir = if ($OwnerWorkflowStateDir) { $OwnerWorkflowStateDir } else { $null }
+        ownerWorkflowOutputDir = if ($OwnerWorkflowOutputDir) { $OwnerWorkflowOutputDir } else { $null }
+        ownerMediaFallbackRoot = if ($OwnerMediaFallbackRoot) { $OwnerMediaFallbackRoot } else { $null }
         applicationPythonStateDir = $ApplicationPythonStateDir
         applicationPythonOutputDir = $ApplicationPythonOutputDir
       }

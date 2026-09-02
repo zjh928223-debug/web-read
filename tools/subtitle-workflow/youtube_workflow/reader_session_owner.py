@@ -330,6 +330,12 @@ def _snapshot_checksum(candidate: Mapping[str, Any]) -> str:
     return _checksum({key: candidate[key] for key in sorted(_CANDIDATE_FIELDS)})
 
 
+def _empty_state_checksum() -> str:
+    """Checksum for the explicit absence of a Reader Session snapshot."""
+
+    return _checksum({"domain": READER_SESSION_DOMAIN, "empty": True})
+
+
 def _owner_request_fingerprint(
     operation: str,
     capability: str,
@@ -874,6 +880,19 @@ class ReaderSessionOwner:
                     payload=self._current_summary_payload(current),
                 )
             candidate = {**checked, "revision": expected + 1}
+        elif source == "empty":
+            if snapshot is not None:
+                return self._failure(
+                    "restore",
+                    request_id,
+                    correlation_id,
+                    "invalid-request",
+                    outcome="rejected",
+                    commit_status="rejected",
+                    revision=current_revision,
+                    payload=self._current_summary_payload(current),
+                )
+            candidate = None
         else:
             return self._failure(
                 "restore",
@@ -886,7 +905,7 @@ class ReaderSessionOwner:
                 payload=self._current_summary_payload(current),
             )
 
-        payload = self._receipt_payload(candidate, "restore", source=source)
+        payload = self._receipt_payload(candidate, "restore", source=source, empty=source == "empty")
         existing_result, existing = self._load_existing_receipt(key, "restore", request_id, correlation_id)
         if existing is not None:
             if existing_result is None:
@@ -931,7 +950,7 @@ class ReaderSessionOwner:
                 idempotency_key=key,
                 expected_revision=expected,
                 payload=payload,
-                adapter=lambda context: self._commit_candidate(context, candidate),
+                adapter=lambda context: self._commit_empty(context) if source == "empty" else self._commit_candidate(context, candidate),
                 fault=fault,
             )
         except OwnerProcessDeath:
@@ -1086,6 +1105,79 @@ class ReaderSessionOwner:
             effect_fingerprint=effect,
         )
 
+    def _commit_empty(self, context: OwnerCommitContext) -> dict[str, Any]:
+        """Restore the profile to its explicit, empty Reader Session state.
+
+        The target profile can legitimately have no Reader Session before the
+        first authoritative import.  A rollback must therefore be able to
+        remove an imported snapshot without inventing a media-bearing
+        placeholder candidate.  Existing files are moved aside as recovery
+        evidence while the canonical and backup paths are cleared under the
+        same repository locks.  A partial move leaves a detectable
+        current/previous mismatch and is consequently classified as manual
+        recovery by the normal read path.
+        """
+
+        empty_checksum = _empty_state_checksum()
+        try:
+            with self.repository._path_lock(self.snapshot_path):
+                with self.repository._file_lock(self.snapshot_path):
+                    current = self._read_path_unlocked(self.snapshot_path)
+                    previous = self._read_path_unlocked(self.previous_snapshot_path)
+                    if current.status == "missing" and previous.status == "missing":
+                        current_revision = 0
+                    elif current.status == "valid" and current.snapshot is not None and previous.status in {"missing", "valid"}:
+                        current_revision = current.snapshot["revision"]
+                    elif current.status == "valid" and current.snapshot is not None:
+                        raise ReaderSessionOwnerError("manual-recovery")
+                    else:
+                        raise ReaderSessionOwnerError("manual-recovery")
+
+                    if current_revision != context.expected_revision:
+                        return self._make_evidence(
+                            context,
+                            status="conflict",
+                            revision=current_revision,
+                            snapshot_checksum=empty_checksum,
+                            evidence_source="reader-session.repository.empty",
+                        )
+
+                    if current.status == "missing" and previous.status == "missing":
+                        # This is only a safe no-op when a caller is replaying
+                        # an already completed clear.  The receipt resolver
+                        # normally handles that replay before reaching here;
+                        # return conflict here so the generic receipt store
+                        # never records an advancing commit for no change.
+                        return self._make_evidence(
+                            context,
+                            status="conflict",
+                            revision=0,
+                            snapshot_checksum=empty_checksum,
+                            evidence_source="reader-session.repository.empty",
+                        )
+
+                    for source_path in (self.snapshot_path, self.previous_snapshot_path):
+                        if not source_path.exists():
+                            continue
+                        recovery_path = source_path.with_name(
+                            f"{source_path.name}.cleared-{uuid.uuid4().hex}"
+                        )
+                        os.replace(source_path, recovery_path)
+                    self.repository._fsync_directory(self.snapshot_path.parent)
+        except ReaderSessionOwnerError:
+            raise
+        except Exception as error:
+            raise ReaderSessionOwnerError("manual-recovery") from error
+
+        return self._make_evidence(
+            context,
+            status="committed",
+            revision=0,
+            snapshot_checksum=empty_checksum,
+            effect_fingerprint=_effect_fingerprint(context.operation, empty_checksum),
+            evidence_source="reader-session.repository.empty",
+        )
+
     def _make_evidence(
         self,
         context: OwnerCommitContext,
@@ -1094,6 +1186,7 @@ class ReaderSessionOwner:
         revision: int,
         snapshot_checksum: str,
         effect_fingerprint: str | None = None,
+        evidence_source: str = "reader-session.repository",
     ) -> dict[str, Any]:
         evidence = {
             "status": status,
@@ -1103,13 +1196,42 @@ class ReaderSessionOwner:
             "requestFingerprint": context.request_fingerprint,
             "effectFingerprint": effect_fingerprint or _effect_fingerprint(context.operation, snapshot_checksum),
             "recordChecksums": [snapshot_checksum],
-            "source": "reader-session.repository",
+            "source": evidence_source,
         }
         evidence["evidenceChecksum"] = calculate_evidence_checksum(evidence)
         return evidence
 
     def _resolve_receipt_evidence(self, pending: Mapping[str, Any]) -> Mapping[str, Any] | None:
-        current, _previous = self._read_pair()
+        current, previous = self._read_pair()
+        if (
+            pending.get("operation") == "restore"
+            and current.status == "missing"
+            and previous.status == "missing"
+            and pending.get("requestFingerprint") == _owner_request_fingerprint(
+                "restore",
+                "reader-session.restore",
+                pending.get("expectedRevision"),
+                self._receipt_payload(None, "restore", source="empty", empty=True),
+            )
+        ):
+            return self._make_evidence(
+                OwnerCommitContext(
+                    profile_id=self.profile_id,
+                    instance_id=self.instance_id,
+                    domain=READER_SESSION_DOMAIN,
+                    operation="restore",
+                    capability="reader-session.restore",
+                    idempotency_key=pending["idempotencyKey"],
+                    expected_revision=pending["expectedRevision"],
+                    request_fingerprint=pending["requestFingerprint"],
+                    payload=self._receipt_payload(None, "restore", source="empty", empty=True),
+                ),
+                status="committed",
+                revision=0,
+                snapshot_checksum=_empty_state_checksum(),
+                effect_fingerprint=_effect_fingerprint("restore", _empty_state_checksum()),
+                evidence_source="reader-session.repository.empty",
+            )
         if current.status != "valid" or current.snapshot is None:
             return None
         snapshot = current.snapshot
@@ -1234,6 +1356,18 @@ class ReaderSessionOwner:
                 retry_candidate = self._candidate_from_snapshot(current.snapshot, current.snapshot["revision"])
             except _SnapshotValidationError:
                 return False
+        elif source == "empty":
+            if current.status != "missing" or current.snapshot is not None:
+                return False
+            if result.get("outcome") != "committed":
+                return False
+            payload = self._receipt_payload(None, "restore", source=source, empty=True)
+            return receipt.get("requestFingerprint") == _owner_request_fingerprint(
+                "restore",
+                "reader-session.restore",
+                expected_revision,
+                payload,
+            )
         else:
             return False
         payload = self._receipt_payload(retry_candidate, "restore", source=source)
@@ -1312,19 +1446,32 @@ class ReaderSessionOwner:
 
     @staticmethod
     def _receipt_payload(
-        candidate: Mapping[str, Any],
+        candidate: Mapping[str, Any] | None,
         operation: str,
         *,
         source: str | None = None,
         prepare_id: str | None = None,
+        empty: bool = False,
     ) -> dict[str, Any]:
-        payload = {
-            "candidateChecksum": _snapshot_checksum(candidate),
-            "contentId": candidate["contentId"],
-            "sessionRevision": candidate["revision"],
-            "mediaIdentity": candidate["media"]["mediaId"],
-            "operation": operation,
-        }
+        if empty:
+            payload = {
+                "empty": True,
+                "candidateChecksum": _empty_state_checksum(),
+                "contentId": None,
+                "sessionRevision": 0,
+                "mediaIdentity": None,
+                "operation": operation,
+            }
+        else:
+            if candidate is None:
+                raise _SnapshotValidationError("invalid-request")
+            payload = {
+                "candidateChecksum": _snapshot_checksum(candidate),
+                "contentId": candidate["contentId"],
+                "sessionRevision": candidate["revision"],
+                "mediaIdentity": candidate["media"]["mediaId"],
+                "operation": operation,
+            }
         if source is not None:
             payload["source"] = source
         if prepare_id is not None:

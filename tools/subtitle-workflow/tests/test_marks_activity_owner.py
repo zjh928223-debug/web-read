@@ -159,6 +159,33 @@ class MarksActivityOwnerTests(unittest.TestCase):
         self.assertEqual(command_receipt["outcome"], "committed")
         self.assertEqual(command_receipt["receipt"]["receiptId"], marks["receipt"]["receiptId"])
 
+    def test_clear_activity_command_replaces_payload_with_empty_identity(self):
+        owner = self.make_owner()
+        scope = self.scope()
+        marks = self.command(
+            owner,
+            "marks-commit",
+            {**scope, "marks": [{"globalIndex": 1, "word": "clear-me"}]},
+            0,
+            "clear-seed-marks",
+        )
+        activity = self.command(
+            owner,
+            "activity-append",
+            {**scope, "update": {"lastEvent": "clear-me"}},
+            0,
+            "clear-seed-activity",
+        )
+        self.assertEqual(marks["outcome"], "committed")
+        self.assertEqual(activity["outcome"], "committed")
+
+        cleared_marks = self.command(owner, "marks-commit", {**scope, "marks": []}, 1, "clear-marks")
+        cleared_activity = self.command(owner, "activity-append", {**scope, "clear": True}, 1, "clear-activity")
+        self.assertEqual(cleared_marks["outcome"], "committed")
+        self.assertEqual(cleared_activity["outcome"], "committed")
+        self.assertTrue(owner.query("marks", payload=scope, **self.ids("cleared-marks"))["payload"]["empty"])
+        self.assertTrue(owner.query("activity", payload=scope, **self.ids("cleared-activity"))["payload"]["empty"])
+
     def test_same_key_retry_replays_without_a_second_marks_or_activity_replace(self):
         replacements = {"marks": 0, "activity": 0}
         owner = None

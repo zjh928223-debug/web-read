@@ -179,6 +179,7 @@ class VocabularySrsOwnerTests(unittest.TestCase):
             "vocabulary.learning-events.v1.2026-08.0001",
             owner.query("learning-events", **self.ids("event-shard"))["payload"]["records"],
         )
+
         self.assertEqual(
             owner.query("personalization", **self.ids("personalization"))["payload"]["records"]["vocabulary.personalization.shadow-reports.v1"]["content"]["schema_version"],
             "personalization-shadow-report-store.v1",
@@ -197,6 +198,22 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         )
         self.assertEqual(reopened_receipt["outcome"], "committed")
         self.assertEqual(reopened_receipt["receipt"]["domain"], "vocabulary-srs")
+
+    def test_empty_learning_unit_of_work_clears_existing_records(self):
+        owner = self.make_owner()
+        key = "vocabulary.srs.store.v1"
+        seeded = self.command(owner, "learning-unit-of-work", key, self.row(key, self.srs_content()), 0, request_key="seed")
+        self.assertEqual(seeded["outcome"], "committed")
+
+        cleared = owner.command(
+            "learning-unit-of-work",
+            payload={"records": {}},
+            expected_revision=1,
+            idempotency_key="clear",
+            **self.ids("clear"),
+        )
+        self.assertEqual(cleared["outcome"], "committed")
+        self.assertEqual(owner.query("snapshot", **self.ids("after-clear"))["payload"]["records"], {})
 
     def test_same_idempotency_key_replays_receipt_without_second_canonical_write(self):
         replacements = 0

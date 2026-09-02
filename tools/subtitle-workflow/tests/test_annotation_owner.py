@@ -265,6 +265,21 @@ class AnnotationOwnerTests(unittest.TestCase):
         self.assertEqual(first["receipt"]["receiptId"], retry["receipt"]["receiptId"])
         self.assertEqual(replacements, 1)
 
+    def test_empty_lightweight_import_clears_existing_records(self):
+        owner = self.make_owner()
+        seeded = self.command(owner, "lightweight-import", self.records(), 0, request_key="seed")
+        self.assertEqual(seeded["outcome"], "committed")
+
+        cleared = owner.command(
+            "lightweight-import",
+            payload={"records": {}},
+            expected_revision=1,
+            idempotency_key="clear",
+            **self.ids("clear"),
+        )
+        self.assertEqual(cleared["outcome"], "committed")
+        self.assertEqual(owner.query("scope", scope=self.scope, **self.ids("after-clear"))["payload"]["records"], {})
+
     def test_outer_cas_conflict_keeps_scope_records(self):
         owner = self.make_owner()
         original = self.records()

@@ -23,6 +23,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from fastapi import HTTPException
 
 from .application_backup import WorkflowBackupAdapter
+from .core import _marks_integrity, _session_revision, _sha256_integrity
 from .durable_json import DurableJsonRepository, JsonValidationError
 from .history import (
     WorkflowHistoryStore,
@@ -238,6 +239,42 @@ def _canonical_json(value: Any) -> str:
 
 def _checksum(value: Any) -> str:
     return "sha256:" + sha256(_canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def session_identity_for_json_payloads(
+    manifest: dict,
+    transcript_payload,
+    chunk_data_payload,
+    *,
+    marks: list | None = None,
+) -> dict:
+    """Build the identity for JSON outputs written by DurableJsonRepository.
+
+    Application-backup restore writes JSON through the durable repository,
+    whose pretty-printed bytes are the target file representation.  Keeping
+    this calculation beside the normal file-based identity code makes the
+    restore boundary explicit without changing the repository's established
+    serialization format.
+    """
+    job_id = str(manifest.get("jobId") or "").strip()
+    if not job_id:
+        raise ValueError("manifest.jobId is required for session identity")
+    content_id = f"youtube-workflow:{job_id}"
+
+    def durable_json_bytes(value) -> bytes:
+        return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+    integrity = {
+        "algorithm": "sha256",
+        "transcript": _sha256_integrity(durable_json_bytes(transcript_payload), "file-bytes"),
+        "chunkData": _sha256_integrity(durable_json_bytes(chunk_data_payload), "file-bytes"),
+        "marks": _marks_integrity(marks),
+    }
+    return {
+        "contentId": content_id,
+        "revision": _session_revision(content_id, integrity),
+        "integrity": integrity,
+    }
 
 
 def _identity(value: Any, field: str, *, pattern: re.Pattern[str] = _SAFE_IDENTITY) -> str:
@@ -781,6 +818,8 @@ class WorkflowOwner:
         if not isinstance(rebound, Mapping):
             raise WorkflowOwnerStorageError("manual-recovery")
         rebound = dict(rebound)
+        if not rebound:
+            return {}
         output_text = str(rebound.get("outputDir") or "").strip()
         if "outputDir" in rebound and (not output_text or output_text in {".", "[REDACTED_PATH]"}):
             rebound["outputDir"] = str(self.output_dir.resolve(strict=False))
@@ -789,6 +828,39 @@ class WorkflowOwner:
             if key in rebound and (not value or value == "[REDACTED_PATH]"):
                 rebound[key] = self._effective_runtime_config_value(key, current_config)
         return self._config_payload({"config": rebound})["config"]
+
+    def _current_snapshot_output_roots(self, state: Mapping[str, Any]) -> list[Path]:
+        """Find reachable job output roots without treating config as a root."""
+        roots: list[Path] = []
+        output_root = self.output_dir.expanduser().resolve(strict=False)
+
+        def visit(value: Any) -> None:
+            if isinstance(value, Mapping):
+                for key, child in value.items():
+                    if key == "outputDir" and isinstance(child, str) and child.strip():
+                        candidate = self._resolved_local_path(child)
+                        if candidate is not None and candidate != output_root and output_root in candidate.parents:
+                            if candidate not in roots:
+                                roots.append(candidate)
+                    visit(child)
+            elif isinstance(value, list):
+                for child in value:
+                    visit(child)
+
+        for key in ("jobs", "history", "readerIndex"):
+            visit(state.get(key))
+        return roots
+
+    @staticmethod
+    def _snapshot_is_empty(snapshot: Mapping[str, Any]) -> bool:
+        return (
+            not snapshot.get("jobs")
+            and not snapshot.get("history")
+            and not (snapshot.get("readerIndex") or {}).get("items")
+            and not snapshot.get("config")
+            and not snapshot.get("outputs")
+            and not snapshot.get("mediaReferences")
+        )
 
     def _service_has_active_work(self) -> bool:
         manager = self.service_manager
@@ -2021,6 +2093,80 @@ class WorkflowOwner:
             result[key] = self._rebind_snapshot_value(item)
         return result
 
+    def _snapshot_output_relative(self, value: Any) -> str:
+        """Return a validated output-relative path for a rebound snapshot path."""
+        try:
+            candidate = Path(str(value)).expanduser()
+            if not candidate.is_absolute():
+                candidate = self.output_dir / candidate
+            output_root = self.output_dir.expanduser().resolve(strict=False)
+            resolved = candidate.resolve(strict=False)
+            relative = resolved.relative_to(output_root)
+            if not relative.parts or any(part in {"", ".", ".."} for part in relative.parts):
+                raise ValueError("empty output-relative path")
+            return relative.as_posix()
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as error:
+            raise WorkflowOwnerStorageError("manual-recovery") from error
+
+    def _normalize_snapshot_session_identities(
+        self,
+        jobs: list[dict[str, Any]],
+        output_records: list[dict[str, Any]],
+    ) -> None:
+        """Rebase ready-session identity to the target JSON file bytes.
+
+        The source application backup contains semantic JSON payloads, while
+        the target repository writes them with its own durable formatting.
+        The transcript/chunk payloads are unchanged; only their file-byte
+        identity is recalculated after that target representation is known.
+        """
+        by_relative_path: dict[str, dict[str, Any]] = {}
+        for output_record in output_records:
+            relative = output_record["id"][len("output:"):].replace("\\", "/")
+            by_relative_path[relative] = output_record
+
+        for job in jobs:
+            manifest = job.get("manifest") if isinstance(job, Mapping) else None
+            if not isinstance(manifest, dict) or manifest.get("status") != "ready":
+                continue
+            files = manifest.get("files") if isinstance(manifest.get("files"), Mapping) else None
+            output_dir = str(manifest.get("outputDir") or "").strip()
+            if files is None or not output_dir:
+                continue
+            if not isinstance(files.get("transcript"), str) or not isinstance(files.get("chunkData"), str):
+                continue
+            transcript_id = by_relative_path.get(self._snapshot_output_relative(files.get("transcript")))
+            chunk_id = by_relative_path.get(self._snapshot_output_relative(files.get("chunkData")))
+            if transcript_id is None or chunk_id is None:
+                continue
+            transcript_payload = transcript_id.get("payload")
+            chunk_data_payload = chunk_id.get("payload")
+            if not isinstance(transcript_payload, (Mapping, list)) or not isinstance(chunk_data_payload, (Mapping, list)):
+                continue
+
+            marks = None
+            marks_path = Path(output_dir) / "_workflow" / "reader-marks.json"
+            marks_record = by_relative_path.get(self._snapshot_output_relative(marks_path))
+            if isinstance(marks_record, Mapping) and isinstance(marks_record.get("payload"), Mapping):
+                candidate_marks = marks_record["payload"].get("marks")
+                if isinstance(candidate_marks, list):
+                    marks = candidate_marks
+
+            identity = session_identity_for_json_payloads(
+                manifest,
+                transcript_payload,
+                chunk_data_payload,
+                marks=marks,
+            )
+            manifest.update(identity)
+
+            manifest_path = Path(output_dir) / "manifest.json"
+            manifest_record = by_relative_path.get(self._snapshot_output_relative(manifest_path))
+            if manifest_record is not None and isinstance(manifest_record.get("payload"), Mapping):
+                manifest_payload = dict(manifest_record["payload"])
+                manifest_payload.update(identity)
+                manifest_record["payload"] = manifest_payload
+
     def command(
         self,
         operation: str,
@@ -2208,13 +2354,28 @@ class WorkflowOwner:
                 rebound_history = [self._rebind_snapshot_value(item) for item in snapshot["history"]]
                 rebound_index = self._rebind_snapshot_value(snapshot["readerIndex"])
                 rebound_config = self._rebind_snapshot_config(snapshot["config"], current["config"])
-                self.store.replace_snapshot(
-                    rebound_jobs,
-                    rebound_history,
-                    rebound_index,
-                    rebound_config,
-                )
-                for output_record in snapshot.get("outputs", []):
+                rebound_outputs = [
+                    {
+                        **output_record,
+                        "payload": self._rebind_snapshot_value(output_record["payload"]),
+                    }
+                    for output_record in snapshot.get("outputs", [])
+                ]
+                self._normalize_snapshot_session_identities(rebound_jobs, rebound_outputs)
+                empty_snapshot = self._snapshot_is_empty(snapshot)
+                if empty_snapshot:
+                    clear_result = self.store.clear_snapshot(
+                        output_roots=self._current_snapshot_output_roots(current),
+                    )
+                else:
+                    clear_result = None
+                    self.store.replace_snapshot(
+                        rebound_jobs,
+                        rebound_history,
+                        rebound_index,
+                        rebound_config,
+                    )
+                for output_record in rebound_outputs:
                     self.store.assert_writer_open()
                     relative = output_record["id"][len("output:"):]
                     target = (self.output_dir / relative).resolve(strict=False)
@@ -2238,17 +2399,23 @@ class WorkflowOwner:
                     },
                 )
                 if self.service_manager is not None and hasattr(self.service_manager, "reload_persisted_state"):
-                    self.service_manager.reload_persisted_state()
+                    self.service_manager.reload_persisted_state(flush=not empty_snapshot)
                 self._sync_output_root(rebound_config)
                 next_revision = self._read_state()["revision"]
                 record_checksums = self._snapshot_record_checksums(snapshot)
-                return self._evidence(
+                if not record_checksums:
+                    # The receipt contract requires committed evidence to
+                    # carry at least one durable checksum even when the
+                    # canonical snapshot is intentionally empty.
+                    record_checksums = [_checksum(snapshot)]
+                evidence = self._evidence(
                     context,
                     status="committed",
                     revision=next_revision,
                     record_checksums=record_checksums,
                     effect_fingerprint=_checksum({"operation": operation, "revision": next_revision, "recordChecksums": record_checksums}),
                 )
+                return evidence
             if operation.startswith("job-") and self.service_manager is not None:
                 try:
                     service_result = self._service_command_result(operation, mutation, current, context)

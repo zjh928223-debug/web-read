@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
+from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig, attach_session_identity
 from youtube_workflow.durable_json import DurableJsonRepository
 from youtube_workflow.history import WorkflowHistoryStore
 from youtube_workflow.service import JobManager
@@ -82,6 +82,150 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertFalse(owner.jobs_path.exists())
         self.assertFalse(owner.receipts.receipt_path.exists())
         self.assertNotIn(str(self.root), json.dumps(capabilities))
+
+    def test_empty_snapshot_clears_canonical_state_and_retains_recovery_evidence(self):
+        owner = self.make_owner()
+        job = {**self.job(), "outputDir": "job-1"}
+        initial_revision = owner._read_state()["revision"]
+        imported = owner.command(
+            "snapshot-commit",
+            payload={"snapshot": {
+                "jobs": [job],
+                "history": [job],
+                "readerIndex": {"items": [{"jobId": job["jobId"], "title": job["title"]}]},
+                "config": {"model": "test"},
+                "outputs": [{
+                    "id": "output:job-1/result.json",
+                    "payload": {"status": "ready"},
+                }],
+                "mediaReferences": [],
+            }},
+            expected_revision=initial_revision,
+            idempotency_key="snapshot-import",
+            **self.ids("snapshot-import"),
+        )
+        self.assertEqual(imported["outcome"], "committed")
+        self.assertTrue(owner.jobs_path.exists())
+        self.assertTrue((self.output_dir / "job-1/result.json").exists())
+
+        cleared = owner.command(
+            "snapshot-commit",
+            payload={"snapshot": {
+                "jobs": [],
+                "history": [],
+                "readerIndex": {"items": []},
+                "config": {},
+                "outputs": [],
+                "mediaReferences": [],
+            }},
+            expected_revision=imported["revision"],
+            idempotency_key="snapshot-clear",
+            **self.ids("snapshot-clear"),
+        )
+        self.assertEqual(cleared["outcome"], "committed")
+        self.assertFalse(owner.jobs_path.exists())
+        self.assertFalse(owner.history_path.exists())
+        self.assertFalse(owner.reader_index_path.exists())
+        self.assertFalse(owner.config_path.exists())
+        self.assertFalse((self.output_dir / "job-1/result.json").exists())
+        self.assertTrue(list(self.state_dir.glob("jobs.json.cleared-*")))
+        self.assertTrue(list(self.output_dir.glob("job-1/result.json.cleared-*")))
+        self.assertEqual(owner.query("job", payload={"jobId": "job-1"}, **self.ids("cleared-job"))["error"]["code"], "not-found")
+
+    def test_snapshot_commit_rebases_ready_session_identity_to_target_json_bytes(self):
+        fallback_root = self.root / "fallback"
+        source_job_root = self.root / "source-job"
+        fallback_job_root = fallback_root / "job-1"
+        source_job_root.mkdir(parents=True)
+        fallback_job_root.mkdir(parents=True)
+        for name in ("audio.mp3", "video.mp4"):
+            (fallback_job_root / name).write_bytes(b"source-media")
+
+        transcript = {"segments": [{"start": 0, "end": 1, "text": "hello"}]}
+        chunk_data = {"s": [{"chunks": [{"id": 0, "a": 0, "b": 1, "en": "hello", "zh": "你好"}]}]}
+        source_transcript = source_job_root / "transcript.json"
+        source_chunk_data = source_job_root / "chunks.json"
+        source_transcript.write_text(json.dumps(transcript, ensure_ascii=False), encoding="utf-8")
+        source_chunk_data.write_text(json.dumps(chunk_data, ensure_ascii=False), encoding="utf-8")
+        source_manifest = {
+            "jobId": "job-1",
+            "status": "ready",
+            "stage": "completed",
+            "outputDir": "job-1",
+            "files": {
+                "audio": "job-1/audio.mp3",
+                "video": "job-1/video.mp4",
+                "transcript": "job-1/transcript.json",
+                "chunkData": "job-1/chunks.json",
+            },
+        }
+        identity_manifest = dict(source_manifest)
+        attach_session_identity(
+            identity_manifest,
+            {
+                "audio": fallback_job_root / "audio.mp3",
+                "video": fallback_job_root / "video.mp4",
+                "transcript": source_transcript,
+                "chunkData": source_chunk_data,
+            },
+        )
+        source_manifest.update({
+            "contentId": identity_manifest["contentId"],
+            "revision": identity_manifest["revision"],
+            "integrity": identity_manifest["integrity"],
+        })
+        job = {
+            **self.job(status="ready"),
+            "outputDir": "job-1",
+            "request": {"url": "https://www.youtube.com/watch?v=example"},
+            "manifest": source_manifest,
+        }
+        config = WorkflowConfig(state_dir=self.state_dir, output_dir=self.output_dir)
+
+        class NonStartingJobManager(JobManager):
+            def start_pending_worker(self):
+                return None
+
+        manager = NonStartingJobManager(
+            config=config,
+            runner_factory=lambda: FakeWorkflowRunner(config),
+            media_fallback_root=fallback_root,
+        )
+        owner = self.make_owner(instance_id="instance-identity", repository=manager.store.json_repository)
+        owner.service_manager = manager
+        try:
+            committed = owner.command(
+                "snapshot-commit",
+                payload={"snapshot": {
+                    "jobs": [job],
+                    "history": [],
+                    "readerIndex": {"items": []},
+                    "config": {},
+                    "outputs": [
+                        {"id": "output:job-1/transcript.json", "payload": transcript},
+                        {"id": "output:job-1/chunks.json", "payload": chunk_data},
+                        {"id": "output:job-1/manifest.json", "payload": source_manifest},
+                    ],
+                    "mediaReferences": [],
+                }},
+                expected_revision=0,
+                idempotency_key="snapshot-identity",
+                **self.ids("snapshot-identity"),
+            )
+            self.assertEqual(committed["outcome"], "committed")
+            resolved = manager._manifest_for_job("job-1")
+            persisted = json.loads((self.output_dir / "job-1" / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(resolved["integrity"], persisted["integrity"])
+            self.assertEqual(
+                resolved["integrity"]["transcript"]["bytes"],
+                (self.output_dir / "job-1" / "transcript.json").stat().st_size,
+            )
+            self.assertNotEqual(
+                resolved["integrity"]["transcript"]["sha256"],
+                identity_manifest["integrity"]["transcript"]["sha256"],
+            )
+        finally:
+            manager.close()
 
     def test_existing_workflow_records_and_typed_commands_round_trip_after_reopen(self):
         owner = self.make_owner()

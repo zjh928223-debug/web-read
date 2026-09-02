@@ -1,10 +1,12 @@
 import hashlib
 import json
+import os
 import shutil
 import threading
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from .core import build_history_item
 from .durable_json import (
@@ -982,6 +984,86 @@ class WorkflowHistoryStore:
                 "jobsRevision": jobs_document["revision"],
                 "historyRevision": history_document["revision"],
             }
+
+    def clear_snapshot(self, *, output_roots=()) -> dict:
+        """Remove the canonical workflow snapshot while retaining recovery evidence.
+
+        An empty workflow snapshot is different from four JSON documents that
+        merely contain empty collections: the backup contract uses file
+        presence to distinguish an empty owner from an explicitly configured
+        owner.  Move the canonical documents (and their backups) aside with a
+        non-recoverable-by-accident suffix instead of unlinking them.  Output
+        JSON metadata for the currently reachable job roots is moved the same
+        way; media files are deliberately left untouched.
+        """
+        with self.lock:
+            self.assert_writer_open()
+            token = uuid4().hex
+            moved: list[tuple[Path, Path]] = []
+            canonical_paths = (
+                self.jobs_path,
+                self.history_path,
+                self.reader_index_path,
+                self.config_path,
+                self.state_dir / "application-backup-media-references.json",
+            )
+            output_root = self.output_dir.expanduser().resolve(strict=False)
+            roots = []
+            for raw_root in output_roots or ():
+                try:
+                    root = Path(raw_root).expanduser().resolve(strict=False)
+                except (OSError, TypeError, ValueError):
+                    continue
+                if root == output_root or output_root not in root.parents:
+                    continue
+                if root not in roots:
+                    roots.append(root)
+
+            def move_as_recovery(path: Path) -> None:
+                path = Path(path)
+                if not path.exists():
+                    return
+                destination = path.with_name(f"{path.name}.cleared-{token}")
+                self.json_repository._replace_with_permission_retry(path, destination)
+                moved.append((destination, path))
+
+            try:
+                for path in canonical_paths:
+                    move_as_recovery(path)
+                    move_as_recovery(self.json_repository.backup_path(path))
+                seen_output_paths: set[Path] = set()
+                for root in roots:
+                    if not root.exists() or not root.is_dir():
+                        continue
+                    for path in sorted(root.rglob("*.json")):
+                        resolved = path.resolve(strict=False)
+                        if resolved in seen_output_paths or ".cleared-" in path.name:
+                            continue
+                        seen_output_paths.add(resolved)
+                        move_as_recovery(path)
+                DurableJsonRepository._fsync_directory(self.state_dir)
+                for root in roots:
+                    try:
+                        DurableJsonRepository._fsync_directory(root)
+                    except OSError:
+                        # The canonical state move is already durable on
+                        # platforms without directory fsync support.
+                        pass
+            except BaseException:
+                for destination, original in reversed(moved):
+                    try:
+                        self.json_repository._replace_with_permission_retry(destination, original)
+                    except BaseException:
+                        # Preserve the moved artifact as recovery evidence if
+                        # compensation is unavailable.
+                        pass
+                raise
+
+            self._known_revisions["jobs"] = 0
+            self._known_revisions["history"] = 0
+            self._known_payloads["jobs"] = {"jobs": []}
+            self._known_payloads["history"] = {"items": []}
+            return {"cleared": True, "recoveryToken": token, "movedCount": len(moved)}
 
     def append_log(self, message: str, *, max_bytes: int = 1024 * 1024, backup_count: int = 3) -> None:
         line = f"{datetime.now(timezone.utc).isoformat()} {message}".strip() + "\n"

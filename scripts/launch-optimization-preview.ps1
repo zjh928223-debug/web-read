@@ -3,12 +3,16 @@ param(
   [switch]$Stop,
   [switch]$DevFallback,
   [switch]$EnableOwnerMigration,
+  [switch]$EnableOwnerPromotion,
   [string]$BootstrapPython = '',
   [int]$StartupTimeoutSeconds = 45
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+if ($EnableOwnerPromotion -and -not $EnableOwnerMigration) {
+  throw 'Owner promotion requires -EnableOwnerMigration.'
+}
 Import-Module (Join-Path $PSScriptRoot 'launcher-instance-manager.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'optimization-launch-runtime.psm1') -Force -DisableNameChecking
 Import-Module (Join-Path $PSScriptRoot 'optimization-release.psm1') -Force -DisableNameChecking
@@ -1154,6 +1158,18 @@ try {
     }
     if (-not $migrationEnabled) { $activeReusable = $false }
   }
+  if ($EnableOwnerPromotion) {
+    $existingArguments = @((Get-OptimizationObjectValue -Object $existingHostState -Name 'argumentList') | ForEach-Object { [string]$_ })
+    $promotionEnabled = $existingArguments -contains '--owner-promotion-mode' `
+      -and $existingArguments -contains 'optimization'
+    foreach ($domain in @('reader-session', 'marks-activity', 'passage-preview', 'annotation', 'vocabulary-srs', 'workflow')) {
+      if (-not ($existingArguments -contains '--owner-promotion-domain') -or -not ($existingArguments -contains $domain)) {
+        $promotionEnabled = $false
+        break
+      }
+    }
+    if (-not $promotionEnabled) { $activeReusable = $false }
+  }
 
   # Migrate an already-running pre-commit-marker installation before the
   # front door starts.  Once present, this file is the only public routing
@@ -1396,6 +1412,7 @@ try {
   $newWorkflowHealthUrl = Get-HostWorkflowHealthUrl -HostHealthUrl $newHostHealthUrl
   $newCapabilityHealthUrl = $existingCapabilityHealthUrl
   $newCapabilityStarted = $false
+  $initialApplicationProfileLeaseMode = if ($EnableOwnerPromotion) { 'authoritative' } else { 'standby-if-busy' }
   Set-OptimizationActivationJournal -Journal $activationJournal -Status 'prepared' -Phase 'pair-starting'
   $newPair = Start-OptimizationOwnedPair `
     -Release $newRelease `
@@ -1412,6 +1429,7 @@ try {
     -WorkflowRoot $workflowRoot `
     -OwnerWorkflowStateDir $ownerWorkflowStateDir `
     -OwnerWorkflowOutputDir $ownerWorkflowOutputDir `
+    -OwnerMediaFallbackRoot $ownerWorkflowOutputDir `
     -ProjectRoot $projectRoot `
     -ApplicationIsolationRoot $newApplicationIsolationRoot `
     -ApplicationProfileDir $newApplicationProfileDir `
@@ -1429,9 +1447,10 @@ try {
     -StartupTimeoutSeconds $StartupTimeoutSeconds `
     -ReservedPorts $reservedDailyPorts `
     -ExpectedDataRoot $defaultOptimizationDataRoot `
-    -ApplicationProfileLeaseMode 'standby-if-busy' `
-    -AllowStandbyReadiness `
-    -EnableOwnerMigration:$EnableOwnerMigration
+    -ApplicationProfileLeaseMode $initialApplicationProfileLeaseMode `
+    -AllowStandbyReadiness:([bool](-not $EnableOwnerPromotion)) `
+    -EnableOwnerMigration:$EnableOwnerMigration `
+    -EnableOwnerPromotion:$EnableOwnerPromotion
   $newPairStarted = $true
   $newCapabilityStarted = [string]$newPair.capability.status -eq 'started'
   $activationJournal.newCapabilityStarted = $newCapabilityStarted
@@ -1487,6 +1506,7 @@ try {
       -WorkflowRoot $workflowRoot `
       -OwnerWorkflowStateDir $ownerWorkflowStateDir `
       -OwnerWorkflowOutputDir $ownerWorkflowOutputDir `
+      -OwnerMediaFallbackRoot $ownerWorkflowOutputDir `
       -ProjectRoot $projectRoot `
       -ApplicationIsolationRoot $newApplicationIsolationRoot `
       -ApplicationProfileDir $newApplicationProfileDir `
@@ -1505,7 +1525,8 @@ try {
       -ReservedPorts $reservedDailyPorts `
       -ExpectedDataRoot $defaultOptimizationDataRoot `
       -ApplicationProfileLeaseMode 'authoritative' `
-      -EnableOwnerMigration:$EnableOwnerMigration
+      -EnableOwnerMigration:$EnableOwnerMigration `
+      -EnableOwnerPromotion:$EnableOwnerPromotion
     $newHostState = Read-OptimizationJsonFile -Path $newHostManagerStatePath
     if ($null -eq $newHostState) { throw 'Promoted optimization Host returned ready without an owned state file.' }
     if ((Get-OptimizationObjectText -Object $newPair.health -Name 'profileLeaseMode') -ne 'authoritative' `
