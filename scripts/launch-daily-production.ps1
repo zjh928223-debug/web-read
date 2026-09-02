@@ -15,6 +15,7 @@ param(
   [string]$ApplicationIsolationRoot = '',
   [string]$LogRoot = '',
   [string]$BootstrapPython = '',
+  [string]$OpenMarkerPath = '',
   [int]$StartupTimeoutSeconds = 45
 )
 
@@ -152,6 +153,9 @@ function Get-DailyContext {
   if ($defaultContract -and $hasOverride -and -not $FixtureMode) {
     throw 'Path overrides require explicit -FixtureMode; the formal daily-production profile is fixed and isolated.'
   }
+  if ($OpenMarkerPath -and -not $FixtureMode) {
+    throw 'OpenMarkerPath is available only in explicit fixture mode.'
+  }
 
   $stateRootValue = if ($StateRoot) { $StateRoot } else { $defaultStateRoot }
   $releaseRootValue = if ($ReleaseRoot) { $ReleaseRoot } else { $defaultReleaseRoot }
@@ -209,6 +213,7 @@ function Get-DailyContext {
     activeTargetPath = Join-Path $stateRoot 'active-target.json'
     rollbackTargetPath = Join-Path $stateRoot 'rollback-target.json'
     journalPath = Join-Path $stateRoot 'promotion-journal.json'
+    openMarkerPath = if ($OpenMarkerPath) { Resolve-DailyPath -Value $OpenMarkerPath -Label 'Daily production open marker' } else { '' }
     reservedPorts = $reservedPorts
   }
 }
@@ -570,6 +575,16 @@ function Start-DailyPair {
     -EnableOwnerMigration:$OwnerPromotion `
     -EnableOwnerPromotion:$OwnerPromotion `
     -AllowReservedDailyPorts:$Context.allowReservedDailyPorts
+}
+
+function Open-DailyFrontend {
+  param([Parameter(Mandatory)]$Context)
+  $url = "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/"
+  if ($Context.fixtureMode -and $Context.openMarkerPath) {
+    Write-DailyText -Path $Context.openMarkerPath -Text "$url`n"
+    return
+  }
+  Start-Process $url
 }
 
 function Test-DailyPairIdentity {
@@ -1316,7 +1331,7 @@ function Invoke-DailyApply {
     Invoke-DailyCrashPoint -Phase 'apply-before-journal-remove'
     Remove-DailyJournal -Context $Context
     Invoke-DailyCrashPoint -Phase 'apply-after-journal-remove'
-    if ($Open -and -not $NoOpen) { Start-Process "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/" }
+    if ($Open -and -not $NoOpen) { Open-DailyFrontend -Context $Context }
     return [ordered]@{
       status = 'applied'
       action = 'Apply'
@@ -1363,6 +1378,7 @@ function Invoke-DailyStart {
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $targetInstance = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $target -Name 'profile') -Name 'instanceId'
     if ([string]$pairIdentity.hostState.instanceId -ne $targetInstance) { throw 'An owned daily-production pair is running for a different target; refusing adoption.' }
+    if ($Open -and -not $NoOpen) { Open-DailyFrontend -Context $Context }
     return [ordered]@{ status = 'reused'; action = 'Start'; targetPath = $Context.activeTargetPath; ownerAuthority = $pairIdentity.ownerAuthority; sideEffects = @('none') }
   }
   foreach ($endpoint in @($preflight.frontend, $preflight.backend)) {
@@ -1377,7 +1393,7 @@ function Invoke-DailyStart {
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $nextTarget = New-DailyTarget -Context $Context -Release $release -Pair $pairIdentity -InstanceId $instanceId -Toolchain $toolchain
     Write-DailyJson -Path $Context.activeTargetPath -Value $nextTarget
-    if ($Open -and -not $NoOpen) { Start-Process "http://$(Format-OptimizationUrlHost -HostName $Context.frontendHost):$($Context.frontendPort)/" }
+    if ($Open -and -not $NoOpen) { Open-DailyFrontend -Context $Context }
     return [ordered]@{ status = 'started'; action = 'Start'; targetPath = $Context.activeTargetPath; ownerAuthority = $nextTarget.ownerAuthority; sideEffects = @('started owned Host/capability pair', 'updated atomic target owner receipt') }
   } catch {
     try { Stop-DailyOwnedInstance -Context $Context -InstanceId $instanceId } catch {}

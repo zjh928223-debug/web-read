@@ -384,6 +384,14 @@ try {
     Assert-True ([string]$ownerAuthority.status -eq 'legacy-browser-owner/pre-cutover' -and @($ownerAuthority.missingDomains).Count -gt 0) 'daily launcher owner authority state was neither honest pre-cutover nor complete'
   }
 
+  $openMarkerPath = Join-Path $testRoot 'daily-open.marker'
+  $openCommon = @($common | Where-Object { $_ -ne '-NoOpen' }) + @('-OpenMarkerPath', $openMarkerPath)
+  $reusedOpen = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Start', '-Open') + $openCommon) -Environment $stableEnvironment
+  Assert-True ($reusedOpen.exitCode -eq 0 -and $reusedOpen.json.status -eq 'reused') "daily reused Start -Open failed: $($reusedOpen.text)"
+  Assert-True (Test-Path -LiteralPath $openMarkerPath -PathType Leaf) 'daily reused Start -Open did not invoke the browser-open boundary'
+  $openedUrl = (Get-Content -LiteralPath $openMarkerPath -Raw -Encoding UTF8).Trim()
+  Assert-True ($openedUrl -eq "http://127.0.0.1:$frontendPort/") "daily reused Start -Open targeted the wrong URL: $openedUrl"
+
   $rollbackCrashPhases = @(
     'rollback-before-stop',
     'rollback-after-stop',
