@@ -113,6 +113,38 @@ function buildReaderMaterial(readerFixture) {
 const readerMaterial = buildReaderMaterial(fixture.reader)
 const audioDataUrl = makeSilentWavDataUrl(fixture.reader.audioDurationSeconds)
 
+function isEdgeTtsRequest(request) {
+  if (request.method() !== 'POST') return false
+  try {
+    return new URL(request.url()).pathname === '/api/tts/edge'
+  } catch {
+    return false
+  }
+}
+
+function readTtsRequestToken(request) {
+  return String(request.headers()['x-read-web-performance-tts-request'] || '').trim()
+}
+
+function classifyExpectedPronunciationAbort({
+  method,
+  pathname,
+  failureText,
+  pageUnloading = false,
+  pageClosed = false,
+  requestReplaced = false,
+  testTriggered = false,
+} = {}) {
+  if (String(method || '').toUpperCase() !== 'POST') return ''
+  if (String(pathname || '') !== '/api/tts/edge') return ''
+  if (failureText !== 'net::ERR_ABORTED') return ''
+  if (pageClosed) return 'page-closed'
+  if (pageUnloading) return 'page-unload'
+  if (requestReplaced) return 'request-replaced'
+  if (testTriggered) return 'test-triggered'
+  return ''
+}
+
 async function mockApi(route) {
   const request = route.request()
   const url = new URL(request.url())
@@ -403,38 +435,139 @@ await context.addInitScript(() => {
 })
 
 const page = await context.newPage()
+await page.addInitScript(() => {
+  const nativeFetch = window.fetch.bind(window)
+  const ttsStates = new Map()
+  let nextToken = 0
+
+  window.__readWebPerformanceTtsState = (token) => {
+    const state = ttsStates.get(String(token || ''))
+    return state
+      ? { aborted: state.aborted, testTriggered: state.testTriggered }
+      : null
+  }
+  window.__readWebPerformanceExpectPendingTtsAbort = () => {
+    for (const state of ttsStates.values()) {
+      if (!state.settled) state.testTriggered = true
+    }
+  }
+
+  window.fetch = (input, init = {}) => {
+    let url = null
+    try {
+      url = new URL(typeof input === 'string' ? input : input?.url || '', window.location.href)
+    } catch {}
+    const method = String(init?.method || input?.method || 'GET').toUpperCase()
+    if (url?.pathname !== '/api/tts/edge' || method !== 'POST' || !init?.signal) {
+      return nativeFetch(input, init)
+    }
+
+    const token = `perf-tts-${++nextToken}`
+    const state = {
+      aborted: Boolean(init.signal.aborted),
+      testTriggered: false,
+      settled: false,
+    }
+    ttsStates.set(token, state)
+    init.signal.addEventListener('abort', () => {
+      state.aborted = true
+    }, { once: true })
+    const headers = new Headers(init.headers || (typeof Request !== 'undefined' && input instanceof Request ? input.headers : undefined))
+    headers.set('X-Read-Web-Performance-TTS-Request', token)
+    return nativeFetch(input, { ...init, headers }).finally(() => {
+      state.settled = true
+    })
+  }
+})
 let activeJourney = 'setup'
+let mainFrameNavigationSerial = 0
+let pageClosed = false
+let nextRequestSerial = 0
+const ttsRequests = new Map()
+const requestFailureTasks = []
 page.on('console', (message) => {
   if (message.type() === 'error') artifact.errors.push({ journey: activeJourney, type: 'console', text: message.text() })
 })
 page.on('pageerror', (error) => artifact.errors.push({ journey: activeJourney, type: 'pageerror', text: error.message }))
-page.on('request', () => { artifact.requests.total += 1 })
-page.on('requestfailed', (request) => {
-  const failureText = request.failure()?.errorText
-  let expectedPronunciationAbort = false
+page.on('close', () => { pageClosed = true })
+page.on('request', (request) => {
+  artifact.requests.total += 1
   try {
-    const url = new URL(request.url())
-    expectedPronunciationAbort = request.method() === 'POST'
-      && url.pathname === '/api/tts/edge'
-      && failureText === 'net::ERR_ABORTED'
+    if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
+      mainFrameNavigationSerial += 1
+    }
   } catch {}
-  if (expectedPronunciationAbort) {
-    // The pronunciation service deliberately cancels an in-flight request
-    // when a learning page is deactivated or replaced. Chromium surfaces
-    // that normal lifecycle cancellation as requestfailed/ERR_ABORTED; keep
-    // it observable without treating it as a browser or network error.
+  if (isEdgeTtsRequest(request)) {
+    const state = {
+      request,
+      token: readTtsRequestToken(request),
+      serial: ++nextRequestSerial,
+      navigationSerial: mainFrameNavigationSerial,
+      failed: false,
+      finished: false,
+    }
+    ttsRequests.set(request, state)
+  }
+})
+page.on('requestfinished', (request) => {
+  const state = ttsRequests.get(request)
+  if (state) state.finished = true
+})
+page.on('requestfailed', (request) => {
+  const task = handleRequestFailure(request)
+  requestFailureTasks.push(task)
+})
+
+async function handleRequestFailure(request) {
+  const failureText = request.failure()?.errorText
+  const state = ttsRequests.get(request)
+  let pathname = ''
+  try {
+    pathname = new URL(request.url()).pathname
+  } catch {}
+
+  let browserTtsState = null
+  if (state?.token && !page.isClosed()) {
+    try {
+      browserTtsState = await page.evaluate(
+        (token) => window.__readWebPerformanceTtsState?.(token) || null,
+        state.token,
+      )
+    } catch {}
+  }
+  const newerTtsRequest = state
+    ? Array.from(ttsRequests.values()).some((candidate) => candidate.serial > state.serial)
+    : false
+  const reason = classifyExpectedPronunciationAbort({
+    method: request.method(),
+    pathname,
+    failureText,
+    pageUnloading: Boolean(state && mainFrameNavigationSerial > state.navigationSerial),
+    pageClosed: pageClosed || page.isClosed(),
+    requestReplaced: Boolean(browserTtsState?.aborted && newerTtsRequest),
+    testTriggered: Boolean(browserTtsState?.testTriggered),
+  })
+  if (state) state.failed = true
+  if (reason) {
     artifact.requests.expectedAborted += 1
     return
   }
   artifact.requests.failed += 1
   artifact.errors.push({ journey: activeJourney, type: 'requestfailed', url: request.url(), text: failureText })
-})
+}
+
 page.on('response', (response) => {
   if (response.status() >= 400) {
     artifact.requests.httpErrors += 1
     artifact.errors.push({ journey: activeJourney, type: 'http', url: response.url(), status: response.status() })
   }
 })
+
+const expectPronunciationAbort = async () => {
+  try {
+    await page.evaluate(() => window.__readWebPerformanceExpectPendingTtsAbort?.())
+  } catch {}
+}
 
 const measure = async (name, action) => {
   const started = performance.now()
@@ -461,7 +594,7 @@ try {
     const startedAt = performance.now()
     try {
       if (forcedFailureJourney === name) throw new Error(`Forced journey failure: ${name}`)
-      const metrics = await journey({ page, measure, sample })
+      const metrics = await journey({ page, measure, sample, expectPronunciationAbort })
       const runtime = await page.evaluate(() => window.__readWebPerformance || { longTasks: [], rejections: [] })
       artifact.longTasks.push(...(runtime.longTasks || []).map((entry) => ({ journey: name, ...entry })))
       for (const rejection of runtime.rejections || []) {
@@ -480,6 +613,7 @@ try {
   artifact.errors.push({ journey: activeJourney, type: 'harness', text: error.stack || error.message })
   await page.screenshot({ path: path.join(outputDirectory, 'browser-journeys-failure.png'), fullPage: true })
 } finally {
+  await Promise.allSettled(requestFailureTasks)
   artifact.summary = {
     passedJourneys: artifact.journeys.filter((item) => item.status === 'passed').length,
     requestedJourneys: requestedJourneys.length,

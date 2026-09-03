@@ -417,6 +417,7 @@ class WorkflowCoreTests(unittest.TestCase):
             request = WorkflowRequest(
                 url="https://www.youtube.com/watch?v=NoFallback123",
                 gemini_mode="mock",
+                video_priority=False,
             )
 
             with self.assertRaises(WorkflowCommandError):
@@ -428,7 +429,7 @@ class WorkflowCoreTests(unittest.TestCase):
             self.assertEqual(command_runner.download_attempts, 1)
             self.assertEqual(
                 command_runner.calls[0][1][command_runner.calls[0][1].index("-f") + 1],
-                "best[ext=mp4]/best",
+                "bestaudio/best",
             )
 
     def test_local_runner_retries_audio_first_youtube_media_403_at_most_once(self):
@@ -514,6 +515,7 @@ class WorkflowCoreTests(unittest.TestCase):
                 request = WorkflowRequest(
                     url="https://www.youtube.com/watch?v=NoContext12345",
                     gemini_mode="mock",
+                    video_priority=False,
                 )
 
                 with self.assertRaises(WorkflowCommandError):
@@ -523,6 +525,10 @@ class WorkflowCoreTests(unittest.TestCase):
                     ).run(request, job_id="job-403-context")
 
                 self.assertEqual(command_runner.download_attempts, 1)
+                self.assertEqual(
+                    command_runner.calls[0][1][command_runner.calls[0][1].index("-f") + 1],
+                    "bestaudio/best",
+                )
 
     def test_local_runner_only_falls_back_for_a_real_youtube_video_url(self):
         error = WorkflowCommandError(
