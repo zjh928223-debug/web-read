@@ -60,6 +60,38 @@ def ends_with_terminal_punctuation(raw_text: str) -> bool:
     return raw.endswith(".") or raw.endswith("?") or raw.endswith("!")
 
 
+def repair_sentence_boundary_cuts(words: List[Dict], cuts) -> List[int]:
+    """Make Gemini cuts respect terminal punctuation without changing word order.
+
+    Gemini sometimes returns a cut after the first word of the next sentence,
+    even when it also recognizes the preceding sentence.  The runtime contract
+    is that a cut is *after* the numbered word, so every ordinary terminal word
+    must be a cut and a redundant cut immediately after it must be removed.
+    Abbreviations remain governed by ``ends_with_terminal_punctuation``.
+    """
+    total_words = len(words)
+    valid_cuts = {
+        cut
+        for cut in cuts
+        if isinstance(cut, int)
+        and not isinstance(cut, bool)
+        and 1 <= cut < total_words
+    }
+    terminal_cuts = {
+        index
+        for index, word in enumerate(words, start=1)
+        if index < total_words and ends_with_terminal_punctuation(get_word_text(word))
+    }
+
+    repaired_cuts = valid_cuts | terminal_cuts
+    for terminal_index in terminal_cuts:
+        successor = terminal_index + 1
+        if successor in repaired_cuts and successor not in terminal_cuts:
+            repaired_cuts.remove(successor)
+
+    return sorted(repaired_cuts)
+
+
 def build_phrase_spans(words: List[Dict]) -> List[Dict]:
     norm_words = [normalize_token(get_word_text(w)) for w in words]
     spans: List[Dict] = []

@@ -312,6 +312,73 @@ def validate_zh_only_result(input_data, output_data):
     return True, ""
 
 
+def reconstruct_zh_only_result(input_data, output_data):
+    if not isinstance(output_data, dict):
+        return None, "顶层不是 dict"
+
+    input_segments = input_data.get("s") if isinstance(input_data, dict) else None
+    output_segments = output_data.get("s")
+    if not isinstance(input_segments, list):
+        return None, "input_data['s'] 不是 list"
+    if not isinstance(output_segments, list):
+        return None, "output_data['s'] 不是 list"
+    if len(output_segments) != len(input_segments):
+        return None, f"s 长度不一致。input={len(input_segments)} output={len(output_segments)}"
+
+    reconstructed_segments = []
+    for input_item, output_item in zip(input_segments, output_segments):
+        if not isinstance(input_item, dict) or not isinstance(output_item, dict):
+            return None, "segment 不是 dict"
+
+        expected_id = input_item.get("id")
+        if "id" in output_item and output_item.get("id") != expected_id:
+            return None, f"id 不一致。input={expected_id} output={output_item.get('id')}"
+
+        input_chunks = input_item.get("chunks")
+        output_chunks = output_item.get("chunks")
+        if not isinstance(input_chunks, list):
+            return None, f"segment_id={expected_id} 的 input chunks 不是 list"
+        if not isinstance(output_chunks, list):
+            return None, f"segment_id={expected_id} 的 chunks 不是 list"
+        if len(output_chunks) != len(input_chunks):
+            return None, (
+                f"segment_id={expected_id} 的 chunk 数量不一致。"
+                f"input={len(input_chunks)} output={len(output_chunks)}"
+            )
+
+        reconstructed_chunks = []
+        for chunk_index, (input_chunk, output_chunk) in enumerate(zip(input_chunks, output_chunks)):
+            if not isinstance(input_chunk, dict) or not isinstance(output_chunk, dict):
+                return None, f"segment_id={expected_id} chunk_index={chunk_index} 不是 dict"
+            if "a" in output_chunk and output_chunk.get("a") != input_chunk.get("a"):
+                return None, (
+                    f"segment_id={expected_id} chunk_index={chunk_index} a 不匹配。"
+                    f" input={input_chunk.get('a')} output={output_chunk.get('a')}"
+                )
+            if "b" in output_chunk and output_chunk.get("b") != input_chunk.get("b"):
+                return None, (
+                    f"segment_id={expected_id} chunk_index={chunk_index} b 不匹配。"
+                    f" input={input_chunk.get('b')} output={output_chunk.get('b')}"
+                )
+
+            zh = output_chunk.get("zh")
+            if not isinstance(zh, str) or not zh.strip():
+                return None, (
+                    f"segment_id={expected_id} chunk_index={chunk_index} zh 为空。"
+                    f" en={input_chunk.get('en')!r} zh={zh!r}"
+                )
+
+            reconstructed_chunk = dict(input_chunk)
+            reconstructed_chunk["zh"] = zh
+            reconstructed_chunks.append(reconstructed_chunk)
+
+        reconstructed_segment = dict(input_item)
+        reconstructed_segment["chunks"] = reconstructed_chunks
+        reconstructed_segments.append(reconstructed_segment)
+
+    return {"s": reconstructed_segments}, ""
+
+
 def build_repair_queue(input_data, output_data, rescued_segments=None):
     rescued_segments = rescued_segments or {}
     repair_queue = []
@@ -625,8 +692,8 @@ def generate_zh_for_chunks(
         raise RuntimeError("校验失败: Gemini 返回的顶层结构不是 JSON 对象。")
 
     rescued_segments = {}
-    ok, reason = validate_zh_only_result(chunk_plan, response_data)
-    if not ok:
+    reconstructed_output, reason = reconstruct_zh_only_result(chunk_plan, response_data)
+    if reconstructed_output is None:
         if invalid_output_path is not None:
             invalid_output_path.write_text(
                 json.dumps(response_data, ensure_ascii=False, indent=2),
@@ -643,8 +710,6 @@ def generate_zh_for_chunks(
         if log_func is not None:
             log_func(f"{log_prefix}：业务校验失败：{reason}")
         raise RuntimeError(f"校验失败: {reason}")
-
-    reconstructed_output = response_data
 
     repair_queue = build_repair_queue(reconstructed_output, reconstructed_output, rescued_segments=rescued_segments)
     if repair_queue_path is not None:

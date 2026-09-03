@@ -1543,6 +1543,7 @@ class LocalWorkflowRunner:
             sys.path.insert(0, str(chunker_dir))
         if str(SCRIPT_DIR) not in sys.path:
             sys.path.insert(0, str(SCRIPT_DIR))
+        from chunk_rules import repair_sentence_boundary_cuts
         from language_service import parse_json_with_light_repair, request_gemini_with_cache
         from spoken_chunker import extract_words_from_whisperx_json
 
@@ -1579,11 +1580,15 @@ class LocalWorkflowRunner:
         if not isinstance(raw_cuts, list):
             raise RuntimeError(f"Gemini 返回的 cuts 格式不正确：{raw_cuts!r}")
         valid_cuts = sorted({cut for cut in raw_cuts if isinstance(cut, int) and 1 <= cut < total_words})
+        repaired_cuts = repair_sentence_boundary_cuts(words, valid_cuts)
         if log_func:
-            log_func(f"语块切分：原始切分点 {raw_cuts}，有效切分点 {valid_cuts}")
+            log_func(
+                f"语块切分：原始切分点 {raw_cuts}，有效切分点 {valid_cuts}，"
+                f"句末修正后 {repaired_cuts}"
+            )
         chunks = []
         start = 1
-        for end in valid_cuts + [total_words]:
+        for end in repaired_cuts + [total_words]:
             chunk_words = words[start - 1:end]
             chunk_text = " ".join(str(word.get("word", "")).strip() for word in chunk_words).strip()
             if chunk_text:

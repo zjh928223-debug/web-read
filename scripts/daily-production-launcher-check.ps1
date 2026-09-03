@@ -393,6 +393,16 @@ try {
   $openedUrl = (Get-Content -LiteralPath $openMarkerPath -Raw -Encoding UTF8).Trim()
   Assert-True ($openedUrl -eq "http://127.0.0.1:$frontendPort/") "daily reused Start -Open targeted the wrong URL: $openedUrl"
 
+  Remove-Item -LiteralPath $openMarkerPath -Force
+  $missingDesktopVenvEnvironment = @{
+    LOCALAPPDATA = Join-Path $testRoot 'desktop-context-without-venv'
+    READ_WEB_PYTHON = $null
+    READ_WEB_PYTHON_PATH = $null
+  }
+  $reusedWithoutVisibleVenv = Invoke-PowerShellJson -Arguments (@('-File', $launcherPath, '-Action', 'Start', '-Open') + $openCommon) -Environment $missingDesktopVenvEnvironment
+  Assert-True ($reusedWithoutVisibleVenv.exitCode -eq 0 -and $reusedWithoutVisibleVenv.json.status -eq 'reused') "daily reused Start -Open incorrectly required a locally visible Python venv: $($reusedWithoutVisibleVenv.text)"
+  Assert-True (Test-Path -LiteralPath $openMarkerPath -PathType Leaf) 'daily reused Start -Open did not open the browser when the desktop context could not see the Python venv'
+
   $rollbackCrashPhases = @(
     'rollback-before-stop',
     'rollback-after-stop',

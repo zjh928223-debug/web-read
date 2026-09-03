@@ -489,18 +489,24 @@ function Get-DailyReleaseFields {
   }
 }
 
-function Get-DailyReleaseFromTarget {
-  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target, [Parameter(Mandatory)]$Toolchain)
+function Get-DailyReleaseDescriptorFromTarget {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target)
   Assert-DailyTargetIdentity -Context $Context -Target $Target
   $releaseRoot = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseRoot'
   if (-not $releaseRoot -or -not (Test-DailyChildPath -Root $Context.releaseRoot -Candidate $releaseRoot)) { throw 'Daily production target release points outside its release root.' }
   $release = Get-OptimizationReleaseDescriptor -ReleaseRoot $releaseRoot
+  if ([string]$release.releaseId -ne [string](Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId')) {
+    throw 'Daily production target release identity mismatch.'
+  }
+  return $release
+}
+
+function Get-DailyReleaseFromTarget {
+  param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Target, [Parameter(Mandatory)]$Toolchain)
+  $release = Get-DailyReleaseDescriptorFromTarget -Context $Context -Target $Target
   $integrity = Test-OptimizationReleaseIntegrity -Release $release -NodePath $Toolchain.nodePath -ReleaseHealthScript $Context.releaseHealthScript
   if (-not $integrity.passed -or -not (Test-OptimizationReleaseCompatibility -Release $release)) {
     throw 'Daily production target release failed integrity or compatibility validation.'
-  }
-  if ([string]$release.releaseId -ne [string](Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $Target -Name 'release') -Name 'releaseId')) {
-    throw 'Daily production target release identity mismatch.'
   }
   return $release
 }
@@ -1385,12 +1391,13 @@ function Invoke-DailyStart {
   $target = Read-OptimizationJsonFile -Path $Context.activeTargetPath
   $targetStatus = Get-OptimizationObjectText -Object $target -Name 'status'
   if ($null -eq $target -or $targetStatus -notin @('active', 'stopped')) { throw "No retained daily-production target is available at $($Context.activeTargetPath). Apply first or inspect Rollback state." }
-  $toolchain = Get-DailyToolchain -Context $Context
-  $release = Get-DailyReleaseFromTarget -Context $Context -Target $target -Toolchain $toolchain
-  $token = Get-DailyToken -Context $Context
-  Set-DailyEnvironment -Context $Context -Toolchain $toolchain -ServiceToken $token
   $preflight = Get-DailyPreflight -Context $Context
   if ($preflight.frontend.classification -eq 'owned-process' -and $preflight.backend.classification -eq 'owned-process') {
+    # Reusing a proven running pair must not depend on the launcher's local
+    # toolchain being visible. Desktop shortcuts can run outside the Codex
+    # filesystem view that created the external Python venv.
+    $release = Get-DailyReleaseDescriptorFromTarget -Context $Context -Target $target
+    $token = Get-DailyToken -Context $Context
     $pairIdentity = Test-DailyPairIdentity -Context $Context -Release $release -Token $token
     $targetInstance = Get-OptimizationObjectText -Object (Get-OptimizationObjectValue -Object $target -Name 'profile') -Name 'instanceId'
     if ([string]$pairIdentity.hostState.instanceId -ne $targetInstance) { throw 'An owned daily-production pair is running for a different target; refusing adoption.' }
@@ -1400,6 +1407,10 @@ function Invoke-DailyStart {
   foreach ($endpoint in @($preflight.frontend, $preflight.backend)) {
     if ($endpoint.occupied) { throw "Daily production Start blocked by $($endpoint.classification) on $($endpoint.name) port $($endpoint.port); no process was stopped." }
   }
+  $toolchain = Get-DailyToolchain -Context $Context
+  $release = Get-DailyReleaseFromTarget -Context $Context -Target $target -Toolchain $toolchain
+  $token = Get-DailyToken -Context $Context
+  Set-DailyEnvironment -Context $Context -Toolchain $toolchain -ServiceToken $token
   $oldTokenSnapshot = Read-DailyText -Path $Context.tokenPath
   $tokenNeedsWrite = ([string]$oldTokenSnapshot).Trim() -ne $token
   $instanceId = [Guid]::NewGuid().ToString('N')

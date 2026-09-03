@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import unittest
@@ -5,6 +6,177 @@ from pathlib import Path
 from unittest import mock
 
 import language_service
+
+
+class LanguageServiceTranslationTests(unittest.TestCase):
+    def test_generate_zh_for_chunks_rehydrates_source_en_when_model_changes_en(self):
+        chunk_plan = {
+            "s": [{
+                "id": 0,
+                "chunks": [
+                    {
+                        "a": 1263,
+                        "b": 1269,
+                        "en": "immune system should be killing cancer. It",
+                        "zh": "",
+                    },
+                    {
+                        "a": 1270,
+                        "b": 1278,
+                        "en": "should be the body's primary defense.",
+                        "zh": "",
+                    },
+                ],
+            }],
+        }
+        model_response = {
+            "s": [{
+                "id": 0,
+                "chunks": [
+                    {
+                        "a": 1263,
+                        "b": 1269,
+                        "en": "system should be killing cancer. It",
+                        "zh": "免疫系统本该杀死癌症。它",
+                    },
+                    {
+                        "a": 1270,
+                        "b": 1278,
+                        "en": "rewritten by the model",
+                        "zh": "应该是身体的主要防线。",
+                    },
+                ],
+            }],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            language_service,
+            "request_gemini_with_cache",
+            return_value=json.dumps(model_response, ensure_ascii=False),
+        ):
+            result = language_service.generate_zh_for_chunks(
+                Path(tmp),
+                "gemini-test",
+                chunk_plan,
+                "test-key",
+                "",
+                "prompt",
+            )
+
+        result_chunks = result["s"][0]["chunks"]
+        self.assertEqual(result_chunks[0]["en"], chunk_plan["s"][0]["chunks"][0]["en"])
+        self.assertEqual(result_chunks[1]["en"], chunk_plan["s"][0]["chunks"][1]["en"])
+        self.assertEqual(result_chunks[0]["zh"], "免疫系统本该杀死癌症。它")
+        self.assertEqual(result_chunks[1]["zh"], "应该是身体的主要防线。")
+
+    def test_generate_zh_for_chunks_accepts_zh_only_model_response(self):
+        chunk_plan = {
+            "s": [{
+                "id": 0,
+                "chunks": [
+                    {"a": 1, "b": 3, "en": "The immune system adapts.", "zh": ""},
+                    {"a": 4, "b": 6, "en": "Cancer evolves too.", "zh": ""},
+                ],
+            }],
+        }
+        model_response = {
+            "s": [{
+                "chunks": [
+                    {"zh": "免疫系统会适应。"},
+                    {"zh": "癌症也会进化。"},
+                ],
+            }],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            language_service,
+            "request_gemini_with_cache",
+            return_value=json.dumps(model_response, ensure_ascii=False),
+        ):
+            result = language_service.generate_zh_for_chunks(
+                Path(tmp),
+                "gemini-test",
+                chunk_plan,
+                "test-key",
+                "",
+                "prompt",
+            )
+
+        self.assertEqual(
+            result,
+            {
+                "s": [{
+                    "id": 0,
+                    "chunks": [
+                        {"a": 1, "b": 3, "en": "The immune system adapts.", "zh": "免疫系统会适应。"},
+                        {"a": 4, "b": 6, "en": "Cancer evolves too.", "zh": "癌症也会进化。"},
+                    ],
+                }],
+            },
+        )
+
+    def test_generate_zh_for_chunks_keeps_response_schema_api_compatible(self):
+        chunk_plan = {
+            "s": [{
+                "id": 0,
+                "chunks": [
+                    {"a": 1, "b": 3, "en": "The immune system adapts.", "zh": ""},
+                    {"a": 4, "b": 6, "en": "Cancer evolves too.", "zh": ""},
+                ],
+            }],
+        }
+        model_response = {
+            "s": [{
+                "chunks": [
+                    {"zh": "免疫系统会适应。"},
+                    {"zh": "癌症也会进化。"},
+                ],
+            }],
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "s": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "chunks": {
+                                "type": "array",
+                                "items": {"type": "object"},
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        request_config = {}
+
+        def fake_request(*_args, **kwargs):
+            request_config.update(kwargs["extra_config"])
+            return json.dumps(model_response, ensure_ascii=False)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            language_service,
+            "request_gemini_with_cache",
+            side_effect=fake_request,
+        ):
+            language_service.generate_zh_for_chunks(
+                Path(tmp),
+                "gemini-test",
+                chunk_plan,
+                "test-key",
+                "",
+                "prompt",
+                main_output_json_schema=schema,
+            )
+
+        chunks_schema = (
+            request_config["response_json_schema"]["properties"]["s"]["items"]
+            ["properties"]["chunks"]
+        )
+        self.assertNotIn("minItems", chunks_schema)
+        self.assertNotIn("maxItems", chunks_schema)
 
 
 class LanguageServiceRateLimitTests(unittest.TestCase):
