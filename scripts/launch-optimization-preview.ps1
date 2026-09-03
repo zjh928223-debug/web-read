@@ -348,6 +348,7 @@ function Get-OptimizationHostRestartSpec {
   $authorityRoot = Get-OptimizationObjectText -Object $State -Name 'applicationProfileAuthorityRoot'
   $authorityIsolationRoot = Get-OptimizationObjectText -Object $State -Name 'applicationProfileAuthorityIsolationRoot'
   if (-not $authorityRoot -or -not $authorityIsolationRoot) { return $null }
+  $nltkDataPath = Get-OptimizationObjectText -Object $State -Name 'nltkDataPath'
   $rawArguments = @((Get-OptimizationObjectValue -Object $State -Name 'argumentList') | ForEach-Object { [string]$_ })
   if ($rawArguments.Count -eq 0) { return $null }
   $arguments = @()
@@ -378,6 +379,7 @@ function Get-OptimizationHostRestartSpec {
     $metadataValue = Get-OptimizationObjectText -Object $State -Name $metadataName
     if ($metadataValue) { $metadata[$metadataName] = $metadataValue }
   }
+  if ($nltkDataPath) { $metadata['nltkDataPath'] = $nltkDataPath }
   return @{
     ReleaseId = Get-OptimizationObjectText -Object $State -Name 'releaseId'
     ProfileId = Get-OptimizationObjectText -Object $State -Name 'profileId'
@@ -429,6 +431,12 @@ function Start-OptimizationHostFromSnapshot {
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_ALLOWED_ORIGIN' -Value "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$($State.port)"
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_HOST' -Value $backendHost
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_CAPABILITY_PORT' -Value ([string]$fixedBackendPort)
+  $stateNltkDataPath = Get-OptimizationObjectText -Object $State -Name 'nltkDataPath'
+  if ($stateNltkDataPath) {
+    Set-OptimizationProcessEnvironmentValue -Name 'NLTK_DATA' -Value $stateNltkDataPath
+  } else {
+    Set-OptimizationProcessEnvironmentValue -Name 'NLTK_DATA' -Value $null
+  }
   Start-ManagedRuntimeInstance @spec | Out-Null
   $health = Wait-OptimizationHttpJson -Url $spec.HealthUrl -TimeoutSeconds $ReadyTimeoutSeconds -Predicate {
     param($value)
@@ -1297,7 +1305,7 @@ try {
       $whisperxNltkDataPath = Join-Path $whisperxRoot 'nltk_data'
       $punktTabPath = Join-Path $whisperxNltkDataPath 'tokenizers\punkt_tab'
       if (-not (Test-Path -LiteralPath $punktTabPath -PathType Container)) {
-        throw "WhisperX runtime is missing the NLTK punkt_tab resource. Run the isolated venv setup from tools\subtitle-workflow\README.md before launching optimization: $whisperxNltkDataPath"
+        Write-Warning "WhisperX runtime is missing the NLTK punkt_tab resource. Workflow operations requiring WhisperX will remain not-ready until the isolated venv setup is completed: $whisperxNltkDataPath"
       }
     }
   }
@@ -1675,6 +1683,7 @@ try {
     -StartupTimeoutSeconds $StartupTimeoutSeconds `
     -ReservedPorts $reservedDailyPorts `
     -ExpectedDataRoot $defaultOptimizationDataRoot `
+    -NltkDataPath $whisperxNltkDataPath `
     -ApplicationProfileLeaseMode $initialApplicationProfileLeaseMode `
     -AllowStandbyReadiness:([bool](-not $EnableOwnerPromotion)) `
     -EnableOwnerMigration:$EnableOwnerMigration `
@@ -1752,6 +1761,7 @@ try {
       -StartupTimeoutSeconds $StartupTimeoutSeconds `
       -ReservedPorts $reservedDailyPorts `
       -ExpectedDataRoot $defaultOptimizationDataRoot `
+      -NltkDataPath $whisperxNltkDataPath `
       -ApplicationProfileLeaseMode 'authoritative' `
       -EnableOwnerMigration:$EnableOwnerMigration `
       -EnableOwnerPromotion:$EnableOwnerPromotion

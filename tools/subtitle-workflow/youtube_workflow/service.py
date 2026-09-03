@@ -107,6 +107,21 @@ def _workflow_media_etag(media_identity: str, path: Path) -> str:
     ).hexdigest()
 
 
+def _nltk_punkt_tab_path(configured_whisperx_path: Path | None) -> Path | None:
+    """Resolve the optional WhisperX tokenizer data without blocking Host startup."""
+    configured_nltk_data = str(os.environ.get("NLTK_DATA") or "").strip()
+    if configured_nltk_data:
+        roots = [Path(value).expanduser() for value in configured_nltk_data.split(os.pathsep) if value.strip()]
+    else:
+        resolved_whisperx = resolve_executable_path(configured_whisperx_path)
+        roots = [resolved_whisperx.parent.parent / "nltk_data"] if resolved_whisperx is not None else []
+    for root in roots:
+        candidate = root / "tokenizers" / "punkt_tab"
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _request_fingerprint(request: WorkflowRequest, *, operation: str, subject: str = "", payload: dict | None = None) -> str:
     descriptor = {
         "operation": operation,
@@ -1264,6 +1279,21 @@ class JobManager:
                     "tool": label,
                     "configuredPath": str(configured_path or ""),
                     "message": f"{label} 未安装或配置路径无效，请先修复 Windows 后端设置。",
+                },
+            )
+        if stage in {"downloading", "transcribing"} and _nltk_punkt_tab_path(self.config.whisperx_path) is None:
+            configured_nltk_data = str(os.environ.get("NLTK_DATA") or "").strip()
+            if not configured_nltk_data:
+                resolved_whisperx = resolve_executable_path(self.config.whisperx_path)
+                if resolved_whisperx is not None:
+                    configured_nltk_data = str(resolved_whisperx.parent.parent / "nltk_data")
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "WORKFLOW_TOOL_MISSING",
+                    "tool": "NLTK punkt_tab",
+                    "configuredPath": configured_nltk_data,
+                    "message": "NLTK punkt_tab 未安装或配置路径无效，请先修复 Windows 后端设置。",
                 },
             )
 

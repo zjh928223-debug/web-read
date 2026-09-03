@@ -182,7 +182,9 @@ WhisperX 使用独立的仓库外 venv，不加入服务 lock。Windows 上固�
 PowerShell 会话的 PATH。安装方式是先执行 `python -m venv`，再在该 venv 中执行
 `pip install whisperx`，并在同一个 venv 的 `nltk_data` 目录下载 `punkt_tab`；有 NVIDIA GPU 时按
 WhisperX 官方建议选择匹配的 CUDA Torch wheels。optimization launcher 会把该目录注入
-`NLTK_DATA`，并在启动前检查它，避免任务运行到对齐阶段才因缺少 NLTK 数据失败。
+`NLTK_DATA`，并在启动时检查它；缺失时仍保持 Local App Host liveness，真正创建或重试
+需要 WhisperX 的 workflow 会在 operation-scoped preflight 返回 typed `not-ready`，避免任务
+运行到对齐阶段才因缺少 NLTK 数据失败。
 
 `verify:fast` 只执行离线、确定性的 lock 格式和 RuntimeConfig 选择检查；`verify:full` 还会
 执行完整 package-set health。Python 清单区分 required 和 optional。`whisperx` 等外部工具缺失

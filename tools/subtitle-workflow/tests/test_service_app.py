@@ -10,6 +10,7 @@ import zipfile
 import subprocess
 from pathlib import Path
 from threading import Event
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient as FastApiTestClient
 
@@ -2420,6 +2421,32 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(response.json()["detail"]["tool"], "WhisperX")
             self.assertIn("Windows 后端设置", response.json()["detail"]["message"])
             self.assertEqual(client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["jobs"], [])
+
+    def test_missing_punkt_tab_keeps_service_live_and_rejects_workflow_mutation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(
+                output_dir=Path(tmp) / "out",
+                yt_dlp_path=Path(__file__),
+                whisperx_path=Path(__file__),
+            )
+            missing_nltk_data = Path(tmp) / "missing-nltk-data"
+            with patch.dict(os.environ, {"NLTK_DATA": str(missing_nltk_data)}, clear=False):
+                client = TestClient(create_app(JobManager(config=config)))
+
+                health = client.get("/api/health")
+                self.assertEqual(health.status_code, 200)
+                self.assertEqual(health.json()["status"], "ok")
+
+                response = client.post(
+                    "/api/jobs",
+                    json={"url": "https://example.com/video", "geminiMode": "mock"},
+                )
+
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()["detail"]["code"], "WORKFLOW_TOOL_MISSING")
+                self.assertEqual(response.json()["detail"]["tool"], "NLTK punkt_tab")
+                self.assertEqual(response.json()["detail"]["configuredPath"], str(missing_nltk_data))
+                self.assertEqual(client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["jobs"], [])
 
     def test_saved_bare_workflow_tool_names_survive_reload_and_stale_path_repair(self):
         with tempfile.TemporaryDirectory() as tmp:

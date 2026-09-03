@@ -173,7 +173,7 @@
   --pru-accent-hover: #3b82f6;
   --pru-info: #2563eb;
   --pru-focus-ring: rgba(37, 99, 235, 0.22);
-  --pru-shell-bg: var(--card-bg);
+  --pru-shell-bg: color-mix(in srgb, var(--bg-color) 92%, transparent);
   --pru-shell-surface: var(--card-bg);
   --pru-shell-row: color-mix(in srgb, var(--card-bg) 88%, var(--bg-color));
   --pru-shell-row-hover: color-mix(in srgb, var(--btn-hover) 74%, var(--card-bg));

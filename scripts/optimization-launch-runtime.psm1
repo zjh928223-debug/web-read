@@ -565,6 +565,7 @@ function Start-OptimizationOwnedPair {
     [Parameter(Mandatory)][int]$StartupTimeoutSeconds,
     [Parameter(Mandatory)][int[]]$ReservedPorts,
     [string]$ExpectedDataRoot = '',
+    [string]$NltkDataPath = '',
     [string]$ApplicationProfileInitializer = '',
     [ValidateSet('authoritative', 'standby-if-busy')]
     [string]$ApplicationProfileLeaseMode = 'authoritative',
@@ -746,6 +747,7 @@ function Start-OptimizationOwnedPair {
         ownerMediaFallbackRoot = if ($OwnerMediaFallbackRoot) { $OwnerMediaFallbackRoot } else { $null }
         applicationPythonStateDir = $ApplicationPythonStateDir
         applicationPythonOutputDir = $ApplicationPythonOutputDir
+        nltkDataPath = if ($NltkDataPath) { $NltkDataPath } else { $null }
       }
     if ([string]$hostResult.status -ne 'started' -or [string]$hostResult.instanceId -ne $InstanceId) {
       throw 'Production host was not started as the new owned instance.'
