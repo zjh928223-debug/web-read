@@ -58,18 +58,17 @@
       "sha256AtCapture": "sha256:f400c69ee90646f819a03ad5e4567682d27f540f4c05f88b2d0cce3f2509c673"
     },
     {
-      "path": "tools/subtitle-workflow/tests/test_workflow_core.py",
-      "sha256AtCapture": "sha256:a4ed5d51679265cb4848e9b8f0de392bad60d3442606df6c009baaa154012a87"
-    },
-    {
-      "path": "tools/subtitle-workflow/youtube_workflow/core.py",
-      "sha256AtCapture": "sha256:cbab0dbe97b54dd7ca970bcbd4af53822ee8059e346767e8647a24fe567cf6d5"
-    },
-    {
       "path": "tools/subtitle-workflow/tests/test_chunk_rules.py",
       "sha256AtCapture": "sha256:6a1b0cdc99fac54dcee697f91b0589825b0c7d3416dfe90cd1eec22064c010ad"
     }
   ],
+  "protectedWorkingTreeFilesResolution": {
+    "paths": [
+      "tools/subtitle-workflow/youtube_workflow/core.py",
+      "tools/subtitle-workflow/tests/test_workflow_core.py"
+    ],
+    "resolution": "Explicitly authorized in codex/whisperx-e2e-final-acceptance after read-only capture, hash evidence, and three-way hunk coordination; both paths are now part of the formal branch."
+  },
   "frozenSourceFiles": [
     {
       "path": "src/services/persistence/application-persistence.js",
@@ -151,5 +150,5 @@
     "all six domain registrations and typed API schema",
     "no owner-mode or domain writer migration claim"
   ],
-  "artifactChecksum": "sha256:35cbe508b439e16b25f7554ff09f1b0ff02e8a6a39d914ffda22fefcbf2ca126"
+  "artifactChecksum": "sha256:cfaa3b47e1105365c9442a8363291f06ec75f62c17327d1b28de87f0b827201d"
 }

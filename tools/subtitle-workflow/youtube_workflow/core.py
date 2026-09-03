@@ -37,9 +37,11 @@ DEFAULT_STATE_DIR = DEFAULT_DATA_ROOT / ".workflow_state"
 SYSTEM_PROMPT_ZH_ONLY = """
 你是英语语块的中文口语转述助手。
 输入已经给出固定 chunks，且最外层 s 只允许有 1 个元素。
-你只能为每个 chunk 生成 zh。
-绝对禁止修改 id、a、b、en。
-绝对禁止删除、合并、拆分、重排 chunks，绝对禁止改写 en。
+你只能为每个输入 chunk 按原顺序生成一个非空 zh。
+先统计输入 chunks 的数量；输出 chunks 数组必须与输入数量完全相同。
+一个输入 chunk 即使包含多个英语句子，也只能生成一个 zh，不能按句子再次切分。
+必须原样复制每个输入 chunk 的 id、a、b、en，只填写对应的 zh。
+绝对禁止删除、合并、拆分或重排 chunks，也绝对禁止改写 en。
 输出必须是合法 JSON，对象格式为 {"s":[{"id":0,"chunks":[{"a":1,"b":2,"en":"...","zh":"..."}]}]}，并且 s 中只能有 1 个元素。
 只输出 JSON，不要 markdown，不要解释。
 """
@@ -47,11 +49,29 @@ SYSTEM_PROMPT_ZH_ONLY = """
 SYSTEM_PROMPT_CHUNK = """
 你是英语口语语块的切分助手。
 输入是一段从视频转录的英语文本，每个词带有编号。
-你的任务是将这些词按美国人口语的自然"气口"切分成语块（spoken chunks）。
+你的任务是将这些词按美国人口语的自然"气口"切分成语块（spoken chunks），但必须优先保证句子边界正确。
+
+切分目标：
+1. 句子内部按自然语义、语法和气口切分成适合英语学习的完整语块。
+2. 不要为了追求气口，把下一个句子的首词并入上一个句子的末尾。
+3. 不要过度切分；同一个完整语义单元应尽量保持在同一个 chunk 中。
+
+句子边界是硬规则：
+1. 如果某个词以句号、问号或感叹号结尾（例如 `solves?`、`clearly.`），必须在这个词之后切分。
+2. 句末标点之后的词属于下一个 chunk，绝对不能把它放进前一个 chunk；例如 `[185] solves? [186] The` 必须返回切分点 `185`，不能返回 `186`。
+3. `cuts` 中的数字表示“在该编号的词之后切分”，不是“在该编号的词之前切分”。切分点应当是前一个 chunk 的最后一个词的编号。
+4. 注意词表中可能把标点附在单词末尾；必须检查每个词本身的末尾标点。
+5. 缩写、首字母缩写或小数点不应被误判为句末；但普通的 `.?!` 句末标点必须遵守上面的硬规则。
+
+语法和语义保护：
+1. 不得删除、添加、复制、重排任何词；所有词必须按原顺序且恰好覆盖一次。
+2. 不要在固定短语、动词短语、介词短语或紧密的名词短语中间切分。
+3. 避免让 chunk 以孤立的冠词、助动词、介词、连词或关系词结尾；如果这些词开启后续短语，应与后续短语保持在一起。
+4. 句内可以保留自然的口语不完整感，但不能破坏句末边界，也不能把明显属于下一句的首词提前。
+
 输出格式：{"cuts": [9, 18, 25, ...]}
-cuts 是切分点数组，每个数字表示"在此编号的词之后切分"。
 切分点必须是 1 到总词数-1 之间的整数，严格递增。
-只输出 JSON，不要 markdown，不要解释。
+只输出切分点数组，不要输出词、文本、解释或 markdown。
 """
 
 MAIN_OUTPUT_JSON_SCHEMA = {
@@ -60,6 +80,7 @@ MAIN_OUTPUT_JSON_SCHEMA = {
         "s": {
             "type": "array",
             "minItems": 1,
+            "maxItems": 1,
             "items": {
                 "type": "object",
                 "properties": {
@@ -112,12 +133,11 @@ STAGES = (
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm", ".wmv"}
-# Keep the original quality policy as the first attempt.  Progressive MP4 is
-# deliberately a recovery selector: YouTube may reject the split video/audio
-# request with HTTP 403, but using it permanently would lower audio quality.
+# Progressive MP4 is the reliable first attempt for video-priority mode.  The
+# audio-first path can use it once as a narrowly-scoped HTTP 403 recovery.
 YOUTUBE_AUDIO_FORMAT_SELECTOR = "bestaudio/best"
-YOUTUBE_VIDEO_FORMAT_SELECTOR = "bestvideo+bestaudio/best"
 YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR = "best[ext=mp4]/best"
+YOUTUBE_VIDEO_FORMAT_SELECTOR = YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
 YOUTUBE_HOSTS = frozenset({
     "youtube.com",
     "www.youtube.com",
@@ -994,7 +1014,12 @@ class LocalWorkflowRunner:
                 cancel_event=cancel_event,
             )
         except Exception as error:
-            if not is_youtube_http_403_failure(error, request.url) or cancel_event.is_set():
+            if (
+                request.video_priority
+                or preferred_selector == YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
+                or not is_youtube_http_403_failure(error, request.url)
+                or cancel_event.is_set()
+            ):
                 raise
             self._cleanup_incomplete_download(temp_folder)
             stage(

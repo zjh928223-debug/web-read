@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+from threading import Event
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -8,6 +9,7 @@ from unittest.mock import patch
 from youtube_workflow.core import (
     FakeWorkflowRunner,
     LocalWorkflowRunner,
+    SYSTEM_PROMPT_CHUNK,
     WorkflowConfig,
     WorkflowCommandError,
     WorkflowRequest,
@@ -61,10 +63,11 @@ class FakeCommandRunner:
 
 
 class DownloadFailureCommandRunner(FakeCommandRunner):
-    def __init__(self, failure_message, fail_count=1):
+    def __init__(self, failure_message, fail_count=1, cancel_on_failure=False):
         super().__init__()
         self.failure_message = failure_message
         self.fail_count = fail_count
+        self.cancel_on_failure = cancel_on_failure
         self.download_attempts = 0
         self.partial_path = None
 
@@ -80,6 +83,8 @@ class DownloadFailureCommandRunner(FakeCommandRunner):
             self.partial_path = output_pattern.parent / "partial-download.mp4.part"
             self.partial_path.write_bytes(b"incomplete media")
             emit_line(self.failure_message)
+            if self.cancel_on_failure and cancel_event is not None:
+                cancel_event.set()
             raise WorkflowCommandError("yt-dlp", 1, [self.failure_message])
 
         format_selector = cmd[cmd.index("-f") + 1]
@@ -120,6 +125,15 @@ class VideoImportCommandRunner:
 class WorkflowCoreTests(unittest.TestCase):
     def test_safe_title_removes_windows_unsafe_trailing_dot(self):
         self.assertEqual(safe_title_from_url("Zebras Look Like Horses."), "Zebras-Look-Like-Horses")
+
+    def test_gemini_chunk_prompt_protects_sentence_boundaries(self):
+        for rule in (
+            "句子边界是硬规则",
+            "必须在这个词之后切分",
+            "不能返回 `186`",
+            "所有词必须按原顺序且恰好覆盖一次",
+        ):
+            self.assertIn(rule, SYSTEM_PROMPT_CHUNK)
 
     def test_marks_integrity_uses_cross_language_stable_business_field_projection(self):
         first = marks_integrity([{
@@ -299,7 +313,7 @@ class WorkflowCoreTests(unittest.TestCase):
 
             self.assertEqual([source for source, _cmd in command_runner.calls], ["yt-dlp", "whisperx"])
             yt_dlp_cmd = command_runner.calls[0][1]
-            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestvideo+bestaudio/best")
+            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
             self.assertEqual(
                 yt_dlp_cmd[yt_dlp_cmd.index("--extractor-args") + 1],
                 "youtube:player_client=mweb",
@@ -414,10 +428,10 @@ class WorkflowCoreTests(unittest.TestCase):
             self.assertEqual(command_runner.download_attempts, 1)
             self.assertEqual(
                 command_runner.calls[0][1][command_runner.calls[0][1].index("-f") + 1],
-                "bestvideo+bestaudio/best",
+                "best[ext=mp4]/best",
             )
 
-    def test_local_runner_retries_a_youtube_media_403_at_most_once(self):
+    def test_local_runner_retries_audio_first_youtube_media_403_at_most_once(self):
         with tempfile.TemporaryDirectory() as tmp:
             command_runner = DownloadFailureCommandRunner(
                 "ERROR: unable to download video data: HTTP Error 403: Forbidden",
@@ -426,6 +440,7 @@ class WorkflowCoreTests(unittest.TestCase):
             request = WorkflowRequest(
                 url="https://www.youtube.com/watch?v=NoLoop12345",
                 gemini_mode="mock",
+                video_priority=False,
             )
 
             with self.assertRaises(WorkflowCommandError):
@@ -437,8 +452,57 @@ class WorkflowCoreTests(unittest.TestCase):
             self.assertEqual(command_runner.download_attempts, 2)
             self.assertEqual(
                 [cmd[cmd.index("-f") + 1] for _source, cmd in command_runner.calls],
-                ["bestvideo+bestaudio/best", "best[ext=mp4]/best"],
+                ["bestaudio/best", "best[ext=mp4]/best"],
             )
+
+    def test_local_runner_does_not_retry_video_priority_progressive_403(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command_runner = DownloadFailureCommandRunner(
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+            )
+
+            with self.assertRaises(WorkflowCommandError):
+                LocalWorkflowRunner(
+                    WorkflowConfig(output_dir=Path(tmp)),
+                    command_runner=command_runner,
+                ).run(
+                    WorkflowRequest(
+                        url="https://www.youtube.com/watch?v=Video403123",
+                        gemini_mode="mock",
+                    ),
+                    job_id="job-video-403",
+                )
+
+            self.assertEqual(command_runner.download_attempts, 1)
+            self.assertEqual(
+                command_runner.calls[0][1][command_runner.calls[0][1].index("-f") + 1],
+                "best[ext=mp4]/best",
+            )
+
+    def test_local_runner_does_not_retry_when_download_is_canceled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command_runner = DownloadFailureCommandRunner(
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+                cancel_on_failure=True,
+            )
+            cancel_event = Event()
+
+            with self.assertRaises(WorkflowCommandError):
+                LocalWorkflowRunner(
+                    WorkflowConfig(output_dir=Path(tmp)),
+                    command_runner=command_runner,
+                ).run(
+                    WorkflowRequest(
+                        url="https://www.youtube.com/watch?v=Cancel40312",
+                        gemini_mode="mock",
+                        video_priority=False,
+                    ),
+                    job_id="job-cancel-403",
+                    cancel_event=cancel_event,
+                )
+
+            self.assertTrue(cancel_event.is_set())
+            self.assertEqual(command_runner.download_attempts, 1)
 
     def test_local_runner_does_not_fallback_for_non_media_403_contexts(self):
         for failure_message in (
