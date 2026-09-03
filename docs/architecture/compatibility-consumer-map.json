@@ -8,9 +8,9 @@
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 85,
-    "staticReaders": 55,
-    "staticWriters": 60,
+    "compatibilitySurfaces": 87,
+    "staticReaders": 57,
+    "staticWriters": 62,
     "runtimeDefined": 61,
     "runtimeCalled": 1,
     "inlineHandlers": 0,
@@ -62,7 +62,7 @@
       "writes": [
         {
           "file": "src/composables/annotation-backfill-ai-module.js",
-          "line": 1536
+          "line": 1542
         }
       ],
       "runtime": {
@@ -79,7 +79,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 966
+          "line": 968
         },
         {
           "file": "src/composables/reader-feature-runtime-deps.js",
@@ -91,7 +91,7 @@
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 297
+          "line": 299
         }
       ],
       "writes": [
@@ -145,15 +145,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 60
+          "line": 62
         },
         {
           "file": "src/main.js",
-          "line": 60
+          "line": 62
         },
         {
           "file": "src/main.js",
-          "line": 61
+          "line": 63
         }
       ],
       "writes": [
@@ -184,15 +184,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 63
+          "line": 65
         },
         {
           "file": "src/main.js",
-          "line": 63
+          "line": 65
         },
         {
           "file": "src/main.js",
-          "line": 64
+          "line": 66
         }
       ],
       "writes": [
@@ -324,23 +324,23 @@
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 819
+          "line": 820
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 946
+          "line": 947
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2088
+          "line": 2090
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2088
+          "line": 2090
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2089
+          "line": 2091
         },
         {
           "file": "src/composables/app-handlers.js",
@@ -513,7 +513,7 @@
         },
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 721
+          "line": 732
         }
       ],
       "writes": [],
@@ -580,15 +580,15 @@
         },
         {
           "file": "src/main.js",
-          "line": 57
+          "line": 59
         },
         {
           "file": "src/main.js",
-          "line": 57
+          "line": 59
         },
         {
           "file": "src/main.js",
-          "line": 58
+          "line": 60
         }
       ],
       "writes": [
@@ -617,7 +617,7 @@
       "writes": [
         {
           "file": "src/composables/vocabulary-preview-module.js",
-          "line": 1590
+          "line": 1596
         }
       ],
       "runtime": {
@@ -627,6 +627,96 @@
         "reads": 0,
         "calls": 0,
         "assigned": true
+      }
+    },
+    {
+      "name": "__windowsOwnerDomainCutover",
+      "reads": [
+        {
+          "file": "src/composables/youtube-workflow-client.js",
+          "line": 95
+        },
+        {
+          "file": "src/composables/youtube-workflow-client.js",
+          "line": 106
+        },
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 310
+        },
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 421
+        },
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 493
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 310
+        },
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 450
+        },
+        {
+          "file": "src/services/windows-owner-domain-cutover.js",
+          "line": 483
+        }
+      ],
+      "runtime": {
+        "name": "__windowsOwnerDomainCutover",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
+      }
+    },
+    {
+      "name": "__windowsOwnerReaderSessionConsumer",
+      "reads": [
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 959
+        },
+        {
+          "file": "src/composables/session-lifecycle-runtime.js",
+          "line": 36
+        },
+        {
+          "file": "src/composables/session-runtime-adapters.js",
+          "line": 61
+        },
+        {
+          "file": "src/services/windows-owner-reader-session-composition.js",
+          "line": 32
+        },
+        {
+          "file": "src/services/windows-owner-reader-session-composition.js",
+          "line": 139
+        }
+      ],
+      "writes": [
+        {
+          "file": "src/services/windows-owner-reader-session-composition.js",
+          "line": 58
+        },
+        {
+          "file": "src/services/windows-owner-reader-session-composition.js",
+          "line": 141
+        }
+      ],
+      "runtime": {
+        "name": "__windowsOwnerReaderSessionConsumer",
+        "defined": false,
+        "type": "undefined",
+        "reads": 1,
+        "calls": 0,
+        "assigned": false
       }
     },
     {
@@ -745,7 +835,7 @@
         },
         {
           "file": "src/composables/vocabulary-preview-module.js",
-          "line": 185
+          "line": 186
         }
       ],
       "writes": [
@@ -787,7 +877,7 @@
       "writes": [
         {
           "file": "src/services/annotation/storage.js",
-          "line": 373
+          "line": 503
         }
       ],
       "runtime": {
@@ -822,11 +912,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 940
+          "line": 941
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 940
+          "line": 941
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1087,35 +1177,35 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 963
+          "line": 965
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 963
+          "line": 965
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 964
+          "line": 966
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 964
+          "line": 966
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 446
+          "line": 476
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 446
+          "line": 476
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 447
+          "line": 477
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 447
+          "line": 477
         }
       ],
       "writes": [
@@ -1629,11 +1719,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 949
+          "line": 950
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 960
+          "line": 962
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1660,11 +1750,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 948
+          "line": 949
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 959
+          "line": 961
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1732,11 +1822,11 @@
       "reads": [
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 680
+          "line": 691
         },
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 681
+          "line": 692
         }
       ],
       "writes": [],
@@ -1812,7 +1902,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 970
+          "line": 972
         },
         {
           "file": "src/composables/media-source-module.js",
@@ -1851,11 +1941,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2348
+          "line": 2350
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2348
+          "line": 2350
         }
       ],
       "writes": [
@@ -1973,11 +2063,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2837
+          "line": 2839
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2837
+          "line": 2839
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
