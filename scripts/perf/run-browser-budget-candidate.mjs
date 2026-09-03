@@ -54,6 +54,7 @@ const combined = {
     total: artifacts.reduce((sum, artifact) => sum + artifact.requests.total, 0),
     failed: artifacts.reduce((sum, artifact) => sum + artifact.requests.failed, 0),
     httpErrors: artifacts.reduce((sum, artifact) => sum + artifact.requests.httpErrors, 0),
+    expectedAborted: artifacts.reduce((sum, artifact) => sum + (artifact.requests.expectedAborted || 0), 0),
   },
 }
 combined.summary = {

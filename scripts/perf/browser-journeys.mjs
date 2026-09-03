@@ -370,7 +370,7 @@ const artifact = {
   measures: [],
   samples: [],
   errors: [],
-  requests: { total: 0, failed: 0, httpErrors: 0 },
+  requests: { total: 0, failed: 0, httpErrors: 0, expectedAborted: 0 },
   longTasks: [],
 }
 
@@ -410,8 +410,24 @@ page.on('console', (message) => {
 page.on('pageerror', (error) => artifact.errors.push({ journey: activeJourney, type: 'pageerror', text: error.message }))
 page.on('request', () => { artifact.requests.total += 1 })
 page.on('requestfailed', (request) => {
+  const failureText = request.failure()?.errorText
+  let expectedPronunciationAbort = false
+  try {
+    const url = new URL(request.url())
+    expectedPronunciationAbort = request.method() === 'POST'
+      && url.pathname === '/api/tts/edge'
+      && failureText === 'net::ERR_ABORTED'
+  } catch {}
+  if (expectedPronunciationAbort) {
+    // The pronunciation service deliberately cancels an in-flight request
+    // when a learning page is deactivated or replaced. Chromium surfaces
+    // that normal lifecycle cancellation as requestfailed/ERR_ABORTED; keep
+    // it observable without treating it as a browser or network error.
+    artifact.requests.expectedAborted += 1
+    return
+  }
   artifact.requests.failed += 1
-  artifact.errors.push({ journey: activeJourney, type: 'requestfailed', url: request.url(), text: request.failure()?.errorText })
+  artifact.errors.push({ journey: activeJourney, type: 'requestfailed', url: request.url(), text: failureText })
 })
 page.on('response', (response) => {
   if (response.status() >= 400) {
