@@ -28,6 +28,7 @@ $shellPath = switch ($PowerShellKind) {
     if ($null -ne $preferred) { $preferred.Source } else { (Get-Command powershell -ErrorAction Stop).Source }
   }
 }
+$script:realLauncherApplicationProfileAuthorityIsolationRoot = ''
 
 function Assert-True {
   param([bool]$Value, [Parameter(Mandatory)][string]$Message)
@@ -88,7 +89,14 @@ function Invoke-Launcher {
       if ($null -eq $value) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
       else { [Environment]::SetEnvironmentVariable($name, [string]$value, 'Process') }
     }
-    $argumentExpression = (($Arguments | ForEach-Object {
+    $effectiveArguments = @($Arguments)
+    if ($script:realLauncherApplicationProfileAuthorityIsolationRoot -and $effectiveArguments -notcontains '-ApplicationProfileAuthorityIsolationRoot') {
+      $effectiveArguments += @(
+        '-ApplicationProfileAuthorityIsolationRoot',
+        $script:realLauncherApplicationProfileAuthorityIsolationRoot
+      )
+    }
+    $argumentExpression = (($effectiveArguments | ForEach-Object {
       $value = [string]$_
       if ($value -match '^-[A-Za-z][A-Za-z0-9-]*$') { $value }
       else { "'" + $value.Replace("'", "''") + "'" }
@@ -647,6 +655,12 @@ function Assert-RealLauncherLifecycle {
   $frontDoorHealthIdentityTestPath = Join-Path $stateRoot 'front-door-health-identity.test'
   $tokenPath = Join-Path $stateRoot 'production-host.token'
   $applicationInstancesRoot = 'E:\ReadWebData\SubtitleWorkflow-Optimization\.read-web-application\instances'
+  $applicationProfileAuthorityFixtureRoot = Join-Path `
+    'E:\ReadWebData\SubtitleWorkflow-Optimization\.read-web-application\acceptance-profile-authorities' `
+    ([Guid]::NewGuid().ToString('N'))
+  Assert-True (-not (Test-Path -LiteralPath $applicationProfileAuthorityFixtureRoot)) 'optimization launcher test generated an authority fixture path collision'
+  New-Item -ItemType Directory -Force -Path $applicationProfileAuthorityFixtureRoot | Out-Null
+  $script:realLauncherApplicationProfileAuthorityIsolationRoot = $applicationProfileAuthorityFixtureRoot
   $initialIsolationInstanceIds = @()
   if (Test-Path -LiteralPath $applicationInstancesRoot -PathType Container) {
     $initialIsolationInstanceIds = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Directory -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
@@ -1104,10 +1118,10 @@ function Assert-RealLauncherLifecycle {
       Assert-True (-not [string]::IsNullOrWhiteSpace($currentActiveInstanceName)) "$crashPhase recovery published an empty active application instance identity"
       # The recovered manager receipt identifies the sole active instance:
       # rollback points back to the old baseline, while committed
-      # forward-recovery points to the new committed instance.  Permit only
-      # that one directory so an uncleared old/candidate/orphan instance is
-      # observable rather than hidden by a historical baseline allow-list.
-      $allowedIsolationInstanceIds = @($currentActiveInstanceName)
+      # forward-recovery points to the new committed instance.  Preserve
+      # directories that predated this acceptance run, while making any new
+      # old/candidate/orphan instance observable.
+      $allowedIsolationInstanceIds = @($initialIsolationInstanceIds + $currentActiveInstanceName | Select-Object -Unique)
       $newIsolationRoots = @(Get-ChildItem -LiteralPath $applicationInstancesRoot -Force -ErrorAction SilentlyContinue | Where-Object { $allowedIsolationInstanceIds -notcontains $_.Name })
       Assert-True ($newIsolationRoots.Count -eq 0) "$crashPhase recovery left a pending application profile lease (allowed=$($allowedIsolationInstanceIds -join ','), new=$(($newIsolationRoots | ForEach-Object { $_.Name }) -join ','))"
     }
@@ -1121,7 +1135,18 @@ function Assert-RealLauncherLifecycle {
     Assert-True ($reusedHostState.releaseId -eq $expectedReuseReleaseId) 'reuse changed the active host descriptor'
     Write-Host 'real optimization launcher start/health/reuse and failure preservation passed'
   } finally {
-    if ($started) { Invoke-Launcher -Arguments @('-Stop', '-NoOpen') | Out-Null }
+    $stopSucceeded = -not $started
+    try {
+      if ($started) {
+        Invoke-Launcher -Arguments @('-Stop', '-NoOpen') | Out-Null
+        $stopSucceeded = $true
+      }
+    } finally {
+      $script:realLauncherApplicationProfileAuthorityIsolationRoot = ''
+      if ($stopSucceeded -and (Test-Path -LiteralPath $applicationProfileAuthorityFixtureRoot)) {
+        Remove-Item -LiteralPath $applicationProfileAuthorityFixtureRoot -Recurse -Force
+      }
+    }
   }
   Assert-True (-not (Test-Path -LiteralPath $hostStatePath)) 'stop left production host state'
   Assert-True (-not (Test-Path -LiteralPath $capabilityStatePath)) 'stop left capability state'

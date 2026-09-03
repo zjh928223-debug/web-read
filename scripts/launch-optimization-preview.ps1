@@ -4,6 +4,7 @@ param(
   [switch]$DevFallback,
   [switch]$EnableOwnerMigration,
   [switch]$EnableOwnerPromotion,
+  [string]$ApplicationProfileAuthorityIsolationRoot = '',
   [string]$BootstrapPython = '',
   [int]$StartupTimeoutSeconds = 45
 )
@@ -1265,8 +1266,23 @@ try {
   # The instance directory is disposable lifecycle state.  Authority lease,
   # owner-mode checkpoints, and any future cutover identity live at this
   # stable profile-level location so an overlapping replacement cannot create
-  # a second authoritative writer for the same profile.
-  $applicationProfileAuthorityIsolationRoot = $applicationIsolationRoot
+  # a second authoritative writer for the same profile.  An explicit
+  # authority-isolation root is reserved for isolated acceptance fixtures;
+  # it remains inside the configured application root and never changes the
+  # default production authority location.
+  if ($ApplicationProfileAuthorityIsolationRoot) {
+    $applicationProfileAuthorityIsolationRoot = [IO.Path]::GetFullPath($ApplicationProfileAuthorityIsolationRoot).TrimEnd('\', '/')
+    $normalizedApplicationRoot = Normalize-OptimizationPath -Value $applicationIsolationRoot
+    $normalizedAuthorityRoot = Normalize-OptimizationPath -Value $applicationProfileAuthorityIsolationRoot
+    $normalizedInstancesRoot = Normalize-OptimizationPath -Value (Join-Path $applicationIsolationRoot 'instances')
+    $authorityWithinApplication = $normalizedAuthorityRoot.StartsWith("$normalizedApplicationRoot\", [StringComparison]::OrdinalIgnoreCase)
+    $authorityInsideInstances = $normalizedAuthorityRoot.StartsWith("$normalizedInstancesRoot\", [StringComparison]::OrdinalIgnoreCase)
+    if (-not $authorityWithinApplication -or $authorityInsideInstances) {
+      throw 'Optimization profile authority isolation root must be a non-instance child of the application root.'
+    }
+  } else {
+    $applicationProfileAuthorityIsolationRoot = $applicationIsolationRoot
+  }
   $applicationProfileAuthorityRoot = Join-Path $applicationProfileAuthorityIsolationRoot "profiles\$profileId"
 
   if ($DevFallback) {
