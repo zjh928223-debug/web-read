@@ -9,6 +9,23 @@ const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
 const core = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/core.py'), 'utf8')
 
+function ruleBodies(selector, declaration) {
+  const token = `${selector} {`
+  const bodies = []
+  let offset = 0
+  while (true) {
+    const start = styles.indexOf(token, offset)
+    if (start < 0) break
+    const bodyStart = start + token.length
+    const end = styles.indexOf('}', bodyStart)
+    if (end < 0) break
+    const body = styles.slice(bodyStart, end)
+    if (new RegExp(`(?:^|\\n)\\s*${declaration}\\s*:`).test(body)) bodies.push({ start, body })
+    offset = end + 1
+  }
+  return bodies
+}
+
 assert.ok(panel.includes("const workflowView = ref('library')"), 'material center should open to the library')
 assert.ok(panel.includes('<span>素材库</span>') && panel.includes('<span>任务</span>') && panel.includes('<span>设置</span>'), 'navigation should expose only library, tasks, and settings')
 assert.ok(panel.includes('+ 添加素材'), 'add material should be a primary header action')
@@ -72,6 +89,22 @@ assert.ok(styles.includes('var(--glass-button-bg)') && styles.includes('var(--gl
 assert.ok(styles.includes('.youtube-workflow .youtube-library-open') && styles.includes('border-radius: 12px !important'), 'library open actions should use neutral rounded rectangles')
 assert.ok(styles.includes('quiet liquid-glass capsules') && styles.includes('--youtube-capsule-shadow') && styles.includes('font-weight: 500 !important'), 'material actions should use the quiet liquid-glass capsule contract')
 assert.equal(styles.includes('shared blue glass capsules'), false, 'retired blue-text capsule styling should not remain')
+const backdropRules = ruleBodies('.youtube-workflow-backdrop', 'background')
+const effectiveBackdropRule = backdropRules.at(-1)
+assert.ok(effectiveBackdropRule, 'the backdrop must have an effective background declaration')
+assert.match(effectiveBackdropRule.body, /background:\s*color-mix\(in srgb,\s*#000\s+28%,\s*transparent\)/, 'the last effective backdrop rule must keep the accepted dimming alpha')
+const panelRules = ruleBodies('.youtube-workflow .youtube-workflow-panel', 'background')
+const effectivePanelRule = panelRules.at(-1)
+assert.ok(effectivePanelRule, 'the panel must have an effective background declaration')
+assert.match(effectivePanelRule.body, /background:\s*var\(--(?:pru-shell-surface|bg-color)\)/, 'the last effective panel rule must remain opaque')
+assert.ok(styles.includes('--card-bg: #ffffff') && styles.includes('--card-bg: #252525'), 'light and dark panel surfaces must be concrete opaque theme colors')
+const capsuleDefaultStart = styles.indexOf('.youtube-material-notice button {')
+const noticeCloseDefaultStart = styles.indexOf('.youtube-material-notice .youtube-material-notice-close {')
+const noticeCloseDefaultRule = ruleBodies('.youtube-material-notice .youtube-material-notice-close', 'background').at(-1)
+const noticeCloseHoverStart = styles.indexOf('.youtube-material-notice button:hover')
+assert.ok(capsuleDefaultStart >= 0 && noticeCloseDefaultStart > capsuleDefaultStart && noticeCloseDefaultStart < noticeCloseHoverStart, 'notice close default must override the generic capsule rule before hover')
+assert.match(noticeCloseDefaultRule.body, /background:\s*transparent\s*!important/, 'notice close default must stay transparent')
+assert.match(styles, /\.youtube-material-notice \.youtube-material-notice-close:focus-visible[\s\S]*?box-shadow:\s*0 0 0 3px var\(--pru-focus-ring\)\s*!important;/, 'notice close focus styling must remain visible')
 assert.match(styles, /\.youtube-reader-controls \.small-btn:hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button:first-child:hover \{[\s\S]*?transform: none !important;/, 'material capsules should not lift or enlarge on hover')
 assert.ok(styles.includes('.youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"]') && styles.includes('.youtube-filter-tabs button[data-active="true"]'), 'navigation and time filters should keep quiet selected glass states')
 assert.ok(styles.includes('.youtube-quality-backdrop') && styles.includes('z-index: 2600'), 'quality report should render above the material center backdrop')

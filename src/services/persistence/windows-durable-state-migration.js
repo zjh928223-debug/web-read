@@ -231,6 +231,10 @@ function safeResult(value, fallbackRevision = null) {
   }
 }
 
+function canReplayCompletedSmokeUnfreeze(domain, cutover) {
+  return domain === 'workflow' || cutover?.replayCompletedSmokeUnfreeze === true
+}
+
 function resultIsCommitted(value, method) {
   const source = isPlainObject(value) ? value : {}
   const status = source.commitStatus || source.outcome || source.status
@@ -1287,7 +1291,8 @@ export function createWindowsDurableStateMigration(options = {}) {
     // retry must replay that idempotent cleanup instead of treating the
     // persisted result as proof that the writer gate is clear.
     if (entry.smoke?.status === 'passed') {
-      if (cutover && typeof cutover.unfreeze === 'function') {
+      if (canReplayCompletedSmokeUnfreeze(domain, cutover)
+        && cutover && typeof cutover.unfreeze === 'function') {
         let unfreezeResult
         try {
           unfreezeResult = await cutover.unfreeze({ domain, reason: 'migration-authoritative' })

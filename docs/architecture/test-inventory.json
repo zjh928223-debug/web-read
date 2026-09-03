@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
-    "architecture": 114,
-    "behavior": 118,
+    "architecture": 116,
+    "behavior": 121,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 278,
-  "executableScriptCount": 299,
+  "packageScriptCount": 280,
+  "executableScriptCount": 304,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -962,6 +962,18 @@
         "scripts/latest-wins-ledger-check.mjs"
       ],
       "owner": "package.json#scripts.verify:latest-wins-ledger"
+    },
+    {
+      "name": "verify:launcher-detached-lifetime",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launcher-detached-lifetime-check.ps1",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/launcher-detached-lifetime-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:launcher-detached-lifetime"
     },
     {
       "name": "verify:launcher-instance-manager",
@@ -2997,6 +3009,24 @@
         "scripts/windows-owner-api-client-check.mjs"
       ],
       "owner": "package.json#scripts.verify:windows-owner-api-client"
+    },
+    {
+      "name": "verify:windows-owner-authoritative-promotion",
+      "command": "node scripts/windows-owner-authoritative-promotion-check.mjs && node scripts/windows-owner-authoritative-promotion-cli-check.mjs && node scripts/windows-owner-authoritative-promotion-focused-check.mjs && node --check scripts/windows-owner-authoritative-promotion.mjs && node --check scripts/lib/windows-owner-authoritative-promotion.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_owner_promotion",
+      "category": "architecture",
+      "layers": [
+        "behavior",
+        "architecture"
+      ],
+      "invokes": [
+        "scripts/lib/windows-owner-authoritative-promotion.mjs",
+        "scripts/run-python-command.mjs",
+        "scripts/windows-owner-authoritative-promotion-check.mjs",
+        "scripts/windows-owner-authoritative-promotion-cli-check.mjs",
+        "scripts/windows-owner-authoritative-promotion-focused-check.mjs",
+        "scripts/windows-owner-authoritative-promotion.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion"
     },
     {
       "name": "verify:windows-owner-baseline",
@@ -5875,6 +5905,30 @@
       }
     },
     {
+      "path": "scripts/lib/windows-owner-authoritative-promotion.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-authoritative-promotion"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
       "path": "scripts/lib/windows-owner-cutover.mjs",
       "category": "behavior",
       "layers": [
@@ -8155,6 +8209,7 @@
         "package.json#scripts.verify:runtime-config",
         "package.json#scripts.verify:windows-owner",
         "package.json#scripts.verify:windows-owner-annotation",
+        "package.json#scripts.verify:windows-owner-authoritative-promotion",
         "package.json#scripts.verify:windows-owner-c2",
         "package.json#scripts.verify:windows-owner-c2a",
         "package.json#scripts.verify:windows-owner-c2b",
@@ -10774,6 +10829,115 @@
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-authoritative-promotion-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-authoritative-promotion"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-authoritative-promotion-cli-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
+      "architectureEvidence": [
+        "source-shape"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-authoritative-promotion"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "includes-source-text"
+        ],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
+        "executesModule": false,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/windows-owner-authoritative-promotion-focused-check.mjs",
+      "category": "architecture",
+      "layers": [
+        "architecture",
+        "behavior"
+      ],
+      "aggregates": [
+        "architecture:source-shape"
+      ],
+      "architectureEvidence": [
+        "source-shape"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-authoritative-promotion"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [
+          "asserts-source-text"
+        ],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-owner-authoritative-promotion.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-authoritative-promotion",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-authoritative-promotion"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": false,
         "executesModule": true,
         "startsBrowser": false
       }

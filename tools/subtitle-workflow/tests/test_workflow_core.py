@@ -9,7 +9,9 @@ from youtube_workflow.core import (
     FakeWorkflowRunner,
     LocalWorkflowRunner,
     WorkflowConfig,
+    WorkflowCommandError,
     WorkflowRequest,
+    is_youtube_http_403_failure,
     safe_title_from_url,
     assert_manifest_has_no_secret,
     classify_error,
@@ -56,6 +58,35 @@ class FakeCommandRunner:
             }
             (output_dir / f"{audio.stem}.json").write_text(json.dumps(transcript), encoding="utf-8")
             emit_line("[whisperx] done")
+
+
+class DownloadFailureCommandRunner(FakeCommandRunner):
+    def __init__(self, failure_message, fail_count=1):
+        super().__init__()
+        self.failure_message = failure_message
+        self.fail_count = fail_count
+        self.download_attempts = 0
+        self.partial_path = None
+
+    def run(self, cmd, source, emit_line, cancel_event=None):
+        if source != "yt-dlp":
+            return super().run(cmd, source, emit_line, cancel_event=cancel_event)
+
+        self.calls.append((source, list(cmd)))
+        self.download_attempts += 1
+        output_pattern = Path(cmd[cmd.index("-o") + 1])
+        output_pattern.parent.mkdir(parents=True, exist_ok=True)
+        if self.download_attempts <= self.fail_count:
+            self.partial_path = output_pattern.parent / "partial-download.mp4.part"
+            self.partial_path.write_bytes(b"incomplete media")
+            emit_line(self.failure_message)
+            raise WorkflowCommandError("yt-dlp", 1, [self.failure_message])
+
+        format_selector = cmd[cmd.index("-f") + 1]
+        suffix = ".mp4" if "bestvideo" in format_selector or "ext=mp4" in format_selector else ".webm"
+        media = output_pattern.parent / f"Fallback Video{suffix}"
+        media.write_bytes(b"fallback media")
+        emit_line("[download] 100%")
 
 
 class VideoImportCommandRunner:
@@ -268,7 +299,7 @@ class WorkflowCoreTests(unittest.TestCase):
 
             self.assertEqual([source for source, _cmd in command_runner.calls], ["yt-dlp", "whisperx"])
             yt_dlp_cmd = command_runner.calls[0][1]
-            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
+            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestvideo+bestaudio/best")
             self.assertEqual(
                 yt_dlp_cmd[yt_dlp_cmd.index("--extractor-args") + 1],
                 "youtube:player_client=mweb",
@@ -319,8 +350,125 @@ class WorkflowCoreTests(unittest.TestCase):
             ).run(request, job_id="job-audio-first")
 
             yt_dlp_cmd = command_runner.calls[0][1]
-            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
+            self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "bestaudio/best")
             self.assertEqual(manifest["request"]["videoPriority"], False)
+
+    def test_local_runner_retries_one_youtube_media_403_with_progressive_media(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command_runner = DownloadFailureCommandRunner(
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+            )
+            events = []
+            request = WorkflowRequest(
+                url="https://www.youtube.com/watch?v=Fallback12345",
+                gemini_mode="mock",
+                video_priority=False,
+            )
+
+            manifest = LocalWorkflowRunner(
+                WorkflowConfig(output_dir=Path(tmp)),
+                command_runner=command_runner,
+            ).run(request, job_id="job-403", emit=events.append)
+
+            selectors = [
+                cmd[cmd.index("-f") + 1]
+                for source, cmd in command_runner.calls
+                if source == "yt-dlp"
+            ]
+            self.assertEqual(selectors, ["bestaudio/best", "best[ext=mp4]/best"])
+            self.assertEqual(
+                [source for source, _cmd in command_runner.calls],
+                ["yt-dlp", "yt-dlp", "whisperx"],
+            )
+            fallback_messages = [
+                event["message"]
+                for event in events
+                if "切换兼容格式重试" in event["message"]
+            ]
+            self.assertEqual(len(fallback_messages), 1)
+            self.assertEqual(manifest["status"], "ready")
+            self.assertTrue(Path(manifest["files"]["audio"]).name.endswith(".mp4"))
+            self.assertEqual(Path(command_runner.calls[-1][1][1]), Path(manifest["files"]["audio"]))
+            self.assertNotIn("HTTP Error 403", "\n".join(manifest["logSummary"]))
+            self.assertIsNotNone(command_runner.partial_path)
+            self.assertFalse(command_runner.partial_path.exists())
+            self.assertTrue(Path(manifest["files"]["audio"]).exists())
+            validate_session_files(manifest)
+
+    def test_local_runner_does_not_retry_non_403_download_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command_runner = DownloadFailureCommandRunner(
+                "ERROR: unable to download video data: HTTP Error 404: Not Found",
+            )
+            request = WorkflowRequest(
+                url="https://www.youtube.com/watch?v=NoFallback123",
+                gemini_mode="mock",
+            )
+
+            with self.assertRaises(WorkflowCommandError):
+                LocalWorkflowRunner(
+                    WorkflowConfig(output_dir=Path(tmp)),
+                    command_runner=command_runner,
+                ).run(request, job_id="job-404")
+
+            self.assertEqual(command_runner.download_attempts, 1)
+            self.assertEqual(
+                command_runner.calls[0][1][command_runner.calls[0][1].index("-f") + 1],
+                "bestvideo+bestaudio/best",
+            )
+
+    def test_local_runner_retries_a_youtube_media_403_at_most_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            command_runner = DownloadFailureCommandRunner(
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+                fail_count=2,
+            )
+            request = WorkflowRequest(
+                url="https://www.youtube.com/watch?v=NoLoop12345",
+                gemini_mode="mock",
+            )
+
+            with self.assertRaises(WorkflowCommandError):
+                LocalWorkflowRunner(
+                    WorkflowConfig(output_dir=Path(tmp)),
+                    command_runner=command_runner,
+                ).run(request, job_id="job-403-loop")
+
+            self.assertEqual(command_runner.download_attempts, 2)
+            self.assertEqual(
+                [cmd[cmd.index("-f") + 1] for _source, cmd in command_runner.calls],
+                ["bestvideo+bestaudio/best", "best[ext=mp4]/best"],
+            )
+
+    def test_local_runner_does_not_fallback_for_non_media_403_contexts(self):
+        for failure_message in (
+            "ERROR: HTTP Error 403: Forbidden (cookies expired)",
+            "ERROR: network request failed after HTTP Error 403: Forbidden",
+        ):
+            with self.subTest(failure_message=failure_message), tempfile.TemporaryDirectory() as tmp:
+                command_runner = DownloadFailureCommandRunner(failure_message)
+                request = WorkflowRequest(
+                    url="https://www.youtube.com/watch?v=NoContext12345",
+                    gemini_mode="mock",
+                )
+
+                with self.assertRaises(WorkflowCommandError):
+                    LocalWorkflowRunner(
+                        WorkflowConfig(output_dir=Path(tmp)),
+                        command_runner=command_runner,
+                    ).run(request, job_id="job-403-context")
+
+                self.assertEqual(command_runner.download_attempts, 1)
+
+    def test_local_runner_only_falls_back_for_a_real_youtube_video_url(self):
+        error = WorkflowCommandError(
+            "yt-dlp",
+            1,
+            ["ERROR: HTTP Error 403: Forbidden"],
+        )
+        self.assertTrue(is_youtube_http_403_failure(error, "https://www.youtube.com/watch?v=Real12345"))
+        self.assertFalse(is_youtube_http_403_failure(error, "https://www.youtube.com/"))
+        self.assertFalse(is_youtube_http_403_failure(error, "https://example.com/video"))
 
     def test_retry_with_downloaded_video_and_no_transcript_resumes_at_whisperx(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,6 +3,33 @@ const { chromium } = require('playwright')
 
 const APP_URL = process.env.READ_WEB_URL || 'http://127.0.0.1:5173/'
 
+function cssAlpha(color) {
+  const slash = color.match(/\/\s*([0-9.]+)\s*\)?$/)
+  if (slash) return Number(slash[1])
+  const rgba = color.match(/rgba\(\s*[^,]+,\s*[^,]+,\s*[^,]+,\s*([0-9.]+)\s*\)/i)
+  if (rgba) return Number(rgba[1])
+  return color === 'transparent' ? 0 : 1
+}
+
+async function assertMaterialSurfaceStyles(page, theme) {
+  const styles = await page.evaluate(() => {
+    const backdrop = document.querySelector('.youtube-workflow-backdrop')
+    const panel = document.querySelector('.youtube-workflow-panel')
+    if (!backdrop || !panel) return null
+    const backdropStyle = getComputedStyle(backdrop)
+    const panelStyle = getComputedStyle(panel)
+    return {
+      backdropColor: backdropStyle.backgroundColor,
+      panelColor: panelStyle.backgroundColor,
+    }
+  })
+  assert.ok(styles, `${theme} material center surface nodes should be present`)
+  const backdropAlpha = cssAlpha(styles.backdropColor)
+  const panelAlpha = cssAlpha(styles.panelColor)
+  assert.ok(backdropAlpha >= 0.27 && backdropAlpha <= 0.29, `${theme} backdrop alpha should be about 0.28, got ${styles.backdropColor}`)
+  assert.ok(panelAlpha >= 0.99, `${theme} panel should be opaque, got ${styles.panelColor}`)
+}
+
 function json(body) {
   return {
     status: 200,
@@ -57,7 +84,7 @@ async function mockService(page) {
     if (fileMatch) {
       const [, jobId, kind] = fileMatch
       if (jobId === 'library-0' && kind === 'transcript') {
-        return route.fulfill({ status: 404, contentType: 'text/plain', body: 'missing transcript' })
+        return route.fulfill({ status: 200, contentType: 'application/json', body: 'not-json' })
       }
       const payload = kind === 'transcript'
         ? { segments: [{ start: 0, end: 1, words: [{ word: jobId, start: 0, end: 1 }] }] }
@@ -71,7 +98,12 @@ async function mockService(page) {
       return route.fulfill({
         status: 206,
         contentType: 'audio/wav',
-        headers: { 'accept-ranges': 'bytes', 'content-range': 'bytes 0-0/16' },
+        headers: {
+          'access-control-expose-headers': 'accept-ranges, content-range, etag',
+          'accept-ranges': 'bytes',
+          'content-range': 'bytes 0-0/16',
+          etag: '"library-audio-etag"',
+        },
         body: Buffer.from([0]),
       })
     }
@@ -114,12 +146,22 @@ async function mockService(page) {
 async function main() {
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  const consoleErrors = []
+  const pageErrors = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+  page.on('pageerror', (error) => pageErrors.push(error.message))
   try {
     await mockService(page)
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
     await page.locator('.youtube-material-entry').click()
     const panel = page.locator('.youtube-workflow-panel')
     await panel.waitFor({ state: 'visible' })
+    await assertMaterialSurfaceStyles(page, 'light')
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+    await assertMaterialSurfaceStyles(page, 'dark')
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
     await page.waitForSelector('.youtube-workflow-library-job')
     assert.equal(await page.locator('.youtube-workflow-nav button').count(), 3)
     assert.equal(await page.locator('.youtube-workflow-library-job').count(), 20)
@@ -235,6 +277,31 @@ async function main() {
     const materialNotice = page.locator('.youtube-material-notice')
     await materialNotice.waitFor({ state: 'visible' })
     assert.match(await materialNotice.innerText(), /字幕不可用，请重新生成字幕/)
+    const noticeClose = materialNotice.locator('.youtube-material-notice-close')
+    for (const theme of ['light', 'dark']) {
+      if (theme === 'dark') {
+        await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+      } else {
+        await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
+      }
+      await page.mouse.move(0, 0)
+      const closeStyle = await noticeClose.evaluate((button) => {
+        const style = getComputedStyle(button)
+        return {
+          backgroundColor: style.backgroundColor,
+          backgroundImage: style.backgroundImage,
+          boxShadow: style.boxShadow,
+        }
+      })
+      assert.equal(cssAlpha(closeStyle.backgroundColor), 0, `${theme} notice close should be transparent by default`)
+      await noticeClose.focus()
+      const focusStyle = await noticeClose.evaluate((button) => getComputedStyle(button).boxShadow)
+      assert.match(focusStyle, /0px 0px 0px 3px/, `${theme} notice close should retain a visible focus ring`)
+      await noticeClose.hover()
+      const hoverStyle = await noticeClose.evaluate((button) => getComputedStyle(button).backgroundImage)
+      assert.match(hoverStyle, /linear-gradient/, `${theme} notice close should retain its hover treatment`)
+    }
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
     await page.locator('.youtube-material-entry').click()
     await panel.waitFor({ state: 'visible' })
     await page.locator('.youtube-workflow-library-job').nth(1).getByRole('button', { name: '打开' }).click()
@@ -243,6 +310,8 @@ async function main() {
   } finally {
     await browser.close()
   }
+  assert.deepEqual(consoleErrors, [], `browser console should stay healthy: ${consoleErrors.join(' | ')}`)
+  assert.deepEqual(pageErrors, [], `browser page errors should stay healthy: ${pageErrors.join(' | ')}`)
   console.log('youtube workflow panel v3 browser check passed')
 }
 

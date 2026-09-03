@@ -405,7 +405,7 @@ let completedCutoverUnfreezeCalls = 0
 const completedCutoverFixture = createMigrationFixture({
   stateStore: completedCutoverStore,
   cutoverControls: {
-    'reader-session': {
+    workflow: {
       async switch() { return { ok: true, authorityChanged: true } },
       async smoke() { return { ok: true } },
       async unfreeze() {
@@ -415,7 +415,7 @@ const completedCutoverFixture = createMigrationFixture({
     },
   },
 })
-const completedCutover = await completedCutoverFixture.service.migrateDomain('reader-session', {
+const completedCutover = await completedCutoverFixture.service.migrateDomain('workflow', {
   expectedRevision: 0,
   idempotencyKey: 'migration-completed-cutover-replay',
 })
@@ -425,7 +425,7 @@ assert.equal(completedCutoverUnfreezeCalls, 1)
 const reopenedCutover = createMigrationFixture({
   stateStore: completedCutoverStore,
   cutoverControls: {
-    'reader-session': {
+    workflow: {
       async unfreeze() {
         completedCutoverUnfreezeCalls += 1
         return { ok: true }
@@ -433,10 +433,48 @@ const reopenedCutover = createMigrationFixture({
     },
   },
 })
-const replayedCutoverSmoke = await reopenedCutover.service.smokeCheck('reader-session')
+const replayedCutoverSmoke = await reopenedCutover.service.smokeCheck('workflow')
 assert.equal(replayedCutoverSmoke.ok, true)
 assert.equal(replayedCutoverSmoke.status, 'passed')
 assert.equal(completedCutoverUnfreezeCalls, 2, 'a reopened completed cutover must replay the unfreeze cleanup')
+
+const nonWorkflowReplayStore = createMemoryMigrationStateStore()
+let nonWorkflowReplayUnfreezeCalls = 0
+const nonWorkflowFixture = createMigrationFixture({
+  stateStore: nonWorkflowReplayStore,
+  cutoverControls: {
+    'reader-session': {
+      async switch() { return { ok: true, authorityChanged: true } },
+      async smoke() { return { ok: true } },
+      async unfreeze() {
+        nonWorkflowReplayUnfreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+const nonWorkflowCutover = await nonWorkflowFixture.service.migrateDomain('reader-session', {
+  expectedRevision: 0,
+  idempotencyKey: 'migration-non-workflow-replay',
+})
+assert.equal(nonWorkflowCutover.ok, true)
+assert.equal(nonWorkflowCutover.steps.smoke.status, 'passed')
+assert.equal(nonWorkflowReplayUnfreezeCalls, 1)
+const reopenedNonWorkflow = createMigrationFixture({
+  stateStore: nonWorkflowReplayStore,
+  cutoverControls: {
+    'reader-session': {
+      async unfreeze() {
+        nonWorkflowReplayUnfreezeCalls += 1
+        return { ok: true }
+      },
+    },
+  },
+})
+const nonWorkflowReplay = await reopenedNonWorkflow.service.smokeCheck('reader-session')
+assert.equal(nonWorkflowReplay.ok, true)
+assert.equal(nonWorkflowReplay.status, 'passed')
+assert.equal(nonWorkflowReplayUnfreezeCalls, 1, 'non-workflow persisted smoke must not unfreeze without explicit capability')
 
 const physicalFreezeState = createMemoryMigrationStateStore()
 let initialPhysicalFreezeCalls = 0

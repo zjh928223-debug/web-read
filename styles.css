@@ -454,7 +454,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  background: color-mix(in srgb, #000 28%, transparent);
+  background: transparent;
   color: var(--text-sub);
   font-size: 17px;
   cursor: pointer;
@@ -4945,7 +4945,7 @@ body {
   justify-content: flex-end;
   align-items: stretch;
   padding: 14px;
-  background: transparent;
+  background: color-mix(in srgb, #000 28%, transparent);
   z-index: 2400;
 }
 
@@ -5129,6 +5129,17 @@ body {
     box-shadow var(--glass-duration-fast) var(--glass-ease),
     background-color var(--glass-duration-fast) var(--glass-ease),
     border-color var(--glass-duration-fast) var(--glass-ease) !important;
+}
+
+.youtube-material-notice .youtube-material-notice-close {
+  background: transparent !important;
+}
+
+.youtube-material-notice .youtube-material-notice-close:focus,
+.youtube-material-notice .youtube-material-notice-close:focus-visible {
+  outline: none !important;
+  border-color: var(--pru-accent) !important;
+  box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
 }
 
 .youtube-reader-controls .small-btn::before,

@@ -66,6 +66,9 @@ export function createWindowsOwnerCutoverControls(options = {}) {
     ? options.legacyWriterControl
     : null
   return Object.fromEntries(DOMAINS.map((domain) => [domain, {
+    // Only the workflow owner may replay a persisted passed-smoke cleanup by
+    // default; other domains must opt in through an explicit capability.
+    replayCompletedSmokeUnfreeze: domain === 'workflow',
     async freeze({ domain: requestedDomain, reason }) {
       if (requestedDomain !== domain) return { ok: false, reasonCode: 'OWNER_CUTOVER_DOMAIN_MISMATCH' }
       let legacyResult = null

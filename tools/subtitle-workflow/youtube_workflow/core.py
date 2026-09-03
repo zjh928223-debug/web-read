@@ -112,11 +112,20 @@ STAGES = (
 
 AUDIO_EXTENSIONS = {".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".wma"}
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".mpeg", ".mpg", ".webm", ".wmv"}
-# YouTube's current GVS rollout rejects split bestvideo/bestaudio downloads
-# with HTTP 403 in this local environment. Keep both audio-first and
-# video-priority jobs on one progressive, authorized media URL.
+# Keep the original quality policy as the first attempt.  Progressive MP4 is
+# deliberately a recovery selector: YouTube may reject the split video/audio
+# request with HTTP 403, but using it permanently would lower audio quality.
+YOUTUBE_AUDIO_FORMAT_SELECTOR = "bestaudio/best"
+YOUTUBE_VIDEO_FORMAT_SELECTOR = "bestvideo+bestaudio/best"
 YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR = "best[ext=mp4]/best"
-YOUTUBE_VIDEO_FORMAT_SELECTOR = YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
+YOUTUBE_HOSTS = frozenset({
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+})
 YOUTUBE_PLAYER_CLIENT = "mweb"
 
 
@@ -314,8 +323,7 @@ def youtube_video_id(url: str) -> str:
     except ValueError:
         return ""
     host = parsed.hostname.lower().rstrip(".") if parsed.hostname else ""
-    allowed = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be"}
-    if host not in allowed:
+    if host not in YOUTUBE_HOSTS:
         return ""
     candidate = ""
     if host.endswith("youtu.be"):
@@ -334,6 +342,19 @@ def youtube_video_id(url: str) -> str:
 def canonical_material_key(url: str) -> str:
     video_id = youtube_video_id(url)
     return f"youtube:{video_id}" if video_id else ""
+
+
+def is_youtube_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(str(url or "").strip())
+    except ValueError:
+        return False
+    host = parsed.hostname.lower().rstrip(".") if parsed.hostname else ""
+    return (
+        parsed.scheme.lower() in {"http", "https"}
+        and host in YOUTUBE_HOSTS
+        and bool(youtube_video_id(url))
+    )
 
 
 def utc_now_iso() -> str:
@@ -416,6 +437,56 @@ def classify_error_code(error: Exception | str) -> str:
     if "403" in text and any(token in text for token in ("youtube", "yt-dlp", "download video data")):
         return "YOUTUBE_MEDIA_HTTP_403"
     return ""
+
+
+def is_youtube_http_403_failure(error: Exception | str, url: str) -> bool:
+    if not is_youtube_url(url):
+        return False
+    source = getattr(error, "source", None)
+    if source is not None and str(source).lower() != "yt-dlp":
+        return False
+    text_parts = [str(error)]
+    output_tail = getattr(error, "output_tail", None)
+    if isinstance(output_tail, (list, tuple)):
+        text_parts.extend(str(line) for line in output_tail)
+    text = "\n".join(text_parts)
+    normalized = text.lower()
+    if any(token in normalized for token in (
+        "cookie",
+        "authentication",
+        "authenticated",
+        "authorization",
+        "unauthorized",
+        "login",
+        "login required",
+        "sign in",
+        "sign-in",
+        "signin",
+        "auth required",
+        "private video",
+        "members-only",
+        "network",
+        "proxy",
+        "timed out",
+        "timeout",
+        "connection",
+        "dns",
+        "resolve host",
+        "no space left",
+        "disk full",
+        "permission denied",
+        "cancelled",
+        "canceled",
+        "任务已取消",
+    )):
+        return False
+    return bool(re.search(
+        r"\bhttp(?:\s+error)?\s*[:=]?\s*403\b"
+        r"|\bstatus(?:\s+code)?\s*[:=]?\s*403\b"
+        r"|\b403\s*[:=-]?\s*forbidden\b",
+        text,
+        re.IGNORECASE,
+    ))
 
 
 def load_json_file(path: Path) -> dict:
@@ -824,6 +895,14 @@ class LocalWorkflowRunner:
         if resolve_executable_path(configured_path) is None:
             raise RuntimeError(f"{label} 未安装或配置路径无效：{configured_path}")
 
+    def _cleanup_incomplete_download(self, temp_folder: Path) -> None:
+        """Remove only the private download staging tree before a recovery retry."""
+        for path in list(temp_folder.iterdir()):
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+
     def _run_whisperx(
         self,
         media_file: Path,
@@ -867,10 +946,12 @@ class LocalWorkflowRunner:
         current_stage = "queued"
         self.config.output_dir.mkdir(parents=True, exist_ok=True)
 
-        def stage(name: str, message: str) -> None:
+        def stage(name: str, message: str, *, clear_log: bool = False) -> None:
             nonlocal current_stage
             if cancel_event.is_set():
                 raise RuntimeError("任务已取消。")
+            if clear_log:
+                log_summary.clear()
             current_stage = name
             log_summary.append(message)
             emit({"jobId": job_id, "status": name, "stage": name, "message": message})
@@ -887,25 +968,47 @@ class LocalWorkflowRunner:
         media_label = "视频" if request.video_priority else "音频"
         stage("downloading", f"开始下载 YouTube {media_label}。")
         self._require_configured_tool("yt-dlp", self.config.yt_dlp_path)
-        download_cmd = [str(self.config.yt_dlp_path)]
-        if self.config.cookies_path.exists():
-            download_cmd.extend(["--cookies", str(self.config.cookies_path)])
-        download_cmd.extend([
-            "--js-runtimes", "node",
-            "--remote-components", "ejs:github",
-            "--extractor-args", f"youtube:player_client={YOUTUBE_PLAYER_CLIENT}",
-        ])
-        # YouTube now requires a per-video GVS PO token for the mweb client.
-        # The local yt-dlp WPC provider supplies it.  A progressive MP4 keeps
-        # video and audio on the same authorized URL; split bestvideo/bestaudio
-        # streams are rejected with HTTP 403 on the current YouTube rollout.
-        # The local yt-dlp WPC provider supplies the per-video token. A
-        # progressive MP4 keeps video and audio on the same authorized URL;
-        # split bestvideo/bestaudio streams are rejected with HTTP 403 on the
-        # current YouTube rollout, including for audio-first jobs.
-        format_selector = YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR
-        download_cmd.extend(["-f", format_selector, "--newline", "-o", str(temp_folder / "%(title)s.%(ext)s"), request.url])
-        self.command_runner.run(download_cmd, "yt-dlp", lambda line: command_line("yt-dlp", line), cancel_event=cancel_event)
+
+        def build_download_command(format_selector: str) -> list[str]:
+            command = [str(self.config.yt_dlp_path)]
+            if self.config.cookies_path.exists():
+                command.extend(["--cookies", str(self.config.cookies_path)])
+            command.extend([
+                "--js-runtimes", "node",
+                "--remote-components", "ejs:github",
+                "--extractor-args", f"youtube:player_client={YOUTUBE_PLAYER_CLIENT}",
+                "-f", format_selector,
+                "--newline",
+                "-o", str(temp_folder / "%(title)s.%(ext)s"),
+                request.url,
+            ])
+            return command
+
+        preferred_selector = YOUTUBE_VIDEO_FORMAT_SELECTOR if request.video_priority else YOUTUBE_AUDIO_FORMAT_SELECTOR
+        preferred_command = build_download_command(preferred_selector)
+        try:
+            self.command_runner.run(
+                preferred_command,
+                "yt-dlp",
+                lambda line: command_line("yt-dlp", line),
+                cancel_event=cancel_event,
+            )
+        except Exception as error:
+            if not is_youtube_http_403_failure(error, request.url) or cancel_event.is_set():
+                raise
+            self._cleanup_incomplete_download(temp_folder)
+            stage(
+                "downloading",
+                "首次 YouTube 下载返回 HTTP 403，已清理临时文件并切换兼容格式重试。",
+                clear_log=True,
+            )
+            fallback_command = build_download_command(YOUTUBE_PROGRESSIVE_FORMAT_SELECTOR)
+            self.command_runner.run(
+                fallback_command,
+                "yt-dlp",
+                lambda line: command_line("yt-dlp", line),
+                cancel_event=cancel_event,
+            )
 
         downloaded_files = [path for path in temp_folder.iterdir() if path.is_file()]
         if not downloaded_files:
