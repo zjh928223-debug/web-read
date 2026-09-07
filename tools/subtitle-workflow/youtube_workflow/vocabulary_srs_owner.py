@@ -45,6 +45,7 @@ _LEARNING_RECEIPT = re.compile(
 _VOCABULARY_BACKUP = re.compile(r"^(.+)\.backup:[0-9]+$")
 _VOCABULARY_QUARANTINE = re.compile(r"^vocabulary\.corrupt\.quarantine\.v1:[a-f0-9]{64}$")
 _RECORD_FIELDS = frozenset({"id", "content", "timestamp", "revision", "contentId", "checksum"})
+_SETTLEMENT_ALLOWED_SENSITIVE_KEYS = frozenset({"attempt_token", "claim_token"})
 
 CANONICAL_RECORD_KEYS = (
     "vocabulary.srs.store.v1",
@@ -275,7 +276,7 @@ def _validate_record_content(key: str, content: Any) -> dict[str, Any]:
             raise VocabularySrsOwnerError("invalid-request")
         _validate_json_value(
             content,
-            allowed_sensitive_keys=frozenset({"attempt_token"}) if _SETTLEMENT.fullmatch(source_id) else frozenset(),
+            allowed_sensitive_keys=_SETTLEMENT_ALLOWED_SENSITIVE_KEYS if _SETTLEMENT.fullmatch(source_id) else frozenset(),
         )
         return deepcopy(content)
     if _VOCABULARY_QUARANTINE.fullmatch(key):
@@ -292,7 +293,7 @@ def _validate_record_content(key: str, content: Any) -> dict[str, Any]:
             raise VocabularySrsOwnerError("invalid-request")
         _validate_json_value(
             content,
-            allowed_sensitive_keys=frozenset({"attempt_token"})
+            allowed_sensitive_keys=_SETTLEMENT_ALLOWED_SENSITIVE_KEYS
             if _SETTLEMENT.fullmatch(str(content.get("sourceId") or "")) else frozenset(),
         )
         return deepcopy(content)
@@ -333,7 +334,7 @@ def _validate_record_content(key: str, content: Any) -> dict[str, Any]:
                 "skipped_target_ids",
             )):
                 raise VocabularySrsOwnerError("invalid-request")
-        _validate_json_value(content, allowed_sensitive_keys=frozenset({"attempt_token"}))
+        _validate_json_value(content, allowed_sensitive_keys=_SETTLEMENT_ALLOWED_SENSITIVE_KEYS)
         return deepcopy(content)
     marker = _expected_schema(key)
     if marker is not None:
@@ -526,13 +527,13 @@ class VocabularySrsOwner:
         # empty learning-unit-of-work.  Keep every other command non-empty.
         if not raw_records and not (operation == "learning-unit-of-work" and keys == {"records"}):
             raise VocabularySrsOwnerError("invalid-request")
-        allows_settlement_attempt_token = any(
+        allows_settlement_sensitive_keys = any(
             isinstance(key, str) and _SETTLEMENT.fullmatch(key)
             for key in raw_records
         )
         _validate_json_value(
             payload,
-            allowed_sensitive_keys=frozenset({"attempt_token"}) if allows_settlement_attempt_token else frozenset(),
+            allowed_sensitive_keys=_SETTLEMENT_ALLOWED_SENSITIVE_KEYS if allows_settlement_sensitive_keys else frozenset(),
         )
         allowed = _COMMAND_RECORD_RULES[operation]
         result = {}

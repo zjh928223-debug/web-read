@@ -262,7 +262,7 @@ async function runBrowserCheck() {
     }
     await page.getByRole('button', { name: 'Space 显示答案' }).click()
     await page.getByRole('button', { name: '一般' }).click()
-    await page.getByText('本次复习完成', { exact: true }).waitFor()
+    await page.getByText('今日复习已完成', { exact: true }).waitFor()
     await page.getByText('共完成 5 张', { exact: true }).waitFor()
     await page.getByText('Good 一般：5', { exact: true }).waitFor()
 

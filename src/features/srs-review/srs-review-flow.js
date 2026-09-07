@@ -25,7 +25,7 @@ export function createSrsReviewFlow(options = {}) {
   async function rate(action) {
     if (!action || state.ratingCommitted || state.transitioning) return false
     const answerRevealedBeforeRating = state.answerRevealed
-    if (!state.answerRevealed && action.tone !== 'again') {
+    if (!state.answerRevealed) {
       if (typeof options.revealHint === 'function') {
         options.revealHint(ANSWER_REQUIRED_MESSAGE)
       }
@@ -34,7 +34,6 @@ export function createSrsReviewFlow(options = {}) {
     const generation = cardGeneration
     state.transitioning = true
     state.pendingTone = action.tone
-    if (action.tone === 'again') state.answerRevealed = true
     try {
       const saved = typeof options.submitAction === 'function'
         ? await options.submitAction(action, { answerRevealedBeforeRating })

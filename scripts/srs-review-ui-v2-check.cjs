@@ -217,8 +217,16 @@ async function main() {
       return true
     },
   })
+  assert.equal(
+    await flow.rate({ rating: 'again', tone: 'again' }),
+    false,
+    'Again must be rejected until the answer is revealed',
+  )
+  assert.deepEqual(flowMetadata, [], 'no rating may be submitted before the answer is revealed')
+  flow.resetCard()
+  flow.revealAnswer()
   assert.equal(await flow.rate({ rating: 'again', tone: 'again' }), true)
-  assert.deepEqual(flowMetadata, [['again', false]], 'automatic Again reveal is not a pre-rating cue')
+  assert.deepEqual(flowMetadata.at(-1), ['again', true])
   flow.resetCard()
   flow.revealAnswer()
   assert.equal(await flow.rate({ rating: 'good', tone: 'good' }), true)
@@ -448,6 +456,35 @@ async function verifyReadOnlySourceProbe({ sourceSelector, uiServiceModule }) {
   assert.deepEqual(await warmUiService.getReviewCards({ entries: [] }), [])
   assert.deepEqual(warmReads, { acquisition: 2, content: 1, review: 2, context: 1 })
   assert.equal(warmCommandCalls, 0, 'review warmup must remain read-only')
+
+  let activationCalls = 0
+  const activationUiService = uiServiceModule.createSrsReviewUiService({
+    managementService: {
+      async activatePendingPreviewLearning(input) {
+        activationCalls += 1
+        assert.equal(input.timezone, 'UTC')
+        return { activated: [] }
+      },
+    },
+    acquisitionRepository: { async loadSnapshot() { return { by_learning_unit_id: {} } } },
+    contentRepository: { async loadSnapshot() { return { words: [], contexts: [] } } },
+    reviewStateRepository: { async loadSnapshot() { return { by_learning_unit_id: {} } } },
+    contextEvidenceRepository: { async loadSnapshot() { return { by_context_evidence_id: {} } } },
+    learningEventRepository: { async query() { return [] } },
+    sessionLedgerRepository: { async getBySessionId() { return null } },
+    reviewService: {
+      async startReviewSession() { return null },
+      async resumeReviewSession() { return null },
+      async recordReviewAttempt() { return null },
+      async completeReviewSession() { return null },
+    },
+  })
+  await activationUiService.startReviewSession({
+    session_id: 'fresh-preview-review',
+    now: '2026-07-29T01:00:00.000Z',
+    timezone: 'UTC',
+  })
+  assert.equal(activationCalls, 1, 'a new review session should activate eligible preview learning')
 
   let storedLedger = createLedger({ mode: 'balanced', promptMode: 'word_only' })
   storedLedger.local_day = '2026-07-28'

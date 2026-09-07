@@ -537,8 +537,8 @@ html.srs-review-standalone-document body {
 }
 
 .srs-review-sentence strong {
-  color: #2454c6;
-  font-weight: 750;
+  color: #111827;
+  font-weight: 700;
 }
 
 .srs-review-passage-word {
@@ -562,8 +562,8 @@ html.srs-review-standalone-document body {
 }
 
 .srs-review-passage-word.is-review-word {
-  color: var(--srs-primary);
-  font-weight: 750;
+  color: #111827;
+  font-weight: 700;
 }
 
 .srs-review-audio {

@@ -125,8 +125,18 @@ function recordForCommand(id, content) {
   return { id, content: clone(content) }
 }
 
+async function callOwner(owner, method, request) {
+  try {
+    return await owner[method](request)
+  } catch (error) {
+    if (error?.code !== 'owner-not-ready' || typeof owner.refresh !== 'function') throw error
+    await owner.refresh()
+    return owner[method](request)
+  }
+}
+
 async function querySnapshot(owner) {
-  const response = await owner.query({
+  const response = await callOwner(owner, 'query', {
     domain: DOMAIN,
     operation: 'snapshot',
     payload: {},
@@ -139,7 +149,7 @@ async function querySnapshot(owner) {
 }
 
 async function commitRecords(owner, operation, records, expectedRevision, idempotencyValue) {
-  const response = await owner.command({
+  const response = await callOwner(owner, 'command', {
     domain: DOMAIN,
     operation,
     payload: { records },

@@ -23,6 +23,7 @@ const COMMAND_TYPES = Object.freeze({
   RECORD_ATTEMPT: 'record_vocabulary_acquisition_attempt',
   MARK_READY: 'mark_vocabulary_ready_for_check',
   GRADUATE: 'graduate_learning_unit',
+  ACTIVATE_PREVIEW: 'activate_preview_learning_unit',
   COMPLETE_ARTICLE: 'complete_article_learning_unit',
   SKIP: 'skip_vocabulary_learning_unit',
 });
@@ -56,6 +57,24 @@ function requiredId(value, field) {
     fail('INVALID_FIELD_TYPE', 'Expected a non-empty ID', { field });
   }
   return value;
+}
+
+function nonNegativeInteger(value, field) {
+  if (!Number.isInteger(value) || value < 0) {
+    fail('INVALID_FIELD_TYPE', 'Expected a non-negative integer', { field });
+  }
+  return value;
+}
+
+function localDay(value, field) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    fail('INVALID_FIELD_TYPE', 'Expected a local day in YYYY-MM-DD format', { field });
+  }
+  return value;
+}
+
+function nonEmptyText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function utcTimestamp(value, field) {
@@ -144,6 +163,8 @@ function commandOccurredAt(payload, commandType) {
       return payload?.attempt?.occurred_at;
     case COMMAND_TYPES.GRADUATE:
       return payload?.graduated_at;
+    case COMMAND_TYPES.ACTIVATE_PREVIEW:
+      return payload?.activated_at;
     case COMMAND_TYPES.COMPLETE_ARTICLE:
       return payload?.completed_at;
     default:
@@ -209,7 +230,7 @@ function initialReviewState(unit, payload, graduatedAt) {
     created_at: graduatedAt,
     updated_at: graduatedAt,
     revision: 0,
-    extensions: {},
+    extensions: isPlainObject(payload.extensions) ? clone(payload.extensions) : {},
   };
 }
 
@@ -548,6 +569,119 @@ export function createVocabularyAcquisitionService(options = {}) {
           schema_version: 'graduation-result.v1',
           learning_unit_id: learningUnitId,
           review_state_id: reviewState.review_state_id,
+          event_id: eventId,
+        };
+      });
+    },
+
+    activatePreviewLearningUnit(rawCommand) {
+      return run(rawCommand, COMMAND_TYPES.ACTIVATE_PREVIEW, async (uow, command) => {
+        const learningUnitId = requiredId(command.payload.learning_unit_id, 'payload.learning_unit_id');
+        const unit = await uow.acquisition.getLearningUnit(learningUnitId);
+        const state = await uow.acquisition.getState(learningUnitId);
+        if (!unit || !state) {
+          fail('INVALID_CONTEXT_REFERENCE', 'Learning unit does not exist', {
+            learning_unit_id: learningUnitId,
+          });
+        }
+        if (unit.extensions?.source !== 'ielts-preview') {
+          fail('INVALID_STATE_TRANSITION', 'Only IELTS preview learning units may be activated by capacity', {
+            learning_unit_id: learningUnitId,
+          });
+        }
+
+        const existingReviewState = await uow.review.getByLearningUnitId(learningUnitId);
+        if (state.status === ACQUISITION_STATUSES.GRADUATED) {
+          if (!existingReviewState) {
+            fail('INVALID_CONTEXT_REFERENCE', 'Graduated preview learning unit is missing ReviewState', {
+              learning_unit_id: learningUnitId,
+            });
+          }
+          return {
+            schema_version: 'preview-activation-result.v1',
+            learning_unit_id: learningUnitId,
+            review_state_id: existingReviewState.review_state_id,
+            status: state.status,
+            activated: false,
+            already_activated: true,
+            event_id: null,
+          };
+        }
+
+        assertStatus(state, [
+          ACQUISITION_STATUSES.INTRODUCED,
+          ACQUISITION_STATUSES.ACQUIRING,
+          ACQUISITION_STATUSES.READY_FOR_CHECK,
+        ]);
+        if (existingReviewState) {
+          fail('REVIEW_STATE_ALREADY_EXISTS', 'Preview learning unit already has a ReviewState', {
+            learning_unit_id: learningUnitId,
+          });
+        }
+        if (!nonEmptyText(unit.normalized_form)
+          || unit.target_sense_id === null
+          || (!nonEmptyText(unit.target_sense?.gloss) && !nonEmptyText(unit.target_sense?.definition))) {
+          fail('INVALID_STATE_TRANSITION', 'Preview activation requires a valid word and primary meaning', {
+            learning_unit_id: learningUnitId,
+          });
+        }
+
+        const activatedAt = utcTimestamp(command.payload.activated_at, 'payload.activated_at');
+        const activationLocalDay = localDay(command.payload.local_day, 'payload.local_day');
+        const dailyLimit = nonNegativeInteger(command.payload.daily_limit, 'payload.daily_limit');
+        const dueReviewCount = nonNegativeInteger(command.payload.due_review_count, 'payload.due_review_count');
+        const previewActivation = {
+          schema_version: 'preview-capacity-activation.v1',
+          activated_at: activatedAt,
+          local_day: activationLocalDay,
+          daily_limit: dailyLimit,
+          due_review_count: dueReviewCount,
+        };
+        const reviewState = await uow.review.putInitial(initialReviewState(
+          unit,
+          {
+            ...command.payload,
+            extensions: {
+              source: 'ielts-preview',
+              preview_activation: previewActivation,
+            },
+          },
+          activatedAt,
+        ));
+        const graduatedState = await uow.acquisition.putState(normalizeAcquisitionState({
+          ...state,
+          status: ACQUISITION_STATUSES.GRADUATED,
+          graduated_at: activatedAt,
+          extensions: {
+            ...state.extensions,
+            preview_activation: previewActivation,
+          },
+        }), state.revision, { allowPreviewActivation: true });
+        const eventId = requiredId(command.payload.event_id, 'payload.event_id');
+        await uow.events.append(eventBase({
+          eventId,
+          command,
+          eventType: 'preview_learning_activated',
+          unit,
+          occurredAt: activatedAt,
+          recordedAt: activatedAt,
+          payload: {
+            review_state_id: reviewState.review_state_id,
+            acquisition_status: graduatedState.status,
+            completion_basis: 'preview_capacity_activation',
+            local_day: activationLocalDay,
+            daily_limit: dailyLimit,
+            due_review_count: dueReviewCount,
+            active_duration_reliable: false,
+          },
+        }));
+        return {
+          schema_version: 'preview-activation-result.v1',
+          learning_unit_id: learningUnitId,
+          review_state_id: reviewState.review_state_id,
+          status: graduatedState.status,
+          activated: true,
+          already_activated: false,
           event_id: eventId,
         };
       });

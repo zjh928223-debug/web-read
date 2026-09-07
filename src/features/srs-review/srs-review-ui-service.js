@@ -135,16 +135,29 @@ export function createSrsReviewUiService(options = {}) {
     })).then((items) => items.filter(Boolean))
   }
 
+  async function activatePreviewForNewSession(input = {}) {
+    if (typeof managementService?.activatePendingPreviewLearning !== 'function') return null
+    const sessionId = input.session_id
+    if (sessionId && await sessionLedgerRepository.getBySessionId(sessionId)) return null
+    return managementService.activatePendingPreviewLearning({
+      now: input.now,
+      timezone: input.timezone,
+      local_day: input.local_day,
+    })
+  }
+
   async function hasReviewCards(input = {}) {
     const sessionId = input.session_id
+    let existingSession = null
     if (sessionId) {
-      const existing = await sessionLedgerRepository.getBySessionId(sessionId)
-      if (existing) {
-        if (existing.status === 'completed' || existing.status === 'abandoned') return false
-        const completedIds = completedLedgerItemIds(existing)
-        if (existing.entries.some((entry) => !completedIds.has(entry.ledger_item_id))) return true
+      existingSession = await sessionLedgerRepository.getBySessionId(sessionId)
+      if (existingSession) {
+        if (existingSession.status === 'completed' || existingSession.status === 'abandoned') return false
+        const completedIds = completedLedgerItemIds(existingSession)
+        if (existingSession.entries.some((entry) => !completedIds.has(entry.ledger_item_id))) return true
       }
     }
+    if (!existingSession) await activatePreviewForNewSession(input)
     const snapshot = await acquisitionRepository.loadSnapshot()
     const graduated = Object.values(snapshot.by_learning_unit_id || {})
       .filter((pair) => pair.acquisition_state?.status === 'graduated')
@@ -159,9 +172,18 @@ export function createSrsReviewUiService(options = {}) {
     return false
   }
 
+  async function startReviewSession(input = {}) {
+    const sessionId = input.session_id
+    const existing = sessionId
+      ? await sessionLedgerRepository.getBySessionId(sessionId)
+      : null
+    if (!existing) await activatePreviewForNewSession(input)
+    return reviewService.startReviewSession(input)
+  }
+
   const service = {
     uiServiceVersion: SRS_REVIEW_UI_SERVICE_VERSION,
-    startReviewSession: reviewService.startReviewSession,
+    startReviewSession,
     resumeReviewSession: reviewService.resumeReviewSession,
     recordReviewAttempt: reviewService.recordReviewAttempt,
     completeReviewSession: reviewService.completeReviewSession,

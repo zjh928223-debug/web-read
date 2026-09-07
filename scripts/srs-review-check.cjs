@@ -192,8 +192,9 @@ async function run() {
     /document\.addEventListener\('pointerdown', handleHistoryOutsidePointer, true\)/,
     'the review history should listen for clicks outside its container',
   )
-  assert.match(reviewPageSource, /继续下一组（最多 30 个）/)
-  assert.match(reviewPageSource, /本组后还剩 \{\{ review\.backlogCount\.value \}\} 个/)
+  assert.match(reviewPageSource, /今日复习已完成/)
+  assert.doesNotMatch(reviewPageSource, /继续下一组（最多 30 个）/)
+  assert.doesNotMatch(reviewPageSource, /本组后还剩 \{\{ review\.backlogCount\.value \}\} 个/)
   assert.match(
     reviewPageSource,
     /watch\(\(\) => props\.active,[\s\S]*activateReviewPage\(\)[\s\S]*deactivateReviewPage\(\)/,
@@ -230,6 +231,11 @@ async function run() {
     'the original English sentence should render without a blue label or shadow',
   )
   assert.match(
+    reviewCssSource,
+    /\.srs-review-passage-word\.is-review-word\s*\{[^}]*color:\s*#111827;[^}]*font-weight:\s*700;/s,
+    'the target word in the English sentence should use black bold text without blue coloring',
+  )
+  assert.match(
     reviewPageSource,
     /onMounted\(async \(\) => \{[\s\S]*void loadLegacyMigrationStatus\(\)[\s\S]*await review\.load\(\)/,
     'legacy migration status should not block the first review card',
@@ -249,17 +255,27 @@ async function run() {
   assert.match(
     reviewPageSource,
     /srs-review-sentence-translation/,
-    'the revealed review context should expose the full-sentence Chinese translation',
+    'the review context should retain the full-sentence Chinese translation hook',
   )
   assert.match(
     reviewPageSource,
-    /v-if="flowState\.answerRevealed"/,
-    'Chinese meanings must not render before the answer is revealed',
+    /const sentenceTranslationVisible = ref\(false\)/,
+    'sentence translation visibility should start hidden independently from answer reveal',
   )
   assert.match(
+    reviewPageSource,
+    /v-if="flowState\.answerRevealed && sentenceTranslationVisible && sentenceTranslationZh"/,
+    'revealing the word answer must not reveal sentence Chinese automatically',
+  )
+  assert.match(
+    reviewPageSource,
+    /<template v-for="action in review\.actions"[\s\S]*?v-if="flowState\.answerRevealed"/,
+    'all rating buttons should remain hidden until the answer is revealed',
+  )
+  assert.doesNotMatch(
     reviewPageSource,
     /action\.tone === 'again' \|\| flowState\.answerRevealed/,
-    'only Again should remain visible during recall',
+    'Again must not remain visible during recall',
   )
   assert.match(
     reviewPageSource,
@@ -595,13 +611,20 @@ async function run() {
       againEvents.push('advance')
     },
   })
-  assert.equal(await againFlow.rate(review.actions[0]), true, 'Again should be allowed before reveal')
-  assert.equal(againFlow.answerRevealed, true, 'Again should reveal the answer')
+  assert.equal(
+    await againFlow.rate(review.actions[0]),
+    false,
+    'Again should be rejected before reveal',
+  )
+  assert.equal(againFlow.answerRevealed, false, 'Again must not reveal the answer implicitly')
   assert.deepEqual(
     againEvents,
-    ['submit:again', 'advance'],
-    'Again should save once and advance without blocking on replay audio',
+    [],
+    'Again must not save or advance before the answer is revealed',
   )
+  againFlow.revealAnswer()
+  assert.equal(await againFlow.rate(review.actions[0]), true, 'Again should save after reveal')
+  assert.deepEqual(againEvents, ['submit:again', 'advance'])
   assert.equal(await againFlow.rate(review.actions[0]), false, 'a committed card must ignore duplicate ratings')
   againFlow.resetCard()
   assert.equal(againFlow.answerRevealed, false)

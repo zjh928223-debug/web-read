@@ -6,7 +6,7 @@ const REVIEW_POLICY_MODES = Object.freeze([
   'intensive',
 ])
 
-const DEFAULT_REVIEW_BUDGET_MS = 60 * 60 * 1000
+const DEFAULT_REVIEW_BUDGET_MS = 15 * 60 * 1000
 const DEFAULT_ATTEMPT_DURATION_MS = 36 * 1000
 const DEFAULT_BALANCED_REVISIT_DELAY_MS = 15 * 60 * 1000
 const BALANCED_MAX_REVISITS_PER_LOCAL_DAY = 1
@@ -71,7 +71,7 @@ export function normalizeReviewPolicy(input) {
   }
 
   const policyVersion = source.policy_version ?? DEFAULT_REVIEW_POLICY_VERSION
-  const mode = source.mode ?? 'balanced'
+  const mode = source.mode ?? 'once_daily'
   const budgetMs = source.budget_ms ?? DEFAULT_REVIEW_BUDGET_MS
   const defaultAttemptMs = source.default_attempt_ms ?? DEFAULT_ATTEMPT_DURATION_MS
   const revisitDelayMs = source.balanced_revisit_delay_ms

@@ -353,6 +353,45 @@ class VocabularySrsOwnerTests(unittest.TestCase):
         self.assertEqual(snapshot["payload"]["records"][settlement_key]["timestamp"], timestamp)
         self.assertEqual(snapshot["payload"]["records"][watermark_key]["timestamp"], timestamp)
 
+    def test_settlement_progress_allows_application_claim_token(self):
+        owner = self.make_owner()
+        settlement_key = "vocabulary-article-srs-settlement-progress:article-1"
+        settlement = {
+            "article_id": "article-1",
+            "refinements": [],
+            "application_claims": [{
+                "target_id": "target-1",
+                "claim_token": "application-claim-1",
+                "claimed_at": "2026-08-29T00:00:00.000Z",
+                "expires_at": "2026-08-29T01:00:00.000Z",
+            }],
+            "settlement_target_ids": ["target-1"],
+            "removed_target_ids": [],
+            "applied_target_ids": [],
+            "skipped_target_ids": [],
+            "last_apply_mode": "all",
+            "refined_at": None,
+            "applied_at": None,
+            "skipped_at": None,
+            "updated_at": "2026-08-29T00:00:00.000Z",
+        }
+
+        result = self.command(
+            owner,
+            "learning-event-append",
+            settlement_key,
+            self.row(settlement_key, settlement),
+            0,
+            request_key="settlement-claim-token",
+        )
+
+        self.assertEqual(result["outcome"], "committed")
+        current = owner.query("snapshot", **self.ids("settlement-claim-token-read"))
+        self.assertEqual(
+            current["payload"]["records"][settlement_key]["content"]["application_claims"][0]["claim_token"],
+            "application-claim-1",
+        )
+
     def test_learning_unit_of_work_commits_all_changed_rows_once_with_one_receipt(self):
         replacements = 0
 

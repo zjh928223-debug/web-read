@@ -38,6 +38,133 @@ import { getWindowsOwnerVocabularySrsIntegration } from './windows-owner-vocabul
 
 export const VOCABULARY_LEGACY_ADD_WORD_COMPATIBILITY = 'legacy-add-word.v1';
 
+const PREVIEW_ACTIVATION_DELAY_MS = 24 * 60 * 60 * 1000;
+const PREVIEW_ACTIVATION_PENDING_STATUSES = new Set([
+  'introduced',
+  'acquiring',
+  'ready_for_check',
+]);
+
+function previewLocalDayAt(isoTimestamp, timeZone) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(isoTimestamp));
+    const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return new Date(isoTimestamp).toISOString().slice(0, 10);
+  }
+}
+
+function resolvePreviewTime(options, nowProvider) {
+  const nowIso = toIsoString(options.now || options.activatedAt || options.activated_at || nowProvider());
+  let timeZone = normalizeNullableText(options.timezone || options.timeZone);
+  if (!timeZone) {
+    try {
+      timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      timeZone = null;
+    }
+  }
+  timeZone ||= 'UTC';
+  const localDay = normalizeNullableText(options.local_day || options.localDay)
+    || previewLocalDayAt(nowIso, timeZone);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(localDay)) {
+    throw new Error('Preview activation local day must use YYYY-MM-DD format');
+  }
+  return { nowIso, timeZone, localDay };
+}
+
+function previewActivationDailyLimit(dueReviewCount) {
+  if (dueReviewCount <= 15) return 5;
+  if (dueReviewCount <= 24) return 2;
+  return 0;
+}
+
+function isPreviewSource(pair) {
+  return pair?.learning_unit?.extensions?.source === 'ielts-preview';
+}
+
+function hasPreviewPrimaryMeaning(unit) {
+  const form = normalizeText(unit?.normalized_form).toLocaleLowerCase();
+  const gloss = normalizeText(unit?.target_sense?.gloss);
+  const definition = normalizeText(unit?.target_sense?.definition);
+  return Boolean(
+    definition
+    || (gloss && gloss.toLocaleLowerCase() !== form),
+  );
+}
+
+function isPreviewActivationCandidate(pair, nowIso) {
+  const state = pair?.acquisition_state;
+  const unit = pair?.learning_unit;
+  if (!isPreviewSource(pair) || !PREVIEW_ACTIVATION_PENDING_STATUSES.has(state?.status)) return false;
+  if (!normalizeText(unit?.normalized_form) || unit?.target_sense_id === null) return false;
+  if (!hasPreviewPrimaryMeaning(unit)) return false;
+  const introducedAt = Date.parse(state?.introduced_at || '');
+  const nowMs = Date.parse(nowIso);
+  return Number.isFinite(introducedAt)
+    && Number.isFinite(nowMs)
+    && nowMs - introducedAt >= PREVIEW_ACTIVATION_DELAY_MS;
+}
+
+function isPreviewActivatedOnLocalDay(pair, localDay, timeZone) {
+  if (!isPreviewSource(pair) || pair?.acquisition_state?.status !== 'graduated') return false;
+  const metadata = pair.acquisition_state.extensions?.preview_activation;
+  if (metadata?.local_day === localDay) return true;
+  return Boolean(
+    pair.acquisition_state.graduated_at
+    && previewLocalDayAt(pair.acquisition_state.graduated_at, timeZone) === localDay,
+  );
+}
+
+function previewActivationMetadata(pair) {
+  const metadata = pair?.acquisition_state?.extensions?.preview_activation;
+  return metadata && typeof metadata === 'object' ? metadata : null;
+}
+
+function summarizePendingPreviewSnapshot(snapshot, nowIso) {
+  const pairs = Object.values(snapshot?.by_learning_unit_id || {});
+  const pending = pairs.filter((pair) => (
+    isPreviewSource(pair)
+    && PREVIEW_ACTIVATION_PENDING_STATUSES.has(pair?.acquisition_state?.status)
+  ));
+  return {
+    schema_version: 'preview-learning-pending-summary.v1',
+    waiting: pending.length,
+    matureWaiting: pending.filter((pair) => isPreviewActivationCandidate(pair, nowIso)).length,
+  };
+}
+
+function countDueReviewCards(reviewSnapshot, contentSnapshot, nowIso) {
+  const nowMs = Date.parse(nowIso);
+  const dueCardIds = new Set();
+  const dueV2WordIds = new Set();
+  const dueStates = Object.values(reviewSnapshot?.by_learning_unit_id || {});
+  dueStates.forEach((state) => {
+    if (!state || !Number.isFinite(Date.parse(state.due_at)) || Date.parse(state.due_at) > nowMs) return;
+    const cardId = state.learning_unit_id
+      ? `unit:${state.learning_unit_id}`
+      : (state.word_id ? `word:${state.word_id}` : null);
+    if (!cardId || dueCardIds.has(cardId)) return;
+    dueCardIds.add(cardId);
+    if (state.word_id) dueV2WordIds.add(String(state.word_id));
+  });
+  (contentSnapshot?.reviewStates || []).forEach((state) => {
+    if (!state || !Number.isFinite(Date.parse(state.due_at)) || Date.parse(state.due_at) > nowMs) return;
+    const learningUnitId = state.learning_unit_id ? String(state.learning_unit_id) : null;
+    const wordId = state.word_id ? String(state.word_id) : null;
+    const cardId = learningUnitId ? `unit:${learningUnitId}` : (wordId ? `word:${wordId}` : null);
+    if (!cardId || dueCardIds.has(cardId) || (!learningUnitId && wordId && dueV2WordIds.has(wordId))) return;
+    dueCardIds.add(cardId);
+  });
+  return dueCardIds.size;
+}
+
 export function createVocabularyService(options = {}) {
   const ownerIntegration = options.ownerIntegration
     || (!options.repository ? getWindowsOwnerVocabularySrsIntegration(options.windowObject || globalThis) : null);
@@ -67,7 +194,11 @@ export function createVocabularyService(options = {}) {
   }
   const acquisitionService = options.acquisitionService
     || createVocabularyAcquisitionService(acquisitionServiceOptions);
+  const reviewStateRepository = options.reviewStateRepository
+    || ownerIntegration?.reviewStateRepository
+    || null;
   const legacyCompatibilityCalls = [];
+  let previewActivationQueue = Promise.resolve();
 
   function normalizeWordInput(input = {}) {
     const createdAt = toIsoString(input.createdAt || input.created_at || nowProvider());
@@ -330,6 +461,150 @@ export function createVocabularyService(options = {}) {
       remaining: Math.max(0, pending.length - results.length),
       results,
     };
+  }
+
+  async function loadPreviewReviewStateSnapshot(learningUnitIds) {
+    if (typeof reviewStateRepository?.loadSnapshot === 'function') {
+      return reviewStateRepository.loadSnapshot();
+    }
+    if (typeof reviewStateRepository?.getByLearningUnitId === 'function') {
+      const entries = await Promise.all((Array.isArray(learningUnitIds) ? learningUnitIds : [])
+        .map(async (learningUnitId) => [
+          learningUnitId,
+          await reviewStateRepository.getByLearningUnitId(learningUnitId),
+        ]));
+      return {
+        schema_version: 'review-store.v2',
+        by_learning_unit_id: Object.fromEntries(entries.filter(([, state]) => state)),
+      };
+    }
+    return { schema_version: 'review-store.v2', by_learning_unit_id: {} };
+  }
+
+  async function loadPreviewActivationInputs() {
+    const acquisitionSnapshot = await acquisitionRepository.loadSnapshot();
+    const [contentSnapshot, reviewSnapshot] = await Promise.all([
+      typeof repository.loadSnapshot === 'function'
+        ? repository.loadSnapshot()
+        : Promise.resolve({ words: [], reviewStates: [] }),
+      loadPreviewReviewStateSnapshot(Object.keys(acquisitionSnapshot?.by_learning_unit_id || {})),
+    ]);
+    return { acquisitionSnapshot, contentSnapshot, reviewSnapshot };
+  }
+
+  async function getPendingPreviewLearningSummary(options = {}) {
+    if (!acquisitionEnabled || typeof acquisitionRepository.loadSnapshot !== 'function') {
+      return {
+        schema_version: 'preview-learning-pending-summary.v1',
+        waiting: 0,
+        matureWaiting: 0,
+      };
+    }
+    const { nowIso } = resolvePreviewTime(options, nowProvider);
+    return summarizePendingPreviewSnapshot(await acquisitionRepository.loadSnapshot(), nowIso);
+  }
+
+  async function activatePendingPreviewLearning(options = {}) {
+    const execute = async () => {
+      if (!acquisitionEnabled || typeof acquisitionRepository.loadSnapshot !== 'function') {
+        return {
+          schema_version: 'preview-activation-plan.v1',
+          local_day: null,
+          due_review_count: 0,
+          daily_limit: 0,
+          dailyLimit: 0,
+          activated: [],
+          waiting: 0,
+          matureWaiting: 0,
+          remainingDailyCapacity: 0,
+        };
+      }
+      if (typeof acquisitionService.activatePreviewLearningUnit !== 'function') {
+        throw new Error('Preview activation command is unavailable');
+      }
+      const { nowIso, timeZone, localDay } = resolvePreviewTime(options, nowProvider);
+      const { acquisitionSnapshot, contentSnapshot, reviewSnapshot } = await loadPreviewActivationInputs();
+      const pairs = Object.values(acquisitionSnapshot?.by_learning_unit_id || {});
+      const pending = pairs.filter((pair) => (
+        isPreviewSource(pair)
+        && PREVIEW_ACTIVATION_PENDING_STATUSES.has(pair?.acquisition_state?.status)
+      ));
+      const dueReviewCount = countDueReviewCards(
+        reviewSnapshot,
+        contentSnapshot,
+        nowIso,
+      );
+      const activatedToday = pairs.filter((pair) => (
+        isPreviewActivatedOnLocalDay(pair, localDay, timeZone)
+      ));
+      const persistedDailyLimit = activatedToday
+        .map(previewActivationMetadata)
+        .find((metadata) => Number.isInteger(metadata?.daily_limit) && metadata.daily_limit >= 0)
+        ?.daily_limit;
+      const dailyLimit = persistedDailyLimit ?? previewActivationDailyLimit(dueReviewCount);
+      const remainingCapacity = Math.max(0, dailyLimit - activatedToday.length);
+      const candidates = pending
+        .filter((pair) => isPreviewActivationCandidate(pair, nowIso))
+        .sort((left, right) => {
+          const leftAt = Date.parse(left.acquisition_state.introduced_at);
+          const rightAt = Date.parse(right.acquisition_state.introduced_at);
+          if (leftAt !== rightAt) return leftAt - rightAt;
+          return String(left.learning_unit.learning_unit_id)
+            .localeCompare(String(right.learning_unit.learning_unit_id));
+        })
+        .slice(0, remainingCapacity);
+
+      const makeCommand = (pair) => {
+        const learningUnitId = pair.learning_unit.learning_unit_id;
+        const commandBase = `preview-capacity-activation:${localDay}:${learningUnitId}`;
+        return {
+          command_id: `${commandBase}:command`,
+          correlation_id: commandBase,
+          event_partition: nowIso.slice(0, 7),
+          payload: {
+            learning_unit_id: learningUnitId,
+            activated_at: nowIso,
+            local_day: localDay,
+            daily_limit: dailyLimit,
+            due_review_count: dueReviewCount,
+            review_state_id: `vocabulary-review:${learningUnitId}`,
+            scheduler_version: 'fsrs.v1',
+            scheduler_parameters_version: 'fsrs-parameters.v1',
+            event_id: `${commandBase}:event`,
+          },
+        };
+      };
+      const activate = async (commands) => {
+        const results = [];
+        for (const pair of candidates) {
+          results.push(await commands.activatePreviewLearningUnit(makeCommand(pair)));
+        }
+        return results;
+      };
+      const activated = candidates.length && typeof acquisitionService.runBatch === 'function'
+        ? await acquisitionService.runBatch(activate)
+        : await activate(acquisitionService);
+      const postActivationSnapshot = await acquisitionRepository.loadSnapshot();
+      const postPairs = Object.values(postActivationSnapshot?.by_learning_unit_id || {});
+      const postSummary = summarizePendingPreviewSnapshot(postActivationSnapshot, nowIso);
+      const activatedTodayAfter = postPairs.filter((pair) => (
+        isPreviewActivatedOnLocalDay(pair, localDay, timeZone)
+      )).length;
+      return {
+        schema_version: 'preview-activation-plan.v1',
+        local_day: localDay,
+        due_review_count: dueReviewCount,
+        daily_limit: dailyLimit,
+        dailyLimit,
+        activated: Array.isArray(activated) ? activated : [],
+        waiting: postSummary.waiting,
+        matureWaiting: postSummary.matureWaiting,
+        remainingDailyCapacity: Math.max(0, dailyLimit - activatedTodayAfter),
+      };
+    };
+    const next = previewActivationQueue.then(execute, execute);
+    previewActivationQueue = next.catch(() => undefined);
+    return next;
   }
 
   async function queueAcquisitionInternal(input = {}, options = {}) {
@@ -668,6 +943,8 @@ export function createVocabularyService(options = {}) {
     queueVocabularyAcquisitions,
     queuePreviewVocabularyAcquisition,
     completePendingArticleLearning,
+    getPendingPreviewLearningSummary,
+    activatePendingPreviewLearning,
     getAcquisitionRepository: () => acquisitionRepository,
     getAcquisitionService: () => acquisitionService,
     isAcquisitionEnabled: () => acquisitionEnabled,

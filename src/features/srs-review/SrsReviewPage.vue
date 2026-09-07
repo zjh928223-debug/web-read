@@ -7,7 +7,7 @@
       </button>
       <div class="srs-review-heading">
         <p class="srs-review-progress" aria-live="polite">
-          {{ review.progress.value || '今日复习' }}<template v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value"> · 本组后还剩 {{ review.backlogCount.value }} 个</template>
+          {{ review.progress.value || '今日复习' }}
         </p>
       </div>
       <div ref="historyContainer" class="srs-review-summary">
@@ -102,16 +102,14 @@
     </section>
 
     <section v-else-if="review.empty.value" class="srs-review-state" aria-live="polite">
-      <h2>今天没有待复习单词</h2>
+      <h2>今日复习已完成</h2>
+      <p>当前没有需要复习的词。</p>
       <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
-      <h2>本次复习完成</h2>
+      <h2>今日复习已完成</h2>
       <p>共完成 {{ sessionCompletedCount }} 张</p>
-      <p v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value">
-        还有 {{ review.backlogCount.value }} 个待复习单词，可继续下一组。
-      </p>
       <p v-if="review.deferredRevisit.value">{{ review.currentEligibilityLabel.value }}，稍后回来即可继续。</p>
       <ul class="srs-review-completion-counts">
         <li>Again 忘记：{{ review.sessionRatingCounts.value.again }}</li>
@@ -119,14 +117,6 @@
         <li>Good 一般：{{ review.sessionRatingCounts.value.good }}</li>
         <li>Easy 容易：{{ review.sessionRatingCounts.value.easy }}</li>
       </ul>
-      <button
-        v-if="review.reviewSource.value === 'legacy' && review.backlogCount.value"
-        type="button"
-        class="srs-review-retry"
-        @click="review.continueLegacyBatch"
-      >
-        继续下一组（最多 30 个）
-      </button>
       <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
     </section>
 
@@ -185,7 +175,7 @@
               >{{ part.text }}</span><template v-else>{{ part.text }}</template></template></template>
             </p>
             <p
-              v-if="flowState.answerRevealed && sentenceTranslationZh"
+              v-if="flowState.answerRevealed && sentenceTranslationVisible && sentenceTranslationZh"
               class="srs-review-sentence-translation"
               lang="zh-CN"
             ><span
@@ -194,12 +184,12 @@
               :class="{ 'is-review-meaning': part.highlighted }"
             >{{ part.text }}</span></p>
             <p
-              v-else-if="flowState.answerRevealed && sentenceTranslationLoading"
+              v-else-if="flowState.answerRevealed && sentenceTranslationVisible && sentenceTranslationLoading"
               class="srs-review-sentence-translation is-loading"
               role="status"
             >正在生成整句翻译…</p>
             <p
-              v-else-if="flowState.answerRevealed && sentenceTranslationUnavailable"
+              v-else-if="flowState.answerRevealed && sentenceTranslationVisible && sentenceTranslationUnavailable"
               class="srs-review-sentence-translation is-unavailable"
             >
               <span>整句翻译暂时不可用</span>
@@ -366,7 +356,7 @@
         </button>
         <template v-for="action in review.actions" :key="action.shortcut">
           <button
-          v-if="action.tone === 'again' || flowState.answerRevealed"
+          v-if="flowState.answerRevealed"
           type="button"
           :class="[`is-${action.tone}`, { 'is-pending': flowState.transitioning && flowState.pendingTone === action.tone }]"
           :aria-keyshortcuts="action.shortcut"
@@ -445,6 +435,7 @@ const historyContainer = ref(null)
 const flowNotice = ref('')
 const sentenceTranslationZh = ref('')
 const sentenceTranslationParts = ref([])
+const sentenceTranslationVisible = ref(false)
 const sentenceTranslationLoading = ref(false)
 const sentenceTranslationUnavailable = ref(false)
 const migrationStatus = ref(null)
@@ -667,6 +658,7 @@ watch(() => review.current.value?.word?.id, async (nextId, previousId) => {
   translationRequest += 1
   sentenceTranslationZh.value = ''
   sentenceTranslationParts.value = []
+  sentenceTranslationVisible.value = false
   sentenceTranslationLoading.value = false
   sentenceTranslationUnavailable.value = false
   void dictionaryAssistance.setCard(nextId ? word.value.word : '')
@@ -700,6 +692,7 @@ watch(() => flowState.answerRevealed, (revealed) => {
 
 async function hydrateCurrentSentenceTranslation() {
   if (!flowState.answerRevealed) return
+  sentenceTranslationVisible.value = true
   const request = ++translationRequest
   const cardId = review.current.value?.word?.id
   sentenceTranslationLoading.value = true
@@ -846,6 +839,7 @@ function handleReviewShortcut(event) {
     || event.metaKey
   ) return
   if (review.pending.value || !review.current.value || review.reviewingPast.value) return
+  if (!flowState.answerRevealed) return
   const action = getReviewActionForShortcut(event.key)
   if (!action) return
   event.preventDefault()

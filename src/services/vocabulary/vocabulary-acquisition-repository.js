@@ -279,7 +279,16 @@ function assertImmutableLearningUnitFields(current, next) {
   }
 }
 
-function assertStateTransition(currentStatus, nextStatus) {
+function assertStateTransition(currentStatus, nextStatus, options = {}) {
+  if (options.allowPreviewActivation === true
+    && nextStatus === ACQUISITION_STATUSES.GRADUATED
+    && [
+      ACQUISITION_STATUSES.INTRODUCED,
+      ACQUISITION_STATUSES.ACQUIRING,
+      ACQUISITION_STATUSES.READY_FOR_CHECK,
+    ].includes(currentStatus)) {
+    return;
+  }
   if (currentStatus === nextStatus) {
     if (currentStatus === ACQUISITION_STATUSES.GRADUATED
       || currentStatus === ACQUISITION_STATUSES.SKIPPED) {
@@ -422,7 +431,7 @@ function createRepositoryCore(storage, options = {}) {
     return clone(store.by_learning_unit_id[id]?.acquisition_state || null);
   }
 
-  async function putState(input, expectedRevision) {
+  async function putState(input, expectedRevision, options = {}) {
     const next = normalizeAcquisitionState(input);
     const expected = normalizeExpectedRevision(expectedRevision);
     const store = await loadStore();
@@ -448,7 +457,7 @@ function createRepositoryCore(storage, options = {}) {
         actual_revision: next.revision,
       });
     }
-    assertStateTransition(current.status, next.status);
+    assertStateTransition(current.status, next.status, options);
     next.revision = current.revision + 1;
     pair.acquisition_state = next;
     await saveStore(store);
@@ -1047,8 +1056,11 @@ export function createIndexedDbAcquisitionRepository(options = {}) {
     getState(learningUnitId) {
       return runRecoverableTransaction('readonly', (repository) => repository.getState(learningUnitId));
     },
-    putState(state, expectedRevision) {
-      return runRecoverableTransaction('readwrite', (repository) => repository.putState(state, expectedRevision));
+    putState(state, expectedRevision, options) {
+      return runRecoverableTransaction(
+        'readwrite',
+        (repository) => repository.putState(state, expectedRevision, options),
+      );
     },
     getAttempt(attemptId) {
       return runRecoverableTransaction('readonly', (repository) => repository.getAttempt(attemptId));

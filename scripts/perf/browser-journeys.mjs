@@ -366,7 +366,7 @@ const journeys = {
       const previousProgress = await page.locator('.srs-review-progress').textContent()
       await rating.click()
       await page.waitForFunction(({ previousWord: priorWord, previousProgress: priorProgress }) => {
-        const completed = document.querySelector('.srs-review-state h2')?.textContent?.trim() === '本次复习完成'
+        const completed = document.querySelector('.srs-review-state h2')?.textContent?.trim() === '今日复习已完成'
         const nextWord = document.querySelector('.srs-review-word-line h2')?.textContent?.trim()
         const nextProgress = document.querySelector('.srs-review-progress')?.textContent?.trim()
         return completed

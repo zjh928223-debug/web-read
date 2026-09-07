@@ -220,7 +220,8 @@ function harness(api, {
   const reviewStateRepository = {
     async getByLearningUnitId(id) {
       reviewQueries.push(id);
-      return structuredClone(reviewStates.find((state) => state.learning_unit_id === id) ?? null);
+      const reviewStore = runner.snapshot().find((row) => row.id === 'vocabulary.review.store.v2')?.content;
+      return structuredClone(reviewStore?.by_learning_unit_id?.[id] ?? null);
     },
   };
   const learningEventRepository = {
@@ -380,6 +381,56 @@ async function main() {
     assert.equal(ledger.backlog.due_review_count, 1);
     const again = await test.start('session-fixed');
     assert.deepEqual(again, ledger, 'session start is stable and does not re-plan an existing ledger');
+  }
+
+  {
+    const formal = unit('formal-first');
+    const preview = unit('preview-after-formal');
+    preview.learning_unit.extensions = { source: 'ielts-preview' };
+    const test = harness(api, {
+      pairs: [preview, formal],
+      reviewStates: [reviewState('preview-after-formal'), reviewState('formal-first')],
+    });
+    const ledger = await test.start('session-preview-priority');
+    assert.deepEqual(
+      ledger.entries.map((entry) => entry.learning_unit_id),
+      ['formal-first', 'preview-after-formal'],
+      'formal due reviews must precede activated preview cards',
+    );
+    assert.deepEqual(
+      ledger.entries.map((entry) => entry.queue_kind),
+      ['due_review', 'due_review'],
+    );
+  }
+
+  {
+    const preview = unit('preview-activated-once');
+    preview.learning_unit.extensions = { source: 'ielts-preview' };
+    const test = harness(api, {
+      pairs: [preview],
+      reviewStates: [reviewState('preview-activated-once', {
+        state: 'new',
+        due_at: '2026-07-28T07:00:00.000Z',
+        stability: 0,
+        difficulty: 5,
+        elapsed_days: 0,
+        scheduled_days: 0,
+        reps: 0,
+        lapses: 0,
+        learning_steps: 0,
+        last_review_at: null,
+      })],
+    });
+    const firstLedger = await test.start('session-preview-new');
+    assert.equal(firstLedger.entries[0].queue_kind, 'acquisition');
+    await test.service.recordReviewAttempt(attempt(firstLedger, 'preview-first-good'));
+    const nextLedger = await test.start('session-preview-due', {
+      now: '2026-07-31T08:00:00.000Z',
+      local_day: '2026-07-31',
+      timezone: 'UTC',
+    });
+    assert.equal(nextLedger.entries[0].queue_kind, 'due_review');
+    assert.notEqual(nextLedger.entries[0].queue_kind, 'acquisition');
   }
 
   {

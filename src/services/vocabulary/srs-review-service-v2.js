@@ -221,6 +221,16 @@ function planningCandidate(reviewState, estimatedAttemptMs, queueKind, reason, d
   };
 }
 
+function isUnreviewedPreviewCard(reviewState, learningUnit) {
+  return learningUnit?.extensions?.source === 'ielts-preview'
+    && reviewState?.state === 'new'
+    && Number(reviewState?.reps) === 0
+    && Number(reviewState?.learning_steps) === 0
+    && Number(reviewState?.lapses) === 0
+    && Number(reviewState?.scheduled_days) === 0
+    && reviewState?.last_review_at == null;
+}
+
 function toVersionedReviewState(beforeState, scheduledState, occurredAt, schedulerVersion) {
   return {
     ...clone(beforeState),
@@ -589,12 +599,17 @@ export function createSrsReviewServiceV2(options = {}) {
           continue;
         }
         if (Date.parse(reviewState.due_at) > Date.parse(input.now)) continue;
-        const queueKind = reviewState.state === 'relearning' ? 'relearning' : 'due_review';
+        const previewIsUnreviewed = isUnreviewedPreviewCard(reviewState, unit);
+        const queueKind = reviewState.state === 'relearning'
+          ? 'relearning'
+          : (previewIsUnreviewed ? 'acquisition' : 'due_review');
         candidates.push(planningCandidate(
           reviewState,
           speed.estimated_attempt_ms,
           queueKind,
-          queueKind === 'relearning' ? 'SCHEDULER_RELEARNING_DUE' : 'SCHEDULER_DUE',
+          queueKind === 'relearning'
+            ? 'SCHEDULER_RELEARNING_DUE'
+            : (queueKind === 'acquisition' ? 'PREVIEW_CAPACITY_ACTIVATED' : 'SCHEDULER_DUE'),
         ));
       }
       const planned = planReviewSession({

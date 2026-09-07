@@ -142,8 +142,8 @@ async function main() {
   assert.deepEqual(normalizedDefault, {
     schema_version: 'review-policy.v1',
     policy_version: 'review-policy.v1',
-    mode: 'balanced',
-    budget_ms: 3600000,
+    mode: 'once_daily',
+    budget_ms: 900000,
     default_attempt_ms: 36000,
     balanced_revisit_delay_ms: 900000,
     balanced_max_revisits_per_local_day: 1,
