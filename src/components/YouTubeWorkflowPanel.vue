@@ -1591,7 +1591,18 @@ function isActiveJob(job) {
 function jobLogLines(job) {
   const lines = Array.isArray(job && job.logSummary) ? job.logSummary : []
   const cleaned = lines.map((line) => String(line || '').trim()).filter(Boolean)
-  if (!cleaned.length) return ['等待后台日志…']
+  if (!cleaned.length) {
+    const stage = String(job?.stage || job?.status || '').toLowerCase()
+    const fallback = {
+      queued: '任务已排队，等待后台工作线程…',
+      downloading: '正在下载视频素材…',
+      transcribing: '正在使用 WhisperX 生成逐词字幕…',
+      segmenting: '正在请求 Gemini 生成英语语块…',
+      translating: '正在请求 Gemini 生成中文翻译…',
+      validating: '正在校验字幕、语块和阅读器文件…',
+    }
+    return [fallback[stage] || '后台正在处理，等待下一条进度…']
+  }
   return cleaned.slice(-5)
 }
 

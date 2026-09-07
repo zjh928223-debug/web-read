@@ -939,9 +939,9 @@ class LocalWorkflowRunner:
             "--compute_type", "float16",
             "--language", "en",
             "--vad_method", "silero",
-            "--beam_size", "8",
-            "--batch_size", "4",
-            "--return_char_alignments",
+            "--beam_size", "5",
+            "--batch_size", "8",
+            "--print_progress", "True",
             "--output_format", "json",
             "--output_dir", str(target_folder),
         ]
@@ -950,6 +950,39 @@ class LocalWorkflowRunner:
         if not raw_transcript_path.is_file():
             raise RuntimeError("没有找到 WhisperX 生成的原始 JSON 文件。")
         return raw_transcript_path
+
+    def _extract_transcription_audio(
+        self,
+        media_file: Path,
+        target_folder: Path,
+        file_stem: str,
+        emit_line: Callable[[str], None],
+        cancel_event: Event,
+    ) -> Path:
+        """Create a lightweight audio input for WhisperX while retaining video playback media."""
+        self._require_configured_tool("ffmpeg", self.config.ffmpeg_path)
+        audio_file = target_folder / f"{file_stem}.transcription.mp3"
+        if audio_file.is_file() and audio_file.stat().st_size > 0:
+            emit_line(f"复用已存在的转写音频：{audio_file.name}")
+            return audio_file
+        ffmpeg_cmd = [
+            str(self.config.ffmpeg_path),
+            "-y",
+            "-i", str(media_file),
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-q:a", "2",
+            str(audio_file),
+        ]
+        self.command_runner.run(
+            ffmpeg_cmd,
+            "ffmpeg",
+            emit_line,
+            cancel_event=cancel_event,
+        )
+        if not audio_file.is_file() or audio_file.stat().st_size <= 0:
+            raise RuntimeError("视频没有生成可供 WhisperX 使用的转写音频。")
+        return audio_file
 
     def run(
         self,
@@ -1049,16 +1082,27 @@ class LocalWorkflowRunner:
         video_file = downloaded_media_file if request.video_priority and is_video_media(downloaded_media_file) else None
         if video_file:
             audio_file = downloaded_media_file
-            transcription_audio_file = audio_file
+            stage("transcribing", "视频已下载，正在抽取音频供 WhisperX 使用。")
+            transcription_audio_file = self._extract_transcription_audio(
+                video_file,
+                target_folder,
+                file_stem,
+                lambda line: command_line("ffmpeg", line),
+                cancel_event,
+            )
+            stage("transcribing", "音频抽取完成，开始启动 WhisperX。")
         else:
             audio_file = downloaded_media_file
             transcription_audio_file = audio_file
+            stage("transcribing", "开始启动 WhisperX。")
         workflow_dir = target_folder / "_workflow"
         workflow_dir.mkdir(exist_ok=True)
         checkpoint_path = workflow_dir / "checkpoint.json"
         checkpoint_files = {"audio": str(audio_file)}
         if video_file:
             checkpoint_files["video"] = str(video_file)
+        if transcription_audio_file != audio_file:
+            checkpoint_files["transcriptionAudio"] = str(transcription_audio_file)
         checkpoint = {
             "jobId": job_id,
             "title": title,
@@ -1071,7 +1115,6 @@ class LocalWorkflowRunner:
         }
         self._save_checkpoint(checkpoint_path, checkpoint, "downloading")
 
-        stage("transcribing", "开始启动 WhisperX。")
         raw_transcript_path = self._run_whisperx(
             transcription_audio_file,
             target_folder,
@@ -1117,6 +1160,8 @@ class LocalWorkflowRunner:
         files = {"audio": str(audio_file), "transcript": str(transcript_path), "chunkData": str(public_chunk_path)}
         if video_file:
             files["video"] = str(video_file)
+        if transcription_audio_file != audio_file:
+            files["transcriptionAudio"] = str(transcription_audio_file)
         checkpoint["files"] = files
         self._save_checkpoint(checkpoint_path, checkpoint, "translating")
         stage("validating", "校验阅读器会话文件。")
@@ -1210,6 +1255,15 @@ class LocalWorkflowRunner:
         if retry_stage == "transcribing":
             if transcription_audio_file is None:
                 return self.run(request, job_id, emit=emit, cancel_event=cancel_event)
+            if video_file and transcription_checkpoint_file is None:
+                stage("transcribing", "从已下载视频抽取转写音频。")
+                transcription_audio_file = self._extract_transcription_audio(
+                    video_file,
+                    target_folder,
+                    file_stem,
+                    lambda line: command_line("ffmpeg", line),
+                    cancel_event,
+                )
             stage("transcribing", "从已下载素材继续启动 WhisperX。")
             raw_transcript_path = self._run_whisperx(
                 transcription_audio_file,
@@ -1225,7 +1279,7 @@ class LocalWorkflowRunner:
             checkpoint_files = {"audio": str(audio_file or transcription_audio_file), "transcript": str(transcript_path)}
             if video_file:
                 checkpoint_files["video"] = str(video_file)
-            if transcription_audio_file != (audio_file or video_file):
+            if transcription_audio_file and transcription_audio_file != (audio_file or video_file):
                 checkpoint_files["transcriptionAudio"] = str(transcription_audio_file)
             checkpoint["files"] = checkpoint_files
             self._save_checkpoint(checkpoint_path, checkpoint, "transcribing")
@@ -1376,24 +1430,12 @@ class LocalWorkflowRunner:
             shutil.copy2(transcript_source, transcript_path)
             log_summary.append("legacy transcript copied")
         else:
-            whisperx_cmd = [
-                str(self.config.whisperx_path),
-                str(audio_file),
-                "--model", "large-v3",
-                "--device", "cuda",
-                "--compute_type", "float16",
-                "--language", "en",
-                "--vad_method", "silero",
-                "--beam_size", "8",
-                "--batch_size", "4",
-                "--return_char_alignments",
-                "--output_format", "json",
-                "--output_dir", str(target_folder),
-            ]
-            self.command_runner.run(whisperx_cmd, "whisperx", lambda line: command_line("whisperx", line), cancel_event=cancel_event)
-            raw_transcript_path = target_folder / f"{audio_file.stem}.json"
-            if not raw_transcript_path.exists():
-                raise RuntimeError("legacy import did not produce a Whisper transcript")
+            raw_transcript_path = self._run_whisperx(
+                audio_file,
+                target_folder,
+                lambda line: command_line("whisperx", line),
+                cancel_event,
+            )
             raw_transcript_path.replace(transcript_path)
 
         output_json_path = workflow_dir / "output.json"

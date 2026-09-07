@@ -14,6 +14,14 @@ const PASSAGE_DATA_KEY = 'vocabulary.passage-preview.data.v2'
 const PASSAGE_PROGRESS_KEY = 'vocabulary.passage-preview.progress.v2'
 const PASSAGE_DURABLE_KEY = 'vocabulary.passage-preview.durable-state.v1'
 const PASSAGE_ACQUISITION_KEY = 'vocabulary.passage-preview.acquisition.v1'
+const PASSAGE_QUERY_RECORD_KEYS = Object.freeze({
+  'durable-state': [PASSAGE_DURABLE_KEY],
+  'preview-batch': [PASSAGE_DATA_KEY, PASSAGE_ACQUISITION_KEY],
+  progress: [PASSAGE_PROGRESS_KEY],
+  continuation: [],
+  archive: [],
+  'legacy-keys': [],
+})
 const ANNOTATION_PREFIX = 'AnnotationGenerationStorage::'
 const ANNOTATION_SUFFIXES = ['annotation.bundle.v2.json', 'annotation.generated.json', 'annotation.status.json']
 const FINGERPRINT = `sha256:${'a'.repeat(64)}`
@@ -345,9 +353,12 @@ async function handleOwnerRequest(request, response) {
     const records = domain === 'passage-preview'
       ? state.passageRecords
       : state.annotationRecords
-    const selected = domain === 'annotation' && body.payload?.scope
-      ? Object.fromEntries(Object.entries(records).filter(([, content]) => sameScope(content, body.payload.scope)))
-      : records
+    const passageKeys = PASSAGE_QUERY_RECORD_KEYS[body.operation] || []
+    const selected = domain === 'passage-preview'
+      ? Object.fromEntries(Object.entries(records).filter(([key]) => passageKeys.includes(key)))
+      : domain === 'annotation' && body.payload?.scope
+        ? Object.fromEntries(Object.entries(records).filter(([, content]) => sameScope(content, body.payload.scope)))
+        : records
     return sendJson(response, 200, ownerResponse(body, {
       outcome: 'read',
       commitStatus: 'not-applicable',
@@ -366,7 +377,8 @@ async function handleOwnerRequest(request, response) {
       return sendJson(response, 400, { error: 'records are required' })
     }
     state.commandRequests.push({ url: request.url, raw, body })
-    if (state.pageFailure === 'command' && domain === 'passage-preview') {
+    if ((state.pageFailure === 'command' || state.pageFailure === 'conflict-once') && domain === 'passage-preview') {
+      if (state.pageFailure === 'conflict-once') state.pageFailure = null
       return sendJson(response, 409, ownerResponse(body, {
         outcome: 'conflict',
         commitStatus: 'conflict',
@@ -571,6 +583,33 @@ async function runPassagePreviewPageCheck(origin, context) {
   state.commandRequests = []
   state.commandInFlight = 0
   state.maxConcurrentCommands = 0
+  state.pageFailure = null
+  const recoveringOwnerPage = await context.newPage()
+  const recoveringOwnerErrors = []
+  recoveringOwnerPage.on('pageerror', (error) => recoveringOwnerErrors.push(error.message))
+  try {
+    await mountPassagePreviewPage(recoveringOwnerPage, origin, pageItems, { startOwnerReady: false })
+    await recoveringOwnerPage.getByRole('button', { name: '看看这个词怎么用' }).waitFor()
+    await recoveringOwnerPage.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await recoveringOwnerPage.getByRole('button', { name: '下一词' }).click()
+    await waitForCondition(() => state.commandInFlight === 0 && state.revisions['passage-preview'] === 2, 2000)
+    assert.equal(
+      await recoveringOwnerPage.getByText('进度保存失败，请重新打开。', { exact: true }).count(),
+      0,
+      'a temporarily unavailable authoritative owner must recover instead of selecting the frozen browser writer',
+    )
+    const counts = await recoveringOwnerPage.evaluate(() => window.__passagePreviewPageTest.progressStorageCounts())
+    assert.deepEqual(counts, { reads: 0, writes: 0 })
+  } finally {
+    await recoveringOwnerPage.close()
+  }
+  assert.deepEqual(recoveringOwnerErrors, [], `recovering owner page emitted browser errors: ${recoveringOwnerErrors.join('; ')}`)
+
+  state.passageRecords = createPassagePageRecords(pageItems)
+  state.revisions['passage-preview'] = 0
+  state.commandRequests = []
+  state.commandInFlight = 0
+  state.maxConcurrentCommands = 0
   state.pageQueryDelayMs = 0
   state.pageFailure = 'query'
   const queryFailurePage = await context.newPage()
@@ -589,6 +628,28 @@ async function runPassagePreviewPageCheck(origin, context) {
   }
   assert.deepEqual(queryFailureErrors, [], `query failure emitted browser errors: ${queryFailureErrors.join('; ')}`)
 
+  state.passageRecords = createPassagePageRecords(pageItems)
+  state.revisions['passage-preview'] = 0
+  state.commandRequests = []
+  state.pageFailure = 'conflict-once'
+  const conflictRecoveryPage = await context.newPage()
+  try {
+    await mountPassagePreviewPage(conflictRecoveryPage, origin, pageItems)
+    await conflictRecoveryPage.getByRole('button', { name: '看看这个词怎么用' }).click()
+    await waitForCondition(() => state.revisions['passage-preview'] === 1, 2000)
+    assert.equal(
+      await conflictRecoveryPage.getByText('进度保存失败，请重新打开。', { exact: true }).count(),
+      0,
+      'one revision conflict must be retried instead of locking the preview page',
+    )
+    assert.equal(state.commandRequests.length, 2, 'revision conflict recovery must retry exactly once')
+  } finally {
+    await conflictRecoveryPage.close()
+  }
+
+  state.passageRecords = createPassagePageRecords(pageItems)
+  state.revisions['passage-preview'] = 0
+  state.commandRequests = []
   state.pageFailure = 'command'
   const writeFailurePage = await context.newPage()
   const writeFailureErrors = []
@@ -611,7 +672,7 @@ async function runPassagePreviewPageCheck(origin, context) {
   state.pageQueryDelayMs = 0
 }
 
-async function mountPassagePreviewPage(page, origin, items) {
+async function mountPassagePreviewPage(page, origin, items, options = {}) {
   await page.goto(origin, { waitUntil: 'domcontentloaded' })
   await page.evaluate(({ profileId, instanceId, pageItems }) => {
     const stale = {
@@ -642,13 +703,19 @@ async function mountPassagePreviewPage(page, origin, items) {
     window.__passagePreviewPageItems = pageItems
     window.__passagePreviewPageOwnerArgs = { profileId, instanceId }
   }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID, pageItems: items })
-  await page.evaluate(async ({ profileId, instanceId }) => {
+  await page.evaluate(async ({ profileId, instanceId, startOwnerReady }) => {
     const { createApp, h } = await import('/node_modules/.vite/deps/vue.js')
     const { default: PassagePreviewPage } = await import('/src/features/passage-preview/PassagePreviewPage.vue')
     const { createWindowsOwnerApiClient } = await import('/src/services/windows-owner-api-client.js')
     const client = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 1000 })
+    let ownerReady = startOwnerReady !== false
     window.__windowsOwnerDomainCutover = {
+      get ownerReady() { return ownerReady },
       isAuthoritative: (domain) => domain === 'passage-preview',
+      assertBrowserWriterAllowed(domain) {
+        if (domain === 'passage-preview') throw new Error('The passage-preview browser writer is frozen after Host cutover')
+      },
+      async refresh() { ownerReady = true },
       query: (request) => client.query(request),
       command: (request) => client.command(request),
     }
@@ -663,7 +730,7 @@ async function mountPassagePreviewPage(page, origin, items) {
         },
       }),
     }).mount(root)
-  }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID })
+  }, { profileId: PROFILE_ID, instanceId: INSTANCE_ID, startOwnerReady: options.startOwnerReady })
 }
 
 function createPassagePageRecords(items) {

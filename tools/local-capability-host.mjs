@@ -5,6 +5,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:http'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { loadEnv } from 'vite'
 
 import { createEcdictVitePlugin } from '../src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createLocalSentenceVitePlugin } from '../src/dictionary/local-sentences/local-sentence-vite-plugin.mjs'
@@ -29,26 +30,34 @@ export const CAPABILITY_ENDPOINTS = Object.freeze([
 ])
 
 export function loadCapabilityRuntimeConfig(env = process.env, cwd = process.cwd()) {
+  // The capability host is a separate Windows backend process. Load the
+  // backend-only .env.local here as well as inherited process variables;
+  // process variables win, and the key is never sent to the browser bundle.
+  const fileEnv = env === process.env ? loadEnv('production', cwd, '') : {}
+  const runtimeEnv = { ...fileEnv, ...env }
+  const dataRoot = String(runtimeEnv.READ_WEB_SUBTITLE_DATA_ROOT || '').trim()
   return {
-    host: env.READ_WEB_CAPABILITY_HOST || '127.0.0.1',
-    port: Number.parseInt(env.READ_WEB_CAPABILITY_PORT || '8770', 10),
-    accessToken: String(env.READ_WEB_SERVICE_TOKEN || '').trim(),
-    releaseId: String(env.READ_WEB_RELEASE_ID || '').trim(),
-    profileId: String(env.READ_WEB_PROFILE_ID || '').trim(),
-    instanceId: String(env.READ_WEB_INSTANCE_ID || '').trim(),
-    localSentenceDatabasePath: env.LOCAL_SENTENCE_DATABASE_PATH,
-    translationApiKey: env.VOCABULARY_TRANSLATION_API_KEY || env.GEMINI_API_KEY,
-    translationModels: compactModels(env.VOCABULARY_TRANSLATION_MODEL, env.VOCABULARY_TRANSLATION_FALLBACK_MODELS),
-    translationProxyUrl: env.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
-    aiPreviewApiKey: env.VOCABULARY_AI_PREVIEW_API_KEY || env.VOCABULARY_TRANSLATION_API_KEY || env.GEMINI_API_KEY,
-    aiPreviewModels: compactModels(env.VOCABULARY_AI_PREVIEW_MODEL, env.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS),
-    aiPreviewProxyUrl: env.VOCABULARY_AI_PREVIEW_PROXY_URL || env.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
-    merriamDictionaryApiKey: env.MERRIAM_WEBSTER_DICTIONARY_API_KEY,
-    merriamLearnersApiKey: env.MERRIAM_WEBSTER_LEARNERS_API_KEY,
-    wordnikApiKey: env.WORDNIK_API_KEY,
-    ieltsCandidatesPath: env.IELTS_READING_VOCABULARY_CANDIDATES_PATH,
-    ecdictEnabled: env.ECDICT_ENABLED === 'true',
-    ecdictDatabasePath: env.ECDICT_DATABASE_PATH,
+    host: runtimeEnv.READ_WEB_CAPABILITY_HOST || '127.0.0.1',
+    port: Number.parseInt(runtimeEnv.READ_WEB_CAPABILITY_PORT || '8770', 10),
+    accessToken: String(runtimeEnv.READ_WEB_SERVICE_TOKEN || '').trim(),
+    releaseId: String(runtimeEnv.READ_WEB_RELEASE_ID || '').trim(),
+    profileId: String(runtimeEnv.READ_WEB_PROFILE_ID || '').trim(),
+    instanceId: String(runtimeEnv.READ_WEB_INSTANCE_ID || '').trim(),
+    localSentenceDatabasePath: runtimeEnv.LOCAL_SENTENCE_DATABASE_PATH
+      || (dataRoot ? resolve(dataRoot, 'dictionaries', 'local-sentences.sqlite') : resolve(cwd, 'data/dictionaries/local-sentences.sqlite')),
+    translationApiKey: runtimeEnv.VOCABULARY_TRANSLATION_API_KEY || runtimeEnv.GEMINI_API_KEY,
+    translationModels: compactModels(runtimeEnv.VOCABULARY_TRANSLATION_MODEL, runtimeEnv.VOCABULARY_TRANSLATION_FALLBACK_MODELS),
+    translationProxyUrl: runtimeEnv.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
+    aiPreviewApiKey: runtimeEnv.VOCABULARY_AI_PREVIEW_API_KEY || runtimeEnv.VOCABULARY_TRANSLATION_API_KEY || runtimeEnv.GEMINI_API_KEY,
+    aiPreviewModels: compactModels(runtimeEnv.VOCABULARY_AI_PREVIEW_MODEL, runtimeEnv.VOCABULARY_AI_PREVIEW_FALLBACK_MODELS),
+    aiPreviewProxyUrl: runtimeEnv.VOCABULARY_AI_PREVIEW_PROXY_URL || runtimeEnv.VOCABULARY_TRANSLATION_PROXY_URL || 'http://127.0.0.1:7897',
+    merriamDictionaryApiKey: runtimeEnv.MERRIAM_WEBSTER_DICTIONARY_API_KEY,
+    merriamLearnersApiKey: runtimeEnv.MERRIAM_WEBSTER_LEARNERS_API_KEY,
+    wordnikApiKey: runtimeEnv.WORDNIK_API_KEY,
+    wordnikHourlyBudget: parseOptionalPositiveInteger(runtimeEnv.WORDNIK_LOCAL_HOURLY_BUDGET),
+    ieltsCandidatesPath: runtimeEnv.IELTS_READING_VOCABULARY_CANDIDATES_PATH,
+    ecdictEnabled: runtimeEnv.ECDICT_ENABLED === 'true',
+    ecdictDatabasePath: runtimeEnv.ECDICT_DATABASE_PATH,
     cwd,
   }
 }
@@ -82,7 +91,10 @@ export function createLocalCapabilityServer(options = {}) {
       learnersApiKey: config.merriamLearnersApiKey,
     }),
     createTatoebaSentenceVitePlugin(),
-    createWordnikSentenceVitePlugin({ apiKey: config.wordnikApiKey }),
+    createWordnikSentenceVitePlugin({
+      apiKey: config.wordnikApiKey,
+      hourlyBudget: config.wordnikHourlyBudget,
+    }),
     createIeltsLearningPoolVitePlugin({ candidatesPath: config.ieltsCandidatesPath }),
     createEcdictVitePlugin({
       enabled: config.ecdictEnabled,
@@ -151,6 +163,12 @@ function dispatch(middleware, request, response, onMissing) {
 
 function compactModels(primary, fallbacks = '') {
   return [primary, ...String(fallbacks || '').split(',')].map((value) => String(value || '').trim()).filter(Boolean)
+}
+
+function parseOptionalPositiveInteger(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 function isLoopbackHost(value) {

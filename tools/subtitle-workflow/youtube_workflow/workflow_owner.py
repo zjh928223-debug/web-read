@@ -1330,6 +1330,21 @@ class WorkflowOwner:
             raise WorkflowOwnerError("invalid-request")
         return value
 
+    def _live_service_job_snapshot(self, job_id: str) -> dict[str, Any] | None:
+        """Read the in-process event ring without making it a second durable store."""
+        manager = self.service_manager
+        manager_jobs = getattr(manager, "jobs", None)
+        if not isinstance(manager_jobs, Mapping):
+            return None
+        record = manager_jobs.get(str(job_id or ""))
+        if record is None or not hasattr(record, "public_snapshot"):
+            return None
+        try:
+            snapshot = record.public_snapshot()
+        except Exception:
+            return None
+        return dict(snapshot) if isinstance(snapshot, Mapping) else None
+
     @staticmethod
     def _job_payload(payload: Mapping[str, Any], operation: str) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
@@ -1672,7 +1687,25 @@ class WorkflowOwner:
             selected = jobs
             if "jobId" in query_payload:
                 selected = [item for item in jobs if item.get("jobId") == query_payload["jobId"]]
-            public = [_public_value(item) for item in selected]
+            public = []
+            for item in selected:
+                persisted_public = _public_value(item)
+                job_id = str(item.get("jobId") or "") if isinstance(item, Mapping) else ""
+                live = self._live_service_job_snapshot(job_id) if job_id else None
+                if live is not None and str(live.get("status") or "").lower() not in {
+                    "ready",
+                    "failed",
+                    "canceled",
+                    "cancelled",
+                    "completed",
+                }:
+                    live_public = _public_value(live)
+                    if isinstance(live_public, Mapping):
+                        merged = dict(persisted_public) if isinstance(persisted_public, Mapping) else {}
+                        merged.update(live_public)
+                        public.append(merged)
+                        continue
+                public.append(persisted_public)
             payload_result = {
                 "empty": not bool(public),
                 "found": bool(public),

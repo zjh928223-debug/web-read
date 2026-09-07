@@ -311,14 +311,18 @@ class WorkflowCoreTests(unittest.TestCase):
                 command_runner=command_runner,
             ).run(request, job_id="job-local", emit=events.append)
 
-            self.assertEqual([source for source, _cmd in command_runner.calls], ["yt-dlp", "whisperx"])
+            self.assertEqual([source for source, _cmd in command_runner.calls], ["yt-dlp", "ffmpeg", "whisperx"])
             yt_dlp_cmd = command_runner.calls[0][1]
             self.assertEqual(yt_dlp_cmd[yt_dlp_cmd.index("-f") + 1], "best[ext=mp4]/best")
             self.assertEqual(
                 yt_dlp_cmd[yt_dlp_cmd.index("--extractor-args") + 1],
                 "youtube:player_client=mweb",
             )
-            whisperx_cmd = command_runner.calls[1][1]
+            whisperx_cmd = command_runner.calls[2][1]
+            self.assertEqual(whisperx_cmd[whisperx_cmd.index("--beam_size") + 1], "5")
+            self.assertEqual(whisperx_cmd[whisperx_cmd.index("--batch_size") + 1], "8")
+            self.assertEqual(whisperx_cmd[whisperx_cmd.index("--print_progress") + 1], "True")
+            self.assertNotIn("--return_char_alignments", whisperx_cmd)
             self.assertEqual(manifest["status"], "ready")
             self.assertEqual(manifest["request"]["videoPriority"], True)
             allowed_states = {
@@ -337,9 +341,10 @@ class WorkflowCoreTests(unittest.TestCase):
             self.assertTrue(all(event["stage"] in allowed_states for event in events))
             self.assertEqual(Path(manifest["files"]["video"]).name, "Example Video.mp4")
             self.assertEqual(Path(manifest["files"]["audio"]).name, "Example Video.mp4")
-            self.assertNotIn("transcriptionAudio", manifest["files"])
-            self.assertEqual(Path(whisperx_cmd[1]), Path(manifest["files"]["audio"]))
+            self.assertEqual(Path(manifest["files"]["transcriptionAudio"]).name, "Example Video.transcription.mp3")
+            self.assertEqual(Path(whisperx_cmd[1]), Path(manifest["files"]["transcriptionAudio"]))
             self.assertTrue(Path(manifest["files"]["audio"]).exists())
+            self.assertTrue(Path(manifest["files"]["transcriptionAudio"]).exists())
             self.assertTrue(Path(manifest["files"]["transcript"]).exists())
             self.assertTrue(Path(manifest["files"]["transcript"]).name.endswith(".transcript.json"))
             self.assertTrue(Path(manifest["files"]["chunkData"]).name.endswith(".ai-chunks.json"))
@@ -578,10 +583,13 @@ class WorkflowCoreTests(unittest.TestCase):
                 emit=lambda event: None,
             )
 
-            self.assertEqual([source for source, _cmd in command_runner.calls], ["whisperx"])
-            self.assertEqual(Path(command_runner.calls[0][1][1]), video)
+            self.assertEqual([source for source, _cmd in command_runner.calls], ["ffmpeg", "whisperx"])
+            transcription_audio = job_dir / "Example Video.transcription.mp3"
+            self.assertEqual(Path(command_runner.calls[0][1][-1]), transcription_audio)
+            self.assertEqual(Path(command_runner.calls[1][1][1]), transcription_audio)
             self.assertEqual(manifest["status"], "ready")
             self.assertEqual(manifest["retryStage"], "transcribing")
+            self.assertEqual(Path(manifest["files"]["transcriptionAudio"]), transcription_audio)
             self.assertTrue(Path(manifest["files"]["transcript"]).is_file())
             self.assertEqual(previous_manifest["checkpoint"]["jobId"], "old-job")
             validate_session_files(manifest)

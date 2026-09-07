@@ -40,6 +40,29 @@ async function main() {
     accessToken: 'test-client-token',
   });
 
+  const structuredErrorClient = api.createYoutubeWorkflowClient({
+    baseUrl: 'http://127.0.0.1:8765',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 409,
+      async json() {
+        return {
+          status: 'not-ready',
+          error: {
+            code: 'legacy-writer-frozen',
+            message: 'the Host owner API is authoritative for this domain',
+          },
+        };
+      },
+    }),
+  });
+  await assert.rejects(
+    structuredErrorClient.health(),
+    (error) => error.message === 'the Host owner API is authoritative for this domain'
+      && error.code === 'legacy-writer-frozen'
+      && error.detail?.code === 'legacy-writer-frozen',
+  );
+
   await client.health();
   await client.diagnostics();
   await client.diagnosticsPackage();

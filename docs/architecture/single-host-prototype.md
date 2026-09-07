@@ -22,6 +22,17 @@ an explicitly managed loopback sidecar until they are ported.
 
 These are Connect middleware and cannot accompany a copied `dist` directory without a Node/Vite process. The separate FastAPI workflow service already owns workflow, activity, marks, pronunciation, TTS, file, and Range media APIs.
 
+### Wordnik free-plan boundary
+
+Wordnik is configured only in the Windows capability backend through `WORDNIK_API_KEY` (or the
+backend-only `.env.local`); it is never exposed as a `VITE_*` value. The browser asks for a sentence
+only after the learner reveals a word, so opening a 50-word preview does not pre-fetch Wordnik. The
+free-plan path does not retain completed Wordnik data in browser/session caches; only identical
+requests that are still in flight are coalesced. The backend keeps a conservative local hourly guard
+and forwards Wordnik's `x-ratelimit-*` headers when available, including the observed hour/minute
+limits and remaining counts. The current public pricing page lists Free Basic as 100 calls/hour;
+the exact minute allowance is plan-dependent and must be read from those response headers.
+
 ## Prototype result
 
 `production_host_prototype.create_production_host(...)` dispatches `/api/*` to the existing workflow ASGI application without stripping the `/api` prefix, provides `/api/app/health`, serves immutable `dist` assets, and applies an HTML-only SPA fallback. Existing workflow Range responses pass through unchanged. Its `startupMs` field provides a small startup-cost measurement seam. A normal Starlette `mount('/api', workflow)` is intentionally not used because the workflow routes already include `/api`; mounting there would incorrectly expose them as `/api/api/*`.

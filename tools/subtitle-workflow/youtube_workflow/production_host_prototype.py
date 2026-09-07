@@ -553,6 +553,12 @@ class PathPreservingAsgiDispatch:
         if method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
             return False
         if self._domain_is_frozen("workflow") or self._domain_is_authoritative("workflow"):
+            # Annotation backfill is an execution endpoint, not a legacy
+            # workflow/job-state writer.  It must remain reachable after the
+            # Host workflow owner is promoted; otherwise the request is
+            # rejected here with a generic 409 before Gemini is contacted.
+            if re.fullmatch(r"/api/jobs/[^/]+/annotation-backfill(?:/.*)?", path):
+                return False
             return path.startswith(("/api/config", "/api/jobs", "/api/import/jobs", "/api/history"))
         if self._domain_is_frozen("marks-activity") or self._domain_is_authoritative("marks-activity"):
             if path.startswith("/api/reader/activity"):

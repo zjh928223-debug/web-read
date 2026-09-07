@@ -3,11 +3,13 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from youtube_workflow.production_host_prototype import create_local_app_host
+from youtube_workflow.windows_owner_runtime import create_profile_owner_handlers
 from youtube_workflow.windows_owner_registry import WINDOWS_OWNER_DOMAINS, load_owner_registry
 
 
@@ -325,6 +327,63 @@ class WindowsOwnerC2aTests(unittest.TestCase):
                 )
                 self.assertNotEqual(unblocked.status_code, 409)
                 self.assertNotEqual(unblocked.json().get("error", {}).get("code"), "legacy-writer-frozen")
+
+    def test_workflow_cutover_keeps_annotation_backfill_execution_reachable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dispatch = self.make_app(Path(tmp), ["workflow"])
+            self.assertFalse(
+                dispatch._legacy_writer_is_frozen(
+                    "/api/jobs/c2a-job/annotation-backfill",
+                    "POST",
+                )
+            )
+            self.assertFalse(
+                dispatch._legacy_writer_is_frozen(
+                    "/api/jobs/c2a-job/annotation-backfill/operations/op-1/cancel",
+                    "POST",
+                )
+            )
+            self.assertTrue(
+                dispatch._legacy_writer_is_frozen(
+                    "/api/jobs/c2a-job/retry",
+                    "POST",
+                )
+            )
+
+    def test_marks_owner_resolves_each_job_to_workflow_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output_root = root / "workflow-output"
+            job_output = output_root / "article-folder"
+
+            manager = SimpleNamespace(
+                _manifest_for_job=lambda job_id: {
+                    "jobId": job_id,
+                    "outputDir": str(job_output),
+                },
+            )
+            handlers = create_profile_owner_handlers(
+                root / "profile",
+                "c2a-profile",
+                "c2a-instance",
+                workflow_output_dir=output_root,
+                workflow_service_manager=manager,
+            )
+            response = handlers["marks-activity"].command(
+                "marks-commit",
+                payload={
+                    "jobId": "c2a-job",
+                    "contentId": "c2a-content",
+                    "marks": [{"globalIndex": 0, "word": "hello"}],
+                },
+                expected_revision=0,
+                idempotency_key="c2a-job-marks",
+                request_id="c2a-job-marks-request",
+                correlation_id="c2a-job-marks-correlation",
+            )
+            self.assertEqual(response["outcome"], "committed")
+            self.assertTrue((job_output / "_workflow" / "reader-marks.json").is_file())
+            self.assertFalse((root / "profile" / "owners" / "marks-activity" / "_workflow" / "reader-marks.json").exists())
 
 
 if __name__ == "__main__":

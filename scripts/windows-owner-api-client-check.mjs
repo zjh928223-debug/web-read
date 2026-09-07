@@ -169,6 +169,33 @@ await assert.rejects(
 )
 assert.equal(calls.length, beforeInvalid, 'invalid operations must fail before fetch')
 
+let settlementClaimTokenCalls = 0
+const settlementClaimTokenClient = createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  fetchImpl: async (_url, options) => {
+    settlementClaimTokenCalls += 1
+    return jsonResponse(notReadyResponse(JSON.parse(options.body)), 503)
+  },
+})
+const settlementClaimTokenResult = await settlementClaimTokenClient.command({
+  domain: 'vocabulary-srs',
+  operation: 'learning-event-append',
+  payload: {
+    recordKey: 'vocabulary-article-srs-settlement-progress:article-1',
+    record: {
+      id: 'vocabulary-article-srs-settlement-progress:article-1',
+      content: {
+        article_id: 'article-1',
+        application_claims: [{ claim_token: 'application-claim-1' }],
+      },
+    },
+  },
+  expectedRevision: 0,
+  idempotencyKey: 'settlement-claim-token',
+})
+assert.equal(settlementClaimTokenResult.outcome, 'not-ready')
+assert.equal(settlementClaimTokenCalls, 1, 'settlement claim tokens must reach the Host request')
+
 const conflictClient = createWindowsOwnerApiClient({
   profileId: 'optimization',
   fetchImpl: async (_url, options) => jsonResponse({

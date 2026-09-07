@@ -52,14 +52,19 @@ async function readJsonResponse(response) {
     let details = null
     try {
       const body = await response.json()
-      if (body?.detail && typeof body.detail === 'object') {
-        detailPayload = body.detail
-        detail = String(body.detail.message || '')
-        code = String(body.detail.code || '')
-        category = String(body.detail.category || '')
-        retryable = body.detail.retryable
-        details = body.detail.details && typeof body.detail.details === 'object'
-          ? body.detail.details
+      const structuredError = body?.detail && typeof body.detail === 'object'
+        ? body.detail
+        : body?.error && typeof body.error === 'object'
+          ? body.error
+          : null
+      if (structuredError) {
+        detailPayload = structuredError
+        detail = String(structuredError.message || '')
+        code = String(structuredError.code || '')
+        category = String(structuredError.category || '')
+        retryable = structuredError.retryable
+        details = structuredError.details && typeof structuredError.details === 'object'
+          ? structuredError.details
           : null
       } else {
         detail = body?.detail ? String(body.detail) : ''

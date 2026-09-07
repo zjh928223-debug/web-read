@@ -280,6 +280,56 @@ class WorkflowOwnerTests(unittest.TestCase):
         self.assertEqual(receipt["outcome"], "committed")
         self.assertEqual(receipt["receipt"]["domain"], "workflow")
 
+    def test_job_query_overlays_live_service_events_without_persisting_event_ring(self):
+        config = WorkflowConfig(state_dir=self.state_dir, output_dir=self.output_dir)
+
+        class NonStartingJobManager(JobManager):
+            def start_pending_worker(self):
+                return None
+
+        manager = NonStartingJobManager(
+            config=config,
+            runner_factory=lambda: FakeWorkflowRunner(config),
+        )
+        owner = WorkflowOwner(
+            self.state_dir,
+            self.output_dir,
+            "profile-1",
+            "instance-live-events",
+            store=manager.store,
+            service_manager=manager,
+        )
+        try:
+            created = manager.create_job(
+                {"url": "https://www.youtube.com/watch?v=live-events", "geminiMode": "mock"},
+                start_worker=False,
+            )
+            record = manager.jobs[created["jobId"]]
+            record.add_event({
+                "status": "downloading",
+                "stage": "downloading",
+                "message": "download stage",
+            })
+            record.add_event({
+                "status": "downloading",
+                "stage": "downloading",
+                "message": "live log only",
+            })
+
+            query = owner.query(
+                "job",
+                payload={"jobId": created["jobId"]},
+                **self.ids("live-events"),
+            )
+            job = query["payload"]["job"]
+            self.assertEqual(job["stage"], "downloading")
+            self.assertIn("live log only", job["logSummary"])
+
+            persisted = json.loads((self.state_dir / "jobs.json").read_text(encoding="utf-8"))
+            self.assertNotIn("logSummary", persisted["jobs"][0])
+        finally:
+            manager.close()
+
     def test_same_key_replays_without_a_second_job_repository_replace(self):
         replacements = 0
         owner = None

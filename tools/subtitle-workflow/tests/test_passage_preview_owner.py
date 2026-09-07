@@ -229,6 +229,50 @@ class PassagePreviewOwnerTests(unittest.TestCase):
         receipt = reopened.receipt(idempotency_key="write-0", **self.ids("reopen-receipt"))
         self.assertEqual(receipt["outcome"], "committed")
 
+    def test_durable_state_keeps_adaptive_preview_history_for_backend_readers(self):
+        owner = self.make_owner()
+        durable_key = "vocabulary.passage-preview.durable-state.v1"
+        durable = self.durable()
+        durable["learningHistory"] = {
+            "schemaVersion": "passage-preview.learning-history.v1",
+            "sessions": [{
+                "schemaVersion": "passage-preview.learning-session.v1",
+                "sessionId": "preview:batch-1:2026-09-01T01:00:00.000Z",
+                "batchId": "batch-1",
+                "calendarDate": "2026-09-01",
+                "timeZone": "Asia/Shanghai",
+                "status": "completed",
+                "startedAt": "2026-09-01T01:00:00.000Z",
+                "completedAt": "2026-09-01T01:02:00.000Z",
+                "durationMs": 120000,
+                "itemCount": 2,
+                "items": [
+                    {"id": "ielts-reading:2026-09-01:batch-1:alpha", "lemma": "alpha", "learnedAt": "2026-09-01T01:01:00.000Z"},
+                    {"id": "ielts-reading:2026-09-01:batch-1:beta", "lemma": "beta", "learnedAt": "2026-09-01T01:02:00.000Z"},
+                ],
+                "recordedAt": "2026-09-01T01:02:01.000Z",
+            }],
+            "dailySummaries": [{
+                "calendarDate": "2026-09-01",
+                "sessionCount": 1,
+                "wordCount": 2,
+                "durationMs": 120000,
+            }],
+            "updatedAt": "2026-09-01T01:02:01.000Z",
+        }
+        durable["learningSettings"] = {
+            "schemaVersion": "passage-preview.learning-settings.v1",
+            "batchSize": 37,
+        }
+        result = self.command(owner, "state-commit", durable_key, self.row(durable_key, durable), 0, request_key="adaptive-history")
+        self.assertEqual(result["outcome"], "committed")
+
+        loaded = owner.query("durable-state", **self.ids("adaptive-history-read"))
+        content = loaded["payload"]["records"][durable_key]["content"]
+        self.assertEqual(content["learningHistory"]["sessions"][0]["calendarDate"], "2026-09-01")
+        self.assertEqual(content["learningHistory"]["sessions"][0]["items"][1]["lemma"], "beta")
+        self.assertEqual(content["learningSettings"]["batchSize"], 37)
+
     def test_empty_legacy_import_clears_existing_records(self):
         owner = self.make_owner()
         key = "vocabulary.passage-preview.data.v1"

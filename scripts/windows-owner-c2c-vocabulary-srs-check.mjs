@@ -1274,6 +1274,7 @@ async function runAppOwnerRecoveryJourney(origin) {
       ].join('')
 
       let hostReady = false
+      let refreshCount = 0
       function ownerNotReadyError(operation) {
         const error = new Error(`owner is not ready for ${operation}`)
         error.code = 'owner-not-ready'
@@ -1301,6 +1302,11 @@ async function runAppOwnerRecoveryJourney(origin) {
             revision: 1,
             payload: { records: {} },
           }
+        },
+        async refresh() {
+          refreshCount += 1
+          hostReady = true
+          return { status: 'authoritative', authoritativeDomains: ['vocabulary-srs'] }
         },
       }
       window.__windowsOwnerDomainCutover = cutover
@@ -1330,14 +1336,20 @@ async function runAppOwnerRecoveryJourney(origin) {
 
       await waitFor(hasNotReadyStatus)
       const initialNotReady = hasNotReadyStatus()
-      hostReady = true
-      await waitFor(() => !hasNotReadyStatus())
-      const recovered = !hasNotReadyStatus()
       const integration = (await import('/src/services/vocabulary/windows-owner-vocabulary-srs.js'))
         .getWindowsOwnerVocabularySrsIntegration(window)
+      const recoveredSnapshot = await integration.reviewStateRepository.loadSnapshot()
+      await waitFor(() => !hasNotReadyStatus())
+      const recovered = !hasNotReadyStatus()
       const ownerReadyAfterRecovery = integration?.owner?.ownerReady === true
       app.unmount()
-      return { initialNotReady, recovered, ownerReadyAfterRecovery }
+      return {
+        initialNotReady,
+        recovered,
+        ownerReadyAfterRecovery,
+        refreshCount,
+        recoveredSnapshotSchema: recoveredSnapshot?.schema_version,
+      }
     })
     return { ...result, pageErrors }
   } finally {
@@ -1472,6 +1484,8 @@ try {
   assert.equal(appRecoveryResult.initialNotReady, true, 'App must retain a visible not-ready state while Host is unavailable')
   assert.equal(appRecoveryResult.recovered, true, 'App must recover its owner-backed vocabulary integration after Host readiness')
   assert.equal(appRecoveryResult.ownerReadyAfterRecovery, true, 'App recovery must observe the ready Host owner')
+  assert.equal(appRecoveryResult.refreshCount, 1, 'first vocabulary/SRS query must refresh a temporarily unavailable authoritative owner once')
+  assert.equal(appRecoveryResult.recoveredSnapshotSchema, 'review-store.v2', 'recovered query must return the review snapshot')
   assert.deepEqual(appRecoveryResult.pageErrors, [], 'App owner recovery must not throw during mount or readiness transition')
 
   const finalResponse = await ownerClient.query({ domain: DOMAIN, operation: 'snapshot', payload: {} })

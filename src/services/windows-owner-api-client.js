@@ -441,11 +441,17 @@ function bindPayload(payload, profileId, instanceId) {
   if (instanceId && copy.instanceId !== undefined && copy.instanceId !== instanceId) throw inputError('payload instanceId does not match client instance')
   copy.profileId = profileId
   if (instanceId) copy.instanceId = instanceId
-  const allowsVocabularySettlementAttemptToken = typeof copy.recordKey === 'string'
+  const allowsVocabularySettlementSensitiveKeys = typeof copy.recordKey === 'string'
     ? copy.recordKey.startsWith(VOCABULARY_SETTLEMENT_RECORD_PREFIX)
     : isPlainObject(copy.records)
       && Object.keys(copy.records).some((recordKey) => recordKey.startsWith(VOCABULARY_SETTLEMENT_RECORD_PREFIX))
-  assertJsonSafe(copy, 'payload', new WeakSet(), inputError, allowsVocabularySettlementAttemptToken ? new Set(['attempt_token']) : new Set())
+  assertJsonSafe(
+    copy,
+    'payload',
+    new WeakSet(),
+    inputError,
+    allowsVocabularySettlementSensitiveKeys ? new Set(['attempt_token', 'claim_token']) : new Set(),
+  )
   return copy
 }
 
