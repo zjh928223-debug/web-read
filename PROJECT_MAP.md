@@ -32,6 +32,29 @@ The reproducible journey is `npm run verify:windows-owner-c2`; C1, C2b and C2c a
 passage/annotation and vocabulary/workflow browser and owner behavior checks. Host reopen queries read the
 profile-scoped canonical repositories, not the browser backup composition.
 
+## Mac-Windows deployment modes
+
+The selected production mode is Windows-hosted and same-origin. The Windows stable front door serves the
+immutable frontend `dist` and `/api` from one origin; a Mac browser opens that stable entry directly. Static
+assets, API calls, event streams and polling, and relative audio/video or other media URLs (including Range
+requests) all use that same origin. The Mac does not need a production backend base URL or a separate CORS path.
+
+The selected development mode is a lightweight Mac Vite/HMR process. Its server-side local configuration
+proxies relative `/api`, event/polling, and Range media requests to the Windows stable front door. The proxy is
+only a development aid: the production browser bundle continues to use relative URLs, and the Windows address
+must not be exposed through `VITE_*` values, browser constants, or the built bundle.
+
+Windows remains the boundary for WhisperX, ffmpeg, yt-dlp, AI and other heavy work, secrets, SQLite, media
+storage, and durable persistence. The optimization stable front door remains `5184`; the candidate FastAPI
+Host keeps its dynamically selected internal port and the `8776` Node capability sidecar remains loopback-only.
+The optimization profile continues to use `5184/8776` and `E:\ReadWebData\SubtitleWorkflow-Optimization`;
+the daily reader ports and data root must not be mixed into this mode.
+
+This decision does not introduce Tauri, a resident Mac production server, Mac offline canonical persistence,
+remote Windows NativePicker interaction, self-built pairing/TLS, or a second Git repository. This section records
+the deployment boundary and does not claim that the private-LAN or remote-dev implementation and cross-machine
+acceptance are complete.
+
 ## Runtime entry
 
 ```text
