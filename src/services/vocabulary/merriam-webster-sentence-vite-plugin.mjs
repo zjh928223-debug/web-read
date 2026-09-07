@@ -2,6 +2,7 @@ import { readWindowsGenericCredential } from './windows-generic-credential.mjs'
 import {
   deriveEnglishLemmaCandidates,
   findEnglishInflectionInSentence,
+  findExactEnglishWordInSentence,
 } from './english-inflection-match.mjs'
 
 export const MERRIAM_WEBSTER_SENTENCE_ENDPOINT = '/api/vocabulary/merriam-webster-examples'
@@ -134,7 +135,8 @@ export function extractMerriamWebsterExamples(payload, { word, referenceName = '
       const definition = extractDefinition(node.dt)
       for (const [exampleIndex, example] of extractVerbalIllustrations(node.dt).entries()) {
         const sentence = cleanMerriamText(example.t)
-        const matchedTerm = findEnglishInflectionInSentence(sentence, targetLemma, { preferredForm: word })
+        const matchedTerm = findExactEnglishWordInSentence(sentence, word)
+          || findEnglishInflectionInSentence(sentence, targetLemma, { preferredForm: word })
         const wordCount = countWords(sentence)
         if (!matchedTerm || wordCount < 3 || wordCount > 20) continue
         items.push({

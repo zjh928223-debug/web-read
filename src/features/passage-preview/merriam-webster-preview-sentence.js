@@ -11,7 +11,7 @@ const sessionResults = new Map()
 export async function findMerriamWebsterPreviewSentence(item, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   if (typeof fetchImpl !== 'function') return unavailable('Merriam-Webster 例句服务不可用。')
-  const word = normalizeWord(item?.lemma || item?.word)
+  const word = normalizeWord(item?.word || item?.form || item?.lemma)
   if (!word) return unavailable('缺少目标词。')
   const targetSenseKey = normalizeText(item?.targetSenseKey) || `preview:${word}:${normalizeText(item?.primaryMeaningZh)}`
   const cacheKey = `${word}\u0000${targetSenseKey}`

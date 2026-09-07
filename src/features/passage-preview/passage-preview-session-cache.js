@@ -1,5 +1,5 @@
-export const PASSAGE_PREVIEW_SESSION_CACHE_KEY = 'vocabulary.passage-preview.session-cache.v1'
-export const PASSAGE_PREVIEW_SESSION_CACHE_SCHEMA = 'passage-preview.session-cache.v1'
+export const PASSAGE_PREVIEW_SESSION_CACHE_KEY = 'vocabulary.passage-preview.session-cache.v2'
+export const PASSAGE_PREVIEW_SESSION_CACHE_SCHEMA = 'passage-preview.session-cache.v2'
 
 let memoryCache = null
 

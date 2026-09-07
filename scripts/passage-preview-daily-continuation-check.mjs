@@ -11,9 +11,66 @@ const {
   loadIeltsDailyPreviewAllocations,
   loadIeltsPreviewCandidateWords,
   materializeIeltsDailyPreviewBatch,
+  resolveCompletedIeltsPreviewAction,
+  resolveIeltsDailyPreviewContinuationGate,
   saveIeltsDailyPreviewAllocations,
   selectNextIeltsDailyPreviewBatch,
 } = await importDailyContinuation()
+
+assert.equal(
+  resolveIeltsDailyPreviewContinuationGate({
+    waiting: 40,
+    currentBatchCompleted: true,
+    nextBatchAvailable: true,
+  }).allowed,
+  false,
+  'the waiting threshold must block an already allocated next batch',
+)
+assert.equal(
+  resolveIeltsDailyPreviewContinuationGate({
+    waiting: 39,
+    currentBatchCompleted: true,
+    nextBatchAvailable: true,
+  }).allowed,
+  true,
+  'one item below the waiting threshold must continue normally',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: false }).action,
+  'keep_completed',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: false }).notice,
+  '等待池现有 40 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排',
+  'the waiting-threshold action must carry the user-facing queue notice',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: true }).action,
+  'keep_completed',
+  'a dated/preallocated next batch must also remain completed at the waiting threshold',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 40, hasBatchDate: true }).notice,
+  '等待池现有 40 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 39, hasBatchDate: false }).action,
+  'open_or_clear_undated_batch',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 39, hasBatchDate: false }).notice,
+  '',
+  'dropping below the threshold must clear the waiting notice',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 39, hasBatchDate: true }).action,
+  'advance_dated_batch',
+)
+assert.equal(
+  resolveCompletedIeltsPreviewAction({ waiting: 39, hasBatchDate: true }).notice,
+  '',
+  'an empty candidate pool below the threshold must not show a false waiting notice',
+)
 
 const storage = createMemoryStorage({
   'vocabulary.ielts-daily-preview.allocations.v1': JSON.stringify({
@@ -84,10 +141,37 @@ assert.deepEqual(
   }).batch.words,
   ['new-word-b', 'new-word-c'],
 )
+
+const sameDayAdaptive = generateIeltsDailyPreviewBatch({
+  allocations: generated.allocations,
+  date: '2026-08-08',
+  candidateWords: [
+    { lemma: 'hard-word', ieltsDifficultyBook: 9 },
+    { lemma: 'easy-word-a', ieltsDifficultyBook: 5 },
+    { lemma: 'easy-word-b', ieltsDifficultyBook: 6 },
+  ],
+  adaptivePlan: {
+    schemaVersion: 'passage-preview.adaptive-plan.v1',
+    batchSize: 2,
+    minBook: 4,
+    maxBook: 6,
+  },
+  batchSize: 2,
+  allowExistingDate: true,
+})
+assert.equal(sameDayAdaptive.created, true)
+assert.match(sameDayAdaptive.batch.id, /^2026-08-08-/u)
+assert.deepEqual(sameDayAdaptive.batch.words, ['easy-word-a', 'easy-word-b'])
+assert.equal(sameDayAdaptive.batch.adaptivePlan.maxBook, 6)
 await saveIeltsDailyPreviewAllocations(generated.allocations, storage)
 assert.deepEqual(
   (await loadIeltsDailyPreviewAllocations(storage)).batches.at(-1),
   { date: '2026-08-08', words: ['new-word-b', 'new-word-c'] },
+)
+await saveIeltsDailyPreviewAllocations(sameDayAdaptive.allocations, storage)
+assert.equal(
+  (await loadIeltsDailyPreviewAllocations(storage)).batches.filter((batch) => batch.date === '2026-08-08').length,
+  2,
 )
 
 const filteredAllocatedBatch = selectNextIeltsDailyPreviewBatch({
@@ -229,13 +313,16 @@ async function importDailyContinuation() {
   const projectRoot = fileURLToPath(new URL('..', import.meta.url))
   const tempDir = await mkdtemp(join(tmpdir(), 'read-web-daily-continuation-'))
   const policySource = await readFile(join(projectRoot, 'src/services/vocabulary/personalization/primary-sense-policy.js'), 'utf8')
+  const morphologySource = await readFile(join(projectRoot, 'src/services/vocabulary/english-inflection-match.mjs'), 'utf8')
   const importerSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-import.js'), 'utf8'))
     .replace('../../services/vocabulary/personalization/primary-sense-policy.js', './primary-sense-policy.mjs')
+    .replace('../../services/vocabulary/english-inflection-match.mjs', './english-inflection-match.mjs')
   const continuationSource = (await readFile(join(projectRoot, 'src/features/passage-preview/passage-preview-daily-continuation.js'), 'utf8'))
     .replace("./passage-preview-import.js", './passage-preview-import.mjs')
     .replace("./passage-preview-durable-state.js", './passage-preview-durable-state.mjs')
     .replace("./passage-preview-storage.js", './passage-preview-storage.mjs')
   await writeFile(join(tempDir, 'primary-sense-policy.mjs'), policySource, 'utf8')
+  await writeFile(join(tempDir, 'english-inflection-match.mjs'), morphologySource, 'utf8')
   await writeFile(join(tempDir, 'passage-preview-import.mjs'), importerSource, 'utf8')
   await writeFile(join(tempDir, 'passage-preview-storage.mjs'), [
     'export const isPassagePreviewOwnerAuthoritative = () => false',

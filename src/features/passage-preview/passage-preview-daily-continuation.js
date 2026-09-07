@@ -19,8 +19,9 @@ export const IELTS_DAILY_PREVIEW_ARCHIVE_KEY = 'vocabulary.ielts-daily-preview.a
 export const IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA = 'ielts-daily-preview.allocations.v1'
 export const IELTS_DAILY_PREVIEW_CONTINUATION_SCHEMA = 'ielts-daily-preview.continuation.v1'
 export const IELTS_DAILY_PREVIEW_ARCHIVE_SCHEMA = 'ielts-daily-preview.archive.v1'
-export const IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE = 50
+export const IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE = 20
 export const IELTS_DAILY_PREVIEW_CANDIDATE_ENDPOINT = '/api/vocabulary/ielts-learning-pool'
+export const IELTS_DAILY_PREVIEW_WAITING_THRESHOLD = 40
 
 const BATCH_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u
 const PREVIEW_ID_PATTERN = /^ielts-reading:(\d{4}-\d{2}-\d{2}):/iu
@@ -28,6 +29,51 @@ const DEFAULT_LOCAL_SENTENCE_ENDPOINT = '/api/vocabulary/local-sentences'
 const DEFAULT_ECDICT_ENDPOINT = '/api/dev/dictionary/ecdict'
 const DEFAULT_BATCH_TITLE = '剑桥雅思阅读 · {date} · 首次接触'
 const FALLBACK_MEANING = '暂无本地中文释义'
+
+export function resolveIeltsDailyPreviewContinuationGate({
+  waiting = 0,
+  currentBatchCompleted = false,
+  nextBatchAvailable = false,
+} = {}) {
+  const normalizedWaiting = Math.max(0, Number(waiting) || 0)
+  if (!currentBatchCompleted) {
+    return {
+      allowed: true,
+      reason: 'current_batch_in_progress',
+      nextBatchAvailable: Boolean(nextBatchAvailable),
+      notice: '',
+    }
+  }
+  if (normalizedWaiting >= IELTS_DAILY_PREVIEW_WAITING_THRESHOLD) {
+    return {
+      allowed: false,
+      reason: 'waiting_threshold',
+      nextBatchAvailable: Boolean(nextBatchAvailable),
+      notice: `等待池现有 ${normalizedWaiting} 个词；降到 40 个以下前暂不开新一组，今天只需完成“今日复习”里的安排`,
+    }
+  }
+  return {
+    allowed: true,
+    reason: 'waiting_capacity_available',
+    nextBatchAvailable: Boolean(nextBatchAvailable),
+    notice: '',
+  }
+}
+
+export function resolveCompletedIeltsPreviewAction({
+  waiting = 0,
+  hasBatchDate = false,
+} = {}) {
+  const gate = resolveIeltsDailyPreviewContinuationGate({
+    waiting,
+    currentBatchCompleted: true,
+  })
+  if (!gate.allowed) return { ...gate, action: 'keep_completed' }
+  return {
+    ...gate,
+    action: hasBatchDate ? 'advance_dated_batch' : 'open_or_clear_undated_batch',
+  }
+}
 
 export async function loadIeltsDailyPreviewAllocations(storage = globalThis.localStorage) {
   const ownerRecords = await loadPassagePreviewRecordsFromOwner()
@@ -48,12 +94,13 @@ export async function loadIeltsDailyPreviewAllocations(storage = globalThis.loca
 
 export async function saveIeltsDailyPreviewAllocations(allocations = {}, storage = globalThis.localStorage) {
   const normalized = normalizeAllocations(allocations)
+  const serializedBatches = normalized.batches.map(serializeAllocationBatch)
+  const hasExtendedBatches = normalized.batches.some((batch) => batch.id || batch.adaptivePlan)
   const envelope = {
     schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
-    batches: Object.fromEntries(normalized.batches.map((batch) => [batch.date, {
-      words: batch.words,
-      ...(batch.candidateItems?.length ? { candidateItems: batch.candidateItems } : {}),
-    }])),
+    batches: hasExtendedBatches
+      ? serializedBatches
+      : Object.fromEntries(serializedBatches.map((batch) => [batch.date, batch])),
     assignedLemmas: normalized.assignedLemmas,
   }
   if (isPassagePreviewOwnerAuthoritative()) {
@@ -74,6 +121,8 @@ export function generateIeltsDailyPreviewBatch({
   candidateWords = [],
   excludedLemmas = [],
   batchSize = IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE,
+  adaptivePlan = null,
+  allowExistingDate = false,
 } = {}) {
   const current = normalizeAllocations(allocations)
   const normalizedDate = normalizeDate(date)
@@ -85,7 +134,7 @@ export function generateIeltsDailyPreviewBatch({
   }
 
   const existing = current.batches.find((batch) => batch.date === normalizedDate)
-  if (existing) return {
+  if (existing && !allowExistingDate) return {
     allocations: current,
     batch: existing,
     created: false,
@@ -97,7 +146,11 @@ export function generateIeltsDailyPreviewBatch({
   normalizeWords(excludedLemmas).forEach((word) => assigned.add(word))
   const availableItems = normalizeCandidateItems(candidateWords)
     .filter((item) => !assigned.has(item.lemma))
-  const requestedSize = Math.max(1, Math.floor(Number(batchSize) || IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE))
+  const plan = normalizeAdaptivePlan(adaptivePlan)
+  const requestedSize = Math.max(
+    1,
+    Math.floor(Number(batchSize) || Number(plan?.batchSize) || IELTS_DAILY_PREVIEW_DEFAULT_BATCH_SIZE),
+  )
   if (availableItems.length < requestedSize) return {
     allocations: current,
     batch: null,
@@ -107,10 +160,12 @@ export function generateIeltsDailyPreviewBatch({
     requestedSize,
   }
 
-  const selectedItems = availableItems.slice(0, requestedSize)
+  const selectedItems = selectBatchCandidates(availableItems, requestedSize, plan)
   const batch = {
+    ...(plan || allowExistingDate ? { id: createAllocationBatchId(normalizedDate, current.batches) } : {}),
     date: normalizedDate,
     words: selectedItems.map((item) => item.lemma),
+    ...(plan ? { adaptivePlan: plan } : {}),
     ...(selectedItems.some((item) => Object.keys(item).length > 1)
       ? { candidateItems: selectedItems }
       : {}),
@@ -371,6 +426,7 @@ export async function materializeIeltsDailyPreviewBatch({
     date,
     word,
     fallbackItem: fallbackByLemma.get(word),
+    batchId: batch?.id,
     fetchImpl,
     localSentenceEndpoint,
     ecdictEndpoint,
@@ -408,9 +464,12 @@ function normalizeAllocations(value) {
       const words = normalizeWords(batch.words)
       const candidateItems = normalizeCandidateItems(batch.candidateItems)
         .filter((item) => words.includes(item.lemma))
+      const adaptivePlan = normalizeAdaptivePlan(batch.adaptivePlan)
       return {
+        ...(normalizeText(batch.id) ? { id: normalizeText(batch.id) } : {}),
         date: normalizeDate(date),
         words,
+        ...(adaptivePlan ? { adaptivePlan } : {}),
         ...(candidateItems.length ? { candidateItems } : {}),
       }
     })
@@ -422,6 +481,65 @@ function normalizeAllocations(value) {
     schemaVersion: IELTS_DAILY_PREVIEW_ALLOCATIONS_SCHEMA,
     batches,
     assignedLemmas: [...assigned],
+  }
+}
+
+function serializeAllocationBatch(batch) {
+  return {
+    ...(batch.id ? { id: batch.id } : {}),
+    date: batch.date,
+    words: batch.words,
+    ...(batch.adaptivePlan ? { adaptivePlan: batch.adaptivePlan } : {}),
+    ...(batch.candidateItems?.length ? { candidateItems: batch.candidateItems } : {}),
+  }
+}
+
+function selectBatchCandidates(items, requestedSize, adaptivePlan) {
+  const source = Array.isArray(items) ? items : []
+  if (!adaptivePlan) return source.slice(0, requestedSize)
+  const preferred = source
+    .map((item, index) => ({ item, index, book: normalizeBook(item.ieltsDifficultyBook || item.difficultyBook) }))
+    .filter(({ book }) => book >= adaptivePlan.minBook && book <= adaptivePlan.maxBook)
+    .sort((left, right) => left.book - right.book || left.index - right.index)
+    .map(({ item }) => item)
+  if (preferred.length >= requestedSize) return preferred.slice(0, requestedSize)
+  const preferredLemmas = new Set(preferred.map((item) => item.lemma))
+  return [
+    ...preferred,
+    ...source.filter((item) => !preferredLemmas.has(item.lemma)),
+  ].slice(0, requestedSize)
+}
+
+function createAllocationBatchId(date, batches) {
+  const used = new Set((Array.isArray(batches) ? batches : []).map((batch) => normalizeText(batch?.id)).filter(Boolean))
+  let ordinal = 1
+  let candidate = `${date}-${String(ordinal).padStart(2, '0')}`
+  while (used.has(candidate)) {
+    ordinal += 1
+    candidate = `${date}-${String(ordinal).padStart(2, '0')}`
+  }
+  return candidate
+}
+
+function normalizeAdaptivePlan(value) {
+  if (!value || typeof value !== 'object') return null
+  const batchSize = Math.floor(Number(value.batchSize))
+  const minBook = Math.floor(Number(value.minBook))
+  const maxBook = Math.floor(Number(value.maxBook))
+  if (!Number.isInteger(batchSize) || batchSize < 1
+    || !Number.isInteger(minBook) || minBook < 1
+    || !Number.isInteger(maxBook) || maxBook < minBook) return null
+  return {
+    schemaVersion: normalizeText(value.schemaVersion) || 'passage-preview.adaptive-plan.v1',
+    stage: Number.isInteger(value.stage) && value.stage >= 0 ? value.stage : 0,
+    completedSessions: Number.isInteger(value.completedSessions) && value.completedSessions >= 0
+      ? value.completedSessions
+      : 0,
+    completedDays: Number.isInteger(value.completedDays) && value.completedDays >= 0 ? value.completedDays : 0,
+    batchSize,
+    minBook,
+    maxBook,
+    label: normalizeText(value.label),
   }
 }
 
@@ -439,6 +557,7 @@ async function hydratePreviewWord({
   date,
   word,
   fallbackItem,
+  batchId = '',
   fetchImpl,
   localSentenceEndpoint,
   ecdictEndpoint,
@@ -469,7 +588,9 @@ async function hydratePreviewWord({
 
   return {
     schemaVersion: FIRST_CONTACT_PREVIEW_SCHEMA,
-    id: `ielts-reading:${date}:${word}`,
+    id: batchId
+      ? `ielts-reading:${date}:${batchId}:${word}`
+      : `ielts-reading:${date}:${word}`,
     lemma: word,
     word: normalizeText(fallbackItem?.word) || word,
     form: normalizeText(fallbackItem?.form) || word,
@@ -493,6 +614,10 @@ async function hydratePreviewWord({
         || `ielts-reading-daily:${word}:${primaryMeaningZh}`,
     realSentence: fallbackItem?.realSentence || null,
     previewContext: normalizePreviewContext(fallbackItem?.previewContext),
+    forms: normalizeForms(fallbackItem?.forms, fallbackItem?.form, fallbackItem?.word, word),
+    ...(normalizeBook(fallbackItem?.ieltsDifficultyBook || fallbackItem?.difficultyBook)
+      ? { ieltsDifficultyBook: normalizeBook(fallbackItem.ieltsDifficultyBook || fallbackItem.difficultyBook) }
+      : {}),
   }
 }
 
@@ -537,8 +662,22 @@ function normalizeLocalSense(value) {
   if (!meaningZh) return null
   return {
     meaningZh,
-    partOfSpeech: normalizeText(value.partOfSpeech),
+    partOfSpeech: normalizePreviewPartOfSpeech(value.partOfSpeech),
   }
+}
+
+function normalizePreviewPartOfSpeech(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/\.$/u, '')
+  if (!normalized) return ''
+  if (['a', 'adj', 'adjective', 's'].includes(normalized) || /\b(?:adj|adjective)\b/u.test(normalized)) return 'adjective'
+  if (
+    ['n', 'noun'].includes(normalized)
+    || /\bnoun\b/u.test(normalized)
+    || /\bpl(?:ural)?\.?\b/u.test(normalized)
+  ) return 'noun'
+  if (['v', 'verb'].includes(normalized) || /\bverb\b/u.test(normalized)) return 'verb'
+  if (['adv', 'adverb', 'r'].includes(normalized) || /\badverb\b/u.test(normalized)) return 'adverb'
+  return normalized
 }
 
 function selectEcdictMeaning(entry) {
@@ -599,10 +738,12 @@ function normalizeCandidateItems(value) {
       lemma,
       word: normalizeText(input?.word) || lemma,
       form: normalizeText(input?.form) || normalizeText(input?.word) || lemma,
+      forms: normalizeForms(input?.forms, input?.form, input?.word, lemma),
       pos: normalizeText(input?.pos || input?.partOfSpeech),
       phonetic: normalizeText(input?.phonetic),
       primaryMeaningZh: normalizeText(input?.primaryMeaningZh || input?.meaning || input?.translation),
       targetSenseKey: normalizeText(input?.targetSenseKey),
+      ieltsDifficultyBook: normalizeBook(input?.ieltsDifficultyBook || input?.difficultyBook),
       previewContext: normalizePreviewContext(input?.previewContext),
     })
   })
@@ -624,6 +765,10 @@ function mergeCandidateItems(values) {
       phonetic: item.phonetic || previous.phonetic || '',
       primaryMeaningZh: item.primaryMeaningZh || previous.primaryMeaningZh || '',
       targetSenseKey: item.targetSenseKey || previous.targetSenseKey || '',
+      forms: normalizeForms([
+        ...(Array.isArray(previous.forms) ? previous.forms : []),
+        ...(Array.isArray(item.forms) ? item.forms : []),
+      ], item.form, item.word, item.lemma),
       realSentence: item.realSentence || previous.realSentence || null,
       previewContext: item.previewContext || previous.previewContext || null,
     })
@@ -659,6 +804,18 @@ function uniqueDates(value) {
 function normalizeWord(value) {
   const word = normalizeText(value).toLowerCase()
   return /^[a-z]+(?:[-'][a-z]+)*$/u.test(word) ? word : ''
+}
+
+function normalizeForms(value, ...fallbacks) {
+  return [...new Set([
+    ...fallbacks,
+    ...(Array.isArray(value) ? value : []),
+  ].map(normalizeWord).filter(Boolean))]
+}
+
+function normalizeBook(value) {
+  const book = Number(value)
+  return Number.isInteger(book) && book > 0 ? book : 0
 }
 
 function normalizeDate(value) {

@@ -10,7 +10,7 @@ export function generateEnglishInflections(value) {
   if (!lemma) return []
   return unique([
     lemma,
-    pluralOrThirdPerson(lemma),
+    ...pluralOrThirdPerson(lemma),
     pastTense(lemma),
     presentParticiple(lemma),
   ])
@@ -19,6 +19,14 @@ export function generateEnglishInflections(value) {
 export function isEnglishInflectionOf(formValue, lemmaValue) {
   const form = normalizeEnglishWord(formValue)
   return Boolean(form) && generateEnglishInflections(lemmaValue).includes(form)
+}
+
+export function findExactEnglishWordInSentence(sentenceValue, wordValue) {
+  const sentence = String(sentenceValue || '').normalize('NFKC')
+  const word = normalizeEnglishWord(wordValue)
+  if (!sentence || !word) return ''
+  const tokens = sentence.match(/[A-Za-z]+(?:[-'][A-Za-z]+)*/gu) || []
+  return tokens.find((token) => normalizeEnglishWord(token) === word) || ''
 }
 
 export function deriveEnglishLemmaCandidates(value) {
@@ -60,16 +68,21 @@ export function findEnglishInflectionInSentence(sentenceValue, lemmaValue, optio
   const tokens = sentence.match(/[A-Za-z]+(?:[-'][A-Za-z]+)*/gu) || []
   const preferred = normalizeEnglishWord(options.preferredForm)
   if (preferred && allowed.has(preferred)) {
-    const exact = tokens.find((token) => normalizeEnglishWord(token) === preferred)
+    const exact = findExactEnglishWordInSentence(sentence, preferred)
     if (exact) return exact
   }
   return tokens.find((token) => allowed.has(normalizeEnglishWord(token))) || ''
 }
 
 function pluralOrThirdPerson(lemma) {
-  if (/[^aeiou]y$/u.test(lemma)) return `${lemma.slice(0, -1)}ies`
-  if (/(?:s|x|z|ch|sh)$/u.test(lemma)) return `${lemma}es`
-  return `${lemma}s`
+  if (/[^aeiou]y$/u.test(lemma)) return [`${lemma.slice(0, -1)}ies`]
+  if (/(?:s|x|z|ch|sh)$/u.test(lemma)) return [`${lemma}es`]
+  // Common f/fe plurals are written with -ves (leaf/leaves, wife/wives).
+  // Keep the regular -s form too because English has exceptions such as
+  // roofs and chiefs.
+  if (lemma.endsWith('fe')) return unique([`${lemma}s`, `${lemma.slice(0, -2)}ves`])
+  if (lemma.endsWith('f')) return unique([`${lemma}s`, `${lemma.slice(0, -1)}ves`])
+  return [`${lemma}s`]
 }
 
 function pastTense(lemma) {
@@ -88,7 +101,11 @@ function presentParticiple(lemma) {
 
 function shouldDoubleFinal(lemma) {
   return lemma.length >= 3
+    && !/[wxy]$/u.test(lemma)
     && /[aeiou][b-df-hj-np-tv-z]$/u.test(lemma)
+    // Do not double after a vowel digraph: heat -> heated, boil -> boiled,
+    // look -> looked, and the same pattern appears frequently in the IELTS pool.
+    && !/[aeiou]{2}[b-df-hj-np-tv-z]$/u.test(lemma)
     && !/[aeiou][b-df-hj-np-tv-z][a-z]+$/u.test(lemma.slice(0, -1))
 }
 

@@ -1,4 +1,8 @@
 import { resolvePrimarySense } from '../../services/vocabulary/personalization/primary-sense-policy.js'
+import {
+  findEnglishInflectionInSentence,
+  findExactEnglishWordInSentence,
+} from '../../services/vocabulary/english-inflection-match.mjs'
 
 export const PASSAGE_ONE_SOURCE_MARKER = 'C19-T1-RP1-'
 export const PASSAGE_ONE_PREVIEW_SIZE = 5
@@ -32,6 +36,7 @@ export function importVocabularyPreview(payload = {}) {
       lemma,
       word: normalizeText(input?.word || input?.lemma) || lemma,
       form: normalizeImportedForm(input?.form, lemma),
+      forms: normalizeForms(input?.forms, input?.form, input?.word, lemma),
       pos: normalizeText(input?.pos || input?.partOfSpeech),
       phonetic: normalizeText(input?.phonetic || input?.usPhonetic),
       source: normalizeText(input?.source),
@@ -40,8 +45,19 @@ export function importVocabularyPreview(payload = {}) {
       primarySenseStatus: primary.status,
       primarySenseReason: primary.reason,
       targetSenseKey: primary.targetSenseKey,
-      realSentence: normalizeRealSentence(input?.realSentence, lemma),
-      previewContext: normalizePreviewContext(input?.previewContext, lemma),
+      ...(normalizePositiveInteger(input?.ieltsDifficultyBook || input?.difficultyBook)
+        ? { ieltsDifficultyBook: normalizePositiveInteger(input.ieltsDifficultyBook || input.difficultyBook) }
+        : {}),
+      realSentence: normalizeRealSentence(input?.realSentence, lemma, [
+        input?.form,
+        input?.word,
+        ...(Array.isArray(input?.forms) ? input.forms : []),
+      ]),
+      previewContext: normalizePreviewContext(input?.previewContext, lemma, [
+        input?.form,
+        input?.word,
+        ...(Array.isArray(input?.forms) ? input.forms : []),
+      ]),
     })
   })
   if (!items.length) throw new Error('预习文件缺少可用的单一中文主要义。')
@@ -154,7 +170,7 @@ function normalizePartOfSpeech(value) {
   return normalized
 }
 
-function normalizeRealSentence(value, lemma) {
+function normalizeRealSentence(value, lemma, surface) {
   if (!value || typeof value !== 'object') return null
   const sentence = normalizeText(value.sentence)
   const translationZh = normalizeText(value.translationZh)
@@ -163,15 +179,14 @@ function normalizeRealSentence(value, lemma) {
   if (!['article', 'subtitle', 'open_corpus', 'dictionary_example'].includes(source.kind)) return null
   if (/\b(?:ai|generated)\b/iu.test(`${source.kind} ${source.name} ${source.license}`)) return null
   if ((sentence.match(/[A-Za-z]+(?:['’][A-Za-z]+)*/g) || []).length > 16) return null
-  const escaped = String(lemma || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  if (!escaped || !new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence)) return null
+  if (!containsTargetForm(sentence, lemma, surface)) return null
   return { sentence, translationZh, source: { ...source } }
 }
 
-function normalizePreviewContext(value, lemma) {
+function normalizePreviewContext(value, lemma, surface) {
   if (!value || typeof value !== 'object') return null
   const sentence = normalizeText(value.sentence)
-  if (!sentence || !containsTargetForm(sentence, lemma)) return null
+  if (!sentence || !containsTargetForm(sentence, lemma, surface)) return null
   return {
     sentence,
     surrounding_text: normalizeText(value.surrounding_text || value.surroundingText) || null,
@@ -188,9 +203,13 @@ function normalizePreviewContext(value, lemma) {
   }
 }
 
-function containsTargetForm(sentence, lemma) {
-  const escaped = String(lemma || '').replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  return Boolean(escaped && new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence))
+function containsTargetForm(sentence, lemma, surface) {
+  const surfaces = Array.isArray(surface) ? surface : [surface]
+  return Boolean(
+    surfaces.some((candidate) => findExactEnglishWordInSentence(sentence, candidate))
+      || findExactEnglishWordInSentence(sentence, lemma)
+      || findEnglishInflectionInSentence(sentence, lemma, { preferredForm: surfaces.find(Boolean) }),
+  )
 }
 
 export function extractPreviewPhrase({ sentence, word, form } = {}) {
@@ -205,6 +224,18 @@ export function extractPreviewPhrase({ sentence, word, form } = {}) {
 function normalizeImportedForm(value, fallback) {
   const withoutCount = normalizeText(value).replace(/[×x]\s*\d+\s*$/i, '').trim()
   return withoutCount || normalizeText(fallback)
+}
+
+function normalizeForms(value, ...fallbacks) {
+  return [...new Set([
+    ...fallbacks,
+    ...(Array.isArray(value) ? value : []),
+  ].map((candidate) => normalizeText(candidate).toLowerCase()).filter((candidate) => /^[a-z]+(?:[-'][a-z]+)*$/u.test(candidate)))]
+}
+
+function normalizePositiveInteger(value) {
+  const number = Number(value)
+  return Number.isInteger(number) && number > 0 ? number : 0
 }
 
 function normalizeText(value) {

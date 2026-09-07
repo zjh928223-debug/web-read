@@ -3,7 +3,10 @@ import {
   REAL_SENTENCE_STATUS,
   resolvePreviewContextSentence,
 } from './preview-sentence-source.js'
-import { generateAiPreviewSentenceBatches } from './passage-preview-ai-sentence.js'
+import {
+  createFallbackAiPreviewSentence,
+  generateAiPreviewSentenceBatches,
+} from './passage-preview-ai-sentence.js'
 import { sentenceTranslationKey, translateSentenceBatches } from './sentence-translation.js'
 import { validatePreviewSentenceResult } from './preview-sentence-target-validation.mjs'
 
@@ -17,6 +20,8 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
     Math.min(items.length || 1, Math.floor(Number(options.concurrency) || PASSAGE_PREVIEW_PRELOAD_CONCURRENCY)),
   )
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {}
+  const onEntry = typeof options.onEntry === 'function' ? options.onEntry : () => {}
+  const preloadExternalSources = options.preloadExternalSources !== false
   const entries = []
   let completed = 0
 
@@ -26,11 +31,12 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
     let result = stored
     let sourceType = stored ? 'stored' : ''
 
-    if (!result) {
+    if (!result && preloadExternalSources) {
       try {
         const candidate = await findPreviewSentence(item, {
           fetchImpl,
           signal: options.signal,
+          skipProviderIds: options.skipProviderIds || [],
         })
         const validation = validatePreviewSentenceResult(item, candidate)
         if (candidate?.status === REAL_SENTENCE_STATUS.READY && validation.accepted) {
@@ -42,11 +48,13 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
       }
     }
 
-    const fallback = result ? null : resolvePreviewContextSentence(item)
-    entries.push({ item, result, fallback, sourceType })
+    const fallback = preloadExternalSources && !result ? resolvePreviewContextSentence(item) : null
+    const entry = { item, result, fallback, sourceType }
+    entries.push(entry)
+    notifyEntry(onEntry, entry)
     completed += 1
     onProgress({
-      phase: 'sentences',
+      phase: preloadExternalSources ? 'sentences' : 'stored',
       completed,
       total: items.length,
       ready: entries.filter((entry) => entry.result).length,
@@ -56,7 +64,7 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
   const aiInputs = entries
     .filter((entry) => !entry.result && !entry.fallback)
     .map((entry) => entry.item)
-  if (aiInputs.length) {
+  if (preloadExternalSources && aiInputs.length) {
     onProgress({ phase: 'ai', completed: 0, total: aiInputs.length })
     try {
       const generated = await generateAiPreviewSentenceBatches(aiInputs, {
@@ -72,9 +80,21 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
         if (!validation.accepted) continue
         entry.result = validation.result
         entry.sourceType = 'ai'
+        notifyEntry(onEntry, { ...entry, fallback: null })
       }
     } catch (error) {
       if (error?.name === 'AbortError') throw error
+    }
+  }
+
+  if (preloadExternalSources && options.ensureSentence) {
+    for (const entry of entries) {
+      if (entry.result || entry.fallback) continue
+      const fallback = createFallbackAiPreviewSentence(entry.item)
+      if (!fallback) continue
+      entry.result = fallback
+      entry.sourceType = 'ai-fallback'
+      notifyEntry(onEntry, { ...entry, fallback: null })
     }
   }
 
@@ -97,7 +117,7 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
   }
 
   let translated = []
-  if (translationInputs.length) {
+  if (preloadExternalSources && translationInputs.length) {
     try {
       translated = await translateSentenceBatches(translationInputs, {
         fetchImpl,
@@ -126,6 +146,7 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
     const result = translationZh && !sentenceResult.translationZh
       ? { ...sentenceResult, translationZh }
       : sentenceResult
+    notifyEntry(onEntry, { ...entry, result, fallback: null })
     preloadedSentences[item.id] = result
     if (!entry?.result || entry.sourceType !== 'provider' || result.persistence === 'none') return item
     return enrichItem(item, result)
@@ -138,7 +159,7 @@ export async function preloadPassagePreviewBatch(rawItems, options = {}) {
     stats: {
       total: items.length,
       sourceReady: entries.filter((entry) => entry.sourceType === 'provider').length,
-      aiGenerated: entries.filter((entry) => entry.sourceType === 'ai').length,
+      aiGenerated: entries.filter((entry) => ['ai', 'ai-fallback'].includes(entry.sourceType)).length,
       stored: entries.filter((entry) => entry.sourceType === 'stored').length,
       fallback: entries.filter((entry) => !entry.result && entry.fallback).length,
       translated: translationBySentence.size,
@@ -188,5 +209,19 @@ function throwIfAborted(signal) {
     const error = new Error('Passage preview preload aborted')
     error.name = 'AbortError'
     throw error
+  }
+}
+
+function notifyEntry(onEntry, entry) {
+  if (!entry?.result && !entry?.fallback) return
+  try {
+    onEntry({
+      item: entry.item,
+      result: entry.result || entry.fallback || null,
+      fallback: entry.fallback || null,
+      sourceType: entry.sourceType || (entry.fallback ? 'fallback' : ''),
+    })
+  } catch (_error) {
+    // Progress/streaming observers must never make sentence preparation fail.
   }
 }

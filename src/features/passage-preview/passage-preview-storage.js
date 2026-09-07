@@ -15,6 +15,24 @@ export const LEGACY_PASSAGE_PREVIEW_PROGRESS_KEY = 'vocabulary.passage-preview.p
 const PASSAGE_PREVIEW_OWNER_DOMAIN = 'passage-preview'
 const PASSAGE_PREVIEW_DURABLE_KEY = 'vocabulary.passage-preview.durable-state.v1'
 const PASSAGE_PREVIEW_DURABLE_SCHEMA = 'passage-preview.durable-state.v1'
+const PASSAGE_PREVIEW_DATA_QUERY_OPERATIONS = Object.freeze([
+  'durable-state',
+  'preview-batch',
+  'legacy-keys',
+])
+const PASSAGE_PREVIEW_PROGRESS_QUERY_OPERATIONS = Object.freeze([
+  'durable-state',
+  'progress',
+  'legacy-keys',
+])
+const PASSAGE_PREVIEW_ALL_QUERY_OPERATIONS = Object.freeze([
+  'durable-state',
+  'preview-batch',
+  'progress',
+  'continuation',
+  'archive',
+  'legacy-keys',
+])
 
 export function loadPassagePreviewData(storage = globalThis.localStorage) {
   const durable = loadPassagePreviewDurableState(storage, { data: loadLegacyData(storage) })
@@ -109,11 +127,11 @@ export function savePassagePreviewProgress(progress, storage = globalThis.localS
 }
 
 export function isPassagePreviewOwnerAuthoritative(windowObject = globalThis) {
-  return Boolean(getAuthoritativeWindowsOwner(PASSAGE_PREVIEW_OWNER_DOMAIN, windowObject))
+  return windowObject?.__windowsOwnerDomainCutover?.isAuthoritative?.(PASSAGE_PREVIEW_OWNER_DOMAIN) === true
 }
 
 export async function loadPassagePreviewDataFromOwner(windowObject = globalThis) {
-  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
+  const snapshot = await readPassagePreviewOwnerRecords(windowObject, PASSAGE_PREVIEW_DATA_QUERY_OPERATIONS)
   if (!snapshot) return null
   const durable = ownerRecordContent(snapshot.records[PASSAGE_PREVIEW_DURABLE_KEY])
   if (Array.isArray(durable?.data)) return durable.data
@@ -122,15 +140,18 @@ export async function loadPassagePreviewDataFromOwner(windowObject = globalThis)
 }
 
 export async function loadPassagePreviewProgressFromOwner(windowObject = globalThis) {
-  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
+  const snapshot = await readPassagePreviewOwnerRecords(windowObject, PASSAGE_PREVIEW_PROGRESS_QUERY_OPERATIONS)
   if (!snapshot) return null
   const durable = ownerRecordContent(snapshot.records[PASSAGE_PREVIEW_DURABLE_KEY])
   const current = durable?.progress || ownerRecordContent(snapshot.records[PASSAGE_PREVIEW_PROGRESS_KEY])
   return normalizeProgress(current)
 }
 
-export async function loadPassagePreviewRecordsFromOwner(windowObject = globalThis) {
-  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
+export async function loadPassagePreviewRecordsFromOwner(
+  windowObject = globalThis,
+  operations = PASSAGE_PREVIEW_ALL_QUERY_OPERATIONS,
+) {
+  const snapshot = await readPassagePreviewOwnerRecords(windowObject, operations)
   if (!snapshot) return null
   return Object.fromEntries(Object.entries(snapshot.records).map(([key, record]) => [
     key,
@@ -139,7 +160,7 @@ export async function loadPassagePreviewRecordsFromOwner(windowObject = globalTh
 }
 
 export async function commitPassagePreviewOwnerRecords(records, options = {}, windowObject = globalThis) {
-  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
+  const snapshot = await readPassagePreviewOwnerRecords(windowObject, ['durable-state'])
   if (!snapshot) return null
   const normalizedRecords = Object.fromEntries(Object.entries(records || {}).map(([key, content]) => [
     key,
@@ -165,52 +186,83 @@ export async function commitPassagePreviewOwnerRecords(records, options = {}, wi
 }
 
 export async function commitPassagePreviewOwnerDurableUpdate(mutator, options = {}, windowObject = globalThis) {
-  const snapshot = await readPassagePreviewOwnerRecords(windowObject)
-  if (!snapshot) return null
-  const current = ownerRecordContent(snapshot.records[PASSAGE_PREVIEW_DURABLE_KEY])
-  const base = current && typeof current === 'object' && !Array.isArray(current)
-    ? cloneOwnerValue(current)
-    : {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const snapshot = await readPassagePreviewOwnerRecords(windowObject, ['durable-state'])
+    if (!snapshot) return null
+    const current = ownerRecordContent(snapshot.records[PASSAGE_PREVIEW_DURABLE_KEY])
+    const base = current && typeof current === 'object' && !Array.isArray(current)
+      ? cloneOwnerValue(current)
+      : {
+        schemaVersion: PASSAGE_PREVIEW_DURABLE_SCHEMA,
+        revision: 0,
+        batchId: null,
+        data: [],
+        progress: createInitialPassagePreviewProgress(),
+        allocations: null,
+        continuation: null,
+        archive: [],
+      }
+    const changed = typeof mutator === 'function' ? (mutator(base) || base) : base
+    const innerRevision = Number.isInteger(base.revision) && base.revision >= 0 ? base.revision : 0
+    const durable = {
+      ...changed,
       schemaVersion: PASSAGE_PREVIEW_DURABLE_SCHEMA,
-      revision: 0,
-      batchId: null,
-      data: [],
-      progress: createInitialPassagePreviewProgress(),
-      allocations: null,
-      continuation: null,
-      archive: [],
+      revision: innerRevision + 1,
     }
-  const changed = typeof mutator === 'function' ? (mutator(base) || base) : base
-  const innerRevision = Number.isInteger(base.revision) && base.revision >= 0 ? base.revision : 0
-  const durable = {
-    ...changed,
-    schemaVersion: PASSAGE_PREVIEW_DURABLE_SCHEMA,
-    revision: innerRevision + 1,
+    const extras = typeof options.extraRecords === 'function'
+      ? options.extraRecords(durable, snapshot.records)
+      : options.extraRecords
+    try {
+      const response = await commitPassagePreviewOwnerRecords({
+        [PASSAGE_PREVIEW_DURABLE_KEY]: durable,
+        ...(extras && typeof extras === 'object' ? extras : {}),
+      }, { ...options, expectedRevision: snapshot.revision }, windowObject)
+      return { state: durable, response, revision: response.revision }
+    } catch (error) {
+      if (attempt === 0 && error?.code === 'conflict') continue
+      throw error
+    }
   }
-  const extras = typeof options.extraRecords === 'function'
-    ? options.extraRecords(durable, snapshot.records)
-    : options.extraRecords
-  const response = await commitPassagePreviewOwnerRecords({
-    [PASSAGE_PREVIEW_DURABLE_KEY]: durable,
-    ...(extras && typeof extras === 'object' ? extras : {}),
-  }, options, windowObject)
-  return { state: durable, response, revision: response.revision }
+  return null
 }
 
-async function readPassagePreviewOwnerRecords(windowObject) {
-  const owner = getAuthoritativeWindowsOwner(PASSAGE_PREVIEW_OWNER_DOMAIN, windowObject)
+async function readPassagePreviewOwnerRecords(windowObject, operations = PASSAGE_PREVIEW_ALL_QUERY_OPERATIONS) {
+  const owner = await resolvePassagePreviewOwner(windowObject)
   if (!owner) return null
-  const response = requireOwnerRead(await owner.query({
-    domain: PASSAGE_PREVIEW_OWNER_DOMAIN,
-    operation: 'legacy-keys',
-    payload: {},
-  }), PASSAGE_PREVIEW_OWNER_DOMAIN)
+  const queryOperations = [...new Set(operations)].filter(Boolean)
+  const responses = await Promise.all(queryOperations.map(async (operation) => (
+    requireOwnerRead(await owner.query({
+      domain: PASSAGE_PREVIEW_OWNER_DOMAIN,
+      operation,
+      payload: {},
+    }), PASSAGE_PREVIEW_OWNER_DOMAIN)
+  )))
+  const response = responses[0]
+  const records = Object.fromEntries(responses.flatMap((queryResponse) => (
+    Object.entries(ownerResponseRecords(queryResponse))
+  )))
   return {
     owner,
     response,
-    revision: Number.isInteger(response.revision) ? response.revision : 0,
-    records: ownerResponseRecords(response),
+    revision: responses.reduce((revision, queryResponse) => (
+      Number.isInteger(queryResponse.revision) ? Math.max(revision, queryResponse.revision) : revision
+    ), 0),
+    records,
   }
+}
+
+async function resolvePassagePreviewOwner(windowObject) {
+  let owner = getAuthoritativeWindowsOwner(PASSAGE_PREVIEW_OWNER_DOMAIN, windowObject)
+  if (owner) return owner
+  const cutover = windowObject?.__windowsOwnerDomainCutover
+  if (cutover?.isAuthoritative?.(PASSAGE_PREVIEW_OWNER_DOMAIN) !== true) return null
+  await cutover.refresh?.()
+  owner = getAuthoritativeWindowsOwner(PASSAGE_PREVIEW_OWNER_DOMAIN, windowObject)
+  if (owner) return owner
+  const error = new Error('The passage-preview Windows owner is not ready')
+  error.name = 'WindowsOwnerNotReadyError'
+  error.code = 'owner-not-ready'
+  throw error
 }
 
 function cloneOwnerValue(value) {

@@ -9,7 +9,7 @@ export { REAL_SENTENCE_STATUS }
 export async function findRealPreviewSentence(item, options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch
   if (typeof fetchImpl !== 'function') return unavailable('真实短句服务不可用')
-  const word = normalizeText(item?.lemma || item?.word).toLowerCase()
+  const word = normalizeText(item?.word || item?.form || item?.lemma).toLowerCase()
   const meaningZh = normalizeText(item?.primaryMeaningZh || item?.targetMeaningZh)
   if (!word || !meaningZh) return unavailable('缺少目标词或主要义')
 

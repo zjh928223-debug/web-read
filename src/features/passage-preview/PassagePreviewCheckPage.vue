@@ -155,7 +155,7 @@ const wordLengthClass = computed(() => {
   if (length >= 24) return 'is-extreme-length'
   if (length >= 18) return 'is-extra-long'
   if (length >= 14) return 'is-very-long'
-  if (length >= 10) return 'is-long'
+  if (length >= 8) return 'is-long'
   return ''
 })
 const sentence = computed(() => (

@@ -27,7 +27,10 @@ export function createSentenceSourceRegistry({ providers = [] } = {}) {
   }
 
   async function findPreviewSentence(item, options = {}) {
-    const enabledProviders = orderedProviders().filter((provider) => provider.enabled)
+    const skippedProviderIds = new Set(normalizeProviderIds(options.skipProviderIds))
+    const enabledProviders = orderedProviders().filter((provider) => (
+      provider.enabled && !skippedProviderIds.has(provider.id)
+    ))
     if (!enabledProviders.length) return unavailable('No real-sentence source is enabled.')
 
     let fallback = unavailable('No enabled source returned a suitable real sentence.')
@@ -94,6 +97,10 @@ function normalizeProvider(provider) {
 
 function normalizeId(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function normalizeProviderIds(value) {
+  return Array.isArray(value) ? value.map(normalizeId).filter(Boolean) : []
 }
 
 function unavailable(message) {

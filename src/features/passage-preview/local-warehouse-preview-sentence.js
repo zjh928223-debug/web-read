@@ -1,5 +1,6 @@
 import { REAL_SENTENCE_STATUS } from '../../services/vocabulary/personalization/sentence-source-registry.js'
 import {
+  findExactEnglishWordInSentence,
   findEnglishInflectionInSentence,
   isEnglishInflectionOf,
 } from '../../services/vocabulary/english-inflection-match.mjs'
@@ -25,9 +26,10 @@ export async function findLocalWarehousePreviewSentence(item, options = {}) {
       partOfSpeech: item?.pos || item?.partOfSpeech,
     })
     if (!selected) return unavailable('暂未找到合格的本地短句')
-    const matchedForm = findEnglishInflectionInSentence(selected.sentence, selected.lemma, {
+    const matchedForm = findExactEnglishWordInSentence(selected.sentence, word)
+      || findEnglishInflectionInSentence(selected.sentence, selected.lemma, {
       preferredForm: word,
-    })
+      })
     return {
       status: REAL_SENTENCE_STATUS.READY,
       sentence: selected.sentence,
@@ -64,7 +66,7 @@ export function selectCandidate(items, { word, lemma, primarySense, partOfSpeech
   const targetPartOfSpeech = normalizePartOfSpeech(primarySense?.partOfSpeech || partOfSpeech)
   const lockedLemma = normalizeWord(primarySense?.lemma)
   let eligible = (Array.isArray(items) ? items : [])
-    .filter((item) => isEligible(item, lemma || word))
+    .filter((item) => isEligible(item, { word, lemma }))
   if (lockedLemma) eligible = eligible.filter((item) => normalizeWord(item?.lemma) === lockedLemma)
   if (targetPartOfSpeech) {
     const samePartOfSpeech = eligible.filter((item) => normalizePartOfSpeech(item?.partOfSpeech) === targetPartOfSpeech)
@@ -77,16 +79,19 @@ export function selectCandidate(items, { word, lemma, primarySense, partOfSpeech
   return candidates[0]?.item || null
 }
 
-function isEligible(item, target) {
+function isEligible(item, { word, lemma } = {}) {
   const sentence = normalizeText(item?.sentence)
   const count = Number(item?.wordCount) || sentence.split(/\s+/u).length
   if (!sentence || count < 3 || count > 14) return false
-  const targetSurface = normalizeWord(target)
-  const candidateLemma = normalizeWord(item?.lemma || target)
+  const targetSurface = normalizeWord(word || lemma)
+  const requestedLemma = normalizeWord(lemma)
+  const candidateLemma = normalizeWord(item?.lemma || lemma || word)
+  const exactTarget = findExactEnglishWordInSentence(sentence, targetSurface)
   return Boolean(targetSurface)
     && Boolean(candidateLemma)
-    && isEnglishInflectionOf(targetSurface, candidateLemma)
-    && Boolean(findEnglishInflectionInSentence(sentence, candidateLemma, { preferredForm: targetSurface }))
+    && (isEnglishInflectionOf(targetSurface, candidateLemma)
+      || (candidateLemma === requestedLemma && Boolean(exactTarget)))
+    && Boolean(exactTarget || findEnglishInflectionInSentence(sentence, candidateLemma, { preferredForm: targetSurface }))
 }
 
 function score(item, word, lemma, primarySense) {
@@ -134,8 +139,16 @@ function normalizePrimarySense(value) {
 
 function normalizePartOfSpeech(value) {
   const normalized = normalizeText(value).toLowerCase().replace(/\.$/u, '')
-  if (['a', 'adj', 'adjective', 's'].includes(normalized)) return 'adjective'
-  if (['n', 'noun'].includes(normalized) || /\bnoun\b/u.test(normalized)) return 'noun'
+  if (!normalized) return ''
+  if (['a', 'adj', 'adjective', 's'].includes(normalized) || /\b(?:adj|adjective)\b/u.test(normalized)) return 'adjective'
+  // Dictionary entries often encode inflection notes in the part-of-speech
+  // field, for example "(pl. leaves )".  A plural marker still describes a
+  // noun and must not make an otherwise valid noun example look incompatible.
+  if (
+    ['n', 'noun'].includes(normalized)
+    || /\bnoun\b/u.test(normalized)
+    || /\bpl(?:ural)?\.?\b/u.test(normalized)
+  ) return 'noun'
   if (['v', 'verb'].includes(normalized) || /\bverb\b/u.test(normalized)) return 'verb'
   if (['adv', 'adverb', 'r'].includes(normalized) || /\badverb\b/u.test(normalized)) return 'adverb'
   return normalized

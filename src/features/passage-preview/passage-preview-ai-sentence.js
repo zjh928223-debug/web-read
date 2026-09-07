@@ -49,6 +49,22 @@ export async function findAiPreviewSentence(item, options = {}) {
   return generated[0] || null
 }
 
+// Last-resort local wording keeps a prepared batch usable when every remote
+// sentence source and the AI endpoint are unavailable. It is deliberately
+// marked as an AI learning aid and is never persisted as authentic evidence.
+export function createFallbackAiPreviewSentence(item) {
+  const input = toInputItem(item)
+  if (!input.id || !input.lemma) return null
+  const surface = input.form || input.word || input.lemma
+  const partOfSpeech = normalizePartOfSpeech(input.partOfSpeech)
+  const sentence = buildFallbackSentence(surface, input.lemma, partOfSpeech)
+  const candidate = createAiSentenceResult(input, sentence)
+  const validation = validatePreviewSentenceResult(input, candidate)
+  return validation.accepted && isSimpleAiPreviewSentence(validation.result.sentence)
+    ? validation.result
+    : null
+}
+
 function createAiSentenceResult(item, sentence) {
   const lemma = normalizeWord(item.lemma || item.word)
   return {
@@ -119,6 +135,26 @@ function normalizeId(value) {
 function normalizeWord(value) {
   const word = normalizeText(value).toLowerCase()
   return /^[a-z]+(?:[-'][a-z]+)*$/u.test(word) ? word : ''
+}
+
+function buildFallbackSentence(surface, lemma, partOfSpeech) {
+  if (partOfSpeech === 'adjective') return `The answer is ${surface}.`
+  if (partOfSpeech === 'adverb') return `They worked ${surface} today.`
+  if (partOfSpeech === 'verb') return `The team will ${lemma} tomorrow.`
+  if (partOfSpeech === 'noun') {
+    const plural = /s$/iu.test(surface) && !/(?:ss|us|is)$/iu.test(surface)
+    return plural ? `The ${surface} look useful today.` : `The ${surface} looks useful today.`
+  }
+  return `This example uses ${surface} today.`
+}
+
+function normalizePartOfSpeech(value) {
+  const normalized = normalizeText(value).toLowerCase().replace(/\.$/u, '')
+  if (['a', 'adj', 'adjective', 's'].includes(normalized)) return 'adjective'
+  if (['n', 'noun'].includes(normalized) || /\bnoun\b/u.test(normalized)) return 'noun'
+  if (['v', 'verb'].includes(normalized) || /\bverb\b/u.test(normalized)) return 'verb'
+  if (['adv', 'adverb', 'r'].includes(normalized) || /\badverb\b/u.test(normalized)) return 'adverb'
+  return normalized
 }
 
 function normalizeText(value) {

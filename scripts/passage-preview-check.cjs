@@ -85,20 +85,66 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /realSentence\.value\?\.matchedForm/)
   assert.match(componentSource, /\(\?<\!\[A-Za-z\]\)\(\$\{word\}\)\(\?!\[A-Za-z\]\)/)
   assert.match(componentSource, /wordLengthClass/)
+  assert.match(componentSource, /if \(length >= 8\) return 'is-long'/)
+  assert.match(checkComponentSource, /if \(length >= 8\) return 'is-long'/)
   assert.match(componentSource, /role="switch"/)
   assert.match(componentSource, /handleShortcutKeyup/)
   assert.match(componentSource, /handlePreviewWindowBlur/)
   assert.match(componentSource, /handlePreviewVisibilityChange/)
   assert.match(componentSource, /简短真实语境/)
-  assert.match(componentSource, /真实短句不可用时，会尝试生成一条经过规则校验的 AI 辅助例句/)
+  assert.doesNotMatch(componentSource, /先看一眼词形；点击后只学习一个主要义和一条短句/)
+  assert.doesNotMatch(componentSource, /中文释义准备中/)
+  assert.doesNotMatch(componentSource, /正在从本地例句仓库和可追溯语料中筛选短句/)
+  assert.doesNotMatch(componentSource, /暂未找到合格真实短句/)
   assert.doesNotMatch(componentSource, /剑雅原句已退出首次接触|复习模型安排原文迁移/)
   assert.doesNotMatch(read('src/features/passage-preview/passage-preview.css'), /passage-preview-later-note/)
   assert.doesNotMatch(componentSource, /完整语境|focusChunks|paragraphChunks/)
   assert.match(componentSource, /watch\([\s\S]*speakWord\(\)/)
   assert.match(componentSource, /progress\.status = 'completed'/)
   assert.match(componentSource, /progress\.completedAt = new Date\(\)\.toISOString\(\)/)
+  assert.match(
+    componentSource,
+    /const saved = await enqueueProgressMutation\([\s\S]*?emit\('item-revealed'/,
+    'reveal progress must be persisted before acquisition registration is emitted',
+  )
   assert.match(appSource, /今日复习[\s\S]*待预习/)
   assert.match(appSource, /<KeepAlive>[\s\S]*<SrsReviewPage/)
+  assert.match(appSource, /passagePreviewAcquisitionRegistrationPromise/)
+  assert.match(
+    appSource,
+    /await reconcileRevealedPreviewAcquisitions\(passagePreviewItems\.value, progress, introducedRecords\)/,
+    'reopening a preview batch must skip acquisition records that are already registered',
+  )
+  assert.match(appSource, /async function replayPersistedPassagePreviewAcquisitions\(\)/)
+  assert.match(
+    appSource,
+    /if \(!vocabularySrsNotReady\.value\) \{\s+void replayPersistedPassagePreviewAcquisitions\(\)/,
+    'a ready vocabulary owner must replay persisted revealed preview items during app startup',
+  )
+  assert.match(
+    appSource,
+    /if \(wasNotReady && !vocabularySrsNotReady\.value\) \{[\s\S]*?void replayPersistedPassagePreviewAcquisitions\(\)/,
+    'owner recovery must replay persisted revealed preview items after the existing readiness transition',
+  )
+  assert.match(appSource, /resolveCompletedIeltsPreviewAction/)
+  assert.match(
+    appSource,
+    /completionAction\.action === 'keep_completed'[\s\S]*?completionAction\.reason === 'waiting_threshold'[\s\S]*?passagePreviewQueueNotice\.value = completionAction\.notice/,
+    'completed preview surfaces must expose the full waiting-threshold notice',
+  )
+  assert.match(appSource, /await savePassagePreviewData\(\[\]\)/)
+  assert.match(appSource, /advanceCompletedIeltsPreviewBatch\(currentBatchDate, progress\)/)
+  assert.match(appSource, /openFirstAvailableIeltsPreviewBatch\(\)/)
+  assert.match(
+    appSource,
+    /async function advanceCompletedIeltsPreviewBatch\(currentBatchDate, progress\) \{\s+if \(!await ensurePreviewGenerationCapacity\(\)\) return false\s+const continuation = await loadIeltsDailyPreviewContinuation\(\)/,
+    'completed dated batches must check waiting capacity before reading the next allocation',
+  )
+  assert.match(
+    appSource,
+    /async function openFirstAvailableIeltsPreviewBatch\(\) \{\s+if \(!await ensurePreviewGenerationCapacity\(\)\) return false\s+passagePreviewPreparationMessage/,
+    'new preview generation must check waiting capacity before selecting or generating a batch',
+  )
   assert.match(checkComponentSource, /aria-keyshortcuts="1"[\s\S]*>忘记</)
   assert.match(checkComponentSource, /aria-keyshortcuts="2"[\s\S]*>困难</)
   assert.match(checkComponentSource, /aria-keyshortcuts="3"[\s\S]*>一般</)
@@ -136,18 +182,25 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.doesNotMatch(merriamWebsterPort, /\bfetch\b|localStorage|indexedDB|repository|dictionaryapi\.com/i)
   assert.match(merriamWebsterAdapter, /MERRIAM_WEBSTER_PREVIEW_ENDPOINT/)
   assert.doesNotMatch(merriamWebsterAdapter, /localStorage|indexedDB|savePassagePreviewData/i)
-  assert.match(componentSource, /result\.persistence !== 'none'/)
-  assert.doesNotMatch(componentSource, /Powered by Wordnik|passage-preview-attribution|passage-preview-wordnik-badge/)
+  assert.doesNotMatch(componentSource, /Powered by Wordnik|passage-preview-wordnik-badge/)
+  assert.match(componentSource, /passage-preview-attribution/)
   assert.match(componentSource, /brandingRequired/)
   assert.match(componentSource, /width="50"/)
-  assert.match(componentSource, /translateSentenceBatches/)
-  assert.match(componentSource, /createTranslationGenerationQueue/)
-  assert.doesNotMatch(componentSource, /translateSentenceBatches\(items, \{ signal: translationAbortController\.signal \}\)/)
+  assert.match(componentSource, /createFallbackAiPreviewSentence/)
+  assert.doesNotMatch(componentSource, /findPreviewSentence|findAiPreviewSentence|translateSentenceBatches|createTranslationGenerationQueue/)
   assert.match(componentSource, /passagePreviewActionForKeyboardEvent/)
   assert.match(componentSource, /action === 'revealContent'/)
   assert.match(componentSource, /passage-preview-header-meta/)
+  assert.doesNotMatch(componentSource, /preparationStatus/)
+  assert.match(componentSource, /修改句子中文快捷键/)
+  assert.match(appSource, /preloadExternalSources: true/)
+  assert.match(appSource, /ensureSentence: true/)
+  assert.doesNotMatch(appSource, /startPassagePreviewBackgroundPreparation/)
   assert.match(componentSource, /window\.addEventListener\('keydown', handleShortcutKeydown, true\)/)
   assert.match(componentSource, /sentenceTranslationVisible/)
+  assert.match(componentSource, /passage-preview-translation-control/)
+  assert.doesNotMatch(componentSource, /passage-preview-translation-toggle|显示中文|隐藏中文/)
+  assert.match(componentSource, /pronunciation\.prefetch/)
   assert.match(componentSource, /快捷键设置/)
   const previewCss = read('src/features/passage-preview/passage-preview.css')
   assert.match(previewCss, /text-decoration-line:\s*underline/)
@@ -157,6 +210,7 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*display:\s*inline-flex/)
   assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*align-items:\s*center/)
   assert.match(previewCss, /\.passage-preview-shortcut-open[\s\S]*justify-content:\s*center/)
+  assert.match(previewCss, /\.passage-preview-word-line\s*\{[\s\S]*display:\s*grid/)
 }
 
 function verifyProgressPersistence(storageModule, items) {
@@ -604,6 +658,23 @@ async function verifySentenceSourceRegistry() {
   assert.equal(unavailable.status, 'unavailable')
   assert.equal(disabledWordnikCalls, 0, 'disabled Wordnik port must remain inert')
 
+  let skippedWordnikCalls = 0
+  const skippedRegistry = modules.composition.createPreviewSentenceSourceRegistry({
+    localWarehouseResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
+    tatoebaResolver: async () => ({ status: 'unavailable', message: 'fixture miss' }),
+    merriamWebster: { enabled: false },
+    wordnik: {
+      enabled: true,
+      resolver: async () => {
+        skippedWordnikCalls += 1
+        return { status: 'ready', sentence: 'This is a skipped fixture.' }
+      },
+    },
+  })
+  const skipped = await skippedRegistry.findPreviewSentence({ word: 'example' }, { skipProviderIds: ['wordnik'] })
+  assert.equal(skipped.status, 'unavailable')
+  assert.equal(skippedWordnikCalls, 0, 'a skipped provider must not be called during preload')
+
   const exhaustedRegistry = modules.composition.createPreviewSentenceSourceRegistry({
     localWarehouseResolver: async () => ({ status: 'unavailable', message: '本地例句仓库尚未构建' }),
     tatoebaResolver: async () => ({ status: 'unavailable', message: '暂未找到与主要义匹配的合格真实短句' }),
@@ -707,6 +778,81 @@ async function verifySentenceSourceRegistry() {
   assert.equal(automatic.primaryMeaningZh, '自动的')
   assert.equal(automatic.primaryPartOfSpeech, 'adjective')
 
+  const leaves = await modules.localAdapter.findLocalWarehousePreviewSentence({
+    word: 'leaves',
+    lemma: 'leaf',
+    pos: 'noun',
+    primaryMeaningZh: '叶',
+  }, {
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          available: true,
+          primarySense: {
+            lemma: 'leaf',
+            partOfSpeech: '(pl. leaves )',
+            definitionEn: 'a flattened structure of a higher plant',
+            meaningZh: '（高等植物的）叶',
+          },
+          items: [{
+            lemma: 'leaf', sentence: 'The leaves turn crimson in autumn.',
+            senseGloss: 'a flattened structure of a higher plant', partOfSpeech: 'noun', senseOrder: 1, wordCount: 6,
+            source: { name: 'fixture', type: 'dictionary_example', recordId: 'leaf-plural', license: 'fixture', url: '#' },
+          }],
+        }
+      },
+    }),
+  })
+  assert.equal(leaves.status, 'ready')
+  assert.equal(leaves.matchedForm, 'leaves')
+  assert.equal(leaves.primaryPartOfSpeech, 'noun')
+
+  const molten = await modules.localAdapter.findLocalWarehousePreviewSentence({
+    word: 'molten',
+    lemma: 'melt',
+    pos: 'adjective',
+    primaryMeaningZh: '熔化的',
+  }, {
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          available: true,
+          primarySense: {
+            lemma: 'melt',
+            partOfSpeech: 'adjective',
+            definitionEn: 'made liquid by heat',
+            meaningZh: '熔化的',
+          },
+          items: [{
+            lemma: 'melt', sentence: 'Molten rock flows quickly.',
+            senseGloss: 'made liquid by heat', partOfSpeech: 'adjective', senseOrder: 1, wordCount: 4,
+            source: { name: 'fixture', type: 'dictionary_example', recordId: 'molten-adjective', license: 'fixture', url: '#' },
+          }],
+        }
+      },
+    }),
+  })
+  assert.equal(molten.status, 'ready')
+  assert.equal(molten.matchedForm, 'Molten')
+
+  const heatedContext = modules.composition.resolvePreviewContextSentence({
+    word: 'heated',
+    lemma: 'heat',
+    form: 'heated',
+    pos: 'noun',
+    primaryMeaningZh: '热',
+    previewContext: {
+      sentence: 'Every eruption is different, but put at its simplest, where there are weaknesses, rocks deep in the mantle, heated to 1,350 C, will start to expand and rise.',
+      source_kind: 'user_local_exam_material',
+      source_title: 'fixture',
+      source_id: 'heated-context',
+    },
+  })
+  assert.ok(heatedContext?.sentence.includes('heated'))
+  assert.ok((heatedContext?.sentence.match(/[A-Za-z]+/gu) || []).length <= 14)
+
   let fetchCount = 0
   const direct = await modules.wordnikAdapter.findWordnikPreviewSentence({
     word: 'suspicion',
@@ -734,14 +880,32 @@ async function verifySentenceSourceRegistry() {
   assert.equal(direct.translationZh, '')
   assert.equal(direct.source.name, 'Wordnik')
   assert.match(direct.source.url, /wordnik\.com\/words\/suspicion/)
+  assert.equal(direct.source.attributionText, null)
+  assert.equal(direct.source.brandingRequired, true)
   assert.match(direct.source.poweredByLogoUrl, /wordnik_badge_a2\.png$/)
   await modules.wordnikAdapter.findWordnikPreviewSentence({
     word: 'suspicion',
     primaryMeaningZh: '怀疑',
     targetSenseKey: 'suspicion:n:01',
-  }, { fetchImpl: async () => assert.fail('formatted Wordnik result should use session memory') })
-  assert.equal(fetchCount, 1)
-  modules.wordnikAdapter.clearWordnikPreviewSessionCache()
+  }, {
+    fetchImpl: async () => {
+      fetchCount += 1
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [{
+              id: '78',
+              sentence: 'The suspicion was unfounded.',
+              providerName: 'fixture-provider',
+              wordUrl: 'https://www.wordnik.com/words/suspicion',
+            }],
+          }
+        },
+      }
+    },
+  })
+  assert.equal(fetchCount, 2, 'free Wordnik data must not be cached after a completed request')
 
   assert.throws(() => modules.registry.createSentenceSourceRegistry({
     providers: [
@@ -838,7 +1002,9 @@ async function verifyWordnikSentenceEndpoint() {
           ok: true,
           status: 200,
           headers: { get: (name) => ({
+            'x-ratelimit-limit-hour': '100',
             'x-ratelimit-remaining-hour': '99',
+            'x-ratelimit-limit-minute': '10',
             'x-ratelimit-remaining-minute': '4',
           })[name] || null },
           async json() {
@@ -849,6 +1015,7 @@ async function verifyWordnikSentenceEndpoint() {
                 title: 'Fixture title',
                 provider: { name: 'Fixture provider' },
                 url: 'https://example.test/original',
+                attributionText: 'Powered by Wordnik',
               }],
             }
           },
@@ -862,6 +1029,13 @@ async function verifyWordnikSentenceEndpoint() {
   assert.equal(response.json.items[0].sentence, 'Her suspicion grew.')
   assert.equal(response.json.remainingHour, 99)
   assert.equal(response.json.remainingMinute, 4)
+  assert.equal(response.json.limitHour, 100)
+  assert.equal(response.json.limitMinute, 10)
+  assert.deepEqual(response.json.rateLimit, {
+    hour: { limit: 100, remaining: 99 },
+    minute: { limit: 10, remaining: 4 },
+  })
+  assert.equal(response.json.items[0].attributionText, 'Powered by Wordnik')
   assert.match(upstreamUrl, /api\.wordnik\.com\/v4\/word\.json\/suspicion\/examples/)
   assert.doesNotMatch(upstreamUrl, /fixture-secret/)
   assert.equal(upstreamApiKey, 'fixture-secret')
@@ -878,6 +1052,58 @@ async function verifyWordnikSentenceEndpoint() {
   assert.equal(fetchCount, 1)
   currentTime += 60 * 60 * 1000 + 1
   assert.equal(budget.tryTake(), true, 'local budget should reopen after the rolling hour')
+
+  let releaseUpstream
+  let coalescedFetchCount = 0
+  const coalescedUpstream = new Promise((resolve) => { releaseUpstream = resolve })
+  const coalescedBudget = plugin.createWordnikHourlyBudget({ limit: 2 })
+  const inFlight = new Map()
+  const firstCoalescedResponse = createJsonResponse()
+  const secondCoalescedResponse = createJsonResponse()
+  const requestOptions = {
+    method: 'GET',
+    url: `${plugin.WORDNIK_SENTENCE_ENDPOINT}?word=example&limit=2`,
+  }
+  const firstRequest = plugin.handleWordnikSentenceRequest(
+    requestOptions,
+    firstCoalescedResponse,
+    () => assert.fail('Wordnik endpoint should handle the first coalesced request'),
+    {
+      apiKey: 'fixture-secret',
+      budget: coalescedBudget,
+      inFlight,
+      fetchImpl: async () => {
+        coalescedFetchCount += 1
+        return coalescedUpstream
+      },
+    },
+  )
+  const secondRequest = plugin.handleWordnikSentenceRequest(
+    requestOptions,
+    secondCoalescedResponse,
+    () => assert.fail('Wordnik endpoint should handle the second coalesced request'),
+    {
+      apiKey: 'fixture-secret',
+      budget: coalescedBudget,
+      inFlight,
+      fetchImpl: async () => {
+        coalescedFetchCount += 1
+        return coalescedUpstream
+      },
+    },
+  )
+  releaseUpstream({
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    async json() {
+      return { examples: [{ exampleId: 1, text: 'An example.' }] }
+    },
+  })
+  await Promise.all([firstRequest, secondRequest])
+  assert.equal(coalescedFetchCount, 1, 'duplicate in-flight requests must share one upstream call')
+  assert.equal(firstCoalescedResponse.statusCode, 200)
+  assert.equal(secondCoalescedResponse.statusCode, 200)
 }
 
 async function importSource(relativePath) {
@@ -903,11 +1129,15 @@ async function importSource(relativePath) {
 async function importPassagePreviewImporter() {
   const tempDir = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'read-web-preview-importer-'))
   const policySource = read('src/services/vocabulary/personalization/primary-sense-policy.js')
+  const morphologySource = read('src/services/vocabulary/english-inflection-match.mjs')
   const importerSource = read('src/features/passage-preview/passage-preview-import.js')
     .replace('../../services/vocabulary/personalization/primary-sense-policy.js', './primary-sense-policy.mjs')
+    .replace('../../services/vocabulary/english-inflection-match.mjs', './english-inflection-match.mjs')
   const policyPath = path.join(tempDir, 'primary-sense-policy.mjs')
+  const morphologyPath = path.join(tempDir, 'english-inflection-match.mjs')
   const importerPath = path.join(tempDir, 'passage-preview-import.mjs')
   await fsPromises.writeFile(policyPath, policySource, 'utf8')
+  await fsPromises.writeFile(morphologyPath, morphologySource, 'utf8')
   await fsPromises.writeFile(importerPath, importerSource, 'utf8')
   return import(`${pathToFileURL(importerPath).href}?v=${Date.now()}`)
 }
@@ -967,6 +1197,7 @@ async function importPreviewSentenceSources() {
     .replace('../../services/vocabulary/personalization/sentence-source-registry.js', './sentence-source-registry.mjs')
     .replace('../../services/vocabulary/personalization/wordnik-sentence-source.js', './wordnik-sentence-source.mjs')
     .replace('../../services/vocabulary/personalization/merriam-webster-sentence-source.js', './merriam-webster-sentence-source.mjs')
+    .replace('../../services/vocabulary/english-inflection-match.mjs', './english-inflection-match.mjs')
     .replace('./tatoeba-preview-sentence.js', './tatoeba-preview-sentence.mjs')
     .replace('./wordnik-preview-sentence.js', './wordnik-preview-sentence.mjs')
     .replace('./merriam-webster-preview-sentence.js', './merriam-webster-preview-sentence.mjs')

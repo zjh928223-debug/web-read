@@ -1,3 +1,5 @@
+import { findEnglishInflectionInSentence } from './english-inflection-match.mjs'
+
 export const TATOEBA_SENTENCE_ENDPOINT = '/api/vocabulary/real-sentences'
 export const TATOEBA_API_BASE = 'https://api.tatoeba.org/v1/sentences'
 
@@ -77,9 +79,7 @@ function normalizeLimit(value) {
 
 function isEligibleEnglishSentence(item, word) {
   if (!item || item.lang !== 'eng' || item.is_unapproved === true || item.license !== 'CC BY 2.0 FR') return false
-  const escaped = word.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
-  const family = new RegExp(`(?<![A-Za-z])${escaped}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu')
-  return family.test(String(item.text || ''))
+  return Boolean(findEnglishInflectionInSentence(String(item.text || ''), word))
 }
 
 function normalizeTatoebaItem(item) {

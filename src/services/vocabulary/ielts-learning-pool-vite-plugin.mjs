@@ -1,5 +1,9 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
+import {
+  findEnglishInflectionInSentence,
+  findExactEnglishWordInSentence,
+} from './english-inflection-match.mjs'
 
 export const IELTS_LEARNING_POOL_ENDPOINT = '/api/vocabulary/ielts-learning-pool'
 export const IELTS_READING_CANDIDATES_DEFAULT_PATH = resolve(
@@ -107,21 +111,27 @@ export function createIeltsLearningPoolVitePlugin(options = {}) {
 function normalizeCandidate(item) {
   const lemma = normalizeWord(item?.lemma)
   if (!lemma) return null
+  const declaredForms = normalizeForms(item?.forms, lemma)
+  const exampleForm = normalizeWord(item?.example?.form)
+  const sentenceForm = declaredForms.find((candidate) => findExactEnglishWordInSentence(item?.example?.sentence, candidate))
+  const form = exampleForm || sentenceForm || declaredForms[1] || lemma
   return {
     lemma,
-    form: normalizeWord(item?.example?.form) || normalizeWord(item?.forms?.[0]) || lemma,
+    form,
+    forms: normalizeForms(declaredForms, lemma, form),
     phonetic: normalizeText(item?.phonetic),
     pos: normalizeText(item?.pos),
     translation: normalizeTranslation(item?.translation),
     definition: normalizeText(item?.definition),
-    example: normalizeExample(item?.example, lemma),
+    ieltsDifficultyBook: normalizePositiveInteger(item?.example?.book),
+    example: normalizeExample(item?.example, lemma, form, declaredForms),
   }
 }
 
-function normalizeExample(example, lemma) {
+function normalizeExample(example, lemma, form, forms = []) {
   if (!example || typeof example !== 'object') return null
   const sentence = normalizeText(example.sentence)
-  if (!sentence || !containsLemma(sentence, lemma)) return null
+  if (!sentence || !containsTargetForm(sentence, lemma, [form, ...forms])) return null
   const book = normalizePositiveInteger(example.book)
   const test = normalizePositiveInteger(example.test)
   const passage = normalizePositiveInteger(example.passage)
@@ -147,12 +157,14 @@ function toSummaryCandidate(candidate) {
     lemma: candidate.lemma,
     word: candidate.form || candidate.lemma,
     form: candidate.form || candidate.lemma,
+    ...(candidate.forms?.length ? { forms: candidate.forms } : {}),
     phonetic: candidate.phonetic,
     pos: candidate.pos,
     primaryMeaningZh: meaning,
     primarySenseStatus: meaning ? 'resolved' : 'suggested',
     primarySenseReason: meaning ? '剑雅本地候选池已提供首要义项提示' : '剑雅候选池暂未提供中文首要义项',
     targetSenseKey: stableTargetSenseKey(candidate.lemma, meaning),
+    ...(candidate.ieltsDifficultyBook ? { ieltsDifficultyBook: candidate.ieltsDifficultyBook } : {}),
   }
 }
 
@@ -224,8 +236,20 @@ function stableTargetSenseKey(lemma, meaning) {
   return `ielts-reading:${lemma}:${meaning || 'candidate'}`
 }
 
-function containsLemma(sentence, lemma) {
-  return new RegExp(`(?<![A-Za-z])${escapeRegExp(lemma)}(?:s|es|ed|ing)?(?![A-Za-z])`, 'iu').test(sentence)
+function containsTargetForm(sentence, lemma, forms) {
+  const candidates = Array.isArray(forms) ? forms : [forms]
+  return Boolean(
+    candidates.some((candidate) => findExactEnglishWordInSentence(sentence, candidate))
+      || findExactEnglishWordInSentence(sentence, lemma)
+      || findEnglishInflectionInSentence(sentence, lemma, { preferredForm: candidates[0] }),
+  )
+}
+
+function normalizeForms(value, ...fallbacks) {
+  return [...new Set([
+    ...fallbacks,
+    ...(Array.isArray(value) ? value : []),
+  ].map(normalizeWord).filter(Boolean))]
 }
 
 function uniqueWords(value) {

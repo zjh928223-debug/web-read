@@ -159,6 +159,7 @@
     "verify:passage-preview:translation-generation": "node scripts/passage-preview-translation-generation-check.mjs",
     "verify:passage-preview:daily-continuation": "node scripts/passage-preview-daily-continuation-check.mjs",
     "verify:passage-preview:durable-state": "node scripts/passage-preview-durable-state-check.mjs",
+    "verify:passage-preview:learning-plan": "node scripts/passage-preview-learning-plan-check.mjs",
     "verify:passage-preview:preload": "node scripts/passage-preview-preload-check.mjs",
     "verify:passage-preview:session-cache": "node scripts/passage-preview-session-cache-check.mjs",
     "verify:passage-preview-shortcuts": "node scripts/passage-preview-shortcuts-check.mjs",

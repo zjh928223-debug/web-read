@@ -1,5 +1,6 @@
 import {
   findEnglishInflectionInSentence,
+  findExactEnglishWordInSentence,
   isEnglishInflectionOf,
   normalizeEnglishWord,
 } from '../../services/vocabulary/english-inflection-match.mjs'
@@ -13,11 +14,15 @@ export function validatePreviewSentenceResult(item, result) {
   const targetSurface = normalizeEnglishWord(item?.word || item?.lemma)
   const fallbackLemma = normalizeEnglishWord(item?.lemma || item?.word)
   const candidateLemma = normalizeEnglishWord(result.targetLemma || result.matchedLemma || fallbackLemma)
-  if (!targetSurface || !candidateLemma || !isEnglishInflectionOf(targetSurface, candidateLemma)) {
+  const exactTarget = findExactEnglishWordInSentence(result.sentence, targetSurface)
+  const sameAsItemLemma = Boolean(fallbackLemma && candidateLemma === fallbackLemma)
+  const targetMatchesCandidate = isEnglishInflectionOf(targetSurface, candidateLemma)
+    || (sameAsItemLemma && Boolean(exactTarget))
+  if (!targetSurface || !candidateLemma || !targetMatchesCandidate) {
     return rejected('候选 lemma 与目标词形不一致')
   }
 
-  const matchedForm = findEnglishInflectionInSentence(result.sentence, candidateLemma, {
+  const matchedForm = exactTarget || findEnglishInflectionInSentence(result.sentence, candidateLemma, {
     preferredForm: result.matchedForm || targetSurface,
   })
   if (!matchedForm) return rejected('句中没有目标 lemma 的合法词形')

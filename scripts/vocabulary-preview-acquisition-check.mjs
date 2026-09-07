@@ -116,8 +116,272 @@ assert.equal(
 )
 
 await runCoordinatorScenario(api)
+await runPreviewActivationScenario(api)
 
-console.log('Vocabulary preview acquisition graduation checks passed.')
+console.log('Vocabulary preview acquisition and unified review activation checks passed.')
+
+async function runPreviewActivationScenario(moduleApi) {
+  const now = '2026-08-08T08:00:00.000Z'
+  const introducedAt = '2026-08-07T08:00:00.000Z'
+
+  for (const [dueReviewCount, expectedLimit] of [[0, 5], [15, 5], [16, 2], [24, 2], [25, 0]]) {
+    const fixture = await createActivationFixture(moduleApi, {
+      dueReviewCount,
+      count: 6,
+      introducedAt,
+      now,
+    })
+    const plan = await fixture.service.activatePendingPreviewLearning({
+      now,
+      timezone: 'UTC',
+      local_day: '2026-08-08',
+    })
+    assert.equal(plan.due_review_count, dueReviewCount)
+    assert.equal(plan.dailyLimit, expectedLimit)
+    assert.equal(plan.activated.filter((item) => item.activated).length, expectedLimit)
+    const snapshot = await fixture.acquisitionRepository.loadSnapshot()
+    const graduated = Object.values(snapshot.by_learning_unit_id)
+      .filter((pair) => pair.acquisition_state.status === 'graduated')
+    assert.equal(graduated.length, expectedLimit)
+    assert.equal(
+      graduated.every((pair) => pair.acquisition_state.extensions.preview_activation.local_day === '2026-08-08'),
+      true,
+    )
+    const reviewSnapshot = await fixture.reviewStateRepository.loadSnapshot()
+    assert.equal(Object.keys(reviewSnapshot.by_learning_unit_id).length, expectedLimit)
+    const activationEvents = fixture.runner.snapshot()
+      .flatMap((row) => row.content?.events || [])
+      .filter((event) => event.event_type === 'preview_learning_activated'
+        && event.payload?.completion_basis === 'preview_capacity_activation')
+    assert.equal(activationEvents.length, expectedLimit)
+  }
+
+  const dailyFixture = await createActivationFixture(moduleApi, {
+    dueReviewCount: 0,
+    count: 8,
+    introducedAt,
+    now,
+  })
+  const firstActivation = await dailyFixture.service.activatePendingPreviewLearning({
+    now,
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(firstActivation.activated.filter((item) => item.activated).length, 5)
+  const reopenedActivation = await dailyFixture.service.activatePendingPreviewLearning({
+    now,
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(reopenedActivation.activated.length, 0)
+  assert.equal(reopenedActivation.remainingDailyCapacity, 0)
+
+  const restartedService = moduleApi.createVocabularyService({
+    repository: dailyFixture.repository,
+    scheduler: { createInitialReviewState() { throw new Error('legacy scheduler must not run') } },
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+    acquisitionRepository: dailyFixture.acquisitionRepository,
+    acquisitionService: moduleApi.createVocabularyAcquisitionService({
+      enabled: true,
+      runUnitOfWork: dailyFixture.runner.run,
+      now: () => now,
+    }),
+    reviewStateRepository: dailyFixture.reviewStateRepository,
+  })
+  const afterRestart = await restartedService.activatePendingPreviewLearning({
+    now,
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(afterRestart.activated.length, 0)
+  assert.equal(afterRestart.remainingDailyCapacity, 0)
+
+  const exactBoundary = await createActivationFixture(moduleApi, {
+    dueReviewCount: 0,
+    count: 1,
+    introducedAt,
+    now,
+    omitContext: true,
+  })
+  assert.equal(
+    (await exactBoundary.acquisitionRepository.loadSnapshot()).by_learning_unit_id[exactBoundary.unitIds[0]]
+      .acquisition_state.status,
+    'introduced',
+  )
+  const exactBoundaryPlan = await exactBoundary.service.activatePendingPreviewLearning({
+    now,
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(exactBoundaryPlan.activated.length, 1)
+  assert.equal(exactBoundaryPlan.activated[0].activated, true)
+
+  const fifoFixture = await createActivationFixture(moduleApi, {
+    dueReviewCount: 0,
+    count: 3,
+    introducedAt: [
+      '2026-08-07T08:00:00.000Z',
+      '2026-08-05T08:00:00.000Z',
+      '2026-08-06T08:00:00.000Z',
+    ],
+    now,
+  })
+  const fifoPlan = await fifoFixture.service.activatePendingPreviewLearning({
+    now,
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  const formById = new Map(
+    Object.values((await fifoFixture.acquisitionRepository.loadSnapshot()).by_learning_unit_id)
+      .map((pair) => [pair.learning_unit.learning_unit_id, pair.learning_unit.normalized_form]),
+  )
+  assert.deepEqual(
+    fifoPlan.activated.map((item) => formById.get(item.learning_unit_id)),
+    ['preview-1', 'preview-2', 'preview-0'],
+  )
+
+  const previewOnlyBacklog = await createActivationFixture(moduleApi, {
+    dueReviewCount: 0,
+    count: 20,
+    introducedAt: '2026-08-01T08:00:00.000Z',
+    now,
+  })
+  await seedActivatedPreviewReviews(previewOnlyBacklog, 20)
+  const twentyActivatedPreviewDue = await previewOnlyBacklog.service.activatePendingPreviewLearning({
+    now: '2026-08-08T08:00:00.000Z',
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(twentyActivatedPreviewDue.due_review_count, 20)
+  assert.equal(twentyActivatedPreviewDue.dailyLimit, 2)
+  assert.equal(twentyActivatedPreviewDue.activated.length, 0)
+  const activatedPreviewReviewState = Object.values(
+    (await previewOnlyBacklog.reviewStateRepository.loadSnapshot()).by_learning_unit_id,
+  )[0]
+  assert.equal(activatedPreviewReviewState.scheduler_parameters_version, 'fsrs-parameters.v1')
+
+  const twentyFiveActivatedPreview = await createActivationFixture(moduleApi, {
+    dueReviewCount: 0,
+    count: 25,
+    introducedAt: '2026-08-01T08:00:00.000Z',
+    now,
+  })
+  await seedActivatedPreviewReviews(twentyFiveActivatedPreview, 25)
+  const twentyFivePreviewDuePlan = await twentyFiveActivatedPreview.service.activatePendingPreviewLearning({
+    now: '2026-08-08T08:00:00.000Z',
+    timezone: 'UTC',
+    local_day: '2026-08-08',
+  })
+  assert.equal(twentyFivePreviewDuePlan.due_review_count, 25)
+  assert.equal(twentyFivePreviewDuePlan.dailyLimit, 0)
+  assert.equal(twentyFivePreviewDuePlan.activated.length, 0)
+
+  for (const [formalCount, activatedPreviewCount, expectedLimit] of [
+    [5, 10, 5],
+    [5, 11, 2],
+    [5, 19, 2],
+    [5, 20, 0],
+  ]) {
+    const mixedFixture = await createActivationFixture(moduleApi, {
+      dueReviewCount: formalCount,
+      count: activatedPreviewCount,
+      introducedAt: '2026-08-01T08:00:00.000Z',
+      now,
+    })
+    await seedActivatedPreviewReviews(mixedFixture, activatedPreviewCount)
+    const mixedPlan = await mixedFixture.service.activatePendingPreviewLearning({
+      now: '2026-08-08T08:00:00.000Z',
+      timezone: 'UTC',
+      local_day: '2026-08-08',
+    })
+    assert.equal(mixedPlan.due_review_count, formalCount + activatedPreviewCount)
+    assert.equal(mixedPlan.dailyLimit, expectedLimit)
+  }
+}
+
+async function createActivationFixture(moduleApi, options = {}) {
+  const now = options.now || delayedAt
+  const repository = moduleApi.createInMemoryVocabularyRepository({
+    reviewStates: Array.from({ length: options.dueReviewCount || 0 }, (_, index) => ({
+      word_id: `formal-due-${index}`,
+      due_at: now,
+      state: 'review',
+    })),
+  })
+  const runner = moduleApi.createInMemoryVocabularyLearningUnitOfWorkRunner({
+    now: () => now,
+  })
+  const acquisitionRepository = createAcquisitionReader(runner.snapshot)
+  const reviewStateRepository = {
+    async loadSnapshot() {
+      return runner.snapshot().find((row) => row.id === 'vocabulary.review.store.v2')?.content
+        || { schema_version: 'review-store.v2', by_learning_unit_id: {} }
+    },
+  }
+  const acquisitionService = moduleApi.createVocabularyAcquisitionService({
+    enabled: true,
+    runUnitOfWork: runner.run,
+    now: () => now,
+  })
+  const service = moduleApi.createVocabularyService({
+    repository,
+    scheduler: { createInitialReviewState() { throw new Error('legacy scheduler must not run') } },
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+    acquisitionRepository,
+    acquisitionService,
+    reviewStateRepository,
+  })
+  const unitIds = []
+  const introducedAt = options.introducedAt || '2026-08-07T08:00:00.000Z'
+  for (let index = 0; index < (options.count || 0); index += 1) {
+    const queued = await service.queuePreviewVocabularyAcquisition({
+      word: `preview-${index}`,
+      lemma: `preview-${index}`,
+      language: 'en',
+      meaning: `含义 ${index}`,
+      createdAt: Array.isArray(introducedAt) ? introducedAt[index] : introducedAt,
+      preview_item_id: `preview-item-${index}`,
+      context: options.omitContext ? null : undefined,
+    })
+    unitIds.push(queued.learningUnit.learning_unit_id)
+  }
+  return {
+    repository,
+    runner,
+    acquisitionRepository,
+    reviewStateRepository,
+    acquisitionService,
+    service,
+    unitIds,
+  }
+}
+
+async function seedActivatedPreviewReviews(fixture, count, {
+  activatedAt = '2026-08-07T08:00:00.000Z',
+  localDay = '2026-08-07',
+} = {}) {
+  for (const learningUnitId of fixture.unitIds.slice(0, count)) {
+    const commandBase = `preview-test-activation:${learningUnitId}`
+    await fixture.acquisitionService.activatePreviewLearningUnit({
+      command_id: `${commandBase}:command`,
+      correlation_id: commandBase,
+      event_partition: activatedAt.slice(0, 7),
+      payload: {
+        learning_unit_id: learningUnitId,
+        activated_at: activatedAt,
+        local_day: localDay,
+        daily_limit: 5,
+        due_review_count: 0,
+        review_state_id: `vocabulary-review:${learningUnitId}`,
+        scheduler_version: 'fsrs.v1',
+        scheduler_parameters_version: 'fsrs-parameters.v1',
+        event_id: `${commandBase}:event`,
+      },
+    })
+  }
+}
 
 async function runCoordinatorScenario(moduleApi) {
   const coordinatorNow = { value: new Date(delayedAt) }
@@ -166,6 +430,14 @@ async function runCoordinatorScenario(moduleApi) {
   const registered = await coordinator.registerItem(item, { introducedAt })
   assert.equal(registered.state.status, 'acquiring')
   assert.equal((await repository.loadSnapshot()).reviewStates.length, 0)
+  const reloadedCoordinator = moduleApi.createPassagePreviewAcquisitionCoordinator({
+    vocabularyService: service,
+    storage,
+    now: () => coordinatorNow.value,
+  })
+  const repeated = await reloadedCoordinator.registerItem(item, { introducedAt })
+  assert.equal(repeated.record.learningUnitId, registered.record.learningUnitId)
+  assert.equal(Object.keys((await coordinatorAcquisitionRepository.loadSnapshot()).by_learning_unit_id).length, 1)
   storage.setItem('vocabulary.passage-preview.acquisition.v1', JSON.stringify({
     schemaVersion: 'passage-preview.acquisition.v1',
     records: [{

@@ -15,9 +15,16 @@ const {
 } = api
 
 const storage = memoryStorage()
-const first = updatePassagePreviewDurableState((state) => ({ ...state, data: [{ id: 'batch:a' }] }), storage)
+const first = updatePassagePreviewDurableState((state) => ({
+  ...state,
+  data: [{ id: 'batch:a' }],
+  learningHistory: { schemaVersion: 'passage-preview.learning-history.v1', sessions: [] },
+  learningSettings: { schemaVersion: 'passage-preview.learning-settings.v1', batchSize: 37 },
+}), storage)
 assert.equal(first.revision, 1)
 assert.equal(loadPassagePreviewDurableState(storage).data[0].id, 'batch:a')
+assert.equal(loadPassagePreviewDurableState(storage).learningHistory.sessions.length, 0)
+assert.equal(loadPassagePreviewDurableState(storage).learningSettings.batchSize, 37)
 storage.failNextWrite(new DOMException('quota', 'QuotaExceededError'))
 assert.throws(() => updatePassagePreviewDurableState((state) => ({ ...state, progress: { currentIndex: 2 } }), storage), /quota/)
 assert.equal(loadPassagePreviewDurableState(storage).revision, 1)

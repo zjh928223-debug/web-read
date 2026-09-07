@@ -315,6 +315,7 @@ function normalizePreviewItem(item = {}) {
     id: normalizeText(item.id),
     lemma: normalizeWord(item.lemma || item.word),
     word: normalizeText(item.word || item.lemma),
+    forms: normalizeForms(item.forms, item.form, item.word, item.lemma),
     primaryMeaningZh: normalizeText(item.primaryMeaningZh),
     pos: normalizeText(item.pos || item.partOfSpeech),
     phonetic: normalizeText(item.phonetic),
@@ -421,6 +422,10 @@ function mergeItems(previous, next) {
     primaryMeaningZh: normalizeText(right.primaryMeaningZh || left.primaryMeaningZh),
     pos: normalizeText(right.pos || left.pos),
     phonetic: normalizeText(right.phonetic || left.phonetic),
+    forms: normalizeForms([
+      ...(Array.isArray(left.forms) ? left.forms : []),
+      ...(Array.isArray(right.forms) ? right.forms : []),
+    ], right.form, right.word, right.lemma),
     targetSenseKey: normalizeText(right.targetSenseKey || left.targetSenseKey),
     previewContext: right.previewContext || left.previewContext || null,
     realSentence: right.realSentence || left.realSentence || null,
@@ -456,6 +461,13 @@ function normalizeWord(value) {
 
 function normalizeText(value) {
   return String(value ?? '').normalize('NFKC').replace(/\s+/gu, ' ').trim()
+}
+
+function normalizeForms(value, ...fallbacks) {
+  return [...new Set([
+    ...fallbacks,
+    ...(Array.isArray(value) ? value : []),
+  ].map((candidate) => normalizeText(candidate).toLowerCase()).filter((candidate) => /^[a-z]+(?:[-'][a-z]+)*$/u.test(candidate)))]
 }
 
 function clone(value) {

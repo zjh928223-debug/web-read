@@ -27,6 +27,8 @@ export function inspectPassagePreviewDurableState(storage = globalThis.localStor
     allocations: legacy.allocations || null,
     continuation: legacy.continuation || null,
     archive: legacy.archive || [],
+    learningHistory: legacy.learningHistory || null,
+    learningSettings: legacy.learningSettings || null,
   })
   if (result.status === 'missing') return { status: 'not-found', state: legacyState }
   if (result.status === 'corrupt') {
@@ -74,6 +76,12 @@ function normalizeState(value = {}) {
     allocations: value.allocations && typeof value.allocations === 'object' ? value.allocations : null,
     continuation: value.continuation && typeof value.continuation === 'object' ? value.continuation : null,
     archive: Array.isArray(value.archive) ? value.archive : [],
+    learningHistory: value.learningHistory && typeof value.learningHistory === 'object'
+      ? value.learningHistory
+      : null,
+    learningSettings: value.learningSettings && typeof value.learningSettings === 'object'
+      ? value.learningSettings
+      : null,
   }
 }
 
@@ -88,7 +96,8 @@ function readJson(storage, key) {
 
 function hasLegacyState(legacy) {
   return Boolean(legacy && (legacy.batchId || legacy.progress || legacy.allocations || legacy.continuation
-    || (Array.isArray(legacy.data) && legacy.data.length) || (Array.isArray(legacy.archive) && legacy.archive.length)))
+    || legacy.learningHistory || legacy.learningSettings || (Array.isArray(legacy.data) && legacy.data.length)
+    || (Array.isArray(legacy.archive) && legacy.archive.length)))
 }
 
 function persistenceError(code, message, details = {}) {

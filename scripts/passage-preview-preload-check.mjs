@@ -85,6 +85,72 @@ assert.equal(prepared.stats.translated, 1)
 assert.ok(calls.some(({ url }) => url.includes('reference=dictionary')))
 assert.ok(calls.some(({ url }) => url.includes('/api/vocabulary/sentence-translations')))
 
+const contextOnlyPrepared = await preloadPassagePreviewBatch([
+  {
+    id: 'ielts-reading:2026-09-04:heated',
+    word: 'heated',
+    lemma: 'heat',
+    form: 'heated',
+    pos: 'noun',
+    primaryMeaningZh: '热',
+    primarySenseStatus: 'resolved',
+    previewContext: {
+      sentence: 'Every eruption is different, but put at its simplest, where there are weaknesses, rocks deep in the mantle, heated to 1,350 C, will start to expand and rise.',
+      source_kind: 'user_local_exam_material',
+      source_id: 'heated-context',
+      source_title: '剑桥雅思本地阅读语料',
+      source_locator: { locator_version: 'source-locator.v1', local_locator: 'heated-1' },
+      license_kind: 'user_owned',
+      ownership: 'private',
+      quality_status: 'validated',
+    },
+  },
+], {
+  concurrency: 1,
+  ensureSentence: true,
+  fetchImpl: async (url, options = {}) => {
+    const parsed = new URL(String(url), 'http://127.0.0.1')
+    if (parsed.pathname === '/api/vocabulary/sentence-translations') {
+      const body = JSON.parse(options.body)
+      return jsonResponse({
+        available: true,
+        items: body.items.map((item) => ({ ...item, translationZh: '加热后的岩石' })),
+      })
+    }
+    return jsonResponse({ items: [] }, 404)
+  },
+})
+const contextOnlySentence = contextOnlyPrepared.preloadedSentences['ielts-reading:2026-09-04:heated']
+assert.ok(contextOnlySentence?.sentence.includes('heated'))
+assert.ok((contextOnlySentence?.sentence.match(/[A-Za-z]+/gu) || []).length <= 14)
+assert.equal(contextOnlySentence.translationZh, '加热后的岩石')
+
+const irregularFallbackPrepared = await preloadPassagePreviewBatch([{
+  id: 'ielts-reading:2026-09-04:molten',
+  word: 'molten',
+  lemma: 'melt',
+  form: 'molten',
+  pos: 'adjective',
+  primaryMeaningZh: '熔化的',
+}], {
+  concurrency: 1,
+  ensureSentence: true,
+  fetchImpl: async (url, options = {}) => {
+    const parsed = new URL(String(url), 'http://127.0.0.1')
+    if (parsed.pathname === '/api/vocabulary/sentence-translations') {
+      const body = JSON.parse(options.body)
+      return jsonResponse({
+        available: true,
+        items: body.items.map((item) => ({ ...item, translationZh: '熔化的材料' })),
+      })
+    }
+    return jsonResponse({ items: [] }, 404)
+  },
+})
+const irregularFallbackSentence = irregularFallbackPrepared.preloadedSentences['ielts-reading:2026-09-04:molten']
+assert.equal(irregularFallbackSentence?.sentence, 'The answer is molten.')
+assert.equal(irregularFallbackSentence.translationZh, '熔化的材料')
+
 const aiCalls = []
 const aiPrepared = await preloadPassagePreviewBatch([
   {
@@ -155,6 +221,82 @@ assert.equal(aiPrepared.items.every((item) => item.realSentence === undefined), 
 assert.equal(aiPrepared.preloadedSentences['ielts-reading:2026-08-09:steady'], undefined, 'short fragments are rejected')
 assert.equal(aiPrepared.stats.aiGenerated, 1)
 assert.ok(aiCalls.some(({ url }) => url.includes('/api/vocabulary/ai-preview-sentences')))
+
+const ensuredPrepared = await preloadPassagePreviewBatch([{
+  id: 'ielts-reading:2026-08-09:steady-fallback',
+  word: 'steady',
+  lemma: 'steady',
+  form: 'steady',
+  pos: 'adjective',
+  primaryMeaningZh: '稳定的',
+  primarySenseStatus: 'resolved',
+  targetSenseKey: 'steady:adjective:稳定的',
+}], {
+  concurrency: 1,
+  ensureSentence: true,
+  fetchImpl: async (url, options = {}) => {
+    const parsed = new URL(String(url), 'http://127.0.0.1')
+    aiCalls.push({ url: parsed.href, method: options.method || 'GET' })
+    if (parsed.pathname === '/api/vocabulary/ai-preview-sentences') {
+      return jsonResponse({ available: true, items: [{
+        id: 'steady-fallback',
+        sentence: 'Steady.',
+      }] })
+    }
+    if (parsed.pathname === '/api/vocabulary/sentence-translations') {
+      return jsonResponse({ available: true, items: [{
+        id: 'ielts-reading:2026-08-09:steady-fallback',
+        sentence: 'The answer is steady.',
+        translationZh: '答案很稳定。',
+      }] })
+    }
+    return jsonResponse({ items: [] })
+  },
+})
+const fallbackSentence = ensuredPrepared.preloadedSentences['ielts-reading:2026-08-09:steady-fallback']
+assert.equal(fallbackSentence.sentence, 'The answer is steady.')
+assert.equal(fallbackSentence.generated, true)
+assert.equal(fallbackSentence.persistence, 'session-only')
+assert.equal(fallbackSentence.translationZh, '答案很稳定。')
+
+const lazyCalls = []
+const lazyProgress = []
+const lazyEntries = []
+const lazyPrepared = await preloadPassagePreviewBatch([
+  {
+    id: 'ielts-reading:2026-08-09:lazy',
+    word: 'resilient',
+    lemma: 'resilient',
+    form: 'resilient',
+    pos: 'adjective',
+    primaryMeaningZh: '有韧性的',
+    primarySenseStatus: 'resolved',
+    targetSenseKey: 'resilient:adjective:有韧性的',
+    previewContext: {
+      sentence: 'The resilient child kept trying.',
+      source_kind: 'user_local_exam_material',
+      source_id: 'fixture-context',
+      source_title: '本地资料',
+      license_kind: 'user_owned',
+    },
+  },
+], {
+  preloadExternalSources: false,
+  fetchImpl: async (url) => {
+    lazyCalls.push(String(url))
+    return jsonResponse({ items: [] })
+  },
+  onProgress: (progress) => lazyProgress.push(progress),
+  onEntry: (entry) => lazyEntries.push(entry),
+})
+assert.deepEqual(lazyCalls, [], 'lazy preparation must not request external sentence, AI, or translation services')
+assert.deepEqual(lazyPrepared.preloadedSentences, {})
+assert.equal(lazyPrepared.items[0].realSentence, undefined)
+assert.equal(lazyPrepared.stats.sourceReady, 0)
+assert.equal(lazyPrepared.stats.aiGenerated, 0)
+assert.equal(lazyPrepared.stats.translated, 0)
+assert.ok(lazyProgress.some((progress) => progress.phase === 'stored'))
+assert.deepEqual(lazyEntries, [], 'lazy preparation must not stream unprepared external entries')
 
 console.log('Passage preview sentence, translation, and preload checks passed.')
 

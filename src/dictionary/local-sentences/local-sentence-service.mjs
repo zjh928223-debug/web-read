@@ -2,7 +2,6 @@ import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import {
   deriveEnglishLemmaCandidates,
-  isEnglishInflectionOf,
 } from '../../services/vocabulary/english-inflection-match.mjs'
 
 export const LOCAL_SENTENCE_SCHEMA_VERSION = '1'
@@ -50,10 +49,11 @@ export function createLocalSentenceService({ databasePath } = {}) {
     query(word, { lemma = '', limit = 24, maxWordCount = 20 } = {}) {
       const normalizedWord = normalizeWord(word)
       const normalizedLemma = normalizeWord(lemma)
-      const suppliedLemma = normalizedLemma
-        && (!normalizedWord || isEnglishInflectionOf(normalizedWord, normalizedLemma))
-        ? normalizedLemma
-        : ''
+      // The preview batch carries the lemma separately from the displayed
+      // surface. Keep that explicit pair even for irregular forms such as
+      // molten -> melt; otherwise the database query silently drops the real
+      // lemma before sentence selection can inspect the sentence.
+      const suppliedLemma = normalizedLemma || ''
       const lemmas = unique([suppliedLemma, normalizedWord, ...deriveLemmaCandidates(normalizedWord)]).slice(0, 8)
       while (lemmas.length < 8) lemmas.push('')
       if (!normalizedWord && !normalizedLemma) return { available: true, items: [], lemmas: [] }

@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 116,
-    "behavior": 121,
+    "behavior": 122,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 280,
-  "executableScriptCount": 304,
+  "packageScriptCount": 281,
+  "executableScriptCount": 305,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1273,6 +1273,18 @@
         "scripts/passage-preview-durable-state-check.mjs"
       ],
       "owner": "package.json#scripts.verify:passage-preview:durable-state"
+    },
+    {
+      "name": "verify:passage-preview:learning-plan",
+      "command": "node scripts/passage-preview-learning-plan-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/passage-preview-learning-plan-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:passage-preview:learning-plan"
     },
     {
       "name": "verify:passage-preview:preload",
@@ -6348,6 +6360,30 @@
       "owner": "package.json#scripts.verify:passage-preview:durable-state",
       "owners": [
         "package.json#scripts.verify:passage-preview:durable-state"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/passage-preview-learning-plan-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:passage-preview:learning-plan",
+      "owners": [
+        "package.json#scripts.verify:passage-preview:learning-plan"
       ],
       "invocation": "direct",
       "evidence": {

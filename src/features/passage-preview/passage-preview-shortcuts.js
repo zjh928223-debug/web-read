@@ -2,13 +2,13 @@ export const PASSAGE_PREVIEW_SHORTCUTS_KEY = 'vocabulary.passage-preview.shortcu
 export const PASSAGE_PREVIEW_SHORTCUTS_SCHEMA = 'passage-preview.shortcuts.v2'
 export const PASSAGE_PREVIEW_TRANSLATION_SHORTCUT_KEY = 'vocabulary.passage-preview.shortcut.translation.v1'
 export const PASSAGE_PREVIEW_CONTEXT_SHORTCUT_KEY = 'vocabulary.passage-preview.shortcut.context.v1'
-export const PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODE_KEY = 'vocabulary.passage-preview.translation-display-mode.v1'
+export const PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODE_KEY = 'vocabulary.passage-preview.translation-display-mode.v2'
 
 export const PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODES = Object.freeze({
   HOLD: 'hold',
   PERSISTENT: 'persistent',
 })
-export const DEFAULT_PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODE = PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODES.PERSISTENT
+export const DEFAULT_PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODE = PASSAGE_PREVIEW_TRANSLATION_DISPLAY_MODES.HOLD
 
 export const PASSAGE_PREVIEW_SHORTCUT_ACTIONS = Object.freeze([
   Object.freeze({ id: 'revealContent', label: '看看这个词怎么用' }),

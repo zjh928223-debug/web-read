@@ -11,13 +11,21 @@ assert.deepEqual(deriveEnglishLemmaCandidates('slates'), ['slate'])
 assert.deepEqual(deriveEnglishLemmaCandidates('rates'), ['rate'])
 assert.deepEqual(deriveEnglishLemmaCandidates('notes'), ['note'])
 assert.ok(deriveEnglishLemmaCandidates('sanctuaries').includes('sanctuary'))
+assert.ok(deriveEnglishLemmaCandidates('leaves').includes('leaf'))
 assert.ok(deriveEnglishLemmaCandidates('propping').includes('prop'))
 assert.ok(deriveEnglishLemmaCandidates('gauges').includes('gauge'))
 assert.equal(isEnglishInflectionOf('slates', 'slat'), false)
 assert.equal(isEnglishInflectionOf('rates', 'rat'), false)
 assert.equal(isEnglishInflectionOf('notes', 'not'), false)
 assert.ok(generateEnglishInflections('rescue').includes('rescued'))
+assert.ok(generateEnglishInflections('leaf').includes('leaves'))
+assert.deepEqual(generateEnglishInflections('heat'), ['heat', 'heats', 'heated', 'heating'])
+assert.equal(isEnglishInflectionOf('heated', 'heat'), true)
+assert.equal(isEnglishInflectionOf('boiled', 'boil'), true)
+assert.equal(isEnglishInflectionOf('looked', 'look'), true)
 assert.equal(findEnglishInflectionInSentence('The survivors were rescued safely.', 'rescue'), 'rescued')
+assert.equal(findEnglishInflectionInSentence('The leaves turn crimson in autumn.', 'leaf'), 'leaves')
+assert.equal(findEnglishInflectionInSentence('The metal was heated before testing.', 'heat', { preferredForm: 'heated' }), 'heated')
 
 const validSlate = validatePreviewSentenceResult({ word: 'slates', lemma: 'slates', pos: 'noun' }, {
   status: 'ready',
@@ -59,6 +67,33 @@ const validMassNoun = validatePreviewSentenceResult({ word: 'ventilation', lemma
   matchedPartOfSpeech: 'noun',
 })
 assert.equal(validMassNoun.accepted, true)
+
+const validLeafPlural = validatePreviewSentenceResult({ word: 'leaves', lemma: 'leaf', pos: 'noun' }, {
+  status: 'ready',
+  sentence: 'The leaves turn crimson in autumn.',
+  matchedLemma: 'leaf',
+  matchedPartOfSpeech: 'noun',
+})
+assert.equal(validLeafPlural.accepted, true)
+
+const validHeated = validatePreviewSentenceResult({ word: 'heated', lemma: 'heat', pos: 'noun' }, {
+  status: 'ready',
+  sentence: 'The metal was heated before testing.',
+  matchedLemma: 'heat',
+  matchedForm: 'heated',
+  primaryPartOfSpeech: 'noun',
+})
+assert.equal(validHeated.accepted, true)
+assert.equal(validHeated.result.matchedForm, 'heated')
+
+const validMolten = validatePreviewSentenceResult({ word: 'molten', lemma: 'melt' }, {
+  status: 'ready',
+  sentence: 'Molten rock flows quickly.',
+  matchedLemma: 'melt',
+  matchedForm: 'molten',
+})
+assert.equal(validMolten.accepted, true)
+assert.equal(validMolten.result.matchedForm, 'Molten')
 
 const rejectedLongPreview = validatePreviewSentenceResult({ word: 'ventilation', lemma: 'ventilation' }, {
   status: 'ready',
