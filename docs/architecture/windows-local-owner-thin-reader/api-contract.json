@@ -9,14 +9,54 @@
   "routePolicy": "Semantic operation names are frozen; concrete HTTP route paths are intentionally not frozen by task 2.1",
   "transport": {
     "kind": "http-json-loopback",
+    "defaultMode": "loopback",
+    "supportedModes": ["loopback", "private-lan"],
+    "modeSelection": "explicit-independent-runtime-config-and-launcher",
     "bindAddress": "127.0.0.1",
     "portSource": "config/runtime.optimization.json",
     "optimizationFrontendPort": 5184,
     "optimizationBackendPort": 8776,
     "nonLoopbackAllowed": false,
     "remoteTransport": false,
+    "remoteTransportPolicy": "disabled-by-default; private-lan may expose only the stable front door",
     "corsIsAuthentication": false,
-    "authorizationBeforePathOrCredentialAccess": true
+    "authorizationBeforePathOrCredentialAccess": true,
+    "privateLan": {
+      "activation": "explicit-independent-runtime-config-and-launcher",
+      "stableFrontDoor": {
+        "bindAddress": "configured-Windows-LAN-address",
+        "port": 5184,
+        "onlyNonLoopbackListener": true
+      },
+      "candidateHost": {
+        "bindAddress": "127.0.0.1",
+        "port": "dynamic-internal",
+        "directClientAccess": false
+      },
+      "capabilitySidecar": {
+        "bindAddress": "127.0.0.1",
+        "port": 8776,
+        "directClientAccess": false
+      },
+      "lanAddressSource": "local-Windows-server-side-runtime-config",
+      "browserBundleExposure": false,
+      "productionCorsDependency": false
+    },
+    "forwarding": {
+      "entryPoint": "stable-front-door-only",
+      "preserves": [
+        "typed-json-request-response",
+        "typed-errors",
+        "receipt",
+        "commit-unknown",
+        "event-stream",
+        "range-headers",
+        "streaming-response"
+      ],
+      "transportSuccessIsDurabilitySuccess": false,
+      "mediaPayloadPolicy": "identity-reference-range-metadata-only",
+      "mediaUrlPolicy": "same-origin-relative-authorized-url; no-signed-media-url"
+    }
   },
   "identityAndMutationRules": {
     "requestId": {
@@ -733,5 +773,5 @@
     "dailyProfileMigration": false,
     "mediaPolicy": "identity/reference metadata and authorized Range URL only"
   },
-  "artifactChecksum": "sha256:a0d0a6e4543606686f3f082b17c71c89db8d6474b8f30443fb33b43e8cf51729"
+  "artifactChecksum": "sha256:93e0e2133b74b00b747b8d805e5c4314221ff8a36d80894989be709971619668"
 }

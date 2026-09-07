@@ -145,6 +145,42 @@ assert(consumers.compatibilityMapSnapshot.summaryAtCapture.staticWriters === com
 
 assert(api.contractVersion === 'windows-thin-reader-api.v1', 'API contract version changed')
 assert(api.implementationStatus === 'contract-only', 'API artifact must not claim implementation')
+assert(api.transport?.defaultMode === 'loopback', 'owner transport must remain loopback by default')
+assert(
+  JSON.stringify(api.transport?.supportedModes) === JSON.stringify(['loopback', 'private-lan']),
+  'owner transport modes changed',
+)
+assert(api.transport?.modeSelection === 'explicit-independent-runtime-config-and-launcher', 'owner transport mode selection is not explicit')
+assert(api.transport?.bindAddress === '127.0.0.1', 'owner transport default bind address changed')
+assert(api.transport?.portSource === 'config/runtime.optimization.json', 'owner transport must use the optimization runtime config')
+assert(api.transport?.optimizationFrontendPort === 5184, 'optimization stable front door port changed')
+assert(api.transport?.optimizationBackendPort === 8776, 'optimization capability sidecar port changed')
+assert(api.transport?.nonLoopbackAllowed === false, 'loopback default must not allow non-loopback listeners')
+assert(api.transport?.remoteTransport === false, 'remote transport must remain disabled in the default mode')
+assert(
+  api.transport?.remoteTransportPolicy === 'disabled-by-default; private-lan may expose only the stable front door',
+  'remote transport policy is not stable-front-door-only',
+)
+assert(api.transport?.privateLan?.activation === 'explicit-independent-runtime-config-and-launcher', 'private-lan activation is not explicit')
+assert(api.transport?.privateLan?.stableFrontDoor?.bindAddress === 'configured-Windows-LAN-address', 'private-lan stable front door bind is not configurable')
+assert(api.transport?.privateLan?.stableFrontDoor?.port === api.transport.optimizationFrontendPort, 'private-lan stable front door must use the stable port')
+assert(api.transport?.privateLan?.stableFrontDoor?.onlyNonLoopbackListener === true, 'private-lan exposes a non-front-door listener')
+assert(api.transport?.privateLan?.candidateHost?.bindAddress === '127.0.0.1', 'private-lan candidate Host must remain loopback')
+assert(api.transport?.privateLan?.candidateHost?.port === 'dynamic-internal', 'private-lan candidate Host port must remain dynamic')
+assert(api.transport?.privateLan?.candidateHost?.directClientAccess === false, 'Mac cannot connect directly to the candidate Host')
+assert(api.transport?.privateLan?.capabilitySidecar?.bindAddress === '127.0.0.1', 'private-lan capability sidecar must remain loopback')
+assert(api.transport?.privateLan?.capabilitySidecar?.port === api.transport.optimizationBackendPort, 'private-lan capability sidecar port changed')
+assert(api.transport?.privateLan?.capabilitySidecar?.directClientAccess === false, 'Mac cannot connect directly to the capability sidecar')
+assert(api.transport?.privateLan?.lanAddressSource === 'local-Windows-server-side-runtime-config', 'LAN address escaped its server-side configuration boundary')
+assert(api.transport?.privateLan?.browserBundleExposure === false, 'LAN address may not enter the browser bundle')
+assert(api.transport?.privateLan?.productionCorsDependency === false, 'production must not depend on CORS')
+assert(api.transport?.forwarding?.entryPoint === 'stable-front-door-only', 'forwarding must enter through the stable front door')
+for (const semantic of ['typed-json-request-response', 'typed-errors', 'receipt', 'commit-unknown', 'event-stream', 'range-headers', 'streaming-response']) {
+  assert(api.transport?.forwarding?.preserves?.includes(semantic), `transport forwarding does not preserve ${semantic}`)
+}
+assert(api.transport?.forwarding?.transportSuccessIsDurabilitySuccess === false, 'transport success cannot imply durability success')
+assert(api.transport?.forwarding?.mediaPayloadPolicy === 'identity-reference-range-metadata-only', 'media transport payload boundary changed')
+assert(api.transport?.forwarding?.mediaUrlPolicy === 'same-origin-relative-authorized-url; no-signed-media-url', 'media transport must not use signed URLs')
 assert(api.requestEnvelopeSchema.required.includes('requestId'), 'request envelope must require requestId')
 assert(api.requestEnvelopeSchema.required.includes('correlationId'), 'request envelope must require correlationId')
 assert(api.requestEnvelopeSchema.required.includes('domain'), 'request envelope must require domain')
