@@ -1,0 +1,396 @@
+{
+  "$schema": "cross-machine-acceptance-evidence.v1.schema.json",
+  "schemaVersion": 1,
+  "artifactKind": "cross-machine-acceptance-evidence-template",
+  "run": {
+    "runId": "REPLACE_WITH_RUN_ID",
+    "capturedAt": null,
+    "operator": null,
+    "mode": "production",
+    "status": "NOT_RUN",
+    "environment": {
+      "profile": "optimization",
+      "frontendPort": 5184,
+      "capabilitySidecarPort": 8776,
+      "dataRoot": "E:\\ReadWebData\\SubtitleWorkflow-Optimization",
+      "windowsHostRole": "heavy-work-and-data-owner",
+      "macRole": "production-browser",
+      "internalServicesLoopback": true,
+      "dailyIsolationVerified": true,
+      "frontDoorOrigin": "http://<configured-Windows-LAN-address>:5184"
+    },
+    "evidenceRoot": "artifacts/cross-machine-acceptance/<run-id>",
+    "notes": "Template only. Copy to an isolated run directory and replace NOT_RUN only after real Windows/Mac evidence is captured."
+  },
+  "journeys": [
+    {
+      "id": "health",
+      "name": "Windows stable front door health",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "Windows optimization owner and stable front door are available; no live run is recorded in this template."
+      ],
+      "actions": [
+        "Request relative /api/health through stable front door 5184 from the selected Mac mode."
+      ],
+      "expected": {
+        "http": [
+          "GET /api/health through 5184",
+          "read-web-local-app-health.v1 response"
+        ],
+        "contract": [
+          "contractVersion=windows-thin-reader-api.v1",
+          "health includes liveness and schema compatibility"
+        ],
+        "owner": [
+          "owner/release/instance identity and six-domain readiness are recorded"
+        ],
+        "media": []
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real Windows/Mac health request has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Run after the isolated optimization owner and stable front door are available."
+        ],
+        "rollback": [
+          "Keep the previous available release and do not mutate any data while blocked."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 01-health/http.json, owner log, and browser network evidence from a real run."
+      }
+    },
+    {
+      "id": "owner-query",
+      "name": "Owner query",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "Health is verified in the target run and a registered read-only domain operation is selected."
+      ],
+      "actions": [
+        "Send a typed query to /api/app/owner through the stable front door without connecting to internal ports."
+      ],
+      "expected": {
+        "http": [
+          "POST /api/app/owner returns a typed response"
+        ],
+        "contract": [
+          "query keeps contractVersion, domain, operation, revision, and typed error boundaries"
+        ],
+        "owner": [
+          "authoritative revision and bounded owner payload are recorded without mutation"
+        ],
+        "media": [
+          "Only identity/reference metadata is allowed if the query includes media"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real owner query evidence has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Repeat the read-only query with the same correlation context after health is ready."
+        ],
+        "rollback": [
+          "Do not create a command or write browser persistence when the owner query is unavailable."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 02-owner-query/http.json and owner query evidence from a real run."
+      }
+    },
+    {
+      "id": "local-capability",
+      "name": "Local capability",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "A Windows-local capability such as profile.capability-query or reader-session.query is registered and safe to query."
+      ],
+      "actions": [
+        "Issue a capability-query through /api/app/owner and record the exact capability and operation."
+      ],
+      "expected": {
+        "http": [
+          "capability-query travels through stable front door 5184"
+        ],
+        "contract": [
+          "read-web-local-capabilities.v1 and capability registry are preserved"
+        ],
+        "owner": [
+          "Local capability has an owner revision and no canonical mutation receipt"
+        ],
+        "media": [
+          "No media bytes, path, or credential is returned"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real local capability request has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Retry the bounded capability query after the local dependency is ready."
+        ],
+        "rollback": [
+          "Mark BLOCKED if the dependency is absent; do not install global dependencies or direct-connect 8776."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 03-local-capability/http.json and capability evidence from a real run."
+      }
+    },
+    {
+      "id": "external-capability",
+      "name": "External capability",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "An approved short external workflow capability and its Windows-side dependency are available."
+      ],
+      "actions": [
+        "Submit workflow job-start through the stable front door with an idempotency key, then retain the job identity for polling."
+      ],
+      "expected": {
+        "http": [
+          "job-start returns a stable job identity through 5184"
+        ],
+        "contract": [
+          "idempotency and typed command outcome are recorded"
+        ],
+        "owner": [
+          "Owner receipt and external dependency result are recorded separately"
+        ],
+        "media": [
+          "Only opaque media identity may be returned after the external capability completes"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real external capability was invoked."
+      },
+      "recovery": {
+        "retry": [
+          "On commit-unknown, query the original receipt or idempotency identity before any retry."
+        ],
+        "rollback": [
+          "Do not claim job completion or create a second operation identity when the dependency is unavailable."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 04-external-capability/http.json, owner receipt, and dependency log from a real run."
+      }
+    },
+    {
+      "id": "workflow-polling",
+      "name": "Workflow polling",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "A real owner job identity is available from the external capability path or an approved optimization job."
+      ],
+      "actions": [
+        "Poll job, queue, and progress through relative /api while recording revisions and visibility changes."
+      ],
+      "expected": {
+        "http": [
+          "Polling remains single-flight and uses relative /api requests"
+        ],
+        "contract": [
+          "stale revisions are rejected and transport failure is not rendered as job failure"
+        ],
+        "owner": [
+          "Immutable snapshots and command/receipt associations remain traceable"
+        ],
+        "media": [
+          "Media remains an identity/reference until a later media probe"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real workflow polling sequence has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Keep the last immutable snapshot and retry under the visibility-aware policy."
+        ],
+        "rollback": [
+          "Do not replay a command or change job state when polling transport is unavailable."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 05-workflow-polling/poll-sequence.json and browser/network evidence from a real run."
+      }
+    },
+    {
+      "id": "media-range",
+      "name": "Audio and video Range",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "Real audio and video media identities with same-origin relative authorized URLs are available."
+      ],
+      "actions": [
+        "Issue HEAD and Range bytes=0-0 probes for both audio and video through the stable front door or remote-dev proxy."
+      ],
+      "expected": {
+        "http": [
+          "Audio and video each return 206, Content-Range, Accept-Ranges, and matching ETag"
+        ],
+        "contract": [
+          "Range semantics and media identity remain within windows-thin-reader-api.v1"
+        ],
+        "owner": [
+          "Descriptor revision and identity/reference metadata are recorded"
+        ],
+        "media": [
+          "No signed URL, absolute path, full body, Blob, or ArrayBuffer is used"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real audio/video Range response has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Re-query the descriptor and repeat bounded HEAD/Range probes after the front door is ready."
+        ],
+        "rollback": [
+          "Release the old resource on identity or ETag mismatch and return to the last verified descriptor."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 06-media-range/audio-headers.json, video-headers.json, and network evidence from a real run."
+      }
+    },
+    {
+      "id": "media-seek-switch",
+      "name": "Multiple seek positions and media switching",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "The audio/video Range baseline is captured and both media elements can be controlled."
+      ],
+      "actions": [
+        "Seek to at least three positions in each media, switch media, refresh binding, and record the subsequent Range requests."
+      ],
+      "expected": {
+        "http": [
+          "Each seek produces bounded Range traffic rather than a full response"
+        ],
+        "contract": [
+          "Range and ETag rebind rules remain consistent after media switch"
+        ],
+        "owner": [
+          "Every switch is associated with the current media identity and descriptor revision"
+        ],
+        "media": [
+          "206, Content-Range, ETag, and old-URL release are visible in the evidence"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real multi-seek or media-switch evidence has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Stop and release the old element, query the new identity, and repeat the seek after rebind."
+        ],
+        "rollback": [
+          "Return to the last verified media identity without changing owner data or using Blob backup."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 07-media-seek-switch/seek-sequence.json and browser network/console evidence from a real run."
+      }
+    },
+    {
+      "id": "windows-restart",
+      "name": "Windows restart recovery",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "A real query, job, or media identity has before-restart owner revision and receipt evidence."
+      ],
+      "actions": [
+        "Use the approved Windows restart flow, wait for health, and reconnect the Mac to the same stable entry."
+      ],
+      "expected": {
+        "http": [
+          "5184 is the recovered stable entry and health is available again"
+        ],
+        "contract": [
+          "contractVersion remains windows-thin-reader-api.v1 after restart"
+        ],
+        "owner": [
+          "Revision, job, media identity, and receipt lookup survive without a second writer"
+        ],
+        "media": [
+          "Range can be re-bound after restart without returning a full payload"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real Windows restart/recovery has been executed."
+      },
+      "recovery": {
+        "retry": [
+          "Keep the pending journal and query the original receipt or authoritative revision before retry."
+        ],
+        "rollback": [
+          "If the new release is not ready, restore the previous release/entry without deleting the data root."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 08-windows-restart before/after state, launcher log, and browser evidence from a real run."
+      }
+    },
+    {
+      "id": "mac-reconnect",
+      "name": "Mac reconnect",
+      "status": "NOT_RUN",
+      "preconditions": [
+        "A production or remote-dev Mac session has completed a real health and owner query."
+      ],
+      "actions": [
+        "Interrupt and restore the Mac connection, then repeat health, owner query, polling, and one media descriptor/seek query."
+      ],
+      "expected": {
+        "http": [
+          "Production uses the same origin and remote-dev restores the server-side proxy to 5184"
+        ],
+        "contract": [
+          "relative URLs, original idempotency identity, and receipt lookup remain intact"
+        ],
+        "owner": [
+          "Windows authoritative revision, receipt, job, and intent state remain authoritative"
+        ],
+        "media": [
+          "Range and ETag revalidate after reconnect"
+        ]
+      },
+      "failure": {
+        "classification": "environment",
+        "observation": "NOT_RUN; no real Mac reconnect evidence has been captured."
+      },
+      "recovery": {
+        "retry": [
+          "Keep the in-memory intent and last immutable snapshot, show a retry state, and reconnect under the selected mode."
+        ],
+        "rollback": [
+          "Never silently write a Mac canonical copy; retain the previous available Windows release if reconnect cannot recover."
+        ]
+      },
+      "evidence": {
+        "refs": [],
+        "notes": "Add 09-mac-reconnect connection sequence, browser network/console, and Windows owner evidence from a real run."
+      }
+    }
+  ]
+}

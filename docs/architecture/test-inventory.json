@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 116,
-    "behavior": 122,
+    "behavior": 123,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 281,
-  "executableScriptCount": 305,
+  "packageScriptCount": 282,
+  "executableScriptCount": 306,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -2974,6 +2974,18 @@
         "scripts/vocabulary-wave1-integration-check.cjs"
       ],
       "owner": "package.json#scripts.verify:vocabulary-wave1-integration"
+    },
+    {
+      "name": "verify:windows-cross-machine-acceptance",
+      "command": "node scripts/windows-cross-machine-acceptance-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-cross-machine-acceptance-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-cross-machine-acceptance"
     },
     {
       "name": "verify:windows-durable-state-migration",
@@ -10527,6 +10539,30 @@
         "release": false,
         "behaviorAssertions": true,
         "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/windows-cross-machine-acceptance-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-cross-machine-acceptance",
+      "owners": [
+        "package.json#scripts.verify:windows-cross-machine-acceptance"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
         "startsBrowser": false
       }
     },

@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "read-web-cross-machine-acceptance-evidence.v1.schema.json",
+  "title": "Read-Web cross-machine single-user acceptance evidence",
+  "description": "Fillable evidence manifest for the E-004 Windows/Mac acceptance runbook. It does not itself prove a live run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactKind", "run", "journeys"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactKind": {
+      "enum": [
+        "cross-machine-acceptance-evidence",
+        "cross-machine-acceptance-evidence-template"
+      ]
+    },
+    "run": { "$ref": "#/$defs/run" },
+    "journeys": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": { "$ref": "#/$defs/journey" }
+    }
+  },
+  "$defs": {
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "capturedAt",
+        "operator",
+        "mode",
+        "status",
+        "environment",
+        "evidenceRoot"
+      ],
+      "properties": {
+        "runId": { "type": "string", "minLength": 1 },
+        "capturedAt": { "type": ["string", "null"] },
+        "operator": { "type": ["string", "null"] },
+        "mode": { "enum": ["production", "remote-dev"] },
+        "status": { "enum": ["RECORDED", "NOT_RUN"] },
+        "environment": { "$ref": "#/$defs/environment" },
+        "evidenceRoot": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "frontendPort",
+        "capabilitySidecarPort",
+        "dataRoot",
+        "windowsHostRole",
+        "macRole",
+        "internalServicesLoopback",
+        "dailyIsolationVerified",
+        "frontDoorOrigin"
+      ],
+      "properties": {
+        "profile": { "const": "optimization" },
+        "frontendPort": { "const": 5184 },
+        "capabilitySidecarPort": { "const": 8776 },
+        "dataRoot": { "const": "E:\\ReadWebData\\SubtitleWorkflow-Optimization" },
+        "windowsHostRole": { "const": "heavy-work-and-data-owner" },
+        "macRole": {
+          "enum": ["production-browser", "remote-dev-vite"]
+        },
+        "internalServicesLoopback": { "const": true },
+        "dailyIsolationVerified": { "const": true },
+        "frontDoorOrigin": { "type": "string", "minLength": 1 }
+      }
+    },
+    "journey": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "status",
+        "preconditions",
+        "actions",
+        "expected",
+        "failure",
+        "recovery",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "health",
+            "owner-query",
+            "local-capability",
+            "external-capability",
+            "workflow-polling",
+            "media-range",
+            "media-seek-switch",
+            "windows-restart",
+            "mac-reconnect"
+          ]
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "preconditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "expected": { "$ref": "#/$defs/expected" },
+        "failure": { "$ref": "#/$defs/failure" },
+        "recovery": { "$ref": "#/$defs/recovery" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["http", "contract", "owner", "media"],
+      "properties": {
+        "http": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "contract": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "owner": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "media": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "observation"],
+      "properties": {
+        "classification": {
+          "enum": [
+            "none",
+            "transport",
+            "authorization",
+            "contract",
+            "owner-durability",
+            "media-range",
+            "dependency",
+            "restart-reconnect",
+            "environment",
+            "unknown"
+          ]
+        },
+        "observation": { "type": "string", "minLength": 1 },
+        "blocker": { "type": "string", "minLength": 1 }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retry", "rollback"],
+      "properties": {
+        "retry": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "rollback": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["refs"],
+      "properties": {
+        "refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "description"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "http-log",
+            "browser-network",
+            "browser-console",
+            "owner-log",
+            "media-headers",
+            "screenshot",
+            "manual-note",
+            "command-output"
+          ]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    }
+  }
+}
