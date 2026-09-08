@@ -5,6 +5,7 @@ param(
   [switch]$EnableOwnerMigration,
   [switch]$EnableOwnerPromotion,
   [string]$ApplicationProfileAuthorityIsolationRoot = '',
+  [string]$FrontDoorRuntimeConfigPath = '',
   [string]$BootstrapPython = '',
   [int]$StartupTimeoutSeconds = 45
 )
@@ -21,6 +22,7 @@ Import-Module (Join-Path $PSScriptRoot 'optimization-release.psm1') -Force -Disa
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $workflowRoot = Join-Path $projectRoot 'tools\subtitle-workflow'
 $runtimeConfigPath = Join-Path $projectRoot 'config\runtime.optimization.json'
+if (-not $FrontDoorRuntimeConfigPath) { $FrontDoorRuntimeConfigPath = $runtimeConfigPath }
 $defaultOptimizationDataRoot = 'E:\ReadWebData\SubtitleWorkflow-Optimization'
 $ownerWorkflowOutputDir = Join-Path $defaultOptimizationDataRoot 'output'
 $ownerWorkflowStateDir = Join-Path $defaultOptimizationDataRoot '.workflow_state'
@@ -1217,6 +1219,7 @@ try {
   $projectRoot = Resolve-OptimizationExistingPath -Value $projectRoot -Label 'Project'
   $workflowRoot = Resolve-OptimizationExistingPath -Value $workflowRoot -Label 'Workflow'
   $runtimeConfigPath = Resolve-OptimizationExistingPath -Value $runtimeConfigPath -Label 'Runtime config'
+  $FrontDoorRuntimeConfigPath = Resolve-OptimizationExistingPath -Value $FrontDoorRuntimeConfigPath -Label 'Front-door RuntimeConfig'
   $frontDoorScript = Resolve-OptimizationExistingPath -Value $frontDoorScript -Label 'Optimization front door'
   $bootstrapPath = if ($BootstrapPython) {
     Resolve-OptimizationSelectedPython -RuntimeConfigPath $runtimeConfigPath -RequestedPath $BootstrapPython
@@ -1260,6 +1263,46 @@ try {
   }
   if ((Normalize-OptimizationPath -Value $workflowDataRoot) -ne (Normalize-OptimizationPath -Value $defaultOptimizationDataRoot)) {
     throw "Optimization runtime must use data root $defaultOptimizationDataRoot; got $workflowDataRoot."
+  }
+
+  $frontDoorRuntime = $runtime
+  if (-not (Test-OptimizationSamePath -Left $FrontDoorRuntimeConfigPath -Right $runtimeConfigPath)) {
+    Push-Location $workflowRoot
+    try {
+      $frontDoorRuntimeJson = & $bootstrapPath -m youtube_workflow.runtime_config --config $FrontDoorRuntimeConfigPath
+      $frontDoorRuntimeExitCode = $LASTEXITCODE
+    } finally {
+      Pop-Location
+    }
+    if ($frontDoorRuntimeExitCode -ne 0) { throw "Front-door RuntimeConfig resolution failed with exit code $frontDoorRuntimeExitCode." }
+    $frontDoorRuntime = (($frontDoorRuntimeJson -join "`n") | ConvertFrom-Json)
+  }
+  $frontDoorTransportMode = Get-OptimizationObjectText -Object $frontDoorRuntime -Name 'transportMode'
+  if (-not $frontDoorTransportMode) { $frontDoorTransportMode = 'loopback' }
+  $frontDoorHost = [string]$frontDoorRuntime.frontend.host
+  $frontDoorPort = [int]$frontDoorRuntime.frontend.port
+  $configuredLanHost = Get-OptimizationObjectText -Object $frontDoorRuntime -Name 'configuredLanHost'
+  $frontDoorProfileId = Get-OptimizationObjectText -Object $frontDoorRuntime -Name 'profileId'
+  $frontDoorDataRoot = [string]$frontDoorRuntime.dataRoot
+  $frontDoorPublicUrl = Get-OptimizationObjectText -Object $frontDoorRuntime.frontend -Name 'publicUrl'
+  if ($frontDoorTransportMode -eq 'private-lan') {
+    if ($frontDoorProfileId -ne $profileId -or -not $configuredLanHost -or $frontDoorHost -ne $configuredLanHost) {
+      throw 'Private-LAN front-door RuntimeConfig must target the optimization profile and its explicit configured LAN host.'
+    }
+    if (-not $frontDoorPublicUrl) { throw 'Private-LAN front-door RuntimeConfig requires frontend.publicUrl.' }
+  } elseif ($frontDoorTransportMode -ne 'loopback' -or -not (Test-OptimizationLoopbackHost -HostName $frontDoorHost)) {
+    throw 'Front-door RuntimeConfig must use loopback or the explicit private-lan transport.'
+  }
+  if ($frontDoorPort -ne $fixedFrontendPort `
+    -or -not (Test-OptimizationLoopbackHost -HostName ([string]$frontDoorRuntime.backend.host)) `
+    -or [int]$frontDoorRuntime.backend.port -ne $fixedBackendPort) {
+    throw 'Front-door RuntimeConfig must preserve 5184 and the loopback 8776 capability sidecar.'
+  }
+  if ((Normalize-OptimizationPath -Value $frontDoorDataRoot) -ne (Normalize-OptimizationPath -Value $defaultOptimizationDataRoot)) {
+    throw "Front-door RuntimeConfig must use data root $defaultOptimizationDataRoot; got $frontDoorDataRoot."
+  }
+  if (-not $frontDoorPublicUrl) {
+    $frontDoorPublicUrl = "http://$(Format-OptimizationUrlHost -HostName $frontDoorHost):$frontDoorPort/"
   }
 
   New-Item -ItemType Directory -Force -Path $workflowDataRoot | Out-Null
@@ -1451,14 +1494,15 @@ try {
 
   $frontDoorExecutableIdentity = Get-OptimizationFileSha256 -Path $frontDoorScript
   $frontDoorExecutablePath = Get-OptimizationFrontDoorExecutablePath -Identity $frontDoorExecutableIdentity
-  $frontDoorProcessHealthUrl = "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontendPort/api/app/front-door-process-health"
+  $frontDoorProcessHealthUrl = "http://$(Format-OptimizationUrlHost -HostName $frontDoorHost):$frontDoorPort/api/app/front-door-process-health"
   $frontDoorManagerIdentity = if ($testFailure -eq 'front-door') { "$frontDoorExecutableIdentity-test-failure" } else { $frontDoorExecutableIdentity }
   $existingFrontDoorProcessHealth = Get-OptimizationHttpJson -Url $frontDoorProcessHealthUrl
   $existingFrontDoorHealthIdentity = Get-OptimizationObjectText -Object $existingFrontDoorProcessHealth -Name 'executableIdentity'
   $frontDoorArgumentList = @(
     $frontDoorExecutablePath,
-    '--host', $frontendHost,
+    '--host', $frontDoorHost,
     '--port', '{port}',
+    '--transport-mode', $frontDoorTransportMode,
     '--target-file', $frontDoorTargetPath,
     '--release-id', '{releaseId}',
     '--profile-id', '{profileId}',
@@ -1470,6 +1514,9 @@ try {
     '--committed-target-file', $frontDoorCommittedTargetPath,
     '--health-identity-test-file', (Join-Path $stateRoot 'front-door-health-identity.test')
   )
+  if ($frontDoorTransportMode -eq 'private-lan') {
+    $frontDoorArgumentList += @('--configured-lan-host', $configuredLanHost)
+  }
   if ($testFailure -eq 'front-door') { $frontDoorArgumentList += '--fail-ready' }
   $frontDoorPreflightStart = $null
   $existingFrontDoorIdentity = Get-OptimizationObjectText -Object $existingFrontDoorState -Name 'executableIdentity'
@@ -1486,7 +1533,7 @@ try {
       ProfileId = $profileId
       InstanceId = $frontDoorInstanceId
       Port = $frontDoorPreflightPort
-      HealthUrl = "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontDoorPreflightPort/api/app/front-door-process-health"
+      HealthUrl = "http://$(Format-OptimizationUrlHost -HostName $frontDoorHost):$frontDoorPreflightPort/api/app/front-door-process-health"
       StatePath = $frontDoorPreflightStatePath
       FilePath = $nodePath
       ArgumentList = $frontDoorPreflightArguments
@@ -1543,7 +1590,7 @@ try {
         -ProfileId $profileId `
         -InstanceId ([string]$existingHostState.instanceId)
     }
-    $frontendUrl = "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontendPort/"
+    $frontendUrl = $frontDoorPublicUrl
     Write-Host "Reusing optimization production host at $frontendUrl (release $($activeRelease.releaseId))."
     if (-not $NoOpen) { Start-Process $frontendUrl }
     $launchSucceeded = $true
@@ -1863,7 +1910,7 @@ try {
     }
   }
   Remove-OptimizationActivationJournal -Path $activationJournalPath
-  $frontendUrl = "http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontendPort/"
+  $frontendUrl = $frontDoorPublicUrl
   Write-Host "Read-Web optimization production host ready: $frontendUrl"
   Write-Host "release=$($newRelease.releaseId) profile=$profileId instance=$newInstanceId hostPort=$newHostPort"
   Write-Host "dist=$($newRelease.distRoot)"
