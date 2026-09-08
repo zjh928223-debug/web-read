@@ -171,6 +171,7 @@
     "verify:optimization-launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell",
     "verify:optimization-launcher:pwsh": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind pwsh",
     "verify:private-lan-launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/private-lan-launcher-check.ps1",
+    "verify:private-lan-runtime": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/private-lan-runtime-check.ps1",
     "verify:production-host-lifecycle": "npm run build && node scripts/production-host-lifecycle-check.mjs",
     "verify:local-sentences": "node --disable-warning=ExperimentalWarning scripts/local-sentence-warehouse-check.mjs",
     "verify:sentence-translations": "node --disable-warning=ExperimentalWarning scripts/sentence-translation-check.mjs",
