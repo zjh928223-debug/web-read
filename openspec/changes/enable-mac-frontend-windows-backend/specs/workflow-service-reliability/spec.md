@@ -1,5 +1,21 @@
 ## ADDED Requirements
 
+### Requirement: Mac 第一版必须完成最小 URL workflow 主路径
+Mac remote mode SHALL 允许用户提交 URL，由 Windows 使用现有 workflow 完成下载和处理，并让 Mac 查看基本状态及打开完成结果。实现 MUST 优先复用现有 job identity、polling 和处理链路。
+
+#### Scenario: Mac 提交一个 URL
+- **WHEN** 用户在 Mac 提交有效 URL
+- **THEN** Windows MUST 接收任务并运行现有下载/处理流程
+- **THEN** Mac MUST 能看到基本运行或失败状态，并在成功后打开生成素材
+
+### Requirement: Workflow 验收不得扩大为任务管理平台
+第一版 MUST NOT以 cancel/retry/prioritize 全面重构、SSE、远程 NativePicker、后台任务断点续作或 workflow 管理后台作为迁移条件。已经正常工作的相关能力 MAY 保留。
+
+#### Scenario: Workflow 主路径通过但高级控制未验证
+- **WHEN** URL 提交、Windows 处理、基本状态和结果打开已经成功
+- **THEN** 未验证的高级控制 MUST NOT阻止第一版迁移
+- **THEN** 实现任务 MUST NOT仅为完整覆盖高级控制而扩大范围
+
 ### Requirement: Mac remote mode 不得依赖 Windows NativePicker
 Mac remote mode SHALL 使用 YouTube URL 和 Windows library query 选择输入；第一版 MUST NOT通过网络请求触发需要用户在 Windows 桌面交互的 NativePicker。
 

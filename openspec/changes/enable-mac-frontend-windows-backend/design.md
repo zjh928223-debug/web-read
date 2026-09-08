@@ -1,117 +1,125 @@
 ## Context
 
-当前 production 路径已经不是单纯的 Vite dev server：`5184` 是稳定前门，FastAPI candidate Host 使用内部动态端口，`8776` 是仍承载九组 Node endpoint plugin 的 loopback capability sidecar。FastAPI Host 已能提供不可变 `dist`、workflow/owner API 与 Range 媒体，并通过 profile lease、activation journal 和 previous release 保持单机切换可恢复。
+当前 Windows private-LAN 基础已经完成：稳定前门监听显式 LAN 地址，内部 FastAPI Host 与 `8776` sidecar 保持 loopback，并继续使用独立 optimization profile、端口和数据根。
 
-现有 contract 和六个 owner module 已具备 typed envelope、revision/CAS、idempotency 与 receipt，但当前 transport 明确限定为 loopback，优化 profile 仍处于 pre-cutover。浏览器端也仍存在 IndexedDB、localStorage、audio-folder 和兼容 outbox writer。跨机迁移的主要工作不是重写数据层，而是增加一个明确的 LAN transport mode，并按域移除 Mac 端 canonical writer。
-
-用户只有一台 Mac 和一台 Windows。Mac 需要能够编辑前端源码，但不应承担 WhisperX、ffmpeg、yt-dlp、SQLite、ECDICT、AI provider、媒体存储或持久数据处理负载。
+本项目只有一名用户、一台 Mac 和一台 Windows。Mac 是浏览器阅读器；Windows 是唯一后台和数据所在机器。剩余工作的衡量标准不是建立完整的分布式系统，而是用户能否在 Mac 上完成日常学习流程，且刷新或手动重启 Windows launcher 后数据仍能从 Windows 恢复。
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- Mac 能在开发时运行轻量 Vite/HMR，并通过 dev proxy 使用 Windows API 与媒体。
-- 日常使用时由 Windows 同源提供 production `dist` 和 `/api`，Mac 只运行浏览器前端。
-- `private-lan` 必须显式启用；现有 loopback profile、端口和数据根保持不变。
-- Windows 是六个持久域的唯一 canonical writer，Mac 只持有 view state、缓存和未确认 intent。
-- 保持 Range/ETag、owner receipt、revision/CAS、profile lease 和 release rollback 等现有有效机制。
-- 将实施拆成适合独立短对话执行的细粒度任务，并为每个实现任务安排独立 review。
+- Windows 一次启动后给出 Mac 可以打开的 URL。
+- Mac 不安装或运行 Read-Web 后台，直接使用 Windows production 页面。
+- Mac 能打开 Windows 素材，显示 transcript/chunk，并正常播放、暂停和 seek。
+- marks 能保存到 Windows；Mac 能提交 URL，由 Windows 完成现有下载/处理，并在 Mac 查看基本状态和打开结果。
+- Preview、Annotation、Vocabulary 和 SRS 只做低成本现状确认，不默认阻塞第一版迁移。
+- 页面刷新，或用户停止后台、手动重新运行 Windows launcher 后，Mac 刷新或重试即可恢复必用数据。
+- 先在 optimization 数据上完成整条旅程；真实数据只在用户明确授权后备份和切换。
 
 **Non-Goals:**
 
-- 不提供公网访问、远程互联网部署、多租户、HA、企业审计或自研 PKI。
-- 不在第一版实现 QR pairing、短期 access/refresh token、自研证书更新或短期签名媒体 URL。
-- 不构建 Mac 原生应用或 Tauri 包装，也不支持 Mac 离线 canonical persistence。
-- 不支持 Mac 本地大媒体上传，也不让 Mac 远程弹出 Windows native picker。
-- 不在本变更中将九组 Node capability 全部重写为 Python。
-- 不拆分 Git 仓库，不搬迁大型源码目录，不修改 IndexedDB schema。
+- 网段扫描、自动发现、MAC 地址或设备指纹。
+- 公网访问、多用户、多租户、HA、rate limit、企业审计或复杂认证。
+- QR pairing、refresh token、自研 TLS/PKI、短期签名媒体 URL。
+- Mac 原生应用、Tauri、Mac production server、Mac 后台或离线 canonical persistence。
+- 新建通用同步系统、browser outbox、逐域 checkpoint、复杂 receipt recovery 或长期兼容矩阵。
+- 为理论威胁、模拟攻击或企业部署要求扩大实现范围。
+- 在跨机可用目标中同时重构目录、重写 scheduler 或重写九组 capability。
+- Windows 开机自启、无感自动重连、后台任务断点续作、launcher daemon 或系统服务安装。
+- workflow 的 cancel/retry/prioritize 全面重构、远程 NativePicker、SSE 或管理后台。
 
 ## Decisions
 
-### 1. production 使用 Windows 同源页面
+### 1. 日常路径只有一个入口
 
-日常页面由 Windows Host 提供，Mac 浏览器直接访问 Windows 稳定前门。前端代码仍在 Mac 浏览器执行，但静态资源、API 和媒体共享同一 origin。
+Windows stable front door 是 Mac 唯一入口：
 
-这比 Mac 长期运行独立静态服务器更适合个人工具：不需要 production CORS、backend base URL、跨域 Cookie 或媒体签名 URL，前后端 release 也不会因分别部署而自然漂移。
+```text
+Mac browser
+    -> http://<windows-lan>:5184
+        -> production dist
+        -> relative /api requests
+        -> relative media requests with Range
+            -> Windows internal Host / sidecar / data
+```
 
-备选方案是 Mac 独立 static server/Tauri。它只在明确要求 Windows 不可用时仍需打开前端时有价值，本变更不采用。
+Mac 不直连内部 Host 或 `8776`，也不需要知道 Windows 文件路径。production 不以 Mac Vite remote-dev 为前置条件；以后确实需要在 Mac 上做 HMR 时再单独增加，不阻塞当前目标。
 
-### 2. development 使用 Mac Vite proxy
+### 2. 复用现有能力，只修真实阻塞
 
-Mac checkout 可以编辑完整 Vue/CSS/JS。remote-dev Vite mode 禁用九组后端 plugin，并将 `/api`、event stream 和 Range 媒体代理到 Windows `5184`。业务代码继续使用相对 URL，Windows IP 只存在于 Mac 本地、非 `VITE_*` 的 server-side dev 配置中。
+现有 owner contract、revision、idempotency、receipt、Range/ETag、profile lease 和 launcher 行为如果已经工作，原样复用。实施任务先运行真实路径，再定位失败 seam；不得为了统一架构而重写可用模块。
 
-production 不依赖 Mac Vite。前端修改通过 Git 同步并进入 Windows release build；也可以由 Mac build 后将受校验的 `dist` 交给 Windows release 流程，但不维护独立运行版本。
+单用户并不要求删除既有保护，但也不新增多用户并发体系。长任务仍应避免一次点击被重复启动；普通个人操作不为理论并发构建新协议。
 
-### 3. 扩展稳定前门，而不是复用 8776
+### 3. Windows 保存业务数据，Mac 本地状态可丢弃
 
-`5184` 继续作为外部稳定入口；`8776` 继续是 loopback capability sidecar；FastAPI candidate Host 继续使用内部端口。`private-lan` 只改变稳定前门的显式 bind/Host/Origin 规则，不允许 Mac 直连内部服务。
+Mac 可以保存主题、面板状态、临时缓存等 UI 状态。第一版必用的 Reader Session、marks 和 workflow 结果必须能够仅凭 Windows 数据恢复。Preview、Annotation、Vocabulary 和 SRS 不默认阻塞迁移；低成本检查发现问题时记录并暂缓，除非用户明确提升其优先级。
 
-现有 `config/runtime.optimization.json` 保持不变。LAN 使用独立配置和独立 launcher 入口，避免影响日常 reader 与优化 profile。
+不要求一次性清除所有历史 IndexedDB/localStorage 代码，也不建立逐域 authority checkpoint。验收只要求第一版必用路径不依赖 Mac 上唯一存在的业务数据：清除 Mac 缓存或换一个浏览器后，Windows 中已保存的必用数据仍能重新加载。
 
-### 4. 第一版采用个人局域网最小授权
+### 4. 一个实现任务覆盖 optimization 完整旅程
 
-不建设 pairing 和 PKI。运行模式限定在用户明确配置的家庭 LAN 地址，内部服务不公开，现有 service token/Host/Origin 检查继续保留。若用户所处局域网不可信，可在部署层使用现成私网方案；这不是应用内新系统。
+不再按 API、数据域或文件拆分 E/R/G。一个 `E-201` 对话持续工作到 optimization 完整旅程通过，内部可以按以下顺序推进，但不因此创建新任务：
 
-### 5. 媒体保持同源相对 URL
+1. 启动 Windows LAN 模式并从 Mac 打开页面。
+2. 修复页面、API 和媒体中的跨机地址问题。
+3. 验证 Reader、transcript/chunk、播放和 seek。
+4. 验证 marks 与页面刷新恢复。
+5. 验证 Mac 提交 URL、Windows 完成现有下载/处理、Mac 查看基本状态并打开完成素材的 workflow 主路径。
+6. 停止后台、手动重新运行 Windows launcher，再由 Mac 刷新或重试并恢复必用数据；不要求开机自启、无感重连或任务断点续作。
+7. 对 Preview、Annotation、Vocabulary 和 SRS 做低成本现状确认；已工作则不改，失败则记录为非阻塞项，不在 `E-201` 中继续扩张。
+8. 运行相关 focused checks、build、production preview 和 LAN smoke。
 
-复用现有 `authorizedUrl`、Range、ETag 与 media identity。descriptor 第一版不增加 `expiresAt`，不允许 Windows 路径和完整媒体进入 JSON。Mac remote-dev 由 Vite proxy 透明转发相对媒体 URL和 Range header。
+只有第一版必用路径完成后才创建一个新的 `R-201` 只读审核对话。辅助功能的问题不阻止任务完成，除非用户在执行前明确将某项列为必用。
 
-### 6. 每个域只有一个 writer
+### 5. Review 只判断真实个人旅程
 
-迁移顺序保持：Reader Session、marks/activity、Workflow 闭环、Passage Preview/Annotation、Vocabulary/SRS。每个域先远程只读，再接入远程 command，最后用 authority checkpoint 阻断旧 writer。
+`R-201` 以 `E-201` 的实机结果、代码 diff 和测试结果为主要证据，只复跑低成本检查、可疑路径或证据缺口，不无理由重复下载、转录、AI 处理等耗时操作。它只接受以下 P0-P2 finding：
 
-`marks-activity` 是 marks 唯一写入 owner。Reader Session 只能携带 `marksRevision` 或只读 projection；Reader Session commit 不得覆盖 marks。
+- Windows LAN 模式不能启动或 Mac 不能打开页面；
+- 素材、transcript/chunk、播放或 seek 不可用；
+- 用户操作没有保存到 Windows，或刷新/重启后数据丢失；
+- workflow 不能完成 Mac 提交 URL、Windows 下载/处理、Mac 查看基本状态并打开结果的主路径；
+- optimization/daily 环境发生串写；
+- 浏览器收到不应出现的 secret、完整 Windows 路径或内部端口；
+- 本次修改造成明确的现有功能回归。
 
-### 7. SRS 第一版不重写 scheduler
+网段扫描、设备识别、多用户竞争、HA、rate limit、企业认证、压力测试、复杂攻击输入和证据系统完善度不属于 review acceptance criteria。
 
-Mac 可以暂时复用现有 scheduler 计算，并使用 expected revision/CAS 将结果提交 Windows。只有实际测得 payload 或冲突问题后，才单独评估把 scheduler 深化到 Windows。
+若审核发现真实问题，只允许一次范围明确的 `F-201` 修复和一次 fresh re-review。第二次仍失败则停止并由用户决定，不扩张为持续修复循环。
 
-### 8. 源码布局保持不变
+### 6. 真实数据切换是独立授权动作
 
-本变更通过配置、adapter、launcher 和 release artifact 建立部署边界，不通过立即创建 `apps/mac-web`、`backend/windows-host` 等目录制造大范围移动。跨机闭环稳定后，可另立 change 评估源码重排。
+optimization 旅程 PASS 后，`E-301` 必须再次取得用户明确授权才可以检查或处理日常真实数据。动作限制为：
 
-### 9. 实现和 review 分离
+1. 只读确认第一版必用数据实际位于 Windows 数据根、Windows 浏览器 IndexedDB/localStorage 还是其他现有位置。
+2. 暂停旧入口写入，确认备份位置，创建普通可恢复备份并确认其存在。
+3. 必要时只复用项目已有导出/导入能力，不新建迁移框架。
+4. 将已验收入口切换到真实数据配置。
+5. 重点确认旧素材和 marks 可见、产生一次新保存、手动重启 launcher 后仍可恢复；复用 optimization 已验证结果，不重复无关的下载、转录或 AI 流程。
+6. 若失败，停止新入口并恢复原配置；不删除原数据。
 
-每个 `E-*` 实现任务必须由一个新对话执行，并输出基点、HEAD、diff 范围、测试和未解决事项。对应 `R-*` 由独立新对话只读审核。review 失败时使用新的 `F-*` 修复对话，之后重新 review。
-
-并行只允许发生在文件集合不重叠的 lane。`App.vue`、`YouTubeWorkflowPanel.vue`、`src/main.js`、owner API client、production Host、request policy、launcher 和 contract 文件均视为串行热点。
-
-### 10. Review 必须有停止条件，证据验证器不得替代实机验收
-
-独立 review 用于发现既定验收条件内的真实 P0-P2，不是逐轮扩张需求的对抗式测试生成器。同一任务连续两次 fix/re-review 仍未通过时，调度必须暂停，重新评估任务是否过宽、验证器是否正在复制业务语义，并由用户决定简化、拆分或继续。
-
-跨机 evidence validator 只负责结构、状态、路径边界、文件存在性和可选 checksum。它可以阻止空引用、占位引用、越界路径和仅凭 manual note 宣告 PASS，但不得解析任意日志来推断 Mac、Windows restart、Range/seek、owner durability 或 reconnect 已真实发生。这些结论必须由对应阶段的真实环境证据和独立审核给出。
-
-当辅助验证脚本超过约 500 行或相对已审核基线增长超过两倍时，视为范围预警：先说明为何不能用现有测试、schema 或人工验收完成，再决定是否继续。不得以“还能构造新的假证据”为由无限创建新的 `F-*` 轮次。
+不建设 migration 平台、逐域 checksum 证据包或企业级 rollback rehearsal。若真实数据格式确实不兼容，停止并把它作为一个具体问题报告给用户，而不是预先设计所有迁移分支。
 
 ## Risks / Trade-offs
 
-- [Windows IP 变化导致 Mac dev proxy 失效] → Windows LAN 地址只保存在 Mac 本地配置，变更后只修改该配置；不把 IP 编译进前端 bundle。
-- [开放稳定前门时意外暴露内部服务] → LAN 模式只绑定稳定前门，验收必须证明 internal Host 和 `8776` 从 Mac 不可达。
-- [remote mode 仍触发浏览器 writer] → 每个域使用先读、再写、最后 checkpoint 的顺序，并以 writer inventory 和独立 review 阻断双 writer。
-- [Mac dev proxy 破坏 Range/seek] → 在接入业务域前先完成真实 audio/video Range 与 seek 验收。
-- [前端旧缓存与新 Host 不兼容] → health 暴露 release/contract compatibility；只支持当前版本和前一版本，失败时提示刷新。
-- [任务过长导致执行模型臆造完成] → 一个任务只处理一个接口或用户路径；每项独立 review，阶段 gate 使用已集成 commit 重新验证。
-- [真实数据迁移误伤日常版] → P0-P8 只能使用优化根；真实数据只读盘点、dry-run、正式迁移和接管分成不同任务，正式写入必须再次取得用户批准。
+- [Windows LAN 地址变化] → 用户修改或重新解析当前地址并重启；不实现扫描或设备发现。
+- [家庭 LAN 中其他设备可访问页面] → 保留已经实现的 Host/Origin/token 和内部服务 loopback 边界；不增加账号系统。
+- [Mac 浏览器缓存掩盖 Windows 持久化缺口] → optimization 旅程包含刷新、清除可丢弃缓存或新浏览器恢复，以及手动重启 launcher。
+- [单个实现任务较长] → 使用 `gpt-5.6-luna/max` 的一个持续对话按真实路径逐步排障，避免大量任务创建、上下文交接和重复审核。
+- [真实数据切换出错] → 切换前做普通备份，保留原数据和旧配置；失败立即停止，不做破坏性清理。
 
-## Migration Plan
+## Execution Plan
 
-1. 固定已验收基点、部署决策、contract delta 和跨机验收清单。
-2. 为稳定前门增加显式 LAN mode，并保持内部服务 loopback。
-3. 在 Mac remote-dev 和 production 同源两种路径上验证 health、owner query、capability、polling 与媒体 Range。
-4. Reader Session 先只读接入 Windows，再接入 commit，并阻断 remote mode IndexedDB writer。
-5. 将 marks/activity 切到唯一 Windows owner，验证 revision、idempotency、receipt 和断线恢复。
-6. 验证 YouTube workflow、library、任务控制和完成素材打开的完整闭环。
-7. Passage Preview 与 Annotation 分 lane 迁移并集成。
-8. Vocabulary/SRS 迁移到 Windows persistence，保留现有 scheduler 的第一版计算位置。
-9. 清点并逐组关闭 remote mode 的旧 canonical writer，完成 build、升级兼容和 launcher 验收。
-10. 在优化根执行 backup/restore rehearsal；之后才对日常真实数据做只读盘点和 dry-run。
-11. 正式真实数据迁移、日常入口接管和回滚演练必须分别通过 review，并在写入前取得用户明确批准。
+1. `E-201`：在 optimization 数据上一次性完成 Mac → Windows 真实个人使用路径。
+2. `R-201`：新的只读对话进行一次完整验收；只报告既定真实 P0-P2。
+3. 若需要，执行一次 `F-201` 和一次 fresh `R-201`；否则直接继续。
+4. 用户明确批准后执行 `E-301`：备份并切换真实数据。
+5. `R-301`：最终只读验收，PASS 后即可归档 change。
 
-每个阶段失败时保持上一阶段的已集成 release 与 authority checkpoint，不跨阶段继续实施。需要回滚时撤回当前域的 checkpoint、恢复上一 release/backup，并重新验证旧 writer 是唯一 writer。
+所有任务严格串行，使用项目 local 环境、`gpt-5.6-luna`、`reasoning effort=max`，不得使用 Git worktree。
 
 ## Open Questions
 
-- Windows LAN 地址由路由器 DHCP reservation、固定 IP 还是现成私网名称提供，由部署时选择；应用只要求一个稳定可配置地址。
-- Mac 主要验收浏览器是 Safari 还是 Chrome，需要在 P2 开始前确定；至少完整验证用户日常使用的一个浏览器。
-- 前端 production build 最终固定在 Windows 构建，还是允许 Mac 生成后交由 Windows manifest 校验，可在 P8 根据实际工作流选择。
+- 最终实机验收使用 Mac 上用户日常采用的浏览器；无需为了本规划预先支持多个浏览器。
+- 第一版必用范围固定为 Reader、transcript/chunk、播放/seek、marks 和 URL workflow；Preview、Annotation、Vocabulary、SRS 默认非阻塞，用户以后可单独提升优先级。
