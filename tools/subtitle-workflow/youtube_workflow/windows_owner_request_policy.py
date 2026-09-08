@@ -51,6 +51,10 @@ DEFAULT_ORIGIN_URLS = (
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5184",
 )
+LOOPBACK_TRANSPORT_MODE = "loopback"
+PRIVATE_LAN_TRANSPORT_MODE = "private-lan"
+SUPPORTED_TRANSPORT_MODES = frozenset({LOOPBACK_TRANSPORT_MODE, PRIVATE_LAN_TRANSPORT_MODE})
+HOSTNAME_LABEL = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 PUBLIC_API_PATHS = frozenset({"/api/health", "/api/app/health", "/api/app/capabilities"})
 BACKUP_QUERY_OPERATIONS = frozenset(
     {"backup", "manifest", "backup-status", "restore-status", "inventory", "dry-run"}
@@ -134,6 +138,46 @@ def _host_parts(value: object) -> tuple[str, str] | None:
     return host, f"{host}:{port}" if port is not None else host
 
 
+def _transport_mode(value: object) -> str:
+    normalized = str(value or "").strip() or LOOPBACK_TRANSPORT_MODE
+    if normalized not in SUPPORTED_TRANSPORT_MODES:
+        raise ValueError(f"unsupported transport mode: {normalized}")
+    return normalized
+
+
+def _is_configured_lan_host(value: object) -> bool:
+    parts = _host_parts(value)
+    if parts is None:
+        return False
+    host = parts[0]
+    if host == "localhost" or any(character.isspace() for character in host):
+        return False
+    try:
+        address = ip_address(host)
+    except ValueError:
+        labels = host.split(".")
+        return (
+            bool(labels)
+            and not all(label.isdigit() for label in labels)
+            and len(host) <= 253
+            and all(HOSTNAME_LABEL.fullmatch(label) for label in labels)
+        )
+    return (
+        address.is_private
+        and not address.is_loopback
+        and not address.is_unspecified
+        and not address.is_multicast
+        and not address.is_reserved
+    )
+
+
+def _configured_lan_host(value: object) -> str | None:
+    if not _is_configured_lan_host(value):
+        return None
+    parts = _host_parts(value)
+    return parts[0] if parts is not None else None
+
+
 def is_loopback_host(value: object) -> bool:
     parts = _host_parts(value)
     if parts is None:
@@ -147,11 +191,109 @@ def is_loopback_host(value: object) -> bool:
         return False
 
 
+def require_transport_bind(
+    value: object,
+    *,
+    transport_mode: object = LOOPBACK_TRANSPORT_MODE,
+    configured_lan_host: object = None,
+) -> str:
+    """Return a configured bind host, failing closed outside the selected mode."""
+
+    mode = _transport_mode(transport_mode)
+    normalized = str(value or "").strip()
+    if mode == LOOPBACK_TRANSPORT_MODE:
+        return require_loopback_bind(normalized)
+    configured = _configured_lan_host(configured_lan_host)
+    if configured is None:
+        raise ValueError("private-lan requires an explicit configured LAN host")
+    if not is_allowed_request_host(
+        normalized,
+        transport_mode=mode,
+        configured_lan_host=configured,
+    ):
+        raise ValueError("private-lan bind host must match the configured LAN host")
+    return normalized
+
+
+def is_allowed_request_host(
+    value: object,
+    *,
+    transport_mode: object = LOOPBACK_TRANSPORT_MODE,
+    configured_lan_host: object = None,
+) -> bool:
+    """Check a Host header against loopback or one explicit private-LAN host."""
+
+    try:
+        mode = _transport_mode(transport_mode)
+    except ValueError:
+        return False
+    if _host_parts(value) is None:
+        return False
+    if mode == LOOPBACK_TRANSPORT_MODE:
+        return is_loopback_host(value)
+    configured = _configured_lan_host(configured_lan_host)
+    if configured is None:
+        return False
+    parts = _host_parts(value)
+    return parts is not None and parts[0] == configured
+
+
 def require_loopback_bind(value: object) -> str:
     normalized = str(value or "").strip()
     if not is_loopback_host(normalized):
         raise ValueError("Local App Host requires an explicit loopback bind host")
     return normalized
+
+
+def _host_authority(value: object) -> tuple[str, int | None] | None:
+    parts = _host_parts(value)
+    if parts is None:
+        return None
+    parsed = urlsplit(f"//{str(value or '').strip()}")
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    return parts[0], port
+
+
+def is_same_origin(
+    value: object,
+    request_host: object,
+    *,
+    transport_mode: object = LOOPBACK_TRANSPORT_MODE,
+    configured_lan_host: object = None,
+) -> bool:
+    """Check an HTTP Origin against the request authority in the selected mode."""
+
+    if not is_allowed_request_host(
+        request_host,
+        transport_mode=transport_mode,
+        configured_lan_host=configured_lan_host,
+    ):
+        return False
+    raw = str(value or "").strip()
+    if not raw:
+        return True
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or parsed.username is not None or parsed.password is not None:
+        return False
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return False
+    origin_authority = _host_authority(parsed.netloc)
+    request_authority = _host_authority(request_host)
+    if origin_authority is None or request_authority is None:
+        return False
+    if not is_allowed_request_host(
+        parsed.netloc,
+        transport_mode=transport_mode,
+        configured_lan_host=configured_lan_host,
+    ):
+        return False
+    default_port = 443 if parsed.scheme == "https" else 80
+    origin_port = origin_authority[1] if origin_authority[1] is not None else default_port
+    request_port = request_authority[1] if request_authority[1] is not None else default_port
+    return origin_authority[0] == request_authority[0] and origin_port == request_port
 
 
 def _origin_netloc(value: object) -> str | None:
@@ -470,7 +612,7 @@ class WindowsOwnerRequestPolicy:
         """Return a safe rejection, or None before dispatching to a handler."""
 
         request_headers = {str(key).lower(): str(value) for key, value in headers.items()}
-        if not is_loopback_host(request_headers.get("host", "")):
+        if not is_allowed_request_host(request_headers.get("host", "")):
             return OwnerRequestPolicyError(
                 "unauthorized",
                 "request host is not an allowed loopback host",

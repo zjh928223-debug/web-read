@@ -14,7 +14,7 @@
 
 ## 2. Windows private-LAN 稳定前门（严格串行）
 
-- [ ] 2.1 `E-101` 在 request policy 附近提取可单测的 LAN bind、request Host 和 same-origin 判断函数；默认只接受 loopback，只有显式 `private-lan` 配置才接受指定 LAN 地址，不实现网段扫描、设备指纹、MAC 识别或 rate limit。
+- [x] 2.1 `E-101` 在 request policy 附近提取可单测的 LAN bind、request Host 和 same-origin 判断函数；默认只接受 loopback，只有显式 `private-lan` 配置才接受指定 LAN 地址，不实现网段扫描、设备指纹、MAC 识别或 rate limit。
 - [ ] 2.2 `R-101` 独立检查 IPv4、localhost、Host 带端口、缺失配置和非法地址测试，确认普通 optimization 启动仍然只允许 loopback。
 - [ ] 2.3 `E-102` 扩展 Windows request policy，使显式 LAN mode 能校验配置的 Host、Origin 和现有 service token，同时保持文件路径、凭据和 owner mutation 在授权前不可达。
 - [ ] 2.4 `R-102` 独立运行 request-policy 与 owner API checks，确认 LAN mode 未将 CORS 当认证、错误响应不泄漏绝对路径、loopback 请求行为没有回归。

@@ -12,6 +12,9 @@ from youtube_workflow.windows_owner_request_policy import (
     API_CONTRACT_VERSION,
     OwnerRequestPolicyError,
     WindowsOwnerRequestPolicy,
+    is_allowed_request_host,
+    is_same_origin,
+    require_transport_bind,
 )
 
 
@@ -292,6 +295,107 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
                 headers={"host": "127.0.0.1"},
                 method="GET",
                 path="/api/health",
+            )
+        )
+
+    def test_transport_bind_requires_explicit_private_lan_configuration(self):
+        self.assertEqual(require_transport_bind("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(require_transport_bind("localhost"), "localhost")
+        with self.assertRaises(ValueError):
+            require_transport_bind("192.168.1.20")
+        with self.assertRaises(ValueError):
+            require_transport_bind(
+                "192.168.1.20",
+                transport_mode="private-lan",
+            )
+        with self.assertRaises(ValueError):
+            require_transport_bind(
+                "192.168.1.21",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            )
+        self.assertEqual(
+            require_transport_bind(
+                "192.168.1.20",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            ),
+            "192.168.1.20",
+        )
+        with self.assertRaises(ValueError):
+            require_transport_bind(
+                "127.0.0.1",
+                transport_mode="private-lan",
+                configured_lan_host="127.0.0.1",
+            )
+        with self.assertRaises(ValueError):
+            require_transport_bind(
+                "0.0.0.0",
+                transport_mode="private-lan",
+                configured_lan_host="0.0.0.0",
+            )
+        with self.assertRaises(ValueError):
+            require_transport_bind(
+                "999.999.999.999",
+                transport_mode="private-lan",
+                configured_lan_host="999.999.999.999",
+            )
+
+    def test_request_host_is_loopback_by_default_or_exact_configured_lan_host(self):
+        self.assertTrue(is_allowed_request_host("127.0.0.1:5184"))
+        self.assertTrue(is_allowed_request_host("localhost:5184"))
+        self.assertFalse(is_allowed_request_host("192.168.1.20:5184"))
+        self.assertFalse(is_allowed_request_host(""))
+        self.assertFalse(is_allowed_request_host("not a host"))
+        self.assertTrue(
+            is_allowed_request_host(
+                "192.168.1.20:5184",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            )
+        )
+        self.assertFalse(
+            is_allowed_request_host(
+                "192.168.1.21:5184",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            )
+        )
+        self.assertFalse(
+            is_allowed_request_host(
+                "192.168.1.20:5184",
+                transport_mode="private-lan",
+            )
+        )
+        self.assertFalse(
+            is_allowed_request_host(
+                "localhost:5184",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            )
+        )
+
+    def test_same_origin_requires_matching_authority_and_selected_host(self):
+        self.assertTrue(is_same_origin("http://127.0.0.1:5184", "127.0.0.1:5184"))
+        self.assertTrue(is_same_origin("http://127.0.0.1", "127.0.0.1"))
+        self.assertFalse(is_same_origin("http://127.0.0.1:5174", "127.0.0.1:5184"))
+        self.assertFalse(is_same_origin("http://localhost:5184", "127.0.0.1:5184"))
+        self.assertTrue(is_same_origin("", "localhost:5184"))
+        self.assertFalse(is_same_origin("http://127.0.0.1:5184/path", "127.0.0.1:5184"))
+        self.assertTrue(
+            is_same_origin(
+                "http://192.168.1.20:5184",
+                "192.168.1.20:5184",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
+            )
+        )
+        self.assertFalse(
+            is_same_origin(
+                "http://192.168.1.21:5184",
+                "192.168.1.20:5184",
+                transport_mode="private-lan",
+                configured_lan_host="192.168.1.20",
             )
         )
 
