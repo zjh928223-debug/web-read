@@ -76,6 +76,14 @@ Mac 可以暂时复用现有 scheduler 计算，并使用 expected revision/CAS 
 
 并行只允许发生在文件集合不重叠的 lane。`App.vue`、`YouTubeWorkflowPanel.vue`、`src/main.js`、owner API client、production Host、request policy、launcher 和 contract 文件均视为串行热点。
 
+### 10. Review 必须有停止条件，证据验证器不得替代实机验收
+
+独立 review 用于发现既定验收条件内的真实 P0-P2，不是逐轮扩张需求的对抗式测试生成器。同一任务连续两次 fix/re-review 仍未通过时，调度必须暂停，重新评估任务是否过宽、验证器是否正在复制业务语义，并由用户决定简化、拆分或继续。
+
+跨机 evidence validator 只负责结构、状态、路径边界、文件存在性和可选 checksum。它可以阻止空引用、占位引用、越界路径和仅凭 manual note 宣告 PASS，但不得解析任意日志来推断 Mac、Windows restart、Range/seek、owner durability 或 reconnect 已真实发生。这些结论必须由对应阶段的真实环境证据和独立审核给出。
+
+当辅助验证脚本超过约 500 行或相对已审核基线增长超过两倍时，视为范围预警：先说明为何不能用现有测试、schema 或人工验收完成，再决定是否继续。不得以“还能构造新的假证据”为由无限创建新的 `F-*` 轮次。
+
 ## Risks / Trade-offs
 
 - [Windows IP 变化导致 Mac dev proxy 失效] → Windows LAN 地址只保存在 Mac 本地配置，变更后只修改该配置；不把 IP 编译进前端 bundle。

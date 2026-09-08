@@ -163,6 +163,26 @@ compatibility facades, `src/composables/legacy-control-bindings.js`, and legacy 
 
 ## Hard Constraints
 
+### Review Loop and Verification Scope
+
+- A verifier may validate artifact structure, referenced-file existence, checksums, and explicit
+  status rules. It must not grow into a second implementation that attempts to infer whether a
+  real browser, restart, network path, or user journey actually occurred from arbitrary log text.
+- Define review acceptance criteria before implementation. Review findings must map to those
+  criteria or to a concrete P0-P2 product/data/rollback failure; a new review must not invent an
+  expanding adversarial specification.
+- After two consecutive fix/re-review failures on the same task, stop automatic iteration. Reassess
+  the task boundary and ask the user whether to simplify, split, or continue. Do not silently start
+  a third fix loop.
+- Treat a support script growing beyond roughly 500 lines or more than twice its reviewed baseline
+  as a scope warning. Pause and justify the added complexity before continuing.
+- For manual or cross-machine acceptance, automation may reject obviously invalid evidence but may
+  never declare that static fixtures prove the real journey. The assigned independent review remains
+  responsible for interpreting real evidence.
+
+See `docs/architecture/review-loop-and-evidence-validation-lessons.md` for the F-004 retrospective
+and the required stop rules for future OpenSpec execution.
+
 ### Cleanup Mode
 
 `complete-appjs-decomposition` has been completed and archived under `openspec/changes/archive/2026-06-18-complete-appjs-decomposition/`. Current cleanup context comes from `CURRENT_PROJECT_STATUS.md` and the active spec at `openspec/specs/legacy-runtime-decomposition/spec.md`.
