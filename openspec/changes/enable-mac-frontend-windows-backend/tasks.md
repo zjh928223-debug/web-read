@@ -23,7 +23,7 @@
 - [x] 2.7 `E-104` 新增 LAN 专用 RuntimeConfig，不修改 `config/runtime.optimization.json`；配置只包含非 secret 的 bind/public URL/profile 信息，并继续使用 `E:\ReadWebData\SubtitleWorkflow-Optimization` 作为开发验证数据根。
 - [x] 2.8 `R-104` 独立审核新配置不含 API key、Cookie、代理凭据和日常真实数据根，且原有 5184/8776 optimization config 原样通过验证。
 - [x] 2.9 `E-105` 新增 LAN 专用 launcher 入口，复用现有 build、immutable release、front door、candidate Host、capability sidecar、health、stop 和 rollback 模块，不复制第二套 launcher 生命周期系统。
-- [ ] 2.10 `R-105` 独立检查 launcher 不绕过 Python health、不修改全局 Python、不停止身份不匹配进程、不复用 daily 5174/8766，启动失败时保留上一可用 release。
+- [x] 2.10 `R-105` 独立检查 launcher 不绕过 Python health、不修改全局 Python、不停止身份不匹配进程、不复用 daily 5174/8766，启动失败时保留上一可用 release。
 - [ ] 2.11 `E-106` 增加 Windows 本机的 LAN 模式自动验证，证明 5184 稳定前门可用、内部 Host 和 8776 仍为 loopback、静态页面和关键 API 能经前门访问；测试不得修改日常 reader 或日常数据。
 - [ ] 2.12 `R-106` 独立复跑 LAN/loopback 监听、health、production preview 和 launcher focused checks，核对实际监听地址而不是只检查配置文本。
 - [ ] 2.13 `G-1` 集成 `E-101` 至 `E-106`，在干净阶段 HEAD 运行 LAN focused checks、现有 optimization launcher checks、production preview 和 owner request-policy checks，全部通过后记录新 `PHASE_BASE`。
