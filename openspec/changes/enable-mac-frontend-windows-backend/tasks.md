@@ -20,7 +20,7 @@
 - [x] 2.4 `R-102` 独立运行 request-policy 与 owner API checks，确认 LAN mode 未将 CORS 当认证、错误响应不泄漏绝对路径、loopback 请求行为没有回归。
 - [x] 2.5 `E-103` 扩展 `tools/optimization-stable-front-door.mjs` 的显式 LAN bind/Host/Origin 模式，保持 internal Host target 必须是 loopback、8776 不可作为 target，并透明代理普通 HTTP、Range 和 streaming response。
 - [x] 2.6 `R-103` 独立审核前门 diff 和测试，确认 LAN 只开放稳定前门、内部 target 限制仍在、Host/Origin 重写正确、activation journal 与 previous release 路由没有回归。
-- [ ] 2.7 `E-104` 新增 LAN 专用 RuntimeConfig，不修改 `config/runtime.optimization.json`；配置只包含非 secret 的 bind/public URL/profile 信息，并继续使用 `E:\ReadWebData\SubtitleWorkflow-Optimization` 作为开发验证数据根。
+- [x] 2.7 `E-104` 新增 LAN 专用 RuntimeConfig，不修改 `config/runtime.optimization.json`；配置只包含非 secret 的 bind/public URL/profile 信息，并继续使用 `E:\ReadWebData\SubtitleWorkflow-Optimization` 作为开发验证数据根。
 - [ ] 2.8 `R-104` 独立审核新配置不含 API key、Cookie、代理凭据和日常真实数据根，且原有 5184/8776 optimization config 原样通过验证。
 - [ ] 2.9 `E-105` 新增 LAN 专用 launcher 入口，复用现有 build、immutable release、front door、candidate Host、capability sidecar、health、stop 和 rollback 模块，不复制第二套 launcher 生命周期系统。
 - [ ] 2.10 `R-105` 独立检查 launcher 不绕过 Python health、不修改全局 Python、不停止身份不匹配进程、不复用 daily 5174/8766，启动失败时保留上一可用 release。

@@ -8,6 +8,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -37,6 +38,10 @@ class RuntimeConfig:
     proxy_url: str
     model: str
     gemini_base_url: str
+    profile_id: str | None = None
+    transport_mode: str = "loopback"
+    configured_lan_host: str = ""
+    frontend_public_url: str | None = None
 
     @property
     def frontend_url(self) -> str:
@@ -59,7 +64,7 @@ class RuntimeConfig:
         return self.data_root / ".workflow_state"
 
     def resolved_payload(self) -> dict:
-        return {
+        payload = {
             "schemaVersion": self.schema_version,
             "frontend": {"host": self.frontend_host, "port": self.frontend_port, "url": self.frontend_url},
             "backend": {"host": self.backend_host, "port": self.backend_port, "url": self.backend_url, "healthUrl": self.health_url},
@@ -74,6 +79,15 @@ class RuntimeConfig:
             "network": {"proxyUrl": self.proxy_url},
             "ai": {"model": self.model, "baseUrl": self.gemini_base_url},
         }
+        if self.profile_id is not None:
+            payload["profileId"] = self.profile_id
+        if self.transport_mode != "loopback":
+            payload["transportMode"] = self.transport_mode
+        if self.configured_lan_host:
+            payload["configuredLanHost"] = self.configured_lan_host
+        if self.frontend_public_url is not None:
+            payload["frontend"]["publicUrl"] = self.frontend_public_url
+        return payload
 
     def diagnostics(self) -> dict:
         payload = self.resolved_payload()
@@ -87,8 +101,8 @@ class RuntimeConfig:
 
 
 _ALLOWED = {
-    "": {"schemaVersion", "frontend", "backend", "dataRoot", "python", "tools", "network", "ai"},
-    "frontend": {"host", "port"},
+    "": {"schemaVersion", "profileId", "transportMode", "configuredLanHost", "frontend", "backend", "dataRoot", "python", "tools", "network", "ai"},
+    "frontend": {"host", "port", "publicUrl"},
     "backend": {"host", "port"},
     "python": {"executable"},
     "tools": {"ytDlp", "whisperx", "ffmpeg", "cookies"},
@@ -121,6 +135,108 @@ def _port(value, name: str) -> int:
     if not 1 <= port <= 65535:
         raise RuntimeConfigError(f"{name} must be between 1 and 65535")
     return port
+
+
+_SAFE_PROFILE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _normalize_host(value: object) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    parsed = urlsplit(f"//{raw}")
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    if port is not None or parsed.username is not None or parsed.password is not None:
+        return ""
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        return ""
+    return (parsed.hostname or "").lower()
+
+
+def _is_loopback_host(value: object) -> bool:
+    host = _normalize_host(value)
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_private_lan_host(value: object) -> bool:
+    host = _normalize_host(value)
+    if not host or _is_loopback_host(host):
+        return False
+    try:
+        address = ip_address(host)
+    except ValueError:
+        labels = host.split(".")
+        return (
+            len(host) <= 253
+            and bool(labels)
+            and not all(label.isdigit() for label in labels)
+            and all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in labels)
+        )
+    return (
+        address.is_private
+        and not address.is_loopback
+        and not address.is_unspecified
+        and not address.is_multicast
+        and not address.is_reserved
+    )
+
+
+def _validate_transport(payload: dict, frontend_host: str, frontend_port: int, backend_host: str, backend_port: int) -> tuple[str | None, str, str]:
+    transport_mode = str(payload.get("transportMode", "loopback") or "loopback").strip()
+    if transport_mode not in {"loopback", "private-lan"}:
+        raise RuntimeConfigError(f"unsupported transport mode: {transport_mode}")
+    profile_id = str(payload.get("profileId", "") or "").strip() or None
+    if profile_id is not None and not _SAFE_PROFILE_ID.fullmatch(profile_id):
+        raise RuntimeConfigError("profileId must be a safe identity")
+    configured_lan_host = _normalize_host(payload.get("configuredLanHost"))
+    if transport_mode == "loopback":
+        if configured_lan_host:
+            raise RuntimeConfigError("configuredLanHost requires transportMode private-lan")
+        if not _is_loopback_host(frontend_host):
+            raise RuntimeConfigError("loopback runtime config requires a loopback frontend host")
+        return profile_id, transport_mode, ""
+    if profile_id is None:
+        raise RuntimeConfigError("private-lan runtime config requires profileId")
+    if not _is_private_lan_host(configured_lan_host):
+        raise RuntimeConfigError("private-lan requires an explicit private LAN host")
+    if _normalize_host(frontend_host) != configured_lan_host:
+        raise RuntimeConfigError("frontend host must match configuredLanHost")
+    if frontend_port != 5184:
+        raise RuntimeConfigError("private-lan frontend port must remain 5184")
+    if not _is_loopback_host(backend_host) or backend_port != 8776:
+        raise RuntimeConfigError("private-lan backend must remain the loopback capability sidecar on port 8776")
+    return profile_id, transport_mode, configured_lan_host
+
+
+def _validate_public_url(value: object, frontend_host: str, frontend_port: int) -> str | None:
+    if value is None:
+        return None
+    parsed = urlsplit(str(value))
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeConfigError("frontend.publicUrl must be a valid URL") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.hostname is None
+        or parsed.hostname.lower() != _normalize_host(frontend_host)
+        or port != frontend_port
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeConfigError("frontend.publicUrl must match the frontend bind and port")
+    return urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
 
 
 _WINDOWS_ENVIRONMENT_VARIABLE = re.compile(r"%([^%]+)%")
@@ -197,6 +313,16 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
     backend_host = str(env_or("READ_WEB_BACKEND_HOST", _value(payload, "backend", "host", "127.0.0.1"))).strip()
     if not frontend_host or not backend_host:
         raise RuntimeConfigError("frontend.host and backend.host must not be empty")
+    frontend_port = _port(env_or("READ_WEB_FRONTEND_PORT", _value(payload, "frontend", "port", 5173)), "frontend.port")
+    backend_port = _port(env_or("READ_WEB_BACKEND_PORT", _value(payload, "backend", "port", 8765)), "backend.port")
+    profile_id, transport_mode, configured_lan_host = _validate_transport(
+        payload,
+        frontend_host,
+        frontend_port,
+        backend_host,
+        backend_port,
+    )
+    frontend_public_url = _validate_public_url(payload.get("frontend", {}).get("publicUrl"), frontend_host, frontend_port)
     data_root = _path(
         env_or("READ_WEB_SUBTITLE_DATA_ROOT", payload.get("dataRoot", DEFAULT_DATA_ROOT)),
         base_dir,
@@ -205,9 +331,9 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
     return RuntimeConfig(
         schema_version=version,
         frontend_host=frontend_host,
-        frontend_port=_port(env_or("READ_WEB_FRONTEND_PORT", _value(payload, "frontend", "port", 5173)), "frontend.port"),
+        frontend_port=frontend_port,
         backend_host=backend_host,
-        backend_port=_port(env_or("READ_WEB_BACKEND_PORT", _value(payload, "backend", "port", 8765)), "backend.port"),
+        backend_port=backend_port,
         data_root=data_root,
         python_executable=_path(
             env_or(
@@ -240,6 +366,10 @@ def load_runtime_config(path: str | Path | None = None, *, env: Mapping[str, str
         proxy_url=str(env_or("READ_WEB_PROXY_URL", _value(payload, "network", "proxyUrl", "http://127.0.0.1:7897"))),
         model=str(env_or("GEMINI_MODEL", _value(payload, "ai", "model", "gemini-2.5-flash"))),
         gemini_base_url=str(env_or("GEMINI_BASE_URL", _value(payload, "ai", "baseUrl", ""))),
+        profile_id=profile_id,
+        transport_mode=transport_mode,
+        configured_lan_host=configured_lan_host,
+        frontend_public_url=frontend_public_url,
     )
 
 

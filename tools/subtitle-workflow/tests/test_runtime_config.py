@@ -56,6 +56,20 @@ class RuntimeConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeConfigError, "backend.secret"):
                 load_runtime_config(unknown_path, env={})
 
+    def test_private_lan_runtime_config_is_explicit_and_keeps_optimization_boundary(self):
+        repository_root = Path(__file__).resolve().parents[3]
+        runtime = load_runtime_config(repository_root / "config" / "runtime.private-lan.json", env={})
+
+        self.assertEqual(runtime.profile_id, "optimization")
+        self.assertEqual(runtime.transport_mode, "private-lan")
+        self.assertEqual(runtime.configured_lan_host, "192.168.1.20")
+        self.assertEqual(runtime.frontend_host, runtime.configured_lan_host)
+        self.assertEqual(runtime.frontend_port, 5184)
+        self.assertEqual(runtime.frontend_public_url, "http://192.168.1.20:5184/")
+        self.assertEqual(runtime.backend_host, "127.0.0.1")
+        self.assertEqual(runtime.backend_port, 8776)
+        self.assertEqual(runtime.data_root, Path(r"E:\ReadWebData\SubtitleWorkflow-Optimization"))
+
     def test_windows_style_environment_variables_resolve_portable_tool_paths(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
