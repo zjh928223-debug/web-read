@@ -348,7 +348,9 @@ async function fetchRequiredEdgeAudio(fetchImpl, baseUrl, text, signal) {
 
 function normalizeLocalTtsAudioUrl(value, baseUrl) {
   try {
-    const serviceUrl = new URL(`${baseUrl}/`)
+    const fallback = globalThis.location?.origin || 'http://localhost'
+    const serviceOrigin = new URL(String(baseUrl || '').trim() || fallback, fallback).origin
+    const serviceUrl = new URL(`${serviceOrigin}/`)
     const url = new URL(String(value || ''), serviceUrl)
     if (url.origin !== serviceUrl.origin) return ''
     if (!/^\/api\/tts\/edge\/audio\/[a-f0-9]{64}\.mp3$/i.test(url.pathname)) return ''
@@ -365,8 +367,10 @@ function createUnavailableError() {
 }
 
 function resolveLocalTtsBaseUrl(value, windowObject) {
-  const candidate = value ?? windowObject?.location?.origin ?? DEFAULT_LOCAL_TTS_BASE_URL
-  return String(candidate).replace(/\/+$/, '')
+  const candidate = value ?? windowObject?.location?.origin ?? globalThis.location?.origin ?? DEFAULT_LOCAL_TTS_BASE_URL
+  const normalized = String(candidate || '').replace(/\/+$/, '')
+  if (!normalized) return windowObject?.location?.origin || globalThis.location?.origin || ''
+  return normalized
 }
 
 function throwIfAborted(signal) {

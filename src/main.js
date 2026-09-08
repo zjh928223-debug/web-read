@@ -74,7 +74,7 @@ themeStore.init()
 // per-domain authoritative checkpoint.  A degraded/pre-cutover Host leaves
 // the existing browser path unchanged.
 const ownerServiceBaseUrl = typeof import.meta.env?.VITE_LOCAL_SERVICE_BASE_URL === 'string'
-  ? import.meta.env.VITE_LOCAL_SERVICE_BASE_URL.trim().replace(/\/$/u, '')
+  ? import.meta.env.VITE_LOCAL_SERVICE_BASE_URL.trim()
   : ''
 // The production front door and the browser share one origin. Keep the
 // health probe relative so the owner health-path guard remains in force.

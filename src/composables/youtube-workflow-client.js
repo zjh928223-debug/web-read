@@ -9,6 +9,11 @@ function trimTrailingSlash(value) {
   return String(value || '').replace(/\/+$/, '')
 }
 
+function runtimeOrigin() {
+  const origin = globalThis.location?.origin
+  return typeof origin === 'string' && origin ? origin : ''
+}
+
 export function createYoutubeWorkflowOperationKey(prefix = 'workflow') {
   const normalizedPrefix = String(prefix || 'workflow').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'workflow'
   try {
@@ -226,6 +231,8 @@ function requireCommittedMarksResult(response) {
 
 export function createYoutubeWorkflowClient(options = {}) {
   const baseUrl = trimTrailingSlash(options.baseUrl || DEFAULT_BASE_URL)
+  const sameOrigin = baseUrl === ''
+  const displayBaseUrl = sameOrigin ? runtimeOrigin() : baseUrl
   const rawFetch = options.fetchImpl || fetch
   const accessToken = String(options.accessToken ?? DEFAULT_ACCESS_TOKEN).trim()
 
@@ -378,13 +385,13 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   function apiUrl(path) {
-    return `${baseUrl}${path}`
+    return sameOrigin ? path : `${baseUrl}${path}`
   }
 
   function capabilityUrl(path) {
-    const url = new URL(apiUrl(path))
+    const url = new URL(apiUrl(path), runtimeOrigin() || 'http://localhost')
     if (accessToken) url.searchParams.set('access_token', accessToken)
-    return url.href
+    return sameOrigin ? `${url.pathname}${url.search}${url.hash}` : url.href
   }
 
   async function requestReaderActivity(payload = {}, options = {}) {
@@ -454,7 +461,7 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   return {
-    baseUrl,
+    baseUrl: displayBaseUrl,
     async health() {
       return readJsonResponse(await fetchImpl(apiUrl('/api/health')))
     },

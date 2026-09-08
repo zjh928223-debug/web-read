@@ -1622,7 +1622,10 @@ try {
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_FRONTEND_PORT' -Value ([string]$frontendPort)
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_BACKEND_HOST' -Value $backendHost
   Set-OptimizationProcessEnvironmentValue -Name 'READ_WEB_BACKEND_PORT' -Value ([string]$backendPort)
-  Set-OptimizationProcessEnvironmentValue -Name 'VITE_LOCAL_SERVICE_BASE_URL' -Value ("http://$(Format-OptimizationUrlHost -HostName $frontendHost):$frontendPort")
+  # The production bundle is served by the stable front door. Keep browser
+  # service, owner, workflow, and media requests same-origin so a Mac never
+  # receives the Windows-only candidate Host address.
+  Set-OptimizationProcessEnvironmentValue -Name 'VITE_LOCAL_SERVICE_BASE_URL' -Value '/'
   Set-OptimizationProcessEnvironmentValue -Name 'ECDICT_ENABLED' -Value 'false'
   Set-OptimizationProcessEnvironmentValue -Name 'NLTK_DATA' -Value $whisperxNltkDataPath
 

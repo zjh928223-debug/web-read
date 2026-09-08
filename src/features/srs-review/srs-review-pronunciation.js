@@ -215,13 +215,23 @@ function normalizeMerriamAudioUrl(value) {
 
 function normalizeEdgeAudioUrl(value, baseUrl) {
   try {
-    const serviceUrl = new URL(`${baseUrl}/`)
+    const serviceUrl = new URL(`${resolveServiceOrigin(baseUrl)}/`)
     const url = new URL(String(value || ''), serviceUrl)
     if (url.origin !== serviceUrl.origin) return ''
     if (!/^\/api\/tts\/edge\/audio\/[a-f0-9]{64}\.mp3$/i.test(url.pathname)) return ''
     return url.href
   } catch (_error) {
     return ''
+  }
+}
+
+function resolveServiceOrigin(baseUrl) {
+  const fallback = globalThis.location?.origin || 'http://localhost'
+  const candidate = String(baseUrl || '').trim()
+  try {
+    return new URL(candidate || fallback, fallback).origin
+  } catch (_error) {
+    return fallback
   }
 }
 
