@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from youtube_workflow.core import FakeWorkflowRunner, WorkflowConfig
-from youtube_workflow.production_host_prototype import create_local_app_host
+from youtube_workflow.production_host_prototype import PathPreservingAsgiDispatch, create_local_app_host
 from youtube_workflow.service import JobManager, create_app as create_service_app
 from youtube_workflow.windows_owner_request_policy import (
     API_CONTRACT_VERSION,
@@ -298,6 +298,105 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
             )
         )
 
+    def test_private_lan_policy_requires_explicit_config_and_authorizes_matching_host_origin_token(self):
+        with self.assertRaises(ValueError):
+            WindowsOwnerRequestPolicy(
+                access_token="instance-token",
+                bind_host="192.168.1.20",
+                transport_mode="private-lan",
+            )
+        with self.assertRaises(ValueError):
+            WindowsOwnerRequestPolicy(
+                access_token="instance-token",
+                bind_host="192.168.1.20",
+                transport_mode="private-lan",
+                configured_lan_host="not a LAN host",
+            )
+        with self.assertRaises(ValueError):
+            WindowsOwnerRequestPolicy(
+                access_token="instance-token",
+                bind_host="192.168.1.20",
+                transport_mode="unsupported",
+                configured_lan_host="192.168.1.20",
+            )
+
+        policy = WindowsOwnerRequestPolicy(
+            access_token="instance-token",
+            bind_host="192.168.1.20",
+            transport_mode="private-lan",
+            configured_lan_host="192.168.1.20",
+            profile_id="fixture-profile",
+            instance_id="fixture-instance",
+            path_roots={
+                "data": self.data_root,
+                "media": self.data_root,
+                "repository": self.data_root,
+                "credentials": self.data_root,
+                "capability": self.data_root,
+            },
+        )
+        headers = {
+            "host": "192.168.1.20:5184",
+            "origin": "http://192.168.1.20:5184",
+            "x-read-web-token": "instance-token",
+        }
+        self.assertEqual(policy.transport_mode, "private-lan")
+        self.assertEqual(policy.configured_lan_host, "192.168.1.20")
+        self.assertIsNone(
+            policy.authorize_transport(
+                headers=headers,
+                method="POST",
+                path="/api/app/owner/command",
+            )
+        )
+
+    def test_private_lan_rejects_host_origin_and_service_token_mismatches_before_sensitive_routes(self):
+        policy = WindowsOwnerRequestPolicy(
+            access_token="instance-token",
+            bind_host="192.168.1.20",
+            transport_mode="private-lan",
+            configured_lan_host="192.168.1.20",
+            profile_id="fixture-profile",
+            instance_id="fixture-instance",
+            path_roots={
+                "data": self.data_root,
+                "media": self.data_root,
+                "repository": self.data_root,
+                "credentials": self.data_root,
+                "capability": self.data_root,
+            },
+        )
+        base = {
+            "host": "192.168.1.20:5184",
+            "origin": "http://192.168.1.20:5184",
+            "x-read-web-token": "instance-token",
+        }
+        cases = (
+            ({**base, "host": "192.168.1.21:5184"}, 400, "private-lan-host"),
+            ({**base, "host": "localhost:5184"}, 400, "private-lan-host"),
+            ({**base, "origin": "http://192.168.1.21:5184"}, 403, "private-lan-origin"),
+            ({**base, "origin": "http://192.168.1.20:5174"}, 403, "private-lan-origin"),
+            ({key: value for key, value in base.items() if key != "x-read-web-token"}, 401, "instance-token"),
+            ({**base, "x-read-web-token": "wrong-token"}, 401, "instance-token"),
+        )
+        for headers, status_code, boundary in cases:
+            error = policy.authorize_transport(
+                headers=headers,
+                method="POST",
+                path="/api/app/owner/command",
+            )
+            self.assertIsNotNone(error)
+            self.assertEqual(error.status_code, status_code)
+            self.assertEqual(error.details["boundary"], boundary)
+
+        self.assertIsNone(
+            policy.authorize_transport(
+                headers={"host": "192.168.1.20:5184", "origin": "http://192.168.1.20:5184"},
+                method="GET",
+                path="/api/health",
+            )
+        )
+
     def test_transport_bind_requires_explicit_private_lan_configuration(self):
         self.assertEqual(require_transport_bind("127.0.0.1"), "127.0.0.1")
         self.assertEqual(require_transport_bind("localhost"), "localhost")
@@ -549,6 +648,75 @@ class WindowsOwnerRequestPolicyTests(unittest.TestCase):
             )
             self.assertEqual(valid.status_code, 503)
             self.assertEqual(valid.json()["payload"], {})
+            self.assertEqual(calls, [])
+
+    def test_private_lan_transport_rejection_precedes_sensitive_owner_body_and_handler(self):
+        dist = self.root / "dist-private-lan"
+        dist.mkdir()
+        (dist / "index.html").write_text("<main>reader</main>", encoding="utf-8")
+        calls = []
+        workflow = FastAPI()
+
+        @workflow.post("/api/app/owner/command")
+        def accidental_owner_handler():
+            calls.append("called")
+            return {"unexpected": True}
+
+        policy = WindowsOwnerRequestPolicy(
+            access_token="private-lan-secret",
+            bind_host="192.168.1.20",
+            transport_mode="private-lan",
+            configured_lan_host="192.168.1.20",
+            profile_id="fixture-profile",
+            instance_id="fixture-instance",
+            path_roots={
+                "data": self.data_root,
+                "media": self.data_root,
+                "repository": self.data_root,
+                "credentials": self.data_root,
+                "capability": self.data_root,
+            },
+        )
+        app = PathPreservingAsgiDispatch(
+            host_app=FastAPI(),
+            workflow_app=workflow,
+            access_token="private-lan-secret",
+            workflow_access_token="private-lan-secret",
+            capability_access_token="private-lan-secret",
+            request_policy=policy,
+        )
+        sensitive_path = str(self.outside_temp.name) + "\\credentials.json"
+        with TestClient(app, base_url="http://192.168.1.20:5184") as client:
+            for headers in (
+                {
+                    "Host": "192.168.1.21:5184",
+                    "Origin": "http://192.168.1.21:5184",
+                    "X-Read-Web-Token": "private-lan-secret",
+                },
+                {
+                    "Host": "192.168.1.20:5184",
+                    "Origin": "http://attacker.example",
+                    "X-Read-Web-Token": "private-lan-secret",
+                },
+                {
+                    "Host": "192.168.1.20:5184",
+                    "Origin": "http://192.168.1.20:5184",
+                },
+            ):
+                response = client.post(
+                    "/api/app/owner/command",
+                    headers=headers,
+                    json={
+                        "credentialPath": sensitive_path,
+                        "token": "do-not-echo",
+                        "mutation": "do-not-run",
+                    },
+                )
+                self.assertIn(response.status_code, {400, 401, 403})
+                self.assertNotIn(sensitive_path, response.text)
+                self.assertNotIn("do-not-echo", response.text)
+                self.assertNotIn("private-lan-secret", response.text)
+
             self.assertEqual(calls, [])
 
     def test_workflow_reuses_policy_for_existing_non_owner_routes(self):

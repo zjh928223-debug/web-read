@@ -1,7 +1,7 @@
 """Small shared request-policy seam for the Windows Local App Host.
 
 The workflow service still exposes its established, non-owner routes.  This
-module only centralizes the common loopback transport checks and the typed
+module only centralizes the common transport checks and the typed
 owner boundary checks that must happen before an owner route can reach a
 handler.  It deliberately does not perform repository work or implement
 owner authority.
@@ -547,6 +547,8 @@ class WindowsOwnerRequestPolicy:
         *,
         access_token: str = "",
         bind_host: str = "127.0.0.1",
+        transport_mode: object = LOOPBACK_TRANSPORT_MODE,
+        configured_lan_host: object = None,
         profile_id: str = "",
         instance_id: str = "",
         allowed_origins: Iterable[str] = (),
@@ -555,7 +557,18 @@ class WindowsOwnerRequestPolicy:
         contract: Mapping[str, Any] | None = None,
         contract_path: Path | None = None,
     ):
-        self.bind_host = require_loopback_bind(bind_host)
+        self.transport_mode = _transport_mode(transport_mode)
+        configured_host = _configured_lan_host(configured_lan_host)
+        self.bind_host = require_transport_bind(
+            bind_host,
+            transport_mode=self.transport_mode,
+            configured_lan_host=configured_lan_host,
+        )
+        self.configured_lan_host = (
+            configured_host
+            if self.transport_mode == PRIVATE_LAN_TRANSPORT_MODE
+            else None
+        )
         self.access_token = str(access_token or "").strip()
         self.profile_id = str(profile_id or "").strip()
         self.instance_id = str(instance_id or "").strip()
@@ -612,25 +625,55 @@ class WindowsOwnerRequestPolicy:
         """Return a safe rejection, or None before dispatching to a handler."""
 
         request_headers = {str(key).lower(): str(value) for key, value in headers.items()}
-        if not is_allowed_request_host(request_headers.get("host", "")):
+        host_allowed = is_allowed_request_host(
+            request_headers.get("host", ""),
+            transport_mode=self.transport_mode,
+            configured_lan_host=self.configured_lan_host,
+        )
+        if not host_allowed:
+            host_boundary = (
+                "private-lan-host"
+                if self.transport_mode == PRIVATE_LAN_TRANSPORT_MODE
+                else "loopback-host"
+            )
+            host_message = (
+                "request host is not the configured private-LAN host"
+                if self.transport_mode == PRIVATE_LAN_TRANSPORT_MODE
+                else "request host is not an allowed loopback host"
+            )
             return OwnerRequestPolicyError(
                 "unauthorized",
-                "request host is not an allowed loopback host",
+                host_message,
                 status_code=400,
                 category="authorization",
-                details={"boundary": "loopback-host"},
+                details={"boundary": host_boundary},
             )
-        if not allowed_loopback_origin(
-            request_headers.get("origin", ""),
-            request_headers.get("host", ""),
-            self.allowed_origins,
-        ):
+        origin_allowed = (
+            is_same_origin(
+                request_headers.get("origin", ""),
+                request_headers.get("host", ""),
+                transport_mode=self.transport_mode,
+                configured_lan_host=self.configured_lan_host,
+            )
+            if self.transport_mode == PRIVATE_LAN_TRANSPORT_MODE
+            else allowed_loopback_origin(
+                request_headers.get("origin", ""),
+                request_headers.get("host", ""),
+                self.allowed_origins,
+            )
+        )
+        if not origin_allowed:
+            origin_boundary = (
+                "private-lan-origin"
+                if self.transport_mode == PRIVATE_LAN_TRANSPORT_MODE
+                else "loopback-origin"
+            )
             return OwnerRequestPolicyError(
                 "forbidden",
                 "request origin is not allowed",
                 status_code=403,
                 category="authorization",
-                details={"boundary": "loopback-origin"},
+                details={"boundary": origin_boundary},
             )
         if not str(path).startswith("/api/") or str(path) in set(public_paths):
             return None
