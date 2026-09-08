@@ -69,31 +69,41 @@ try {
 
   $ownedPort = Get-RandomLoopbackPort
   $sharedInstanceId = [Guid]::NewGuid().ToString('N')
-  $arguments = @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}')
+  $arguments = @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}', '--health-path', '/health-loopback')
   $first = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
-    -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v1'
+    -HealthUrl "http://127.0.0.1:$ownedPort/health-loopback" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-loopback-v1'
   Assert-True ($first.status -eq 'started' -and $first.instanceId -eq $sharedInstanceId) 'first launch should start the requested owned instance identity'
   $second = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
-    -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v1'
+    -HealthUrl "http://127.0.0.1:$ownedPort/health-loopback" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-loopback-v1'
   Assert-True ($second.status -eq 'reused' -and $second.pid -eq $first.pid -and $second.instanceId -eq $sharedInstanceId) 'duplicate launch should reuse the shared owned instance'
-  $replacement = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
-    -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v2'
-  Assert-True ($replacement.status -eq 'started' -and $replacement.pid -ne $first.pid -and $replacement.executableIdentity -eq 'content-v2') 'an executable identity change must replace a fixed-identity runtime'
+  $lanAArguments = @($arguments[0..($arguments.Count - 2)] + '/health-lan-a')
+  $lanA = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
+    -HealthUrl "http://127.0.0.1:$ownedPort/health-lan-a" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $lanAArguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-private-lan-a'
+  Assert-True ($lanA.status -eq 'started' -and $lanA.pid -ne $first.pid) 'loopback to private-LAN configuration must replace the proven old runtime'
+  $lanBArguments = @($arguments[0..($arguments.Count - 2)] + '/health-lan-b')
+  $lanB = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
+    -HealthUrl "http://127.0.0.1:$ownedPort/health-lan-b" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $lanBArguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-private-lan-b'
+  Assert-True ($lanB.status -eq 'started' -and $lanB.pid -ne $lanA.pid) 'private-LAN address change must replace the proven old runtime'
+  $loopback = Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
+    -HealthUrl "http://127.0.0.1:$ownedPort/health-loopback" -StatePath $ownedState -FilePath $python `
+    -ArgumentList $arguments -ReadyTimeoutSeconds 3 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-loopback-v2'
+  Assert-True ($loopback.status -eq 'started' -and $loopback.pid -ne $lanB.pid) 'private-LAN to loopback configuration must replace the proven old runtime'
 
   $replacementFailed = $false
   try {
     Start-ManagedRuntimeInstance -ReleaseId 'test-release' -ProfileId 'isolated-test' -Port $ownedPort `
-      -HealthUrl "http://127.0.0.1:$ownedPort/health" -StatePath $ownedState -FilePath $python `
-      -ArgumentList @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}', '--fail-ready') `
-      -ReadyTimeoutSeconds 1 -InstanceId $sharedInstanceId -ExecutableIdentity 'content-v3'
+      -HealthUrl "http://127.0.0.1:$ownedPort/health-lan-failed" -StatePath $ownedState -FilePath $python `
+      -ArgumentList @($fixture, '--port', '{port}', '--release-id', '{releaseId}', '--profile-id', '{profileId}', '--instance-id', '{instanceId}', '--executable-identity', '{executableIdentity}', '--health-path', '/health-lan-failed', '--fail-ready') `
+      -ReadyTimeoutSeconds 1 -InstanceId $sharedInstanceId -ExecutableIdentity 'config-private-lan-failed'
   } catch { $replacementFailed = $_.Exception.Message -match 'did not become ready|previous runtime restored' }
   Assert-True $replacementFailed 'failed executable replacement must be observable'
-  $restoredHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$ownedPort/health" -TimeoutSec 2
+  $restoredHealth = Invoke-RestMethod -Uri "http://127.0.0.1:$ownedPort/health-loopback" -TimeoutSec 2
   $restoredState = Get-Content -LiteralPath $ownedState -Raw | ConvertFrom-Json
-  Assert-True ($restoredHealth.status -eq 'ready' -and $restoredHealth.executableIdentity -eq 'content-v2' -and $restoredState.executableIdentity -eq 'content-v2') 'failed executable replacement did not restore the previous healthy runtime'
+  Assert-True ($restoredHealth.status -eq 'ready' -and $restoredHealth.executableIdentity -eq 'config-loopback-v2' -and $restoredState.executableIdentity -eq 'config-loopback-v2') 'failed configuration replacement did not restore the previous healthy runtime'
   Assert-True (Stop-OwnedRuntimeInstance -StatePath $ownedState -ExpectedReleaseId 'test-release' -ExpectedProfileId 'isolated-test' -ExpectedInstanceId $first.instanceId) 'owned instance should stop'
   Assert-True (-not (Test-Path -LiteralPath $ownedState)) 'owned state should be removed after stop'
 

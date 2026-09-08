@@ -1495,7 +1495,23 @@ try {
   $frontDoorExecutableIdentity = Get-OptimizationFileSha256 -Path $frontDoorScript
   $frontDoorExecutablePath = Get-OptimizationFrontDoorExecutablePath -Identity $frontDoorExecutableIdentity
   $frontDoorProcessHealthUrl = "http://$(Format-OptimizationUrlHost -HostName $frontDoorHost):$frontDoorPort/api/app/front-door-process-health"
-  $frontDoorManagerIdentity = if ($testFailure -eq 'front-door') { "$frontDoorExecutableIdentity-test-failure" } else { $frontDoorExecutableIdentity }
+  $frontDoorIdentityText = @(
+    $frontDoorExecutableIdentity,
+    $frontDoorHost,
+    [string]$frontDoorPort,
+    $frontDoorProcessHealthUrl,
+    $frontDoorTransportMode,
+    $configuredLanHost
+  ) -join "`n"
+  $frontDoorIdentityAlgorithm = [Security.Cryptography.SHA256]::Create()
+  try {
+    $frontDoorManagerIdentity = ([BitConverter]::ToString(
+        $frontDoorIdentityAlgorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($frontDoorIdentityText))
+      ) -replace '-', '').ToLowerInvariant()
+  } finally {
+    $frontDoorIdentityAlgorithm.Dispose()
+  }
+  if ($testFailure -eq 'front-door') { $frontDoorManagerIdentity = "$frontDoorManagerIdentity-test-failure" }
   $existingFrontDoorProcessHealth = Get-OptimizationHttpJson -Url $frontDoorProcessHealthUrl
   $existingFrontDoorHealthIdentity = Get-OptimizationObjectText -Object $existingFrontDoorProcessHealth -Name 'executableIdentity'
   $frontDoorArgumentList = @(

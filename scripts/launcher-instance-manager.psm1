@@ -1014,9 +1014,13 @@ function Start-ManagedRuntimeInstance {
     if ($null -ne $existing) {
       $owned = Get-MatchingOwnedProcess -State $existing
       $health = Get-LauncherHealth -HealthUrl $HealthUrl
+      $existingHealthUrl = [string](Get-ManagedRecordValue -Object $existing -Name 'healthUrl')
+      $ownershipHealth = if ($existingHealthUrl -and $existingHealthUrl -ne $HealthUrl) {
+        Get-LauncherHealth -HealthUrl $existingHealthUrl
+      } else { $health }
       $requestedInstanceMatches = (-not $InstanceId) -or ([string]$existing.instanceId -eq $InstanceId)
       $baseHealthIdentityMatches = Test-HealthIdentity `
-        -Health $health `
+        -Health $ownershipHealth `
         -ReleaseId $ReleaseId `
         -ProfileId $ProfileId `
         -InstanceId ([string]$existing.instanceId)

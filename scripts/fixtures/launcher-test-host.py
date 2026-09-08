@@ -9,6 +9,7 @@ parser.add_argument('--release-id', required=True)
 parser.add_argument('--profile-id', required=True)
 parser.add_argument('--instance-id', required=True)
 parser.add_argument('--executable-identity', default='')
+parser.add_argument('--health-path', default='/health')
 parser.add_argument('--ready-delay', type=float, default=0)
 parser.add_argument('--fail-ready', action='store_true')
 args = parser.parse_args()
@@ -16,7 +17,7 @@ started = time.monotonic()
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path != '/health':
+        if self.path != args.health_path:
             self.send_response(404)
             self.end_headers()
             return

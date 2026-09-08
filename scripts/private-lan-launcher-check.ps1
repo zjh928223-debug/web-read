@@ -50,6 +50,7 @@ Assert-True ($launcherSource -match "Optimization production host requires loopb
 Assert-True ($launcherSource -match '''--host'',\s*\$frontDoorHost') 'stable front door does not use the selected LAN bind'
 Assert-True ($launcherSource -match '''--transport-mode'',\s*\$frontDoorTransportMode') 'stable front door does not receive transport mode'
 Assert-True ($launcherSource -match '''--configured-lan-host'',\s*\$configuredLanHost') 'stable front door does not receive configured LAN Host validation'
+Assert-True ($launcherSource -match '\$frontDoorIdentityText\s*=\s*@\([\s\S]+\$frontDoorExecutableIdentity[\s\S]+\$frontDoorHost[\s\S]+\$frontDoorPort[\s\S]+\$frontDoorProcessHealthUrl[\s\S]+\$frontDoorTransportMode[\s\S]+\$configuredLanHost') 'managed front-door identity does not cover bind, health, transport, and LAN configuration'
 Assert-True ($launcherSource -match 'Write-OptimizationFrontDoorTarget[\s\S]+-HostName\s+\$frontendHost') 'front-door target no longer stays on the candidate loopback Host'
 Assert-True ($launcherSource -match 'Get-HostHealthUrl') 'candidate Python health path was bypassed'
 
