@@ -205,6 +205,8 @@ def _validate_transport(payload: dict, frontend_host: str, frontend_port: int, b
         return profile_id, transport_mode, ""
     if profile_id is None:
         raise RuntimeConfigError("private-lan runtime config requires profileId")
+    if configured_lan_host == "active-private-ipv4":
+        raise RuntimeConfigError("private-lan active address must be resolved by the private-LAN launcher")
     if not _is_private_lan_host(configured_lan_host):
         raise RuntimeConfigError("private-lan requires an explicit private LAN host")
     if _normalize_host(frontend_host) != configured_lan_host:

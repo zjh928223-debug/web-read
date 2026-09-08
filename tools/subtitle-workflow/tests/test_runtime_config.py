@@ -58,17 +58,19 @@ class RuntimeConfigTests(unittest.TestCase):
 
     def test_private_lan_runtime_config_is_explicit_and_keeps_optimization_boundary(self):
         repository_root = Path(__file__).resolve().parents[3]
-        runtime = load_runtime_config(repository_root / "config" / "runtime.private-lan.json", env={})
+        config_path = repository_root / "config" / "runtime.private-lan.json"
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(runtime.profile_id, "optimization")
-        self.assertEqual(runtime.transport_mode, "private-lan")
-        self.assertEqual(runtime.configured_lan_host, "192.168.1.20")
-        self.assertEqual(runtime.frontend_host, runtime.configured_lan_host)
-        self.assertEqual(runtime.frontend_port, 5184)
-        self.assertEqual(runtime.frontend_public_url, "http://192.168.1.20:5184/")
-        self.assertEqual(runtime.backend_host, "127.0.0.1")
-        self.assertEqual(runtime.backend_port, 8776)
-        self.assertEqual(runtime.data_root, Path(r"E:\ReadWebData\SubtitleWorkflow-Optimization"))
+        self.assertEqual(payload["profileId"], "optimization")
+        self.assertEqual(payload["transportMode"], "private-lan")
+        self.assertEqual(payload["configuredLanHost"], "active-private-ipv4")
+        self.assertEqual(payload["frontend"]["host"], "active-private-ipv4")
+        self.assertEqual(payload["frontend"]["publicUrl"], "active-private-ipv4")
+        self.assertEqual(payload["frontend"]["port"], 5184)
+        self.assertEqual(payload["backend"], {"host": "127.0.0.1", "port": 8776})
+        self.assertEqual(payload["dataRoot"], r"E:\ReadWebData\SubtitleWorkflow-Optimization")
+        with self.assertRaisesRegex(RuntimeConfigError, "must be resolved by the private-LAN launcher"):
+            load_runtime_config(config_path, env={})
 
     def test_windows_style_environment_variables_resolve_portable_tool_paths(self):
         with tempfile.TemporaryDirectory() as temp_dir:

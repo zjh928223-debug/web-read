@@ -122,6 +122,7 @@ function validateTransport(payload, frontend, backend) {
     return { profileId, transportMode, configuredLanHost: '' }
   }
   if (!profileId) throw new Error('private-lan runtime config requires profileId')
+  if (configuredLanHost === 'active-private-ipv4') throw new Error('private-lan active address must be resolved by the private-LAN launcher')
   if (!isPrivateLanHost(configuredLanHost)) throw new Error('private-lan requires an explicit private LAN host')
   if (normalizeHost(frontend.host) !== configuredLanHost) throw new Error('frontend host must match configuredLanHost')
   if (frontend.port !== 5184) throw new Error('private-lan frontend port must remain 5184')

@@ -37,20 +37,16 @@ assert.deepEqual(Object.keys(privateLanPayload.frontend).sort(), ['host', 'port'
 assert.deepEqual(Object.keys(privateLanPayload.backend).sort(), ['host', 'port'])
 assert.equal(privateLanPayload.profileId, 'optimization')
 assert.equal(privateLanPayload.transportMode, 'private-lan')
-assert.equal(privateLanPayload.configuredLanHost, '192.168.1.20')
+assert.equal(privateLanPayload.configuredLanHost, 'active-private-ipv4')
 assert.equal(privateLanPayload.frontend.host, privateLanPayload.configuredLanHost)
 assert.equal(privateLanPayload.frontend.port, 5184)
-assert.equal(privateLanPayload.frontend.publicUrl, 'http://192.168.1.20:5184/')
+assert.equal(privateLanPayload.frontend.publicUrl, 'active-private-ipv4')
 assert.deepEqual(privateLanPayload.backend, { host: '127.0.0.1', port: 8776 })
 assert.equal(privateLanPayload.dataRoot, 'E:\\ReadWebData\\SubtitleWorkflow-Optimization')
-const privateLan = loadRuntimeConfig({ configPath: 'config/runtime.private-lan.json', env: {}, cwd: process.cwd() })
-assert.equal(privateLan.profileId, 'optimization')
-assert.equal(privateLan.transportMode, 'private-lan')
-assert.equal(privateLan.configuredLanHost, '192.168.1.20')
-assert.equal(privateLan.frontend.url, 'http://192.168.1.20:5184/')
-assert.equal(privateLan.frontend.publicUrl, privateLan.frontend.url)
-assert.equal(privateLan.backend.healthUrl, 'http://127.0.0.1:8776/api/health')
-assert.equal(privateLan.dataRoot, 'E:\\ReadWebData\\SubtitleWorkflow-Optimization')
+assert.throws(
+  () => loadRuntimeConfig({ configPath: 'config/runtime.private-lan.json', env: {}, cwd: process.cwd() }),
+  /must be resolved by the private-LAN launcher/,
+)
 const privateLanSerialized = JSON.stringify(privateLanPayload)
 for (const forbidden of [/apikey/i, /api[_-]?key/i, /cookie/i, /token/i, /password/i, /secret/i, /proxy/i]) {
   assert.equal(forbidden.test(privateLanSerialized), false, `LAN RuntimeConfig contains forbidden secret field: ${forbidden}`)
@@ -64,7 +60,7 @@ assert.throws(
     env: { READ_WEB_FRONTEND_HOST: '127.0.0.1' },
     cwd: process.cwd(),
   }),
-  /frontend host must match configuredLanHost/,
+  /must be resolved by the private-LAN launcher/,
 )
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'read-web-runtime-config-'))

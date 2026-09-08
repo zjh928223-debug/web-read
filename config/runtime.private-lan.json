@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "profileId": "optimization",
   "transportMode": "private-lan",
-  "configuredLanHost": "192.168.1.20",
+  "configuredLanHost": "active-private-ipv4",
   "frontend": {
-    "host": "192.168.1.20",
+    "host": "active-private-ipv4",
     "port": 5184,
-    "publicUrl": "http://192.168.1.20:5184/"
+    "publicUrl": "active-private-ipv4"
   },
   "backend": {
     "host": "127.0.0.1",
