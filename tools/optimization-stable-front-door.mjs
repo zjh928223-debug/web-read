@@ -1,26 +1,23 @@
 #!/usr/bin/env node
 
 import { createServer, request as requestUpstream } from 'node:http'
-import { connect as connectUpstream } from 'node:net'
+import { connect as connectUpstream, isIP } from 'node:net'
 import { existsSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-const config = parseArgs(process.argv.slice(2))
-if (!isLoopbackHost(config.host)) throw new Error('optimization front door requires a loopback host')
-if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw new Error('invalid front door port')
-if (!config.targetFile) throw new Error('--target-file is required')
-if (!config.profileId || !config.instanceId || !config.releaseId) throw new Error('front door identity is required')
-if (!config.activeReleaseFile || !config.activeHostFile) throw new Error('front door active pointer files are required')
+const isMainModule = import.meta.url === pathToFileURL(process.argv[1] || '').href
+const config = isMainModule ? parseArgs(process.argv.slice(2)) : null
+if (config) validateFrontDoorConfig(config)
 const omitExecutableIdentityForTest = process.env.READ_WEB_OPTIMIZATION_TEST_FAILURE === 'front-door-health-identity'
 
 const RESERVED_TARGET_PORTS = new Set([5173, 8765, 5174, 8766, 5184, 8776])
 
-const server = createServer((request, response) => {
-  if (!isLoopbackHost(request.headers.host || '')) {
+const server = config ? createServer((request, response) => {
+  if (!isAllowedRequestHost(request.headers.host || '', config)) {
     sendJson(response, 400, { detail: 'invalid host' })
     return
   }
-  if (!isAllowedLoopbackOrigin(request.headers.origin || '', request.headers.host || '')) {
+  if (!isAllowedRequestOrigin(request.headers.origin || '', request.headers.host || '', config)) {
     sendJson(response, 403, { detail: 'origin not allowed' })
     return
   }
@@ -61,10 +58,10 @@ const server = createServer((request, response) => {
     return
   }
   proxyHttp(request, response, target)
-})
+}) : null
 
-server.on('upgrade', (request, socket, head) => {
-  if (!isLoopbackHost(request.headers.host || '') || !isAllowedLoopbackOrigin(request.headers.origin || '', request.headers.host || '')) {
+server?.on('upgrade', (request, socket, head) => {
+  if (!isAllowedRequestHost(request.headers.host || '', config) || !isAllowedRequestOrigin(request.headers.origin || '', request.headers.host || '', config)) {
     writeSocketError(socket, 403, 'origin not allowed')
     return
   }
@@ -105,29 +102,26 @@ server.on('upgrade', (request, socket, head) => {
   socket.once('close', () => upstream.destroy())
 })
 
-server.listen(config.port, config.host, () => {
-  process.stdout.write(`${JSON.stringify({ status: 'ready', service: 'read-web-optimization-front-door', host: config.host, port: config.port })}\n`)
-})
+if (server) {
+  server.listen(config.port, config.host, () => {
+    process.stdout.write(`${JSON.stringify({ status: 'ready', service: 'read-web-optimization-front-door', host: config.host, port: config.port })}\n`)
+  })
+}
 
 let closing = false
 const close = () => {
   if (closing) return
   closing = true
-  server.close(() => { process.exitCode = 0 })
+  server?.close(() => { process.exitCode = 0 })
 }
-process.once('SIGINT', close)
-process.once('SIGTERM', close)
+if (server) {
+  process.once('SIGINT', close)
+  process.once('SIGTERM', close)
+}
 
-function proxyHttp(request, response, target) {
-  const headers = { ...request.headers }
-  delete headers.connection
-  delete headers['proxy-connection']
-  delete headers['keep-alive']
-  delete headers['transfer-encoding']
-  delete headers.upgrade
-  headers.host = targetAuthority(target)
-  if (headers.origin) headers.origin = `http://${targetAuthority(target)}`
-  const upstream = requestUpstream({
+function proxyHttp(request, response, target, requestImpl = requestUpstream) {
+  const headers = buildUpstreamHeaders(request.headers, target)
+  const upstream = requestImpl({
     host: target.host,
     port: target.port,
     method: request.method,
@@ -143,6 +137,18 @@ function proxyHttp(request, response, target) {
     else response.destroy()
   })
   request.pipe(upstream)
+}
+
+function buildUpstreamHeaders(requestHeaders, target) {
+  const headers = { ...requestHeaders }
+  delete headers.connection
+  delete headers['proxy-connection']
+  delete headers['keep-alive']
+  delete headers['transfer-encoding']
+  delete headers.upgrade
+  headers.host = targetAuthority(target)
+  if (headers.origin) headers.origin = `http://${targetAuthority(target)}`
+  return headers
 }
 
 function readTarget() {
@@ -229,7 +235,7 @@ function readTargetFile() {
   return normalizeTarget(targetFile.value)
 }
 
-function normalizeTarget(value) {
+function normalizeTarget(value, expectedProfileId = config?.profileId) {
   if (!value || value.status !== 'active') return null
   const target = {
     host: String(value.host || ''),
@@ -240,7 +246,7 @@ function normalizeTarget(value) {
   }
   if (!isBareLoopbackHost(target.host) || !Number.isInteger(target.port) || target.port < 1 || target.port > 65535) return null
   if (RESERVED_TARGET_PORTS.has(target.port)) return null
-  if (!target.releaseId || !target.profileId || !target.instanceId || target.profileId !== config.profileId) return null
+  if (!target.releaseId || !target.profileId || !target.instanceId || target.profileId !== expectedProfileId) return null
   return target
 }
 
@@ -337,45 +343,92 @@ function targetAuthority(target) {
   return `${formatHost(target.host)}:${target.port}`
 }
 
+function validateFrontDoorConfig(value) {
+  const mode = String(value.transportMode || 'loopback').trim()
+  if (!['loopback', 'private-lan'].includes(mode)) throw new Error(`unsupported transport mode: ${mode}`)
+  value.transportMode = mode
+  if (mode === 'loopback') {
+    if (!isLoopbackHost(value.host)) throw new Error('optimization front door requires a loopback host')
+    if (value.configuredLanHost) throw new Error('--configured-lan-host requires --transport-mode private-lan')
+  } else {
+    const configuredHost = normalizeConfiguredLanHost(value.configuredLanHost)
+    if (!configuredHost) throw new Error('private-lan requires an explicit configured LAN host')
+    if (normalizeBareHost(value.host) !== configuredHost) throw new Error('private-lan bind host must match the configured LAN host')
+    value.configuredLanHost = configuredHost
+  }
+  if (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535) throw new Error('invalid front door port')
+  if (!value.targetFile) throw new Error('--target-file is required')
+  if (!value.profileId || !value.instanceId || !value.releaseId) throw new Error('front door identity is required')
+  if (!value.activeReleaseFile || !value.activeHostFile) throw new Error('front door active pointer files are required')
+  return value
+}
+function isAllowedRequestHost(value, selected) {
+  if (selected.transportMode !== 'private-lan') return isLoopbackHost(value)
+  const authority = parseHostAuthority(value)
+  return Boolean(authority) && authority.host === selected.configuredLanHost && authority.port === selected.port
+}
+function isAllowedRequestOrigin(value, requestHost, selected) {
+  if (selected.transportMode !== 'private-lan') return isAllowedLoopbackOrigin(value, requestHost)
+  if (!isAllowedRequestHost(requestHost, selected)) return false
+  if (!value) return true
+  try {
+    const origin = new URL(String(value))
+    if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== '/' || origin.search || origin.hash) return false
+    const authority = parseHostAuthority(origin.host)
+    return Boolean(authority) && authority.host === selected.configuredLanHost && authority.port === selected.port
+      && origin.host.toLowerCase() === String(requestHost).trim().toLowerCase()
+  } catch { return false }
+}
 function isLoopbackHost(value) {
   try {
     const hostname = new URL(`http://${String(value || '').trim()}`).hostname.replace(/^\[|\]$/g, '').toLowerCase()
     return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
-
 function isBareLoopbackHost(value) {
   try {
     const parsed = new URL(`http://${String(value || '').trim()}`)
-    return isLoopbackHost(parsed.hostname)
-      && !parsed.port
-      && !parsed.username
-      && !parsed.password
-      && parsed.pathname === '/'
-      && !parsed.search
-      && !parsed.hash
-  } catch {
-    return false
-  }
+    return isLoopbackHost(parsed.hostname) && !parsed.port && !parsed.username && !parsed.password
+      && parsed.pathname === '/' && !parsed.search && !parsed.hash
+  } catch { return false }
 }
-
 function formatHost(value) {
   const host = String(value).trim()
   return host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
 }
-
+function normalizeConfiguredLanHost(value) {
+  const host = normalizeBareHost(value)
+  if (!host || isLoopbackHost(host)) return ''
+  const family = isIP(host)
+  if (family === 4) {
+    const [a, b] = host.split('.').map(Number)
+    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ? host : ''
+  }
+  if (family === 6) return /^(?:fc|fd|fe[89ab])/i.test(host) ? host.toLowerCase() : ''
+  const labels = host.split('.')
+  return host.length <= 253 && !labels.every((label) => /^\d+$/.test(label))
+    && labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label)) ? host.toLowerCase() : ''
+}
+function normalizeBareHost(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  const parsed = parseHostAuthority(isIP(raw) === 6 ? `[${raw}]` : raw)
+  return parsed && parsed.port === null ? parsed.host : ''
+}
+function parseHostAuthority(value) {
+  try {
+    const parsed = new URL(`http://${String(value || '').trim()}`)
+    if (!parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) return null
+    return { host: parsed.hostname.replace(/^\[|\]$/g, '').toLowerCase(), port: parsed.port ? Number(parsed.port) : null }
+  } catch { return null }
+}
 function isAllowedLoopbackOrigin(value, requestHost) {
   if (!value) return true
   try {
     const origin = new URL(String(value))
-    return ['http:', 'https:'].includes(origin.protocol)
-      && isLoopbackHost(origin.host)
+    return ['http:', 'https:'].includes(origin.protocol) && isLoopbackHost(origin.host)
       && origin.host.toLowerCase() === String(requestHost || '').toLowerCase()
-  } catch {
-    return false
-  }
+  } catch { return false }
 }
 
 function sendJson(response, status, value) {
@@ -394,6 +447,8 @@ function parseArgs(values) {
   const result = {
     host: '127.0.0.1',
     port: 5184,
+    transportMode: 'loopback',
+    configuredLanHost: '',
     targetFile: '',
     releaseId: '',
     profileId: '',
@@ -412,6 +467,8 @@ function parseArgs(values) {
     const key = name.slice(2).replaceAll('-', '')
     if (key === 'host') result.host = values[++index]
     else if (key === 'port') result.port = Number.parseInt(values[++index] || '', 10)
+    else if (key === 'transportmode') result.transportMode = values[++index]
+    else if (key === 'configuredlanhost') result.configuredLanHost = values[++index]
     else if (key === 'targetfile') result.targetFile = values[++index]
     else if (key === 'releaseid') result.releaseId = values[++index]
     else if (key === 'profileid') result.profileId = values[++index]
@@ -428,8 +485,15 @@ function parseArgs(values) {
   return result
 }
 
-export { isAllowedLoopbackOrigin, isLoopbackHost, readTarget }
-
-if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
-  // The server is intentionally started by the top-level module body above.
+export {
+  buildUpstreamHeaders,
+  isAllowedLoopbackOrigin,
+  isAllowedRequestHost,
+  isAllowedRequestOrigin,
+  isLoopbackHost,
+  normalizeTarget,
+  parseArgs,
+  proxyHttp,
+  readTarget,
+  validateFrontDoorConfig,
 }

@@ -18,7 +18,7 @@
 - [x] 2.2 `R-101` 独立检查 IPv4、localhost、Host 带端口、缺失配置和非法地址测试，确认普通 optimization 启动仍然只允许 loopback。
 - [x] 2.3 `E-102` 扩展 Windows request policy，使显式 LAN mode 能校验配置的 Host、Origin 和现有 service token，同时保持文件路径、凭据和 owner mutation 在授权前不可达。
 - [x] 2.4 `R-102` 独立运行 request-policy 与 owner API checks，确认 LAN mode 未将 CORS 当认证、错误响应不泄漏绝对路径、loopback 请求行为没有回归。
-- [ ] 2.5 `E-103` 扩展 `tools/optimization-stable-front-door.mjs` 的显式 LAN bind/Host/Origin 模式，保持 internal Host target 必须是 loopback、8776 不可作为 target，并透明代理普通 HTTP、Range 和 streaming response。
+- [x] 2.5 `E-103` 扩展 `tools/optimization-stable-front-door.mjs` 的显式 LAN bind/Host/Origin 模式，保持 internal Host target 必须是 loopback、8776 不可作为 target，并透明代理普通 HTTP、Range 和 streaming response。
 - [ ] 2.6 `R-103` 独立审核前门 diff 和测试，确认 LAN 只开放稳定前门、内部 target 限制仍在、Host/Origin 重写正确、activation journal 与 previous release 路由没有回归。
 - [ ] 2.7 `E-104` 新增 LAN 专用 RuntimeConfig，不修改 `config/runtime.optimization.json`；配置只包含非 secret 的 bind/public URL/profile 信息，并继续使用 `E:\ReadWebData\SubtitleWorkflow-Optimization` 作为开发验证数据根。
 - [ ] 2.8 `R-104` 独立审核新配置不含 API key、Cookie、代理凭据和日常真实数据根，且原有 5184/8776 optimization config 原样通过验证。

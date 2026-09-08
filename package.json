@@ -167,6 +167,7 @@
     "verify:learning-page-launcher": "node scripts/learning-page-launcher-check.mjs",
     "verify:launcher-instance-manager": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launcher-instance-manager-check.ps1",
     "verify:launcher-detached-lifetime": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launcher-detached-lifetime-check.ps1",
+    "verify:optimization-stable-front-door": "node scripts/optimization-stable-front-door-check.mjs",
     "verify:optimization-launcher": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind powershell",
     "verify:optimization-launcher:pwsh": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/optimization-launcher-check.ps1 -PowerShellKind pwsh",
     "verify:production-host-lifecycle": "npm run build && node scripts/production-host-lifecycle-check.mjs",
