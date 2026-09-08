@@ -2,15 +2,15 @@
 
 本 change 的每个 `E-*` 实现项必须由一个新的 `gpt-5.6-luna`、`reasoning effort=max` 对话执行；对应 `R-*` 必须由另一个新对话只读审核。review 使用本阶段固定 `PHASE_BASE` 与任务 `TASK_HEAD` 比较，只报告会造成启动失败、功能回归、错误数据、双 writer、跨机不可用、媒体失败或无法回滚的 P0-P2 问题，不增加企业级防御要求。review 失败时必须新建 `F-*` 修复对话，并再次执行对应 review。
 
-- [ ] 1.1 `E-001` 只读盘点当前 branch、HEAD、未提交文件、现有验证结果和需保留的 WhisperX/语言处理/Preview/SRS 工作，生成所有后续任务使用的迁移基点候选，不修改源码或数据。
-- [ ] 1.2 `R-001` 独立确认 `E-001` 基点包含所有应保留工作、没有误用旧默认分支、没有读取或修改受保护工作树，并输出 `PASS/FAIL` 与最终 `PHASE_BASE`。
-- [ ] 1.3 `E-002` 将 production 由 Windows 同源提供 `dist + /api`、Mac remote-dev 使用轻量 Vite proxy、Windows 独占重任务和数据的双模式部署决策写入当前架构说明，明确不采用 Tauri、Mac production server、远程 NativePicker、自研 pairing/TLS 和独立 Git 仓库。
-- [ ] 1.4 `R-002` 独立审核部署决策是否保持 5184 稳定前门、8776 loopback sidecar、内部 FastAPI 动态端口以及 optimization/daily 隔离，且没有重新引入 production CORS 或签名媒体 URL。
-- [ ] 1.5 `E-003` 为现有 owner contract 增加最小 `private-lan` transport delta，保持业务 operation、typed envelope、revision、idempotency 和 receipt 语义不变，并明确只有稳定前门可对 LAN 监听。
-- [ ] 1.6 `R-003` 独立运行 contract checks，确认 8776 未被定义为公共 FastAPI 入口、Mac 不可直连 sidecar、loopback 默认没有改变、contract v1 业务字段没有被无意破坏。
-- [ ] 1.7 `E-004` 建立跨机自动/手工验收清单和可逐步填充的测试骨架，覆盖 health、owner query、至少一项本地 capability、至少一项外部 capability、polling、audio/video Range、seek、Windows restart 和 Mac reconnect。
-- [ ] 1.8 `R-004` 独立审核验收清单是否覆盖真实单用户路径，并删除或拒绝 HA、压力实验室、多用户、企业审计、复杂威胁建模等范围外要求。
-- [ ] 1.9 `G-0` 在 `R-001` 至 `R-004` 全部 PASS 后集成文档与 contract 基线，运行 OpenSpec strict validation，并记录下一阶段唯一 `PHASE_BASE`。
+- [x] 1.1 `E-001` 只读盘点当前 branch、HEAD、未提交文件、现有验证结果和需保留的 WhisperX/语言处理/Preview/SRS 工作，生成所有后续任务使用的迁移基点候选，不修改源码或数据。
+- [x] 1.2 `R-001` 独立确认 `E-001` 基点包含所有应保留工作、没有误用旧默认分支、没有读取或修改受保护工作树，并输出 `PASS/FAIL` 与最终 `PHASE_BASE`。
+- [x] 1.3 `E-002` 将 production 由 Windows 同源提供 `dist + /api`、Mac remote-dev 使用轻量 Vite proxy、Windows 独占重任务和数据的双模式部署决策写入当前架构说明，明确不采用 Tauri、Mac production server、远程 NativePicker、自研 pairing/TLS 和独立 Git 仓库。
+- [x] 1.4 `R-002` 独立审核部署决策是否保持 5184 稳定前门、8776 loopback sidecar、内部 FastAPI 动态端口以及 optimization/daily 隔离，且没有重新引入 production CORS 或签名媒体 URL。
+- [x] 1.5 `E-003` 为现有 owner contract 增加最小 `private-lan` transport delta，保持业务 operation、typed envelope、revision、idempotency 和 receipt 语义不变，并明确只有稳定前门可对 LAN 监听。
+- [x] 1.6 `R-003` 独立运行 contract checks，确认 8776 未被定义为公共 FastAPI 入口、Mac 不可直连 sidecar、loopback 默认没有改变、contract v1 业务字段没有被无意破坏。
+- [x] 1.7 `E-004` 建立跨机自动/手工验收清单和可逐步填充的测试骨架，覆盖 health、owner query、至少一项本地 capability、至少一项外部 capability、polling、audio/video Range、seek、Windows restart 和 Mac reconnect。
+- [x] 1.8 `R-004` 独立审核验收清单是否覆盖真实单用户路径，并删除或拒绝 HA、压力实验室、多用户、企业审计、复杂威胁建模等范围外要求。
+- [x] 1.9 `G-0` 在 `R-001` 至 `R-004` 全部 PASS 后集成文档与 contract 基线，运行 OpenSpec strict validation，并记录下一阶段唯一 `PHASE_BASE`。
 
 ## 2. Windows private-LAN 稳定前门（严格串行）
 

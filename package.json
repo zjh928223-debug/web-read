@@ -47,7 +47,7 @@
     "verify:fast": "node scripts/verify-fast.mjs",
     "verify:windows-owner": "npm run verify:windows-owner-contract && npm run verify:windows-owner-api-client && npm run verify:windows-owner-durable-status && npm run verify:windows-owner-legacy-bridge && npm run verify:windows-owner-media-capability && npm run verify:windows-owner-baseline && npm run verify:windows-owner-determinism && npm run verify:windows-owner-non-goals && npm run verify:windows-owner-non-goals-self-test && npm run verify:windows-owner-consumer-self-test && npm run verify:windows-owner-registry && npm run verify:windows-owner-profile-provider && npm run verify:windows-owner-request-policy && npm run verify:windows-owner-journal && npm run verify:windows-owner-receipt && npm run verify:windows-owner-reader-session && npm run verify:windows-owner-health && npm run verify:windows-owner-launcher-profile && npm run verify:windows-owner-lease && npm run verify:windows-owner-handoff",
     "verify:windows-owner-contract": "node scripts/windows-local-owner-contract-check.mjs",
-    "verify:windows-cross-machine-acceptance": "node scripts/windows-cross-machine-acceptance-check.mjs",
+    "verify:windows-cross-machine-acceptance": "node scripts/windows-cross-machine-acceptance-check.mjs --self-test",
     "verify:windows-owner-api-client": "node scripts/windows-owner-api-client-check.mjs",
     "verify:windows-owner-durable-status": "node scripts/windows-owner-durable-status-check.mjs",
     "verify:windows-owner-legacy-bridge": "node scripts/windows-owner-legacy-bridge-check.mjs",

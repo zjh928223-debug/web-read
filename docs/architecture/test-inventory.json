@@ -2977,7 +2977,7 @@
     },
     {
       "name": "verify:windows-cross-machine-acceptance",
-      "command": "node scripts/windows-cross-machine-acceptance-check.mjs",
+      "command": "node scripts/windows-cross-machine-acceptance-check.mjs --self-test",
       "category": "behavior",
       "layers": [
         "behavior"
