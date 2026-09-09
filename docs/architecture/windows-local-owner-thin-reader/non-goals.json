@@ -3,6 +3,11 @@
   "change": "windows-local-owner-thin-reader",
   "artifactKind": "architecture-non-goal-guard",
   "implementationStatus": "milestone-contract-and-baseline-only",
+  "transportException": {
+    "change": "enable-tailscale-reader-access",
+    "status": "manual-single-user-serve-only",
+    "boundary": "Tailscale Serve may publish the loopback 127.0.0.1:5184 front door as one explicit tailnet-private HTTPS 5184 origin; no Funnel, non-loopback application bind, generic transport mode, or internal-port exposure is introduced."
+  },
   "forbiddenCapabilities": [
     "Mac owner implementation",
     "Tailscale transport",
@@ -150,5 +155,5 @@
     "all six domain registrations and typed API schema",
     "no owner-mode or domain writer migration claim"
   ],
-  "artifactChecksum": "sha256:cfaa3b47e1105365c9442a8363291f06ec75f62c17327d1b28de87f0b827201d"
+  "artifactChecksum": "sha256:4c6ae8d7ef8841638bb0b02619a82feb0d70265a693b07ec36c83a5c8b4ffadb"
 }

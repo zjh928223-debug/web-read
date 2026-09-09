@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 const isMainModule = import.meta.url === pathToFileURL(process.argv[1] || '').href
+const PUBLIC_ORIGIN_PORT = 5184
 const config = isMainModule ? parseArgs(process.argv.slice(2)) : null
 if (config) validateFrontDoorConfig(config)
 const omitExecutableIdentityForTest = process.env.READ_WEB_OPTIMIZATION_TEST_FAILURE === 'front-door-health-identity'
@@ -39,6 +40,7 @@ const server = config ? createServer((request, response) => {
     const visible = readVisibleTarget()
     const target = visible.target
     const ready = target !== null
+    const publicRequest = isPublicOriginRequest(request, config)
     sendJson(response, ready ? 200 : 503, {
       status: ready ? 'ready' : 'degraded',
       service: 'read-web-optimization-front-door',
@@ -46,7 +48,7 @@ const server = config ? createServer((request, response) => {
       profileId: config.profileId,
       instanceId: config.instanceId,
       executableIdentity: config.executableIdentity,
-      target,
+      ...(publicRequest ? {} : { target }),
       commitVisibility: visible.visibility,
       detail: ready ? undefined : 'active target is missing, invalid, or identity-inconsistent',
     })
@@ -57,7 +59,9 @@ const server = config ? createServer((request, response) => {
     sendJson(response, 503, { status: 'degraded', service: 'read-web-optimization-front-door', detail: 'no active target' })
     return
   }
-  proxyHttp(request, response, target)
+  proxyHttp(request, response, target, requestUpstream, {
+    redactPublicHealth: isPublicOriginRequest(request, config),
+  })
 }) : null
 
 server?.on('upgrade', (request, socket, head) => {
@@ -119,7 +123,7 @@ if (server) {
   process.once('SIGTERM', close)
 }
 
-function proxyHttp(request, response, target, requestImpl = requestUpstream) {
+function proxyHttp(request, response, target, requestImpl = requestUpstream, options = {}) {
   const headers = buildUpstreamHeaders(request.headers, target)
   const upstream = requestImpl({
     host: target.host,
@@ -129,6 +133,10 @@ function proxyHttp(request, response, target, requestImpl = requestUpstream) {
     headers,
     agent: false,
   }, (upstreamResponse) => {
+    if (options.redactPublicHealth && isPublicHealthPath(request.url)) {
+      proxyRedactedHealthResponse(upstreamResponse, response)
+      return
+    }
     response.writeHead(upstreamResponse.statusCode || 502, upstreamResponse.headers)
     upstreamResponse.pipe(response)
   })
@@ -137,6 +145,49 @@ function proxyHttp(request, response, target, requestImpl = requestUpstream) {
     else response.destroy()
   })
   request.pipe(upstream)
+}
+
+function proxyRedactedHealthResponse(upstreamResponse, response) {
+  const chunks = []
+  upstreamResponse.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)))
+  upstreamResponse.once('end', () => {
+    let body = Buffer.concat(chunks)
+    try {
+      const payload = JSON.parse(body.toString('utf8'))
+      body = Buffer.from(JSON.stringify(redactPublicHealthPayload(payload)))
+    } catch {
+      // Preserve an unexpected upstream health body without inventing a new response.
+    }
+    const headers = { ...upstreamResponse.headers }
+    delete headers.connection
+    delete headers['content-encoding']
+    delete headers['content-length']
+    delete headers['transfer-encoding']
+    headers['content-type'] = 'application/json; charset=utf-8'
+    headers['content-length'] = String(body.length)
+    response.writeHead(upstreamResponse.statusCode || 502, headers)
+    response.end(body)
+  })
+  upstreamResponse.once('error', () => {
+    if (!response.headersSent) sendJson(response, 503, { detail: 'target unavailable' })
+    else response.destroy()
+  })
+}
+
+function isPublicHealthPath(value) {
+  const pathname = new URL(value || '/', 'http://127.0.0.1').pathname
+  return pathname === '/api/health' || pathname === '/api/app/health' || pathname === '/api/app/capabilities'
+}
+
+function redactPublicHealthPayload(value) {
+  if (Array.isArray(value)) return value.map((item) => redactPublicHealthPayload(item))
+  if (!value || typeof value !== 'object') return value
+  const result = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (/(?:host|port|path|root|directory|filename|file|url)$/iu.test(key)) continue
+    result[key] = redactPublicHealthPayload(item)
+  }
+  return result
 }
 
 function buildUpstreamHeaders(requestHeaders, target) {
@@ -347,6 +398,9 @@ function validateFrontDoorConfig(value) {
   const mode = String(value.transportMode || 'loopback').trim()
   if (!['loopback', 'private-lan'].includes(mode)) throw new Error(`unsupported transport mode: ${mode}`)
   value.transportMode = mode
+  if (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535) throw new Error('invalid front door port')
+  value.publicOrigin = normalizePublicOrigin(value.publicOrigin, PUBLIC_ORIGIN_PORT)
+  if (value.publicOrigin && mode !== 'loopback') throw new Error('--public-origin requires loopback transport')
   if (mode === 'loopback') {
     if (!isLoopbackHost(value.host)) throw new Error('optimization front door requires a loopback host')
     if (value.configuredLanHost) throw new Error('--configured-lan-host requires --transport-mode private-lan')
@@ -356,19 +410,24 @@ function validateFrontDoorConfig(value) {
     if (normalizeBareHost(value.host) !== configuredHost) throw new Error('private-lan bind host must match the configured LAN host')
     value.configuredLanHost = configuredHost
   }
-  if (!Number.isInteger(value.port) || value.port < 1 || value.port > 65535) throw new Error('invalid front door port')
   if (!value.targetFile) throw new Error('--target-file is required')
   if (!value.profileId || !value.instanceId || !value.releaseId) throw new Error('front door identity is required')
   if (!value.activeReleaseFile || !value.activeHostFile) throw new Error('front door active pointer files are required')
   return value
 }
 function isAllowedRequestHost(value, selected) {
-  if (selected.transportMode !== 'private-lan') return isLoopbackHost(value)
+  if (selected.transportMode !== 'private-lan') {
+    return isLoopbackHost(value) || isAllowedPublicOriginHost(value, selected)
+  }
   const authority = parseHostAuthority(value)
   return Boolean(authority) && authority.host === selected.configuredLanHost && authority.port === selected.port
 }
 function isAllowedRequestOrigin(value, requestHost, selected) {
-  if (selected.transportMode !== 'private-lan') return isAllowedLoopbackOrigin(value, requestHost)
+  if (selected.transportMode !== 'private-lan') {
+    if (!value) return true
+    if (isLoopbackHost(requestHost)) return isAllowedLoopbackOrigin(value, requestHost)
+    return isAllowedPublicOrigin(value, requestHost, selected)
+  }
   if (!isAllowedRequestHost(requestHost, selected)) return false
   if (!value) return true
   try {
@@ -378,6 +437,53 @@ function isAllowedRequestOrigin(value, requestHost, selected) {
     return Boolean(authority) && authority.host === selected.configuredLanHost && authority.port === selected.port
       && origin.host.toLowerCase() === String(requestHost).trim().toLowerCase()
   } catch { return false }
+}
+function normalizePublicOrigin(value, port) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  let origin
+  try { origin = new URL(raw) } catch { throw new Error('--public-origin must be a valid HTTPS origin') }
+  const hostname = origin.hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  if (origin.protocol !== 'https:'
+    || origin.username
+    || origin.password
+    || origin.port !== String(port)
+    || origin.pathname !== '/'
+    || origin.search
+    || origin.hash
+    || !hostname.includes('.')
+    || isIP(hostname)
+    || !hostname.split('.').every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) {
+    throw new Error(`--public-origin must be an exact HTTPS DNS origin on port ${port}`)
+  }
+  return `https://${formatHost(hostname)}:${port}/`
+}
+function isAllowedPublicOriginHost(value, selected) {
+  if (!selected.publicOrigin) return false
+  try {
+    const expected = new URL(selected.publicOrigin)
+    const authority = parseHostAuthority(value)
+    return Boolean(authority)
+      && authority.host === expected.hostname.toLowerCase()
+      && authority.port === Number(expected.port)
+  } catch { return false }
+}
+function isAllowedPublicOrigin(value, requestHost, selected) {
+  if (!isAllowedPublicOriginHost(requestHost, selected)) return false
+  try {
+    const origin = new URL(String(value))
+    const expected = new URL(selected.publicOrigin)
+    return origin.protocol === 'https:'
+      && !origin.username
+      && !origin.password
+      && origin.pathname === '/'
+      && !origin.search
+      && !origin.hash
+      && origin.origin === expected.origin
+  } catch { return false }
+}
+function isPublicOriginRequest(request, selected) {
+  return Boolean(selected.publicOrigin) && isAllowedPublicOriginHost(request.headers.host || '', selected)
 }
 function isLoopbackHost(value) {
   try {
@@ -449,6 +555,7 @@ function parseArgs(values) {
     port: 5184,
     transportMode: 'loopback',
     configuredLanHost: '',
+    publicOrigin: '',
     targetFile: '',
     releaseId: '',
     profileId: '',
@@ -469,6 +576,7 @@ function parseArgs(values) {
     else if (key === 'port') result.port = Number.parseInt(values[++index] || '', 10)
     else if (key === 'transportmode') result.transportMode = values[++index]
     else if (key === 'configuredlanhost') result.configuredLanHost = values[++index]
+    else if (key === 'publicorigin') result.publicOrigin = values[++index]
     else if (key === 'targetfile') result.targetFile = values[++index]
     else if (key === 'releaseid') result.releaseId = values[++index]
     else if (key === 'profileid') result.profileId = values[++index]
@@ -491,7 +599,9 @@ export {
   isAllowedRequestHost,
   isAllowedRequestOrigin,
   isLoopbackHost,
+  redactPublicHealthPayload,
   normalizeTarget,
+  normalizePublicOrigin,
   parseArgs,
   proxyHttp,
   readTarget,

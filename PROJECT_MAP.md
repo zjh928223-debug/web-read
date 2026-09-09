@@ -47,13 +47,16 @@ must not be exposed through `VITE_*` values, browser constants, or the built bun
 Windows remains the boundary for WhisperX, ffmpeg, yt-dlp, AI and other heavy work, secrets, SQLite, media
 storage, and durable persistence. The optimization stable front door remains `5184`; the candidate FastAPI
 Host keeps its dynamically selected internal port and the `8776` Node capability sidecar remains loopback-only.
+The single-user tailnet exception runs Tailscale Serve in front of that same loopback front door and accepts one
+explicit full MagicDNS HTTPS origin at runtime; it does not add a general transport mode or expose the internal
+Host/sidecar ports.
 The optimization profile continues to use `5184/8776` and `E:\ReadWebData\SubtitleWorkflow-Optimization`;
 the daily reader ports and data root must not be mixed into this mode.
 
 This decision does not introduce Tauri, a resident Mac production server, Mac offline canonical persistence,
 remote Windows NativePicker interaction, self-built pairing/TLS, or a second Git repository. This section records
-the deployment boundary and does not claim that the private-LAN or remote-dev implementation and cross-machine
-acceptance are complete.
+the deployment boundary; the manual tailnet Serve exception is documented in `docs/OPERATIONS.md`, while the
+private-LAN and cross-machine acceptance claims remain limited to their own evidence.
 
 ## Runtime entry
 

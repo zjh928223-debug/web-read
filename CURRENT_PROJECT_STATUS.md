@@ -113,6 +113,9 @@ Vite 仍承载 9 组本地能力插件。optimization 已有 built-dist 单一 L
 ## 7. 隔离与迁移状态
 
 - 优化 workspace：`E:\read-web-next-optimization`；手工 built Host 使用 `5184/8776` 与 `E:\ReadWebData\SubtitleWorkflow-Optimization`。
+- Tailnet 入口是本 change 新增的显式例外：手动运行 optimization launcher 后，由 Tailscale Serve 将
+  `127.0.0.1:5184` 发布为 tailnet 私有 HTTPS `:5184`；不新增通用 transport mode，不启用 Funnel，
+  内部 Host 动态端口与 `8776` 继续 loopback。完整 MagicDNS 名称只在运行时传入前门参数，不提交到代码。
 - 当前日常安装/工作区：`E:\read-web-next`，现有 origin 使用 `5174/8766` 与 `E:\ReadWebData\SubtitleWorkflow-Next`；该树和现有 Vite/dev 兼容 launcher 受保护。
 - daily-production 候选由本 worktree 的独立 launcher 以 built-dist Host 提供，不能把当前日常 origin 的现有 Vite/dev owner 误写成 built Host。
 - 旧日常回退参考：`E:\read-web`，`5173/8765`；不得由本 worktree 构建、启动或写入。

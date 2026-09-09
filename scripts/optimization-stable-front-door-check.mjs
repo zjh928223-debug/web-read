@@ -6,8 +6,10 @@ import {
   isAllowedRequestHost,
   isAllowedRequestOrigin,
   normalizeTarget,
+  normalizePublicOrigin,
   parseArgs,
   proxyHttp,
+  redactPublicHealthPayload,
   validateFrontDoorConfig,
 } from '../tools/optimization-stable-front-door.mjs'
 
@@ -35,6 +37,51 @@ assert.throws(
   () => validateFrontDoorConfig(frontDoorConfig({ host: '192.168.1.20' })),
   /requires a loopback host/,
 )
+
+const tailnet = validateFrontDoorConfig(frontDoorConfig({
+  publicOrigin: 'https://windows-reader.tail12345.ts.net:5184/',
+}))
+assert.equal(normalizePublicOrigin('https://WINDOWS-READER.tail12345.ts.net:5184', 5184), 'https://windows-reader.tail12345.ts.net:5184/')
+assert.equal(tailnet.publicOrigin, 'https://windows-reader.tail12345.ts.net:5184/')
+assert.equal(isAllowedRequestHost('windows-reader.tail12345.ts.net:5184', tailnet), true)
+assert.equal(isAllowedRequestOrigin('https://windows-reader.tail12345.ts.net:5184', 'windows-reader.tail12345.ts.net:5184', tailnet), true)
+assert.equal(isAllowedRequestOrigin('', 'windows-reader.tail12345.ts.net:5184', tailnet), true)
+for (const host of [
+  'other-reader.tail12345.ts.net:5184',
+  'windows-reader.tail12345.ts.net:443',
+  'windows-reader.tail12345.ts.net:5174',
+]) {
+  assert.equal(isAllowedRequestHost(host, tailnet), false, `unexpected tailnet Host acceptance: ${host}`)
+}
+for (const origin of [
+  'http://windows-reader.tail12345.ts.net:5184',
+  'https://other-reader.tail12345.ts.net:5184',
+  'https://windows-reader.tail12345.ts.net:5174',
+]) {
+  assert.equal(
+    isAllowedRequestOrigin(origin, 'windows-reader.tail12345.ts.net:5184', tailnet),
+    false,
+    `unexpected tailnet Origin acceptance: ${origin}`,
+  )
+}
+assert.throws(
+  () => validateFrontDoorConfig(frontDoorConfig({ publicOrigin: 'http://windows-reader.tail12345.ts.net:5184' })),
+  /exact HTTPS DNS origin/,
+)
+assert.throws(
+  () => validateFrontDoorConfig(frontDoorConfig({ publicOrigin: 'https://100.64.0.1:5184' })),
+  /exact HTTPS DNS origin/,
+)
+const parsedTailnet = parseArgs(['--public-origin', 'https://windows-reader.tail12345.ts.net:5184/'])
+assert.equal(parsedTailnet.publicOrigin, 'https://windows-reader.tail12345.ts.net:5184/')
+assert.deepEqual(redactPublicHealthPayload({
+  status: 'ready',
+  workflowRoot: 'E:\\ReadWebData\\SubtitleWorkflow-Optimization',
+  nested: { host: '127.0.0.1', port: 5201, value: 'kept' },
+}), {
+  status: 'ready',
+  nested: { value: 'kept' },
+})
 
 const privateLan = validateFrontDoorConfig(frontDoorConfig({
   host: '192.168.1.20',

@@ -576,8 +576,14 @@ The optimization workspace now has a completed isolated C2 cutover path for all 
 per-domain checkpoint makes the Host authoritative and blocks the old canonical browser writer through the
 existing domain guard; normal startup still keeps an uncheckpointed/pre-cutover domain not-ready, and the
 explicit optimization entry never auto-migrates a daily profile. Legacy readers needed for inventory or rollback
-remain read-only. `SeekPlayerDB` version 1 / `files` / `id`, the thin runtime entries, loopback-only transport,
-and identity/reference-only media handling remain unchanged.
+remain read-only. `SeekPlayerDB` version 1 / `files` / `id`, the thin runtime entries, loopback-only application
+listeners, and identity/reference-only media handling remain unchanged. The follow-up
+`enable-tailscale-reader-access` change adds only a manual Tailscale Serve HTTPS front door in front of the
+loopback listener; it does not turn this architecture artifact into a general VPN/transport contract.
+
+The earlier `enable-mac-frontend-windows-backend` change remains the private-LAN and cross-machine business
+baseline. Its `launch-private-lan-preview.ps1` entry and unfinished E-201/R-201 status are not replaced by the
+tailnet exception; the two changes must retain separate real-device evidence.
 
 The controlled one-time operator wrapper is documented in
 [`production-migration-entry.md`](./production-migration-entry.md). It adds explicit plan/inventory/dry-run and

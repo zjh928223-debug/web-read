@@ -6,6 +6,7 @@ param(
   [switch]$EnableOwnerPromotion,
   [string]$ApplicationProfileAuthorityIsolationRoot = '',
   [string]$FrontDoorRuntimeConfigPath = '',
+  [string]$FrontDoorPublicOrigin = '',
   [string]$BootstrapPython = '',
   [int]$StartupTimeoutSeconds = 45
 )
@@ -140,6 +141,24 @@ function Test-OptimizationSamePath {
       [IO.Path]::GetFullPath($Right).TrimEnd('\', '/'),
       [StringComparison]::OrdinalIgnoreCase)
   } catch { return $false }
+}
+
+function Normalize-OptimizationFrontDoorPublicOrigin {
+  param(
+    [AllowEmptyString()][string]$Value,
+    [Parameter(Mandatory)][int]$Port
+  )
+  if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
+  try { $uri = [Uri]::new($Value.Trim()) } catch { throw 'Front-door public origin must be a valid HTTPS DNS origin.' }
+  $dnsHost = $uri.DnsSafeHost.ToLowerInvariant()
+  $ipAddress = $null
+  $validDnsHost = $dnsHost -match '^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$'
+  if (-not $uri.IsAbsoluteUri -or $uri.Scheme -ne 'https' -or $uri.UserInfo `
+    -or $uri.Port -ne $Port -or $uri.AbsolutePath -ne '/' -or $uri.Query -or $uri.Fragment `
+    -or -not $validDnsHost -or [Net.IPAddress]::TryParse($dnsHost, [ref]$ipAddress)) {
+    throw "Front-door public origin must be an exact HTTPS DNS origin on port $Port."
+  }
+  return "https://$($dnsHost):$Port/"
 }
 
 function Get-OptimizationManagedStateArguments {
@@ -1293,6 +1312,10 @@ try {
   } elseif ($frontDoorTransportMode -ne 'loopback' -or -not (Test-OptimizationLoopbackHost -HostName $frontDoorHost)) {
     throw 'Front-door RuntimeConfig must use loopback or the explicit private-lan transport.'
   }
+  $frontDoorPublicOrigin = Normalize-OptimizationFrontDoorPublicOrigin -Value $FrontDoorPublicOrigin -Port $frontDoorPort
+  if ($frontDoorPublicOrigin -and $frontDoorTransportMode -ne 'loopback') {
+    throw 'Front-door public origin requires the default loopback transport.'
+  }
   if ($frontDoorPort -ne $fixedFrontendPort `
     -or -not (Test-OptimizationLoopbackHost -HostName ([string]$frontDoorRuntime.backend.host)) `
     -or [int]$frontDoorRuntime.backend.port -ne $fixedBackendPort) {
@@ -1304,6 +1327,7 @@ try {
   if (-not $frontDoorPublicUrl) {
     $frontDoorPublicUrl = "http://$(Format-OptimizationUrlHost -HostName $frontDoorHost):$frontDoorPort/"
   }
+  if ($frontDoorPublicOrigin) { $frontDoorPublicUrl = $frontDoorPublicOrigin }
 
   New-Item -ItemType Directory -Force -Path $workflowDataRoot | Out-Null
   $applicationIsolationRoot = Join-Path $workflowDataRoot '.read-web-application'
@@ -1501,7 +1525,8 @@ try {
     [string]$frontDoorPort,
     $frontDoorProcessHealthUrl,
     $frontDoorTransportMode,
-    $configuredLanHost
+    $configuredLanHost,
+    $frontDoorPublicOrigin
   ) -join "`n"
   $frontDoorIdentityAlgorithm = [Security.Cryptography.SHA256]::Create()
   try {
@@ -1532,6 +1557,9 @@ try {
   )
   if ($frontDoorTransportMode -eq 'private-lan') {
     $frontDoorArgumentList += @('--configured-lan-host', $configuredLanHost)
+  }
+  if ($frontDoorPublicOrigin) {
+    $frontDoorArgumentList += @('--public-origin', $frontDoorPublicOrigin)
   }
   if ($testFailure -eq 'front-door') { $frontDoorArgumentList += '--fail-ready' }
   $frontDoorPreflightStart = $null

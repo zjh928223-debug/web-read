@@ -254,6 +254,37 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-
 若端口已被未知进程占用，停止并核对 PID ownership；不要结束日常版进程来腾端口。需要源代码调试时，必须显式传入
 `-DevFallback`，它仍使用 optimization 隔离的 `5184/8776`，不改变 built production 默认路径。
 
+## Tailnet private HTTPS（手动 Serve 例外）
+
+这是当前 optimization loopback 前门的单用户、手动 Tailscale Serve 发布方式。它不新增
+RuntimeConfig 或 transport mode；前门仍只监听 `127.0.0.1:5184`，内部 Host 和 `8776` 仍只监听
+loopback。首次使用前，tailnet 管理员必须启用 HTTPS certificates；`Tailscale Funnel` 必须保持关闭。
+
+先用 `tailscale status --json` 找到 Windows 本机的完整 MagicDNS 名称，把下面占位符替换为该名称，
+再按两步启动：
+
+```powershell
+Set-Location E:\read-web-next-optimization
+$tailnetOrigin = 'https://<完整-Windows-MagicDNS-名称>:5184/'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-preview.ps1 -NoOpen -FrontDoorPublicOrigin $tailnetOrigin
+tailscale serve --bg --https=5184 http://127.0.0.1:5184
+tailscale serve status --json
+```
+
+Mac 唯一入口是 launcher 输出的完整 HTTPS MagicDNS URL。不要改用 Tailscale IP、短主机名、
+`0.0.0.0` 或 Funnel；public origin 只作为显式启动参数，不写入 bundle、RuntimeConfig 或业务数据。
+
+停止或回退时先撤销 Serve 映射，再停止本应用；不要使用 `tailscale serve reset`：
+
+```powershell
+Set-Location E:\read-web-next-optimization
+tailscale serve --https=5184 off
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/launch-optimization-preview.ps1 -Stop -NoOpen
+```
+
+只停止 launcher 而保留 Serve 映射时，Mac 入口应显示不可用/可重试；重新按上面的 launcher 命令启动后，
+刷新或重试即可恢复。Serve 被停用后，旧的 loopback/LAN 回退仍不提供异地访问。
+
 ## Verification
 
 ```powershell
