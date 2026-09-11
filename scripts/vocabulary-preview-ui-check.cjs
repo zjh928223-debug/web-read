@@ -17,6 +17,11 @@ const videoSource = read('src', 'components', 'VideoPlayerFloat.vue');
 const videoModuleSource = read('src', 'composables', 'media-source-module.js');
 
 assert.match(previewSource, /previewButton\.addEventListener\('click', scanPreview\)/);
+assert.match(
+  previewSource,
+  /ownerIntegration\s*\?\s*createVocabularyService\(\{\s*ownerIntegration,\s*acquisitionEnabled:\s*true\s*\}\)/,
+  'owner-backed article settlement must use the acquisition batch path',
+);
 assert.match(previewSource, /vocabulary-preview-dialog__hint/);
 assert.match(previewSource, /form\.append\(modelLabel, keyLabel, statusEl, dictionaryHint, listEl, footer\)/);
 assert.match(previewSource, /expandedMeaningIds/);
@@ -26,6 +31,7 @@ assert.match(previewSource, /let settlementOpening = false/);
 assert.match(previewSource, /settlementDialog\.openLoading/);
 assert.match(previewSource, /function updateSpeakingState/);
 assert.match(previewSource, /正在加入/);
+assert.match(previewSource, /精简中断，可重试/);
 assert.match(previewSource, /addAllButton\.textContent =/);
 assert.match(previewSource, /pronunciation\.prefetch/);
 assert.match(pronunciationSource, /const audioCache = new Map\(\)/);
@@ -213,6 +219,85 @@ async function runPreviewAnnotationClickCheck() {
   }
 }
 
+async function runStaleRefinementButtonCheck() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(targetUrl, { waitUntil: 'networkidle' });
+    return await page.evaluate(async () => {
+      const module = await import('/src/composables/vocabulary-preview-module.js');
+      const originalStorage = window.AnnotationGenerationStorage;
+      window.AnnotationGenerationStorage = {
+        async loadBundle() {
+          return {
+            generated: {
+              items: [{
+                targetId: 'stale-refinement-target',
+                markedText: 'effort',
+                boundary: 'effort',
+                meaning: '为了达成某事而进行的尝试或努力。',
+                sourceSentence: 'There is an effort to keep the mayor away from the ceremony.',
+              }],
+            },
+            status: {},
+          };
+        },
+      };
+      const settleButton = document.createElement('button');
+      document.body.appendChild(settleButton);
+      const controller = module.createVocabularyPreviewController({
+        settleButton,
+        state: {
+          currentAudioMeta: {
+            source: 'youtube-workflow',
+            jobId: 'stale-refinement-article',
+            title: 'Stale refinement fixture',
+          },
+          currentAudioKey: 'stale-refinement-audio',
+        },
+        windowObject: window,
+        documentObject: document,
+        vocabularyService: {
+          async getWordsAndContextsByLemmas(lemmas) {
+            return new Map(lemmas.map((lemma) => [lemma, { word: null, contexts: [] }]));
+          },
+        },
+        settlementProgressRepository: {
+          async getProgress() {
+            return {
+              article_id: 'stale-refinement-article',
+              refinements: [{
+                target_id: 'stale-refinement-target',
+                prompt_version: 3,
+                status: 'pending',
+                attempted_at: '2026-07-10T00:00:00.000Z',
+              }],
+              settlement_target_ids: [],
+              removed_target_ids: [],
+              applied_target_ids: [],
+              skipped_target_ids: [],
+              application_claims: [],
+            };
+          },
+        },
+      });
+      try {
+        await controller.openSettlement();
+        const refineButton = document.querySelector('.vocabulary-preview-dialog--settlement .vocabulary-preview-dialog__footer button');
+        return { disabled: refineButton ? refineButton.disabled : null };
+      } finally {
+        controller.dispose();
+        settleButton.remove();
+        window.AnnotationGenerationStorage = originalStorage;
+      }
+    });
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 async function main() {
   let server = null;
   const output = { value: '' };
@@ -242,6 +327,8 @@ async function main() {
     assert.equal(annotationClickResult.indexedItemCount, 1, 'displaying preview words should refresh the generated annotation index');
     assert.equal(annotationClickResult.hitTargetId, 'preview-deliberations-target', 'a displayed preview word should resolve its persisted explanation');
     assert.equal(annotationClickResult.hitMeaning, 'careful discussion');
+    const staleRefinementButtonResult = await runStaleRefinementButtonCheck();
+    assert.equal(staleRefinementButtonResult.disabled, false, 'an abandoned refinement should leave the AI refinement button clickable');
     console.log('vocabulary preview UI check passed');
   } finally {
     if (server && server.exitCode === null) server.kill();

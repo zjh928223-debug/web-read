@@ -23,9 +23,11 @@
           </div>
         </header>
 
-        <div v-if="!serviceOnline" class="youtube-workflow-alert">
-          <strong>后台服务未启动</strong>
-          <span>当前后端地址：{{ youtubeWorkflowClient.baseUrl }}</span>
+        <div class="youtube-workflow-service-status">
+          <div v-if="serviceStatusKnown && !serviceOnline" class="youtube-workflow-alert">
+            <strong>后台服务未启动</strong>
+            <span>当前后端地址：{{ youtubeWorkflowClient.baseUrl }}</span>
+          </div>
         </div>
 
         <div class="youtube-workflow-layout">
@@ -194,6 +196,7 @@
                     <small class="youtube-library-source-detail">{{ librarySourceText(job) }}</small>
                     <button type="button" class="small-btn" @click="confirmReprocess(job)">重新处理</button>
                     <button type="button" class="small-btn" @click="showQuality(job)">查看处理详情</button>
+                    <button type="button" class="small-btn danger" @click="deleteLibraryRecord(job)">删除记录</button>
                   </div>
                 </article>
                 <button v-if="libraryHasMore" type="button" class="small-btn youtube-library-load-more" :disabled="libraryPending" @click="loadMoreLibrary">
@@ -348,6 +351,7 @@ import { useChunkStore } from '../pinia-stores/chunk.js'
 import { useMarksStore } from '../pinia-stores/marks.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
 import { bridgeToPinia } from '../composables/pinia-bridge-module.js'
+import { scheduleGeneratedAnnotationIndexRefresh } from '../composables/session-facades.js'
 import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
@@ -386,6 +390,7 @@ const READER_OUTBOX_QUARANTINE_PREFIX = 'read-web.reader-save-outbox-quarantine.
 
 const panelOpen = ref(false)
 const serviceOnline = ref(false)
+const serviceStatusKnown = ref(false)
 const linkInput = ref('')
 const linkCards = ref([])
 const linkNotice = ref('')
@@ -448,6 +453,8 @@ let readerCloseGeneration = 0
 let readerOutboxReplayPromise = null
 let completionSignalTimer = 0
 let materialNoticeTimer = 0
+let libraryRetryTimer = 0
+let libraryRetryCount = 0
 const completedTaskTimers = new Map()
 const readerSessionPersistence = createReaderSessionPersistence()
 const diagnosticsDownloader = createObjectUrlDownloader()
@@ -898,6 +905,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (completionSignalTimer) window.clearTimeout(completionSignalTimer)
   if (materialNoticeTimer) window.clearTimeout(materialNoticeTimer)
+  if (libraryRetryTimer) window.clearTimeout(libraryRetryTimer)
   completedTaskTimers.forEach((timer) => window.clearTimeout(timer))
   completedTaskTimers.clear()
   qualityActionGuard.dispose()
@@ -973,6 +981,7 @@ function makeLoader() {
     applyCurrentAudioMeta,
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,
+    scheduleGeneratedAnnotationIndexRefresh,
     applyReaderMarks: replaceReaderMarksVisible,
     syncReaderMarksVisuals: syncMarkedWordVisuals,
     bridgeToPinia,
@@ -997,15 +1006,6 @@ function makeLoader() {
     showToast: window.showToast
   })
   return readerSessionLoader
-}
-
-async function checkHealth() {
-  try {
-    await youtubeWorkflowClient.health()
-    serviceOnline.value = true
-  } catch (_err) {
-    serviceOnline.value = false
-  }
 }
 
 function commitLinkInput() {
@@ -1172,10 +1172,11 @@ async function enqueueUrls() {
 function openPanel() {
   panelOpen.value = true
   workflowView.value = 'library'
-  observeBestEffort(checkHealth(), {
-    operationId: 'material-center-health-refresh',
-    reason: 'the material library opens immediately while service health refreshes in the background',
-  })
+  libraryRetryCount = 0
+  if (libraryRetryTimer) {
+    window.clearTimeout(libraryRetryTimer)
+    libraryRetryTimer = 0
+  }
   observeBestEffort(refreshQueue(), {
     operationId: 'material-center-task-refresh',
     reason: 'task status refresh must not block opening the fixed material panel',
@@ -1258,9 +1259,32 @@ async function refreshLibrary(options = {}) {
     recentJobs.value.sort((left, right) => materialTimestamp(right) - materialTimestamp(left))
     libraryHasMore.value = normalized.length === libraryPageSize
     refreshLinkDuplicates()
+    serviceOnline.value = true
+    serviceStatusKnown.value = true
+    libraryRetryCount = 0
     readerActivityNotice.value = ''
   } catch (err) {
-    readerActivityNotice.value = err && err.message ? err.message : String(err)
+    serviceStatusKnown.value = true
+    if (err?.code === 'owner-not-ready') {
+      serviceOnline.value = true
+      readerActivityNotice.value = libraryRetryCount === 0
+        ? 'Windows 后台正在启动，素材库会自动刷新…'
+        : 'Windows 后台尚未就绪，请稍后再打开素材库。'
+      if (libraryRetryCount === 0 && !libraryRetryTimer) {
+        libraryRetryCount = 1
+        libraryRetryTimer = window.setTimeout(() => {
+          libraryRetryTimer = 0
+          if (!panelOpen.value || workflowView.value !== 'library') return
+          observeBestEffort(refreshLibrary(), {
+            operationId: 'material-center-library-retry',
+            reason: 'retry one transient Windows owner startup read after the panel is interactive',
+          })
+        }, 750)
+      }
+    } else {
+      serviceOnline.value = false
+      readerActivityNotice.value = err && err.message ? err.message : String(err)
+    }
   } finally {
     libraryPending.value = false
   }
@@ -1531,6 +1555,9 @@ function classifyMaterialLoadFailure(error) {
   if (/credential|api.?key|auth|gemini/u.test(combined)) {
     return { message: 'API 认证失效，请检查设置', actionLabel: '检查设置', action: 'settings' }
   }
+  if (/owner-not-ready|reader-session-(?:conflict|commit-unknown)|reader session owner/u.test(combined)) {
+    return { message: 'Windows 阅读器状态同步失败，请稍后重新打开', actionLabel: '查看原因', action: 'details' }
+  }
   if (/file|media|audio|range|missing|incomplete|404|410/u.test(combined)) {
     return { message: '本地素材不完整，请重新下载', actionLabel: '重新下载', action: 'downloading' }
   }
@@ -1752,6 +1779,27 @@ async function deleteFailedTaskGroup(group) {
       rememberWorkflowRevision(deleted)
       queueJobs.value = queueJobs.value.filter((job) => job.jobId !== jobId)
     }
+    refreshLinkDuplicates()
+  } catch (error) {
+    if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)
+    else workflowMutationNotice.value = error?.message || String(error)
+  }
+}
+
+async function deleteLibraryRecord(job) {
+  if (!job?.jobId) return
+  const title = jobDisplayTitle(job) || librarySourceText(job)
+  if (!window.confirm(`只删除素材库记录，不删除已生成文件。\n\n${title}\n\n确定继续吗？`)) return
+  workflowMutationNotice.value = ''
+  try {
+    await ensureWorkflowRevision()
+    const deleted = await youtubeWorkflowClient.deleteJob(job.jobId, {
+      expectedRevision: workflowRevision.value,
+    })
+    rememberWorkflowRevision(deleted)
+    recentJobs.value = recentJobs.value.filter((item) => item.jobId !== job.jobId)
+    queueJobs.value = queueJobs.value.filter((item) => item.jobId !== job.jobId)
+    expandedLibraryJobId.value = ''
     refreshLinkDuplicates()
   } catch (error) {
     if (isWorkflowMutationConflict(error)) await handleWorkflowMutationConflict(error)

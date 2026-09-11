@@ -216,6 +216,44 @@ async function main() {
   assert.equal(Object.keys(batchAcquisitionRow?.content?.by_learning_unit_id || {}).length, 20);
   assert.ok(Object.values(batchAcquisitionRow.content.by_learning_unit_id)
     .every((pair) => pair.acquisition_state.status === 'graduated'));
+
+  const ownerVocabularyRepository = api.createInMemoryVocabularyRepository();
+  const ownerRunner = api.createInMemoryVocabularyLearningUnitOfWorkRunner({ now: () => now });
+  const ownerAcquisitionReader = createAcquisitionReader(ownerRunner.snapshot);
+  let ownerBatchTransactionCount = 0;
+  let ownerIndividualTransactionCount = 0;
+  const ownerService = api.createVocabularyService({
+    ownerIntegration: {
+      vocabularyRepository: ownerVocabularyRepository,
+      acquisitionRepository: ownerAcquisitionReader,
+      runVocabularyLearningUnitOfWork(...args) {
+        ownerIndividualTransactionCount += 1;
+        return ownerRunner.run(...args);
+      },
+      runVocabularyLearningBatchSession(...args) {
+        ownerBatchTransactionCount += 1;
+        return ownerRunner.runBatchSession(...args);
+      },
+    },
+    scheduler: schedulerStub(),
+    now: () => new Date(now),
+    acquisitionEnabled: true,
+  });
+  const ownerCandidates = Array.from({ length: 20 }, (_, index) => candidate({
+    target_id: `owner-batch-target-${index}`,
+    targetId: `owner-batch-target-${index}`,
+    word: `ownerbatchword${index}`,
+    lemma: `ownerbatchword${index}`,
+    context: {
+      source_id: 'article-owner-batch',
+      sentence: `Ownerbatchword${index} appears in this article.`,
+    },
+  }));
+  const ownerResult = await applyArticle(api, ownerService, ownerCandidates);
+  assert.equal(ownerResult.added, 20);
+  assert.equal(ownerBatchTransactionCount, 1, 'owner-backed article settlement should use one 20-item canonical batch');
+  assert.equal(ownerIndividualTransactionCount, 0, 'owner-backed article settlement must not fall back to individual transactions');
+
   assert.equal(first.selectedCount, 1);
   const legacySnapshot = await vocabularyRepository.loadSnapshot();
   assert.equal(legacySnapshot.words.length, 1);

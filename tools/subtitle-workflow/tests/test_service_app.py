@@ -2796,6 +2796,36 @@ class ServiceAppTests(unittest.TestCase):
             self.assertEqual(client.get(f"/api/jobs/{failed['jobId']}").status_code, 404)
             self.assertEqual(client.get("/api/history?status=failed").json(), [])
 
+    def test_ready_job_can_be_deleted_from_library_without_deleting_output_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = WorkflowConfig(output_dir=Path(tmp))
+            manager = JobManager(config=config, runner_factory=lambda: FakeWorkflowRunner(config))
+            client = TestClient(create_app(manager))
+
+            created = client.post(
+                "/api/jobs",
+                json={"url": "https://example.com/ready-delete", "geminiMode": "mock"},
+            ).json()
+            ready = self._wait_ready(client, created["jobId"])
+            output_dir = Path(ready["outputDir"])
+            self.assertTrue(output_dir.exists())
+            self.assertTrue(any(item.get("jobId") == created["jobId"] for item in client.get("/api/reader/recent?timeScope=all").json()))
+
+            before_delete = client.post("/api/jobs/snapshot", json={"jobIds": [], "includeAll": True}).json()["revision"]
+            deleted = client.delete(
+                f"/api/jobs/{created['jobId']}",
+                headers={"X-Expected-Revision": str(before_delete)},
+            )
+            self.assertEqual(deleted.status_code, 200)
+            self.assertEqual(deleted.json()["deleted"], True)
+            self.assertEqual(deleted.json()["jobId"], created["jobId"])
+            self.assertEqual(deleted.json()["status"], "ready")
+            self.assertGreater(deleted.json()["revision"], before_delete)
+            self.assertEqual(client.get(f"/api/jobs/{created['jobId']}").status_code, 404)
+            self.assertFalse(any(item.get("jobId") == created["jobId"] for item in client.get("/api/reader/recent?timeScope=all").json()))
+            self.assertIsNone(manager.store.get_history_item(created["jobId"]))
+            self.assertTrue(output_dir.exists())
+
     def test_failed_job_can_retry_from_checkpoint_stage(self):
         with tempfile.TemporaryDirectory() as tmp:
             calls = []

@@ -564,6 +564,23 @@ const receiptQueryWithStoredReceipt = await createWindowsOwnerApiClient({
 assert.equal(receiptQueryWithStoredReceipt.outcome, 'read')
 assert.equal(receiptQueryWithStoredReceipt.receipt.requestId, 'old-request-1')
 
+const receiptQueryAfterHostRestart = await createWindowsOwnerApiClient({
+  profileId: 'optimization',
+  instanceId: 'instance-test-2',
+  fetchImpl: async (_url, options) => {
+    const request = JSON.parse(options.body)
+    assert.equal(request.payload.instanceId, 'instance-test-2')
+    assert.equal(request.idempotencyKey, 'committed-1')
+    return jsonResponse({
+      ...baseResponse(request),
+      receipt: { ...receiptFor(committedRequest), instanceId: 'instance-test-1' },
+      payload: { found: true },
+    })
+  },
+}).receipt({ domain: 'workflow', idempotencyKey: 'committed-1' })
+assert.equal(receiptQueryAfterHostRestart.outcome, 'read')
+assert.equal(receiptQueryAfterHostRestart.receipt.instanceId, 'instance-test-1')
+
 console.log('windows owner API client check passed')
 
 async function importModule(clientCode, value) {

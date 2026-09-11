@@ -20,6 +20,7 @@ import {
   canonicalJson,
   createInMemoryVocabularyLearningUnitOfWorkRunner,
   normalizeReviewStore,
+  sha256Utf8,
 } from './vocabulary-learning-uow.js'
 import {
   createInMemoryReviewSessionLedgerRepository,
@@ -125,6 +126,54 @@ function recordForCommand(id, content) {
   return { id, content: clone(content) }
 }
 
+function recordChecksum(record) {
+  return `sha256:${sha256Utf8(canonicalJson(record?.content))}`
+}
+
+function expectedRecordChecksums(records) {
+  return [...new Set(Object.values(records || {}).map(recordChecksum))].sort()
+}
+
+function matchesCommittedReceipt(response, operation, idempotencyKey, records, expectedRevision) {
+  const receipt = response?.receipt
+  if (response?.outcome !== 'committed'
+    || response?.commitStatus !== 'committed'
+    || !receipt
+    || receipt.commitStatus !== 'committed'
+    || receipt.operation !== operation
+    || receipt.idempotencyKey !== idempotencyKey
+    || receipt.expectedRevision !== expectedRevision
+    || !Number.isSafeInteger(receipt.revision)
+    || receipt.revision !== response.revision
+    || !Array.isArray(receipt.recordChecksums)) return false
+  const expectedChecksums = expectedRecordChecksums(records)
+  const actualChecksums = [...receipt.recordChecksums].sort()
+  return expectedChecksums.length === actualChecksums.length
+    && expectedChecksums.every((checksum, index) => checksum === actualChecksums[index])
+}
+
+async function recoverUnknownCommit(owner, response, operation, records, expectedRevision, idempotencyKey) {
+  if (response?.outcome !== 'commit-unknown' || typeof owner.receipt !== 'function') return null
+  let receiptResponse
+  try {
+    receiptResponse = await callOwner(owner, 'receipt', {
+      domain: DOMAIN,
+      idempotencyKey,
+    })
+  } catch (_error) {
+    return null
+  }
+  if (!matchesCommittedReceipt(receiptResponse, operation, idempotencyKey, records, expectedRevision)) return null
+  return {
+    ...response,
+    outcome: 'committed',
+    commitStatus: 'committed',
+    revision: receiptResponse.revision,
+    receipt: receiptResponse.receipt,
+    error: null,
+  }
+}
+
 async function callOwner(owner, method, request) {
   try {
     return await owner[method](request)
@@ -135,10 +184,10 @@ async function callOwner(owner, method, request) {
   }
 }
 
-async function querySnapshot(owner) {
+async function queryOwnerRecords(owner, operation) {
   const response = await callOwner(owner, 'query', {
     domain: DOMAIN,
-    operation: 'snapshot',
+    operation,
     payload: {},
   })
   requireOwnerRead(response, DOMAIN)
@@ -148,17 +197,31 @@ async function querySnapshot(owner) {
   }
 }
 
+async function querySnapshot(owner) {
+  return queryOwnerRecords(owner, 'snapshot')
+}
+
 async function commitRecords(owner, operation, records, expectedRevision, idempotencyValue) {
+  const idempotencyKey = stableOwnerIdempotencyKey(
+    `vocabulary-${operation}`,
+    idempotencyValue,
+  )
   const response = await callOwner(owner, 'command', {
     domain: DOMAIN,
     operation,
     payload: { records },
     expectedRevision,
-    idempotencyKey: stableOwnerIdempotencyKey(
-      `vocabulary-${operation}`,
-      idempotencyValue,
-    ),
+    idempotencyKey,
   })
+  const recovered = await recoverUnknownCommit(
+    owner,
+    response,
+    operation,
+    records,
+    expectedRevision,
+    idempotencyKey,
+  )
+  if (recovered) return recovered
   return assertCommitted(response, operation)
 }
 
@@ -221,7 +284,7 @@ function emptyPersonalizationStore() {
 function createVocabularyOwnerRepository(owner, now) {
   return createVocabularyRepository({
     async loadRecord() {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'entry')
       return {
         snapshot: contentFrom(selected.records, VOCABULARY_ROW_ID),
         revision: selected.revision,
@@ -244,7 +307,7 @@ function createAcquisitionOwnerRepository(owner, now) {
   let expectedRevision = 0
   return createVocabularyAcquisitionRepository({
     async loadStore() {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'acquisition')
       expectedRevision = selected.revision
       return contentFrom(selected.records, ACQUISITION_ROW_ID, emptyAcquisitionStore())
     },
@@ -264,7 +327,7 @@ function createAcquisitionOwnerRepository(owner, now) {
 function createContextOwnerRepository(owner, now) {
   return {
     async loadSnapshot() {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'context-evidence')
       return contentFrom(selected.records, CONTEXT_ROW_ID, { schema_version: 'context-evidence-store.v1', by_context_evidence_id: {} })
     },
     async getById(contextEvidenceId) {
@@ -276,7 +339,7 @@ function createContextOwnerRepository(owner, now) {
       return repository.listByLearningUnit(learningUnitId)
     },
     async put(evidence, expectedEvidenceRevision) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'context-evidence')
       const repository = createInMemoryContextEvidenceRepository(
         contentFrom(selected.records, CONTEXT_ROW_ID, null),
       )
@@ -308,12 +371,12 @@ function eventSeedFromRecords(records) {
 function createLearningEventOwnerRepository(owner, runOwnerUnitOfWork) {
   return {
     async query(query = {}) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'learning-events')
       const repository = createInMemoryLearningEventRepository(eventSeedFromRecords(selected.records))
       return repository.query(query)
     },
     async getById(eventId) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'learning-events')
       const repository = createInMemoryLearningEventRepository(eventSeedFromRecords(selected.records))
       return repository.getById(eventId)
     },
@@ -339,7 +402,7 @@ function createLearningEventOwnerRepository(owner, runOwnerUnitOfWork) {
 function createReviewStateOwnerRepository(owner) {
   return {
     async loadSnapshot() {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'review-queue')
       return normalizeReviewStore(contentFrom(selected.records, REVIEW_ROW_ID, null))
     },
     async getByLearningUnitId(learningUnitId) {
@@ -352,14 +415,14 @@ function createReviewStateOwnerRepository(owner) {
 function createLedgerOwnerRepository(owner, now) {
   return {
     async getBySessionId(sessionId) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'review-queue')
       const repository = createInMemoryReviewSessionLedgerRepository(
         Object.values(contentFrom(selected.records, LEDGER_ROW_ID, emptyLedgerStore()).by_session_id || {}),
       )
       return repository.getBySessionId(sessionId)
     },
     async put(input, expectedLedgerRevision = null) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'review-queue')
       const store = contentFrom(selected.records, LEDGER_ROW_ID, emptyLedgerStore())
       const current = store.by_session_id?.[input?.session_id] || null
       const next = normalizeReviewSessionLedger(input)
@@ -479,7 +542,7 @@ function createSettlementOwnerRepository(owner, now) {
 
 function createPersonalizationOwnerRepository(owner, now) {
   async function loadStore() {
-    const selected = await querySnapshot(owner)
+    const selected = await queryOwnerRecords(owner, 'personalization')
     return contentFrom(selected.records, PERSONALIZATION_ROW_ID, emptyPersonalizationStore())
   }
   return {
@@ -496,7 +559,7 @@ function createPersonalizationOwnerRepository(owner, now) {
       return local.list(options)
     },
     async put(report) {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'personalization')
       const local = createInMemoryPersonalizationShadowReportRepository(
         Object.values((contentFrom(selected.records, PERSONALIZATION_ROW_ID, emptyPersonalizationStore()).by_session_id || {})),
       )
@@ -512,7 +575,7 @@ function createPersonalizationOwnerRepository(owner, now) {
       return result
     },
     async clear() {
-      const selected = await querySnapshot(owner)
+      const selected = await queryOwnerRecords(owner, 'personalization')
       const next = emptyPersonalizationStore()
       await commitRecords(
         owner,

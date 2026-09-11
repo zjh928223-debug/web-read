@@ -1,6 +1,24 @@
 import { runtimeState } from './runtime-state-facade.js'
 
 const READER_SESSION_COMMIT_ATTEMPTS = 3
+const READER_SESSION_OWNER_RETRY_DELAYS_MS = [120, 240]
+
+function emitYoutubeWorkflowDiagnostic(branch, {
+  generation = null,
+  aborted = false,
+  contentId = '',
+  revision = null,
+  status = '',
+} = {}) {
+  console.info('[reader-session-diagnostic]', {
+    generation,
+    aborted: !!aborted,
+    contentIdSuffix: typeof contentId === 'string' ? contentId.slice(-8) : '',
+    revision,
+    status,
+    branch,
+  })
+}
 
 function getWordCount(transcript) {
   const segments = transcript && Array.isArray(transcript.segments) ? transcript.segments : []
@@ -330,6 +348,11 @@ export function createYoutubeWorkflowLoader(deps = {}) {
   function cancelLoad() {
     if (!activeLoad) return false
     const load = activeLoad
+    emitYoutubeWorkflowDiagnostic('loader:cancel-active-load', {
+      generation: load.generation,
+      aborted: load.controller.signal.aborted,
+      status: 'cancel',
+    })
     load.controller.abort('reader session load canceled')
     activeLoad = null
     loadState = { status: 'aborted', generation: load.generation, jobId: load.jobId, error: null }
@@ -369,22 +392,38 @@ export function createYoutubeWorkflowLoader(deps = {}) {
 
   async function commitLatestSession(load, session, requestOptions) {
     if (ownerMode) {
-      if (!isCurrentLoad(load)) return supersededResult(load)
-      const expectedRevision = await prepareExpectedRevision()
-      if (!isCurrentLoad(load)) return supersededResult(load)
-      if (typeof readerSessionOwner.commitSession !== 'function') {
-        throw new Error('reader session owner commit is not available')
+      for (let attempt = 1; attempt <= READER_SESSION_COMMIT_ATTEMPTS; attempt += 1) {
+        if (!isCurrentLoad(load)) return supersededResult(load)
+        try {
+          const expectedRevision = await prepareExpectedRevision()
+          if (!isCurrentLoad(load)) return supersededResult(load)
+          if (typeof readerSessionOwner.commitSession !== 'function') {
+            throw new Error('reader session owner commit is not available')
+          }
+          const result = await readerSessionOwner.commitSession(session, {
+            expectedRevision,
+            mediaDescriptor: session.mediaDescriptor,
+            signal: requestOptions.signal,
+            diagnosticGeneration: load.generation,
+          })
+          emitYoutubeWorkflowDiagnostic('loader:owner-commit-returned', {
+            generation: load.generation,
+            aborted: load.controller.signal.aborted,
+            contentId: session.contentId,
+            revision: result?.result?.revision ?? session.revision,
+            status: result?.status || 'unknown',
+          })
+          if (result?.status === 'committed') return result
+          const error = new Error('reader session owner did not commit the loaded session')
+          error.code = result?.error?.code || result?.status || 'READER_SESSION_OWNER_COMMIT_FAILED'
+          error.ownerResult = result
+          if (!isRetryableOwnerCommitFailure(error) || attempt >= READER_SESSION_COMMIT_ATTEMPTS) throw error
+        } catch (error) {
+          if (!isRetryableOwnerCommitFailure(error) || attempt >= READER_SESSION_COMMIT_ATTEMPTS) throw error
+        }
+        await waitForOwnerCommitRetry(load, attempt)
       }
-      const result = await readerSessionOwner.commitSession(session, {
-        expectedRevision,
-        mediaDescriptor: session.mediaDescriptor,
-        signal: requestOptions.signal,
-      })
-      if (result?.status === 'committed') return result
-      const error = new Error('reader session owner did not commit the loaded session')
-      error.code = result?.error?.code || result?.status || 'READER_SESSION_OWNER_COMMIT_FAILED'
-      error.ownerResult = result
-      throw error
+      throw new Error('reader session owner commit attempts exhausted')
     }
     for (let attempt = 1; attempt <= READER_SESSION_COMMIT_ATTEMPTS; attempt += 1) {
       if (!isCurrentLoad(load)) return supersededResult(load)
@@ -401,6 +440,23 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       }
     }
     throw new Error('reader session commit attempts exhausted')
+  }
+
+  function isRetryableOwnerCommitFailure(error) {
+    const code = String(error?.code || '').toLowerCase()
+    const status = String(error?.ownerResult?.status || '').toLowerCase()
+    return status === 'conflict'
+      || status === 'not-ready'
+      || code === 'conflict'
+      || code === 'not-ready'
+      || code === 'owner-not-ready'
+      || code === 'reader-session-conflict'
+  }
+
+  async function waitForOwnerCommitRetry(load, attempt) {
+    if (!isCurrentLoad(load)) return
+    const delay = READER_SESSION_OWNER_RETRY_DELAYS_MS[Math.max(0, attempt - 1)] || 240
+    await new Promise((resolve) => setTimeout(resolve, delay))
   }
 
   async function restoreAnnotationBackfillResult(jobId) {
@@ -438,7 +494,14 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       throw new Error('reader session publisher is not available')
     }
 
-    if (activeLoad) activeLoad.controller.abort('superseded by a newer reader session load')
+    if (activeLoad) {
+      emitYoutubeWorkflowDiagnostic('loader:abort-active-load', {
+        generation: activeLoad.generation,
+        aborted: activeLoad.controller.signal.aborted,
+        status: 'superseded',
+      })
+      activeLoad.controller.abort('superseded by a newer reader session load')
+    }
     const load = {
       jobId,
       generation: ++generation,
@@ -446,6 +509,11 @@ export function createYoutubeWorkflowLoader(deps = {}) {
     }
     activeLoad = load
     loadState = { status: 'loading', generation: load.generation, jobId, error: null }
+    emitYoutubeWorkflowDiagnostic('loader:new-generation', {
+      generation: load.generation,
+      aborted: load.controller.signal.aborted,
+      status: 'loading',
+    })
 
     try {
       const requestOptions = { signal: load.controller.signal }
@@ -561,9 +629,23 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         }
         await sessionPublisher.publishPreparedSession(preparedSession)
         if (!isCurrentLoad(load)) {
+          emitYoutubeWorkflowDiagnostic('loader:restore-after-publish-superseded', {
+            generation: load.generation,
+            aborted: load.controller.signal.aborted,
+            contentId,
+            revision,
+            status: 'superseded',
+          })
           await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           return supersededResult(load)
         }
+        emitYoutubeWorkflowDiagnostic('loader:before-owner-commit', {
+          generation: load.generation,
+          aborted: load.controller.signal.aborted,
+          contentId,
+          revision,
+          status: 'dispatching',
+        })
         const commitResult = await commitLatestSession(load, {
           contentId,
           revision,
@@ -573,13 +655,41 @@ export function createYoutubeWorkflowLoader(deps = {}) {
           marks: normalizedMarks,
           ...(mediaDescriptor ? { mediaDescriptor } : {}),
         }, requestOptions)
+        emitYoutubeWorkflowDiagnostic('loader:owner-commit-result', {
+          generation: load.generation,
+          aborted: load.controller.signal.aborted,
+          contentId,
+          revision: commitResult?.result?.revision ?? revision,
+          status: commitResult?.status || 'unknown',
+        })
         if (commitResult.status === 'superseded') {
+          emitYoutubeWorkflowDiagnostic('loader:restore-on-superseded-result', {
+            generation: load.generation,
+            aborted: load.controller.signal.aborted,
+            contentId,
+            revision,
+            status: 'superseded',
+          })
           await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           return commitResult
         }
         committed = true
       } catch (error) {
+        emitYoutubeWorkflowDiagnostic('loader:owner-commit-catch', {
+          generation: load.generation,
+          aborted: load.controller.signal.aborted,
+          contentId,
+          revision,
+          status: 'error',
+        })
         if (!committed && isCurrentLoad(load)) {
+          emitYoutubeWorkflowDiagnostic('loader:restore-on-current-error', {
+            generation: load.generation,
+            aborted: load.controller.signal.aborted,
+            contentId,
+            revision,
+            status: 'restoreFailedLoad',
+          })
           try {
             await restoreFailedLoad(visibleSnapshot, previousOwnerMedia)
           } catch (rollbackError) {
@@ -589,6 +699,14 @@ export function createYoutubeWorkflowLoader(deps = {}) {
             failure.rollbackError = rollbackError
             throw failure
           }
+        } else {
+          emitYoutubeWorkflowDiagnostic('loader:skip-restore-not-current', {
+            generation: load.generation,
+            aborted: load.controller.signal.aborted,
+            contentId,
+            revision,
+            status: 'superseded',
+          })
         }
         throw error
       }
@@ -605,7 +723,14 @@ export function createYoutubeWorkflowLoader(deps = {}) {
       loadState = { status: 'loaded', generation: load.generation, jobId, error: null }
       return { status: 'loaded', jobId, manifest, generation: load.generation, identity: identity.status }
     } catch (error) {
-      if (!isCurrentLoad(load)) return supersededResult(load)
+      if (!isCurrentLoad(load)) {
+        emitYoutubeWorkflowDiagnostic('loader:return-superseded', {
+          generation: load.generation,
+          aborted: load.controller.signal.aborted,
+          status: 'superseded',
+        })
+        return supersededResult(load)
+      }
       loadState = {
         status: 'error',
         generation: load.generation,

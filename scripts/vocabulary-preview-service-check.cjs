@@ -525,6 +525,33 @@ async function main() {
     api.getArticleSrsSettlementProgressStatus(await failedRefinementRepository.getProgress('article-meaning-field')),
     'refinement_pending'
   );
+  const stalePendingRepository = api.createInMemoryArticleSrsSettlementProgressRepository({
+    schemaVersion: 1,
+    articles: {
+      'article-stale-pending': {
+        article_id: 'article-stale-pending',
+        refinements: [{
+          target_id: 'manual-meaning-field',
+          prompt_version: api.SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION,
+          status: 'pending',
+          attempted_at: '2026-07-10T00:00:00.000Z',
+        }],
+      },
+    },
+  });
+  const stalePendingSettlement = api.applyArticleSrsSettlementProgress(
+    rebuiltMeaningFieldSettlement,
+    await stalePendingRepository.getProgress('article-stale-pending')
+  );
+  assert.equal(stalePendingSettlement.candidates[0].refinement_attempted_at, '2026-07-10T00:00:00.000Z');
+  assert.equal(api.getSettlementMeaningRefinementCandidates(stalePendingSettlement.candidates).length, 1, 'an abandoned pending refinement should become retryable');
+  assert.equal(api.getArticleSrsSettlementProgressStatus(stalePendingSettlement.progress), 'refinement_retryable');
+  const stalePendingRetryClaim = await stalePendingRepository.claimRefinementAttempt(
+    'article-stale-pending',
+    stalePendingSettlement.candidates,
+    { claimToken: 'stale-pending-retry' },
+  );
+  assert.deepEqual(stalePendingRetryClaim.claimedTargetIds, ['manual-meaning-field'], 'an abandoned pending refinement should be claimable again');
   await failedRefinementRepository.recordRefinementFailure('article-meaning-field', rebuiltMeaningFieldSettlement.candidates, new Error('network failed'), {
     claimToken: failedRefinementClaim.claimToken,
   });

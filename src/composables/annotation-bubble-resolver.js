@@ -6,7 +6,8 @@ import {
   getAnnotationGeneratedIndexScopeKey,
   getAnnotationGeneratedResultStore,
   getAnnotationGenerationScope,
-  getAnnotationGenerationScopeKey
+  getAnnotationGenerationScopeKey,
+  waitForGeneratedAnnotationIndex
 } from './session-facades.js';
 
 function pickAnnotationValue(source, keys) {
@@ -33,6 +34,7 @@ export function initAnnotationBubbleResolver(options = {}) {
   const getWords = typeof options.getWords === 'function' ? options.getWords : function () { return []; };
   const markedMap = options.markedMap;
   const vocabMatchMap = options.vocabMatchMap;
+  let bubbleRequestId = 0;
 
   function normalizeAnnotationBubbleHit(match, wordIndex, span) {
     const data = match && match.data ? match.data : match;
@@ -120,7 +122,64 @@ export function initAnnotationBubbleResolver(options = {}) {
     return normalizeAnnotationBubbleHit(match, wordIndex, span);
   }
 
+  function hasPotentialAnnotation(span) {
+    const wordIndex = Number(span && span.dataset ? span.dataset.wordIndex : NaN);
+    if (!Number.isFinite(wordIndex) || wordIndex < 0) return false;
+    if (markedMap && typeof markedMap.has === 'function' && markedMap.has(wordIndex)) return true;
+    return !!(vocabMatchMap && typeof vocabMatchMap.has === 'function' && vocabMatchMap.has(wordIndex));
+  }
+
+  function generatedAnnotationIndexReady() {
+    return getAnnotationGeneratedIndexScopeKey() === getAnnotationGenerationScopeKey();
+  }
+
+  function deferBubbleUntilGeneratedIndex(span, options, requestId) {
+    if (typeof waitForGeneratedAnnotationIndex !== 'function') return;
+    const scopeKey = getAnnotationGenerationScopeKey();
+    emitAnnotationDiagnostics('app.generated_bubble_click_deferred', {
+      scope: getAnnotationGenerationScope(),
+      wordIndex: Number(span && span.dataset ? span.dataset.wordIndex : NaN),
+      indexedScopeKey: getAnnotationGeneratedIndexScopeKey(),
+      currentScopeKey: scopeKey
+    });
+    let wait;
+    try {
+      wait = waitForGeneratedAnnotationIndex();
+    } catch (error) {
+      emitAnnotationDiagnostics('app.generated_bubble_click_deferred_failed', {
+        scope: getAnnotationGenerationScope(),
+        reason: error && error.code ? error.code : 'wait-start-failed'
+      });
+      return;
+    }
+    Promise.resolve(wait).then(() => {
+      if (requestId !== bubbleRequestId) return;
+      if (getAnnotationGenerationScopeKey() !== scopeKey) return;
+      if (span && span.isConnected === false) return;
+      const annotation = resolveAnnotationBubbleForSpan(span);
+      if (!annotation) return;
+      const bubble = getAnnotationBubble();
+      if (!bubble || typeof bubble.setAnnotation !== 'function') return;
+      const bubbleVisible = typeof bubble.isVisible === 'function' ? bubble.isVisible() : false;
+      bubble.setAnnotation(annotation);
+      if ((!bubbleVisible || options.forceShow) && typeof bubble.show === 'function') {
+        bubble.show();
+      }
+      emitAnnotationDiagnostics('app.generated_bubble_click_deferred_resolved', {
+        scope: getAnnotationGenerationScope(),
+        wordIndex: Number(span && span.dataset ? span.dataset.wordIndex : NaN),
+        occurrenceKey: annotation.occurrenceKey || ''
+      });
+    }).catch((error) => {
+      emitAnnotationDiagnostics('app.generated_bubble_click_deferred_failed', {
+        scope: getAnnotationGenerationScope(),
+        reason: error && error.code ? error.code : 'wait-failed'
+      });
+    });
+  }
+
   function notifyAnnotationBubbleWordClick(span, options = {}) {
+    const requestId = ++bubbleRequestId;
     const bubble = getAnnotationBubble();
     if (!bubble) {
       emitAnnotationDiagnostics('app.generated_bubble_click_skipped', {
@@ -146,6 +205,9 @@ export function initAnnotationBubbleResolver(options = {}) {
         bubble.show();
       }
       return true;
+    }
+    if (!annotation && hasPotentialAnnotation(span) && !generatedAnnotationIndexReady()) {
+      deferBubbleUntilGeneratedIndex(span, options, requestId);
     }
     return false;
   }

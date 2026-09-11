@@ -51,6 +51,7 @@ export function createSessionAnnotationRuntime(deps = {}) {
     const getAnnotationGenerationScope = generatedIndexRuntime.getAnnotationGenerationScope;
     const refreshGeneratedAnnotationIndexForCurrentDocument = generatedIndexRuntime.refreshGeneratedAnnotationIndexForCurrentDocument;
     const scheduleGeneratedAnnotationIndexRefresh = generatedIndexRuntime.scheduleGeneratedAnnotationIndexRefresh;
+    const waitForGeneratedAnnotationIndex = generatedIndexRuntime.waitForGeneratedAnnotationIndex;
     const syncAnnotationGenerationEntryStatus = generatedIndexRuntime.syncAnnotationGenerationEntryStatus;
 
     const annotationContextRuntime = createSessionAnnotationContextRuntime({
@@ -115,6 +116,7 @@ export function createSessionAnnotationRuntime(deps = {}) {
         clearGeneratedAnnotationIndex,
         getAnnotationGenerationScope,
         scheduleGeneratedAnnotationIndexRefresh,
+        waitForGeneratedAnnotationIndex,
         syncAnnotationGenerationEntryStatus,
         normalizeAnnotationMark,
         emitAnnotationDiagnostics,

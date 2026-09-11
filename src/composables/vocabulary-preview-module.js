@@ -1002,7 +1002,9 @@ export function createVocabularyPreviewController(deps = {}) {
   const ownerIntegration = deps.ownerIntegration
     || getWindowsOwnerVocabularySrsIntegration(windowObject);
   const vocabularyService = deps.vocabularyService
-    || (ownerIntegration ? createVocabularyService({ ownerIntegration }) : createVocabularyService());
+    || (ownerIntegration
+      ? createVocabularyService({ ownerIntegration, acquisitionEnabled: true })
+      : createVocabularyService());
   const settlementApplicationRunner = typeof deps.runSettlementApplication === 'function'
     ? deps.runSettlementApplication
     : (options) => (
@@ -1078,6 +1080,11 @@ export function createVocabularyPreviewController(deps = {}) {
     if (status === 'refinement_pending') {
       settleButton.textContent = '释义精简中断待确认';
       settleButton.title = '本文已有一笔 AI 精简请求记录；打开可查看当前候选';
+      return;
+    }
+    if (status === 'refinement_retryable') {
+      settleButton.textContent = '精简中断，可重试';
+      settleButton.title = '上次 AI 精简请求长时间未完成；打开后可安全重试';
       return;
     }
     if (status === 'refinement_failed') {
@@ -1382,6 +1389,8 @@ export function createVocabularyPreviewController(deps = {}) {
       showToast('这些候选已在另一窗口精简或已有精简记录。', 'info');
       return { requested: 0, updated: 0, rejected: 0, missing: 0 };
     }
+    const claimedRefinements = new Map((refinementClaim.progress?.refinements || [])
+      .map((refinement) => [normalizeText(refinement && refinement.target_id), refinement]));
     const template = buildSettlementMeaningRefinementTemplate({
       candidates: claimedCandidates,
       sourceId: articleId,
@@ -1398,6 +1407,7 @@ export function createVocabularyPreviewController(deps = {}) {
     claimedCandidates.forEach((candidate) => {
       candidate.refinement_attempted = true;
       candidate.refinement_status = 'pending';
+      candidate.refinement_attempted_at = claimedRefinements.get(normalizeText(candidate && candidate.targetId))?.attempted_at || '';
     });
     await refreshSettlementProgressBadge(currentIdentity);
     let response;
@@ -1423,7 +1433,7 @@ export function createVocabularyPreviewController(deps = {}) {
       });
     } catch (progressError) {
       await refreshSettlementProgressBadge(currentIdentity);
-      throw new Error(`AI 已返回精简释义，但持久化失败；为避免重复请求，本次不会自动重试。${progressError && progressError.message ? ` ${progressError.message}` : ''}`);
+      throw new Error(`AI 已返回精简释义，但持久化失败；本次不会立即重试，Host 恢复后可再次尝试。${progressError && progressError.message ? ` ${progressError.message}` : ''}`);
     }
     claimedCandidates.forEach((candidate) => {
       candidate.refinement_status = 'completed';

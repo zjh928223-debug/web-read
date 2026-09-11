@@ -336,7 +336,11 @@ function validateReceipt(receipt, request) {
   for (const field of ['receiptId', 'profileId', 'instanceId', 'requestId', 'correlationId', 'evidenceSource']) requireIdentity(receipt[field], `receipt.${field}`)
   if (receipt.contractVersion !== apiContract.contractVersion || receipt.queryOperation !== 'receipt-query') invalidResponse('receipt contract identity is invalid')
   if (receipt.domain !== request.domain) invalidResponse('receipt identity does not match response')
-  if (receipt.profileId !== request.payload.profileId || (request.payload.instanceId && receipt.instanceId !== request.payload.instanceId)) invalidResponse('receipt profile identity does not match response')
+  // Durable receipts survive a Host restart, so receipt-query may return the
+  // instance that originally committed the operation rather than this Host's
+  // current instance. The profile remains the stable ownership boundary.
+  if (receipt.profileId !== request.payload.profileId
+    || (request.kind !== 'receipt-query' && request.payload.instanceId && receipt.instanceId !== request.payload.instanceId)) invalidResponse('receipt profile identity does not match response')
   if (request.kind !== 'receipt-query' && (receipt.requestId !== request.requestId || receipt.correlationId !== request.correlationId || receipt.operation !== request.operation)) invalidResponse('receipt identity does not match response')
   if (request.kind === 'receipt-query' && request.payload.receiptId && receipt.receiptId !== request.payload.receiptId) invalidResponse('receipt id does not match query')
   const registeredOperations = WINDOWS_OWNER_DOMAIN_REGISTRY[receipt.domain]?.allOperations || []

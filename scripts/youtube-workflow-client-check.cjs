@@ -139,6 +139,28 @@ async function main() {
   assert.ok(ownerCommands.every((request) => typeof request.idempotencyKey === 'string' && request.idempotencyKey.startsWith('marks-')));
   assert.equal(calls.filter((call) => call.url.includes('/api/reader/activity') || call.url.includes('/reader-marks')).length, 3);
 
+  let workflowOwnerRefreshes = 0;
+  let workflowOwnerReady = false;
+  globalThis.__windowsOwnerDomainCutover = {
+    get ownerReady() { return workflowOwnerReady; },
+    isAuthoritative(domain) { return domain === 'workflow'; },
+    async refresh() {
+      workflowOwnerRefreshes += 1;
+      workflowOwnerReady = true;
+    },
+    async query(request) {
+      assert.equal(workflowOwnerReady, true);
+      return { outcome: 'read', revision: 1, payload: { records: [] } };
+    },
+    async command() { return { outcome: 'committed', commitStatus: 'committed', revision: 1 }; },
+  };
+  try {
+    assert.deepEqual(await client.readerRecent({ limit: 1 }), []);
+  } finally {
+    delete globalThis.__windowsOwnerDomainCutover;
+  }
+  assert.equal(workflowOwnerRefreshes, 1);
+
   const workflowCommands = [];
   let workflowRevision = 0;
   const workflowCommandReceipts = new Map();

@@ -257,6 +257,9 @@ export function createYoutubeWorkflowClient(options = {}) {
   }
 
   async function workflowQuery(cutover, operation, payload = {}, signal) {
+    if (cutover.ownerReady === false && !signal?.aborted && typeof cutover.refresh === 'function') {
+      await cutover.refresh()
+    }
     const response = observeWorkflowResponse(await cutover.query({
       domain: 'workflow',
       operation,

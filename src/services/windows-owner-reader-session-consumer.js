@@ -28,6 +28,27 @@ const ERROR_MESSAGES = Object.freeze({
   'media-not-ready': 'reader session media is not ready',
 })
 
+function emitReaderSessionDiagnostic(branch, {
+  generation = null,
+  aborted = false,
+  contentId = '',
+  revision = null,
+  status = '',
+} = {}) {
+  console.info('[reader-session-diagnostic]', {
+    generation,
+    aborted: !!aborted,
+    contentIdSuffix: typeof contentId === 'string' ? contentId.slice(-8) : '',
+    revision,
+    status,
+    branch,
+  })
+}
+
+function diagnosticErrorStatus(error) {
+  return String(error?.code || error?.category || 'error')
+}
+
 export class WindowsOwnerReaderSessionError extends Error {
   constructor(code, options = {}) {
     super(ERROR_MESSAGES[code] || options.message || 'reader session owner operation failed')
@@ -55,7 +76,17 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     })
     : null)
 
-  async function querySnapshot({ signal } = {}) {
+  async function querySnapshot({ signal, diagnostic = {} } = {}) {
+    const diagnosticContext = {
+      generation: diagnostic.generation ?? null,
+      contentId: diagnostic.contentId || '',
+      revision: diagnostic.revision ?? null,
+    }
+    emitReaderSessionDiagnostic('querySnapshot:before-owner-query', {
+      ...diagnosticContext,
+      aborted: !!signal?.aborted,
+      status: 'dispatching',
+    })
     let result
     try {
       result = await ownerClient.query({
@@ -65,11 +96,35 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
         ...(signal ? { signal } : {}),
       })
     } catch (error) {
+      emitReaderSessionDiagnostic('querySnapshot:owner-query-error', {
+        ...diagnosticContext,
+        aborted: !!signal?.aborted,
+        status: diagnosticErrorStatus(error),
+      })
       return rejectedResult(error)
     }
 
-    if (isNotFound(result)) return { status: 'empty', source: 'owner', result }
+    emitReaderSessionDiagnostic('querySnapshot:owner-query-returned', {
+      ...diagnosticContext,
+      aborted: !!signal?.aborted,
+      revision: result?.revision ?? diagnosticContext.revision,
+      status: result?.outcome || 'unknown',
+    })
+
+    if (isNotFound(result)) {
+      emitReaderSessionDiagnostic('querySnapshot:empty', {
+        ...diagnosticContext,
+        aborted: !!signal?.aborted,
+        status: 'empty',
+      })
+      return { status: 'empty', source: 'owner', result }
+    }
     if (result.outcome !== 'read' || !isPlainObject(result.payload) || !isPlainObject(result.payload.snapshot)) {
+      emitReaderSessionDiagnostic('querySnapshot:invalid-result', {
+        ...diagnosticContext,
+        aborted: !!signal?.aborted,
+        status: 'rejected',
+      })
       return rejectedResult(errorFromResult(result))
     }
 
@@ -78,6 +133,12 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
       if (result.revision !== undefined && result.revision !== null && result.revision !== normalized.snapshot.revision) {
         throw new WindowsOwnerReaderSessionError('reader-session-invalid', { category: 'schema' })
       }
+      emitReaderSessionDiagnostic('querySnapshot:found', {
+        ...diagnosticContext,
+        aborted: !!signal?.aborted,
+        revision: normalized.snapshot.revision,
+        status: 'found',
+      })
       return {
         status: 'found',
         source: 'owner',
@@ -86,6 +147,11 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
         result,
       }
     } catch (error) {
+      emitReaderSessionDiagnostic('querySnapshot:normalize-error', {
+        ...diagnosticContext,
+        aborted: !!signal?.aborted,
+        status: 'rejected',
+      })
       return rejectedResult(error)
     }
   }
@@ -241,9 +307,16 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
     } catch (error) {
       return rejectedResult(error)
     }
-    let commitOptions = { ...options, idempotencyKey }
+    let commitOptions = { ...options, idempotencyKey, diagnosticLookup: 1 }
     let prior = await lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions, expectedRevision)
     if (prior?.occurrenceRequired) {
+      emitReaderSessionDiagnostic('commit:occurrence-required', {
+        generation: options.diagnosticGeneration ?? null,
+        aborted: !!options.signal?.aborted,
+        contentId: session.contentId,
+        revision: prior.baseRevision,
+        status: 'occurrence-required',
+      })
       if (!generatedIdempotencyKey) return occurrenceConflict(prior)
       try {
         idempotencyKey = await createStableCommitIdempotencyKey(
@@ -252,7 +325,7 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
           profileId,
           prior.baseRevision,
         )
-        commitOptions = { ...options, idempotencyKey }
+        commitOptions = { ...options, idempotencyKey, diagnosticLookup: 2 }
       } catch (error) {
         return rejectedResult(error)
       }
@@ -359,6 +432,17 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
   })
 
   async function lookupExistingCommitReceipt(idempotencyKey, session, candidate, commitOptions, expectedRevision) {
+    const diagnosticContext = {
+      generation: commitOptions.diagnosticGeneration ?? null,
+      aborted: !!commitOptions.signal?.aborted,
+      contentId: session.contentId,
+      revision: expectedRevision,
+    }
+    const lookupNumber = commitOptions.diagnosticLookup || 1
+    emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:before`, {
+      ...diagnosticContext,
+      status: 'dispatching',
+    })
     let receiptResult
     try {
       receiptResult = await ownerClient.receipt({
@@ -367,8 +451,19 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
         ...(commitOptions.signal ? { signal: commitOptions.signal } : {}),
       })
     } catch (error) {
+      emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:error`, {
+        ...diagnosticContext,
+        aborted: !!commitOptions.signal?.aborted,
+        status: diagnosticErrorStatus(error),
+      })
       return rejectedResult(error, 'reader-session-commit-unknown')
     }
+    emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:returned`, {
+      ...diagnosticContext,
+      aborted: !!commitOptions.signal?.aborted,
+      revision: receiptResult?.receipt?.revision ?? receiptResult?.revision ?? expectedRevision,
+      status: receiptResult?.outcome || 'unknown',
+    })
     // The host receipt store represents an unobserved idempotency key as
     // commit-unknown with no receipt. There is no dispatched commit to
     // recover in that shape, so the normal prepare -> commit flow may start.
@@ -393,13 +488,38 @@ export function createWindowsOwnerReaderSessionConsumer(options = {}) {
 
     const receipt = receiptResult.receipt
     if (receipt.operation !== 'commit' || receipt.idempotencyKey !== idempotencyKey) {
+      emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:identity-mismatch`, {
+        ...diagnosticContext,
+        aborted: !!commitOptions.signal?.aborted,
+        revision: receipt.revision,
+        status: 'conflict',
+      })
       return {
         status: 'conflict',
         result: receiptResult,
         error: new WindowsOwnerReaderSessionError('reader-session-conflict', { category: 'conflict', retryable: true }),
       }
     }
-    const queried = await querySnapshot({ signal: commitOptions.signal })
+    emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:before-querySnapshot`, {
+      ...diagnosticContext,
+      aborted: !!commitOptions.signal?.aborted,
+      revision: receipt.revision,
+      status: 'committed-key-match',
+    })
+    const queried = await querySnapshot({
+      signal: commitOptions.signal,
+      diagnostic: {
+        generation: diagnosticContext.generation,
+        contentId: diagnosticContext.contentId,
+        revision: receipt.revision,
+      },
+    })
+    emitReaderSessionDiagnostic(`receipt-query:${lookupNumber}:after-querySnapshot`, {
+      ...diagnosticContext,
+      aborted: !!commitOptions.signal?.aborted,
+      revision: queried.snapshot?.revision ?? queried.result?.revision ?? receipt.revision,
+      status: queried.status,
+    })
     const snapshot = queried.status === 'found' ? queried.snapshot : null
     if (!snapshot) {
       return {

@@ -19,6 +19,8 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     ? deps.getWindow
     : function () { return globalThis; };
   const consoleApi = deps.consoleApi || console;
+  let activeRefreshPromise = null;
+  let activeRefreshScopeKey = '';
 
   function getAnnotationGenerationScope() {
     const storage = typeof deps.getAnnotationGenerationStorage === 'function'
@@ -108,6 +110,8 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
   function clearGeneratedAnnotationIndex() {
     nextGeneratedIndexRefreshSeq();
+    activeRefreshPromise = null;
+    activeRefreshScopeKey = '';
     state.annotationGeneratedIndexScopeKey = '';
     const store = typeof deps.getAnnotationGeneratedResultStore === 'function'
       ? deps.getAnnotationGeneratedResultStore()
@@ -195,15 +199,38 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
 
   function scheduleGeneratedAnnotationIndexRefresh() {
     const scheduledScopeKey = getAnnotationGenerationScopeKey();
-    return observeBestEffort(refreshGeneratedAnnotationIndexForCurrentDocument(), {
+    if (activeRefreshPromise && activeRefreshScopeKey === scheduledScopeKey) {
+      return activeRefreshPromise;
+    }
+    const observedRefresh = observeBestEffort(refreshGeneratedAnnotationIndexForCurrentDocument(), {
       operationId: 'annotation-generated-index-refresh',
       reason: 'failed background refresh clears only the matching transient index and remains retryable',
       logger: consoleApi,
       fallback: null,
-    }).then((result) => {
+    });
+    const trackedRefresh = observedRefresh.then((result) => {
       if (result !== null) return;
       if (getAnnotationGenerationScopeKey() === scheduledScopeKey) clearGeneratedAnnotationIndex();
+    }).finally(() => {
+      if (activeRefreshPromise === trackedRefresh) {
+        activeRefreshPromise = null;
+        activeRefreshScopeKey = '';
+      }
     });
+    activeRefreshPromise = trackedRefresh;
+    activeRefreshScopeKey = scheduledScopeKey;
+    return trackedRefresh;
+  }
+
+  function waitForGeneratedAnnotationIndex() {
+    const scopeKey = getAnnotationGenerationScopeKey();
+    if (state.annotationGeneratedIndexScopeKey === scopeKey) {
+      return Promise.resolve({ status: 'ready', scopeKey });
+    }
+    if (activeRefreshPromise && activeRefreshScopeKey === scopeKey) {
+      return activeRefreshPromise;
+    }
+    return scheduleGeneratedAnnotationIndexRefresh();
   }
 
   async function syncAnnotationGenerationEntryStatus() {
@@ -225,6 +252,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     getAnnotationGenerationScopeKey,
     refreshGeneratedAnnotationIndexForCurrentDocument,
     scheduleGeneratedAnnotationIndexRefresh,
+    waitForGeneratedAnnotationIndex,
     syncAnnotationGenerationEntryStatus
   };
 }

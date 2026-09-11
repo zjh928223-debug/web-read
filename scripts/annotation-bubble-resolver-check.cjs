@@ -17,10 +17,11 @@ async function importResolverWithStubs(source, bubble) {
       'const emitAnnotationDebug = () => {};\n' +
       'const emitAnnotationDiagnostics = () => {};\n' +
       'const getAnnotationClickResolver = () => globalThis.__testClickResolver || ({ resolveClick: () => null });\n' +
-      'const getAnnotationGeneratedIndexScopeKey = () => "";\n' +
+      'const getAnnotationGeneratedIndexScopeKey = () => globalThis.__testGeneratedIndexScopeKey || "";\n' +
       'const getAnnotationGeneratedResultStore = () => globalThis.__testGeneratedStore || ({ getItems: () => [] });\n' +
       'const getAnnotationGenerationScope = () => ({ audioKey: "audio", documentId: "doc" });\n' +
-      'const getAnnotationGenerationScopeKey = () => "audio::doc";\n'
+      'const getAnnotationGenerationScopeKey = () => "audio::doc";\n' +
+      'const waitForGeneratedAnnotationIndex = () => globalThis.__testWaitForGeneratedAnnotationIndex ? globalThis.__testWaitForGeneratedAnnotationIndex() : Promise.resolve();\n'
     ) + source
     .replace(/import \{ getAnnotationBubbleApi \} from '\.\/annotation-bubble\.js';\r?\n/, '')
     .replace(/import \{[\s\S]*?\} from '\.\/session-facades\.js';\r?\n/, '');
@@ -189,6 +190,46 @@ async function runBehaviorChecks() {
     'manual-target',
     'annotation bubble resolver should forward the marked occurrenceKey and targetId'
   );
+
+  let resolveGeneratedIndex;
+  globalThis.__testGeneratedIndexScopeKey = '';
+  globalThis.__testWaitForGeneratedAnnotationIndex = () => new Promise((resolve) => {
+    resolveGeneratedIndex = resolve;
+  });
+  generatedStore.clear();
+  const deferredCallStart = calls.length;
+  assert.equal(
+    identityResolver.notifyAnnotationBubbleWordClick(
+      { dataset: { wordIndex: '0' }, textContent: 'temporarily' }
+    ),
+    false,
+    'a marked word click should remain synchronous while its generated index is loading'
+  );
+  assert.equal(
+    calls.slice(deferredCallStart).some((entry) => Array.isArray(entry) && entry[0] === 'set'),
+    false,
+    'a deferred click must not use an index from the wrong scope'
+  );
+  globalThis.__testGeneratedIndexScopeKey = 'audio::doc';
+  generatedStore.indexBundle({
+    items: [{
+      id: 'deferred-annotation',
+      targetId: 'manual-target',
+      markedText: 'temporarily',
+      boundary: 'temporarily',
+      meaning: 'deferred meaning',
+      occurrenceKey: 'manual::temporarily'
+    }]
+  });
+  resolveGeneratedIndex();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    calls.slice(deferredCallStart).some((entry) => Array.isArray(entry) && entry[0] === 'set' && entry[1].meaning === 'deferred meaning'),
+    true,
+    'the deferred click should show the annotation after the generated index becomes ready'
+  );
+  delete globalThis.__testWaitForGeneratedAnnotationIndex;
+  delete globalThis.__testGeneratedIndexScopeKey;
 
   generatedStore.indexBundle({
     items: [{

@@ -117,4 +117,59 @@ assert.equal(loader.getLoadState().jobId, 'job-c')
 assert.equal(loader.getLoadState().generation, 3)
 assert.equal(loader.getLoadState().error.code, 'READER_SESSION_LOAD_FAILED')
 
+{
+  let ownerRevision = 0
+  let ownerCommitAttempts = 0
+  const ownerExpectedRevisions = []
+  const ownerVisible = { contentId: 'old-owner-session' }
+  const owner = {
+    async resolveWorkflowMediaDescriptor() {
+      return {
+        mediaId: 'owner-media',
+        kind: 'audio',
+        size: 10,
+        contentType: 'audio/mpeg',
+        etag: 'owner-etag',
+        revision: 'owner-revision',
+        authorizedUrl: 'owner://audio',
+      }
+    },
+    async bindMediaDescriptor() {},
+    async currentRevision() { return ownerRevision },
+    async commitSession(_session, options) {
+      ownerExpectedRevisions.push(options.expectedRevision)
+      ownerCommitAttempts += 1
+      if (ownerCommitAttempts < 3) {
+        ownerRevision += 1
+        return { status: 'conflict', error: { code: 'reader-session-conflict' } }
+      }
+      return { status: 'committed' }
+    },
+    getDescriptor() { return null },
+  }
+  const ownerLoader = createYoutubeWorkflowLoader({
+    client: {
+      async getSession(jobId) { return { jobId, title: 'Owner retry', files: {} } },
+      async getFile(_jobId, kind) {
+        const payload = kind === 'transcript' ? transcript('owner-retry') : chunks('owner-retry')
+        return new Blob([JSON.stringify(payload)])
+      },
+      async getReaderMarks() { return { marks: [] } },
+    },
+    readerSessionOwner: owner,
+    hasCurrentContent: () => false,
+    sessionPublisher: {
+      async captureVisibleSession() { return { ...ownerVisible } },
+      async publishPreparedSession(prepared) { ownerVisible.contentId = prepared.contentId },
+      async restoreVisibleSession(snapshot) { Object.assign(ownerVisible, snapshot) },
+    },
+    validateTranscriptData: (value) => value,
+    validateChunkData: (value) => value,
+  })
+  const ownerResult = await ownerLoader.loadJobIntoReader('owner-retry', { replacePolicy: 'replace-current' })
+  assert.equal(ownerResult.status, 'loaded', 'owner conflict retries should eventually commit the loaded session')
+  assert.equal(ownerCommitAttempts, 3, 'owner commit retries should remain bounded')
+  assert.deepEqual(ownerExpectedRevisions, [0, 1, 2], 'each owner retry should refresh the authoritative revision')
+}
+
 console.log('youtube workflow loader race check passed')

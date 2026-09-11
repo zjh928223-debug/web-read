@@ -5,7 +5,10 @@ import {
   toIsoString,
 } from './vocabulary-models.js';
 import { summarizeArticleSrsSettlement } from './article-srs-settlement.js';
-import { SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION } from './settlement-meaning-refinement.js';
+import {
+  isSettlementMeaningRefinementPendingRetryable,
+  SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION,
+} from './settlement-meaning-refinement.js';
 
 export const ARTICLE_SRS_SETTLEMENT_PROGRESS_STORE_KEY = 'vocabulary-article-srs-settlement-progress';
 
@@ -204,7 +207,12 @@ export function createArticleSrsSettlementProgressRepository(storage) {
         const targetId = getTargetId(candidate);
         if (!targetId) return;
         const existing = byTargetId.get(targetId);
-        if (existing && existing.prompt_version === promptVersion && (existing.status === 'pending' || existing.status === 'completed')) return;
+        const pendingIsRetryable = existing
+          && isSettlementMeaningRefinementPendingRetryable(existing, attemptedAt);
+        if (existing
+          && existing.prompt_version === promptVersion
+          && (existing.status === 'completed'
+            || existing.status === 'pending' && !pendingIsRetryable)) return;
         claimedTargetIds.push(targetId);
         byTargetId.set(targetId, {
           ...(existing || {}),
@@ -551,7 +559,11 @@ export function getArticleSrsSettlementProgressStatus(progress) {
   const currentRefinements = normalized.refinements.filter((item) => (
     item.prompt_version === SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION
   ));
-  if (currentRefinements.some((item) => item.status === 'pending')) return 'refinement_pending';
+  if (currentRefinements.some((item) => (
+    item.status === 'pending'
+    && !isSettlementMeaningRefinementPendingRetryable(item)
+  ))) return 'refinement_pending';
+  if (currentRefinements.some((item) => item.status === 'pending')) return 'refinement_retryable';
   if (currentRefinements.some((item) => item.status === 'failed')) return 'refinement_failed';
   if (currentRefinements.length) return 'refined';
   return 'none';
@@ -578,6 +590,7 @@ export function applyArticleSrsSettlementProgress(settlement = {}, progress = nu
     if (refinement) {
       candidate.refinement_attempted = true;
       candidate.refinement_status = refinement.status;
+      candidate.refinement_attempted_at = refinement.attempted_at;
       if (refinement.simple_meaning) {
         candidate.simple_meaning = refinement.simple_meaning;
         candidate.simpleMeaning = refinement.simple_meaning;

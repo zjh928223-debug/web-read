@@ -25,6 +25,7 @@ export function configureSessionFacades(options = {}) {
     'getAnnotationGenerationScope',
     'emitAnnotationDiagnostics',
     'scheduleGeneratedAnnotationIndexRefresh',
+    'waitForGeneratedAnnotationIndex',
     'syncAnnotationGenerationEntryStatus'
   ].forEach((name) => {
     if (typeof options[name] === 'function') runtimeHandlers[name] = options[name];
@@ -89,6 +90,13 @@ export function scheduleGeneratedAnnotationIndexRefresh() {
   return Promise.resolve();
 }
 
+export function waitForGeneratedAnnotationIndex() {
+  if (typeof runtimeHandlers.waitForGeneratedAnnotationIndex === 'function') {
+    return runtimeHandlers.waitForGeneratedAnnotationIndex();
+  }
+  return Promise.resolve();
+}
+
 export function syncAnnotationGenerationEntryStatus() {
   if (typeof runtimeHandlers.syncAnnotationGenerationEntryStatus === 'function') {
     return runtimeHandlers.syncAnnotationGenerationEntryStatus();
@@ -109,6 +117,7 @@ function installSessionWindowFacades() {
   windowObject.clearPersistedChunkSession = clearPersistedChunkSession;
   windowObject.emitAnnotationDiagnostics = emitAnnotationDiagnostics;
   windowObject.scheduleGeneratedAnnotationIndexRefresh = scheduleGeneratedAnnotationIndexRefresh;
+  windowObject.waitForGeneratedAnnotationIndex = waitForGeneratedAnnotationIndex;
   windowObject.syncAnnotationGenerationEntryStatus = syncAnnotationGenerationEntryStatus;
 }
 
@@ -121,6 +130,7 @@ const sessionFacadesApi = {
   emitAnnotationDiagnostics,
   emitAnnotationDebug,
   scheduleGeneratedAnnotationIndexRefresh,
+  waitForGeneratedAnnotationIndex,
   syncAnnotationGenerationEntryStatus,
   getAnnotationGeneratedResultStore,
   getAnnotationClickResolver

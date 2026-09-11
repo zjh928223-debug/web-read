@@ -202,7 +202,7 @@
   width: clamp(720px, 60vw, 960px);
   height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   border: 1px solid var(--glass-border);
   border-radius: 22px;
   background: var(--pru-shell-surface);
@@ -770,6 +770,13 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 8px;
   background: rgba(248, 250, 252, 0.94);
+}
+
+.youtube-workflow-service-checking {
+  margin: 8px 0;
+  color: var(--pru-shell-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .youtube-workflow-form,
@@ -3387,7 +3394,7 @@ body {
 
     /* === Standalone annotation bubble === */
     :root {
-      --annotation-bubble-glass-bg: rgba(229, 238, 248, 0.78);
+      --annotation-bubble-glass-bg: rgba(229, 238, 248, 1);
       --annotation-bubble-glass-border: rgba(255,255,255,0.66);
       --annotation-bubble-glass-shadow:
         0 14px 30px rgba(15,23,42,0.12),
@@ -3569,7 +3576,7 @@ body {
 
     [data-theme="dark"] .annotation-bubble {
       background:
-        rgba(32,36,44,0.78);
+        rgba(32,36,44,1);
       border-color: rgba(255,255,255,0.16);
       box-shadow:
         0 22px 54px rgba(0,0,0,0.38),
@@ -4487,7 +4494,7 @@ body {
       padding: 0;
       overflow: hidden;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto auto minmax(0, 1fr);
       background: color-mix(in srgb, var(--pru-shell-bg) 88%, var(--pru-reader-bg));
     }
 
@@ -4963,7 +4970,7 @@ body {
   width: clamp(720px, 60vw, 960px);
   height: calc(100vh - 28px);
   max-height: calc(100vh - 28px);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   border: 1px solid var(--glass-border);
   border-radius: 22px;
   background: var(--pru-shell-surface);

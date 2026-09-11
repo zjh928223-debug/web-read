@@ -39,6 +39,8 @@ import { getWindowsOwnerVocabularySrsIntegration } from './windows-owner-vocabul
 export const VOCABULARY_LEGACY_ADD_WORD_COMPATIBILITY = 'legacy-add-word.v1';
 
 const PREVIEW_ACTIVATION_DELAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_LOCAL_TRANSACTION_CHUNK_SIZE = 4;
+const DEFAULT_OWNER_TRANSACTION_CHUNK_SIZE = 20;
 const PREVIEW_ACTIVATION_PENDING_STATUSES = new Set([
   'introduced',
   'acquiring',
@@ -383,7 +385,9 @@ export function createVocabularyService(options = {}) {
       const transactionChunkSize = Number.isInteger(batchOptions.transactionChunkSize)
         && batchOptions.transactionChunkSize > 0
         ? batchOptions.transactionChunkSize
-        : 4;
+        : (ownerIntegration
+          ? DEFAULT_OWNER_TRANSACTION_CHUNK_SIZE
+          : DEFAULT_LOCAL_TRANSACTION_CHUNK_SIZE);
       for (let chunkStart = 0; chunkStart < pendingTasks.length; chunkStart += transactionChunkSize) {
         const chunk = pendingTasks.slice(chunkStart, chunkStart + transactionChunkSize);
         await acquisitionService.runBatch(async (batchService) => {

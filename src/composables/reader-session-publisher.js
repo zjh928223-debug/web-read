@@ -93,6 +93,9 @@ export function createReaderSessionPublisher(deps = {}) {
     if (mediaSource && typeof mediaSource.setAudioElement === 'function') mediaSource.setAudioElement(audioPlayer)
     if (mediaSource && typeof mediaSource.loadJobMedia === 'function') mediaSource.loadJobMedia(prepared.media)
     deps.processTranscript(prepared.transcript)
+    if (typeof deps.scheduleGeneratedAnnotationIndexRefresh === 'function') {
+      deps.scheduleGeneratedAnnotationIndexRefresh()
+    }
     deps.processChunkData(prepared.chunkData)
     if (typeof deps.applyReaderMarks === 'function') {
       await deps.applyReaderMarks(prepared.marks, {

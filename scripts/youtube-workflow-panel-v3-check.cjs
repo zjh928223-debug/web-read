@@ -49,12 +49,18 @@ assert.ok(panel.includes('groupTaskAttempts') && panel.includes('次尝试'), 'f
 assert.ok(panel.includes('YOUTUBE_MEDIA_HTTP_403') && panel.includes('YouTube 媒体授权失败（HTTP 403），请重新处理'), 'YouTube media 403 failures should identify authorization without blaming the proxy node')
 assert.ok(panel.includes('deleteFailedTaskGroup') && panel.includes('clearFailedTasks'), 'failed records should support single and bulk deletion')
 assert.ok(panel.includes('只清除失败提示和失败任务记录，不会删除成功素材或复习数据'), 'bulk deletion must state its safe boundary')
-assert.equal(panel.includes('deleteHistoryJob'), false, 'successful material deletion must not be exposed')
+assert.ok(panel.includes('deleteLibraryRecord') && panel.includes('删除记录'), 'successful material records should support deleting the library record')
 assert.equal(panel.includes('删文件'), false, 'successful generated files must not be deletable from the library')
 assert.ok(panel.includes('confirmReprocess') && panel.includes('forceReprocess: true'), 'reprocessing should be explicit and confirmed')
 assert.ok(panel.includes('canonicalMaterialKey') && panel.includes('extractYoutubeVideoId'), 'YouTube URL variants should share a stable identity')
 assert.ok(panel.includes('正在读取视频信息') && panel.includes('youtube.com/oembed'), 'new link cards should resolve human-readable video metadata')
 assert.ok(panel.includes('MATERIAL_ALREADY_EXISTS'), 'stale clients should handle server-side duplicate rejection')
+assert.match(
+  panel,
+  /<div class="youtube-workflow-service-status">\s*<div v-if="serviceStatusKnown && !serviceOnline" class="youtube-workflow-alert">/,
+  'the service alert must stay hidden until a real library request reports the backend unavailable',
+)
+assert.equal(panel.includes('正在连接后台'), false, 'opening the material center must not show a blocking backend health check')
 assert.ok(panel.includes('Gemini API Key') && panel.includes('更新 API Key'), 'settings should lead with the API key flow')
 assert.ok(panel.includes('confirmDeleteCredential') && panel.includes('清除已保存 API Key'), 'key deletion should live behind advanced settings and confirmation')
 assert.ok(panel.includes('2/4 · 生成字幕') && panel.includes('3/4 · AI 切分与翻译'), 'tasks should expose four understandable progress stages')
@@ -70,6 +76,7 @@ assert.equal(panel.includes('youtube-task-capsule'), false, 'floating task capsu
 assert.equal(panel.toLowerCase().includes('capsule'), false, 'floating capsule behavior should be removed')
 assert.equal(panel.includes('startPanelDrag'), false, 'fixed panel should not keep drag behavior')
 assert.ok(panel.includes('AI 切分结果不可用，请重新 AI 切分') && panel.includes('本地素材不完整，请重新下载'), 'load errors should state reason and remedy directly')
+assert.ok(panel.includes('Windows 阅读器状态同步失败，请稍后重新打开'), 'reader-session owner failures should not be presented as API authentication failures')
 assert.ok(panel.includes('clearMaterialNotice()') && panel.includes('clearMaterialRepairState(job.jobId)'), 'new and successful opens should clear stale material errors')
 assert.equal(panel.includes('打开失败'), false, 'load notices should not add a redundant failure prefix')
 assert.match(panel, /<Teleport to="body">\s*<div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">/, 'quality report should teleport above the material center stacking context')
@@ -97,6 +104,11 @@ const panelRules = ruleBodies('.youtube-workflow .youtube-workflow-panel', 'back
 const effectivePanelRule = panelRules.at(-1)
 assert.ok(effectivePanelRule, 'the panel must have an effective background declaration')
 assert.match(effectivePanelRule.body, /background:\s*var\(--(?:pru-shell-surface|bg-color)\)/, 'the last effective panel rule must remain opaque')
+const panelGridRules = ruleBodies('.youtube-workflow .youtube-workflow-panel', 'grid-template-rows')
+assert.ok(
+  panelGridRules.some(({ body }) => /grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)/.test(body)),
+  'the panel grid must reserve an auto-sized row for the service status before the flexible content row',
+)
 assert.ok(styles.includes('--card-bg: #ffffff') && styles.includes('--card-bg: #252525'), 'light and dark panel surfaces must be concrete opaque theme colors')
 const capsuleDefaultStart = styles.indexOf('.youtube-material-notice button {')
 const noticeCloseDefaultStart = styles.indexOf('.youtube-material-notice .youtube-material-notice-close {')

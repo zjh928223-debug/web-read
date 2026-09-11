@@ -2400,8 +2400,10 @@ class JobManager:
             if not record:
                 raise HTTPException(status_code=404, detail="job not found")
             status = record.status
-            if status not in {"failed", "canceled"}:
-                raise HTTPException(status_code=409, detail="only failed or canceled queue records can be deleted")
+            if status not in {"ready", "failed", "canceled"}:
+                raise HTTPException(status_code=409, detail="only ready, failed, or canceled records can be deleted")
+            if status == "ready":
+                self.store.delete_history_item(job_id, delete_files=False)
             self.pending = [item for item in self.pending if item.job_id != job_id]
             self.jobs.pop(job_id, None)
             self.recent = [entry for entry in self.recent if entry.get("jobId") != job_id]

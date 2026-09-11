@@ -6,6 +6,10 @@ import {
 
 export const SETTLEMENT_MEANING_REFINEMENT_SOURCE = 'article-srs-meaning-refinement';
 export const SETTLEMENT_MEANING_REFINEMENT_PROMPT_VERSION = 3;
+// A pending refinement protects against duplicate requests from concurrent
+// tabs. Once the single backfill request has been quiet for this long, the
+// original tab may have gone away after the Host committed only the claim.
+export const SETTLEMENT_MEANING_REFINEMENT_PENDING_RETRY_AFTER_MS = 2 * 60 * 1000;
 const WORD_SIMPLE_MEANING_TARGET_LENGTH = 10;
 const PHRASE_SIMPLE_MEANING_TARGET_LENGTH = 14;
 const WORD_SIMPLE_MEANING_MAX_LENGTH = 16;
@@ -93,16 +97,44 @@ export function isSettlementSimpleMeaningValid(value, entryType) {
   return normalized.length <= getSettlementSimpleMeaningLimit(entryType);
 }
 
-export function needsSettlementMeaningRefinement(candidate) {
+function parseRefinementTimestamp(value) {
+  try {
+    return Date.parse(new Date(value).toISOString());
+  } catch (_error) {
+    return Number.NaN;
+  }
+}
+
+export function isSettlementMeaningRefinementPendingRetryable(candidate, now = new Date()) {
+  if (normalizeText(candidate && (candidate.refinement_status || candidate.status)).toLowerCase() !== 'pending') {
+    return false;
+  }
+  const attemptedAt = candidate && (
+    candidate.refinement_attempted_at
+    || candidate.refinementAttemptedAt
+    || candidate.attempted_at
+    || candidate.attemptedAt
+  );
+  const attemptedAtMs = parseRefinementTimestamp(attemptedAt);
+  const nowMs = parseRefinementTimestamp(now);
+  return Number.isFinite(attemptedAtMs)
+    && Number.isFinite(nowMs)
+    && nowMs >= attemptedAtMs + SETTLEMENT_MEANING_REFINEMENT_PENDING_RETRY_AFTER_MS;
+}
+
+export function needsSettlementMeaningRefinement(candidate, options = {}) {
   if (!candidate || candidate.eligible === false) return false;
-  if (candidate.refinement_attempted === true && candidate.refinement_status !== 'failed') return false;
+  if (candidate.refinement_attempted === true
+    && candidate.refinement_status !== 'failed'
+    && !isSettlementMeaningRefinementPendingRetryable(candidate, options.now)) return false;
   if (!getCandidateTargetId(candidate)) return false;
   if (!getCandidateMeaning(candidate)) return false;
   return !isSettlementSimpleMeaningValid(getCandidateSimpleMeaning(candidate), candidate.entry_type);
 }
 
-export function getSettlementMeaningRefinementCandidates(candidates = []) {
-  return (Array.isArray(candidates) ? candidates : []).filter(needsSettlementMeaningRefinement);
+export function getSettlementMeaningRefinementCandidates(candidates = [], options = {}) {
+  return (Array.isArray(candidates) ? candidates : [])
+    .filter((candidate) => needsSettlementMeaningRefinement(candidate, options));
 }
 
 export function buildSettlementMeaningRefinementTemplate(options = {}) {

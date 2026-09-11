@@ -906,6 +906,105 @@ async function runBrowserCoreJourney(origin) {
         createWindowsOwnerVocabularySrsIntegration,
         getWindowsOwnerVocabularySrsIntegration,
       } = await import('/src/services/vocabulary/windows-owner-vocabulary-srs.js')
+      const { canonicalJson, sha256Utf8 } = await import('/src/services/vocabulary/vocabulary-learning-uow.js')
+
+      const routedOwnerQueries = []
+      const routingOwner = {
+        isAuthoritative(domain) { return domain === 'vocabulary-srs' },
+        async query(request) {
+          routedOwnerQueries.push(request.operation)
+          return {
+            outcome: 'read',
+            revision: 7,
+            payload: { revision: 7, records: {} },
+          }
+        },
+        async command() {
+          throw new Error('query routing fixture must not issue a command')
+        },
+      }
+      const routingIntegration = createWindowsOwnerVocabularySrsIntegration({
+        owner: routingOwner,
+        now: () => fixtureTime,
+      })
+      await routingIntegration.vocabularyRepository.loadSnapshot()
+      await routingIntegration.acquisitionRepository.loadSnapshot()
+      await routingIntegration.contextEvidenceRepository.loadSnapshot()
+      await routingIntegration.learningEventRepository.query()
+      await routingIntegration.reviewStateRepository.loadSnapshot()
+      await routingIntegration.sessionLedgerRepository.getBySessionId('missing-session')
+      await routingIntegration.personalizationShadowReportRepository.list({ limit: 2 })
+      const expectedRoutedOwnerQueries = [
+        'entry',
+        'acquisition',
+        'context-evidence',
+        'learning-events',
+        'review-queue',
+        'review-queue',
+        'personalization',
+      ]
+      if (JSON.stringify(routedOwnerQueries) !== JSON.stringify(expectedRoutedOwnerQueries)) {
+        throw new Error(`owner query routing regression: ${JSON.stringify(routedOwnerQueries)}`)
+      }
+
+      const recoveryRecordKey = 'vocabulary-article-srs-settlement-progress:receipt-recovery'
+      let recoveryCommand = null
+      let recoveryCommandCalls = 0
+      let recoveryReceiptCalls = 0
+      const recoveryOwner = {
+        isAuthoritative(domain) { return domain === 'vocabulary-srs' },
+        async query() {
+          return {
+            outcome: 'read',
+            revision: 0,
+            payload: { revision: 0, records: {} },
+          }
+        },
+        async command(request) {
+          recoveryCommandCalls += 1
+          recoveryCommand = request
+          return {
+            outcome: 'commit-unknown',
+            commitStatus: 'commit-unknown',
+            revision: null,
+            payload: {},
+          }
+        },
+        async receipt(request) {
+          recoveryReceiptCalls += 1
+          if (!recoveryCommand || request.idempotencyKey !== recoveryCommand.idempotencyKey) {
+            throw new Error('receipt recovery queried the wrong idempotency key')
+          }
+          const record = recoveryCommand.payload.records[recoveryRecordKey]
+          return {
+            outcome: 'committed',
+            commitStatus: 'committed',
+            revision: 1,
+            receipt: {
+              operation: recoveryCommand.operation,
+              idempotencyKey: recoveryCommand.idempotencyKey,
+              expectedRevision: recoveryCommand.expectedRevision,
+              revision: 1,
+              commitStatus: 'committed',
+              recordChecksums: [`sha256:${sha256Utf8(canonicalJson(record.content))}`],
+            },
+          }
+        },
+      }
+      const recoveryIntegration = createWindowsOwnerVocabularySrsIntegration({
+        owner: recoveryOwner,
+        now: () => fixtureTime,
+      })
+      const recoveredSettlementProgress = await recoveryIntegration.settlementProgressRepository.recordSettlementTargets(
+        'receipt-recovery',
+        ['fixture-target-recovery'],
+        { appliedTargetIds: ['fixture-target-recovery'], updatedAt: fixtureTime },
+      )
+      if (!recoveredSettlementProgress.applied_target_ids.includes('fixture-target-recovery')
+        || recoveryCommandCalls !== 1
+        || recoveryReceiptCalls !== 1) {
+        throw new Error('unknown vocabulary Host commit was not reconciled through its durable receipt')
+      }
 
       const ownerClient = createWindowsOwnerApiClient({ profileId, instanceId, timeoutMs: 3000 })
       const setupDatabase = () => new Promise((resolve, reject) => {
@@ -1233,6 +1332,7 @@ async function runBrowserCoreJourney(origin) {
           personalizationCount: personalization.length,
           queuedLearningUnitId: queued.learningUnit?.learning_unit_id || null,
           settlementAppliedCount: settlementAfter.applied_target_ids.length,
+          receiptRecovery: true,
           sessionEntryCount: session.entries.length,
           recordedRating: attempt.attempt.rating,
           addedWordId: added.id,
@@ -1244,6 +1344,7 @@ async function runBrowserCoreJourney(origin) {
           firstLoadIntegrationRetained,
           firstLoadWriterBlocked,
           ordinaryPreCutoverUnfrozen: ordinaryPreCutoverComposition.cutover === null,
+          routedOwnerQueries,
         }
       } finally {
         IDBFactory.prototype.open = originalOpen
@@ -1470,6 +1571,7 @@ try {
   assert.equal(browserResult.sessionEntryCount, 2)
   assert.equal(browserResult.recordedRating, 'good')
   assert.equal(browserResult.failedClosed, true)
+  assert.equal(browserResult.receiptRecovery, true, 'unknown vocabulary Host commits must reconcile through receipt-query')
   assert.equal(browserResult.existingWriterBlocked, true)
   assert.equal(browserResult.unavailableRetained, true)
   assert.equal(browserResult.indexedDbWrites, 0, 'authoritative browser vocabulary/SRS path must not write IndexedDB')

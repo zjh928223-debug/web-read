@@ -26,6 +26,7 @@ export function initSessionRuntimeAssembly(env = {}) {
     const clearGeneratedAnnotationIndex = annotationRuntime.clearGeneratedAnnotationIndex;
     const getAnnotationGenerationScope = annotationRuntime.getAnnotationGenerationScope;
     const scheduleGeneratedAnnotationIndexRefresh = annotationRuntime.scheduleGeneratedAnnotationIndexRefresh;
+    const waitForGeneratedAnnotationIndex = annotationRuntime.waitForGeneratedAnnotationIndex;
     const syncAnnotationGenerationEntryStatus = annotationRuntime.syncAnnotationGenerationEntryStatus;
     const emitAnnotationDiagnostics = annotationRuntime.emitAnnotationDiagnostics;
     const lifecycleRuntime = adapters.lifecycle.start(st, annotationRuntime);
@@ -40,6 +41,7 @@ export function initSessionRuntimeAssembly(env = {}) {
         getAnnotationGenerationScope,
         emitAnnotationDiagnostics,
         scheduleGeneratedAnnotationIndexRefresh,
+        waitForGeneratedAnnotationIndex,
         syncAnnotationGenerationEntryStatus
       });
 
