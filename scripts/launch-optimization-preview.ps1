@@ -1148,6 +1148,7 @@ $activeHostStateSwitched = $false
 $oldHostStoppedForHandoff = $false
 $oldRelease = $null
 $oldToken = ''
+$oldTokenReceiptPresent = $false
 $newToken = ''
 $candidate = $null
 $newRelease = $null
@@ -1162,6 +1163,15 @@ try {
   New-Item -ItemType Directory -Force -Path $stateRoot, $releaseRoot, $stagingRoot, $logRoot | Out-Null
 
   Invoke-OptimizationActivationRecovery
+
+  # Snapshot the receipt before any runtime/Python/front-door preflight can
+  # fail.  The catch path may remove a token only when this launch created it;
+  # an early preflight failure must never delete an existing Host receipt just
+  # because $oldToken has not been read yet.
+  $oldTokenReceiptPresent = Test-Path -LiteralPath $tokenPath -PathType Leaf
+  if ($oldTokenReceiptPresent) {
+    $oldToken = (Read-OptimizationRuntimeText -Path $tokenPath).Trim()
+  }
 
   if ($Stop) {
     $activeHost = Read-OptimizationJsonFile -Path $hostStatePath
@@ -1416,12 +1426,6 @@ try {
   $existingCapabilityState = Read-OptimizationJsonFile -Path $capabilityStatePath
   $existingHostHealth = if ($existingHostHealthUrl) { Get-OptimizationHttpJson -Url $existingHostHealthUrl } else { $null }
   $existingCapabilityHealth = Get-OptimizationHttpJson -Url $existingCapabilityHealthUrl
-  # Read the old service-token receipt before any front-door preflight can
-  # fail.  The catch path may remove a token only when this launch created a
-  # new token; an existing Host's receipt must survive every failed upgrade.
-  if (Test-Path -LiteralPath $tokenPath -PathType Leaf) {
-    $oldToken = (Read-OptimizationRuntimeText -Path $tokenPath).Trim()
-  }
   $activePointer = Read-OptimizationActiveRelease -Path $activeReleasePath
   $oldActiveReleaseSnapshot = Read-OptimizationRuntimeText -Path $activeReleasePath
   $oldActiveHostSnapshot = Read-OptimizationRuntimeText -Path $hostStatePath
@@ -2013,7 +2017,7 @@ try {
       Clear-OptimizationFrontDoorTarget -Path $frontDoorTargetPath
       try { Stop-OptimizationOwnedState -StatePath $frontDoorStatePath -ProfileId $profileId | Out-Null } catch {}
     }
-    if (-not $launchSucceeded -and -not $oldToken -and (Test-Path -LiteralPath $tokenPath)) {
+    if (-not $launchSucceeded -and -not $oldTokenReceiptPresent -and $newToken -and (Test-Path -LiteralPath $tokenPath)) {
       Remove-Item -LiteralPath $tokenPath -Force -ErrorAction SilentlyContinue
     }
   }

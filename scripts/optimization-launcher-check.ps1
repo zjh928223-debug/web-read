@@ -872,6 +872,16 @@ function Assert-RealLauncherLifecycle {
     $committedTargetSnapshot = Read-OptimizationRuntimeText -Path $frontDoorCommittedTargetPath
     $tokenSnapshot = Read-OptimizationRuntimeText -Path $tokenPath
     $hostSnapshot = Read-OptimizationRuntimeText -Path $hostStatePath
+    $earlyBootstrapFailurePath = Join-Path $stateRoot 'missing-bootstrap-python.exe'
+    Assert-True (-not (Test-Path -LiteralPath $earlyBootstrapFailurePath -PathType Leaf)) 'early Python preflight fixture unexpectedly exists'
+    $earlyBootstrapFailureObserved = $false
+    try {
+      Invoke-Launcher `
+        -Arguments @('-NoOpen', '-BootstrapPython', $earlyBootstrapFailurePath) | Out-Null
+    } catch { $earlyBootstrapFailureObserved = $true }
+    Assert-True $earlyBootstrapFailureObserved 'missing bootstrap Python preflight failure was not observable'
+    Assert-True ((Read-OptimizationRuntimeText -Path $tokenPath) -eq $tokenSnapshot) 'early Python preflight failure changed the existing Host service token'
+    Assert-True ((Get-HttpStatus -Url 'http://127.0.0.1:5184/api/app/health') -eq 200) 'early Python preflight failure interrupted the active Host'
     $validPendingJournal = ConvertTo-Json @{
       schemaVersion = 1
       status = 'switching'
