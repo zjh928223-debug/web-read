@@ -7,6 +7,7 @@ async function main() {
   const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8');
   const panelPath = path.join(repoRoot, 'src', 'components', 'YouTubeWorkflowPanel.vue');
   const panelSource = fs.readFileSync(panelPath, 'utf8');
+  const outboxStorageSource = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'persistence', 'reader-outbox-storage.js'), 'utf8');
   const clientSource = fs.readFileSync(path.join(repoRoot, 'src', 'composables', 'youtube-workflow-client.js'), 'utf8');
   const receiptSource = fs.readFileSync(path.join(repoRoot, 'src', 'services', 'workflow', 'operation-receipt.js'), 'utf8');
   const serviceSource = fs.readFileSync(path.join(repoRoot, 'tools', 'subtitle-workflow', 'youtube_workflow', 'service.py'), 'utf8');
@@ -147,7 +148,14 @@ async function main() {
   assert.ok(panelSource.includes("window.addEventListener('pagehide', handleReaderPageHide)"), 'workflow panel should save reader marks when the page is hidden or closed');
   assert.ok(panelSource.includes("window.addEventListener('pageshow', handleReaderPageShow)"), 'workflow panel should reset close receipts when a BFCache page returns');
   assert.ok(panelSource.includes('keepaliveReaderMarks') && panelSource.includes('keepaliveReaderActivity'), 'workflow panel should use the authorized production client for unload-safe reader sync');
-  assert.ok(panelSource.includes('READER_OUTBOX_ENTRY_PREFIX') && panelSource.includes('writeReaderOutboxEntry'), 'workflow panel should persist one versioned reader receipt per operation before unload delivery');
+  assert.ok(panelSource.includes("from '../services/persistence/reader-outbox-storage.js'")
+    && panelSource.includes('createReaderOutboxEntry')
+    && panelSource.includes('readReaderOutbox')
+    && panelSource.includes('writeReaderOutboxEntry')
+    && panelSource.includes('removeReaderOutboxEntry'), 'workflow panel should connect the four reader outbox storage operations');
+  assert.ok(outboxStorageSource.includes('READER_OUTBOX_ENTRY_PREFIX')
+    && outboxStorageSource.includes('readerOutboxEntryKey')
+    && outboxStorageSource.includes('migrateLegacyReaderOutbox'), 'reader outbox storage should retain versioned keys and legacy migration');
   assert.equal(panelSource.includes('切换到阅读器'), false, 'open action should not use ambiguous switch-to-reader wording');
   assert.equal(panelSource.includes('YouTube URL'), false, 'URL label should not be YouTube-specific');
 

@@ -4,6 +4,7 @@ const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
 const panel = fs.readFileSync(path.join(root, 'src/components/YouTubeWorkflowPanel.vue'), 'utf8')
+const outboxStorage = fs.readFileSync(path.join(root, 'src/services/persistence/reader-outbox-storage.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow-client.js'), 'utf8')
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
@@ -124,6 +125,7 @@ assert.ok(styles.includes('.youtube-add-material-form') && styles.includes('.you
 assert.ok(styles.includes('--pru-shell-bg: color-mix(in srgb, var(--bg-color)'), 'material center should inherit the reader theme instead of beige')
 
 assert.ok(panel.includes('createReaderSessionPersistence') && panel.includes('readerSessionPersistence:'), 'atomic reader session publishing must remain intact')
-assert.ok(panel.includes('READER_OUTBOX_ENTRY_PREFIX') && panel.includes('keepaliveReaderActivity'), 'reader recovery and unload persistence must remain intact')
+assert.ok(panel.includes("from '../services/persistence/reader-outbox-storage.js'") && panel.includes('keepaliveReaderActivity'), 'reader recovery and unload persistence must remain intact')
+assert.ok(outboxStorage.includes('READER_OUTBOX_ENTRY_PREFIX') && outboxStorage.includes('readerOutboxEntryKey') && outboxStorage.includes('migrateLegacyReaderOutbox'), 'reader outbox storage should retain versioned keys and legacy migration')
 
 console.log('youtube workflow panel v3 check passed')

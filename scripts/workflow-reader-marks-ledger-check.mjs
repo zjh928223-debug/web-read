@@ -5,6 +5,10 @@ const source = await fs.readFile(
   new URL('../src/components/YouTubeWorkflowPanel.vue', import.meta.url),
   'utf8',
 )
+const storageSource = await fs.readFile(
+  new URL('../src/services/persistence/reader-outbox-storage.js', import.meta.url),
+  'utf8',
+)
 
 assert.match(source, /import \{ createLatestWinsLedger \}/)
 assert.match(source, /const readerMarksLedgers = new Map\(\)/)
@@ -14,9 +18,13 @@ assert.match(source, /getReaderActivityLedger\(payload\.jobId\)/)
 assert.match(source, /activityOperationId: context\.operationId/)
 assert.match(source, /readerUnloadFlushed/)
 assert.match(source, /handleBeforeUnload\(\)/)
-assert.match(source, /READER_OUTBOX_ENTRY_PREFIX/)
-assert.match(source, /readerOutboxEntryKey\(entry\)/)
-assert.match(source, /migrateLegacyReaderOutbox\(\)/)
+assert.match(source, /import \{[\s\S]*createReaderOutboxEntry,[\s\S]*removeReaderOutboxEntry,[\s\S]*\} from '\.\.\/services\/persistence\/reader-outbox-storage\.js'/)
+assert.match(source, /readReaderOutbox\(\)/)
+assert.match(source, /writeReaderOutboxEntry\(marksEntry\)/)
+assert.match(source, /removeReaderOutboxEntry\(entry\)/)
+assert.match(storageSource, /const READER_OUTBOX_ENTRY_PREFIX = 'read-web\.reader-save-outbox\.v2\.'/)
+assert.match(storageSource, /function readerOutboxEntryKey\(entry\)/)
+assert.match(storageSource, /function migrateLegacyReaderOutbox\(\)/)
 assert.match(source, /handleReaderPageShow/)
 assert.match(source, /window\.addEventListener\('reader-marks-changed', handleReaderMarksChanged\)/)
 assert.doesNotMatch(source, /MutationObserver/)

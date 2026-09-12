@@ -71,6 +71,7 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
   const context = await browser.newContext()
   const page = await context.newPage()
   const marksRequests = []
+  let allowInitialAuthorityGet = true
   let authorityGets = 0
   let abortFirstAuthorityGet = true
 
@@ -86,6 +87,11 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
   await page.addInitScript((key) => localStorage.removeItem(key), outboxKey)
   await page.route(`${appUrl}/api/jobs/${encodeURIComponent(jobId)}/reader-marks`, async (route) => {
     if (route.request().method() !== 'GET') return route.continue()
+    if (allowInitialAuthorityGet) {
+      allowInitialAuthorityGet = false
+      await new Promise((resolve) => setTimeout(resolve, 120))
+      return route.continue()
+    }
     authorityGets += 1
     if (abortFirstAuthorityGet) {
       abortFirstAuthorityGet = false
@@ -99,6 +105,13 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
   await page.waitForSelector('.youtube-reader-controls .small-btn')
   await page.locator('.youtube-reader-controls .small-btn').first().click()
   await page.waitForSelector('.youtube-workflow-panel', { state: 'visible' })
+  const initialAuthorityResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET' && url.pathname.endsWith('/reader-marks')
+  })
+  await setReaderState(page, jobId, 'initial', true)
+  await (await initialAuthorityResponse).finished()
+  authorityGets = 0
   await postJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`, {
     marks: [{ globalIndex: 1, word: 'owner-a', start: 0.5, sourceType: 'manual-mark' }],
     expectedRevision: 0,
@@ -183,7 +196,7 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
   const storedOutbox = JSON.stringify(storedEntries)
   assert.equal(storedOutbox.includes(token), false, 'outbox must not persist the service token')
   assert.equal(storedOutbox.includes('127.0.0.1'), false, 'outbox must not persist a private service path')
-  const keepaliveFetches = await firstPage.evaluate(() => window.__readerRecoveryFetches.filter((item) => item.url.includes('/reader-marks') || item.url.includes('/reader/activity')))
+  const keepaliveFetches = await firstPage.evaluate(() => window.__readerRecoveryFetches.filter((item) => item.method === 'POST' && (item.url.includes('/reader-marks') || item.url.includes('/reader/activity'))))
   assert.equal(keepaliveFetches.length, 2)
   assert.equal(keepaliveFetches.every((item) => item.keepalive === true), true)
   assert.equal(unloadRequests.every((request) => request.headers['x-read-web-token'] === token), true)
