@@ -25,7 +25,7 @@ assert.match(coordinatorSource, /async write\(entry, context\)\s*\{[\s\S]*?youtu
 assert.match(coordinatorSource, /activityOperationId: context\.operationId/)
 assert.match(source, /getReaderMarksLedger\(jobId\)\.submit\(/)
 assert.match(source, /getReaderActivityLedger\(payload\.jobId\)/)
-assert.match(source, /useReaderSaveCoordinator\(\{[\s\S]*currentJobId,[\s\S]*getReaderSessionId: \(\) => readerSessionId,[\s\S]*mergeRecentReaderItem,[\s\S]*\}\)/)
+assert.match(source, /useReaderSaveCoordinator\(\{[\s\S]*currentJobId,[\s\S]*getReaderSessionId: \(\) => readerPlaybackTracker\.getReaderSessionId\(\),[\s\S]*mergeRecentReaderItem,[\s\S]*\}\)/)
 assert.match(source, /readerMarksHydrations = new Map\(\)/)
 assert.match(source, /readerUnloadFlushed/)
 assert.match(source, /handleBeforeUnload\(\)/)

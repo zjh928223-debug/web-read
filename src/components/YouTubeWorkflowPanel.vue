@@ -356,6 +356,7 @@ import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../com
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
+import { createReaderPlaybackTracker } from '../services/workflow/reader-playback-tracker.js'
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import {
   createReaderOutboxEntry,
@@ -387,7 +388,6 @@ const terminalStatuses = new Set(['ready', 'failed', 'canceled'])
 const audioStore = useAudioStore()
 const chunkStore = useChunkStore()
 const marksStore = useMarksStore()
-const READER_SYNC_INTERVAL_MS = 15000
 
 const panelOpen = ref(false)
 const serviceOnline = ref(false)
@@ -432,18 +432,12 @@ const qualityModal = ref(null)
 const materialNotice = ref(null)
 const repairStates = new Map()
 const currentJobId = ref('')
-const playback = new Map()
 const loadedReadyJobs = new Set()
 let jobPollingScheduler = null
 let linkSequence = 0
 const pendingWorkflowActions = new Map()
 let workflowSnapshotFlight = null
 let workflowRevisionNeedsRefresh = true
-let readerSessionId = ''
-let readerSessionStartedAt = ''
-let readerLastSyncAt = 0
-let playbackTrackedMedia = null
-let unsubscribeMediaSourceTracking = null
 let readerSessionLoader = null
 let readerSessionLoadInProgress = false
 let readerUnloadFlushed = false
@@ -461,6 +455,14 @@ const qualityDialogController = createDialogController()
 const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
 const panelPending = computed(() => starting.value)
 const readerMarksHydrations = new Map()
+const readerPlaybackTracker = createReaderPlaybackTracker({
+  getCurrentJobId: () => currentJobId.value,
+  getReaderMedia,
+  getMediaSource,
+  ensureCurrentJobFromAudioMeta,
+  onActivity: (event) => syncReaderActivity(event),
+  getCurrentMarkCount,
+})
 const {
   readerActivityNotice,
   readerMarksSaveState,
@@ -477,7 +479,7 @@ const {
   dispose: disposeReaderSaveCoordinator,
 } = useReaderSaveCoordinator({
   currentJobId,
-  getReaderSessionId: () => readerSessionId,
+  getReaderSessionId: () => readerPlaybackTracker.getReaderSessionId(),
   mergeRecentReaderItem,
 })
 
@@ -708,7 +710,7 @@ onMounted(() => {
   window.localStorage.removeItem(['youtubeWorkflow', 'apiKey'].join('.'))
   cleanupWorkflowOperationReceipts()
   syncVideoPreferred(videoPriority.value)
-  bindPlaybackTracking()
+  readerPlaybackTracker.bindPlaybackTracking()
   ensureCurrentJobFromAudioMeta()
   observeBestEffort(replayReaderOutbox(), {
     operationId: 'reader-outbox-startup-replay',
@@ -739,7 +741,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pagehide', handleReaderPageHide)
   window.removeEventListener('pageshow', handleReaderPageShow)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
-  unbindPlaybackTracking()
+  readerPlaybackTracker.unbindPlaybackTracking()
   readerMarksHydrations.clear()
   disposeReaderSaveCoordinator()
   diagnosticsDownloader.dispose()
@@ -1323,7 +1325,7 @@ async function loadJob(job) {
     currentJobId.value = job.jobId
     updateReaderConflictVisibility()
     loadedReadyJobs.add(job.jobId)
-    startReaderSession(job)
+    readerPlaybackTracker.startReaderSession(job)
     observeBestEffort(youtubeWorkflowClient.getReaderActivity(job.jobId).then((activity) => {
       if (Number.isInteger(activity?.revision)) rememberReaderRevision('activity', job.jobId, activity.revision)
     }), {
@@ -1974,7 +1976,7 @@ function shortPath(value) {
 
 function listenText(job) {
   if (!job) return '未开始'
-  const item = playback.get(job.jobId)
+  const item = readerPlaybackTracker.getPlaybackState(job.jobId)
   if (item && item.completed) return '已听完'
   if (item && item.coverageRatio > 0) return '收听中'
   return '未开始'
@@ -2002,70 +2004,6 @@ function resumeReaderAudioFromPanel() {
   return true
 }
 
-function startReaderSession(job) {
-  const jobId = job && job.jobId ? String(job.jobId) : ''
-  if (!jobId) return
-  readerSessionId = `${jobId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  readerSessionStartedAt = new Date().toISOString()
-  readerLastSyncAt = 0
-  if (!playback.has(jobId)) {
-    playback.set(jobId, { intervals: [], lastTime: null, coverageRatio: 0, completed: false })
-  }
-}
-
-function addPlaybackTrackingListeners(media) {
-  if (!media || typeof media.addEventListener !== 'function') return
-  media.addEventListener('timeupdate', handleTimeUpdate)
-  media.addEventListener('play', handlePlay)
-  media.addEventListener('pause', handlePause)
-  media.addEventListener('seeking', handleSeeking)
-  media.addEventListener('ended', handleEnded)
-}
-
-function removePlaybackTrackingListeners(media) {
-  if (!media || typeof media.removeEventListener !== 'function') return
-  media.removeEventListener('timeupdate', handleTimeUpdate)
-  media.removeEventListener('play', handlePlay)
-  media.removeEventListener('pause', handlePause)
-  media.removeEventListener('seeking', handleSeeking)
-  media.removeEventListener('ended', handleEnded)
-}
-
-function bindPlaybackTrackingTo(media) {
-  if (!media || playbackTrackedMedia === media) return
-  removePlaybackTrackingListeners(playbackTrackedMedia)
-  playbackTrackedMedia = media
-  addPlaybackTrackingListeners(playbackTrackedMedia)
-}
-
-function bindPlaybackTracking() {
-  bindPlaybackTrackingTo(getReaderMedia())
-  const mediaSource = getMediaSource()
-  if (mediaSource && typeof mediaSource.subscribe === 'function' && !unsubscribeMediaSourceTracking) {
-    unsubscribeMediaSourceTracking = mediaSource.subscribe(() => {
-      bindPlaybackTrackingTo(getReaderMedia())
-    })
-  }
-}
-
-function unbindPlaybackTracking() {
-  if (typeof unsubscribeMediaSourceTracking === 'function') {
-    unsubscribeMediaSourceTracking()
-    unsubscribeMediaSourceTracking = null
-  }
-  removePlaybackTrackingListeners(playbackTrackedMedia)
-  playbackTrackedMedia = null
-}
-
-function playbackState() {
-  ensureCurrentJobFromAudioMeta()
-  if (!currentJobId.value) return null
-  if (!playback.has(currentJobId.value)) {
-    playback.set(currentJobId.value, { intervals: [], lastTime: null, coverageRatio: 0, completed: false })
-  }
-  return playback.get(currentJobId.value)
-}
-
 function ensureCurrentJobFromAudioMeta() {
   if (currentJobId.value) {
     startReaderMarksHydration(currentJobId.value)
@@ -2076,110 +2014,20 @@ function ensureCurrentJobFromAudioMeta() {
   const jobId = meta && meta.source === 'youtube-workflow' ? String(meta.jobId || '') : ''
   if (!jobId) return
   currentJobId.value = jobId
-  startReaderSession({ jobId })
+  readerPlaybackTracker.startReaderSession({ jobId })
   startReaderMarksHydration(jobId)
   updateReaderConflictVisibility()
-}
-
-function handlePlay() {
-  const state = playbackState()
-  const audio = getAudio()
-  if (state && audio) state.lastTime = audio.currentTime
-  if (currentJobId.value && readerLastSyncAt === 0) {
-    readerLastSyncAt = Date.now()
-    syncReaderActivity('open')
-  }
-}
-
-function handlePause() {
-  const audio = getAudio()
-  if (audio && audio.ended) return
-  syncReaderActivity('pause')
-}
-
-function handleSeeking() {
-  const state = playbackState()
-  if (state) state.lastTime = null
-}
-
-function handleTimeUpdate() {
-  const state = playbackState()
-  const audio = getAudio()
-  if (!state || !audio || audio.paused) return
-  const current = audio.currentTime
-  const previous = state.lastTime
-  if (Number.isFinite(previous) && current > previous) {
-    const maxNaturalDelta = Math.max(3, 2.5 * Number(audio.playbackRate || 1))
-    if (current - previous <= maxNaturalDelta) {
-      addInterval(state, previous, current)
-      updateCoverage(state, audio.duration)
-      scheduleReaderActivitySync()
-    }
-  }
-  state.lastTime = current
-}
-
-function handleEnded() {
-  const state = playbackState()
-  const audio = getAudio()
-  if (!state || !audio) return
-  updateCoverage(state, audio.duration)
-  if (state.coverageRatio >= 0.7) state.completed = true
-  syncReaderActivity('ended')
-}
-
-function addInterval(state, start, end) {
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return
-  state.intervals.push([start, end])
-  state.intervals.sort((a, b) => a[0] - b[0])
-  const merged = []
-  for (const interval of state.intervals) {
-    const last = merged[merged.length - 1]
-    if (last && interval[0] <= last[1] + 0.25) last[1] = Math.max(last[1], interval[1])
-    else merged.push(interval)
-  }
-  state.intervals = merged
-}
-
-function updateCoverage(state, duration) {
-  if (!Number.isFinite(duration) || duration <= 0) return
-  const covered = state.intervals.reduce((total, item) => total + Math.max(0, item[1] - item[0]), 0)
-  state.coverageRatio = Math.max(0, Math.min(1, covered / duration))
-}
-
-function scheduleReaderActivitySync() {
-  const now = Date.now()
-  if (now - readerLastSyncAt < READER_SYNC_INTERVAL_MS) return
-  readerLastSyncAt = now
-  syncReaderActivity('progress')
 }
 
 async function syncReaderActivity(event = 'progress') {
   if (readerSessionLoadInProgress && event !== 'switch') return null
   if (!currentJobId.value) return null
-  const payload = buildReaderActivityPayload(event)
+  const payload = readerPlaybackTracker.buildReaderActivityPayload(event)
   if (!payload) return null
   const ledger = getReaderActivityLedger(payload.jobId)
   ledger.submit({ jobId: payload.jobId, payload })
   await ledger.waitForIdle()
   return ledger.getState().status === 'saved' ? ledger.getState() : null
-}
-
-function buildReaderActivityPayload(event) {
-  const audio = getAudio()
-  const state = playbackState()
-  if (!currentJobId.value) return null
-  return {
-    jobId: currentJobId.value,
-    event,
-    sessionId: readerSessionId || `${currentJobId.value}-session`,
-    sessionStartedAt: readerSessionStartedAt || new Date().toISOString(),
-    positionSeconds: audio && Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
-    durationSeconds: audio && Number.isFinite(audio.duration) ? audio.duration : 0,
-    intervals: state && Array.isArray(state.intervals) ? state.intervals.map((item) => [item[0], item[1]]) : [],
-    coverageRatio: state && Number.isFinite(state.coverageRatio) ? state.coverageRatio : 0,
-    markCount: getCurrentMarkCount()
-  }
 }
 
 function mergeRecentReaderItem(item) {
@@ -2450,7 +2298,7 @@ function handleBeforeUnload() {
   if (readerSessionLoadInProgress) return
   if (readerUnloadFlushed) return
   ensureCurrentJobFromAudioMeta()
-  const payload = buildReaderActivityPayload('close')
+  const payload = readerPlaybackTracker.buildReaderActivityPayload('close')
   if (!payload) return
   const closeGeneration = readerCloseGeneration
   const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`
