@@ -5,17 +5,28 @@ const source = await fs.readFile(
   new URL('../src/components/YouTubeWorkflowPanel.vue', import.meta.url),
   'utf8',
 )
+const coordinatorSource = await fs.readFile(
+  new URL('../src/composables/use-reader-save-coordinator.js', import.meta.url),
+  'utf8',
+)
 const storageSource = await fs.readFile(
   new URL('../src/services/persistence/reader-outbox-storage.js', import.meta.url),
   'utf8',
 )
 
-assert.match(source, /import \{ createLatestWinsLedger \}/)
-assert.match(source, /const readerMarksLedgers = new Map\(\)/)
-assert.match(source, /const readerActivityLedgers = new Map\(\)/)
+assert.match(coordinatorSource, /export function useReaderSaveCoordinator\(/)
+assert.match(coordinatorSource, /import \{ createLatestWinsLedger \} from '\.\.\/services\/persistence\/latest-wins-ledger\.js'/)
+assert.match(coordinatorSource, /const readerMarksLedgers = new Map\(\)/)
+assert.match(coordinatorSource, /const readerActivityLedgers = new Map\(\)/)
+assert.match(coordinatorSource, /const readerMarksRevisions = new Map\(\)/)
+assert.match(coordinatorSource, /const readerActivityRevisions = new Map\(\)/)
+assert.match(coordinatorSource, /const readerConflicts = new Map\(\)/)
+assert.match(coordinatorSource, /async write\(entry, context\)\s*\{[\s\S]*?youtubeWorkflowClient\.saveReaderMarks\(/)
+assert.match(coordinatorSource, /activityOperationId: context\.operationId/)
 assert.match(source, /getReaderMarksLedger\(jobId\)\.submit\(/)
 assert.match(source, /getReaderActivityLedger\(payload\.jobId\)/)
-assert.match(source, /activityOperationId: context\.operationId/)
+assert.match(source, /useReaderSaveCoordinator\(\{[\s\S]*currentJobId,[\s\S]*getReaderSessionId: \(\) => readerSessionId,[\s\S]*mergeRecentReaderItem,[\s\S]*\}\)/)
+assert.match(source, /readerMarksHydrations = new Map\(\)/)
 assert.match(source, /readerUnloadFlushed/)
 assert.match(source, /handleBeforeUnload\(\)/)
 assert.match(source, /import \{[\s\S]*createReaderOutboxEntry,[\s\S]*removeReaderOutboxEntry,[\s\S]*\} from '\.\.\/services\/persistence\/reader-outbox-storage\.js'/)
@@ -27,10 +38,13 @@ assert.match(storageSource, /function readerOutboxEntryKey\(entry\)/)
 assert.match(storageSource, /function migrateLegacyReaderOutbox\(\)/)
 assert.match(source, /handleReaderPageShow/)
 assert.match(source, /window\.addEventListener\('reader-marks-changed', handleReaderMarksChanged\)/)
+assert.doesNotMatch(source, /const readerMarksLedgers = new Map\(\)/)
+assert.doesNotMatch(source, /const readerActivityLedgers = new Map\(\)/)
+assert.doesNotMatch(source, /readerMarksRevisions\.set\(/)
+assert.doesNotMatch(source, /readerActivityRevisions\.set\(/)
 assert.doesNotMatch(source, /MutationObserver/)
 assert.doesNotMatch(source, /markCountObserver/)
 assert.doesNotMatch(source, /bindMarkCountTracking/)
-assert.match(source, /async write\(entry, context\)\s*\{[\s\S]*?youtubeWorkflowClient\.saveReaderMarks\(/)
 assert.match(source, /youtubeWorkflowClient\.keepaliveReaderMarks\(/)
 assert.doesNotMatch(source, /sendBeacon/)
 

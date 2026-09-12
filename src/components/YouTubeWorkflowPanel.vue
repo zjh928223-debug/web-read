@@ -357,13 +357,13 @@ import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loa
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
-import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 import {
   createReaderOutboxEntry,
   readReaderOutbox,
   writeReaderOutboxEntry,
   removeReaderOutboxEntry,
 } from '../services/persistence/reader-outbox-storage.js'
+import { useReaderSaveCoordinator } from '../composables/use-reader-save-coordinator.js'
 import { createObjectUrlDownloader } from '../services/runtime/download-object-url.js'
 import { createDialogController, createPendingActionGuard } from '../services/runtime/dialog-controller.js'
 import { observeBestEffort, recordBestEffortFailure } from '../services/runtime/best-effort.js'
@@ -422,9 +422,6 @@ const expandedLibraryJobId = ref('')
 const openingJobId = ref('')
 const completionSignal = ref(false)
 const visibleCompletedJobIds = ref([])
-const readerActivityNotice = ref('')
-const readerMarksSaveState = ref('saved')
-const readerActivitySaveState = ref('saved')
 const videoPriority = ref(true)
 const qualityPending = ref(false)
 const panelDialogRoot = ref(null)
@@ -463,107 +460,26 @@ const panelDialogController = createDialogController()
 const qualityDialogController = createDialogController()
 const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
 const panelPending = computed(() => starting.value)
-const readerMarksLedgers = new Map()
-const readerActivityLedgers = new Map()
-const readerMarksRevisions = new Map()
-const readerActivityRevisions = new Map()
 const readerMarksHydrations = new Map()
-const readerConflicts = new Map()
-const readerConflictVisible = ref(false)
-
-function updateReaderConflictVisibility() {
-  const matching = [...readerConflicts.values()].filter(
-    (conflict) => conflict.jobId === currentJobId.value,
-  )
-  readerConflictVisible.value = matching.length > 0
-  matching.forEach((conflict) => {
-    if (conflict.kind === 'marks') readerMarksSaveState.value = 'conflict'
-    else readerActivitySaveState.value = 'conflict'
-    setReaderConflictNotice(conflict)
-  })
-}
-
-function setReaderConflictNotice(conflict) {
-  if (currentJobId.value !== conflict.jobId) return
-  readerActivityNotice.value = conflict.authoritative
-    ? '检测到其他标签页更新；本地最新意图仍未丢失，请确认后重试'
-    : '检测到并发冲突，权威版本暂时无法读取，请稍后重试'
-}
-
-function fetchReaderConflictAuthority(conflict) {
-  if (conflict.authorityFetch) return conflict.authorityFetch
-  conflict.authorityFetch = (async () => {
-    try {
-      conflict.authoritative = conflict.kind === 'marks'
-        ? await youtubeWorkflowClient.getReaderMarks(conflict.jobId)
-        : await youtubeWorkflowClient.getReaderActivity(conflict.jobId)
-      conflict.reloadError = null
-      return conflict.authoritative
-    } catch (reloadError) {
-      conflict.reloadError = reloadError
-      return null
-    } finally {
-      conflict.authorityFetch = null
-      setReaderConflictNotice(conflict)
-    }
-  })()
-  return conflict.authorityFetch
-}
-
-async function loadReaderConflict(kind, jobId, error, localIntent, context, options = {}) {
-  const key = `${kind}:${jobId}`
-  const conflict = {
-    kind,
-    jobId,
-    error,
-    localIntent,
-    context,
-    authoritative: null,
-    authorityFetch: null,
-    resolvePromise: null,
-    retry: typeof options.retry === 'function' ? options.retry : null,
-  }
-  readerConflicts.set(key, conflict)
-  updateReaderConflictVisibility()
-  await fetchReaderConflictAuthority(conflict)
-}
-
-function clearReaderConflict(kind, jobId, operationId = '') {
-  const key = `${kind}:${jobId}`
-  const conflict = readerConflicts.get(key)
-  if (operationId && conflict?.context?.operationId && conflict.context.operationId !== operationId) return
-  readerConflicts.delete(key)
-  updateReaderConflictVisibility()
-}
-
-async function resolveReaderConflict() {
-  const currentConflicts = [...readerConflicts.values()].filter(
-    (conflict) => conflict.jobId === currentJobId.value,
-  )
-  const retries = currentConflicts.map((conflict) => {
-    if (conflict.resolvePromise) return conflict.resolvePromise
-    conflict.resolvePromise = (async () => {
-      const authoritative = conflict.authoritative || await fetchReaderConflictAuthority(conflict)
-      if (!authoritative || !Number.isInteger(authoritative.revision)) return false
-      if (conflict.kind === 'marks') readerMarksRevisions.set(conflict.jobId, authoritative.revision)
-      else readerActivityRevisions.set(conflict.jobId, authoritative.revision)
-      if (conflict.retry) return conflict.retry(authoritative.revision)
-      const ledger = conflict.kind === 'marks'
-        ? getReaderMarksLedger(conflict.jobId)
-        : getReaderActivityLedger(conflict.jobId)
-      return ledger.resolveConflict()
-    })().finally(() => {
-      conflict.resolvePromise = null
-    })
-    return conflict.resolvePromise
-  })
-  if (!retries.length) {
-    readerActivityNotice.value = '正在读取权威版本，请稍后再次确认'
-    return
-  }
-  const results = await Promise.all(retries)
-  if (!results.some(Boolean)) readerActivityNotice.value = '正在读取权威版本，请稍后再次确认'
-}
+const {
+  readerActivityNotice,
+  readerMarksSaveState,
+  readerActivitySaveState,
+  readerConflictVisible,
+  getReaderMarksLedger,
+  getReaderActivityLedger,
+  updateReaderConflictVisibility,
+  loadReaderConflict,
+  clearReaderConflict,
+  resolveReaderConflict,
+  rememberReaderRevision,
+  getReaderRevision,
+  dispose: disposeReaderSaveCoordinator,
+} = useReaderSaveCoordinator({
+  currentJobId,
+  getReaderSessionId: () => readerSessionId,
+  mergeRecentReaderItem,
+})
 
 function rememberWorkflowRevision(payload) {
   const revision = Number(payload && payload.revision)
@@ -673,105 +589,6 @@ async function handleWorkflowMutationConflict(error) {
     // Keep the typed conflict and known revision visible when the refresh is also offline.
   }
   workflowMutationNotice.value = '素材状态刚刚更新，请再试一次。'
-}
-
-async function ensureReaderRevision(revisionMap, jobId, loadRevision) {
-  if (revisionMap.has(jobId)) return revisionMap.get(jobId)
-  try {
-    const payload = await loadRevision()
-    const revision = Number(payload?.revision)
-    if (Number.isInteger(revision) && revision >= 0) {
-      revisionMap.set(jobId, revision)
-      return revision
-    }
-  } catch (_error) {
-    // A missing or temporarily offline revision keeps the existing zero-based fallback.
-  }
-  return 0
-}
-
-function getReaderMarksLedger(jobId) {
-  if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
-  const ledger = createLatestWinsLedger({
-    async write(entry, context) {
-      const expectedRevision = await ensureReaderRevision(
-        readerMarksRevisions,
-        jobId,
-        () => youtubeWorkflowClient.getReaderMarks(jobId),
-      )
-      const saved = await youtubeWorkflowClient.saveReaderMarks(entry.jobId, {
-        marks: entry.marks,
-        expectedRevision,
-        operationId: context.operationId,
-      })
-      if (Number.isInteger(saved?.revision)) readerMarksRevisions.set(jobId, saved.revision)
-      return saved
-    },
-    createOperationId(sequence) {
-      return `reader-marks-${jobId}-${Date.now()}-${sequence}`
-    },
-    onStateChange(state) {
-      if (currentJobId.value !== jobId) return
-      readerMarksSaveState.value = state.status
-      if (state.status === 'conflict') readerActivityNotice.value = '标记存在并发冲突，本地最新意图仍保留，请确认后重试'
-      else if (state.status === 'error') readerActivityNotice.value = '标记保存失败，将在下次修改时重试'
-      else if (state.status === 'saved') {
-        clearReaderConflict('marks', jobId)
-        if (readerActivityNotice.value.startsWith('标记保存失败')
-          || readerActivityNotice.value.startsWith('标记存在并发冲突')
-          || readerActivityNotice.value.includes('本地最新意图仍未丢失')
-          || readerActivityNotice.value.includes('最新进度仍保留')) readerActivityNotice.value = ''
-      }
-    },
-    onConflict(error, localIntent, context) {
-      return loadReaderConflict('marks', jobId, error, localIntent, context)
-    }
-  })
-  readerMarksLedgers.set(jobId, ledger)
-  return ledger
-}
-
-function getReaderActivityLedger(jobId) {
-  if (readerActivityLedgers.has(jobId)) return readerActivityLedgers.get(jobId)
-  const ledger = createLatestWinsLedger({
-    async write(entry, context) {
-      const expectedRevision = await ensureReaderRevision(
-        readerActivityRevisions,
-        jobId,
-        () => youtubeWorkflowClient.getReaderActivity(jobId),
-      )
-      const updated = await youtubeWorkflowClient.recordReaderActivity({
-        ...entry.payload,
-        activityOperationId: context.operationId,
-        activitySequence: context.sequence,
-        expectedRevision,
-      })
-      if (Number.isInteger(updated?.revision)) readerActivityRevisions.set(jobId, updated.revision)
-      mergeRecentReaderItem(updated)
-      return updated
-    },
-    createOperationId(sequence) {
-      return `reader-activity-${jobId}-${readerSessionId || 'session'}-${sequence}`
-    },
-    onStateChange(state) {
-      if (currentJobId.value !== jobId) return
-      readerActivitySaveState.value = state.status
-      if (state.status === 'conflict') readerActivityNotice.value = '进度存在并发冲突，最新进度仍保留，请确认后重试'
-      else if (state.status === 'error') readerActivityNotice.value = '进度保存失败，将保留最新进度重试'
-      else if (state.status === 'saved') {
-        clearReaderConflict('activity', jobId)
-        if (readerActivityNotice.value.startsWith('进度保存失败')
-          || readerActivityNotice.value.startsWith('进度存在并发冲突')
-          || readerActivityNotice.value.includes('本地最新意图仍未丢失')
-          || readerActivityNotice.value.includes('最新进度仍保留')) readerActivityNotice.value = ''
-      }
-    },
-    onConflict(error, localIntent, context) {
-      return loadReaderConflict('activity', jobId, error, localIntent, context)
-    }
-  })
-  readerActivityLedgers.set(jobId, ledger)
-  return ledger
 }
 
 const geminiMode = computed(() => {
@@ -923,15 +740,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('pageshow', handleReaderPageShow)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
   unbindPlaybackTracking()
-  readerMarksLedgers.forEach((ledger) => ledger.dispose())
-  readerMarksLedgers.clear()
-  readerActivityLedgers.forEach((ledger) => ledger.dispose())
-  readerActivityLedgers.clear()
   readerMarksHydrations.clear()
-  readerMarksRevisions.clear()
-  readerActivityRevisions.clear()
-  readerConflicts.clear()
-  readerConflictVisible.value = false
+  disposeReaderSaveCoordinator()
   diagnosticsDownloader.dispose()
 })
 
@@ -1002,7 +812,7 @@ function makeLoader() {
     applyReaderMarks,
     annotationLightweightModule: window.__annotationLightweightModule,
     onReaderMarksLoaded(payload) {
-      if (Number.isInteger(payload?.revision)) readerMarksRevisions.set(String(payload.jobId || currentJobId.value || ''), payload.revision)
+      if (Number.isInteger(payload?.revision)) rememberReaderRevision('marks', String(payload.jobId || currentJobId.value || ''), payload.revision)
     },
     showToast: window.showToast
   })
@@ -1515,7 +1325,7 @@ async function loadJob(job) {
     loadedReadyJobs.add(job.jobId)
     startReaderSession(job)
     observeBestEffort(youtubeWorkflowClient.getReaderActivity(job.jobId).then((activity) => {
-      if (Number.isInteger(activity?.revision)) readerActivityRevisions.set(job.jobId, activity.revision)
+      if (Number.isInteger(activity?.revision)) rememberReaderRevision('activity', job.jobId, activity.revision)
     }), {
       operationId: `reader-background-activity-load-${job.jobId}`,
       reason: 'activity revision hydration is not required for the first rendered reader frame',
@@ -2435,7 +2245,7 @@ function startReaderMarksHydration(jobId) {
     try {
       const payload = await youtubeWorkflowClient.getReaderMarks(normalizedJobId)
       const revision = Number(payload?.revision)
-      if (Number.isInteger(revision) && revision >= 0) readerMarksRevisions.set(normalizedJobId, revision)
+      if (Number.isInteger(revision) && revision >= 0) rememberReaderRevision('marks', normalizedJobId, revision)
       const localChanged = hydration.changed
         || readerMarksFingerprint(getCurrentReaderMarks()) !== hydration.baseline
       if (currentJobId.value !== normalizedJobId || localChanged || !Array.isArray(payload?.marks)) return
@@ -2556,8 +2366,7 @@ function clearReaderOutboxSuccessNotice() {
 
 function settleReaderOutboxSuccess(entry, saved) {
   if (Number.isInteger(saved?.revision)) {
-    if (entry.kind === 'marks') readerMarksRevisions.set(entry.jobId, saved.revision)
-    else readerActivityRevisions.set(entry.jobId, saved.revision)
+    rememberReaderRevision(entry.kind, entry.jobId, saved.revision)
   }
   if (entry.kind === 'activity') mergeRecentReaderItem(saved)
   if (!removeReaderOutboxEntry(entry)) {
@@ -2649,13 +2458,13 @@ function handleBeforeUnload() {
     'marks',
     { jobId: payload.jobId, marks: getCurrentReaderMarks() },
     `reader-marks-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`,
-    readerMarksRevisions.get(payload.jobId) ?? 0,
+    getReaderRevision('marks', payload.jobId) ?? 0,
   )
   const activityEntry = createReaderOutboxEntry(
     'activity',
     payload,
     activityOperationId,
-    readerActivityRevisions.get(payload.jobId) ?? 0,
+    getReaderRevision('activity', payload.jobId) ?? 0,
   )
   if (!marksEntry && !activityEntry) return
   readerUnloadFlushed = true

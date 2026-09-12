@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import net from 'node:net'
+import { ref } from 'vue'
 
 const ledgerSource = await fs.readFile(
   new URL('../src/services/persistence/latest-wins-ledger.js', import.meta.url),
@@ -15,6 +16,10 @@ const clientSource = (await fs.readFile(
 )
 const panelSource = await fs.readFile(
   new URL('../src/components/YouTubeWorkflowPanel.vue', import.meta.url),
+  'utf8',
+)
+const coordinatorSource = await fs.readFile(
+  new URL('../src/composables/use-reader-save-coordinator.js', import.meta.url),
   'utf8',
 )
 const { createLatestWinsLedger } = await import(
@@ -32,12 +37,86 @@ const clientB = createYoutubeWorkflowClient({ baseUrl: `http://127.0.0.1:${port}
 await verifyMarksConflictPolicy()
 await verifyActivityConflictAndIdempotency()
 await verifyConnectionCloseRetryKeepsOneMarksCommit()
-assert.match(panelSource, /status === 'conflict'/, 'panel must render a distinct conflict state')
-assert.match(panelSource, /resolveReaderConflict/, 'panel must expose an explicit conflict resolution action')
-assert.match(panelSource, /readerConflict/, 'panel must retain authoritative conflict context')
+await verifyCoordinatorJobSwitchIsolation()
+assert.match(coordinatorSource, /status === 'conflict'/, 'coordinator must retain a distinct conflict state')
+assert.match(coordinatorSource, /resolveReaderConflict/, 'coordinator must expose explicit conflict resolution')
+assert.match(coordinatorSource, /readerConflicts/, 'coordinator must retain authoritative conflict context')
+assert.match(panelSource, /useReaderSaveCoordinator/, 'panel must create the reader save coordinator')
+assert.match(panelSource, /loadReaderConflict\(/, 'panel must connect outbox conflicts to the coordinator')
 assert.match(panelSource, /readerMarksSaveState\.value = 'dirty'/, 'page close must not report marks as saved')
 assert.match(panelSource, /reader-marks-\$\{payload\.jobId\}-\$\{payload\.sessionId\}-close/, 'page close must carry a stable marks operation id')
 console.log('reader marks/activity conflict checks passed')
+
+async function verifyCoordinatorJobSwitchIsolation() {
+  const currentJobId = ref('job-a')
+  const firstA = deferred()
+  const firstB = deferred()
+  const writes = []
+  const recentItems = []
+  const controlledClient = {
+    async getReaderMarks(jobId) {
+      return { jobId, revision: 0, marks: [] }
+    },
+    async getReaderActivity(jobId) {
+      return { jobId, revision: 0 }
+    },
+    saveReaderMarks(jobId, payload) {
+      writes.push({ jobId, payload })
+      return jobId === 'job-a' ? firstA.promise : firstB.promise
+    },
+    async recordReaderActivity(payload) {
+      return { ...payload, revision: 1 }
+    },
+  }
+  const coordinatorModuleSource = coordinatorSource
+    .replace("import { ref } from 'vue'", "const { ref } = globalThis.__readerSaveCoordinatorDependencies")
+    .replace("import { youtubeWorkflowClient } from './youtube-workflow-client.js'", "const youtubeWorkflowClient = globalThis.__readerSaveCoordinatorDependencies.youtubeWorkflowClient")
+    .replace("import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'", "const { createLatestWinsLedger } = globalThis.__readerSaveCoordinatorDependencies")
+  globalThis.__readerSaveCoordinatorDependencies = {
+    ref,
+    youtubeWorkflowClient: controlledClient,
+    createLatestWinsLedger,
+  }
+  let coordinator = null
+  try {
+    const module = await import(
+      `data:text/javascript;base64,${Buffer.from(coordinatorModuleSource).toString('base64')}#${Date.now()}`
+    )
+    coordinator = module.useReaderSaveCoordinator({
+      currentJobId,
+      getReaderSessionId: () => 'session-a',
+      mergeRecentReaderItem: (item) => recentItems.push(item),
+    })
+
+    const ledgerA = coordinator.getReaderMarksLedger('job-a')
+    ledgerA.submit({ jobId: 'job-a', marks: [{ globalIndex: 1, word: 'A' }] })
+    await tick()
+
+    currentJobId.value = 'job-b'
+    const ledgerB = coordinator.getReaderMarksLedger('job-b')
+    ledgerB.submit({ jobId: 'job-b', marks: [{ globalIndex: 2, word: 'B' }] })
+    for (let attempt = 0; attempt < 10 && writes.length < 2; attempt += 1) await tick()
+    assert.equal(writes.length, 2, 'both job ledgers must begin their own save')
+    assert.equal(coordinator.readerMarksSaveState.value, 'saving', 'job B must own the visible save state')
+
+    firstA.resolve({ jobId: 'job-a', revision: 1 })
+    await ledgerA.waitForIdle()
+    assert.equal(coordinator.readerMarksSaveState.value, 'saving', 'job A completion must not overwrite job B state')
+
+    currentJobId.value = 'job-a'
+    assert.equal(coordinator.getReaderMarksLedger('job-a'), ledgerA, 'returning to job A must reuse its ledger')
+    assert.equal(ledgerA.getState().savedSequence, 1)
+
+    currentJobId.value = 'job-b'
+    firstB.resolve({ jobId: 'job-b', revision: 1 })
+    await ledgerB.waitForIdle()
+    currentJobId.value = 'job-a'
+    assert.equal(coordinator.getReaderMarksLedger('job-a'), ledgerA)
+  } finally {
+    coordinator?.dispose()
+    delete globalThis.__readerSaveCoordinatorDependencies
+  }
+}
 
 async function verifyMarksConflictPolicy() {
   const aRevision = (await clientA.getReaderMarks('job-1')).revision
@@ -266,6 +345,16 @@ function mergeActivity(current, body) {
   if (body.event === 'open') next.openCount += 1
   next.sessions = [...current.sessions, { sessionId: body.sessionId, lastEvent: body.event }]
   return next
+}
+
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 function conflict(code, actualRevision) {
