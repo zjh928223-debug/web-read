@@ -14,6 +14,11 @@ const requestedCounts = String(process.env.READ_WEB_PLAYBACK_SCALE_WORD_COUNTS |
   .split(',')
   .map(Number)
   .filter((value) => fixture.wordCounts.includes(value))
+const diagnosticEnabled = process.env.READ_WEB_PLAYBACK_SCALE_DIAGNOSTIC === '1'
+const diagnosticTracePath = process.env.READ_WEB_PLAYBACK_SCALE_TRACE
+  ? path.resolve(process.env.READ_WEB_PLAYBACK_SCALE_TRACE)
+  : null
+const diagnosticTraceWordCount = Number(process.env.READ_WEB_PLAYBACK_SCALE_TRACE_WORD_COUNT || 10_000)
 const artifact = {
   schema: 'read-web.playback-scale-results',
   schemaVersion: 1,
@@ -22,6 +27,10 @@ const artifact = {
   fixture: { schema: fixture.schema, version: fixture.version, offline: fixture.offline, path: path.relative(repoRoot, fixturePath) },
   errors: [],
   results: [],
+}
+if (diagnosticEnabled) {
+  artifact.diagnostics = { enabled: true, stages: ['sentence-highlight'] }
+  if (diagnosticTracePath) artifact.diagnostics.trace = path.relative(repoRoot, diagnosticTracePath).replaceAll(path.sep, '/')
 }
 
 const browser = await chromium.launch({ headless: true })
@@ -78,6 +87,11 @@ await context.addInitScript(() => {
     longTasks: [],
     listeners: () => ({ active, peak }),
     resetLongTasks() { this.longTasks.length = 0 },
+    drainLongTasks() {
+      const entries = [...this.longTasks]
+      this.longTasks.length = 0
+      return entries
+    },
   }
   if ('PerformanceObserver' in window) {
     try {
@@ -206,6 +220,14 @@ async function runScale(page, wordCount) {
     activeWordCount: document.querySelectorAll('#transcript-vue-container .word-highlight').length,
     activeChunkCount: document.querySelectorAll('#chunk-vue-container .chunk-active').length,
   }))
+  let diagnostics = null
+  if (diagnosticEnabled) {
+    const runWithTrace = diagnosticTracePath && wordCount === diagnosticTraceWordCount
+    const sentenceHighlight = runWithTrace
+      ? await captureSentenceHighlightTrace(page, material, diagnosticTracePath)
+      : await runSentenceHighlightDiagnostic(page, material)
+    diagnostics = { sentenceHighlight }
+  }
   return {
     wordCount,
     segmentCount: material.segmentCount,
@@ -226,6 +248,171 @@ async function runScale(page, wordCount) {
       activeWordCount: runtime.activeWordCount,
       activeChunkCount: runtime.activeChunkCount,
     },
+    ...(diagnostics ? { diagnostics } : {}),
+  }
+}
+
+async function runSentenceHighlightDiagnostic(page, material) {
+  const previous = await page.evaluate(() => ({
+    highlightMode: document.getElementById('highlight-mode-btn')?.textContent?.trim() || '',
+    chunkMode: document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === false,
+  }))
+  const targetCount = fixture.interactionsPerOperation
+  if (material.segmentCount < targetCount) {
+    throw new Error(`Sentence diagnostic needs ${targetCount} segments, received ${material.segmentCount}`)
+  }
+
+  try {
+    await page.evaluate(() => {
+      if (document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === false) {
+        window.toggleChunkMode(false)
+      }
+      const button = document.getElementById('highlight-mode-btn')
+      if (!button || typeof window.cycleHighlightMode !== 'function') {
+        throw new Error('Highlight mode public control is unavailable for sentence diagnostic')
+      }
+      let attempts = 0
+      while (button.textContent?.trim() !== '高亮:句' && attempts < 3) {
+        window.cycleHighlightMode()
+        attempts += 1
+      }
+      if (button.textContent?.trim() !== '高亮:句') {
+        throw new Error('Unable to select sentence highlight mode')
+      }
+    })
+    await page.waitForFunction(() => {
+      const transcript = document.getElementById('transcript-vue-container')
+      const chunk = document.getElementById('chunk-vue-container')
+      const button = document.getElementById('highlight-mode-btn')
+      return transcript?.classList.contains('reader-view-hidden') === false
+        && chunk?.classList.contains('reader-view-hidden') === true
+        && button?.textContent?.trim() === '高亮:句'
+        && document.body.classList.contains('highlight-sentence-mode')
+    })
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
+    await page.evaluate(() => window.__playbackScaleProbe.resetLongTasks())
+
+    const targets = Array.from({ length: targetCount }, (_, index) => index)
+    const samples = []
+    const longTasks = []
+    for (const target of targets) {
+      const segment = material.transcript.segments[target]
+      samples.push(await sample(page, (time) => window.forceUpdateUI(time), segment.start + 0.001))
+      longTasks.push(...await collectLongTasks(page))
+      const correctness = await page.evaluate((segmentIndex) => {
+        const targetElement = document.getElementById(`segment-${segmentIndex}`)
+        const activeElements = [...document.querySelectorAll('#transcript-vue-container .sentence-active')]
+        return {
+          targetActive: targetElement?.classList.contains('sentence-active') === true,
+          activeCount: activeElements.length,
+          activeId: activeElements[0]?.id || '',
+        }
+      }, target)
+      if (!correctness.targetActive || correctness.activeCount !== 1 || correctness.activeId !== `segment-${target}`) {
+        throw new Error(`Sentence highlight correctness failed for segment ${target}`)
+      }
+      await page.evaluate(() => new Promise((resolve) => setTimeout(() => {
+        window.__playbackScaleProbe.resetLongTasks()
+        resolve()
+      }, 0)))
+    }
+
+    const runtime = await page.evaluate(() => {
+      const transcript = document.getElementById('transcript-vue-container')
+      const chunk = document.getElementById('chunk-vue-container')
+      return {
+        visibleMode: transcript?.classList.contains('reader-view-hidden') === false ? 'transcript' : 'chunk',
+        transcript: {
+          visible: transcript?.classList.contains('reader-view-hidden') === false,
+          wordCount: transcript?.querySelectorAll('[data-word-index]').length || 0,
+          segmentCount: transcript?.querySelectorAll('[id^="segment-"]').length || 0,
+        },
+        chunk: {
+          visible: chunk?.classList.contains('reader-view-hidden') === false,
+          wordCount: chunk?.querySelectorAll('[data-word-index]').length || 0,
+          chunkCount: chunk?.querySelectorAll('.chunk-block').length || 0,
+        },
+        activeSentenceCount: transcript?.querySelectorAll('.sentence-active').length || 0,
+        activeSentenceId: transcript?.querySelector('.sentence-active')?.id || '',
+      }
+    })
+    return {
+      samples,
+      targets,
+      longTasks,
+      view: {
+        visibleMode: runtime.visibleMode,
+        transcript: runtime.transcript,
+        chunk: runtime.chunk,
+      },
+      correctness: {
+        sampleCount: samples.length,
+        targetCount: targets.length,
+        firstTarget: targets[0],
+        lastTarget: targets.at(-1),
+        activeSentenceCount: runtime.activeSentenceCount,
+        activeSentenceId: runtime.activeSentenceId,
+      },
+    }
+  } finally {
+    await restorePlaybackScaleState(page, previous)
+  }
+}
+
+async function restorePlaybackScaleState(page, previous) {
+  await page.evaluate((targetChunkMode) => {
+    const chunkVisible = document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === false
+    if (chunkVisible !== targetChunkMode) window.toggleChunkMode(targetChunkMode)
+  }, previous.chunkMode)
+  await page.evaluate((targetHighlightMode) => {
+    const button = document.getElementById('highlight-mode-btn')
+    if (!button || typeof window.cycleHighlightMode !== 'function') return
+    let attempts = 0
+    while (button.textContent?.trim() !== targetHighlightMode && attempts < 3) {
+      window.cycleHighlightMode()
+      attempts += 1
+    }
+    if (button.textContent?.trim() !== targetHighlightMode) {
+      throw new Error(`Unable to restore highlight mode ${targetHighlightMode}`)
+    }
+  }, previous.highlightMode)
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
+}
+
+function collectLongTasks(page) {
+  return page.evaluate(() => new Promise((resolve) => setTimeout(() => {
+    resolve(window.__playbackScaleProbe.drainLongTasks())
+  }, 0)))
+}
+
+async function captureSentenceHighlightTrace(page, material, tracePath) {
+  const cdp = await page.context().newCDPSession(page)
+  const tracingComplete = new Promise((resolve) => cdp.once('Tracing.tracingComplete', resolve))
+  let tracingStarted = false
+  try {
+    await cdp.send('Tracing.start', {
+      categories: 'devtools.timeline,disabled-by-default-devtools.timeline,v8.execute,blink.user_timing',
+      options: 'record-until-full',
+      transferMode: 'ReturnAsStream',
+    })
+    tracingStarted = true
+    return await runSentenceHighlightDiagnostic(page, material)
+  } finally {
+    if (tracingStarted) {
+      await cdp.send('Tracing.end')
+      const { stream } = await tracingComplete
+      const chunks = []
+      let eof = false
+      while (stream && !eof) {
+        const response = await cdp.send('IO.read', { handle: stream })
+        if (response.data) chunks.push(response.data)
+        eof = response.eof === true
+      }
+      if (stream) await cdp.send('IO.close', { handle: stream }).catch(() => {})
+      await mkdir(path.dirname(tracePath), { recursive: true })
+      await writeFile(tracePath, chunks.join(''), 'utf8')
+    }
+    await cdp.detach().catch(() => {})
   }
 }
 
