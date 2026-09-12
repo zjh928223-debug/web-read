@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 115,
-    "behavior": 127,
+    "behavior": 128,
     "browser": 33,
     "performance": 18,
     "release": 17
   },
   "packageScriptCount": 286,
-  "executableScriptCount": 310,
+  "executableScriptCount": 311,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -7667,6 +7667,30 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/reader-marks-hydration-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
         "browser": false,
         "performance": false,
         "release": false,

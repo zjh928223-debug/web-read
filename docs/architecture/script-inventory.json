@@ -48,6 +48,7 @@
     "scripts/lib/windows-owner-cutover.mjs",
     "scripts/lib/windows-owner-pending-journal.mjs",
     "scripts/lib/windows-owner-production-entry.mjs",
+    "scripts/reader-marks-hydration-check.mjs",
     "scripts/reader-playback-tracker-check.mjs",
     "scripts/start-latest-reader.ps1",
     "scripts/vocabulary-repository-browser-reopen-check.cjs",

@@ -355,6 +355,7 @@ import { scheduleGeneratedAnnotationIndexRefresh } from '../composables/session-
 import { createYoutubeWorkflowOperationKey, youtubeWorkflowClient } from '../composables/youtube-workflow-client.js'
 import { createYoutubeWorkflowLoader } from '../composables/youtube-workflow-loader.js'
 import { createReaderSessionPublisher } from '../composables/reader-session-publisher.js'
+import { createReaderMarksHydration } from '../composables/create-reader-marks-hydration.js'
 import { createJobPollingScheduler } from '../services/workflow/job-polling-scheduler.js'
 import { createReaderPlaybackTracker } from '../services/workflow/reader-playback-tracker.js'
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
@@ -454,7 +455,6 @@ const panelDialogController = createDialogController()
 const qualityDialogController = createDialogController()
 const qualityActionGuard = createPendingActionGuard({ onChange: (pending) => { qualityPending.value = pending } })
 const panelPending = computed(() => starting.value)
-const readerMarksHydrations = new Map()
 const readerPlaybackTracker = createReaderPlaybackTracker({
   getCurrentJobId: () => currentJobId.value,
   getReaderMedia,
@@ -481,6 +481,21 @@ const {
   currentJobId,
   getReaderSessionId: () => readerPlaybackTracker.getReaderSessionId(),
   mergeRecentReaderItem,
+})
+const readerMarksHydration = createReaderMarksHydration({
+  getCurrentJobId: () => currentJobId.value,
+  getCurrentReaderMarks,
+  rememberMarksRevision: (jobId, revision) => rememberReaderRevision('marks', jobId, revision),
+  restoreVisibleMarks: async (marks) => {
+    replaceReaderMarksVisible(marks)
+    if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
+      await window.syncAnnotationGenerationEntryStatus()
+    }
+  },
+  submitLocalChanges: () => {
+    submitCurrentReaderMarks()
+    syncReaderActivity('annotation')
+  },
 })
 
 function rememberWorkflowRevision(payload) {
@@ -742,7 +757,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pageshow', handleReaderPageShow)
   window.removeEventListener('reader-marks-changed', handleReaderMarksChanged)
   readerPlaybackTracker.unbindPlaybackTracking()
-  readerMarksHydrations.clear()
+  readerMarksHydration.clear()
   disposeReaderSaveCoordinator()
   diagnosticsDownloader.dispose()
 })
@@ -2006,7 +2021,7 @@ function resumeReaderAudioFromPanel() {
 
 function ensureCurrentJobFromAudioMeta() {
   if (currentJobId.value) {
-    startReaderMarksHydration(currentJobId.value)
+    readerMarksHydration.startReaderMarksHydration(currentJobId.value)
     updateReaderConflictVisibility()
     return
   }
@@ -2015,7 +2030,7 @@ function ensureCurrentJobFromAudioMeta() {
   if (!jobId) return
   currentJobId.value = jobId
   readerPlaybackTracker.startReaderSession({ jobId })
-  startReaderMarksHydration(jobId)
+  readerMarksHydration.startReaderMarksHydration(jobId)
   updateReaderConflictVisibility()
 }
 
@@ -2068,59 +2083,6 @@ function getCurrentReaderMarks() {
   return normalizeReaderMarks(Array.from(markedMap.values()))
 }
 
-function readerMarksFingerprint(marks) {
-  return JSON.stringify((Array.isArray(marks) ? marks : [])
-    .map((mark) => ({
-      globalIndex: Number(mark.globalIndex),
-      word: String(mark.word || ''),
-      start: Number.isFinite(Number(mark.start)) ? Number(mark.start) : null,
-      sourceType: String(mark.sourceType || 'manual-mark'),
-    }))
-    .sort((left, right) => left.globalIndex - right.globalIndex))
-}
-
-function startReaderMarksHydration(jobId) {
-  const normalizedJobId = String(jobId || '').trim()
-  if (!normalizedJobId || readerMarksHydrations.has(normalizedJobId)) return
-  const hydration = {
-    baseline: readerMarksFingerprint(getCurrentReaderMarks()),
-    changed: false,
-    applying: false,
-    pending: true,
-  }
-  readerMarksHydrations.set(normalizedJobId, hydration)
-  hydration.promise = (async () => {
-    try {
-      const payload = await youtubeWorkflowClient.getReaderMarks(normalizedJobId)
-      const revision = Number(payload?.revision)
-      if (Number.isInteger(revision) && revision >= 0) rememberReaderRevision('marks', normalizedJobId, revision)
-      const localChanged = hydration.changed
-        || readerMarksFingerprint(getCurrentReaderMarks()) !== hydration.baseline
-      if (currentJobId.value !== normalizedJobId || localChanged || !Array.isArray(payload?.marks)) return
-      hydration.applying = true
-      try {
-        replaceReaderMarksVisible(payload.marks)
-        if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
-          await window.syncAnnotationGenerationEntryStatus()
-        }
-      } finally {
-        hydration.applying = false
-      }
-    } catch (error) {
-      recordBestEffortFailure(error, {
-        operationId: 'reader-marks-startup-hydration',
-        reason: 'authoritative marks restore is best effort; the visible session remains available when the owner is temporarily offline',
-      })
-    } finally {
-      hydration.pending = false
-      if (currentJobId.value === normalizedJobId && hydration.changed) {
-        submitCurrentReaderMarks()
-        syncReaderActivity('annotation')
-      }
-    }
-  })()
-}
-
 function syncMarkedWordVisuals(marks) {
   document.querySelectorAll('[data-word-index].marked').forEach((el) => el.classList.remove('marked'))
   marks.forEach((mark) => {
@@ -2162,13 +2124,7 @@ function handleReaderMarksChanged() {
   if (readerSessionLoadInProgress) return
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
-  const hydration = readerMarksHydrations.get(currentJobId.value)
-  if (hydration?.pending) {
-    if (!hydration.applying) {
-      hydration.changed = readerMarksFingerprint(getCurrentReaderMarks()) !== hydration.baseline
-    }
-    return
-  }
+  if (readerMarksHydration.deferLocalChange(currentJobId.value)) return
   submitCurrentReaderMarks()
   syncReaderActivity('annotation')
 }
