@@ -23,6 +23,22 @@
       </span>
     </Teleport>
     <Teleport to="body">
+      <LearningPageLoadNotice
+        v-if="isSrsReviewOpen && srsPageLoad.status"
+        page-name="复习页"
+        :failed="srsPageLoad.status === 'failed'"
+        :retry-failed="srsPageLoad.retryFailed"
+        @retry="srsPageLoad.retry()"
+        @close="closeSrsReview"
+      />
+      <LearningPageLoadNotice
+        v-if="isPassagePreviewOpen && passagePreviewItems.length && previewPageLoad.status"
+        page-name="预习页"
+        :failed="previewPageLoad.status === 'failed'"
+        :retry-failed="previewPageLoad.retryFailed"
+        @retry="previewPageLoad.retry()"
+        @close="closePassagePreview"
+      />
       <KeepAlive>
         <SrsReviewPage
           v-if="isSrsReviewMounted"
@@ -64,16 +80,15 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import ToastMessage from './components/ToastMessage.vue'
 import YouTubeWorkflowPanel from './components/YouTubeWorkflowPanel.vue'
 import VideoPlayerFloat from './components/VideoPlayerFloat.vue'
 import TranscriptContainer from './components/TranscriptContainer.vue'
 import ChunkModeView from './components/ChunkModeView.vue'
-import SrsReviewPage from './features/srs-review/SrsReviewPage.vue'
+import LearningPageLoadNotice from './components/LearningPageLoadNotice.vue'
 import { createSrsReviewUiService } from './features/srs-review/srs-review-ui-service.js'
 import { createSrsReviewSourceSelector } from './features/srs-review/srs-review-source-selector.js'
-import PassagePreviewPage from './features/passage-preview/PassagePreviewPage.vue'
 import PassagePreviewSettingsDialog from './features/passage-preview/PassagePreviewSettingsDialog.vue'
 import { usePassagePreview } from './features/passage-preview/use-passage-preview.js'
 import {
@@ -86,6 +101,36 @@ import { getWindowsOwnerVocabularySrsIntegration } from './services/vocabulary/w
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import './features/srs-review/srs-review.css'
 import './features/passage-preview/passage-preview.css'
+
+function createLearningPage(loader) {
+  const state = reactive({ status: '', retry: null, retryFailed: false })
+  const component = defineAsyncComponent({
+    loader: async () => {
+      state.status = 'loading'
+      const page = await loader()
+      state.status = ''
+      state.retry = null
+      return page
+    },
+    onError(_error, retry, _fail, attempts) {
+      state.status = 'failed'
+      state.retryFailed = attempts > 1
+      state.retry = () => {
+        state.status = 'loading'
+        state.retry = null
+        retry()
+      }
+    },
+  })
+  return { component, state }
+}
+
+const { component: SrsReviewPage, state: srsPageLoad } = createLearningPage(
+  () => import('./features/srs-review/SrsReviewPage.vue'),
+)
+const { component: PassagePreviewPage, state: previewPageLoad } = createLearningPage(
+  () => import('./features/passage-preview/PassagePreviewPage.vue'),
+)
 
 const isSrsReviewOpen = ref(false)
 const isSrsReviewMounted = ref(false)
