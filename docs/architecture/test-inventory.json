@@ -3,14 +3,14 @@
   "generatedBy": "scripts/test-inventory.mjs",
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
-    "architecture": 116,
-    "behavior": 125,
-    "browser": 32,
+    "architecture": 115,
+    "behavior": 126,
+    "browser": 33,
     "performance": 18,
     "release": 17
   },
   "packageScriptCount": 286,
-  "executableScriptCount": 308,
+  "executableScriptCount": 309,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -5551,6 +5551,34 @@
         ],
         "sourceRead": true,
         "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/learning-page-lazy-load-check.cjs",
+      "category": "browser",
+      "layers": [
+        "architecture",
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [
+          "asserts-file-shape"
+        ],
+        "sourceRead": false,
+        "browser": true,
         "performance": false,
         "release": false,
         "behaviorAssertions": true,
@@ -11715,9 +11743,8 @@
     },
     {
       "path": "scripts/youtube-workflow-panel-check.cjs",
-      "category": "architecture",
+      "category": "behavior",
       "layers": [
-        "architecture",
         "behavior"
       ],
       "aggregates": [],
@@ -11728,16 +11755,12 @@
       ],
       "invocation": "inventory-only",
       "evidence": {
-        "sourceShape": [
-          "asserts-source-text",
-          "includes-source-text",
-          "matches-source-text"
-        ],
-        "sourceRead": true,
+        "sourceShape": [],
+        "sourceRead": false,
         "browser": false,
         "performance": false,
         "release": false,
-        "behaviorAssertions": true,
+        "behaviorAssertions": false,
         "executesModule": true,
         "startsBrowser": false
       }

@@ -3,12 +3,16 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const root = path.resolve(__dirname, '..')
+const app = fs.readFileSync(path.join(root, 'src/App.vue'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src/components/YouTubeWorkflowPanel.vue'), 'utf8')
 const outboxStorage = fs.readFileSync(path.join(root, 'src/services/persistence/reader-outbox-storage.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow-client.js'), 'utf8')
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
 const core = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/core.py'), 'utf8')
+const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
+const readerRuntime = fs.readFileSync(path.join(root, 'src/composables/reader-runtime.js'), 'utf8')
+const sessionInit = fs.readFileSync(path.join(root, 'src/composables/session-init.js'), 'utf8')
 
 function ruleBodies(selector, declaration) {
   const token = `${selector} {`
@@ -28,9 +32,14 @@ function ruleBodies(selector, declaration) {
 }
 
 assert.ok(panel.includes("const workflowView = ref('library')"), 'material center should open to the library')
+assert.ok(app.includes('<YouTubeWorkflowPanel') && app.includes("import YouTubeWorkflowPanel"), 'App.vue should mount the material workflow panel')
+assert.ok(panel.includes('youtube-material-entry') && panel.includes('素材处理') && panel.includes('后台服务未启动'), 'material entry and deferred service guidance should remain connected')
 assert.ok(panel.includes('<span>素材库</span>') && panel.includes('<span>任务</span>') && panel.includes('<span>设置</span>'), 'navigation should expose only library, tasks, and settings')
 assert.ok(panel.includes('+ 添加素材'), 'add material should be a primary header action')
 assert.ok(panel.includes('开始处理') && panel.includes('youtube-add-material-form'), 'add view should expose one compact primary flow')
+assert.ok(panel.includes('linkCards') && panel.includes('youtube-material-link-input') && panel.includes('@submit.prevent="enqueueUrls"'), 'add flow should show parsed links and submit through the current form')
+assert.ok(panel.includes('parseLinks') && panel.includes('isValidMaterialUrl') && panel.includes('normalizeMaterialUrl') && panel.includes('findWorkflowDuplicate'), 'link input should validate and canonicalize before duplicate lookup')
+assert.ok(panel.includes('linkCardStateText') && panel.includes('linkNotice') && panel.includes('duplicateLinkCards') && panel.includes('primaryActionText'), 'link flow should connect validation, duplicate feedback, and state-aware submission')
 assert.equal(panel.includes('导入旧素材目录'), false, 'legacy directory import should not appear in the frontend')
 assert.equal(panel.includes('选择并扫描目录'), false, 'legacy folder scanning should not appear in the add view')
 assert.equal(panel.includes('createNativePickerController'), false, 'retired legacy picker state should leave the panel component')
@@ -67,6 +76,9 @@ assert.ok(panel.includes('confirmDeleteCredential') && panel.includes('清除已
 assert.ok(panel.includes('2/4 · 生成字幕') && panel.includes('3/4 · AI 切分与翻译'), 'tasks should expose four understandable progress stages')
 assert.ok(panel.includes('intervalMs: 2000') && panel.includes('hiddenIntervalMs: 10000'), 'task polling should use the accepted visible and hidden intervals')
 assert.ok(panel.includes('visibleCompletedJobIds') && panel.includes('}, 5000)'), 'completed tasks should remain visible briefly before leaving the task view')
+assert.ok(panel.includes('jobDisplayTitle') && panel.includes('jobStageProgressText') && panel.includes('jobProgressPercent'), 'queue rows should keep shared title and progress rendering')
+assert.ok(panel.includes('openRecentJob') && panel.includes('youtube-library-open'), 'library materials should remain reopenable from the current library row')
+assert.ok(panel.includes('readerRecent') && panel.includes('recordReaderActivity'), 'library and reader activity should remain connected to the reader endpoints')
 assert.ok(panel.includes('hidePanelAfterLoad()') && panel.indexOf('hidePanelAfterLoad()') < panel.indexOf('loadJob(job)'), 'opening should close the panel before loading the reader')
 assert.ok(panel.includes('reader-background-switch-save') && panel.includes('observeBestEffort(syncReaderActivity'), 'switch progress should persist in the background')
 assert.ok(panel.includes('readerSessionLoadInProgress = true') && panel.includes('if (readerSessionLoadInProgress) return'), 'programmatic session restore must not write one material marks into another material')
@@ -78,6 +90,9 @@ assert.equal(panel.toLowerCase().includes('capsule'), false, 'floating capsule b
 assert.equal(panel.includes('startPanelDrag'), false, 'fixed panel should not keep drag behavior')
 assert.ok(panel.includes('AI 切分结果不可用，请重新 AI 切分') && panel.includes('本地素材不完整，请重新下载'), 'load errors should state reason and remedy directly')
 assert.ok(panel.includes('Windows 阅读器状态同步失败，请稍后重新打开'), 'reader-session owner failures should not be presented as API authentication failures')
+assert.ok(panel.includes('resetChunkDisplay: resetChunkChineseDisplay') && panel.includes('annotationLightweightModule: window.__annotationLightweightModule'), 'reader loading should reconnect generated chunk reset and annotation backfill')
+assert.ok(panel.includes('getReaderMedia') && panel.includes('window.__mediaSource.getActiveMediaElement(audio)') && panel.includes('bindPlaybackTrackingTo(getReaderMedia())'), 'reader activity tracking should follow the active media element')
+assert.ok(panel.includes('refreshCurrentJobMediaForVideoPriority') && panel.includes('youtubeWorkflowClient.getSession(currentJobId.value)') && panel.includes("youtubeWorkflowClient.mediaUrl(currentJobId.value, 'video')"), 'optional video media refresh should preserve current reader media behavior')
 assert.ok(panel.includes('clearMaterialNotice()') && panel.includes('clearMaterialRepairState(job.jobId)'), 'new and successful opens should clear stale material errors')
 assert.equal(panel.includes('打开失败'), false, 'load notices should not add a redundant failure prefix')
 assert.match(panel, /<Teleport to="body">\s*<div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">/, 'quality report should teleport above the material center stacking context')
@@ -127,5 +142,13 @@ assert.ok(styles.includes('--pru-shell-bg: color-mix(in srgb, var(--bg-color)'),
 assert.ok(panel.includes('createReaderSessionPersistence') && panel.includes('readerSessionPersistence:'), 'atomic reader session publishing must remain intact')
 assert.ok(panel.includes("from '../services/persistence/reader-outbox-storage.js'") && panel.includes('keepaliveReaderActivity'), 'reader recovery and unload persistence must remain intact')
 assert.ok(outboxStorage.includes('READER_OUTBOX_ENTRY_PREFIX') && outboxStorage.includes('readerOutboxEntryKey') && outboxStorage.includes('migrateLegacyReaderOutbox'), 'reader outbox storage should retain versioned keys and legacy migration')
+
+const deprecatedEntrySource = index.match(/<details class="deprecated-file-entry">([\s\S]*?)<\/details>/u)?.[1] || ''
+assert.ok(deprecatedEntrySource && index.includes('过时入口'), 'manual reader controls should remain grouped under the deprecated entry')
+for (const controlId of ['import-marks-btn', 'export-json', 'export-md-all', 'toggle-chunk-btn', 'btn-chunk-style']) {
+  assert.ok(deprecatedEntrySource.includes(`id="${controlId}"`), `${controlId} should remain inside the deprecated entry`)
+}
+assert.equal(readerRuntime.includes('YouTubeWorkflowPanel'), false, 'reader-runtime.js should not gain material panel UI logic')
+assert.equal(sessionInit.includes('YouTubeWorkflowPanel'), false, 'session-init.js should not gain material panel UI logic')
 
 console.log('youtube workflow panel v3 check passed')

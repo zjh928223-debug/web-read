@@ -24,7 +24,6 @@ export const ARCHITECTURE_EVIDENCE_OWNED_BY_OTHER_GATES = new Set([
   'scripts/vocabulary-context-evidence-check.cjs',
   'scripts/vocabulary-preview-service-check.cjs',
   'scripts/youtube-workflow-loader-check.cjs',
-  'scripts/youtube-workflow-panel-check.cjs',
   'scripts/youtube-workflow-panel-v3-check.cjs',
 ])
 
