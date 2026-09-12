@@ -5,10 +5,14 @@ const vm = require('node:vm');
 
 const repoRoot = path.resolve(__dirname, '..');
 const sourcePath = path.join(repoRoot, 'src', 'composables', 'transcript-state.js');
-const source = fs.readFileSync(sourcePath, 'utf8');
+const source = fs.readFileSync(sourcePath, 'utf8').replace(
+  /^import \{ getPiniaRuntimeStores \} from '\.\.\/pinia-stores\/runtime-registry\.js';\r?\n/m,
+  ''
+);
 
 const sandbox = {
   window: {},
+  getPiniaRuntimeStores: () => null,
   Set,
   Number,
   Object,
@@ -91,5 +95,45 @@ assert.equal(Array.isArray(api.wordStarts), true);
 assert.equal(api.wordStarts.length, 0);
 assert.equal(api.currentWordIndex, -1);
 assert.equal(api.highlightMode, 2);
+
+const registryStore = {
+  segments: [{ start: 3, words: [] }],
+  words: [{ word: 'Registry', start: 3, globalIndex: 4 }],
+  wordStarts: [3],
+  currentWordIndex: 4,
+  highlightMode: 0,
+  activeWordIdx: 4,
+  activeSegIdx: 1,
+};
+const registrySandbox = {
+  ...sandbox,
+  window: {},
+  getPiniaRuntimeStores: () => ({ transcript: registryStore }),
+};
+vm.runInNewContext(source, registrySandbox, { filename: sourcePath });
+const registryApi = registrySandbox.window.__transcriptState;
+assert.ok(registryApi, 'registry transcript state adapter should attach to window');
+assert.equal(registryApi.segments, registryStore.segments);
+assert.equal(registryApi.words, registryStore.words);
+assert.equal(registryApi.wordStarts, registryStore.wordStarts);
+assert.equal(registryApi.currentWordIndex, 4);
+assert.equal(registryApi.highlightMode, 0);
+assert.equal(registryApi.activeWordIdx, 4);
+assert.equal(registryApi.activeSegIdx, 1);
+
+registryApi.segments = [{ start: 8, words: [] }];
+registryApi.words = [{ word: 'Updated', start: 8, globalIndex: 5 }];
+registryApi.wordStarts = [8];
+registryApi.currentWordIndex = 5;
+registryApi.highlightMode = 1;
+registryApi.activeWordIdx = 5;
+registryApi.activeSegIdx = 2;
+assert.equal(registryStore.segments[0].start, 8);
+assert.equal(registryStore.words[0].word, 'Updated');
+assert.equal(registryStore.wordStarts[0], 8);
+assert.equal(registryStore.currentWordIndex, 5);
+assert.equal(registryStore.highlightMode, 1);
+assert.equal(registryStore.activeWordIdx, 5);
+assert.equal(registryStore.activeSegIdx, 2);
 
 console.log('transcript state check passed');
