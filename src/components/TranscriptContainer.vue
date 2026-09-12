@@ -88,7 +88,7 @@ export default {
       if (isMarkedWord(idx)) {
         classes.marked = true
       }
-      if (idx != null && Array.isArray(ts.previewVocabularyWordIndexes) && ts.previewVocabularyWordIndexes.includes(idx)) {
+      if (idx != null && ts.previewVocabularyWordIndexSet.has(idx)) {
         classes['preview-vocabulary-word'] = true
       }
       return classes

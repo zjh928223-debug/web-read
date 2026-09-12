@@ -15,6 +15,9 @@ const previewStyles = read('styles.css');
 const pronunciationSource = read('src', 'services', 'pronunciation', 'aria-american-pronunciation.js');
 const videoSource = read('src', 'components', 'VideoPlayerFloat.vue');
 const videoModuleSource = read('src', 'composables', 'media-source-module.js');
+const transcriptStoreSource = read('src', 'pinia-stores', 'transcript.js');
+const transcriptComponentSource = read('src', 'components', 'TranscriptContainer.vue');
+const chunkComponentSource = read('src', 'components', 'ChunkModeView.vue');
 
 assert.match(previewSource, /previewButton\.addEventListener\('click', scanPreview\)/);
 assert.match(
@@ -47,6 +50,17 @@ assert.match(
 );
 assert.match(videoSource, /avoidReaderControls/);
 assert.match(videoModuleSource, /previous default was top-right/);
+assert.match(transcriptStoreSource, /import \{ computed, ref \} from 'vue'/);
+assert.match(
+  transcriptStoreSource,
+  /const previewVocabularyWordIndexSet = computed\(\(\) => \{[\s\S]*?return new Set\(Array\.isArray\(indexes\) \? indexes : \[\]\)/,
+  'transcript store should derive a Set without changing the source array values',
+);
+assert.match(transcriptStoreSource, /previewVocabularyWordIndexes,\s*previewVocabularyWordIndexSet/);
+for (const componentSource of [transcriptComponentSource, chunkComponentSource]) {
+  assert.match(componentSource, /idx != null && ts\.previewVocabularyWordIndexSet\.has\(idx\)/);
+  assert.equal(componentSource.includes('previewVocabularyWordIndexes.includes'), false);
+}
 
 async function waitForServer(server, output) {
   const deadline = Date.now() + 20_000;
@@ -219,6 +233,113 @@ async function runPreviewAnnotationClickCheck() {
   }
 }
 
+async function runPreviewHighlightIndexCheck() {
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(targetUrl, { waitUntil: 'networkidle' });
+    await page.waitForSelector('#transcript-vue-container', { state: 'attached' });
+    await page.waitForSelector('#chunk-vue-container', { state: 'attached' });
+    return await page.evaluate(async () => {
+      const { getPiniaRuntimeStores } = await import('/src/pinia-stores/runtime-registry.js');
+      const stores = getPiniaRuntimeStores();
+      if (!stores || !stores.transcript || !stores.chunk) {
+        throw new Error('configured Pinia runtime stores are unavailable');
+      }
+      const transcript = stores.transcript;
+      const chunk = stores.chunk;
+      const originalSegments = transcript.segments;
+      const originalWords = transcript.words;
+      const originalPreviewIndexes = transcript.previewVocabularyWordIndexes;
+      const originalChunkItems = chunk.chunkItems;
+
+      const words = [0, 1, 2, 3, 4].map((globalIndex) => ({
+        word: `word-${globalIndex}`,
+        globalIndex,
+        start: globalIndex,
+        end: globalIndex + 0.5,
+      }));
+      const readHighlightedIndexes = (selector) => Array.from(
+        document.querySelectorAll(`${selector} .preview-vocabulary-word`),
+      ).map((element) => Number(element.dataset.wordIndex));
+      const readSnapshot = () => ({
+        transcript: readHighlightedIndexes('#transcript-vue-container'),
+        chunk: readHighlightedIndexes('#chunk-vue-container'),
+      });
+      const flushVue = async () => {
+        await Promise.resolve();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await Promise.resolve();
+      };
+
+      try {
+        transcript.segments = [{ words }];
+        transcript.words = words;
+        chunk.chunkItems = [{ segId: 0, start: 0, end: 5, words }];
+        transcript.previewVocabularyWordIndexes = [];
+        await flushVue();
+        const initial = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes = [1, 3];
+        await flushVue();
+        const firstReplacement = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes = [2];
+        await flushVue();
+        const secondReplacement = readSnapshot();
+        const setAfterReplacement = {
+          isSet: transcript.previewVocabularyWordIndexSet instanceof Set,
+          hasOldIndex: transcript.previewVocabularyWordIndexSet.has(1),
+          hasNewIndex: transcript.previewVocabularyWordIndexSet.has(2),
+        };
+
+        transcript.previewVocabularyWordIndexes.push(4);
+        await flushVue();
+        const afterPush = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes.splice(0, 1);
+        await flushVue();
+        const afterSplice = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes.length = 0;
+        await flushVue();
+        const afterClear = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes = ['1'];
+        await flushVue();
+        const stringIndex = readSnapshot();
+
+        transcript.previewVocabularyWordIndexes = [1];
+        await flushVue();
+        const numericIndex = readSnapshot();
+
+        return {
+          initial,
+          firstReplacement,
+          secondReplacement,
+          setAfterReplacement,
+          afterPush,
+          afterSplice,
+          afterClear,
+          stringIndex,
+          numericIndex,
+          arrayInterfacePreserved: Array.isArray(transcript.previewVocabularyWordIndexes),
+        };
+      } finally {
+        transcript.segments = originalSegments;
+        transcript.words = originalWords;
+        transcript.previewVocabularyWordIndexes = originalPreviewIndexes;
+        chunk.chunkItems = originalChunkItems;
+        await flushVue();
+      }
+    });
+  } finally {
+    await context.close();
+    await browser.close();
+  }
+}
+
 async function runStaleRefinementButtonCheck() {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
@@ -327,6 +448,21 @@ async function main() {
     assert.equal(annotationClickResult.indexedItemCount, 1, 'displaying preview words should refresh the generated annotation index');
     assert.equal(annotationClickResult.hitTargetId, 'preview-deliberations-target', 'a displayed preview word should resolve its persisted explanation');
     assert.equal(annotationClickResult.hitMeaning, 'careful discussion');
+    const previewHighlightResult = await runPreviewHighlightIndexCheck();
+    assert.deepEqual(previewHighlightResult.initial, { transcript: [], chunk: [] });
+    assert.deepEqual(previewHighlightResult.firstReplacement, { transcript: [1, 3], chunk: [1, 3] });
+    assert.deepEqual(previewHighlightResult.secondReplacement, { transcript: [2], chunk: [2] });
+    assert.deepEqual(previewHighlightResult.setAfterReplacement, {
+      isSet: true,
+      hasOldIndex: false,
+      hasNewIndex: true,
+    });
+    assert.deepEqual(previewHighlightResult.afterPush, { transcript: [2, 4], chunk: [2, 4] });
+    assert.deepEqual(previewHighlightResult.afterSplice, { transcript: [4], chunk: [4] });
+    assert.deepEqual(previewHighlightResult.afterClear, { transcript: [], chunk: [] });
+    assert.deepEqual(previewHighlightResult.stringIndex, { transcript: [], chunk: [] }, 'string indexes should not match numeric global indexes');
+    assert.deepEqual(previewHighlightResult.numericIndex, { transcript: [1], chunk: [1] });
+    assert.equal(previewHighlightResult.arrayInterfacePreserved, true);
     const staleRefinementButtonResult = await runStaleRefinementButtonCheck();
     assert.equal(staleRefinementButtonResult.disabled, false, 'an abandoned refinement should leave the AI refinement button clickable');
     console.log('vocabulary preview UI check passed');
