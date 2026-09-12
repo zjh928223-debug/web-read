@@ -78,6 +78,7 @@ function verifyNoReviewOrDictionaryCoupling() {
   const componentSource = read('src/features/passage-preview/PassagePreviewPage.vue')
   const checkComponentSource = read('src/features/passage-preview/PassagePreviewCheckPage.vue')
   const appSource = read('src/App.vue')
+  const composableSource = read('src/features/passage-preview/use-passage-preview.js')
   assert.doesNotMatch(importerSource, /ReviewState|addWord|createInitialReviewState|indexedDB/i)
   assert.doesNotMatch(componentSource, /ECDICT|again|hard|good|easy|processChunkData|ChunkModeView/i)
   assert.match(componentSource, /v-if="!isRevealed"[\s\S]*看看这个词怎么用/)
@@ -109,13 +110,21 @@ function verifyNoReviewOrDictionaryCoupling() {
   )
   assert.match(appSource, /今日复习[\s\S]*待预习/)
   assert.match(appSource, /<KeepAlive>[\s\S]*<SrsReviewPage/)
-  assert.match(appSource, /passagePreviewAcquisitionRegistrationPromise/)
+  assert.match(appSource, /usePassagePreview/)
+  assert.match(appSource, /requestImportFile:/)
   assert.match(
     appSource,
+    /async function openSrsReviewFromPassagePreview\(\)[\s\S]*?await closePassagePreview\(\)/,
+    'the App must keep the cross-page close-before-review coordination',
+  )
+  assert.match(composableSource, /export function usePassagePreview/)
+  assert.match(composableSource, /passagePreviewAcquisitionRegistrationPromise/)
+  assert.match(
+    composableSource,
     /await reconcileRevealedPreviewAcquisitions\(passagePreviewItems\.value, progress, introducedRecords\)/,
     'reopening a preview batch must skip acquisition records that are already registered',
   )
-  assert.match(appSource, /async function replayPersistedPassagePreviewAcquisitions\(\)/)
+  assert.match(composableSource, /async function replayPersistedPassagePreviewAcquisitions\(\)/)
   assert.match(
     appSource,
     /if \(!vocabularySrsNotReady\.value\) \{\s+void replayPersistedPassagePreviewAcquisitions\(\)/,
@@ -126,22 +135,22 @@ function verifyNoReviewOrDictionaryCoupling() {
     /if \(wasNotReady && !vocabularySrsNotReady\.value\) \{[\s\S]*?void replayPersistedPassagePreviewAcquisitions\(\)/,
     'owner recovery must replay persisted revealed preview items after the existing readiness transition',
   )
-  assert.match(appSource, /resolveCompletedIeltsPreviewAction/)
+  assert.match(composableSource, /resolveCompletedIeltsPreviewAction/)
   assert.match(
-    appSource,
+    composableSource,
     /completionAction\.action === 'keep_completed'[\s\S]*?completionAction\.reason === 'waiting_threshold'[\s\S]*?passagePreviewQueueNotice\.value = completionAction\.notice/,
     'completed preview surfaces must expose the full waiting-threshold notice',
   )
-  assert.match(appSource, /await savePassagePreviewData\(\[\]\)/)
-  assert.match(appSource, /advanceCompletedIeltsPreviewBatch\(currentBatchDate, progress\)/)
-  assert.match(appSource, /openFirstAvailableIeltsPreviewBatch\(\)/)
+  assert.match(composableSource, /await savePassagePreviewData\(\[\]\)/)
+  assert.match(composableSource, /advanceCompletedIeltsPreviewBatch\(currentBatchDate, progress\)/)
+  assert.match(composableSource, /openFirstAvailableIeltsPreviewBatch\(\)/)
   assert.match(
-    appSource,
+    composableSource,
     /async function advanceCompletedIeltsPreviewBatch\(currentBatchDate, progress\) \{\s+if \(!await ensurePreviewGenerationCapacity\(\)\) return false\s+const continuation = await loadIeltsDailyPreviewContinuation\(\)/,
     'completed dated batches must check waiting capacity before reading the next allocation',
   )
   assert.match(
-    appSource,
+    composableSource,
     /async function openFirstAvailableIeltsPreviewBatch\(\) \{\s+if \(!await ensurePreviewGenerationCapacity\(\)\) return false\s+passagePreviewPreparationMessage/,
     'new preview generation must check waiting capacity before selecting or generating a batch',
   )
@@ -193,9 +202,9 @@ function verifyNoReviewOrDictionaryCoupling() {
   assert.match(componentSource, /passage-preview-header-meta/)
   assert.doesNotMatch(componentSource, /preparationStatus/)
   assert.match(componentSource, /修改句子中文快捷键/)
-  assert.match(appSource, /preloadExternalSources: true/)
-  assert.match(appSource, /ensureSentence: true/)
-  assert.doesNotMatch(appSource, /startPassagePreviewBackgroundPreparation/)
+  assert.match(composableSource, /preloadExternalSources: true/)
+  assert.match(composableSource, /ensureSentence: true/)
+  assert.doesNotMatch(composableSource, /startPassagePreviewBackgroundPreparation/)
   assert.match(componentSource, /window\.addEventListener\('keydown', handleShortcutKeydown, true\)/)
   assert.match(componentSource, /sentenceTranslationVisible/)
   assert.match(componentSource, /passage-preview-translation-control/)

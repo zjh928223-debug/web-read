@@ -28,12 +28,16 @@ assert.equal(isPassagePreviewLearningLaunch({ search: '?learning=review' }), fal
 assert.equal(isPassagePreviewLearningLaunch({ search: '' }), false)
 
 const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+const composableSource = await readFile(
+  new URL('../src/features/passage-preview/use-passage-preview.js', import.meta.url),
+  'utf8',
+)
 assert.doesNotMatch(appSource, /isPassagePreviewLearningLaunch/)
 assert.match(appSource, /@click="openPassagePreview"/)
-assert.match(appSource, /async function openPassagePreview\(\)[\s\S]*?await openStoredPassagePreview\(\)/)
+assert.match(composableSource, /async function openPassagePreview\(\)[\s\S]*?await openStoredPassagePreview\(\)/)
 const onMountedBlock = appSource.match(/onMounted\(\(\) => \{[\s\S]*?\n\}\)/)?.[0] || ''
 assert.doesNotMatch(onMountedBlock, /openStoredPassagePreview\(\)/)
-assert.match(appSource, /function openStoredPassagePreview\(\)/)
+assert.match(composableSource, /function openStoredPassagePreview\(\)/)
 
 const launcherSource = await readFile(new URL('./launch-learning-page.ps1', import.meta.url), 'utf8')
 assert.match(launcherSource, /\[string\]\$RuntimeConfigPath = ''/)
