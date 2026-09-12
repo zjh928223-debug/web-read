@@ -29,6 +29,8 @@ node scripts/verify-full.mjs
 
 `verify:full` 固定拥有隔离 Vite 端口 `4193`（development）和 `4194`（production preview）；其他自拥有 browser journeys 使用共享策略分配的随机 browser-safe 端口。它不会启动、停止或复用当前日常 `5174/8766` 或旧回退 `5173/8765`。
 
+在本工作区执行 `npm run dev` 时，Vite 默认使用 `config/runtime.optimization.json`（`5184/8776` 和 optimization 数据根目录）。如需指定其他运行配置，可设置 `READ_WEB_RUNTIME_CONFIG`。
+
 查看 daily-production 正式接管计划（默认无副作用）：
 
 ```powershell

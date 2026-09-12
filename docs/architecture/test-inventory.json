@@ -4,13 +4,13 @@
   "scope": "Package verification/test/release commands, executable Node scripts under scripts/, and Python gates under tools/subtitle-workflow/scripts/.",
   "categories": {
     "architecture": 116,
-    "behavior": 123,
+    "behavior": 125,
     "browser": 32,
     "performance": 18,
     "release": 17
   },
-  "packageScriptCount": 282,
-  "executableScriptCount": 306,
+  "packageScriptCount": 286,
+  "executableScriptCount": 308,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -1227,6 +1227,18 @@
       "owner": "package.json#scripts.verify:optimization-launcher:pwsh"
     },
     {
+      "name": "verify:optimization-stable-front-door",
+      "command": "node scripts/optimization-stable-front-door-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/optimization-stable-front-door-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:optimization-stable-front-door"
+    },
+    {
       "name": "verify:passage-preview",
       "command": "node scripts/passage-preview-verify.cjs",
       "category": "behavior",
@@ -1604,6 +1616,30 @@
         "scripts/preview-target-validation-check.mjs"
       ],
       "owner": "package.json#scripts.verify:preview-target-validation"
+    },
+    {
+      "name": "verify:private-lan-launcher",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/private-lan-launcher-check.ps1",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/private-lan-launcher-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:private-lan-launcher"
+    },
+    {
+      "name": "verify:private-lan-runtime",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/private-lan-runtime-check.ps1",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/private-lan-runtime-check.ps1"
+      ],
+      "owner": "package.json#scripts.verify:private-lan-runtime"
     },
     {
       "name": "verify:production-host-lifecycle",
@@ -3155,6 +3191,18 @@
       "owner": "package.json#scripts.verify:windows-owner-determinism"
     },
     {
+      "name": "verify:windows-owner-domain-cutover",
+      "command": "node scripts/windows-owner-domain-cutover-concurrency-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "invokes": [
+        "scripts/windows-owner-domain-cutover-concurrency-check.mjs"
+      ],
+      "owner": "package.json#scripts.verify:windows-owner-domain-cutover"
+    },
+    {
       "name": "verify:windows-owner-durable-status",
       "command": "node scripts/windows-owner-durable-status-check.mjs",
       "category": "behavior",
@@ -3168,7 +3216,7 @@
     },
     {
       "name": "verify:windows-owner-focused-boundaries",
-      "command": "node scripts/windows-local-owner-contract-check.mjs && node scripts/windows-owner-api-client-check.mjs && node scripts/windows-owner-durable-status-check.mjs && node scripts/windows-owner-legacy-bridge-check.mjs && node scripts/windows-owner-media-capability-check.mjs && node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_request_policy tests.test_windows_owner_receipts tests.test_production_host_prototype.ProductionHostPrototypeTests.test_local_app_host_rejects_untrusted_host_origin_and_missing_token tests.test_production_host_prototype.ProductionHostPrototypeTests.test_serves_dist_spa_health_and_workflow_range tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_supports_head_range_etag_and_rejects_non_media tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_never_accepts_a_caller_supplied_path && node scripts/windows-owner-focused-browser-check.mjs",
+      "command": "node scripts/windows-local-owner-contract-check.mjs && node scripts/windows-owner-api-client-check.mjs && node scripts/windows-owner-durable-status-check.mjs && node scripts/windows-owner-legacy-bridge-check.mjs && node scripts/windows-owner-media-capability-check.mjs && node scripts/windows-owner-domain-cutover-concurrency-check.mjs && node scripts/application-backup-public-loader-boundary-check.mjs && node scripts/application-backup-check.mjs && node scripts/run-python-command.mjs --config config/runtime.optimization.json --cwd tools/subtitle-workflow -- -m unittest tests.test_windows_owner_request_policy tests.test_windows_owner_receipts tests.test_production_host_prototype.ProductionHostPrototypeTests.test_local_app_host_rejects_untrusted_host_origin_and_missing_token tests.test_production_host_prototype.ProductionHostPrototypeTests.test_serves_dist_spa_health_and_workflow_range tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_supports_head_range_etag_and_rejects_non_media tests.test_service_app.ServiceAppTests.test_registered_media_endpoint_never_accepts_a_caller_supplied_path && node scripts/windows-owner-focused-browser-check.mjs",
       "category": "browser",
       "layers": [
         "behavior",
@@ -3181,6 +3229,7 @@
         "scripts/run-python-command.mjs",
         "scripts/windows-local-owner-contract-check.mjs",
         "scripts/windows-owner-api-client-check.mjs",
+        "scripts/windows-owner-domain-cutover-concurrency-check.mjs",
         "scripts/windows-owner-durable-status-check.mjs",
         "scripts/windows-owner-focused-browser-check.mjs",
         "scripts/windows-owner-legacy-bridge-check.mjs",
@@ -6276,6 +6325,30 @@
       "evidence": {
         "sourceShape": [],
         "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/optimization-stable-front-door-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:optimization-stable-front-door",
+      "owners": [
+        "package.json#scripts.verify:optimization-stable-front-door"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
         "browser": false,
         "performance": false,
         "release": false,
@@ -11138,6 +11211,31 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": true
+      }
+    },
+    {
+      "path": "scripts/windows-owner-domain-cutover-concurrency-check.mjs",
+      "category": "behavior",
+      "layers": [
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "package.json#scripts.verify:windows-owner-domain-cutover",
+      "owners": [
+        "package.json#scripts.verify:windows-owner-domain-cutover",
+        "package.json#scripts.verify:windows-owner-focused-boundaries"
+      ],
+      "invocation": "direct",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": true,
+        "browser": false,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": false
       }
     },
     {

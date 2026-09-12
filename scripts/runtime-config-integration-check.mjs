@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { loadRuntimeConfig } from '../src/services/runtime/runtime-config-node.mjs'
+import { loadViteRuntimeConfig } from '../vite.config.mjs'
 
 const legacy = loadRuntimeConfig({ env: {}, cwd: process.cwd() })
 assert.equal(legacy.frontend.port, 5173)
@@ -11,6 +12,11 @@ assert.equal(legacy.python.executable, 'python')
 assert.equal(legacy.tools.ytDlp, 'yt-dlp')
 assert.match(legacy.tools.cookies, /cookies\.txt$/)
 assert.equal(legacy.network.proxyUrl, 'http://127.0.0.1:7897')
+
+const viteDefault = loadViteRuntimeConfig({ env: {}, cwd: process.cwd() })
+assert.equal(viteDefault.frontend.port, 5184)
+assert.equal(viteDefault.backend.port, 8776)
+assert.equal(viteDefault.dataRoot, 'E:\\ReadWebData\\SubtitleWorkflow-Optimization')
 
 const next = loadRuntimeConfig({ configPath: 'config/runtime.next.json', env: {}, cwd: process.cwd() })
 assert.equal(next.frontend.url, 'http://127.0.0.1:5174/')
@@ -76,6 +82,20 @@ try {
     network: { proxyUrl: 'http://127.0.0.1:7000' },
     ai: { model: 'fixture-model' },
   }))
+  const viteSelected = loadViteRuntimeConfig({
+    env: { READ_WEB_RUNTIME_CONFIG: configPath },
+    cwd: process.cwd(),
+  })
+  assert.equal(viteSelected.frontend.port, 5188)
+  assert.equal(viteSelected.backend.port, 8788)
+  assert.equal(viteSelected.dataRoot, path.join(root, 'workflow-data'))
+  const vitePortOverride = loadViteRuntimeConfig({
+    env: { READ_WEB_FRONTEND_PORT: '4193' },
+    cwd: process.cwd(),
+  })
+  assert.equal(vitePortOverride.frontend.port, 4193)
+  assert.equal(vitePortOverride.backend.port, 8776)
+  assert.equal(vitePortOverride.dataRoot, 'E:\\ReadWebData\\SubtitleWorkflow-Optimization')
   const runtime = loadRuntimeConfig({ configPath, env: { READ_WEB_BACKEND_PORT: '8799' } })
   assert.equal(runtime.backend.port, 8799)
   assert.equal(runtime.dataRoot, path.join(root, 'workflow-data'))
@@ -106,6 +126,8 @@ try {
 
 const vite = await fs.readFile(new URL('../vite.config.mjs', import.meta.url), 'utf8')
 assert.match(vite, /loadRuntimeConfig/)
+assert.match(vite, /loadViteRuntimeConfig/)
+assert.match(vite, /runtime\.optimization\.json/)
 assert.match(vite, /runtime\.frontend\.port/)
 assert.match(vite, /runtime\.network\.proxyUrl/)
 assert.match(vite, /runtime\.ai\.model/)

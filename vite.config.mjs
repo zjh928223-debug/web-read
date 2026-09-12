@@ -15,9 +15,18 @@ import { loadRuntimeConfig } from './src/services/runtime/runtime-config-node.mj
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
 
+export function loadViteRuntimeConfig({ env = process.env, cwd = process.cwd() } = {}) {
+  const configPath = env.READ_WEB_RUNTIME_CONFIG
+    || resolve(projectRoot, 'config/runtime.optimization.json')
+  return loadRuntimeConfig({ configPath, env, cwd })
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const runtime = loadRuntimeConfig({ env: { ...env, ...process.env }, cwd: process.cwd() })
+  const runtime = loadViteRuntimeConfig({
+    env: { ...env, ...process.env },
+    cwd: process.cwd(),
+  })
   const ecdictEnabled = process.env.ECDICT_ENABLED === 'true'
   const ecdictServiceUrl = pathToFileURL(resolve(
     projectRoot,

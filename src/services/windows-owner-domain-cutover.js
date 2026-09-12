@@ -203,6 +203,14 @@ export function createWindowsOwnerDomainCutover(options = {}) {
     Array.isArray(options.frozenDomains) ? options.frozenDomains : undefined,
   )
   let ownerClient = options.ownerClient || null
+  let refreshPromise = null
+  let disposed = false
+  const currentRefreshState = () => ({
+    status: cutover.status,
+    authoritativeDomains: state.authoritativeDomains,
+    frozenDomains: state.frozenDomains,
+    health: state.health,
+  })
   const cutover = {
     get status() {
       if (state.readiness !== 'ready') return 'not-ready'
@@ -264,49 +272,49 @@ export function createWindowsOwnerDomainCutover(options = {}) {
       }
       state.readiness = 'not-ready'
       ownerClient = null
-      return {
-        status: cutover.status,
-        authoritativeDomains: state.authoritativeDomains,
-        frozenDomains: state.frozenDomains,
-        health: state.health,
-      }
+      return currentRefreshState()
     },
     async refresh(refreshOptions = {}) {
-      if (typeof fetchImpl !== 'function') {
-        return cutover.markUnavailable()
-      }
-      const nextHealth = await readWindowsOwnerHealth(
-        fetchImpl,
-        healthPath,
-        refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs,
-      )
-      if (!nextHealth || !baseHealthReady(nextHealth)) {
-        return cutover.markUnavailable(nextHealth)
-      }
-      setState(nextHealth)
-      const nextSelection = selectHealthDomains(nextHealth)
-      if (nextSelection.persistedNotReady) ownerClient = null
-      if (!ownerClient && nextSelection.ready.length && !nextSelection.persistedNotReady) {
-        try {
-          ownerClient = createWindowsOwnerApiClient({
-            profileId: nextHealth.profileId,
-            instanceId: SAFE_IDENTITY.test(String(nextHealth.instanceId || '')) ? nextHealth.instanceId : undefined,
-            fetchImpl,
-            timeoutMs: refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs,
-          })
-        } catch (_error) {
-          ownerClient = null
+      if (disposed) return currentRefreshState()
+      if (refreshPromise) return refreshPromise
+      refreshPromise = (async () => {
+        if (disposed) return currentRefreshState()
+        if (typeof fetchImpl !== 'function') {
+          return cutover.markUnavailable()
         }
-      }
-      return {
-        status: cutover.status,
-        authoritativeDomains: state.authoritativeDomains,
-        frozenDomains: state.frozenDomains,
-        health: state.health,
+        const timeoutMs = refreshOptions.timeoutMs === undefined ? healthTimeoutMs : refreshOptions.timeoutMs
+        const nextHealth = await readWindowsOwnerHealth(fetchImpl, healthPath, timeoutMs)
+        if (disposed) return currentRefreshState()
+        if (!nextHealth || !baseHealthReady(nextHealth)) {
+          return cutover.markUnavailable(nextHealth)
+        }
+        setState(nextHealth)
+        const nextSelection = selectHealthDomains(nextHealth)
+        if (nextSelection.persistedNotReady) ownerClient = null
+        if (!ownerClient && nextSelection.ready.length && !nextSelection.persistedNotReady) {
+          try {
+            ownerClient = createWindowsOwnerApiClient({
+              profileId: nextHealth.profileId,
+              instanceId: SAFE_IDENTITY.test(String(nextHealth.instanceId || '')) ? nextHealth.instanceId : undefined,
+              fetchImpl,
+              timeoutMs,
+            })
+          } catch (_error) {
+            ownerClient = null
+          }
+        }
+        return currentRefreshState()
+      })()
+      try {
+        return await refreshPromise
+      } finally {
+        refreshPromise = null
       }
     },
     dispose() {
+      disposed = true
       if (cutover.pollHandle) clearInterval(cutover.pollHandle)
+      ownerClient = null
       if (windowObject.__windowsOwnerDomainCutover === cutover) windowObject.__windowsOwnerDomainCutover = null
     },
   }
