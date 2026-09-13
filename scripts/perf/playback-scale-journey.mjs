@@ -3,7 +3,6 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
-
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const baseUrl = process.env.READ_WEB_PLAYBACK_SCALE_URL
 if (!baseUrl) throw new Error('READ_WEB_PLAYBACK_SCALE_URL is required')
@@ -19,6 +18,11 @@ const diagnosticTracePath = process.env.READ_WEB_PLAYBACK_SCALE_TRACE
   ? path.resolve(process.env.READ_WEB_PLAYBACK_SCALE_TRACE)
   : null
 const diagnosticTraceWordCount = Number(process.env.READ_WEB_PLAYBACK_SCALE_TRACE_WORD_COUNT || 10_000)
+const modeDiagnosticEnabled = process.env.READ_WEB_PLAYBACK_SCALE_MODE_DIAGNOSTIC === '1'
+const modeDiagnosticTracePath = process.env.READ_WEB_PLAYBACK_SCALE_MODE_TRACE
+  ? path.resolve(process.env.READ_WEB_PLAYBACK_SCALE_MODE_TRACE)
+  : null
+const modeDiagnosticTraceWordCount = Number(process.env.READ_WEB_PLAYBACK_SCALE_MODE_TRACE_WORD_COUNT || 10_000)
 const artifact = {
   schema: 'read-web.playback-scale-results',
   schemaVersion: 1,
@@ -28,11 +32,15 @@ const artifact = {
   errors: [],
   results: [],
 }
-if (diagnosticEnabled) {
-  artifact.diagnostics = { enabled: true, stages: ['sentence-highlight'] }
+const diagnosticStages = [
+  ...(diagnosticEnabled ? ['sentence-highlight'] : []),
+  ...(modeDiagnosticEnabled ? ['mode-switch-stable-frame'] : []),
+]
+if (diagnosticStages.length > 0) {
+  artifact.diagnostics = { enabled: true, stages: diagnosticStages }
   if (diagnosticTracePath) artifact.diagnostics.trace = path.relative(repoRoot, diagnosticTracePath).replaceAll(path.sep, '/')
+  if (modeDiagnosticTracePath) artifact.diagnostics.modeTrace = path.relative(repoRoot, modeDiagnosticTracePath).replaceAll(path.sep, '/')
 }
-
 const browser = await chromium.launch({ headless: true })
 const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
 await context.route('**/*', async (route) => {
@@ -102,14 +110,12 @@ await context.addInitScript(() => {
     } catch {}
   }
 })
-
 const page = await context.newPage()
 page.on('console', (message) => {
   if (message.type() === 'error') artifact.errors.push({ type: 'console', text: message.text() })
 })
 page.on('pageerror', (error) => artifact.errors.push({ type: 'pageerror', text: error.message }))
 page.on('requestfailed', (request) => artifact.errors.push({ type: 'requestfailed', url: request.url(), text: request.failure()?.errorText }))
-
 try {
   await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 })
   await page.locator('[data-vue-mounted]').waitFor({ state: 'attached', timeout: 15_000 })
@@ -120,10 +126,8 @@ try {
   await mkdir(path.dirname(outputPath), { recursive: true })
   await writeFile(outputPath, `${JSON.stringify(artifact, null, 2)}\n`, 'utf8')
 }
-
 if (artifact.errors.length) process.exitCode = 1
 console.log(`Playback scale artifact: ${outputPath}`)
-
 async function runScale(page, wordCount) {
   const material = buildMaterial(wordCount)
   await page.evaluate(() => window.__playbackScaleProbe.resetLongTasks())
@@ -139,7 +143,6 @@ async function runScale(page, wordCount) {
   const afterImport = await listenerSnapshot(page)
   await page.evaluate(() => window.__playbackScaleProbe.resetLongTasks())
   const samples = { word: [], chunk: [], seek: [], mark: [], mode: [] }
-
   await page.evaluate(() => {
     const button = document.getElementById('highlight-mode-btn')
     if (!button || typeof window.cycleHighlightMode !== 'function') {
@@ -161,7 +164,6 @@ async function runScale(page, wordCount) {
       window.forceUpdateUI(start, { wordIndex })
     }, index))
   }
-
   await page.evaluate(() => window.toggleChunkMode(true))
   await page.locator(`#chunk-${material.segmentCount - 1}`).waitFor({ state: 'attached', timeout: 30_000 })
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
@@ -174,7 +176,6 @@ async function runScale(page, wordCount) {
     }, index))
   }
   await page.evaluate(() => window.toggleChunkMode(false))
-
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.seek.push(await sample(page, (wordIndex) => {
       const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
@@ -187,7 +188,6 @@ async function runScale(page, wordCount) {
       audio.dispatchEvent(new Event('seeked'))
     }, index))
   }
-
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.mark.push(await sample(page, (wordIndex) => {
       const word = document.querySelector(`#transcript-vue-container [data-word-index="${wordIndex}"]`)
@@ -198,7 +198,6 @@ async function runScale(page, wordCount) {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: markKey, bubbles: true }))
     }, index))
   }
-
   for (let index = 0; index < fixture.interactionsPerOperation; index += 1) {
     samples.mode.push(await sample(page, () => window.toggleChunkMode(), null, false))
   }
@@ -220,13 +219,20 @@ async function runScale(page, wordCount) {
     activeWordCount: document.querySelectorAll('#transcript-vue-container .word-highlight').length,
     activeChunkCount: document.querySelectorAll('#chunk-vue-container .chunk-active').length,
   }))
-  let diagnostics = null
+  const diagnostics = {}
   if (diagnosticEnabled) {
     const runWithTrace = diagnosticTracePath && wordCount === diagnosticTraceWordCount
     const sentenceHighlight = runWithTrace
       ? await captureSentenceHighlightTrace(page, material, diagnosticTracePath)
       : await runSentenceHighlightDiagnostic(page, material)
-    diagnostics = { sentenceHighlight }
+    diagnostics.sentenceHighlight = sentenceHighlight
+  }
+  if (modeDiagnosticEnabled) {
+    const runWithTrace = modeDiagnosticTracePath && wordCount === modeDiagnosticTraceWordCount
+    const modeSwitchStableFrame = runWithTrace
+      ? await captureTrace(page, modeDiagnosticTracePath, () => runModeSwitchStableFrameDiagnostic(page))
+      : await runModeSwitchStableFrameDiagnostic(page)
+    diagnostics.modeSwitchStableFrame = modeSwitchStableFrame
   }
   return {
     wordCount,
@@ -248,10 +254,9 @@ async function runScale(page, wordCount) {
       activeWordCount: runtime.activeWordCount,
       activeChunkCount: runtime.activeChunkCount,
     },
-    ...(diagnostics ? { diagnostics } : {}),
+    ...(Object.keys(diagnostics).length > 0 ? { diagnostics } : {}),
   }
 }
-
 async function runSentenceHighlightDiagnostic(page, material) {
   const previous = await page.evaluate(() => ({
     highlightMode: document.getElementById('highlight-mode-btn')?.textContent?.trim() || '',
@@ -261,7 +266,6 @@ async function runSentenceHighlightDiagnostic(page, material) {
   if (material.segmentCount < targetCount) {
     throw new Error(`Sentence diagnostic needs ${targetCount} segments, received ${material.segmentCount}`)
   }
-
   try {
     await page.evaluate(() => {
       if (document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === false) {
@@ -291,7 +295,6 @@ async function runSentenceHighlightDiagnostic(page, material) {
     })
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
     await page.evaluate(() => window.__playbackScaleProbe.resetLongTasks())
-
     const targets = Array.from({ length: targetCount }, (_, index) => index)
     const samples = []
     const longTasks = []
@@ -316,7 +319,6 @@ async function runSentenceHighlightDiagnostic(page, material) {
         resolve()
       }, 0)))
     }
-
     const runtime = await page.evaluate(() => {
       const transcript = document.getElementById('transcript-vue-container')
       const chunk = document.getElementById('chunk-vue-container')
@@ -378,6 +380,57 @@ async function restorePlaybackScaleState(page, previous) {
   }, previous.highlightMode)
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())))
 }
+async function runModeSwitchStableFrameDiagnostic(page) {
+  const previous = await page.evaluate(() => ({ highlightMode: document.getElementById('highlight-mode-btn')?.textContent?.trim() || '', chunkMode: document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === false }))
+  const transitionCount = 20
+  const samples = { transcriptToChunk: [], chunkToTranscript: [] }
+  try {
+    await page.evaluate(() => {
+      const chunk = document.getElementById('chunk-vue-container')
+      if (chunk?.classList.contains('reader-view-hidden') === false) window.toggleChunkMode(false)
+      const audio = document.getElementById('audio-player')
+      if (audio) audio.currentTime = 0.11
+      window.forceUpdateUI(0.11)
+    })
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+    for (let index = 0; index < transitionCount; index += 1) {
+      const targetChunkMode = index % 2 === 0
+      const started = performance.now()
+      await page.evaluate((target) => window.toggleChunkMode(target), targetChunkMode)
+      await page.waitForFunction((target) => {
+        const transcript = document.getElementById('transcript-vue-container')
+        const chunk = document.getElementById('chunk-vue-container')
+        if (!transcript || !chunk) return false
+        const transcriptVisible = !transcript.classList.contains('reader-view-hidden')
+        const chunkVisible = !chunk.classList.contains('reader-view-hidden')
+        const activeRoot = target ? chunk : transcript
+        return transcriptVisible === !target
+          && chunkVisible === target
+          && activeRoot.querySelectorAll('.word-highlight').length === 1
+          && !transcript.querySelector('.sentence-active')
+      }, targetChunkMode, { timeout: 30_000 })
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)))
+      samples[targetChunkMode ? 'transcriptToChunk' : 'chunkToTranscript'].push(performance.now() - started)
+    }
+    const finalState = await page.evaluate(() => {
+      const transcript = document.getElementById('transcript-vue-container')
+      const chunk = document.getElementById('chunk-vue-container')
+      return {
+        visibleMode: chunk?.classList.contains('reader-view-hidden') ? 'transcript' : 'chunk',
+        activeWordCount: document.querySelectorAll('#transcript-vue-container .word-highlight, #chunk-vue-container .word-highlight').length,
+        activeChunkCount: chunk?.querySelectorAll('.chunk-active').length || 0,
+        activeSentenceCount: transcript?.querySelectorAll('.sentence-active').length || 0,
+      }
+    })
+    return {
+      transitionCount,
+      samples,
+      correctness: { transitionCount, transcriptToChunkCount: samples.transcriptToChunk.length, chunkToTranscriptCount: samples.chunkToTranscript.length, allStatesValid: true, finalVisibleMode: finalState.visibleMode, finalActiveWordCount: finalState.activeWordCount, finalActiveChunkCount: finalState.activeChunkCount, finalActiveSentenceCount: finalState.activeSentenceCount },
+    }
+  } finally {
+    await restorePlaybackScaleState(page, previous)
+  }
+}
 
 function collectLongTasks(page) {
   return page.evaluate(() => new Promise((resolve) => setTimeout(() => {
@@ -386,6 +439,10 @@ function collectLongTasks(page) {
 }
 
 async function captureSentenceHighlightTrace(page, material, tracePath) {
+  return captureTrace(page, tracePath, () => runSentenceHighlightDiagnostic(page, material))
+}
+
+async function captureTrace(page, tracePath, operation) {
   const cdp = await page.context().newCDPSession(page)
   const tracingComplete = new Promise((resolve) => cdp.once('Tracing.tracingComplete', resolve))
   let tracingStarted = false
@@ -396,7 +453,7 @@ async function captureSentenceHighlightTrace(page, material, tracePath) {
       transferMode: 'ReturnAsStream',
     })
     tracingStarted = true
-    return await runSentenceHighlightDiagnostic(page, material)
+    return await operation()
   } finally {
     if (tracingStarted) {
       await cdp.send('Tracing.end')

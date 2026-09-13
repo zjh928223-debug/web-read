@@ -3,7 +3,7 @@
     ref="rootElement"
     id="chunk-vue-container"
     class="reading-area chunk-mode"
-    :class="{ 'cn-mode-focus': chunkState.chunkFocusMode, 'reader-view-hidden': !chunkState.isChunkMode }"
+    :class="{ 'cn-mode-focus': chunkState.chunkFocusMode }"
   >
     <div
       v-for="(chunk, idx) in chunkState.chunkItems"
@@ -73,12 +73,23 @@ export default {
       activeChunkElement = nextElement
     }
 
+    function syncChunkVisibility() {
+      if (!rootElement.value) return
+      rootElement.value.classList.toggle('reader-view-hidden', !chunkState.isChunkMode)
+    }
+
     watch(
       () => chunkState.activeChunkIdx,
       () => nextTick(syncActiveChunkClass)
     )
+    watch(
+      () => chunkState.isChunkMode,
+      () => nextTick(syncChunkVisibility)
+    )
     onMounted(syncActiveChunkClass)
+    onMounted(syncChunkVisibility)
     onUpdated(syncActiveChunkClass)
+    onUpdated(syncChunkVisibility)
     onBeforeUnmount(() => {
       if (activeChunkElement) activeChunkElement.classList.remove('chunk-active')
       activeChunkElement = null

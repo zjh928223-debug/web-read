@@ -77,6 +77,16 @@ try {
   }, { material: materialA, audioSrc: makeSilentWavDataUrl(8) })
   await page.locator('#segment-2').waitFor({ state: 'attached', timeout: 10_000 })
   await waitForNextAnimationFrame(page)
+  await waitForViewMode(page, 'transcript')
+
+  await page.evaluate(() => {
+    window.__sentenceHighlightStores.chunk.isChunkMode = true
+  })
+  await waitForViewMode(page, 'chunk')
+  await page.evaluate(() => {
+    window.__sentenceHighlightStores.chunk.isChunkMode = false
+  })
+  await waitForViewMode(page, 'transcript')
 
   await setTranscriptState(page, 2, -1)
   await waitForSentenceIds(page, [])
@@ -173,6 +183,61 @@ try {
       && chunk.querySelector('#chunk-word-3')?.classList.contains('preview-vocabulary-word')
   }, null, { timeout: 10_000 })
 
+  await page.evaluate(() => {
+    window.__sentenceHighlightFocusBefore = document.getElementById('chunk-vue-container')?.classList.contains('cn-mode-focus') === true
+    window.toggleChunkFocusMode()
+  })
+  await page.waitForFunction(() => {
+    const transcript = document.getElementById('transcript-vue-container')
+    const chunk = document.getElementById('chunk-vue-container')
+    return chunk?.classList.contains('reader-view-hidden') === false
+      && transcript?.classList.contains('reader-view-hidden') === true
+      && chunk.classList.contains('cn-mode-focus') !== window.__sentenceHighlightFocusBefore
+  })
+  await page.evaluate(() => window.toggleChunkFocusMode())
+  await page.waitForFunction(() => document.getElementById('chunk-vue-container')?.classList.contains('cn-mode-focus') === window.__sentenceHighlightFocusBefore)
+
+  const chunkCnKey = (await page.locator('#hotkey-chunk-cn-input').inputValue()) || 'c'
+  await page.evaluate(() => {
+    const store = window.__sentenceHighlightStores.chunk
+    store.chunkCNVisible = false
+    store.chunkCNHoldMode = false
+  })
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => element.classList.contains('hidden-cn'))
+  })
+  await page.keyboard.press(chunkCnKey)
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => !element.classList.contains('hidden-cn'))
+  })
+  await page.keyboard.press(chunkCnKey)
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => element.classList.contains('hidden-cn'))
+  })
+
+  await page.evaluate(() => {
+    const store = window.__sentenceHighlightStores.chunk
+    store.chunkCNVisible = false
+    store.chunkCNHoldMode = true
+  })
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => element.classList.contains('hidden-cn'))
+  })
+  await page.keyboard.down(chunkCnKey)
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => !element.classList.contains('hidden-cn'))
+  })
+  await page.keyboard.up(chunkCnKey)
+  await page.waitForFunction(() => {
+    const translations = [...document.querySelectorAll('#chunk-vue-container .chunk-cn')]
+    return translations.length > 0 && translations.every((element) => element.classList.contains('hidden-cn'))
+  })
+
   await page.evaluate(() => window.toggleChunkMode(false))
   await page.waitForFunction(() => document.getElementById('chunk-vue-container')?.classList.contains('reader-view-hidden') === true)
   await page.evaluate(() => window.cycleHighlightMode())
@@ -185,7 +250,13 @@ try {
     const activeElement = document.querySelector('#transcript-vue-container .sentence-active')
     if (!app || typeof app.unmount !== 'function') throw new Error('Vue app unmount handle is unavailable')
     if (!activeElement) throw new Error('Active sentence is unavailable before unmount')
+    const pinia = Reflect.ownKeys(app._context?.provides || {})
+      .map((key) => app._context.provides[key])
+      .find((value) => value?._s instanceof Map)
+    if (!pinia) throw new Error('Pinia remount instance is unavailable')
+    window.__sentenceHighlightStores.chunk.isChunkMode = true
     window.__sentenceHighlightUnmountProbe = activeElement
+    window.__sentenceHighlightRemountPinia = pinia
     app.unmount()
   })
   await page.waitForFunction(() => {
@@ -193,12 +264,51 @@ try {
     return oldElement instanceof HTMLElement
       && !oldElement.classList.contains('sentence-active')
       && document.getElementById('transcript-vue-container') === null
+      && document.getElementById('chunk-vue-container') === null
   }, null, { timeout: 10_000 })
   await page.evaluate(() => {
     window.__sentenceHighlightStores.transcript.activeSegIdx = 2
   })
   await page.waitForTimeout(100)
   assert.equal(await page.locator('#transcript-vue-container').count(), 0)
+
+  await page.evaluate(async () => {
+    const root = document.getElementById('vue-root')
+    const pinia = window.__sentenceHighlightRemountPinia
+    if (!root || !pinia) throw new Error('Vue app remount dependencies are unavailable')
+    const [{ createApp }, { default: App }] = await Promise.all([
+      import('/node_modules/.vite/deps/vue.js'),
+      import('/src/App.vue'),
+    ])
+    const app = createApp(App)
+    app.use(pinia)
+    app.mount(root)
+  })
+  await waitForViewMode(page, 'chunk')
+
+  await page.evaluate(() => {
+    const chunk = window.__sentenceHighlightStores.chunk
+    window.__sentenceHighlightExpectedFocus = !chunk.chunkFocusMode
+    chunk.chunkFocusMode = window.__sentenceHighlightExpectedFocus
+  })
+  await page.waitForFunction(() => {
+    const transcript = document.getElementById('transcript-vue-container')
+    const chunk = document.getElementById('chunk-vue-container')
+    return chunk?.classList.contains('reader-view-hidden') === false
+      && transcript?.classList.contains('reader-view-hidden') === true
+      && chunk.classList.contains('cn-mode-focus') === window.__sentenceHighlightExpectedFocus
+  })
+
+  await page.evaluate(() => {
+    window.__sentenceHighlightStores.transcript.previewVocabularyWordIndexes = [0]
+  })
+  await page.waitForFunction(() => {
+    const transcript = document.getElementById('transcript-vue-container')
+    const chunk = document.getElementById('chunk-vue-container')
+    return chunk?.classList.contains('reader-view-hidden') === false
+      && transcript?.classList.contains('reader-view-hidden') === true
+      && transcript.querySelector('#word-0')?.classList.contains('preview-vocabulary-word') === true
+  })
 
   assert.deepEqual(consoleErrors, [])
   assert.deepEqual(pageErrors, [])
@@ -257,6 +367,18 @@ function waitForSentenceIds(page, expected) {
   return page.waitForFunction((ids) => {
     const actual = [...document.querySelectorAll('#transcript-vue-container .sentence-active')].map((element) => element.id)
     return actual.length === ids.length && actual.every((id, index) => id === ids[index])
+  }, expected, { timeout: 10_000 })
+}
+
+function waitForViewMode(page, expected) {
+  return page.waitForFunction((mode) => {
+    const transcript = document.getElementById('transcript-vue-container')
+    const chunk = document.getElementById('chunk-vue-container')
+    const transcriptVisible = transcript?.classList.contains('reader-view-hidden') === false
+    const chunkVisible = chunk?.classList.contains('reader-view-hidden') === false
+    return mode === 'chunk'
+      ? transcriptVisible === false && chunkVisible === true
+      : transcriptVisible === true && chunkVisible === false
   }, expected, { timeout: 10_000 })
 }
 

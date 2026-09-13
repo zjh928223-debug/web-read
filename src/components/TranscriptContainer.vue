@@ -3,7 +3,6 @@
     ref="rootElement"
     id="transcript-vue-container"
     class="reading-area"
-    :class="{ 'reader-view-hidden': chunkModeActive }"
   >
     <div
       v-for="(seg, idx) in ts.segments"
@@ -34,7 +33,7 @@
 </template>
 
 <script>
-import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { useTranscriptStore } from '../pinia-stores/transcript.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { runtimeState } from '../composables/runtime-state-facade.js'
@@ -63,9 +62,18 @@ export default {
       activeWordElement = nextElement
     }
 
+    function syncTranscriptVisibility() {
+      if (!rootElement.value) return
+      rootElement.value.classList.toggle('reader-view-hidden', chunk.isChunkMode)
+    }
+
     watch(
       () => ts.activeWordIdx,
       () => nextTick(syncActiveWordClass)
+    )
+    watch(
+      () => chunk.isChunkMode,
+      () => nextTick(syncTranscriptVisibility)
     )
 
     function syncActiveSentenceClass() {
@@ -91,8 +99,10 @@ export default {
     )
     onMounted(syncActiveWordClass)
     onMounted(syncActiveSentenceClass)
+    onMounted(syncTranscriptVisibility)
     onUpdated(syncActiveWordClass)
     onUpdated(syncActiveSentenceClass)
+    onUpdated(syncTranscriptVisibility)
     onBeforeUnmount(() => {
       if (activeWordElement) activeWordElement.classList.remove('word-highlight')
       activeWordElement = null
@@ -144,11 +154,7 @@ export default {
       handleTranscriptWordContextMenu({ word: word, event: event })
     }
 
-    const chunkModeActive = computed(function () {
-      return chunk.isChunkMode || false
-    })
-
-    return { ts, rootElement, chunkModeActive, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
+    return { ts, rootElement, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
   }
 }
 </script>
