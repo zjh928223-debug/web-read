@@ -387,7 +387,7 @@
               wordCount: state.words.length
           });
            if (!state.isChunkMode) renderTranscript();
-           syncAnnotationGenerationEntryStatus();
+           syncAnnotationGenerationEntryStatus({ source: 'restore' });
            bridgeToPinia();
            if (state.chunkItems.length > 0) {
            }

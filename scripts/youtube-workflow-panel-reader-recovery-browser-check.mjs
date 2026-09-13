@@ -109,7 +109,8 @@ async function verifyConflictReloadAndSingleFlight(jobId) {
     const url = new URL(response.url())
     return response.request().method() === 'GET' && url.pathname.endsWith('/reader-marks')
   })
-  await setReaderState(page, jobId, 'initial', true)
+  await setReaderState(page, jobId, 'initial')
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('reader-marks-changed', { detail: { source: 'restore' } })))
   await (await initialAuthorityResponse).finished()
   authorityGets = 0
   await postJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`, {
@@ -173,13 +174,14 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
   })
   await firstPage.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await firstPage.waitForSelector('.youtube-reader-controls .small-btn')
-  await setReaderState(firstPage, jobId, 'page-close')
+  await hydrateReaderMarks(firstPage, jobId)
   await firstPage.route(`${appUrl}/api/**`, async (route) => {
     if (route.request().method() === 'POST' && isReaderWrite(route.request().url())) {
       return route.abort('failed')
     }
     return route.continue()
   })
+  await setReaderState(firstPage, jobId, 'page-close', true)
   await firstPage.evaluate(() => window.dispatchEvent(new Event('pagehide')))
   try {
     await waitFor(() => unloadRequests.length >= 2, 'keepalive requests')
@@ -193,10 +195,16 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
   assert.equal(storedEntries.every(({ value }) => value.jobId === jobId), true)
   assert.equal(storedEntries.every(({ value }) => ['marks', 'activity'].includes(value.kind)), true)
   assert.equal(storedEntries.every(({ value }) => value.operationId && Number.isInteger(value.expectedRevision)), true)
+  const storedMarksEntry = storedEntries.find(({ value }) => value.kind === 'marks')?.value
+  assert.equal(storedMarksEntry?.intent?.source, 'local-edit')
+  assert.equal(Number.isInteger(storedMarksEntry?.intent?.localVersion), true)
+  assert.ok(storedMarksEntry.intent.localVersion >= 1)
   const storedOutbox = JSON.stringify(storedEntries)
   assert.equal(storedOutbox.includes(token), false, 'outbox must not persist the service token')
   assert.equal(storedOutbox.includes('127.0.0.1'), false, 'outbox must not persist a private service path')
-  const keepaliveFetches = await firstPage.evaluate(() => window.__readerRecoveryFetches.filter((item) => item.method === 'POST' && (item.url.includes('/reader-marks') || item.url.includes('/reader/activity'))))
+  const keepaliveFetches = await firstPage.evaluate(() => window.__readerRecoveryFetches.filter((item) => item.method === 'POST'
+    && item.keepalive
+    && (item.url.includes('/reader-marks') || item.url.includes('/reader/activity'))))
   assert.equal(keepaliveFetches.length, 2)
   assert.equal(keepaliveFetches.every((item) => item.keepalive === true), true)
   assert.equal(unloadRequests.every((request) => request.headers['x-read-web-token'] === token), true)
@@ -228,7 +236,17 @@ async function verifyCloseOutboxReplayAndAuth(jobId) {
   })
   await replayPage.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await replayPage.waitForSelector('.youtube-reader-controls .small-btn')
-  await waitFor(async () => (await readOutboxEntries(replayPage)).length === 0, 'successful outbox replay cleanup')
+  try {
+    await waitFor(async () => (await readOutboxEntries(replayPage)).length === 0, 'successful outbox replay cleanup')
+  } catch (error) {
+    const debug = await replayPage.evaluate((prefix) => ({
+      entries: Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+        .filter((key) => key?.startsWith(prefix))
+        .map((key) => ({ key, raw: localStorage.getItem(key) })),
+      bodyText: document.body.innerText,
+    }), outboxEntryPrefix)
+    throw new Error(`successful outbox replay cleanup failed: ${JSON.stringify({ debug, replayRequests })}; ${error.message}`)
+  }
   const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
   const activity = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-activity`)
   assert.equal(marks.revision, 1, 'replayed marks must commit once')
@@ -256,12 +274,16 @@ async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) 
   ])
   await installLegacyEnvelopeRaceBarrier(firstPage, 'one')
   await installLegacyEnvelopeRaceBarrier(secondPage, 'two')
-  await setReaderState(firstPage, jobOneId, 'concurrent-one')
-  await setReaderState(secondPage, jobTwoId, 'concurrent-two')
+  await Promise.all([
+    hydrateReaderMarks(firstPage, jobOneId),
+    hydrateReaderMarks(secondPage, jobTwoId),
+  ])
   await Promise.all([
     abortReaderWrites(firstPage),
     abortReaderWrites(secondPage),
   ])
+  await setReaderState(firstPage, jobOneId, 'concurrent-one', true)
+  await setReaderState(secondPage, jobTwoId, 'concurrent-two', true)
   await Promise.all([
     dispatchPageHide(firstPage, false),
     dispatchPageHide(secondPage, false),
@@ -300,8 +322,12 @@ async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) 
   ])
   await abortReaderWrites(sameFirstPage)
   await abortReaderWrites(sameSecondPage)
-  await setReaderState(sameFirstPage, sameJobId, 'same-job-one')
-  await setReaderState(sameSecondPage, sameJobId, 'same-job-two')
+  await Promise.all([
+    hydrateReaderMarks(sameFirstPage, sameJobId),
+    hydrateReaderMarks(sameSecondPage, sameJobId),
+  ])
+  await setReaderState(sameFirstPage, sameJobId, 'same-job-one', true)
+  await setReaderState(sameSecondPage, sameJobId, 'same-job-two', true)
   await Promise.all([
     dispatchPageHide(sameFirstPage, false),
     dispatchPageHide(sameSecondPage, false),
@@ -349,8 +375,9 @@ async function verifyBfcacheReceiptGeneration(jobId) {
   const destinationUrl = `${appUrl}/?bfcacheProbe=destination`
   await page.goto(readerUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
-  await setReaderState(page, jobId, 'before-bfcache')
+  await hydrateReaderMarks(page, jobId)
   await abortReaderWrites(page)
+  await setReaderState(page, jobId, 'before-bfcache', true)
   await page.goto(destinationUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
   await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'persisted pagehide receipt')
@@ -384,27 +411,31 @@ async function verifyBfcacheReceiptGeneration(jobId) {
     return
   }
   await page.unroute(`${appUrl}/api/**`)
-  await setReaderState(page, jobId, 'after-bfcache')
-  await page.evaluate(() => window.dispatchEvent(new Event('reader-marks-changed')))
+  const afterBfcacheSave = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname.endsWith('/reader-marks')
+    && response.request().postDataJSON()?.marks?.[0]?.word === 'after-bfcache')
+  await setReaderState(page, jobId, 'after-bfcache', true)
   await waitFor(async () => {
     const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
     return marks.marks[0]?.word === 'after-bfcache'
   }, 'post-BFCache latest intent')
+  await (await afterBfcacheSave).finished()
   await abortReaderWrites(page)
   await page.close({ runBeforeUnload: true })
   const inspector = await context.newPage()
   await abortReaderWrites(inspector)
   await inspector.goto(destinationUrl, { waitUntil: 'domcontentloaded' })
   await inspector.waitForSelector('.youtube-reader-controls .small-btn')
-  await waitFor(async () => (await readOutboxEntries(inspector)).filter(({ value }) => value.kind === 'marks').length >= 2, 'new generation close receipt')
+  await waitFor(async () => (await readOutboxEntries(inspector)).filter(({ value }) => value.kind === 'marks').length >= 1, 'persisted first-generation marks receipt')
   const lifecycleEvents = await inspector.evaluate((eventKey) => JSON.parse(localStorage.getItem(eventKey) || '[]'), bfcacheEventKey)
   assert.ok(lifecycleEvents.some((event) => event.type === 'pagehide' && event.persisted === false && event.href === readerUrl), 'final page close must dispatch non-persisted pagehide')
   const finalEntries = await readOutboxEntries(inspector)
   const finalMarks = finalEntries.filter(({ value }) => value.kind === 'marks')
   const finalActivity = finalEntries.filter(({ value }) => value.kind === 'activity')
   const firstActivity = firstGeneration.find(({ value }) => value.kind === 'activity')
-  assert.ok(finalMarks.some(({ value }) => value.intent.marks[0].word === 'after-bfcache'))
-  assert.ok(finalMarks.some(({ value }) => value.operationId !== firstGeneration.find(({ value: first }) => first.kind === 'marks')?.operationId))
+  assert.ok(finalMarks.some(({ value }) => value.intent.marks[0].word === 'before-bfcache'))
+  assert.equal(finalMarks.some(({ value }) => value.intent.marks[0].word === 'after-bfcache'), false, 'a saved post-BFCache edit must not create a duplicate close marks receipt')
+  assert.equal(finalMarks.length, 1, 'a saved post-BFCache edit must leave only the original unsent receipt')
   assert.ok(finalActivity.some(({ value }) => value.operationId !== firstActivity?.value.operationId && value.intent.event === 'close'))
   assert.equal((await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)).marks[0].word, 'after-bfcache')
   await context.close()
@@ -416,28 +447,33 @@ async function verifySyntheticBfcacheReceiptGeneration(jobId) {
   await addClearOutboxScript(page)
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
-  await setReaderState(page, jobId, 'before-bfcache')
+  await hydrateReaderMarks(page, jobId)
   await abortReaderWrites(page)
+  await setReaderState(page, jobId, 'before-bfcache', true)
   await dispatchPageHide(page, true)
   await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'synthetic persisted pagehide receipt')
   const firstGeneration = await readOutboxEntries(page)
   await dispatchPageShow(page, true)
   await page.unroute(`${appUrl}/api/**`)
-  await setReaderState(page, jobId, 'after-bfcache')
-  await page.evaluate(() => window.dispatchEvent(new Event('reader-marks-changed')))
+  const afterBfcacheSave = page.waitForResponse((response) => response.request().method() === 'POST'
+    && new URL(response.url()).pathname.endsWith('/reader-marks')
+    && response.request().postDataJSON()?.marks?.[0]?.word === 'after-bfcache')
+  await setReaderState(page, jobId, 'after-bfcache', true)
   await waitFor(async () => {
     const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
     return marks.marks[0]?.word === 'after-bfcache'
   }, 'synthetic post-BFCache latest intent')
+  await (await afterBfcacheSave).finished()
   await abortReaderWrites(page)
   await dispatchPageHide(page, false)
-  await waitFor(async () => (await readOutboxEntries(page)).filter(({ value }) => value.kind === 'marks').length >= 2, 'synthetic new generation close receipt')
+  await waitFor(async () => (await readOutboxEntries(page)).filter(({ value }) => value.kind === 'marks').length >= 1, 'synthetic first-generation marks receipt')
   const finalEntries = await readOutboxEntries(page)
   const finalMarks = finalEntries.filter(({ value }) => value.kind === 'marks')
   const finalActivity = finalEntries.filter(({ value }) => value.kind === 'activity')
   const firstActivity = firstGeneration.find(({ value }) => value.kind === 'activity')
-  assert.ok(finalMarks.some(({ value }) => value.intent.marks[0].word === 'after-bfcache'))
-  assert.ok(finalMarks.some(({ value }) => value.operationId !== firstGeneration.find(({ value: first }) => first.kind === 'marks')?.operationId))
+  assert.ok(finalMarks.some(({ value }) => value.intent.marks[0].word === 'before-bfcache'))
+  assert.equal(finalMarks.some(({ value }) => value.intent.marks[0].word === 'after-bfcache'), false, 'a saved synthetic post-BFCache edit must not create a duplicate close marks receipt')
+  assert.equal(finalMarks.length, 1, 'a saved synthetic post-BFCache edit must leave only the original unsent receipt')
   assert.ok(finalActivity.some(({ value }) => value.operationId !== firstActivity?.value.operationId && value.intent.event === 'close'))
   assert.equal((await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)).marks[0].word, 'after-bfcache')
   await context.close()
@@ -488,14 +524,24 @@ async function verifyLegacyOutboxMigration(jobId) {
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
   await waitFor(async () => (await page.evaluate((key) => localStorage.getItem(key), outboxKey)) === null, 'legacy envelope migration')
-  await waitFor(async () => (await readOutboxEntries(page)).length === 0, 'legacy migrated operation replay')
-  assert.equal(replayRequests.length, 2)
-  assert.ok(replayRequests.some((payload) => payload.operationId === marksOperationId))
+  await waitFor(async () => {
+    const entries = await readOutboxEntries(page)
+    return entries.filter(({ value }) => value.kind === 'marks').length === 1
+      && entries.filter(({ value }) => value.kind === 'activity').length === 0
+  }, 'legacy marks retention without replay')
+  await page.locator('.youtube-reader-controls .small-btn').first().click()
+  await page.getByText('发现来源不明的旧标记补发记录，已保留，未自动发送；请核对后重新编辑并保存').waitFor()
+  const retainedLegacyEntries = await readOutboxEntries(page)
+  const retainedLegacyMarks = retainedLegacyEntries.find(({ value }) => value.kind === 'marks')?.value
+  assert.equal(replayRequests.length, 1)
+  assert.equal(replayRequests.some((payload) => payload.operationId === marksOperationId), false)
   assert.ok(replayRequests.some((payload) => payload.activityOperationId === activityOperationId))
+  assert.equal(retainedLegacyMarks?.intent?.source, undefined)
+  assert.equal(retainedLegacyMarks?.intent?.localVersion, undefined)
   const marks = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)
   const activity = await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-activity`)
-  assert.equal(marks.revision, 1)
-  assert.equal(marks.marks[0].word, 'legacy-migrated')
+  assert.equal(marks.revision, 0)
+  assert.deepEqual(marks.marks, [])
   assert.equal(activity.revision, 1)
   await context.close()
 }
@@ -738,8 +784,26 @@ async function setReaderState(page, jobId, word, dispatchMarksChange = false) {
       start: 0,
       sourceType: 'manual-mark',
     }]])
-    if (dispatch) window.dispatchEvent(new Event('reader-marks-changed'))
+    if (dispatch) {
+      window.dispatchEvent(new CustomEvent('reader-marks-changed', {
+        detail: {
+          source: 'edit',
+          operation: { type: 'replace', marks: [state.markedMap.get(0)] },
+        },
+      }))
+    }
   }, { id: jobId, markWord: word, dispatch: dispatchMarksChange })
+}
+
+async function hydrateReaderMarks(page, jobId) {
+  const authorityResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === 'GET'
+      && url.pathname === `/api/jobs/${encodeURIComponent(jobId)}/reader-marks`
+  })
+  await setReaderState(page, jobId, 'hydration-baseline')
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('reader-marks-changed', { detail: { source: 'restore' } })))
+  await (await authorityResponse).finished()
 }
 
 function isReaderWrite(url) {

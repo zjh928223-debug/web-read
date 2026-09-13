@@ -40,7 +40,11 @@ const outboxMarks = {
   kind: 'marks',
   operationId: 'operation-marks-1',
   expectedRevision: 2,
-  intent: { marks: [{ globalIndex: 1, word: 'hello', start: null, sourceType: 'manual-mark' }] },
+  intent: {
+    marks: [{ globalIndex: 1, word: 'hello', start: null, sourceType: 'manual-mark' }],
+    source: 'local-edit',
+    localVersion: 3,
+  },
 }
 const outboxActivity = {
   jobId: 'job-1',
@@ -104,6 +108,10 @@ const outboxRecords = artifact.domains['reader-session'].records.filter((record)
 assert.equal(outboxRecords.length, 2)
 assert.deepEqual(outboxRecords.map((record) => record.contentId), ['job-1', 'job-1'])
 assert.deepEqual(new Set(outboxRecords.map((record) => record.revision)), new Set([2, 3]))
+const marksOutboxRecord = outboxRecords.find((record) => record.id.includes('operation-marks-1'))
+const sourceField = 'source'
+assert.equal(marksOutboxRecord.payload.intent[sourceField], 'local-edit')
+assert.equal(marksOutboxRecord.payload.intent.localVersion, 3)
 
 storage.setItem('vocabulary.passage-preview.future.v9', JSON.stringify({ schemaVersion: 'future.v9', revision: 1 }))
 await assert.rejects(

@@ -97,9 +97,9 @@ export function waitForGeneratedAnnotationIndex() {
   return Promise.resolve();
 }
 
-export function syncAnnotationGenerationEntryStatus() {
+export function syncAnnotationGenerationEntryStatus(options = {}) {
   if (typeof runtimeHandlers.syncAnnotationGenerationEntryStatus === 'function') {
-    return runtimeHandlers.syncAnnotationGenerationEntryStatus();
+    return runtimeHandlers.syncAnnotationGenerationEntryStatus(options);
   }
 }
 

@@ -321,7 +321,15 @@ function validOutboxEntry(entry) {
     || entry.expectedRevision < 0
     || !isPlainObject(entry.intent)) return false
   if (entry.kind === 'marks') {
-    return hasOnlyKeys(entry.intent, ['marks'])
+    const hasSource = Object.prototype.hasOwnProperty.call(entry.intent, 'source')
+    const hasLocalVersion = Object.prototype.hasOwnProperty.call(entry.intent, 'localVersion')
+    return hasOnlyKeys(entry.intent, ['marks', 'source', 'localVersion'])
+      && (!hasSource && !hasLocalVersion
+        || (hasSource && hasLocalVersion
+          && typeof entry.intent.source === 'string'
+          && safeOutboxText(entry.intent.source, 64)
+          && Number.isInteger(entry.intent.localVersion)
+          && entry.intent.localVersion >= 1))
       && Array.isArray(entry.intent.marks)
       && entry.intent.marks.every((mark) => isPlainObject(mark)
         && hasOnlyKeys(mark, ['globalIndex', 'word', 'start', 'sourceType'])

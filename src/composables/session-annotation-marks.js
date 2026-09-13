@@ -142,6 +142,10 @@ export function createSessionAnnotationMarksRuntime(deps = {}) {
     if (!addedCount && replaceExisting) {
       state.markedMap.clear();
       await deps.saveToDB('marks', []);
+      await deps.syncAnnotationGenerationEntryStatus({
+        source: 'edit',
+        operation: { type: 'replace', marks: [] }
+      });
       return { addedCount: 0, totalCount: 0 };
     }
 
@@ -158,7 +162,10 @@ export function createSessionAnnotationMarksRuntime(deps = {}) {
       deps.renderTranscript();
     }
     deps.forceUpdateUI(deps.getAudioCurrentTime());
-    await deps.syncAnnotationGenerationEntryStatus();
+    await deps.syncAnnotationGenerationEntryStatus({
+      source: 'edit',
+      operation: { type: 'replace', marks: Array.from(state.markedMap.values()) }
+    });
     return { addedCount, totalCount: state.markedMap.size };
   }
 

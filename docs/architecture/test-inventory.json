@@ -6,11 +6,11 @@
     "architecture": 115,
     "behavior": 128,
     "browser": 34,
-    "performance": 18,
+    "performance": 19,
     "release": 17
   },
   "packageScriptCount": 286,
-  "executableScriptCount": 312,
+  "executableScriptCount": 313,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -7697,6 +7697,32 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/reader-marks-restore-fix-repro.mjs",
+      "category": "performance",
+      "layers": [
+        "browser",
+        "performance",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": true,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": false,
+        "startsBrowser": true
       }
     },
     {

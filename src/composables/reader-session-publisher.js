@@ -99,9 +99,10 @@ export function createReaderSessionPublisher(deps = {}) {
     deps.processChunkData(prepared.chunkData)
     if (typeof deps.applyReaderMarks === 'function') {
       await deps.applyReaderMarks(prepared.marks, {
+        jobId: prepared.audioMeta?.jobId || '',
         persist: false,
         contentId: prepared.contentId,
-        revision: prepared.revision,
+        revision: prepared.marksRevision,
       })
     }
     if (typeof deps.resetChunkDisplay === 'function') deps.resetChunkDisplay()

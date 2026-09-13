@@ -143,6 +143,9 @@ assert.ok(styles.includes('--pru-shell-bg: color-mix(in srgb, var(--bg-color)'),
 assert.ok(panel.includes('createReaderSessionPersistence') && panel.includes('readerSessionPersistence:'), 'atomic reader session publishing must remain intact')
 assert.ok(panel.includes("from '../services/persistence/reader-outbox-storage.js'") && panel.includes('keepaliveReaderActivity'), 'reader recovery and unload persistence must remain intact')
 assert.ok(outboxStorage.includes('READER_OUTBOX_ENTRY_PREFIX') && outboxStorage.includes('readerOutboxEntryKey') && outboxStorage.includes('migrateLegacyReaderOutbox'), 'reader outbox storage should retain versioned keys and legacy migration')
+assert.ok(panel.includes('isTrustedReaderMarksOutboxEntry') && panel.includes('localVersion: marksIntent.localVersion'), 'marks outbox replay must require trusted local-edit metadata and retain its local version')
+assert.ok(panel.includes('blockUntrustedReaderMarksOutbox') && panel.includes('未自动发送'), 'source-unknown marks outbox entries must remain pending with an explicit notice')
+assert.ok(outboxStorage.includes('export const READER_MARKS_OUTBOX_SOURCE') && outboxStorage.includes('intent.source === READER_MARKS_OUTBOX_SOURCE'), 'marks outbox trust must be bound to explicit source metadata')
 
 const deprecatedEntrySource = index.match(/<details class="deprecated-file-entry">([\s\S]*?)<\/details>/u)?.[1] || ''
 assert.ok(deprecatedEntrySource && index.includes('过时入口'), 'manual reader controls should remain grouped under the deprecated entry')

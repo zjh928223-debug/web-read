@@ -86,7 +86,15 @@
             await saveToDB('marks', (function () { var out = []; markedMap.forEach(function (v) { out.push(v); }); return out; })());
             if (isChunkModeFn()) renderChunkMode(); else renderTranscript();
             forceUpdateUI(audioPlayer.currentTime);
-            await syncAnnotationGenerationEntryStatus();
+            await syncAnnotationGenerationEntryStatus({
+              source: 'edit',
+              operation: { type: 'replace', marks: (function () {
+                var out = [];
+                markedMap.forEach(function (value) { out.push(value); });
+                return out;
+              })()
+              }
+            });
             showToast('Marks imported', 'success');
           } catch (x) { showError('MARKS_IMPORT', x && x.message ? x.message : 'Invalid marks file'); }
         })).catch(function (error) {

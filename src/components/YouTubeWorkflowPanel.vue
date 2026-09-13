@@ -361,6 +361,8 @@ import { createReaderPlaybackTracker } from '../services/workflow/reader-playbac
 import { createReaderSessionPersistence } from '../services/persistence/reader-session-persistence.js'
 import {
   createReaderOutboxEntry,
+  isTrustedReaderMarksOutboxEntry,
+  READER_MARKS_OUTBOX_SOURCE,
   readReaderOutbox,
   writeReaderOutboxEntry,
   removeReaderOutboxEntry,
@@ -441,9 +443,11 @@ let workflowSnapshotFlight = null
 let workflowRevisionNeedsRefresh = true
 let readerSessionLoader = null
 let readerSessionLoadInProgress = false
+let readerMarksHydration = null
 let readerUnloadFlushed = false
 let readerCloseGeneration = 0
 let readerOutboxReplayPromise = null
+const READER_UNTRUSTED_MARKS_OUTBOX_NOTICE = '发现来源不明的旧标记补发记录，已保留，未自动发送；请核对后重新编辑并保存'
 let completionSignalTimer = 0
 let materialNoticeTimer = 0
 let libraryRetryTimer = 0
@@ -470,6 +474,7 @@ const {
   readerConflictVisible,
   getReaderMarksLedger,
   getReaderActivityLedger,
+  getReaderMarksPendingIntent,
   updateReaderConflictVisibility,
   loadReaderConflict,
   clearReaderConflict,
@@ -481,19 +486,26 @@ const {
   currentJobId,
   getReaderSessionId: () => readerPlaybackTracker.getReaderSessionId(),
   mergeRecentReaderItem,
+  onReaderMarksAuthority: (jobId, payload) => {
+    readerMarksHydration?.rememberAuthoritativeMarks(jobId, payload.marks, payload.revision)
+  },
+  onReaderMarksSaved: (jobId, marks, revision, localVersion) => {
+    readerMarksHydration?.markLocalChangesSaved(jobId, marks, revision, localVersion)
+  },
 })
-const readerMarksHydration = createReaderMarksHydration({
+readerMarksHydration = createReaderMarksHydration({
   getCurrentJobId: () => currentJobId.value,
   getCurrentReaderMarks,
   rememberMarksRevision: (jobId, revision) => rememberReaderRevision('marks', jobId, revision),
   restoreVisibleMarks: async (marks) => {
     replaceReaderMarksVisible(marks)
     if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
-      await window.syncAnnotationGenerationEntryStatus()
+      await window.syncAnnotationGenerationEntryStatus({ source: 'restore' })
     }
   },
-  submitLocalChanges: () => {
-    submitCurrentReaderMarks()
+  submitLocalChanges: (intent) => {
+    if (!intent || !Number.isInteger(intent.sourceRevision)) return
+    submitCurrentReaderMarks(intent)
     syncReaderActivity('annotation')
   },
 })
@@ -810,7 +822,7 @@ function makeLoader() {
     processTranscript: window.processTranscript,
     processChunkData: window.processChunkData,
     scheduleGeneratedAnnotationIndexRefresh,
-    applyReaderMarks: replaceReaderMarksVisible,
+    applyReaderMarks,
     syncReaderMarksVisuals: syncMarkedWordVisuals,
     bridgeToPinia,
     resetChunkDisplay: resetChunkChineseDisplay,
@@ -828,9 +840,6 @@ function makeLoader() {
     validateChunkData: window.DataUtils && window.DataUtils.validateChunkData,
     applyReaderMarks,
     annotationLightweightModule: window.__annotationLightweightModule,
-    onReaderMarksLoaded(payload) {
-      if (Number.isInteger(payload?.revision)) rememberReaderRevision('marks', String(payload.jobId || currentJobId.value || ''), payload.revision)
-    },
     showToast: window.showToast
   })
   return readerSessionLoader
@@ -1090,7 +1099,7 @@ async function refreshLibrary(options = {}) {
     serviceOnline.value = true
     serviceStatusKnown.value = true
     libraryRetryCount = 0
-    readerActivityNotice.value = ''
+    if (readerActivityNotice.value !== READER_UNTRUSTED_MARKS_OUTBOX_NOTICE) readerActivityNotice.value = ''
   } catch (err) {
     serviceStatusKnown.value = true
     if (err?.code === 'owner-not-ready') {
@@ -2106,31 +2115,70 @@ function replaceReaderMarksVisible(marks) {
 
 async function applyReaderMarks(marks, options = {}) {
   const normalized = replaceReaderMarksVisible(marks)
+  const jobId = String(options.jobId || currentJobId.value || '').trim()
+  if (jobId && readerMarksHydration) {
+    readerMarksHydration.rememberAuthoritativeMarks(jobId, normalized, options.revision, { applied: true })
+  }
   if (options.persist !== false) await audioStore.saveToDB('marks', normalized)
-  if (typeof window.syncAnnotationGenerationEntryStatus === 'function') await window.syncAnnotationGenerationEntryStatus()
+  if (typeof window.syncAnnotationGenerationEntryStatus === 'function') {
+    await window.syncAnnotationGenerationEntryStatus({ source: 'restore' })
+  }
 }
 
-function submitCurrentReaderMarks() {
+function submitCurrentReaderMarks(intent = {}) {
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
   const jobId = currentJobId.value
+  const hydrationIntent = readerMarksHydration?.getLocalIntent(jobId)
+  const marks = Array.isArray(intent.marks)
+    ? intent.marks
+    : hydrationIntent?.marks || getCurrentReaderMarks()
+  const sourceRevision = Number.isInteger(intent.sourceRevision)
+    ? intent.sourceRevision
+    : hydrationIntent?.sourceRevision
+  if (!Number.isInteger(sourceRevision)) return null
   return getReaderMarksLedger(jobId).submit({
     jobId,
-    marks: getCurrentReaderMarks()
+    marks,
+    source: READER_MARKS_OUTBOX_SOURCE,
+    sourceRevision,
+    localVersion: Number.isInteger(intent.localVersion)
+      ? intent.localVersion
+      : hydrationIntent?.localVersion,
   })
 }
 
-function handleReaderMarksChanged() {
+function handleReaderMarksChanged(event) {
   if (readerSessionLoadInProgress) return
   ensureCurrentJobFromAudioMeta()
   if (!currentJobId.value) return
-  if (readerMarksHydration.deferLocalChange(currentJobId.value)) return
-  submitCurrentReaderMarks()
+  const jobId = currentJobId.value
+  const source = String(event?.detail?.source || 'system')
+  if (source === 'restore') {
+    observeBestEffort(readerMarksHydration.handleProgrammaticRestore(jobId), {
+      operationId: 'reader-marks-restore-notification',
+      reason: 'a late session snapshot must not replace authoritative or locally edited marks',
+    })
+    return
+  }
+  if (source !== 'edit') return
+  const intent = readerMarksHydration.recordLocalEdit(jobId, {
+    marks: getCurrentReaderMarks(),
+    operation: event?.detail?.operation,
+  })
+  if (!intent || readerMarksHydration.deferLocalChange(jobId)) return
+  submitCurrentReaderMarks(intent)
   syncReaderActivity('annotation')
 }
 
 function readerOutboxRequest(entry, expectedRevision, keepalive = false) {
   if (entry.kind === 'marks') {
+    if (!isTrustedReaderMarksOutboxEntry(entry)) {
+      blockUntrustedReaderMarksOutbox(entry)
+      const error = new Error('Reader marks outbox source is not trusted')
+      error.code = 'READER_UNTRUSTED_MARKS_OUTBOX'
+      throw error
+    }
     const payload = {
       marks: entry.intent.marks,
       expectedRevision,
@@ -2151,6 +2199,17 @@ function readerOutboxRequest(entry, expectedRevision, keepalive = false) {
     : youtubeWorkflowClient.recordReaderActivity(payload)
 }
 
+function blockUntrustedReaderMarksOutbox(entry) {
+  if (entry?.kind !== 'marks') return false
+  readerActivityNotice.value = READER_UNTRUSTED_MARKS_OUTBOX_NOTICE
+  if (currentJobId.value === entry.jobId) readerMarksSaveState.value = 'dirty'
+  recordBestEffortFailure(new Error('Reader marks outbox source is not trusted'), {
+    operationId: 'reader-outbox-untrusted-marks',
+    reason: 'source-unknown marks outbox is retained for review and must not be replayed automatically',
+  })
+  return false
+}
+
 function isReaderConflictError(error) {
   return error?.category === 'conflict' || String(error?.code || '').endsWith('_REVISION_CONFLICT')
 }
@@ -2169,8 +2228,19 @@ function clearReaderOutboxSuccessNotice() {
 }
 
 function settleReaderOutboxSuccess(entry, saved) {
+  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
+    return blockUntrustedReaderMarksOutbox(entry)
+  }
   if (Number.isInteger(saved?.revision)) {
     rememberReaderRevision(entry.kind, entry.jobId, saved.revision)
+    if (entry.kind === 'marks') {
+      readerMarksHydration?.markLocalChangesSaved(
+        entry.jobId,
+        entry.intent.marks,
+        saved.revision,
+        entry.intent.localVersion,
+      )
+    }
   }
   if (entry.kind === 'activity') mergeRecentReaderItem(saved)
   if (!removeReaderOutboxEntry(entry)) {
@@ -2184,6 +2254,9 @@ function settleReaderOutboxSuccess(entry, saved) {
 }
 
 async function retryReaderOutboxEntry(entry, expectedRevision) {
+  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
+    return blockUntrustedReaderMarksOutbox(entry)
+  }
   try {
     return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, expectedRevision))
   } catch (error) {
@@ -2193,6 +2266,9 @@ async function retryReaderOutboxEntry(entry, expectedRevision) {
 }
 
 async function replayReaderOutboxEntry(entry) {
+  if (entry.kind === 'marks' && !isTrustedReaderMarksOutboxEntry(entry)) {
+    return blockUntrustedReaderMarksOutbox(entry)
+  }
   setReaderOutboxState(entry, 'dirty')
   try {
     return settleReaderOutboxSuccess(entry, await readerOutboxRequest(entry, entry.expectedRevision))
@@ -2258,12 +2334,25 @@ function handleBeforeUnload() {
   if (!payload) return
   const closeGeneration = readerCloseGeneration
   const activityOperationId = `reader-activity-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`
-  const marksEntry = createReaderOutboxEntry(
-    'marks',
-    { jobId: payload.jobId, marks: getCurrentReaderMarks() },
-    `reader-marks-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`,
-    getReaderRevision('marks', payload.jobId) ?? 0,
-  )
+  const marksIntent = getReaderMarksPendingIntent(payload.jobId)
+    || readerMarksHydration?.getLocalIntent(payload.jobId)
+  const marksEntry = marksIntent
+    && marksIntent.source === READER_MARKS_OUTBOX_SOURCE
+    && Number.isInteger(marksIntent.localVersion)
+    && marksIntent.localVersion >= 1
+    && Number.isInteger(marksIntent.sourceRevision)
+    ? createReaderOutboxEntry(
+      'marks',
+      {
+        jobId: payload.jobId,
+        marks: marksIntent.marks,
+        source: READER_MARKS_OUTBOX_SOURCE,
+        localVersion: marksIntent.localVersion,
+      },
+      `reader-marks-${payload.jobId}-${payload.sessionId}-close-${closeGeneration}`,
+      marksIntent.sourceRevision,
+    )
+    : null
   const activityEntry = createReaderOutboxEntry(
     'activity',
     payload,
@@ -2272,8 +2361,8 @@ function handleBeforeUnload() {
   )
   if (!marksEntry && !activityEntry) return
   readerUnloadFlushed = true
-  readerMarksSaveState.value = 'dirty'
-  readerActivitySaveState.value = 'dirty'
+  if (marksEntry) readerMarksSaveState.value = 'dirty'
+  if (activityEntry) readerActivitySaveState.value = 'dirty'
   if (marksEntry) {
     writeReaderOutboxEntry(marksEntry)
     observeBestEffort(queueReaderKeepalive(marksEntry), {

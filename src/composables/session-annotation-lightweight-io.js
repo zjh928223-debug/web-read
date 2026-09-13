@@ -125,7 +125,7 @@ export function createSessionAnnotationLightweightIoRuntime(deps = {}) {
       sourceType: 'annotation-lightweight-import',
       replaceExisting: options.replaceExisting !== false
     });
-    await requireLightweightIoFunction(deps, 'syncAnnotationGenerationEntryStatus')();
+    await requireLightweightIoFunction(deps, 'syncAnnotationGenerationEntryStatus')({ source: 'system' });
     return normalized;
   }
 

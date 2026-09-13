@@ -209,7 +209,19 @@ async function main() {
   assert.equal(dispatchedEvents.at(-1).type, 'reader-marks-changed');
   assert.deepEqual(dispatchedEvents.at(-1).detail, {
     markedCount: 2,
-    scope: { audioKey: 'audio-1', documentId: 'doc-1' }
+    scope: { audioKey: 'audio-1', documentId: 'doc-1' },
+    source: 'system'
+  });
+
+  await runtime.syncAnnotationGenerationEntryStatus({
+    source: 'edit',
+    operation: { type: 'remove', globalIndex: 1 }
+  });
+  assert.deepEqual(dispatchedEvents.at(-1).detail, {
+    markedCount: 2,
+    scope: { audioKey: 'audio-1', documentId: 'doc-1' },
+    source: 'edit',
+    operation: { type: 'remove', globalIndex: 1 }
   });
 
   const missingRuntime = api.createSessionAnnotationGeneratedIndexRuntime({

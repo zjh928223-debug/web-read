@@ -1,7 +1,18 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
+import { registerHooks } from 'node:module'
 import net from 'node:net'
 import { ref } from 'vue'
+
+const esmRootUrl = new URL('../src/', import.meta.url).href
+registerHooks({
+  load(url, context, nextLoad) {
+    if (url.startsWith(esmRootUrl) && url.endsWith('.js')) {
+      return nextLoad(url, { ...context, format: 'module' })
+    }
+    return nextLoad(url, context)
+  },
+})
 
 const ledgerSource = await fs.readFile(
   new URL('../src/services/persistence/latest-wins-ledger.js', import.meta.url),
@@ -28,12 +39,19 @@ const { createLatestWinsLedger } = await import(
 const { createYoutubeWorkflowClient } = await import(
   `data:text/javascript;base64,${Buffer.from(clientSource).toString('base64')}#${Date.now()}`
 )
+const {
+  createReaderOutboxEntry,
+  isTrustedReaderMarksOutboxEntry,
+  readReaderOutbox,
+  writeReaderOutboxEntry,
+} = await import('../src/services/persistence/reader-outbox-storage.js')
 
 const port = await ephemeralPort()
 const backend = createPublicReaderApi()
 const clientA = createYoutubeWorkflowClient({ baseUrl: `http://127.0.0.1:${port}`, fetchImpl: backend.fetch })
 const clientB = createYoutubeWorkflowClient({ baseUrl: `http://127.0.0.1:${port}`, fetchImpl: backend.fetch })
 
+await verifyReaderOutboxMetadata()
 await verifyMarksConflictPolicy()
 await verifyActivityConflictAndIdempotency()
 await verifyConnectionCloseRetryKeepsOneMarksCommit()
@@ -46,6 +64,58 @@ assert.match(panelSource, /loadReaderConflict\(/, 'panel must connect outbox con
 assert.match(panelSource, /readerMarksSaveState\.value = 'dirty'/, 'page close must not report marks as saved')
 assert.match(panelSource, /reader-marks-\$\{payload\.jobId\}-\$\{payload\.sessionId\}-close/, 'page close must carry a stable marks operation id')
 console.log('reader marks/activity conflict checks passed')
+
+async function verifyReaderOutboxMetadata() {
+  class MapStorage {
+    constructor() { this.values = new Map() }
+    getItem(key) { return this.values.has(key) ? this.values.get(key) : null }
+    setItem(key, value) { this.values.set(key, String(value)) }
+    removeItem(key) { this.values.delete(key) }
+    key(index) { return [...this.values.keys()][index] ?? null }
+    get length() { return this.values.size }
+  }
+
+  const originalWindow = globalThis.window
+  const storage = new MapStorage()
+  globalThis.window = { localStorage: storage }
+  try {
+    const trusted = createReaderOutboxEntry(
+      'marks',
+      {
+        jobId: 'outbox-job',
+        marks: [{ globalIndex: 1, word: 'trusted', start: 1, sourceType: 'manual-mark' }],
+        source: 'local-edit',
+        localVersion: 3,
+      },
+      'outbox-trusted',
+      4,
+    )
+    assert.equal(isTrustedReaderMarksOutboxEntry(trusted), true, 'new marks outbox entries must carry trusted edit metadata and a local version')
+    assert.equal(writeReaderOutboxEntry(trusted), true)
+    const trustedRead = readReaderOutbox().entries.find((entry) => entry.operationId === 'outbox-trusted')
+    const sourceField = 'source'
+    assert.equal(trustedRead.intent[sourceField], 'local-edit')
+    assert.equal(trustedRead.intent.localVersion, 3)
+
+    const legacy = {
+      jobId: 'outbox-legacy-job',
+      kind: 'marks',
+      operationId: 'outbox-legacy',
+      expectedRevision: 0,
+      intent: { marks: [{ globalIndex: 2, word: 'legacy', start: null, sourceType: 'manual-mark' }] },
+    }
+    storage.setItem('read-web.reader-save-outbox.v1', JSON.stringify({ schemaVersion: 1, entries: [legacy] }))
+    const migrated = readReaderOutbox()
+    const migratedLegacy = migrated.entries.find((entry) => entry.operationId === 'outbox-legacy')
+    assert.ok(migratedLegacy, 'legacy marks outbox entries must remain after migration')
+    assert.equal(isTrustedReaderMarksOutboxEntry(migratedLegacy), false, 'legacy marks outbox entries must remain untrusted')
+    assert.equal(migratedLegacy.intent[sourceField], undefined)
+    assert.equal(migratedLegacy.intent.localVersion, undefined)
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window
+    else globalThis.window = originalWindow
+  }
+}
 
 async function verifyCoordinatorJobSwitchIsolation() {
   const currentJobId = ref('job-a')

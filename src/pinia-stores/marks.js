@@ -14,19 +14,23 @@ export const useMarksStore = defineStore('marks', () => {
     var w = words[currentWordIndex]
     if (!w) return false
     var isMarked = false
+    var operation
     if (markedMap.has(currentWordIndex)) {
       markedMap.delete(currentWordIndex)
+      operation = { type: 'remove', globalIndex: currentWordIndex }
     } else {
-      markedMap.set(currentWordIndex, {
+      var mark = {
         word: w.word, start: w.start, globalIndex: currentWordIndex, sourceType: 'manual-mark'
-      })
+      }
+      markedMap.set(currentWordIndex, mark)
       isMarked = true
+      operation = { type: 'add', mark: mark }
     }
     syncVisual(currentWordIndex, isMarked)
     var arr = []
     markedMap.forEach(function (v) { arr.push(v) })
     await saveToDB('marks', arr)
-    if (typeof syncAnnotationFn === 'function') await syncAnnotationFn()
+    if (typeof syncAnnotationFn === 'function') await syncAnnotationFn({ source: 'edit', operation: operation })
     return true
   }
 

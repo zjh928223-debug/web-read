@@ -185,9 +185,20 @@ export function createLatestWinsLedger(options = {}) {
     failed = null
   }
 
+  function getLatestEntry() {
+    const entry = pending || active || failed
+    if (!entry) return null
+    return Object.freeze({
+      sequence: entry.sequence,
+      operationId: entry.operationId,
+      snapshot: entry.snapshot,
+    })
+  }
+
   return Object.freeze({
     dispose,
     getState: () => state,
+    getLatestEntry,
     resolveConflict: retry,
     retry,
     submit,

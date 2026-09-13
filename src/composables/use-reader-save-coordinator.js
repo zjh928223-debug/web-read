@@ -2,7 +2,13 @@ import { ref } from 'vue'
 import { youtubeWorkflowClient } from './youtube-workflow-client.js'
 import { createLatestWinsLedger } from '../services/persistence/latest-wins-ledger.js'
 
-export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mergeRecentReaderItem }) {
+export function useReaderSaveCoordinator({
+  currentJobId,
+  getReaderSessionId,
+  mergeRecentReaderItem,
+  onReaderMarksAuthority = () => {},
+  onReaderMarksSaved = () => {},
+}) {
   const readerActivityNotice = ref('')
   const readerMarksSaveState = ref('saved')
   const readerActivitySaveState = ref('saved')
@@ -11,6 +17,8 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
   const readerActivityLedgers = new Map()
   const readerMarksRevisions = new Map()
   const readerActivityRevisions = new Map()
+  const readerMarksLastSaves = new Map()
+  const readerMarksRetryRevisions = new Map()
   const readerConflicts = new Map()
 
   function updateReaderConflictVisibility() {
@@ -40,6 +48,9 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
           ? await youtubeWorkflowClient.getReaderMarks(conflict.jobId)
           : await youtubeWorkflowClient.getReaderActivity(conflict.jobId)
         conflict.reloadError = null
+        if (conflict.kind === 'marks' && Array.isArray(conflict.authoritative?.marks)) {
+          onReaderMarksAuthority(conflict.jobId, conflict.authoritative)
+        }
         return conflict.authoritative
       } catch (reloadError) {
         conflict.reloadError = reloadError
@@ -87,8 +98,12 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
       conflict.resolvePromise = (async () => {
         const authoritative = conflict.authoritative || await fetchReaderConflictAuthority(conflict)
         if (!authoritative || !Number.isInteger(authoritative.revision)) return false
-        if (conflict.kind === 'marks') readerMarksRevisions.set(conflict.jobId, authoritative.revision)
-        else readerActivityRevisions.set(conflict.jobId, authoritative.revision)
+        if (conflict.kind === 'marks') {
+          readerMarksRevisions.set(conflict.jobId, authoritative.revision)
+          readerMarksRetryRevisions.set(conflict.jobId, authoritative.revision)
+        } else {
+          readerActivityRevisions.set(conflict.jobId, authoritative.revision)
+        }
         if (conflict.retry) return conflict.retry(authoritative.revision)
         const ledger = conflict.kind === 'marks'
           ? getReaderMarksLedger(conflict.jobId)
@@ -122,21 +137,46 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
     return 0
   }
 
+  async function expectedMarksRevision(jobId, entry, context) {
+    const retryRevision = readerMarksRetryRevisions.get(jobId)
+    if (Number.isInteger(retryRevision)) {
+      readerMarksRetryRevisions.delete(jobId)
+      return retryRevision
+    }
+    const previousSave = readerMarksLastSaves.get(jobId)
+    if (previousSave
+      && previousSave.sequence < context.sequence
+      && (entry.sourceRevision === previousSave.sourceRevision
+        || entry.sourceRevision === previousSave.revision)) {
+      return previousSave.revision
+    }
+    if (Number.isInteger(entry.sourceRevision) && entry.sourceRevision >= 0) return entry.sourceRevision
+    return ensureReaderRevision(
+      readerMarksRevisions,
+      jobId,
+      () => youtubeWorkflowClient.getReaderMarks(jobId),
+    )
+  }
+
   function getReaderMarksLedger(jobId) {
     if (readerMarksLedgers.has(jobId)) return readerMarksLedgers.get(jobId)
     const ledger = createLatestWinsLedger({
       async write(entry, context) {
-        const expectedRevision = await ensureReaderRevision(
-          readerMarksRevisions,
-          jobId,
-          () => youtubeWorkflowClient.getReaderMarks(jobId),
-        )
+        const expectedRevision = await expectedMarksRevision(jobId, entry, context)
         const saved = await youtubeWorkflowClient.saveReaderMarks(entry.jobId, {
           marks: entry.marks,
           expectedRevision,
           operationId: context.operationId,
         })
-        if (Number.isInteger(saved?.revision)) readerMarksRevisions.set(jobId, saved.revision)
+        if (Number.isInteger(saved?.revision)) {
+          readerMarksRevisions.set(jobId, saved.revision)
+          readerMarksLastSaves.set(jobId, {
+            sequence: context.sequence,
+            sourceRevision: expectedRevision,
+            revision: saved.revision,
+          })
+          onReaderMarksSaved(jobId, entry.marks, saved.revision, entry.localVersion)
+        }
         return saved
       },
       createOperationId(sequence) {
@@ -152,6 +192,7 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
           if (readerActivityNotice.value.startsWith('标记保存失败')
             || readerActivityNotice.value.startsWith('标记存在并发冲突')
             || readerActivityNotice.value.includes('本地最新意图仍未丢失')
+            || readerActivityNotice.value.includes('本地最新意图仍保留')
             || readerActivityNotice.value.includes('最新进度仍保留')) readerActivityNotice.value = ''
         }
       },
@@ -206,9 +247,42 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
     return ledger
   }
 
+  function getReaderMarksPendingIntent(jobId) {
+    const ledger = readerMarksLedgers.get(jobId)
+    const state = ledger?.getState?.()
+    const latest = ledger?.getLatestEntry?.()
+    if (!state?.dirty
+      || !latest?.snapshot
+      || !Array.isArray(latest.snapshot.marks)
+      || latest.snapshot.source !== 'local-edit'
+      || !Number.isInteger(latest.snapshot.localVersion)
+      || latest.snapshot.localVersion < 1) return null
+    const sourceRevision = Number.isInteger(latest.snapshot.sourceRevision)
+      ? latest.snapshot.sourceRevision
+      : null
+    const previousSave = readerMarksLastSaves.get(jobId)
+    const expectedRevision = previousSave
+      && previousSave.sequence < latest.sequence
+      && (latest.snapshot.sourceRevision === previousSave.sourceRevision
+        || latest.snapshot.sourceRevision === previousSave.revision)
+      ? previousSave.revision
+      : sourceRevision
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) return null
+    return {
+      marks: latest.snapshot.marks.map((mark) => ({ ...mark })),
+      source: latest.snapshot.source,
+      sourceRevision: expectedRevision,
+      localVersion: latest.snapshot.localVersion,
+      sequence: latest.sequence,
+      operationId: latest.operationId,
+    }
+  }
+
   function rememberReaderRevision(kind, jobId, revision) {
+    const normalizedRevision = Number(revision)
+    if (!Number.isInteger(normalizedRevision) || normalizedRevision < 0) return
     const revisionMap = kind === 'marks' ? readerMarksRevisions : readerActivityRevisions
-    revisionMap.set(jobId, revision)
+    revisionMap.set(jobId, normalizedRevision)
   }
 
   function getReaderRevision(kind, jobId) {
@@ -223,6 +297,8 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
     readerActivityLedgers.clear()
     readerMarksRevisions.clear()
     readerActivityRevisions.clear()
+    readerMarksLastSaves.clear()
+    readerMarksRetryRevisions.clear()
     readerConflicts.clear()
     readerConflictVisible.value = false
   }
@@ -234,6 +310,7 @@ export function useReaderSaveCoordinator({ currentJobId, getReaderSessionId, mer
     readerConflictVisible,
     getReaderMarksLedger,
     getReaderActivityLedger,
+    getReaderMarksPendingIntent,
     updateReaderConflictVisibility,
     loadReaderConflict,
     clearReaderConflict,

@@ -73,7 +73,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     }
   }
 
-  function emitReaderMarksChanged(markedCount) {
+  function emitReaderMarksChanged(markedCount, options = {}) {
     const windowObject = getWindow();
     if (!windowObject || typeof windowObject.dispatchEvent !== 'function') return;
     const CustomEventCtor = typeof windowObject.CustomEvent === 'function'
@@ -84,7 +84,9 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
       windowObject.dispatchEvent(new CustomEventCtor('reader-marks-changed', {
         detail: {
           markedCount,
-          scope: getAnnotationGenerationScope()
+          scope: getAnnotationGenerationScope(),
+          source: options && options.source ? String(options.source) : 'system',
+          ...(options && options.operation ? { operation: options.operation } : {})
         }
       }));
     } catch (error) {
@@ -233,7 +235,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
     return scheduleGeneratedAnnotationIndexRefresh();
   }
 
-  async function syncAnnotationGenerationEntryStatus() {
+  async function syncAnnotationGenerationEntryStatus(options = {}) {
     const markedMap = state.markedMap instanceof Map ? state.markedMap : null;
     const count = markedMap ? markedMap.size : 0;
     if (markCountEl) {
@@ -241,7 +243,7 @@ export function createSessionAnnotationGeneratedIndexRuntime(deps = {}) {
       markCountEl.setAttribute('data-count', String(count));
       markCountEl.setAttribute('title', `当前文章已标记 ${count} 个重点词`);
     }
-    emitReaderMarksChanged(count);
+    emitReaderMarksChanged(count, options);
     return { markedCount: count };
   }
 

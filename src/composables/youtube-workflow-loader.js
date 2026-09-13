@@ -604,6 +604,7 @@ export function createYoutubeWorkflowLoader(deps = {}) {
         transcript: validated.transcript,
         chunkData: validated.chunkData,
         marks: normalizedMarks,
+        marksRevision: marksPayload.revision,
         contentId,
         revision,
         media: {

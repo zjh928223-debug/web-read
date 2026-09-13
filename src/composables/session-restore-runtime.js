@@ -163,7 +163,7 @@ export function createSessionRestoreRuntime(deps = {}) {
         if (normalizedMark) state.markedMap.set(normalizedMark.globalIndex, normalizedMark);
       });
       if (!state.isChunkMode) deps.renderTranscript();
-      deps.syncAnnotationGenerationEntryStatus();
+      deps.syncAnnotationGenerationEntryStatus({ source: 'restore' });
       deps.bridgeToPinia();
     }
     const generatedStore = deps.getAnnotationGeneratedResultStore();

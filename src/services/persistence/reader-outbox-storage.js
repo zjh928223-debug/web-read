@@ -5,6 +5,7 @@ const READER_OUTBOX_SCHEMA_VERSION = 1
 const READER_OUTBOX_ENTRY_PREFIX = 'read-web.reader-save-outbox.v2.'
 const READER_OUTBOX_ENTRY_SCHEMA_VERSION = 2
 const READER_OUTBOX_QUARANTINE_PREFIX = 'read-web.reader-save-outbox-quarantine.v1.'
+export const READER_MARKS_OUTBOX_SOURCE = 'local-edit'
 
 function isPlainReaderOutboxObject(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -29,7 +30,15 @@ function isValidReaderOutboxEntry(entry) {
     || entry.expectedRevision < 0
     || !isPlainReaderOutboxObject(entry.intent)) return false
   if (entry.kind === 'marks') {
-    return hasOnlyReaderOutboxKeys(entry.intent, ['marks'])
+    const hasSource = Object.prototype.hasOwnProperty.call(entry.intent, 'source')
+    const hasLocalVersion = Object.prototype.hasOwnProperty.call(entry.intent, 'localVersion')
+    return hasOnlyReaderOutboxKeys(entry.intent, ['marks', 'source', 'localVersion'])
+      && (!hasSource && !hasLocalVersion
+        || (hasSource && hasLocalVersion
+          && typeof entry.intent.source === 'string'
+          && isSafeReaderOutboxText(entry.intent.source, 64)
+          && Number.isInteger(entry.intent.localVersion)
+          && entry.intent.localVersion >= 1))
       && Array.isArray(entry.intent.marks)
       && entry.intent.marks.every((mark) => isPlainReaderOutboxObject(mark)
         && hasOnlyReaderOutboxKeys(mark, ['globalIndex', 'word', 'start', 'sourceType'])
@@ -61,6 +70,14 @@ function isValidReaderOutboxEntry(entry) {
     && entry.intent.intervals.every((interval) => Array.isArray(interval)
       && interval.length === 2
       && interval.every((value) => Number.isFinite(value)))
+}
+
+export function isTrustedReaderMarksOutboxEntry(entry) {
+  return isValidReaderOutboxEntry(entry)
+    && entry.kind === 'marks'
+    && entry.intent.source === READER_MARKS_OUTBOX_SOURCE
+    && Number.isInteger(entry.intent.localVersion)
+    && entry.intent.localVersion >= 1
 }
 
 function readerOutboxKeyPart(value) {
@@ -253,13 +270,20 @@ export function removeReaderOutboxEntry(entry) {
   }
 }
 
-function readerOutboxMarks(marks) {
-  return (Array.isArray(marks) ? marks : []).map((mark) => ({
-    globalIndex: Number(mark.globalIndex),
-    word: String(mark.word || ''),
-    start: Number.isFinite(Number(mark.start)) ? Number(mark.start) : null,
-    sourceType: String(mark.sourceType || 'manual-mark'),
-  }))
+function readerOutboxMarks(payload) {
+  const intent = {
+    marks: (Array.isArray(payload?.marks) ? payload.marks : []).map((mark) => ({
+      globalIndex: Number(mark.globalIndex),
+      word: String(mark.word || ''),
+      start: Number.isFinite(Number(mark.start)) ? Number(mark.start) : null,
+      sourceType: String(mark.sourceType || 'manual-mark'),
+    })),
+  }
+  if (payload && (payload.source !== undefined || payload.localVersion !== undefined)) {
+    intent.source = payload.source
+    intent.localVersion = payload.localVersion
+  }
+  return intent
 }
 
 function readerOutboxActivity(payload) {
@@ -289,7 +313,7 @@ export function createReaderOutboxEntry(kind, payload, operationId, expectedRevi
     operationId,
     expectedRevision,
     intent: kind === 'marks'
-      ? { marks: readerOutboxMarks(payload.marks) }
+      ? readerOutboxMarks(payload)
       : readerOutboxActivity(payload),
   }
   return isValidReaderOutboxEntry(entry) ? entry : null
