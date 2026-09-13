@@ -450,6 +450,21 @@ try {
       assert.equal(browserArtifact.isolation.mode, 'browser-route-fixtures-with-real-host-api')
       assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/vocabulary/local-sentences'))
       assert.ok(browserArtifact.isolation.realHostApiPaths.includes('/api/tts/edge'))
+      assert.ok(
+        browserArtifact.isolation.realHostApiPaths.some((pathname) => pathname.startsWith('/api/tts/edge/audio/')),
+        'the pronunciation audio child request must reach the temporary production host',
+      )
+      assert.ok(
+        (browserArtifact.ttsRequests || []).some((request) => (
+          request.kind === 'edge-audio-get'
+          && request.journeyAtStart === 'srs-review'
+          && request.isolationRoute === 'real-host'
+          && request.response?.status < 400
+          && request.response?.contentType?.toLowerCase().startsWith('audio/')
+          && request.audio?.valid === true
+        )),
+        'the current SRS card must receive a valid non-mock audio response',
+      )
       assert.equal(browserArtifact.errors.length, 0)
       browserArtifact.provenance = {
         hostKind: 'local-app-host',

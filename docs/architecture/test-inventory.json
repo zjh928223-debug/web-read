@@ -6677,7 +6677,7 @@
         "browser": true,
         "performance": true,
         "release": false,
-        "behaviorAssertions": false,
+        "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": true
       }

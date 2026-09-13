@@ -1,4 +1,5 @@
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
+import assert from 'node:assert/strict'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -45,6 +46,9 @@ const realHostApiPrefixes = String(process.env.READ_WEB_PERF_REAL_HOST_APIS || '
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean)
+const TTS_AUDIO_PATH_PREFIX = '/api/tts/edge/audio/'
+const TTS_AUDIO_FILE_PATTERN = /^\/api\/tts\/edge\/audio\/[a-f0-9]{64}\.mp3$/i
+const DEFAULT_LOCAL_SERVICE_ORIGIN = 'http://127.0.0.1:8765'
 
 function parseRequestedJourneys(value) {
   const names = String(value || fixedJourneyOrder.join(','))
@@ -122,6 +126,75 @@ function isEdgeTtsRequest(request) {
   }
 }
 
+function isEdgeTtsAudioRequest(request) {
+  if (request.method() !== 'GET') return false
+  try {
+    return new URL(request.url()).pathname.startsWith(TTS_AUDIO_PATH_PREFIX)
+  } catch {
+    return false
+  }
+}
+
+function ttsRequestKind(request) {
+  if (isEdgeTtsRequest(request)) return 'edge-post'
+  if (isEdgeTtsAudioRequest(request)) return 'edge-audio-get'
+  return ''
+}
+
+function isRealHostApiPath(pathname) {
+  return realHostApiPrefixes.some((prefix) => (
+    pathname === prefix
+    || (
+      prefix === '/api/tts/edge'
+      && pathname.startsWith(TTS_AUDIO_PATH_PREFIX)
+    )
+  ))
+}
+
+function isRealHostApiRequest(url) {
+  return url.origin === baseOrigin && isRealHostApiPath(url.pathname)
+}
+
+function isFallbackRealHostTtsRequest(url) {
+  return url.origin === DEFAULT_LOCAL_SERVICE_ORIGIN
+    && realHostApiPrefixes.includes('/api/tts/edge')
+    && isRealHostApiPath(url.pathname)
+}
+
+function classifyIsolationRoute(url) {
+  if (isRealHostApiRequest(url) || isFallbackRealHostTtsRequest(url)) return 'real-host'
+  if (url.pathname.startsWith('/api/') || (url.origin !== baseOrigin && url.pathname.includes('/api/'))) {
+    return 'mock'
+  }
+  if (url.origin === baseOrigin || url.protocol === 'data:' || url.protocol === 'blob:') {
+    return 'same-origin'
+  }
+  return 'blocked-external'
+}
+
+function normalizePath(value) {
+  try {
+    return new URL(String(value || ''), baseOrigin).pathname
+  } catch {
+    return ''
+  }
+}
+
+function isLikelyMp3(buffer) {
+  if (!buffer?.length) return false
+  return buffer.subarray(0, 3).toString('ascii') === 'ID3'
+    || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0)
+}
+
+function isValidTtsAudioResponse({ status, contentType, body } = {}) {
+  if (Number(status) >= 400) return false
+  if (!/^audio\//i.test(String(contentType || ''))) return false
+  const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body || [])
+  if (!bytes.length) return false
+  if (/^audio\/mpeg(?:;|$)/i.test(String(contentType || ''))) return isLikelyMp3(bytes)
+  return true
+}
+
 function readTtsRequestToken(request) {
   return String(request.headers()['x-read-web-performance-tts-request'] || '').trim()
 }
@@ -135,14 +208,109 @@ function classifyExpectedPronunciationAbort({
   requestReplaced = false,
   testTriggered = false,
 } = {}) {
-  if (String(method || '').toUpperCase() !== 'POST') return ''
-  if (String(pathname || '') !== '/api/tts/edge') return ''
+  const normalizedMethod = String(method || '').toUpperCase()
+  const normalizedPath = String(pathname || '')
+  const isPost = normalizedMethod === 'POST' && normalizedPath === '/api/tts/edge'
+  const isAudioGet = normalizedMethod === 'GET' && TTS_AUDIO_FILE_PATTERN.test(normalizedPath)
+  if (!isPost && !isAudioGet) return ''
   if (failureText !== 'net::ERR_ABORTED') return ''
   if (pageClosed) return 'page-closed'
   if (pageUnloading) return 'page-unload'
   if (requestReplaced) return 'request-replaced'
-  if (testTriggered) return 'test-triggered'
+  if (isPost && testTriggered) return 'test-triggered'
   return ''
+}
+
+function runTtsContractChecks() {
+  const validAudioPath = `/api/tts/edge/audio/${'a'.repeat(64)}.mp3`
+  assert.equal(
+    isRealHostApiRequest(new URL(`${baseOrigin}${validAudioPath}`)),
+    true,
+    'enabled TTS real-host routing must include the audio child path',
+  )
+  assert.equal(
+    isRealHostApiRequest(new URL(`${baseOrigin}/api/tts/edge-unrelated`)),
+    false,
+    'TTS routing must not widen to an unrelated API path',
+  )
+  assert.equal(
+    classifyIsolationRoute(new URL(`${DEFAULT_LOCAL_SERVICE_ORIGIN}${validAudioPath}`)),
+    'real-host',
+    'the built-in local service fallback must be rewritten only for the configured TTS path',
+  )
+  assert.equal(
+    classifyExpectedPronunciationAbort({
+      method: 'GET',
+      pathname: validAudioPath,
+      failureText: 'net::ERR_ABORTED',
+      requestReplaced: true,
+    }),
+    'request-replaced',
+  )
+  assert.equal(
+    classifyExpectedPronunciationAbort({
+      method: 'GET',
+      pathname: validAudioPath,
+      failureText: 'net::ERR_ABORTED',
+    }),
+    '',
+    'an unexplained audio cancellation must remain an error',
+  )
+  assert.equal(
+    classifyExpectedPronunciationAbort({
+      method: 'GET',
+      pathname: '/api/not-tts',
+      failureText: 'net::ERR_ABORTED',
+      pageUnloading: true,
+    }),
+    '',
+    'a non-TTS request cancellation must remain an error',
+  )
+  assert.equal(
+    classifyExpectedPronunciationAbort({
+      method: 'POST',
+      pathname: '/api/tts/edge',
+      failureText: 'net::ERR_ABORTED',
+      testTriggered: true,
+    }),
+    'test-triggered',
+  )
+  assert.equal(
+    classifyExpectedPronunciationAbort({
+      method: 'POST',
+      pathname: '/api/tts/edge',
+      failureText: 'net::ERR_ABORTED',
+    }),
+    '',
+    'an unexplained generation cancellation must remain an error',
+  )
+  assert.equal(
+    isValidTtsAudioResponse({
+      status: 200,
+      contentType: 'audio/mpeg',
+      body: Buffer.from('ID3fixture-audio'),
+    }),
+    true,
+  )
+  assert.equal(
+    isValidTtsAudioResponse({
+      status: 200,
+      contentType: 'application/json',
+      body: Buffer.from('{}'),
+    }),
+    false,
+    'JSON must not be accepted as audio',
+  )
+  assert.equal(
+    isValidTtsAudioResponse({
+      status: 404,
+      contentType: 'audio/mpeg',
+      body: Buffer.from('ID3missing'),
+    }),
+    false,
+    'an audio 404 must not be accepted as a cancellation',
+  )
+  console.log('TTS browser route/classifier contract passed (positive and negative cases)')
 }
 
 async function mockApi(route) {
@@ -190,10 +358,38 @@ async function installNetworkIsolation(context, artifact) {
   await context.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    if (url.origin === baseOrigin && realHostApiPrefixes.some((prefix) => url.pathname === prefix)) {
+    if (isRealHostApiRequest(url)) {
       artifact.isolation.realHostApiRequests += 1
       artifact.isolation.realHostApiPaths.push(url.pathname)
       await route.continue()
+      return
+    }
+    if (isFallbackRealHostTtsRequest(url)) {
+      artifact.isolation.realHostApiRequests += 1
+      artifact.isolation.realHostApiPaths.push(url.pathname)
+      const requestOrigin = request.headers().origin || baseOrigin
+      if (request.method() === 'OPTIONS') {
+        await route.fulfill({
+          status: 204,
+          headers: {
+            'access-control-allow-origin': requestOrigin,
+            'access-control-allow-credentials': 'true',
+            'access-control-allow-methods': 'GET, POST, OPTIONS',
+            'access-control-allow-headers': request.headers()['access-control-request-headers'] || 'content-type',
+            'access-control-max-age': '60',
+          },
+        })
+        return
+      }
+      const response = await route.fetch({ url: `${baseOrigin}${url.pathname}${url.search}` })
+      await route.fulfill({
+        response,
+        headers: {
+          ...response.headers(),
+          'access-control-allow-origin': requestOrigin,
+          'access-control-allow-credentials': 'true',
+        },
+      })
       return
     }
     if (url.pathname.startsWith('/api/') || url.origin !== baseOrigin && url.pathname.includes('/api/')) {
@@ -355,6 +551,19 @@ const journeys = {
       await page.goto(`${baseUrl}/srs-review.html`, { waitUntil: 'domcontentloaded' })
       await page.locator('.srs-review-content').waitFor({ state: 'visible', timeout: 20_000 })
     })
+    await page.locator('.srs-review-pronunciation-audio').waitFor({ state: 'attached', timeout: 20_000 })
+    await page.waitForFunction(() => {
+      const audio = document.querySelector('.srs-review-pronunciation-audio')
+      return Boolean(audio?.currentSrc && audio.readyState >= 2 && !audio.error)
+    }, undefined, { timeout: 15_000 })
+    const pronunciation = await page.evaluate(() => {
+      const audio = document.querySelector('.srs-review-pronunciation-audio')
+      return {
+        path: audio?.currentSrc ? new URL(audio.currentSrc, location.href).pathname : '',
+        readyState: audio?.readyState ?? 0,
+        error: audio?.error?.code ?? null,
+      }
+    })
     await measure('srs-review.reveal', async () => {
       await page.locator('.srs-review-actions .srs-review-reveal').click()
       await page.locator('.srs-review-meanings').waitFor({ state: 'visible' })
@@ -374,8 +583,16 @@ const journeys = {
           || Boolean(nextProgress && nextProgress !== priorProgress?.trim())
       }, { previousWord, previousProgress })
     })
-    return { reviewVisible: await page.locator('.srs-review-page').isVisible() }
+    return {
+      reviewVisible: await page.locator('.srs-review-page').isVisible(),
+      pronunciation,
+    }
   },
+}
+
+if (process.env.READ_WEB_PERF_TTS_CONTRACT_ONLY === '1') {
+  runTtsContractChecks()
+  process.exit(0)
 }
 
 await mkdir(outputDirectory, { recursive: true })
@@ -403,6 +620,7 @@ const artifact = {
   samples: [],
   errors: [],
   requests: { total: 0, failed: 0, httpErrors: 0, expectedAborted: 0 },
+  ttsRequests: [],
   longTasks: [],
 }
 
@@ -483,8 +701,95 @@ let activeJourney = 'setup'
 let mainFrameNavigationSerial = 0
 let pageClosed = false
 let nextRequestSerial = 0
-const ttsRequests = new Map()
+const ttsRequestStates = new Map()
 const requestFailureTasks = []
+const ttsObservationTasks = []
+const responseDiagnosticTasks = []
+
+async function captureReviewPageContext() {
+  if (page.isClosed()) return null
+  try {
+    return await page.evaluate(() => {
+      const pronunciationAudio = document.querySelector('.srs-review-pronunciation-audio')
+      const pronunciationSource = pronunciationAudio?.currentSrc || pronunciationAudio?.getAttribute('src') || ''
+      let pronunciationPath = ''
+      try {
+        pronunciationPath = pronunciationSource
+          ? new URL(pronunciationSource, location.href).pathname
+          : ''
+      } catch {}
+      return {
+        word: document.querySelector('.srs-review-word-line h2')?.textContent?.trim() || '',
+        progress: document.querySelector('.srs-review-progress')?.textContent?.trim() || '',
+        pronunciationPath,
+        pronunciationConnected: Boolean(pronunciationAudio?.isConnected),
+      }
+    })
+  } catch {
+    return null
+  }
+}
+
+function isPronunciationRequestReplaced(observation, context) {
+  if (observation?.kind !== 'edge-audio-get' || !context) return false
+  const started = observation.cardAtStart
+  if (!started || started.pronunciationPath !== observation.path) return false
+  const cardChanged = started.word !== context.word || started.progress !== context.progress
+  const sourceChanged = context.pronunciationPath !== observation.path || !context.pronunciationConnected
+  return sourceChanged && (cardChanged || !context.word)
+}
+
+async function inspectTtsResponse(response, state) {
+  const observation = state?.observation
+  if (!observation) return
+  const headers = response.headers()
+  const contentType = String(headers['content-type'] || '')
+  observation.response = {
+    status: response.status(),
+    contentType,
+  }
+  if (state.kind === 'edge-post' && response.status() < 400) {
+    try {
+      const payload = await response.json()
+      const audioPath = normalizePath(payload?.audioUrl)
+      if (audioPath) {
+        state.audioPath = audioPath
+        observation.response.audioPath = audioPath
+      }
+    } catch {}
+    return
+  }
+  if (state.kind !== 'edge-audio-get' || response.status() >= 400) return
+  let body = null
+  try {
+    body = await response.body()
+  } catch {}
+  if (body === null) {
+    observation.audio = {
+      byteLength: null,
+      valid: null,
+    }
+    return
+  }
+  const valid = isValidTtsAudioResponse({ status: response.status(), contentType, body })
+  observation.audio = {
+    byteLength: body?.length ?? null,
+    valid,
+  }
+  if (!valid) {
+    artifact.errors.push({
+      journey: observation.journeyAtStart,
+      type: 'tts-invalid-audio-response',
+      method: observation.method,
+      resourceType: observation.resourceType,
+      path: observation.path,
+      status: response.status(),
+      contentType,
+      byteLength: body?.length ?? null,
+    })
+  }
+}
+
 page.on('console', (message) => {
   if (message.type() === 'error') artifact.errors.push({ journey: activeJourney, type: 'console', text: message.text() })
 })
@@ -492,26 +797,55 @@ page.on('pageerror', (error) => artifact.errors.push({ journey: activeJourney, t
 page.on('close', () => { pageClosed = true })
 page.on('request', (request) => {
   artifact.requests.total += 1
+  const kind = ttsRequestKind(request)
   try {
     if (request.isNavigationRequest() && request.frame() === page.mainFrame()) {
       mainFrameNavigationSerial += 1
     }
   } catch {}
-  if (isEdgeTtsRequest(request)) {
+  if (kind) {
+    const url = new URL(request.url())
+    const observation = {
+      kind,
+      method: request.method(),
+      resourceType: request.resourceType(),
+      path: url.pathname,
+      isolationRoute: classifyIsolationRoute(url),
+      journeyAtStart: activeJourney,
+      navigationSerialAtStart: mainFrameNavigationSerial,
+      serial: ++nextRequestSerial,
+      startedAtMs: performance.now(),
+      cardAtStart: null,
+      response: null,
+      failure: null,
+      outcome: 'pending',
+    }
     const state = {
       request,
-      token: readTtsRequestToken(request),
-      serial: ++nextRequestSerial,
+      kind,
+      token: kind === 'edge-post' ? readTtsRequestToken(request) : '',
+      serial: observation.serial,
+      observation,
       navigationSerial: mainFrameNavigationSerial,
       failed: false,
       finished: false,
     }
-    ttsRequests.set(request, state)
+    const contextTask = captureReviewPageContext().then((context) => {
+      observation.cardAtStart = context
+    })
+    state.contextTask = contextTask
+    ttsObservationTasks.push(contextTask)
+    ttsRequestStates.set(request, state)
+    artifact.ttsRequests.push(observation)
   }
 })
 page.on('requestfinished', (request) => {
-  const state = ttsRequests.get(request)
-  if (state) state.finished = true
+  const state = ttsRequestStates.get(request)
+  if (state) {
+    state.finished = true
+    state.observation.outcome = 'finished'
+    state.observation.finishedAtMs = performance.now()
+  }
 })
 page.on('requestfailed', (request) => {
   const task = handleRequestFailure(request)
@@ -520,14 +854,17 @@ page.on('requestfailed', (request) => {
 
 async function handleRequestFailure(request) {
   const failureText = request.failure()?.errorText
-  const state = ttsRequests.get(request)
+  const state = ttsRequestStates.get(request)
+  const observation = state?.observation
   let pathname = ''
   try {
     pathname = new URL(request.url()).pathname
   } catch {}
 
+  if (state?.contextTask) await state.contextTask
+  const pageContextAtFailure = await captureReviewPageContext()
   let browserTtsState = null
-  if (state?.token && !page.isClosed()) {
+  if (state?.kind === 'edge-post' && state.token && !page.isClosed()) {
     try {
       browserTtsState = await page.evaluate(
         (token) => window.__readWebPerformanceTtsState?.(token) || null,
@@ -535,31 +872,72 @@ async function handleRequestFailure(request) {
       )
     } catch {}
   }
-  const newerTtsRequest = state
-    ? Array.from(ttsRequests.values()).some((candidate) => candidate.serial > state.serial)
+  const newerTtsRequest = state?.kind === 'edge-post'
+    ? Array.from(ttsRequestStates.values()).some((candidate) => (
+      candidate.kind === 'edge-post' && candidate.serial > state.serial
+    ))
     : false
+  const requestReplaced = isPronunciationRequestReplaced(observation, pageContextAtFailure)
   const reason = classifyExpectedPronunciationAbort({
     method: request.method(),
     pathname,
     failureText,
     pageUnloading: Boolean(state && mainFrameNavigationSerial > state.navigationSerial),
     pageClosed: pageClosed || page.isClosed(),
-    requestReplaced: Boolean(browserTtsState?.aborted && newerTtsRequest),
-    testTriggered: Boolean(browserTtsState?.testTriggered),
+    requestReplaced: requestReplaced || Boolean(browserTtsState?.aborted && newerTtsRequest),
+    testTriggered: state?.kind === 'edge-post' && Boolean(browserTtsState?.testTriggered),
   })
-  if (state) state.failed = true
+  if (state) {
+    state.failed = true
+    observation.outcome = 'failed'
+    observation.failedAtMs = performance.now()
+    observation.journeyAtFailure = activeJourney
+    observation.navigationSerialAtFailure = mainFrameNavigationSerial
+    observation.cardAtFailure = pageContextAtFailure
+    observation.failure = { text: failureText }
+    observation.expectedAbortReason = reason || null
+  }
   if (reason) {
     artifact.requests.expectedAborted += 1
     return
   }
   artifact.requests.failed += 1
-  artifact.errors.push({ journey: activeJourney, type: 'requestfailed', url: request.url(), text: failureText })
+  if (observation) {
+    artifact.errors.push({
+      journey: observation.journeyAtStart,
+      journeyAtFailure: activeJourney,
+      type: 'requestfailed',
+      method: observation.method,
+      resourceType: observation.resourceType,
+      path: observation.path,
+      url: request.url(),
+      text: failureText,
+      serial: observation.serial,
+      navigationSerialAtStart: observation.navigationSerialAtStart,
+      navigationSerialAtFailure: mainFrameNavigationSerial,
+    })
+  } else {
+    artifact.errors.push({ journey: activeJourney, type: 'requestfailed', url: request.url(), text: failureText })
+  }
 }
 
 page.on('response', (response) => {
+  const state = ttsRequestStates.get(response.request())
+  if (state) responseDiagnosticTasks.push(inspectTtsResponse(response, state))
   if (response.status() >= 400) {
     artifact.requests.httpErrors += 1
-    artifact.errors.push({ journey: activeJourney, type: 'http', url: response.url(), status: response.status() })
+    artifact.errors.push({
+      journey: state?.observation?.journeyAtStart || activeJourney,
+      journeyAtResponse: activeJourney,
+      type: 'http',
+      url: response.url(),
+      status: response.status(),
+      ...(state ? {
+        method: state.observation.method,
+        resourceType: state.observation.resourceType,
+        path: state.observation.path,
+      } : {}),
+    })
   }
 })
 
@@ -613,7 +991,11 @@ try {
   artifact.errors.push({ journey: activeJourney, type: 'harness', text: error.stack || error.message })
   await page.screenshot({ path: path.join(outputDirectory, 'browser-journeys-failure.png'), fullPage: true })
 } finally {
-  await Promise.allSettled(requestFailureTasks)
+  await Promise.allSettled([
+    ...requestFailureTasks,
+    ...ttsObservationTasks,
+    ...responseDiagnosticTasks,
+  ])
   artifact.summary = {
     passedJourneys: artifact.journeys.filter((item) => item.status === 'passed').length,
     requestedJourneys: requestedJourneys.length,
