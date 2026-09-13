@@ -640,7 +640,8 @@ body {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  min-width: max-content;
+  /* Reserve the Teleport target's final footprint before Vue inserts its entries. */
+  min-width: 237px;
   min-height: 28px;
 }
 
@@ -1667,6 +1668,7 @@ body {
       align-items: center;
       gap: 12px;
       width: 100%;
+      box-sizing: border-box;
       overflow-x: auto;
       padding-bottom: 5px;
       border: 1px solid var(--glass-border);

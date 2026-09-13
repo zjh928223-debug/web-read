@@ -49,22 +49,35 @@
     ],
     "policy": "Exact sequence is guarded; this milestone does not reorder index.html scripts"
   },
-  "protectedWorkingTreeFiles": [
+  "protectedWorkingTreeFiles": [],
+  "resolvedProtectedWorkingTreeFiles": [
     {
       "path": "tools/subtitle-workflow/chunker/chunk_rules.py",
-      "sha256AtCapture": "sha256:68ae3145d05d97a15cccb6c48228659d3798b639f256eb83e84e9fbcc8b798e7"
+      "sha256AtCapture": "sha256:68ae3145d05d97a15cccb6c48228659d3798b639f256eb83e84e9fbcc8b798e7",
+      "enteredHistoryIn": ["9e5afaf", "3ef2079"],
+      "currentBlob": "sha256:73de94c254428670289d907f1737d8f059e8dfac",
+      "resolution": "Retained as the committed Python implementation; the historical working-tree protection is resolved without changing the file."
     },
     {
       "path": "tools/subtitle-workflow/language_service.py",
-      "sha256AtCapture": "sha256:e31ec41b563f48d27b3c045a2f208f6cee8e47d23deeb0ddf9d265897bbb93ee"
+      "sha256AtCapture": "sha256:e31ec41b563f48d27b3c045a2f208f6cee8e47d23deeb0ddf9d265897bbb93ee",
+      "enteredHistoryIn": ["9e5afaf", "7b7d609", "3ef2079"],
+      "currentBlob": "sha256:2444d94d2bd2c6ed598b8e805a01786bbcee515a",
+      "resolution": "Retained as the committed Python implementation; the historical working-tree protection is resolved without changing the file."
     },
     {
       "path": "tools/subtitle-workflow/tests/test_language_service.py",
-      "sha256AtCapture": "sha256:f400c69ee90646f819a03ad5e4567682d27f540f4c05f88b2d0cce3f2509c673"
+      "sha256AtCapture": "sha256:f400c69ee90646f819a03ad5e4567682d27f540f4c05f88b2d0cce3f2509c673",
+      "enteredHistoryIn": ["9e5afaf", "7b7d609", "3ef2079"],
+      "currentBlob": "sha256:a7f17a6f45d86370b0be710e4d3449bb65021010",
+      "resolution": "Retained as the committed Python test coverage; the historical working-tree protection is resolved without changing the file."
     },
     {
       "path": "tools/subtitle-workflow/tests/test_chunk_rules.py",
-      "sha256AtCapture": "sha256:6a1b0cdc99fac54dcee697f91b0589825b0c7d3416dfe90cd1eec22064c010ad"
+      "sha256AtCapture": "sha256:6a1b0cdc99fac54dcee697f91b0589825b0c7d3416dfe90cd1eec22064c010ad",
+      "enteredHistoryIn": ["9e5afaf", "3ef2079"],
+      "currentBlob": "sha256:949631afab771ce11300878046431b4f0ddb6d77",
+      "resolution": "Retained as the committed Python test coverage; the historical working-tree protection is resolved without changing the file."
     }
   ],
   "protectedWorkingTreeFilesResolution": {
@@ -155,5 +168,5 @@
     "all six domain registrations and typed API schema",
     "no owner-mode or domain writer migration claim"
   ],
-  "artifactChecksum": "sha256:4c6ae8d7ef8841638bb0b02619a82feb0d70265a693b07ec36c83a5c8b4ffadb"
+  "artifactChecksum": "sha256:f42a9b58e69f6486a51f733e54cc0a1ae8ba0bfbf6b407d8b1569b712cd8db80"
 }

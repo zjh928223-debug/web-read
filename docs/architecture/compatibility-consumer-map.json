@@ -8,10 +8,10 @@
     "pageErrors": []
   },
   "summary": {
-    "compatibilitySurfaces": 87,
+    "compatibilitySurfaces": 88,
     "staticReaders": 57,
-    "staticWriters": 62,
-    "runtimeDefined": 61,
+    "staticWriters": 63,
+    "runtimeDefined": 62,
     "runtimeCalled": 1,
     "inlineHandlers": 0,
     "loadedScripts": 12
@@ -79,7 +79,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 968
+          "line": 842
         },
         {
           "file": "src/composables/reader-feature-runtime-deps.js",
@@ -91,7 +91,7 @@
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 299
+          "line": 317
         }
       ],
       "writes": [
@@ -120,7 +120,7 @@
       "writes": [
         {
           "file": "src/composables/app-handlers.js",
-          "line": 99
+          "line": 107
         }
       ],
       "runtime": {
@@ -324,23 +324,23 @@
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 698
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
           "line": 820
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 947
+          "line": 2011
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2090
+          "line": 2011
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2090
-        },
-        {
-          "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2091
+          "line": 2012
         },
         {
           "file": "src/composables/app-handlers.js",
@@ -513,7 +513,7 @@
         },
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 732
+          "line": 1013
         }
       ],
       "writes": [],
@@ -617,7 +617,7 @@
       "writes": [
         {
           "file": "src/composables/vocabulary-preview-module.js",
-          "line": 1596
+          "line": 1606
         }
       ],
       "runtime": {
@@ -634,37 +634,37 @@
       "reads": [
         {
           "file": "src/composables/youtube-workflow-client.js",
-          "line": 95
+          "line": 105
         },
         {
           "file": "src/composables/youtube-workflow-client.js",
-          "line": 106
+          "line": 116
         },
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 310
+          "line": 318
         },
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 421
+          "line": 429
         },
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 493
+          "line": 501
         }
       ],
       "writes": [
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 310
+          "line": 318
         },
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 450
+          "line": 458
         },
         {
           "file": "src/services/windows-owner-domain-cutover.js",
-          "line": 483
+          "line": 491
         }
       ],
       "runtime": {
@@ -681,7 +681,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 959
+          "line": 833
         },
         {
           "file": "src/composables/session-lifecycle-runtime.js",
@@ -742,15 +742,15 @@
       "reads": [
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 47
+          "line": 49
         },
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 51
+          "line": 53
         },
         {
           "file": "src/composables/session-facades.js",
-          "line": 79
+          "line": 80
         }
       ],
       "writes": [],
@@ -790,7 +790,7 @@
       "reads": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 103
+          "line": 111
         }
       ],
       "writes": [
@@ -831,7 +831,7 @@
       "reads": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 99
+          "line": 107
         },
         {
           "file": "src/composables/vocabulary-preview-module.js",
@@ -912,11 +912,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 941
+          "line": 814
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 941
+          "line": 814
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1084,7 +1084,7 @@
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 108
+          "line": 116
         }
       ],
       "runtime": {
@@ -1102,7 +1102,7 @@
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 109
+          "line": 117
         }
       ],
       "runtime": {
@@ -1137,11 +1137,11 @@
       "reads": [
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 77
+          "line": 79
         },
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 78
+          "line": 80
         }
       ],
       "writes": [],
@@ -1177,35 +1177,35 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 965
+          "line": 839
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 965
+          "line": 839
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 966
+          "line": 840
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 966
+          "line": 840
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 476
+          "line": 544
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 476
+          "line": 544
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 477
+          "line": 545
         },
         {
           "file": "src/composables/youtube-workflow-loader.js",
-          "line": 477
+          "line": 545
         }
       ],
       "writes": [
@@ -1228,11 +1228,11 @@
       "reads": [
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 76
+          "line": 78
         },
         {
           "file": "src/composables/session-annotation-generated-index.js",
-          "line": 82
+          "line": 84
         }
       ],
       "writes": [],
@@ -1251,7 +1251,7 @@
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 110
+          "line": 118
         }
       ],
       "runtime": {
@@ -1292,7 +1292,7 @@
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 107
+          "line": 115
         }
       ],
       "runtime": {
@@ -1666,7 +1666,7 @@
       "writes": [
         {
           "file": "src/composables/annotation-bubble-resolver.js",
-          "line": 153
+          "line": 215
         }
       ],
       "runtime": {
@@ -1719,11 +1719,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 950
+          "line": 823
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 962
+          "line": 836
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1750,11 +1750,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 949
+          "line": 822
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 961
+          "line": 835
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -1805,7 +1805,7 @@
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 111
+          "line": 119
         }
       ],
       "runtime": {
@@ -1822,11 +1822,11 @@
       "reads": [
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 691
+          "line": 972
         },
         {
           "file": "src/services/vocabulary/vocabulary-service.js",
-          "line": 692
+          "line": 973
         }
       ],
       "writes": [],
@@ -1902,7 +1902,7 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 972
+          "line": 843
         },
         {
           "file": "src/composables/media-source-module.js",
@@ -1941,17 +1941,25 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2350
+          "line": 502
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2350
+          "line": 503
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2123
+        },
+        {
+          "file": "src/components/YouTubeWorkflowPanel.vue",
+          "line": 2124
         }
       ],
       "writes": [
         {
           "file": "src/composables/session-facades.js",
-          "line": 112
+          "line": 121
         }
       ],
       "runtime": {
@@ -2063,11 +2071,11 @@
       "reads": [
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2839
+          "line": 2399
         },
         {
           "file": "src/components/YouTubeWorkflowPanel.vue",
-          "line": 2839
+          "line": 2399
         },
         {
           "file": "src/composables/session-runtime-adapters.js",
@@ -2121,6 +2129,24 @@
         "defined": true,
         "type": "object",
         "reads": 1,
+        "calls": 0,
+        "assigned": true
+      }
+    },
+    {
+      "name": "waitForGeneratedAnnotationIndex",
+      "reads": [],
+      "writes": [
+        {
+          "file": "src/composables/session-facades.js",
+          "line": 120
+        }
+      ],
+      "runtime": {
+        "name": "waitForGeneratedAnnotationIndex",
+        "defined": true,
+        "type": "function",
+        "reads": 0,
         "calls": 0,
         "assigned": true
       }
