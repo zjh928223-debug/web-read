@@ -9,7 +9,7 @@
       v-for="(seg, idx) in ts.segments"
       :key="idx"
       :id="'segment-' + idx"
-      :class="lineClasses(idx)"
+      class="transcript-line"
     >
       <template
         v-for="(word, widx) in seg.words"
@@ -47,6 +47,7 @@ export default {
     const chunk = useChunkStore()
     const rootElement = ref(null)
     let activeWordElement = null
+    let activeSentenceElement = null
 
     function syncActiveWordClass() {
       const index = Number(ts.activeWordIdx)
@@ -66,11 +67,37 @@ export default {
       () => ts.activeWordIdx,
       () => nextTick(syncActiveWordClass)
     )
+
+    function syncActiveSentenceClass() {
+      const index = ts.activeSegIdx
+      const nextElement = ts.highlightMode === 2
+        && Number.isInteger(index)
+        && index >= 0
+        && rootElement.value
+        ? rootElement.value.querySelector('#segment-' + index)
+        : null
+      if (activeSentenceElement && activeSentenceElement !== nextElement) {
+        activeSentenceElement.classList.remove('sentence-active')
+      }
+      if (nextElement && !nextElement.classList.contains('sentence-active')) {
+        nextElement.classList.add('sentence-active')
+      }
+      activeSentenceElement = nextElement
+    }
+
+    watch(
+      () => [ts.highlightMode, ts.activeSegIdx],
+      () => nextTick(syncActiveSentenceClass)
+    )
     onMounted(syncActiveWordClass)
+    onMounted(syncActiveSentenceClass)
     onUpdated(syncActiveWordClass)
+    onUpdated(syncActiveSentenceClass)
     onBeforeUnmount(() => {
       if (activeWordElement) activeWordElement.classList.remove('word-highlight')
       activeWordElement = null
+      if (activeSentenceElement) activeSentenceElement.classList.remove('sentence-active')
+      activeSentenceElement = null
     })
 
     function isMarkedWord(idx) {
@@ -92,13 +119,6 @@ export default {
         classes['preview-vocabulary-word'] = true
       }
       return classes
-    }
-
-    function lineClasses(index) {
-      return {
-        'transcript-line': true,
-        'sentence-active': ts.highlightMode === 2 && index === ts.activeSegIdx
-      }
     }
 
     function wordText(word) {
@@ -128,7 +148,7 @@ export default {
       return chunk.isChunkMode || false
     })
 
-    return { ts, rootElement, chunkModeActive, lineClasses, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
+    return { ts, rootElement, chunkModeActive, wordClasses, wordText, wordSeparator, onWordClick, onWordContextMenu }
   }
 }
 </script>

@@ -50,6 +50,7 @@
     "scripts/lib/windows-owner-production-entry.mjs",
     "scripts/reader-marks-hydration-check.mjs",
     "scripts/reader-playback-tracker-check.mjs",
+    "scripts/sentence-highlight-ui-check.mjs",
     "scripts/start-latest-reader.ps1",
     "scripts/vocabulary-repository-browser-reopen-check.cjs",
     "scripts/windows-owner-production-entry.mjs",

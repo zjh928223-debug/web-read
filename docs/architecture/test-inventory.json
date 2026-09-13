@@ -5,12 +5,12 @@
   "categories": {
     "architecture": 115,
     "behavior": 128,
-    "browser": 33,
+    "browser": 34,
     "performance": 18,
     "release": 17
   },
   "packageScriptCount": 286,
-  "executableScriptCount": 311,
+  "executableScriptCount": 312,
   "packageCommands": [
     {
       "name": "dictionary:benchmark",
@@ -8640,6 +8640,31 @@
         "behaviorAssertions": true,
         "executesModule": true,
         "startsBrowser": false
+      }
+    },
+    {
+      "path": "scripts/sentence-highlight-ui-check.mjs",
+      "category": "browser",
+      "layers": [
+        "browser",
+        "behavior"
+      ],
+      "aggregates": [],
+      "architectureEvidence": [],
+      "owner": "docs/architecture/script-inventory.json#devTool",
+      "owners": [
+        "docs/architecture/script-inventory.json#devTool"
+      ],
+      "invocation": "inventory-only",
+      "evidence": {
+        "sourceShape": [],
+        "sourceRead": false,
+        "browser": true,
+        "performance": false,
+        "release": false,
+        "behaviorAssertions": true,
+        "executesModule": true,
+        "startsBrowser": true
       }
     },
     {
