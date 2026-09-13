@@ -26,6 +26,39 @@ evidence；wrapper 目前只做 fixture verification，不读取或迁移日常 
 和 OpenSpec strict validation。`npm run verify:full` 在既有 Python dependency-health 阶段因安装环境中同时
 存在多个 `networkx` 与 `torchaudio` 版本而停止，未把该阻断后的阶段当作通过。
 
+## 本轮单人工具优化收尾（2026-09-13）
+
+本节只记录 `task-op-1`～`task-op-14` 的局部优化边界，不修改文档顶部的全仓库 `Last verified: 2026-08-30`，也不表示历史 Host、发布、迁移或 full 验证结果已被重新核实。
+
+六个方向的状态如下：
+
+1. 健康检查请求协调：完成。
+2. 优化环境默认配置：完成。
+3. 大文件职责拆分：本轮既定前端边界已收尾；预习、outbox、保存队列/冲突、播放跟踪和标记恢复已有独立所有者，面板仍保留材料操作与生命周期接线。
+4. 长材料渲染：共享高亮索引、句高亮局部更新和普通/chunk 模式切换优化已收尾。
+5. 学习页面按需加载：完成；SRS 与 Passage Preview 页面延迟加载，设置弹窗保持静态加载。
+6. 旧检查与文档整理：本批入口核对、旧 panel 兼容入口保留和架构文档同步完成。
+
+task-op-12/13 的历史报告显示，10,000 词材料的稳定跨帧切换 p95 为普通→chunk `38.8～42.0ms`、chunk→普通 `52.9～59.2ms`，句高亮约 `13ms` 且长任务为零。上述数字来自隔离 Vite 开发环境的合成材料测量，本批没有复测；稳定跨帧计时与原 mode 计时不可混用。剩余布局成本不在本轮继续拆分，也不作为追加虚拟列表任务的理由。
+
+### 本轮检查入口与归属
+
+| 范围 | 当前入口 | 归属与边界 |
+| --- | --- | --- |
+| transcript state | `npm run verify:transcript-state` | package.json 正式行为入口 |
+| panel V3 | `npm run verify:youtube-workflow-panel`；浏览器为 `npm run verify:youtube-workflow-panel-behavior` | package.json 正式入口；旧 `node scripts/youtube-workflow-panel-check.cjs` 保留并转接 V3 |
+| reader marks hydration | `node scripts/reader-marks-hydration-check.mjs` | inventory-only focused behavior 入口 |
+| reader playback tracker | `node scripts/reader-playback-tracker-check.mjs` | inventory-only focused behavior 入口 |
+| workflow reader marks ledger | `npm run verify:workflow-reader-ledger` | package.json 正式架构/行为入口 |
+| learning page lazy load | `node scripts/learning-page-lazy-load-check.cjs` | inventory-only browser 入口；沿用已有 Vite 与 dist preview 前置 |
+| vocabulary preview UI | `npm run verify:vocabulary-preview-ui` | package.json 正式 browser/behavior 入口；无 `READ_WEB_URL` 时脚本自启隔离 Vite |
+| sentence highlight UI | `node scripts/sentence-highlight-ui-check.mjs` | inventory-only browser 入口；默认自启隔离 Vite |
+| playback scale capture/diagnostics | `npm run verify:performance:playback-scale` | package.json 性能入口；sentence/mode 诊断仍由既有环境变量可选开启，本批不再做性能实验 |
+
+panel browser 检查继续使用既有 `READ_WEB_URL`/运行中 Vite 前置；playback-scale 入口默认自启隔离服务。上述入口未重新串成总入口，`docs/architecture/script-inventory.json` 与 `docs/architecture/test-inventory.json` 本批无须改动。
+
+本批不刷新 Host cutover、发布、数据迁移、旧 full 结果或 BFCache 的既有合成覆盖；这些历史边界仍按原文记录处理。
+
 ## 1. 产品与运行形态
 
 Read-Web 是本地英语学习应用，前端为 Vite + Vue 3 + Pinia，材料处理服务为 FastAPI。当前可用能力包括：
@@ -96,7 +129,7 @@ Vite 仍承载 9 组本地能力插件。optimization 已有 built-dist 单一 L
 - 个别持久化域仍是多文档、无 CAS 或 legacy writer；
 - AI/backfill、外部进程取消和资源分阶段队列仍需深化；
 - 源码形状 guard 很多，行为与性能门禁仍在逐步补齐；
-- `YouTubeWorkflowPanel.vue` 和后台 service 仍过大，需在可靠性边界稳定后按领域拆分。
+- `YouTubeWorkflowPanel.vue` 仍保留材料操作、标记应用、网络/关闭补发与生命周期接线；本轮已拆出的 outbox、保存队列/冲突、播放跟踪和标记恢复职责有独立所有者。`tools/subtitle-workflow/youtube_workflow/service.py` 仍是独立的后台维护问题，不能被本轮前端整理视为已解决，也不在本批新增任务。
 
 性能预算目前区分 diagnostic baseline 与 enforced gate，不用拍脑袋的数字伪装完成。浏览器 journeys 会采集错误、请求失败、Long Task 与交互时延；后端 benchmark 使用隔离端口和临时数据。
 

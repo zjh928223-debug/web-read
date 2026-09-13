@@ -102,6 +102,21 @@ src/
 └── features/                         Passage Preview、SRS 等独立功能
 ```
 
+### Recent reader responsibility boundaries (2026-09-13)
+
+| 职责 | 当前所有者 |
+| --- | --- |
+| 预习页面协调 | `src/features/passage-preview/use-passage-preview.js` |
+| 阅读 outbox 存储 | `src/services/persistence/reader-outbox-storage.js` |
+| 保存队列、revision 与冲突 | `src/composables/use-reader-save-coordinator.js` |
+| 播放会话、收听统计与事件跟踪 | `src/services/workflow/reader-playback-tracker.js` |
+| 标记恢复期间的协调 | `src/composables/create-reader-marks-hydration.js` |
+| 句高亮和模式可见性局部同步 | `src/components/TranscriptContainer.vue`、`src/components/ChunkModeView.vue` |
+
+`App.vue` 仍负责页面组合、Host 恢复和学习记录启动协调。`YouTubeWorkflowPanel.vue` 仍保留材料操作、标记应用、网络/关闭补发及生命周期接线；它不是只剩模板的壳层。
+
+SRS review 与 Passage Preview 页面通过 `App.vue` 的 `defineAsyncComponent` 按需加载，`PassagePreviewSettingsDialog.vue` 仍静态加载；服务、Host 恢复和学习记录处理没有随页面延迟。
+
 ## Backend ownership
 
 ```text
@@ -152,6 +167,7 @@ docs/NEXT_WORKSPACE.md
 ## Verification ownership
 
 - `scripts/*-check.*`：focused behavior/architecture contracts。
+- `scripts/youtube-workflow-panel-check.cjs`：保留的旧命令兼容入口，实际转接到 V3 panel 检查；package.json 的正式入口为 `verify:youtube-workflow-panel` 与 `verify:youtube-workflow-panel-behavior`。
 - `scripts/ui-compatibility-store-check.cjs`：UI Pinia owner 与 retired `__uiStore` 浏览器行为门禁。
 - `scripts/verify-fast.mjs`：快速行为门禁。
 - `scripts/verify-full.mjs`：隔离浏览器、build 和后端总门禁。
