@@ -1218,6 +1218,9 @@ async function run() {
         segments: [{ text: 'She appeared in court today.', start: 3, end: 6 }],
       })], { type: 'application/json' })
     },
+    mediaUrl(sourceId, kind) {
+      return `http://127.0.0.1:8765/api/jobs/${sourceId}/media/${kind}`
+    },
     fileUrl(sourceId, kind) {
       return `http://127.0.0.1:8765/api/jobs/${sourceId}/file/${kind}`
     },
@@ -1230,8 +1233,8 @@ async function run() {
   })
   assert.equal(
     streamingSource.url,
-    'http://127.0.0.1:8765/api/jobs/streaming-source/file/audio',
-    'source audio should stream directly instead of downloading the full file into a Blob',
+    'http://127.0.0.1:8765/api/jobs/streaming-source/media/audio',
+    'source audio should use the range-capable media path instead of the legacy file path',
   )
   assert.equal(streamingSource.revokeUrl, false)
   await contextModule.resolveReviewSource({
@@ -1246,6 +1249,24 @@ async function run() {
     'words from the same article should reuse the parsed transcript',
   )
   assert.equal(streamingChunkRequests, 1, 'words from the same article should reuse parsed translation chunks')
+
+  const fileOnlySource = await contextModule.resolveReviewSource({
+    source_id: 'file-only-source',
+    sentence: 'appeared in court',
+  }, {
+    client: {
+      ...streamingClient,
+      mediaUrl: undefined,
+      fileUrl(sourceId, kind) {
+        return `http://127.0.0.1:8765/api/jobs/${sourceId}/file/${kind}`
+      },
+    },
+  })
+  assert.equal(
+    fileOnlySource.url,
+    'http://127.0.0.1:8765/api/jobs/file-only-source/file/audio',
+    'review source should retain the legacy file URL fallback for older clients',
+  )
 
   const timeoutStartedAt = Date.now()
   const timedOutSource = await contextModule.resolveReviewSource({

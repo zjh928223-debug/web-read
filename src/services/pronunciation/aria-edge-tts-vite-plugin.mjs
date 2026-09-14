@@ -7,6 +7,8 @@ import edgeTtsPackage from 'node-edge-tts'
 export const ARIA_EDGE_VOICE = 'en-US-AriaNeural'
 const AUDIO_ID_PATTERN = /^[a-f0-9]{64}$/
 const DEFAULT_CACHE_DIR = join(tmpdir(), 'read-web-aria-edge-tts-v1')
+const MAX_BATCH_TEXTS = 50
+const BATCH_CONCURRENCY = 4
 const { EdgeTTS } = edgeTtsPackage
 
 export function createAriaEdgeTtsVitePlugin(options = {}) {
@@ -74,11 +76,40 @@ export function createAriaEdgeTtsService(options = {}) {
     return readFile(audioPath)
   }
 
-  return { synthesize, readAudio, voice }
+  async function synthesizeBatch(values) {
+    const texts = normalizeTtsBatchTexts(values)
+    const items = await mapWithConcurrency(texts, BATCH_CONCURRENCY, async (text) => {
+      try {
+        return {
+          text,
+          ...(await synthesize(text)),
+          source: 'edge-tts',
+        }
+      } catch (_error) {
+        return { text, audioUrl: '', source: '', voice }
+      }
+    })
+    return { items }
+  }
+
+  return { synthesize, synthesizeBatch, readAudio, voice }
 }
 
 export async function handleAriaEdgeTtsRequest(request, response, next, service) {
   const requestUrl = new URL(request.url || '/', 'http://127.0.0.1')
+  if (request.method === 'POST' && requestUrl.pathname === '/api/tts/edge/batch') {
+    try {
+      const payload = JSON.parse(await readRequestBody(request))
+      const result = await service.synthesizeBatch(payload?.texts)
+      sendJson(response, 200, result)
+    } catch (error) {
+      const status = error?.code === 'INVALID_TTS_TEXTS' ? 400 : 503
+      sendJson(response, status, {
+        detail: status === 400 ? error.message : 'Aria TTS batch synthesis failed',
+      })
+    }
+    return
+  }
   if (request.method === 'POST' && requestUrl.pathname === '/api/tts/edge') {
     try {
       const payload = JSON.parse(await readRequestBody(request))
@@ -123,6 +154,39 @@ function normalizeTtsText(value) {
     throw error
   }
   return text
+}
+
+function normalizeTtsBatchTexts(values) {
+  if (!Array.isArray(values)) {
+    const error = new Error('texts must be an array')
+    error.code = 'INVALID_TTS_TEXTS'
+    throw error
+  }
+  const texts = []
+  const seen = new Set()
+  for (const value of values) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim()
+    if (!text || text.length > 200 || seen.has(text)) continue
+    seen.add(text)
+    texts.push(text)
+    if (texts.length >= MAX_BATCH_TEXTS) break
+  }
+  return texts
+}
+
+async function mapWithConcurrency(values, limit, worker) {
+  const results = new Array(values.length)
+  let nextIndex = 0
+  async function consume() {
+    while (nextIndex < values.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await worker(values[index])
+    }
+  }
+  const workers = Array.from({ length: Math.min(limit, values.length) }, () => consume())
+  await Promise.all(workers)
+  return results
 }
 
 function createAudioId(text, voice) {

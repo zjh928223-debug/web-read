@@ -585,6 +585,7 @@ async function verifyEdgeTtsService() {
       cacheDir,
       async synthesizeToFile(text, outputPath) {
         synthesisCount += 1
+        if (text === 'broken') throw new Error('fixture synthesis failed')
         await fsPromises.writeFile(outputPath, Buffer.from(`fake-mp3:${text}`))
       },
     })
@@ -597,6 +598,29 @@ async function verifyEdgeTtsService() {
     assert.equal(synthesisCount, 1)
     const audioId = first.audioUrl.match(/[a-f0-9]{64}/)[0]
     assert.ok((await service.readAudio(audioId)).length > 0)
+
+    const batch = await service.synthesizeBatch([
+      ' first  phrase ',
+      'first phrase',
+      'broken',
+      '',
+      'x'.repeat(201),
+    ])
+    assert.equal(batch.items.length, 2, 'Edge batch should normalize, deduplicate, and bound text values')
+    assert.equal(batch.items[0].text, 'first phrase')
+    assert.match(batch.items[0].audioUrl, /^\/api\/tts\/edge\/audio\/[a-f0-9]{64}\.mp3$/)
+    assert.equal(batch.items[0].voice, pluginModule.ARIA_EDGE_VOICE)
+    assert.equal(batch.items[0].source, 'edge-tts')
+    assert.deepEqual(batch.items[1], {
+      text: 'broken',
+      audioUrl: '',
+      source: '',
+      voice: pluginModule.ARIA_EDGE_VOICE,
+    }, 'Edge batch failures must remain explicit instead of fabricating an audio URL')
+    await assert.rejects(
+      () => service.synthesizeBatch(null),
+      { code: 'INVALID_TTS_TEXTS' },
+    )
   } finally {
     await fsPromises.rm(cacheDir, { recursive: true, force: true })
   }

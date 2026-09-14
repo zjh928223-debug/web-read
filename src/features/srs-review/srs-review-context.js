@@ -169,6 +169,13 @@ export async function resolveReviewSource(context, options = {}) {
       wordStart: wordRange?.start ?? null,
       wordEnd: wordRange?.end ?? null,
     }
+    if (typeof client.mediaUrl === 'function') {
+      const mediaUrl = client.mediaUrl(sourceId, 'audio')
+      if (mediaUrl) {
+        result.url = mediaUrl
+        return result
+      }
+    }
     if (typeof client.fileUrl === 'function') {
       result.url = client.fileUrl(sourceId, 'audio')
       return result
