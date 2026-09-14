@@ -21,6 +21,11 @@ const outboxEntryPrefix = 'read-web.reader-save-outbox.v2.'
 const outboxQuarantinePrefix = 'read-web.reader-save-outbox-quarantine.v1.'
 const bfcacheEventKey = 'read-web.test.reader-bfcache-events'
 
+if (process.env.READ_WEB_RECOVERY_BFCACHE_CONTRACT_ONLY === '1') {
+  runBfcacheEventSelectionContractChecks()
+  process.exit(0)
+}
+
 const apiPort = await randomPort()
 const appUrl = `http://127.0.0.1:${apiPort}`
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'read-web-reader-recovery-'))
@@ -357,6 +362,14 @@ async function verifyConcurrentOutboxAndConflict(jobOneId, jobTwoId, sameJobId) 
 async function verifyBfcacheReceiptGeneration(jobId) {
   const context = await browser.newContext()
   const page = await context.newPage()
+  const pageErrors = []
+  const pendingRequests = new Map()
+  page.on('pageerror', (error) => pageErrors.push(String(error?.message || error)))
+  page.on('request', (request) => {
+    pendingRequests.set(request, summarizeBfcacheRequest(request))
+  })
+  page.on('requestfinished', (request) => pendingRequests.delete(request))
+  page.on('requestfailed', (request) => pendingRequests.delete(request))
   await page.addInitScript((eventKey) => {
     const record = (type, event) => {
       let events = []
@@ -365,7 +378,14 @@ async function verifyBfcacheReceiptGeneration(jobId) {
       } catch {
         events = []
       }
-      events.push({ type, persisted: event.persisted === true, href: location.href })
+      const lastSequence = events.reduce((highest, item) => Math.max(highest, Number(item?.sequence) || 0), 0)
+      events.push({
+        sequence: lastSequence + 1,
+        type,
+        persisted: event.persisted === true,
+        href: location.href,
+        readyState: document.readyState,
+      })
       localStorage.setItem(eventKey, JSON.stringify(events))
     }
     window.addEventListener('pagehide', (event) => record('pagehide', event))
@@ -375,41 +395,59 @@ async function verifyBfcacheReceiptGeneration(jobId) {
   const destinationUrl = `${appUrl}/?bfcacheProbe=destination`
   await page.goto(readerUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await waitForBfcacheLifecycleEvent(page, {
+    eventKey: bfcacheEventKey,
+    expectedHref: readerUrl,
+    expectedType: 'pageshow',
+    afterSequence: 0,
+    stage: 'initial reader pageshow',
+    pageErrors,
+    pendingRequests,
+  })
+  const afterReaderOpen = await readBfcacheLifecycleEvents(page, bfcacheEventKey)
+  const readerOpenSequence = latestBfcacheEventSequence(afterReaderOpen)
   await hydrateReaderMarks(page, jobId)
   await abortReaderWrites(page)
   await setReaderState(page, jobId, 'before-bfcache', true)
   await page.goto(destinationUrl, { waitUntil: 'domcontentloaded' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
+  await waitForBfcacheLifecycleEvent(page, {
+    eventKey: bfcacheEventKey,
+    expectedHref: destinationUrl,
+    expectedType: 'pageshow',
+    afterSequence: readerOpenSequence,
+    stage: 'destination pageshow',
+    pageErrors,
+    pendingRequests,
+  })
   await waitFor(async () => (await readOutboxEntries(page)).length === 2, 'persisted pagehide receipt')
   const firstGeneration = await readOutboxEntries(page)
+  const beforeReturnEvents = await readBfcacheLifecycleEvents(page, bfcacheEventKey)
+  const beforeReturnSequence = latestBfcacheEventSequence(beforeReturnEvents)
   await page.goBack({ waitUntil: 'commit' })
   await page.waitForSelector('.youtube-reader-controls .small-btn')
-  try {
-    await page.waitForFunction(({ eventKey, expectedHref }) => {
-      const events = JSON.parse(localStorage.getItem(eventKey) || '[]')
-      return events.some((event) => event.type === 'pagehide' && event.persisted && event.href === expectedHref)
-        && events.some((event) => event.type === 'pageshow' && event.persisted && event.href === expectedHref)
-    }, { eventKey: bfcacheEventKey, expectedHref: readerUrl }, { timeout: 5_000 })
-  } catch (error) {
-    const evidence = await page.evaluate((eventKey) => ({
-      events: JSON.parse(localStorage.getItem(eventKey) || '[]'),
-      navigation: performance.getEntriesByType('navigation').map((entry) => ({
-        type: entry.type,
-        notRestoredReasons: entry.notRestoredReasons || null,
-      })),
-    }), bfcacheEventKey)
-    const readerLifecycle = evidence.events.filter((event) => event.href === readerUrl)
-    const realLifecycleUnsupported = readerLifecycle.some((event) => event.type === 'pagehide' && event.persisted === false)
-      && readerLifecycle.some((event) => event.type === 'pageshow' && event.persisted === false)
-      && !readerLifecycle.some((event) => event.persisted === true)
-    if (!realLifecycleUnsupported) {
-      throw new Error(`real BFCache lifecycle failed without unsupported-runtime evidence: ${JSON.stringify(evidence)}; ${error.message}`)
-    }
-    console.log(`real BFCache unavailable in this Chromium headless run; using synthetic lifecycle coverage: ${JSON.stringify(evidence)}`)
+  await waitForBfcacheLifecycleEvent(page, {
+    eventKey: bfcacheEventKey,
+    expectedHref: readerUrl,
+    expectedType: 'pageshow',
+    afterSequence: beforeReturnSequence,
+    stage: 'returned reader pageshow',
+    pageErrors,
+    pendingRequests,
+  })
+  const afterReturnEvents = await readBfcacheLifecycleEvents(page, bfcacheEventKey)
+  const lifecycle = classifyBfcacheLifecycle(afterReturnEvents, {
+    readerUrl,
+    afterReaderOpenSequence: readerOpenSequence,
+    beforeReturnSequence,
+  })
+  if (lifecycle.kind === 'reload') {
+    console.log(`real BFCache unavailable in this Chromium headless run; using synthetic lifecycle coverage: ${JSON.stringify({ lifecycle, events: afterReturnEvents })}`)
     await context.close()
     await verifySyntheticBfcacheReceiptGeneration(jobId)
     return
   }
+  assert.equal(lifecycle.kind, 'bfcache', `unexpected reader lifecycle classification: ${JSON.stringify(lifecycle)}`)
   await page.unroute(`${appUrl}/api/**`)
   const afterBfcacheSave = page.waitForResponse((response) => response.request().method() === 'POST'
     && new URL(response.url()).pathname.endsWith('/reader-marks')
@@ -439,6 +477,157 @@ async function verifyBfcacheReceiptGeneration(jobId) {
   assert.ok(finalActivity.some(({ value }) => value.operationId !== firstActivity?.value.operationId && value.intent.event === 'close'))
   assert.equal((await getJson(`/api/jobs/${encodeURIComponent(jobId)}/reader-marks`)).marks[0].word, 'after-bfcache')
   await context.close()
+}
+
+function summarizeBfcacheRequest(request) {
+  try {
+    const url = new URL(request.url())
+    return {
+      method: request.method(),
+      path: url.pathname,
+      resourceType: request.resourceType(),
+    }
+  } catch {
+    return { method: request.method(), resourceType: request.resourceType() }
+  }
+}
+
+async function readBfcacheLifecycleEvents(page, eventKey) {
+  return page.evaluate((key) => {
+    try {
+      const value = JSON.parse(localStorage.getItem(key) || '[]')
+      return Array.isArray(value) ? value : []
+    } catch {
+      return []
+    }
+  }, eventKey)
+}
+
+function latestBfcacheEventSequence(events) {
+  return events.reduce((highest, event, index) => Math.max(highest, Number(event?.sequence) || index + 1), 0)
+}
+
+function classifyBfcacheLifecycle(events, { readerUrl, afterReaderOpenSequence, beforeReturnSequence } = {}) {
+  const readerEvents = events
+    .map((event, index) => ({ ...event, sequence: Number(event?.sequence) || index + 1 }))
+    .filter((event) => event.href === readerUrl)
+  const departureEvents = readerEvents.filter((event) => (
+    event.type === 'pagehide'
+    && event.sequence > afterReaderOpenSequence
+    && event.sequence <= beforeReturnSequence
+  ))
+  const returnEvents = readerEvents.filter((event) => (
+    event.type === 'pageshow' && event.sequence > beforeReturnSequence
+  ))
+  if (!departureEvents.length) return { kind: 'missing', reason: 'reader-pagehide-missing', departureEvents, returnEvents }
+  if (!returnEvents.length) return { kind: 'missing', reason: 'reader-return-pageshow-missing', departureEvents, returnEvents }
+  const departurePersisted = new Set(departureEvents.map((event) => event.persisted === true))
+  const returnPersisted = new Set(returnEvents.map((event) => event.persisted === true))
+  if (departurePersisted.size !== 1 || returnPersisted.size !== 1) {
+    return { kind: 'contradiction', reason: 'conflicting-persisted-values', departureEvents, returnEvents }
+  }
+  const departurePersistedValue = departureEvents.at(-1).persisted === true
+  const returnPersistedValue = returnEvents.at(-1).persisted === true
+  if (departurePersistedValue && returnPersistedValue) {
+    return { kind: 'bfcache', departure: departureEvents.at(-1), returned: returnEvents.at(-1) }
+  }
+  if (!departurePersistedValue && !returnPersistedValue) {
+    return { kind: 'reload', departure: departureEvents.at(-1), returned: returnEvents.at(-1) }
+  }
+  return { kind: 'contradiction', reason: 'departure-return-persisted-mismatch', departureEvents, returnEvents }
+}
+
+async function waitForBfcacheLifecycleEvent(page, {
+  eventKey,
+  expectedHref,
+  expectedType,
+  afterSequence,
+  stage,
+  pageErrors,
+  pendingRequests,
+} = {}) {
+  try {
+    await page.waitForFunction(({ key, href, type, sequence }) => {
+      try {
+        const events = JSON.parse(localStorage.getItem(key) || '[]')
+        return Array.isArray(events) && events.some((event) => (
+          event.type === type
+          && event.href === href
+          && Number(event.sequence) > sequence
+        ))
+      } catch {
+        return false
+      }
+    }, { key: eventKey, href: expectedHref, type: expectedType, sequence: afterSequence }, { timeout: 15_000 })
+  } catch (error) {
+    const evidence = await collectBfcacheDiagnostics(page, eventKey, pageErrors, pendingRequests)
+    throw new Error(`BFCache lifecycle event failed at ${stage}: ${JSON.stringify(evidence)}; ${error.message}`)
+  }
+}
+
+async function collectBfcacheDiagnostics(page, eventKey, pageErrors, pendingRequests) {
+  let pageState = { url: page.url(), readyState: null, events: [], navigation: [] }
+  try {
+    pageState = await page.evaluate((key) => ({
+      url: location.href,
+      readyState: document.readyState,
+      events: (() => {
+        try {
+          const value = JSON.parse(localStorage.getItem(key) || '[]')
+          return Array.isArray(value) ? value : []
+        } catch {
+          return []
+        }
+      })(),
+      navigation: performance.getEntriesByType('navigation').map((entry) => ({
+        type: entry.type,
+        notRestoredReasons: entry.notRestoredReasons || null,
+      })),
+    }), eventKey)
+  } catch (error) {
+    pageState.evaluateError = String(error?.message || error)
+  }
+  return {
+    ...pageState,
+    pageErrors: [...pageErrors],
+    unfinishedRequests: pageState.readyState !== 'complete' ? [...pendingRequests.values()] : [],
+  }
+}
+
+function runBfcacheEventSelectionContractChecks() {
+  const readerUrl = 'http://127.0.0.1:4198/?bfcacheProbe=reader'
+  const destinationUrl = 'http://127.0.0.1:4198/?bfcacheProbe=destination'
+  const normalReload = classifyBfcacheLifecycle([
+    { sequence: 1, type: 'pageshow', persisted: false, href: readerUrl },
+    { sequence: 2, type: 'pagehide', persisted: false, href: readerUrl },
+    { sequence: 3, type: 'pageshow', persisted: false, href: destinationUrl },
+    { sequence: 4, type: 'pageshow', persisted: false, href: readerUrl },
+  ], { readerUrl, afterReaderOpenSequence: 1, beforeReturnSequence: 3 })
+  assert.equal(normalReload.kind, 'reload', 'a same-navigation persisted=false return must use synthetic coverage')
+
+  const realBfcache = classifyBfcacheLifecycle([
+    { sequence: 1, type: 'pageshow', persisted: false, href: readerUrl },
+    { sequence: 2, type: 'pagehide', persisted: true, href: readerUrl },
+    { sequence: 3, type: 'pageshow', persisted: false, href: destinationUrl },
+    { sequence: 4, type: 'pageshow', persisted: true, href: readerUrl },
+  ], { readerUrl, afterReaderOpenSequence: 1, beforeReturnSequence: 3 })
+  assert.equal(realBfcache.kind, 'bfcache', 'a same-navigation persisted=true return must use real BFCache assertions')
+
+  const staleOnly = classifyBfcacheLifecycle([
+    { sequence: 1, type: 'pageshow', persisted: false, href: readerUrl },
+    { sequence: 2, type: 'pagehide', persisted: false, href: readerUrl },
+    { sequence: 3, type: 'pageshow', persisted: false, href: destinationUrl },
+  ], { readerUrl, afterReaderOpenSequence: 1, beforeReturnSequence: 3 })
+  assert.equal(staleOnly.kind, 'missing', 'an earlier reader pageshow must not satisfy the return wait')
+
+  const contradictory = classifyBfcacheLifecycle([
+    { sequence: 1, type: 'pageshow', persisted: false, href: readerUrl },
+    { sequence: 2, type: 'pagehide', persisted: true, href: readerUrl },
+    { sequence: 3, type: 'pageshow', persisted: false, href: destinationUrl },
+    { sequence: 4, type: 'pageshow', persisted: false, href: readerUrl },
+  ], { readerUrl, afterReaderOpenSequence: 1, beforeReturnSequence: 3 })
+  assert.equal(contradictory.kind, 'contradiction', 'mixed departure/return persistence must not be downgraded')
+  console.log('BFCache lifecycle event selection contract passed (reload, real cache, stale event, contradiction)')
 }
 
 async function verifySyntheticBfcacheReceiptGeneration(jobId) {
