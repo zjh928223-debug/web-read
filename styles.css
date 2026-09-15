@@ -2558,6 +2558,9 @@ body {
       box-sizing: border-box;
     }
 
+    /* Workflow compatibility geometry: important padding, active, focus, and
+       disabled rules still arbitrate against compact, icon, breakpoint, and
+       submit variants. Revisit after those local consumers share one owner. */
     .youtube-reader-controls .small-btn,
     .youtube-workflow button {
       display: inline-flex;
@@ -2580,6 +2583,8 @@ body {
       background: color-mix(in srgb, var(--pru-shell-row-hover) 78%, var(--pru-accent) 8%) !important;
     }
 
+    /* Keep the focus ring important until API/input focus and capsule focus
+       have one owner; this preserves a visible ring for every workflow control. */
     .youtube-reader-controls .small-btn:focus-visible,
     .youtube-workflow button:focus-visible,
     .youtube-workflow input:focus-visible,
@@ -2589,6 +2594,8 @@ body {
       box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
     }
 
+    /* Keep ordinary .48 opacity important ahead of the submit-specific disabled
+       exception; revisit after both states are owned by one local rule. */
     .youtube-reader-controls .small-btn:disabled,
     .youtube-workflow button:disabled {
       opacity: 0.48 !important;
@@ -2838,7 +2845,7 @@ body {
       box-sizing: border-box;
       padding: 0 11px;
       border: 1px solid var(--pru-shell-border);
-      border-radius: var(--pru-radius-control) !important;
+      border-radius: var(--pru-radius-control);
       background: var(--pru-shell-surface);
       color: var(--pru-shell-text);
       box-shadow: none;
@@ -5060,6 +5067,10 @@ body {
     0 3px 9px rgba(0, 0, 0, 0.22);
 }
 
+/* Capsule foundation keeps important surface properties and font-weight because
+   more-specific link-card and submit rules still compete. Letter-spacing also
+   stays important while .youtube-library-more has its more-specific 1px rule;
+   revisit both priority boundaries after those local rules are retired. */
 .youtube-reader-controls .small-btn,
 .youtube-workflow button,
 .youtube-material-notice button {
@@ -5079,6 +5090,8 @@ body {
   font-family: var(--pru-ui-font);
   font-weight: 500 !important;
   letter-spacing: 0 !important;
+  /* Keep this post-cascade transition important while it and reduced-motion are
+     consolidated in a future motion cleanup. */
   transition:
     transform var(--glass-duration-fast) var(--glass-ease),
     box-shadow var(--glass-duration-fast) var(--glass-ease),
@@ -5121,6 +5134,8 @@ body {
   opacity: 0.36;
 }
 
+/* Primary state still needs important to override the broad capsule foundation;
+   remove it after primary and base button ownership are consolidated. */
 .youtube-workflow .small-btn.primary,
 .youtube-workflow button.primary,
 .youtube-workflow .youtube-workflow-job-actions .primary,
@@ -5195,6 +5210,8 @@ body {
   min-height: 32px;
 }
 
+/* Navigation, filter, and advanced-toggle surfaces retain important state
+   declarations because they override the generic capsule foundation above. */
 .youtube-workflow .youtube-advanced-toggle {
   border: 1px solid var(--youtube-capsule-border) !important;
   background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
@@ -5439,6 +5456,8 @@ body {
   padding-top: 4px;
 }
 
+/* Danger state follows the same compatibility boundary as primary: keep its
+   important surface until the old and new danger owners are merged. */
 .youtube-workflow .youtube-workflow-job-actions .danger,
 .youtube-workflow .youtube-danger-actions .danger,
 .youtube-workflow .youtube-advanced-danger-row .danger {
