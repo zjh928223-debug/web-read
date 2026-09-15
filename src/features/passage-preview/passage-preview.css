@@ -369,6 +369,7 @@
 }
 
 .passage-preview-shortcut-dialog {
+  --srs-text: #17233a; /* 此弹窗可能直接挂到 body，不能依赖学习页根变量。 */
   width: min(480px, 100%);
   padding: 28px;
   border: 1px solid rgba(132, 149, 176, .32);

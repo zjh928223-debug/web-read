@@ -24,6 +24,7 @@ html.srs-review-standalone-document body {
 
 .srs-review-page {
   --srs-border: #dfe4ed;
+  --srs-text: #17233a;
   --srs-muted: #6f7b90;
   --srs-primary: #3158c8;
   --srs-glass-bg: rgba(229, 238, 248, .78);
@@ -36,7 +37,7 @@ html.srs-review-standalone-document body {
   height: 100dvh;
   min-height: 100vh;
   overflow: hidden;
-  color: #17233a;
+  color: var(--srs-text);
   font-family: Arial, sans-serif;
   font-synthesis: none;
   background:

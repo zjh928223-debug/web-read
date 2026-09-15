@@ -32,7 +32,7 @@ defineEmits(['retry', 'close'])
   padding: 24px;
   border-radius: 12px;
   background: var(--bg-color, #fff);
-  color: var(--text-color, #222);
+  color: var(--text-main);
 }
 .small-btn + .small-btn { margin-left: 12px; }
 </style>
