@@ -1,0 +1,77 @@
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme) prefix(rw);
+@import "tailwindcss/utilities.css" layer(utilities) source(none) prefix(rw);
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@source "../components/ui";
+@source "../components/YouTubeWorkflowPanel.vue";
+@source "../lib";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* These tokens are scoped to the three workflow roots because the quality
+   report and material notice are teleported outside the main panel. */
+.youtube-workflow,
+.youtube-reader-controls,
+.youtube-material-notice {
+  --background: var(--pru-shell-surface);
+  --foreground: var(--pru-shell-text);
+  --primary: var(--pru-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--pru-shell-row);
+  --secondary-foreground: var(--pru-shell-text);
+  --muted: var(--pru-shell-row);
+  --muted-foreground: var(--pru-shell-muted);
+  --accent: var(--pru-shell-row-hover);
+  --accent-foreground: var(--pru-shell-text);
+  --destructive: var(--pru-danger);
+  --border: var(--pru-shell-border);
+  --input: var(--pru-shell-border);
+  --ring: var(--pru-info);
+}
+
+@layer base {
+  [data-ui-owner="workflow"] {
+    box-sizing: border-box;
+    border-style: solid;
+    border-color: var(--border);
+    color: var(--foreground);
+    font-family: var(--pru-ui-font);
+  }
+
+  [data-ui-owner="workflow"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-ui-owner="workflow"] {
+    transition: none;
+  }
+}
+
+/* Preflight is intentionally disabled, so keep the first focus treatment
+   explicit and local to the pilot owner. */
+[data-ui-owner="workflow"]:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--pru-focus-ring);
+}

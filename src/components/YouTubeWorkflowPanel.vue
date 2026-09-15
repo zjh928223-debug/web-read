@@ -107,7 +107,15 @@
                 <div>
                   <h3>任务</h3>
                 </div>
-                <button type="button" class="small-btn" @click="refreshQueue">刷新</button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-ui-owner="workflow"
+                  @click="refreshQueue"
+                >
+                  刷新
+                </Button>
               </div>
               <div class="youtube-workflow-toolbar">
                 <span>{{ taskSummary }}</span>
@@ -346,6 +354,8 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import '../styles/workflow-ui.css'
+import { Button } from './ui/button/index.js'
 import { useAudioStore } from '../pinia-stores/audio.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { useMarksStore } from '../pinia-stores/marks.js'

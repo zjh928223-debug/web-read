@@ -11,6 +11,17 @@
     var buttonSelector = [
       'button','.file-btn','.mini-toggle','.style-btn-toggle'
     ].join(', ');
+    function decorateButton(el) {
+      if (!el) return;
+      var owner = typeof el.getAttribute === 'function'
+        ? el.getAttribute('data-ui-owner')
+        : el.dataset && el.dataset.uiOwner;
+      if (owner === 'workflow') {
+        el.classList.remove('glass-button');
+        return;
+      }
+      el.classList.add('glass-button');
+    }
     var root = document.getElementById('main-app-area') || document.body;
     var bindings = [];
     var pendingNodes = [];
@@ -67,7 +78,7 @@
         bindGlassDynamic(el);
       });
       document.querySelectorAll(buttonSelector).forEach(function (el) {
-        el.classList.add('glass-button');
+        decorateButton(el);
       });
     }
 
@@ -85,7 +96,7 @@
             bindGlassDynamic(node);
           }
           if (node.matches && node.matches(buttonSelector)) {
-            node.classList.add('glass-button');
+            decorateButton(node);
           }
           if (node.querySelectorAll) {
             node.querySelectorAll(panelSelector).forEach(function (el) {
@@ -93,7 +104,7 @@
               bindGlassDynamic(el);
             });
             node.querySelectorAll(buttonSelector).forEach(function (el) {
-              el.classList.add('glass-button');
+              decorateButton(el);
             });
           }
       }

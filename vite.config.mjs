@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import { createEcdictVitePlugin } from './src/dictionary/ecdict/api/ecdict-vite-plugin.mjs'
 import { createAriaEdgeTtsVitePlugin } from './src/services/pronunciation/aria-edge-tts-vite-plugin.mjs'
 import { createTatoebaSentenceVitePlugin } from './src/services/vocabulary/tatoeba-sentence-vite-plugin.mjs'
@@ -35,6 +36,7 @@ export default defineConfig(({ mode }) => {
   return {
   plugins: [
     vue(),
+    tailwindcss(),
     createAriaEdgeTtsVitePlugin(),
     createLocalSentenceVitePlugin({
       databasePath: process.env.LOCAL_SENTENCE_DATABASE_PATH,
@@ -95,6 +97,11 @@ export default defineConfig(({ mode }) => {
         reader: resolve(projectRoot, 'index.html'),
         srsReview: resolve(projectRoot, 'srs-review.html')
       }
+    }
+  },
+  resolve: {
+    alias: {
+      '@': resolve(projectRoot, 'src')
     }
   },
   server: {

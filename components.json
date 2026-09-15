@@ -1,0 +1,19 @@
+{
+  "$schema": "https://shadcn-vue.com/schema.json",
+  "style": "new-york",
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/workflow-ui.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": "rw"
+  },
+  "typescript": false,
+  "aliases": {
+    "utils": "@/lib/utils",
+    "components": "@/components",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "composables": "@/composables"
+  }
+}

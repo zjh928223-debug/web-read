@@ -127,14 +127,22 @@ assert.ok(
   'the panel grid must reserve an auto-sized row for the service status before the flexible content row',
 )
 assert.ok(styles.includes('--card-bg: #ffffff') && styles.includes('--card-bg: #252525'), 'light and dark panel surfaces must be concrete opaque theme colors')
-const capsuleDefaultStart = styles.indexOf('.youtube-material-notice button {')
+const capsuleDefaultStart = [
+  styles.indexOf('.youtube-material-notice button {'),
+  styles.indexOf('.youtube-material-notice button:not([data-ui-owner="workflow"]) {'),
+  styles.indexOf('.youtube-material-notice button:where(:not([data-ui-owner="workflow"])) {'),
+].find((index) => index >= 0) ?? -1
 const noticeCloseDefaultStart = styles.indexOf('.youtube-material-notice .youtube-material-notice-close {')
 const noticeCloseDefaultRule = ruleBodies('.youtube-material-notice .youtube-material-notice-close', 'background').at(-1)
-const noticeCloseHoverStart = styles.indexOf('.youtube-material-notice button:hover')
+const noticeCloseHoverStart = [
+  styles.indexOf('.youtube-material-notice button:hover'),
+  styles.indexOf('.youtube-material-notice button:not([data-ui-owner="workflow"]):hover'),
+  styles.indexOf('.youtube-material-notice button:where(:not([data-ui-owner="workflow"])):hover'),
+].find((index) => index >= 0) ?? -1
 assert.ok(capsuleDefaultStart >= 0 && noticeCloseDefaultStart > capsuleDefaultStart && noticeCloseDefaultStart < noticeCloseHoverStart, 'notice close default must override the generic capsule rule before hover')
 assert.match(noticeCloseDefaultRule.body, /background:\s*transparent\s*!important/, 'notice close default must stay transparent')
 assert.match(styles, /\.youtube-material-notice \.youtube-material-notice-close:focus-visible[\s\S]*?box-shadow:\s*0 0 0 3px var\(--pru-focus-ring\)\s*!important;/, 'notice close focus styling must remain visible')
-assert.match(styles, /\.youtube-reader-controls \.small-btn:hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button:first-child:hover \{[\s\S]*?transform: none !important;/, 'material capsules should not lift or enlarge on hover')
+assert.match(styles, /\.youtube-reader-controls \.small-btn:hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button(?:\:not\(\[data-ui-owner="workflow"\]\)|\:where\(\:not\(\[data-ui-owner="workflow"\]\)\))?:first-child:hover \{[\s\S]*?transform: none !important;/, 'material capsules should not lift or enlarge on hover')
 assert.ok(styles.includes('.youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"]') && styles.includes('.youtube-filter-tabs button[data-active="true"]'), 'navigation and time filters should keep quiet selected glass states')
 assert.ok(styles.includes('.youtube-quality-backdrop') && styles.includes('z-index: 2600'), 'quality report should render above the material center backdrop')
 assert.ok(styles.includes('.youtube-add-material-form') && styles.includes('.youtube-api-key-settings'), 'add and API settings surfaces should use the flat minimal layout')
