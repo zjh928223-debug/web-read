@@ -7,6 +7,8 @@ const app = fs.readFileSync(path.join(root, 'src/App.vue'), 'utf8')
 const panel = fs.readFileSync(path.join(root, 'src/components/YouTubeWorkflowPanel.vue'), 'utf8')
 const outboxStorage = fs.readFileSync(path.join(root, 'src/services/persistence/reader-outbox-storage.js'), 'utf8')
 const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8')
+const workflowStyles = fs.readFileSync(path.join(root, 'src/styles/workflow-ui.css'), 'utf8')
+const buttonVariants = fs.readFileSync(path.join(root, 'src/components/ui/button/index.js'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow-client.js'), 'utf8')
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
 const core = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/core.py'), 'utf8')
@@ -97,6 +99,14 @@ assert.ok(panel.includes('refreshCurrentJobMediaForVideoPriority') && panel.incl
 assert.ok(panel.includes('clearMaterialNotice()') && panel.includes('clearMaterialRepairState(job.jobId)'), 'new and successful opens should clear stale material errors')
 assert.equal(panel.includes('打开失败'), false, 'load notices should not add a redundant failure prefix')
 assert.match(panel, /<Teleport to="body">\s*<div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">/, 'quality report should teleport above the material center stacking context')
+assert.ok(panel.includes("import { Button } from './ui/button/index.js'") && panel.includes('data-ui-owner="workflow"'), 'workflow actions should use the local shadcn Button owner boundary')
+assert.ok((panel.match(/data-ui-owner="workflow"/g) || []).length >= 20, 'workflow button migration should cover the panel and its teleported actions')
+assert.ok(panel.includes('variant="default"') && panel.includes('variant="outline"') && panel.includes('variant="destructive"') && panel.includes('variant="ghost"'), 'workflow buttons should cover the mapped semantic variants')
+assert.ok(panel.includes('size="icon-sm"') && panel.includes('size="xs"'), 'workflow buttons should keep icon and compact filter sizes')
+assert.ok(panel.includes('data-quality-initial-focus') && panel.includes("querySelector('button[data-quality-initial-focus]:not([disabled])')"), 'quality focus must resolve a real button inside the dialog')
+assert.equal(panel.includes('ref="qualityDialogInitialFocus"'), false, 'quality focus must not retain a component ref')
+assert.ok(workflowStyles.includes('@import "tailwindcss/theme.css"') && workflowStyles.includes('prefix(rw)'), 'workflow controls should keep the scoped Tailwind v4 prefix entry')
+assert.ok(workflowStyles.includes('--primary: var(--pru-accent)') && workflowStyles.includes('--destructive: var(--pru-danger)'), 'workflow controls should use the existing theme semantic tokens')
 
 assert.ok(client.includes('async deleteJob(jobId, options = {})') && client.includes('async clearFailedJobs(options = {})'), 'failed-record mutations should carry the authoritative queue revision')
 assert.match(panel, /<main class="youtube-workflow-content">\s*<p v-if="workflowMutationNotice"/, 'mutation notices must stay inside scrollable content instead of creating an implicit panel grid row')
@@ -109,10 +119,14 @@ assert.ok(styles.includes('justify-content: flex-end') && styles.includes('.yout
 assert.ok(styles.includes('repeat(3, minmax(0, 1fr))'), 'narrow navigation should contain three destinations')
 assert.equal(styles.includes('.youtube-task-capsule'), false, 'capsule styles should be deleted')
 assert.equal(styles.includes('.youtube-material-float'), false, 'floating indicator styles should be deleted')
-assert.ok(styles.includes('var(--glass-button-bg)') && styles.includes('var(--glass-blur-sm)'), 'material buttons should use shared liquid-glass styling')
-assert.ok(styles.includes('.youtube-workflow .youtube-library-open') && styles.includes('border-radius: 12px !important'), 'library open actions should use neutral rounded rectangles')
-assert.ok(styles.includes('quiet liquid-glass capsules') && styles.includes('--youtube-capsule-shadow') && styles.includes('font-weight: 500 !important'), 'material actions should use the quiet liquid-glass capsule contract')
+assert.ok(styles.includes('var(--glass-button-bg)') && styles.includes('var(--glass-blur-sm)'), 'unmigrated material controls should retain the shared liquid-glass compatibility styling')
+assert.ok(styles.includes('quiet liquid-glass capsules') && styles.includes('--youtube-capsule-shadow'), 'unmigrated material controls should retain the quiet liquid-glass compatibility contract')
 assert.equal(styles.includes('shared blue glass capsules'), false, 'retired blue-text capsule styling should not remain')
+assert.equal(styles.includes('.youtube-workflow .youtube-library-open {'), false, 'migrated library open actions must leave the old visual rule')
+assert.equal(styles.includes('.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button {'), false, 'migrated navigation actions must leave the old visual rule')
+assert.equal(styles.includes('.youtube-workflow .youtube-filter-tabs button {'), false, 'migrated filter actions must leave the old visual rule')
+assert.ok(styles.includes('.youtube-workflow button:where(:not([data-ui-owner="workflow"]))'), 'legacy workflow button rules must remain available only to unowned controls')
+assert.ok(styles.includes('.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"]))'), 'the retained entry hook must not re-enable legacy styling for the workflow owner')
 const backdropRules = ruleBodies('.youtube-workflow-backdrop', 'background')
 const effectiveBackdropRule = backdropRules.at(-1)
 assert.ok(effectiveBackdropRule, 'the backdrop must have an effective background declaration')
@@ -127,23 +141,13 @@ assert.ok(
   'the panel grid must reserve an auto-sized row for the service status before the flexible content row',
 )
 assert.ok(styles.includes('--card-bg: #ffffff') && styles.includes('--card-bg: #252525'), 'light and dark panel surfaces must be concrete opaque theme colors')
-const capsuleDefaultStart = [
-  styles.indexOf('.youtube-material-notice button {'),
-  styles.indexOf('.youtube-material-notice button:not([data-ui-owner="workflow"]) {'),
-  styles.indexOf('.youtube-material-notice button:where(:not([data-ui-owner="workflow"])) {'),
-].find((index) => index >= 0) ?? -1
-const noticeCloseDefaultStart = styles.indexOf('.youtube-material-notice .youtube-material-notice-close {')
-const noticeCloseDefaultRule = ruleBodies('.youtube-material-notice .youtube-material-notice-close', 'background').at(-1)
-const noticeCloseHoverStart = [
-  styles.indexOf('.youtube-material-notice button:hover'),
-  styles.indexOf('.youtube-material-notice button:not([data-ui-owner="workflow"]):hover'),
-  styles.indexOf('.youtube-material-notice button:where(:not([data-ui-owner="workflow"])):hover'),
-].find((index) => index >= 0) ?? -1
-assert.ok(capsuleDefaultStart >= 0 && noticeCloseDefaultStart > capsuleDefaultStart && noticeCloseDefaultStart < noticeCloseHoverStart, 'notice close default must override the generic capsule rule before hover')
-assert.match(noticeCloseDefaultRule.body, /background:\s*transparent\s*!important/, 'notice close default must stay transparent')
-assert.match(styles, /\.youtube-material-notice \.youtube-material-notice-close:focus-visible[\s\S]*?box-shadow:\s*0 0 0 3px var\(--pru-focus-ring\)\s*!important;/, 'notice close focus styling must remain visible')
-assert.match(styles, /\.youtube-reader-controls \.small-btn:hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button(?:\:not\(\[data-ui-owner="workflow"\]\)|\:where\(\:not\(\[data-ui-owner="workflow"\]\)\))?:first-child:hover \{[\s\S]*?transform: none !important;/, 'material capsules should not lift or enlarge on hover')
-assert.ok(styles.includes('.youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"]') && styles.includes('.youtube-filter-tabs button[data-active="true"]'), 'navigation and time filters should keep quiet selected glass states')
+assert.ok(styles.includes('.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"]))'), 'legacy notice close styling must be restricted to unowned controls')
+assert.ok(workflowStyles.includes('@layer base') && workflowStyles.includes('appearance: none') && workflowStyles.includes('border-width: 0') && workflowStyles.includes('background-color: transparent'), 'workflow owner should provide only the local no-Preflight button base reset')
+assert.equal(workflowStyles.includes('[data-ui-owner="workflow"]:focus'), false, 'workflow base must not override mouse focus or component focus-visible recipes')
+assert.ok(buttonVariants.includes('rw:focus-visible:ring-ring/50') && buttonVariants.includes('rw:focus-visible:ring-destructive/20'), 'Button recipes must own normal and destructive focus-visible rings')
+assert.match(styles, /\.youtube-reader-controls \.small-btn:where\(:not\(\[data-ui-owner="workflow"\]\)\):hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button(?:\:not\(\[data-ui-owner="workflow"\]\)|\:where\(\:not\(\[data-ui-owner="workflow"\]\)\))?:first-child:hover \{[\s\S]*?transform: none !important;/, 'unmigrated material capsules should not lift or enlarge on hover')
+assert.match(styles, /\.youtube-workflow-section-tabs\.youtube-workflow-nav button:where\(:not\(\[data-ui-owner="workflow"\]\)\)\[data-active="true"\]/, 'unmigrated navigation state styling must remain owner-scoped')
+assert.match(styles, /\.youtube-filter-tabs button:where\(:not\(\[data-ui-owner="workflow"\]\)\)\[data-active="true"\]/, 'unmigrated filter state styling must remain owner-scoped')
 assert.ok(styles.includes('.youtube-quality-backdrop') && styles.includes('z-index: 2600'), 'quality report should render above the material center backdrop')
 assert.ok(styles.includes('.youtube-add-material-form') && styles.includes('.youtube-api-key-settings'), 'add and API settings surfaces should use the flat minimal layout')
 assert.ok(styles.includes('--pru-shell-bg: color-mix(in srgb, var(--bg-color)'), 'material center should inherit the reader theme instead of beige')

@@ -172,42 +172,62 @@ async function main() {
     assert.doesNotMatch(await firstLibraryRow.innerText(), /YouTube|Library0000/, 'source identity should stay hidden in the collapsed row')
 
     const openButton = firstLibraryRow.getByRole('button', { name: '打开' })
-    const capsuleBeforeHover = await openButton.evaluate((button) => {
+    const openButtonStyle = await openButton.evaluate((button) => {
       const style = getComputedStyle(button)
-      return { borderRadius: style.borderRadius, backgroundImage: style.backgroundImage, color: style.color, fontWeight: style.fontWeight }
+      return {
+        owner: button.dataset.uiOwner,
+        variant: button.dataset.variant,
+        size: button.dataset.size,
+        borderRadius: style.borderRadius,
+        backgroundImage: style.backgroundImage,
+        color: style.color,
+        fontWeight: style.fontWeight,
+      }
     })
-    assert.equal(capsuleBeforeHover.borderRadius, '12px')
-    assert.match(capsuleBeforeHover.backgroundImage, /linear-gradient/)
-    assert.equal(capsuleBeforeHover.fontWeight, '500')
-    assert.notEqual(capsuleBeforeHover.color, 'rgb(37, 99, 235)')
+    assert.equal(openButtonStyle.owner, 'workflow')
+    assert.equal(openButtonStyle.variant, 'outline')
+    assert.equal(openButtonStyle.size, 'sm')
+    assert.equal(openButtonStyle.borderRadius, '6px')
+    assert.equal(openButtonStyle.backgroundImage, 'none')
+    assert.equal(openButtonStyle.fontWeight, '500')
     await openButton.hover()
-    const capsuleOnHover = await openButton.evaluate((button) => {
+    const openButtonHoverStyle = await openButton.evaluate((button) => {
       const style = getComputedStyle(button)
-      return { borderRadius: style.borderRadius, transform: style.transform }
+      return { borderRadius: style.borderRadius, backgroundImage: style.backgroundImage, transform: style.transform }
     })
-    assert.equal(capsuleOnHover.borderRadius, '12px')
-    assert.equal(capsuleOnHover.transform, 'none', 'quiet capsules should not lift or enlarge on hover')
+    assert.equal(openButtonHoverStyle.borderRadius, '6px')
+    assert.equal(openButtonHoverStyle.backgroundImage, 'none')
+    assert.equal(openButtonHoverStyle.transform, 'none', 'migrated buttons should not inherit the legacy lift effect')
 
     const activeNavigation = page.locator('.youtube-workflow-nav button[data-active="true"]')
     const activeNavigationStyle = await activeNavigation.evaluate((button) => {
       const style = getComputedStyle(button)
-      return { color: style.color, fontWeight: style.fontWeight, backgroundImage: style.backgroundImage }
+      return { owner: button.dataset.uiOwner, variant: button.dataset.variant, size: button.dataset.size, color: style.color, fontWeight: style.fontWeight, backgroundImage: style.backgroundImage }
     })
+    assert.equal(activeNavigationStyle.owner, 'workflow')
+    assert.equal(activeNavigationStyle.variant, 'secondary')
+    assert.equal(activeNavigationStyle.size, 'sm')
     assert.equal(activeNavigationStyle.fontWeight, '500')
-    assert.match(activeNavigationStyle.backgroundImage, /linear-gradient/)
+    assert.equal(activeNavigationStyle.backgroundImage, 'none')
 
     const filterStyle = await page.locator('.youtube-filter-tabs button[data-active="true"]').evaluate((button) => {
       const style = getComputedStyle(button)
-      return { fontWeight: style.fontWeight, backgroundImage: style.backgroundImage }
+      return { owner: button.dataset.uiOwner, variant: button.dataset.variant, size: button.dataset.size, fontWeight: style.fontWeight, backgroundImage: style.backgroundImage }
     })
+    assert.equal(filterStyle.owner, 'workflow')
+    assert.equal(filterStyle.variant, 'secondary')
+    assert.equal(filterStyle.size, 'xs')
     assert.equal(filterStyle.fontWeight, '500')
-    assert.match(filterStyle.backgroundImage, /linear-gradient/)
+    assert.equal(filterStyle.backgroundImage, 'none')
 
     const iconStyle = await firstLibraryRow.getByRole('button', { name: '更多操作' }).evaluate((button) => {
       const style = getComputedStyle(button)
-      return { borderRadius: style.borderRadius, fontWeight: style.fontWeight }
+      return { owner: button.dataset.uiOwner, variant: button.dataset.variant, size: button.dataset.size, borderRadius: style.borderRadius, fontWeight: style.fontWeight }
     })
-    assert.equal(iconStyle.borderRadius, '999px')
+    assert.equal(iconStyle.owner, 'workflow')
+    assert.equal(iconStyle.variant, 'ghost')
+    assert.equal(iconStyle.size, 'icon-sm')
+    assert.equal(iconStyle.borderRadius, '6px')
     assert.equal(iconStyle.fontWeight, '500')
 
     await firstLibraryRow.getByRole('button', { name: '更多操作' }).click()
@@ -224,6 +244,9 @@ async function main() {
       return Boolean(top && top.closest('[aria-labelledby="youtube-quality-dialog-title"]'))
     }, { x: qualityBox.x + qualityBox.width / 2, y: qualityBox.y + qualityBox.height / 2 })
     assert.equal(topElementIsDialog, true, 'quality dialog should receive pointer events above the material panel')
+    const qualityInitialFocus = qualityDialog.locator('[data-quality-initial-focus]')
+    assert.equal(await qualityInitialFocus.getAttribute('data-ui-owner'), 'workflow')
+    assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-quality-initial-focus')), true, 'quality dialog should focus a real initial action button')
     await qualityDialog.getByRole('button', { name: '关闭', exact: true }).click()
 
     const box = await panel.boundingBox()
@@ -238,7 +261,22 @@ async function main() {
     assert.equal(await page.locator('.youtube-workflow-queue-job').count(), 2)
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /2 次尝试/)
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /3\/4 · AI 切分与翻译/)
-    await page.locator('.youtube-workflow-queue-job[data-status="failed"] .danger').click()
+    const failedDeleteButton = page.locator('.youtube-workflow-queue-job[data-status="failed"] button[data-ui-owner="workflow"][data-variant="destructive"]').first()
+    await page.keyboard.press('Tab')
+    await failedDeleteButton.focus()
+    await page.waitForTimeout(200)
+    const destructiveFocusStyle = await failedDeleteButton.evaluate((button) => {
+      const style = getComputedStyle(button)
+      return {
+        focusVisible: button.matches(':focus-visible'),
+        ringColor: style.getPropertyValue('--tw-ring-color'),
+        boxShadow: style.boxShadow,
+      }
+    })
+    assert.equal(destructiveFocusStyle.focusVisible, true, 'destructive action should use keyboard-visible focus')
+    assert.match(destructiveFocusStyle.boxShadow, /0px 0px 0px 3px/, 'destructive action should retain the component focus ring')
+    assert.match(destructiveFocusStyle.ringColor, /destructive|207|cf3d4b/i, 'destructive action should retain its semantic focus color')
+    await failedDeleteButton.click()
     await page.waitForSelector('.youtube-workflow-queue-job[data-status="failed"]', { state: 'hidden' })
     assert.equal(await page.locator('.youtube-workflow-queue-job[data-status="failed"]').count(), 0)
 
@@ -261,8 +299,11 @@ async function main() {
     assert.doesNotMatch(compactSettingsText, /^模型$/m)
     const advancedToggle = page.getByRole('button', { name: /高级设置/ })
     assert.equal((await advancedToggle.innerText()).trim(), '高级设置')
+    assert.equal(await advancedToggle.getAttribute('data-ui-owner'), 'workflow')
+    assert.equal(await advancedToggle.getAttribute('data-variant'), 'outline')
+    assert.equal(await advancedToggle.getAttribute('data-size'), 'sm')
     const advancedToggleBox = await advancedToggle.boundingBox()
-    assert.ok(advancedToggleBox.width >= 156 && advancedToggleBox.height >= 42)
+    assert.ok(advancedToggleBox.width > 0 && advancedToggleBox.height >= 32)
     await advancedToggle.click()
     assert.match(await page.locator('.youtube-advanced-settings').innerText(), /^模型$/m)
 
@@ -285,25 +326,51 @@ async function main() {
         await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
       }
       await page.mouse.move(0, 0)
+      await page.waitForTimeout(200)
       const closeStyle = await noticeClose.evaluate((button) => {
         const style = getComputedStyle(button)
         return {
+          owner: button.dataset.uiOwner,
+          variant: button.dataset.variant,
+          size: button.dataset.size,
           backgroundColor: style.backgroundColor,
           backgroundImage: style.backgroundImage,
           boxShadow: style.boxShadow,
         }
       })
+      assert.equal(closeStyle.owner, 'workflow')
+      assert.equal(closeStyle.variant, 'ghost')
+      assert.equal(closeStyle.size, 'icon-sm')
       assert.equal(cssAlpha(closeStyle.backgroundColor), 0, `${theme} notice close should be transparent by default`)
-      await noticeClose.focus()
-      const focusStyle = await noticeClose.evaluate((button) => getComputedStyle(button).boxShadow)
-      assert.match(focusStyle, /0px 0px 0px 3px/, `${theme} notice close should retain a visible focus ring`)
+      const noticeAction = materialNotice.locator('button').first()
+      await noticeAction.focus()
+      await page.keyboard.press('Tab')
+      await page.waitForTimeout(200)
+      const focusStyle = await noticeClose.evaluate((button) => {
+        const style = getComputedStyle(button)
+        return { active: document.activeElement === button, focusVisible: button.matches(':focus-visible'), outline: style.outline, boxShadow: style.boxShadow }
+      })
+      assert.equal(focusStyle.active, true, `${theme} notice close should receive keyboard focus`)
+      assert.equal(focusStyle.focusVisible, true, `${theme} notice close should use keyboard-visible focus`)
+      assert.match(focusStyle.boxShadow, /0px 0px 0px 3px/, `${theme} notice close should retain the component focus ring`)
       await noticeClose.hover()
       const hoverStyle = await noticeClose.evaluate((button) => getComputedStyle(button).backgroundImage)
-      assert.match(hoverStyle, /linear-gradient/, `${theme} notice close should retain its hover treatment`)
+      assert.equal(hoverStyle, 'none', `${theme} notice close should use the shadcn hover treatment without a legacy gradient`)
     }
     await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
     await page.locator('.youtube-material-entry').click()
     await panel.waitFor({ state: 'visible' })
+    const libraryNavigation = page.locator('.youtube-workflow-nav button[data-view="library"]')
+    await libraryNavigation.click()
+    await page.waitForTimeout(200)
+    const mouseFocusStyle = await libraryNavigation.evaluate((button) => ({
+      active: document.activeElement === button,
+      focusVisible: button.matches(':focus-visible'),
+      boxShadow: getComputedStyle(button).boxShadow,
+    }))
+    assert.equal(mouseFocusStyle.active, true, 'mouse click should focus the navigation button')
+    assert.equal(mouseFocusStyle.focusVisible, false, 'mouse click should not trigger keyboard-visible focus')
+    assert.ok(mouseFocusStyle.boxShadow === 'none' || /0px 0px 0px 0px/.test(mouseFocusStyle.boxShadow), 'mouse focus should not add a persistent component ring')
     await page.locator('.youtube-workflow-library-job').nth(1).getByRole('button', { name: '打开' }).click()
     await panel.waitFor({ state: 'hidden' })
     assert.equal(await materialNotice.isVisible(), false, 'a new open attempt must dismiss the previous material error immediately')

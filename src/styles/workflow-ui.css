@@ -49,9 +49,14 @@
 
 @layer base {
   [data-ui-owner="workflow"] {
+    appearance: none;
     box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
     border-style: solid;
     border-color: var(--border);
+    background-color: transparent;
     color: var(--foreground);
     font-family: var(--pru-ui-font);
   }
@@ -65,13 +70,4 @@
   [data-ui-owner="workflow"] {
     transition: none;
   }
-}
-
-/* Preflight is intentionally disabled, so keep the first focus treatment
-   explicit and local to the pilot owner. */
-[data-ui-owner="workflow"]:focus-visible {
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--pru-focus-ring);
 }

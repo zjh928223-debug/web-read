@@ -1,12 +1,19 @@
 <template>
   <Teleport to="#youtube-reader-controls-root">
     <div class="youtube-reader-controls">
-      <button type="button" class="small-btn youtube-material-entry" @click="openPanel">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        class="small-btn youtube-material-entry"
+        data-ui-owner="workflow"
+        @click="openPanel"
+      >
         <span>素材处理</span>
         <small v-if="activeTaskCount" class="youtube-material-entry-count is-active">{{ activeTaskEntryText }}</small>
         <small v-if="failedTaskCount" class="youtube-material-entry-count is-failed">{{ failedTaskCount }}</small>
         <small v-if="completionSignal" class="youtube-material-entry-count is-complete">✓</small>
-      </button>
+      </Button>
     </div>
   </Teleport>
 
@@ -18,8 +25,28 @@
             <h2>素材处理</h2>
           </div>
           <div class="youtube-window-actions">
-            <button type="button" class="small-btn primary youtube-add-material-button" @click="setWorkflowView('add')">+ 添加素材</button>
-            <button type="button" class="youtube-workflow-icon-btn" aria-label="关闭" title="关闭" @click="closePanel">×</button>
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              class="youtube-add-material-button"
+              data-ui-owner="workflow"
+              @click="setWorkflowView('add')"
+            >
+              + 添加素材
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              class="youtube-workflow-close-button"
+              data-ui-owner="workflow"
+              aria-label="关闭"
+              title="关闭"
+              @click="closePanel"
+            >
+              ×
+            </Button>
           </div>
         </header>
 
@@ -32,17 +59,44 @@
 
         <div class="youtube-workflow-layout">
           <nav class="youtube-workflow-section-tabs youtube-workflow-nav" aria-label="素材处理视图">
-            <button type="button" data-view="library" :aria-pressed="workflowView === 'library'" :data-active="workflowView === 'library' ? 'true' : 'false'" @click="setWorkflowView('library')">
+            <Button
+              type="button"
+              :variant="workflowView === 'library' ? 'secondary' : 'ghost'"
+              size="sm"
+              data-ui-owner="workflow"
+              data-view="library"
+              :aria-pressed="workflowView === 'library'"
+              :data-active="workflowView === 'library' ? 'true' : 'false'"
+              @click="setWorkflowView('library')"
+            >
               <span>素材库</span>
-            </button>
-            <button type="button" data-view="queue" :aria-pressed="workflowView === 'queue'" :data-active="workflowView === 'queue' ? 'true' : 'false'" @click="setWorkflowView('queue')">
+            </Button>
+            <Button
+              type="button"
+              :variant="workflowView === 'queue' ? 'secondary' : 'ghost'"
+              size="sm"
+              data-ui-owner="workflow"
+              data-view="queue"
+              :aria-pressed="workflowView === 'queue'"
+              :data-active="workflowView === 'queue' ? 'true' : 'false'"
+              @click="setWorkflowView('queue')"
+            >
               <span>任务</span>
               <small v-if="activeTaskCount">{{ activeTaskCount }}</small>
               <small v-else-if="failedTaskCount" class="is-failed">{{ failedTaskCount }}</small>
-            </button>
-            <button type="button" data-view="settings" :aria-pressed="workflowView === 'settings'" :data-active="workflowView === 'settings' ? 'true' : 'false'" @click="setWorkflowView('settings')">
+            </Button>
+            <Button
+              type="button"
+              :variant="workflowView === 'settings' ? 'secondary' : 'ghost'"
+              size="sm"
+              data-ui-owner="workflow"
+              data-view="settings"
+              :aria-pressed="workflowView === 'settings'"
+              :data-active="workflowView === 'settings' ? 'true' : 'false'"
+              @click="setWorkflowView('settings')"
+            >
               <span>设置</span>
-            </button>
+            </Button>
           </nav>
 
           <main class="youtube-workflow-content">
@@ -80,7 +134,17 @@
                       <small v-if="!card.valid || card.duplicate || card.metadataState === 'loading'" class="youtube-link-state-text">{{ linkCardStateText(card) }}</small>
                       <span v-if="card.metadataAuthor" class="youtube-link-author">{{ card.metadataAuthor }}</span>
                     </div>
-                    <button type="button" class="small-btn youtube-link-remove" :aria-label="`移除第 ${index + 1} 条链接`" @click="removeLinkCard(card.id)">移除</button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      class="youtube-link-remove"
+                      data-ui-owner="workflow"
+                      :aria-label="`移除第 ${index + 1} 条链接`"
+                      @click="removeLinkCard(card.id)"
+                    >
+                      移除
+                    </Button>
                   </article>
                 </div>
 
@@ -92,12 +156,12 @@
                 </p>
                 <div v-if="geminiMode === 'real' && !apiKey.trim() && !credentialStatus.stored" class="youtube-add-credential-needed">
                   <span>需要先保存 Gemini API Key</span>
-                  <button type="button" class="small-btn" @click="setWorkflowView('settings')">去设置</button>
+                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="setWorkflowView('settings')">去设置</Button>
                 </div>
                 <div class="youtube-primary-actions youtube-add-submit-row">
-                  <button type="submit" class="primary" :disabled="starting || !canEnqueue">
+                  <Button type="submit" variant="default" size="default" data-ui-owner="workflow" :disabled="starting || !canEnqueue">
                     <span>{{ primaryActionText }}</span>
-                  </button>
+                  </Button>
                 </div>
               </form>
             </section>
@@ -119,7 +183,17 @@
               </div>
               <div class="youtube-workflow-toolbar">
                 <span>{{ taskSummary }}</span>
-                <button v-if="failedTaskCount" type="button" class="small-btn youtube-clear-failures" @click="clearFailedTasks">清除失败记录</button>
+                <Button
+                  v-if="failedTaskCount"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="youtube-clear-failures"
+                  data-ui-owner="workflow"
+                  @click="clearFailedTasks"
+                >
+                  清除失败记录
+                </Button>
               </div>
 
               <section class="youtube-workflow-queue">
@@ -156,10 +230,46 @@
                     </details>
                   </div>
                   <div class="youtube-workflow-job-actions">
-                    <button v-if="group.displayJob.status === 'queued'" type="button" class="small-btn" @click="prioritizeJob(group.displayJob)">置顶</button>
-                    <button v-if="group.statusKind === 'failed'" type="button" class="small-btn primary" @click="retryJob(group.displayJob)">重试</button>
-                    <button v-if="group.statusKind === 'failed'" type="button" class="small-btn danger" @click="deleteFailedTaskGroup(group)">删除记录</button>
-                    <button v-if="group.statusKind === 'active'" type="button" class="small-btn" @click="cancelJob(group.displayJob)">取消</button>
+                    <Button
+                      v-if="group.displayJob.status === 'queued'"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-ui-owner="workflow"
+                      @click="prioritizeJob(group.displayJob)"
+                    >
+                      置顶
+                    </Button>
+                    <Button
+                      v-if="group.statusKind === 'failed'"
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      data-ui-owner="workflow"
+                      @click="retryJob(group.displayJob)"
+                    >
+                      重试
+                    </Button>
+                    <Button
+                      v-if="group.statusKind === 'failed'"
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      data-ui-owner="workflow"
+                      @click="deleteFailedTaskGroup(group)"
+                    >
+                      删除记录
+                    </Button>
+                    <Button
+                      v-if="group.statusKind === 'active'"
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      data-ui-owner="workflow"
+                      @click="cancelJob(group.displayJob)"
+                    >
+                      取消
+                    </Button>
                   </div>
                 </article>
               </section>
@@ -173,9 +283,36 @@
                 <span>{{ librarySummary }}</span>
               </div>
               <div class="youtube-filter-tabs youtube-library-time-filter" aria-label="素材时间筛选">
-                <button type="button" :data-active="libraryTimeScope === 'all' ? 'true' : 'false'" @click="setLibraryTimeScope('all')">全部</button>
-                <button type="button" :data-active="libraryTimeScope === 'recent' ? 'true' : 'false'" @click="setLibraryTimeScope('recent')">7 天内</button>
-                <button type="button" :data-active="libraryTimeScope === 'earlier' ? 'true' : 'false'" @click="setLibraryTimeScope('earlier')">更早</button>
+                <Button
+                  type="button"
+                  :variant="libraryTimeScope === 'all' ? 'secondary' : 'ghost'"
+                  size="xs"
+                  data-ui-owner="workflow"
+                  :data-active="libraryTimeScope === 'all' ? 'true' : 'false'"
+                  @click="setLibraryTimeScope('all')"
+                >
+                  全部
+                </Button>
+                <Button
+                  type="button"
+                  :variant="libraryTimeScope === 'recent' ? 'secondary' : 'ghost'"
+                  size="xs"
+                  data-ui-owner="workflow"
+                  :data-active="libraryTimeScope === 'recent' ? 'true' : 'false'"
+                  @click="setLibraryTimeScope('recent')"
+                >
+                  7 天内
+                </Button>
+                <Button
+                  type="button"
+                  :variant="libraryTimeScope === 'earlier' ? 'secondary' : 'ghost'"
+                  size="xs"
+                  data-ui-owner="workflow"
+                  :data-active="libraryTimeScope === 'earlier' ? 'true' : 'false'"
+                  @click="setLibraryTimeScope('earlier')"
+                >
+                  更早
+                </Button>
               </div>
 
               <p v-if="readerActivityNotice" class="youtube-workflow-hint" data-tone="warning">{{ readerActivityNotice }}</p>
@@ -197,27 +334,59 @@
                     </div>
                   </div>
                   <div class="youtube-workflow-job-actions">
-                    <button type="button" class="small-btn youtube-library-open" :disabled="openingJobId === job.jobId" @click="openRecentJob(job)">打开</button>
-                    <button type="button" class="small-btn youtube-library-more" aria-label="更多操作" :aria-expanded="expandedLibraryJobId === job.jobId ? 'true' : 'false'" @click="toggleLibraryMenu(job)">···</button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      class="youtube-library-open"
+                      data-ui-owner="workflow"
+                      :disabled="openingJobId === job.jobId"
+                      @click="openRecentJob(job)"
+                    >
+                      打开
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="youtube-library-more"
+                      data-ui-owner="workflow"
+                      aria-label="更多操作"
+                      :aria-expanded="expandedLibraryJobId === job.jobId ? 'true' : 'false'"
+                      @click="toggleLibraryMenu(job)"
+                    >
+                      ···
+                    </Button>
                   </div>
                   <div v-if="expandedLibraryJobId === job.jobId" class="youtube-library-row-menu">
                     <small class="youtube-library-source-detail">{{ librarySourceText(job) }}</small>
-                    <button type="button" class="small-btn" @click="confirmReprocess(job)">重新处理</button>
-                    <button type="button" class="small-btn" @click="showQuality(job)">查看处理详情</button>
-                    <button type="button" class="small-btn danger" @click="deleteLibraryRecord(job)">删除记录</button>
+                    <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="confirmReprocess(job)">重新处理</Button>
+                    <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="showQuality(job)">查看处理详情</Button>
+                    <Button type="button" variant="destructive" size="sm" data-ui-owner="workflow" @click="deleteLibraryRecord(job)">删除记录</Button>
                   </div>
                 </article>
-                <button v-if="libraryHasMore" type="button" class="small-btn youtube-library-load-more" :disabled="libraryPending" @click="loadMoreLibrary">
+                <Button
+                  v-if="libraryHasMore"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  class="youtube-library-load-more"
+                  data-ui-owner="workflow"
+                  :disabled="libraryPending"
+                  @click="loadMoreLibrary"
+                >
                   {{ libraryPending ? '加载中…' : '加载更多' }}
-                </button>
+                </Button>
               </section>
-              <button
+              <Button
                 v-if="readerConflictVisible"
                 type="button"
-                class="small-btn"
+                variant="outline"
+                size="sm"
+                data-ui-owner="workflow"
                 data-reader-conflict-action
                 @click="resolveReaderConflict"
-              >确认并保存本地最新意图</button>
+              >确认并保存本地最新意图</Button>
             </section>
 
             <section v-if="workflowView === 'add'" class="youtube-add-duplicate-help" aria-live="polite">
@@ -227,10 +396,45 @@
                   <span>{{ duplicateStateText(card.duplicate) }}</span>
                 </div>
                 <div class="youtube-workflow-actions">
-                  <button v-if="card.duplicate.state === 'ready'" type="button" class="small-btn primary" @click="openRecentJob(card.duplicate.job)">打开已有素材</button>
-                  <button v-if="card.duplicate.state === 'active'" type="button" class="small-btn" @click="setWorkflowView('queue')">查看当前任务</button>
-                  <button v-if="card.duplicate.state === 'failed'" type="button" class="small-btn" @click="retryJob(card.duplicate.job)">重试</button>
-                  <button type="button" class="small-btn" @click="confirmReprocess(card.duplicate.job, card.url)">明确重新处理</button>
+                  <Button
+                    v-if="card.duplicate.state === 'ready'"
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    data-ui-owner="workflow"
+                    @click="openRecentJob(card.duplicate.job)"
+                  >
+                    打开已有素材
+                  </Button>
+                  <Button
+                    v-if="card.duplicate.state === 'active'"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-ui-owner="workflow"
+                    @click="setWorkflowView('queue')"
+                  >
+                    查看当前任务
+                  </Button>
+                  <Button
+                    v-if="card.duplicate.state === 'failed'"
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-ui-owner="workflow"
+                    @click="retryJob(card.duplicate.job)"
+                  >
+                    重试
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-ui-owner="workflow"
+                    @click="confirmReprocess(card.duplicate.job, card.url)"
+                  >
+                    明确重新处理
+                  </Button>
                 </div>
               </div>
             </section>
@@ -252,17 +456,32 @@
                   <input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" aria-label="Gemini API Key" placeholder="输入新的 API Key">
                 </label>
                 <div class="youtube-credential-actions">
-                  <button type="button" class="small-btn primary" :disabled="!apiKey.trim()" @click="saveCredential">
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="default"
+                    data-ui-owner="workflow"
+                    :disabled="!apiKey.trim()"
+                    @click="saveCredential"
+                  >
                     {{ credentialStatus.stored ? '更新 API Key' : '保存 API Key' }}
-                  </button>
+                  </Button>
                 </div>
                 <p v-if="credentialNotice" class="youtube-workflow-hint">{{ credentialNotice }}</p>
               </section>
               <p v-else class="youtube-workflow-hint">当前为本地开发模式，无需配置 API Key。</p>
 
-              <button type="button" class="youtube-advanced-toggle" :aria-expanded="showAdvanced ? 'true' : 'false'" @click="showAdvanced = !showAdvanced">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                class="youtube-advanced-toggle"
+                data-ui-owner="workflow"
+                :aria-expanded="showAdvanced ? 'true' : 'false'"
+                @click="showAdvanced = !showAdvanced"
+              >
                 <span>{{ showAdvanced ? '收起高级设置' : '高级设置' }}</span>
-              </button>
+              </Button>
               <div v-if="showAdvanced" class="youtube-advanced-settings">
                 <label>
                   <span>模型</span>
@@ -293,14 +512,14 @@
                   <input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe">
                 </label>
                 <div class="youtube-primary-actions">
-                  <button type="button" class="small-btn primary" @click="saveBackendConfig">保存后台配置</button>
-                  <button type="button" class="small-btn" @click="refreshMaintenance">维护状态</button>
-                  <button type="button" class="small-btn" @click="checkCleanup">检查旧文件</button>
-                  <button type="button" class="small-btn" @click="confirmCleanup">清理旧文件</button>
-                  <button type="button" class="small-btn" @click="downloadDiagnosticsPackage">导出诊断包</button>
+                  <Button type="button" variant="default" size="default" data-ui-owner="workflow" @click="saveBackendConfig">保存后台配置</Button>
+                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="refreshMaintenance">维护状态</Button>
+                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="checkCleanup">检查旧文件</Button>
+                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="confirmCleanup">清理旧文件</Button>
+                  <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" @click="downloadDiagnosticsPackage">导出诊断包</Button>
                 </div>
                 <div v-if="geminiMode === 'real' && credentialStatus.stored" class="youtube-advanced-danger-row">
-                  <button type="button" class="small-btn danger" @click="confirmDeleteCredential">清除已保存 API Key</button>
+                  <Button type="button" variant="destructive" size="sm" data-ui-owner="workflow" @click="confirmDeleteCredential">清除已保存 API Key</Button>
                 </div>
                 <p v-if="backendConfigNotice">{{ backendConfigNotice }}</p>
                 <p v-if="maintenanceInfo">{{ maintenanceText(maintenanceInfo) }}</p>
@@ -317,7 +536,20 @@
         <section ref="qualityDialogRoot" class="youtube-subwindow-card youtube-quality-card" role="dialog" aria-modal="true" aria-labelledby="youtube-quality-dialog-title" :aria-busy="qualityPending ? 'true' : 'false'">
           <header>
             <strong id="youtube-quality-dialog-title">质量报告</strong>
-            <button ref="qualityDialogInitialFocus" type="button" class="youtube-workflow-icon-btn" aria-label="关闭质量报告" title="关闭" :disabled="qualityPending" @click="closeQualityModal">x</button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              class="youtube-workflow-close-button"
+              data-ui-owner="workflow"
+              data-quality-initial-focus
+              aria-label="关闭质量报告"
+              title="关闭"
+              :disabled="qualityPending"
+              @click="closeQualityModal"
+            >
+              x
+            </Button>
           </header>
           <p>{{ jobDisplayTitle(qualityModal.job) }}</p>
           <p ref="qualityDialogStatus" role="status" aria-live="polite" aria-atomic="true">{{ qualityIssueSummary(qualityModal.report) }}</p>
@@ -327,9 +559,9 @@
             </li>
           </ul>
           <div class="youtube-workflow-actions">
-            <button type="button" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</button>
-            <button type="button" class="small-btn" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</button>
-            <button type="button" class="small-btn" :disabled="qualityPending" @click="closeQualityModal">关闭</button>
+            <Button type="button" variant="default" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'segmenting')">重新AI切分</Button>
+            <Button type="button" variant="outline" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="retryQualityJob(qualityModal.job, 'translating')">重新翻译</Button>
+            <Button type="button" variant="ghost" size="sm" data-ui-owner="workflow" :disabled="qualityPending" @click="closeQualityModal">关闭</Button>
           </div>
         </section>
       </div>
@@ -345,8 +577,18 @@
         @mouseleave="resumeMaterialNotice"
       >
         <span>{{ materialNotice.message }}</span>
-        <button type="button" class="small-btn" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</button>
-        <button type="button" class="youtube-material-notice-close" aria-label="关闭提示" @click="clearMaterialNotice">×</button>
+        <Button type="button" variant="default" size="sm" data-ui-owner="workflow" @click="runMaterialNoticeAction">{{ materialNotice.actionLabel }}</Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          class="youtube-material-notice-close"
+          data-ui-owner="workflow"
+          aria-label="关闭提示"
+          @click="clearMaterialNotice"
+        >
+          ×
+        </Button>
       </aside>
     </Teleport>
   </div>
@@ -440,7 +682,6 @@ const qualityPending = ref(false)
 const panelDialogRoot = ref(null)
 const qualityDialogRoot = ref(null)
 const qualityDialogStatus = ref(null)
-const qualityDialogInitialFocus = ref(null)
 const qualityModal = ref(null)
 const materialNotice = ref(null)
 const repairStates = new Map()
@@ -807,8 +1048,9 @@ watch(qualityModal, async (modal) => {
   }
   await nextTick()
   if (!qualityDialogRoot.value) return
+  const initialFocus = qualityDialogRoot.value.querySelector('button[data-quality-initial-focus]:not([disabled])')
   qualityDialogController.open(qualityDialogRoot.value, {
-    initialFocus: qualityDialogInitialFocus.value,
+    initialFocus,
     statusElement: qualityDialogStatus.value,
     isPending: () => qualityPending.value,
     onRequestClose: closeQualityModal,
