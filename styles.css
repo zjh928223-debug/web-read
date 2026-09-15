@@ -1514,12 +1514,24 @@ body {
     .ui-glass-dynamic.glass-card::before {
       opacity: 1;
     }
-    .glass-button {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) .glass-button {
       position: relative;
       overflow: hidden;
       isolation: isolate;
     }
-    .glass-button::before {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) .glass-button::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1534,11 +1546,23 @@ body {
       transition: opacity var(--glass-duration-fast) var(--glass-ease);
       z-index: 0;
     }
-    .glass-button > * {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) .glass-button > * {
       position: relative;
       z-index: 1;
     }
-    .ui-glass-dynamic.glass-button::before {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) .ui-glass-dynamic.glass-button::before {
       opacity: 0.78;
     }
 
@@ -1896,11 +1920,19 @@ body {
     }
 
     /* 鎸夐挳閫氱敤鏍峰紡 */
-    #toggle-follow, .small-btn, button, .speed-controls button, .seek-controls button, #highlight-mode-btn, #toggle-chunk-btn {
+    #toggle-follow, .small-btn,
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button,
+    .speed-controls button, .seek-controls button, #highlight-mode-btn, #toggle-chunk-btn {
       padding: 5px 12px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
-      color: var(--btn-text) !important;
+      color: var(--btn-text);
       cursor: pointer;
       border-radius: 10px;
       transition:
@@ -1922,7 +1954,15 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    #toggle-follow::before, .small-btn::before, button::before, .speed-controls button::before, .seek-controls button::before, #highlight-mode-btn::before, #toggle-chunk-btn::before, .file-btn::before, .mini-toggle::before {
+    #toggle-follow::before, .small-btn::before,
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button::before,
+    .speed-controls button::before, .seek-controls button::before, #highlight-mode-btn::before, #toggle-chunk-btn::before, .file-btn::before, .mini-toggle::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1935,23 +1975,50 @@ body {
     }
     #toggle-follow.ui-glass-dynamic::before,
     .small-btn.ui-glass-dynamic::before,
-    button.ui-glass-dynamic::before,
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button.ui-glass-dynamic::before,
     .file-btn.ui-glass-dynamic::before,
     .mini-toggle.ui-glass-dynamic::before {
       opacity: 0.72;
     }
-    button:hover, #toggle-follow:hover, .small-btn:hover {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button:hover,
+    #toggle-follow:hover, .small-btn:hover {
       transform: translateY(-1px) scale(1.01);
-      background: var(--glass-panel-bg-strong) !important;
+      background: var(--glass-panel-bg-strong);
       border-color: rgba(255,255,255,0.68);
       box-shadow: inset 1px 1px 0 rgba(255,255,255,0.84), var(--glass-shadow-md);
     }
-    button:active, #toggle-follow:active, .small-btn:active {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button:active,
+    #toggle-follow:active, .small-btn:active {
       transform: translateY(0) scale(0.985);
       background: rgba(226,232,242,0.52);
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
     }
-    button:focus-visible, #toggle-follow:focus-visible, .small-btn:focus-visible, .file-btn:focus-visible {
+    :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button:focus-visible,
+    #toggle-follow:focus-visible, .small-btn:focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
     }
@@ -2199,7 +2266,15 @@ body {
       color: var(--text-main);
       cursor: pointer;
     }
-    [data-theme="dark"] #toggle-follow, [data-theme="dark"] .small-btn, [data-theme="dark"] button, [data-theme="dark"] .speed-controls button, [data-theme="dark"] .seek-controls button, [data-theme="dark"] #highlight-mode-btn, [data-theme="dark"] #toggle-chunk-btn {
+    [data-theme="dark"] #toggle-follow, [data-theme="dark"] .small-btn,
+    [data-theme="dark"] :where(
+      #theme-controls, .controls, .extra-controls, .transcript-header,
+      #style-editor-modal, #chunk-style-modal,
+      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .annotation-backfill-dialog, .vocabulary-preview-dialog,
+      .annotation-bubble, .youtube-video-player
+    ) button,
+    [data-theme="dark"] .speed-controls button, [data-theme="dark"] .seek-controls button, [data-theme="dark"] #highlight-mode-btn, [data-theme="dark"] #toggle-chunk-btn {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);

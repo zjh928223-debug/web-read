@@ -51,6 +51,29 @@ html.srs-review-standalone-document body {
   inset: 0;
 }
 
+/* 主壳 overlay 过去依赖 styles.css 裸 button 的文本选择行为；独立 SRS 不受这组补偿影响。 */
+.srs-review-page.is-overlay button {
+  user-select: none;
+}
+
+/* 主壳 overlay 的评分控件原先依赖 styles.css 的内边距；独立 SRS 保留自身尺寸。 */
+.srs-review-page.is-overlay .srs-review-actions button {
+  padding: 5px 12px;
+}
+
+/* 主壳 overlay 发音按钮原先依赖 styles.css 的内边距；固定圆形尺寸保持不变。 */
+.srs-review-page.is-overlay .srs-review-speaker {
+  padding: 5px 12px;
+}
+
+/* 主壳 overlay 的次级操作按钮原先依赖 styles.css 的最小高度；独立 SRS 不受这组补偿影响。 */
+.srs-review-page.is-overlay .srs-review-replay-shortcut,
+.srs-review-page.is-overlay .srs-review-retry,
+.srs-review-page.is-overlay .srs-review-playback-shortcut-setting button,
+.srs-review-page.is-overlay .srs-review-sentence-translation.is-unavailable button {
+  min-height: 28px;
+}
+
 .srs-review-header {
   position: relative;
   z-index: 20;
@@ -90,6 +113,12 @@ html.srs-review-standalone-document body {
   color: rgba(92, 105, 124, .94) !important;
   background: rgba(255, 255, 255, .62);
   box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
+}
+
+:where(.srs-review-page) button:focus-visible,
+:where(.srs-review-page) audio:focus-visible {
+  outline: 3px solid rgba(36, 84, 198, .35);
+  outline-offset: 3px;
 }
 
 .srs-review-back svg {
@@ -1137,12 +1166,6 @@ html.srs-review-standalone-document body {
   color: #b4232b;
   font: 600 18px/1.6 system-ui, sans-serif;
   text-align: center;
-}
-
-button:focus-visible,
-audio:focus-visible {
-  outline: 3px solid rgba(36, 84, 198, .35);
-  outline-offset: 3px;
 }
 
 @keyframes srs-review-spin {

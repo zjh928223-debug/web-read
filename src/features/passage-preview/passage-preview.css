@@ -390,6 +390,20 @@
   margin: 0;
 }
 
+:where(.passage-preview-shortcut-dialog) button:focus-visible {
+  outline: 3px solid rgba(36, 84, 198, .35);
+  outline-offset: 3px;
+}
+
+/* 预习设置按钮过去依赖 styles.css 裸 button 的排版与盒模型；只在弹窗自身补回基础属性。 */
+:where(.passage-preview-shortcut-dialog) button {
+  box-sizing: border-box;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 500;
+  user-select: none;
+}
+
 .passage-preview-shortcut-dialog > header p {
   margin-bottom: 5px;
   color: #8490a3;
