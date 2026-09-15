@@ -262,44 +262,11 @@
   color: var(--pru-info);
 }
 
-.youtube-reader-controls .small-btn,
-.youtube-workflow button {
-  border-color: var(--glass-border) !important;
-  border-radius: 999px !important;
-  background: var(--glass-button-bg) !important;
-  color: var(--text-main) !important;
-  box-shadow: var(--glass-shadow-sm) !important;
-  backdrop-filter: var(--glass-blur-sm) !important;
-  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
-  font-family: var(--pru-ui-font);
-}
-
-.youtube-workflow button:hover,
-.youtube-reader-controls .small-btn:hover {
-  background: color-mix(in srgb, var(--glass-button-bg) 76%, var(--btn-hover)) !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button,
-.youtube-workflow .youtube-filter-tabs button,
-.youtube-workflow .youtube-advanced-toggle {
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button {
-  border-radius: 10px !important;
-}
-
 .youtube-workflow .youtube-filter-tabs {
   grid-template-columns: repeat(3, minmax(72px, auto));
   justify-self: start;
   border-radius: 999px;
   background: color-mix(in srgb, var(--btn-bg) 70%, transparent);
-}
-
-.youtube-workflow .youtube-filter-tabs button {
-  border-radius: 999px !important;
 }
 
 .youtube-workflow .youtube-workflow-job,
@@ -2600,47 +2567,17 @@ body {
       min-height: var(--pru-control-h);
       box-sizing: border-box;
       padding: 0 12px !important;
-      border: 1px solid var(--pru-shell-border) !important;
-      border-radius: var(--pru-radius-control) !important;
-      background: var(--pru-shell-surface) !important;
-      color: var(--pru-shell-text) !important;
-      box-shadow: none !important;
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-      font-family: var(--pru-ui-font);
       font-size: 13px;
-      font-weight: 650;
       line-height: 1;
-      letter-spacing: 0;
       white-space: nowrap;
       cursor: pointer;
-      transition:
-        background-color 150ms var(--pru-ease),
-        border-color 150ms var(--pru-ease),
-        color 150ms var(--pru-ease),
-        box-shadow 150ms var(--pru-ease);
       transform: none !important;
       touch-action: manipulation;
-    }
-
-    .youtube-reader-controls .small-btn::before,
-    .youtube-workflow button::before {
-      display: none !important;
-    }
-
-    .youtube-reader-controls .small-btn:hover,
-    .youtube-workflow button:hover {
-      background: var(--pru-shell-row-hover) !important;
-      border-color: color-mix(in srgb, var(--pru-accent) 34%, var(--pru-shell-border)) !important;
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--pru-focus-ring) 58%, transparent) !important;
-      transform: none !important;
     }
 
     .youtube-reader-controls .small-btn:active,
     .youtube-workflow button:active {
       background: color-mix(in srgb, var(--pru-shell-row-hover) 78%, var(--pru-accent) 8%) !important;
-      box-shadow: inset 0 1px 2px rgba(35, 28, 18, 0.12) !important;
-      transform: none !important;
     }
 
     .youtube-reader-controls .small-btn:focus-visible,
@@ -2668,41 +2605,6 @@ body {
       min-height: var(--pru-control-h-sm);
       padding: 0 10px !important;
       font-size: 12px;
-    }
-
-    .youtube-workflow .small-btn.primary,
-    .youtube-workflow button.primary,
-    .youtube-workflow .youtube-workflow-actions .primary,
-    .youtube-workflow .youtube-workflow-job-actions .primary,
-    .youtube-workflow .youtube-primary-actions button[type="submit"],
-    .youtube-workflow .youtube-switch-modal .youtube-workflow-actions button:first-child,
-    .youtube-workflow .youtube-quality-card .youtube-workflow-actions button:first-child {
-      border-color: transparent !important;
-      background: var(--pru-accent) !important;
-      color: #ffffff !important;
-    }
-
-    .youtube-workflow .small-btn.primary:hover,
-    .youtube-workflow button.primary:hover,
-    .youtube-workflow .youtube-workflow-actions .primary:hover,
-    .youtube-workflow .youtube-workflow-job-actions .primary:hover,
-    .youtube-workflow .youtube-primary-actions button[type="submit"]:hover,
-    .youtube-workflow .youtube-switch-modal .youtube-workflow-actions button:first-child:hover,
-    .youtube-workflow .youtube-quality-card .youtube-workflow-actions button:first-child:hover {
-      background: var(--pru-accent-hover) !important;
-      border-color: transparent !important;
-      box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
-    }
-
-    .youtube-workflow .youtube-workflow-job-actions .danger {
-      border-color: color-mix(in srgb, var(--pru-danger) 32%, var(--pru-shell-border)) !important;
-      background: var(--pru-shell-surface) !important;
-      color: var(--pru-danger) !important;
-    }
-
-    .youtube-workflow .youtube-workflow-job-actions .danger:hover {
-      background: color-mix(in srgb, var(--pru-danger) 10%, var(--pru-shell-surface)) !important;
-      border-color: color-mix(in srgb, var(--pru-danger) 46%, var(--pru-shell-border)) !important;
     }
 
     .youtube-workflow .youtube-advanced-toggle {
@@ -4611,20 +4513,11 @@ body {
       min-height: 34px;
       justify-content: space-between;
       padding: 0 9px !important;
-      border-color: transparent !important;
-      border-radius: 6px !important;
-      background: transparent !important;
-      color: var(--pru-shell-muted) !important;
       font-size: 13px;
-      font-weight: 700;
-      box-shadow: none !important;
     }
 
     .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"] {
       position: relative;
-      border-color: color-mix(in srgb, var(--pru-accent) 16%, var(--pru-row-border)) !important;
-      background: color-mix(in srgb, var(--pru-accent) 10%, var(--pru-shell-surface)) !important;
-      color: var(--pru-shell-text) !important;
     }
 
     .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button[data-active="true"]::before {
@@ -4745,17 +4638,7 @@ body {
     .youtube-workflow .youtube-filter-tabs button {
       min-height: 26px;
       padding: 0 8px !important;
-      border-color: transparent !important;
-      background: transparent !important;
-      color: var(--pru-shell-muted) !important;
-      box-shadow: none !important;
       font-size: 12px;
-    }
-
-    .youtube-workflow .youtube-filter-tabs button[data-active="true"] {
-      border-color: var(--pru-row-border) !important;
-      background: var(--pru-shell-surface) !important;
-      color: var(--pru-shell-text) !important;
     }
 
     .youtube-workflow-form,
@@ -5072,18 +4955,6 @@ body {
   background: color-mix(in srgb, var(--btn-bg) 54%, transparent);
 }
 
-.youtube-reader-controls .small-btn,
-.youtube-workflow button {
-  border-color: var(--glass-border) !important;
-  border-radius: 999px !important;
-  background: var(--glass-button-bg) !important;
-  color: var(--text-main) !important;
-  box-shadow: var(--glass-shadow-sm) !important;
-  backdrop-filter: var(--glass-blur-sm) !important;
-  -webkit-backdrop-filter: var(--glass-blur-sm) !important;
-  font-family: var(--pru-ui-font);
-}
-
 .youtube-workflow .small-btn.primary,
 .youtube-workflow button.primary,
 .youtube-workflow .youtube-workflow-actions .primary,
@@ -5094,14 +4965,6 @@ body {
   border-color: color-mix(in srgb, var(--pru-accent) 40%, transparent) !important;
   background: color-mix(in srgb, var(--pru-accent) 82%, transparent) !important;
   color: #fff !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button,
-.youtube-workflow .youtube-filter-tabs button,
-.youtube-workflow .youtube-advanced-toggle {
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
 }
 
 .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button {
@@ -5410,7 +5273,6 @@ body {
 }
 
 .youtube-workflow button:disabled {
-  opacity: 0.46;
   box-shadow: none !important;
 }
 
@@ -5523,7 +5385,6 @@ body {
   min-height: 42px;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, var(--pru-info) 18%, var(--pru-shell-border));
-  border-radius: 12px;
   background: color-mix(in srgb, var(--pru-shell-surface) 88%, transparent);
   color: var(--pru-shell-text);
   font: 500 14px/1.4 var(--pru-ui-font);
@@ -5576,14 +5437,6 @@ body {
   display: flex;
   justify-content: flex-start;
   padding-top: 4px;
-}
-
-.youtube-workflow .youtube-advanced-danger-row .danger {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--pru-danger) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  font-weight: 500 !important;
 }
 
 .youtube-workflow .youtube-workflow-job-actions .danger,
