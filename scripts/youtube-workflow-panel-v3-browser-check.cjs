@@ -67,6 +67,12 @@ async function mockService(page) {
     url: `https://youtube.com/watch?v=Library${String(index).padStart(4, '0')}`,
     lastActivityAt: new Date(Date.UTC(2026, 7, 18, 10, 0, 0) - index * 3600000).toISOString(),
   }))
+  const observed = {
+    credentialPayloads: [],
+    configPayloads: [],
+    createPayloads: [],
+  }
+  await page.route('**/oembed**', (route) => route.fulfill(json({})))
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -74,6 +80,15 @@ async function mockService(page) {
     if (url.pathname === '/api/health') return route.fulfill(json({ ok: true }))
     if (url.pathname === '/api/jobs/snapshot') return route.fulfill(json({ revision, jobs: queue }))
     if (url.pathname === '/api/reader/recent') return route.fulfill(json(library))
+    if (url.pathname === '/api/credentials/gemini' && request.method() === 'POST') {
+      observed.credentialPayloads.push(request.postDataJSON())
+      return route.fulfill(json({ stored: true, provider: 'test' }))
+    }
+    if (url.pathname === '/api/config' && request.method() === 'POST') {
+      const payload = request.postDataJSON()
+      observed.configPayloads.push(payload)
+      return route.fulfill(json(payload))
+    }
     if (url.pathname === '/api/config') return route.fulfill(json({ model: 'gemini-test' }))
     if (url.pathname === '/api/credentials/gemini/status') return route.fulfill(json({ stored: true, provider: 'test' }))
     const sessionMatch = url.pathname.match(/^\/api\/jobs\/(library-\d+)\/session$/)
@@ -131,6 +146,7 @@ async function mockService(page) {
         })
       }
       const payload = request.postDataJSON()
+      observed.createPayloads.push(payload)
       revision += 1
       const created = {
         jobId: 'created-after-delete', status: 'queued', stage: 'queued', title: 'Created after delete',
@@ -141,6 +157,7 @@ async function mockService(page) {
     }
     return route.fulfill(json({ ok: true, revision }))
   })
+  return observed
 }
 
 async function main() {
@@ -153,7 +170,7 @@ async function main() {
   })
   page.on('pageerror', (error) => pageErrors.push(error.message))
   try {
-    await mockService(page)
+    const observed = await mockService(page)
     await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
     await page.locator('.youtube-material-entry').click()
     const panel = page.locator('.youtube-workflow-panel')
@@ -284,11 +301,48 @@ async function main() {
     const addText = await page.locator('.youtube-workflow-content').innerText()
     assert.match(addText, /视频链接/)
     assert.doesNotMatch(addText, /导入旧素材目录|视频优先|系统凭据/)
-    await page.locator('textarea[name="youtube-material-link"]').fill('https://www.youtube.com/watch?v=vJl7LfO1r7Y&t=6s')
-    await page.locator('textarea[name="youtube-material-link"]').press('Tab')
+    const linkInput = page.locator('textarea[name="youtube-material-link"]')
+    const linkField = await linkInput.evaluate((textarea) => {
+      const style = getComputedStyle(textarea)
+      return [textarea.dataset.uiOwner, textarea.dataset.slot, textarea.name, textarea.autocomplete, textarea.rows, style.minHeight, style.maxHeight, style.borderRadius, style.padding, style.resize, style.cursor, style.backgroundImage, style.backdropFilter]
+    })
+    assert.deepEqual(linkField, ['workflow', 'textarea', 'youtube-material-link', 'off', 2, '76px', '220px', '6px', '8px 12px', 'vertical', 'text', 'none', 'none'])
+
+    await linkInput.fill('  https://www.youtube.com/watch?v=bLurTest123  ')
+    assert.equal(await linkInput.inputValue(), '  https://www.youtube.com/watch?v=bLurTest123  ', 'editing DOM should preserve raw v-model.trim input until change')
+    await linkInput.press('Tab')
     await page.waitForSelector('.youtube-link-card')
+    assert.match(await page.locator('.youtube-link-card').first().innerText(), /bLurTest123/, 'blur should commit the trimmed link value')
+
+    await linkInput.fill('  https://www.youtube.com/watch?v=pAsteTest12\nhttps://www.youtube.com/watch?v=pAsteTest13  ')
+    await page.evaluate(() => {
+      const textarea = document.querySelector('textarea[name="youtube-material-link"]')
+      const event = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: () => '  https://www.youtube.com/watch?v=pAsteTest12\nhttps://www.youtube.com/watch?v=pAsteTest13  ' },
+      })
+      textarea.dispatchEvent(event)
+    })
+    await page.waitForTimeout(30)
+    assert.equal(await page.locator('.youtube-link-card').count(), 3, 'multi-line paste should commit one card per link without duplication')
+
+    await linkInput.fill('https://www.youtube.com/watch?v=enterTest12')
+    await linkInput.press('Enter')
+    await page.waitForTimeout(30)
+    assert.equal(await page.locator('.youtube-link-card').count(), 3, 'ordinary Enter should keep textarea editing behavior')
+    await linkInput.fill('https://www.youtube.com/watch?v=cTrlEnter12')
+    await linkInput.press('Control+Enter')
+    await page.waitForTimeout(30)
+    assert.equal(await page.locator('.youtube-link-card').count(), 4, 'Ctrl+Enter should commit one link card')
+
+    await page.locator('.youtube-link-card').first().getByRole('button', { name: '移除第 1 条链接' }).click()
+    await page.locator('.youtube-link-card').first().getByRole('button', { name: '移除第 1 条链接' }).click()
+    await page.locator('.youtube-link-card').first().getByRole('button', { name: '移除第 1 条链接' }).click()
+    assert.equal(await page.locator('.youtube-link-card').count(), 1)
     await page.locator('.youtube-add-material-form button[type="submit"]').click()
     await page.waitForSelector('.youtube-workflow-queue-job')
+    assert.equal(observed.createPayloads.length, 1)
+    assert.equal(observed.createPayloads[0].url, 'https://www.youtube.com/watch?v=cTrlEnter12')
     assert.equal(await page.locator('[data-workflow-mutation-notice]').count(), 0, 'deleting failures must advance the local revision before creating again')
     assert.match(await page.locator('.youtube-workflow-queue').innerText(), /Created after delete/)
 
@@ -306,6 +360,63 @@ async function main() {
     assert.ok(advancedToggleBox.width > 0 && advancedToggleBox.height >= 32)
     await advancedToggle.click()
     assert.match(await page.locator('.youtube-advanced-settings').innerText(), /^模型$/m)
+
+    const apiKeyInput = page.locator('input[name="youtube-gemini-api-key-settings"]')
+    const apiKeyField = await apiKeyInput.evaluate((input) => {
+      const style = getComputedStyle(input)
+      return [input.dataset.uiOwner, input.dataset.slot, input.type, input.name, input.autocomplete, style.height, style.borderRadius, style.padding, style.cursor, style.backgroundImage]
+    })
+    assert.deepEqual(apiKeyField, ['workflow', 'input', 'password', 'youtube-gemini-api-key-settings', 'off', '36px', '6px', '4px 12px', 'text', 'none'])
+    await page.evaluate(() => {
+      const input = document.querySelector('input[name="youtube-gemini-api-key-settings"]')
+      input.value = 'old'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
+      input.value = '正在输入'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await page.evaluate(() => document.querySelector('.youtube-advanced-toggle').click())
+    await page.waitForTimeout(30)
+    assert.equal(await apiKeyInput.inputValue(), '正在输入', 'composition text should survive a parent component update')
+    await page.evaluate(() => {
+      const input = document.querySelector('input[name="youtube-gemini-api-key-settings"]')
+      input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }))
+    })
+    await page.waitForTimeout(30)
+    await page.getByRole('button', { name: /高级设置/ }).click()
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+    const darkApiKeyBackground = await apiKeyInput.evaluate((input) => getComputedStyle(input).backgroundColor)
+    assert.notEqual(darkApiKeyBackground, 'rgba(0, 0, 0, 0)', 'dark theme should retain the generated input surface token')
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
+    await apiKeyInput.fill('  test-key  ')
+    assert.equal(await apiKeyInput.inputValue(), '  test-key  ', 'API Key should preserve raw v-model whitespace')
+    await page.getByRole('button', { name: '更新 API Key' }).click()
+    await page.waitForTimeout(30)
+    assert.deepEqual(observed.credentialPayloads, [{ apiKey: '  test-key  ' }])
+
+    const advancedInputs = page.locator('.youtube-advanced-settings input[data-ui-owner="workflow"]')
+    assert.equal(await advancedInputs.count(), 7)
+    for (let index = 0; index < await advancedInputs.count(); index += 1) {
+      assert.equal(await advancedInputs.nth(index).getAttribute('data-slot'), 'input')
+      assert.equal(await advancedInputs.nth(index).getAttribute('autocomplete'), 'off')
+    }
+    const cookiesPath = page.locator('input[name="youtube-workflow-cookies-path"]')
+    await cookiesPath.fill('  C:/学习 数据/cookies.txt  ')
+    assert.equal(await cookiesPath.inputValue(), '  C:/学习 数据/cookies.txt  ', 'advanced fields should preserve raw editing value before change')
+    await cookiesPath.press('Tab')
+    assert.equal(await cookiesPath.inputValue(), 'C:/学习 数据/cookies.txt', 'advanced fields should trim on change')
+    await page.getByRole('button', { name: '保存后台配置' }).click()
+    await page.waitForTimeout(30)
+    assert.equal(observed.configPayloads.at(-1).cookiesPath, 'C:/学习 数据/cookies.txt')
+
+    for (const width of [760, 761, 640, 641]) {
+      await page.setViewportSize({ width, height: 760 })
+      const viewportFieldBox = await advancedInputs.first().boundingBox()
+      const viewportPanelBox = await panel.boundingBox()
+      assert.ok(viewportFieldBox && viewportFieldBox.width > 0, `${width}px advanced field should remain visible`)
+      assert.ok(viewportFieldBox.x >= viewportPanelBox.x - 1, `${width}px field should stay inside the panel on the left`)
+      assert.ok(viewportFieldBox.x + viewportFieldBox.width <= viewportPanelBox.x + viewportPanelBox.width + 1, `${width}px field should stay inside the panel on the right`)
+    }
 
     await page.setViewportSize({ width: 640, height: 760 })
     const mobileBox = await panel.boundingBox()

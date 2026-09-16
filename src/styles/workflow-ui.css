@@ -61,7 +61,11 @@
     font-family: var(--pru-ui-font);
   }
 
-  [data-ui-owner="workflow"]:not(:disabled) {
+  [data-ui-owner="workflow"]:is(input, textarea) {
+    cursor: text;
+  }
+
+  [data-ui-owner="workflow"]:is(button, [role="button"]):not(:disabled) {
     cursor: pointer;
   }
 }

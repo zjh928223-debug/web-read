@@ -766,9 +766,9 @@ body {
   font-size: 13px;
 }
 
-.youtube-workflow-form input,
+.youtube-workflow-form input:where(:not([data-ui-owner="workflow"])),
 .youtube-workflow-form select,
-.youtube-import-panel input,
+.youtube-import-panel input:where(:not([data-ui-owner="workflow"])),
 .youtube-folder-choice select {
   min-height: 34px;
   border: 1px solid rgba(148, 163, 184, 0.7);
@@ -786,7 +786,7 @@ body {
   font-weight: 700;
 }
 
-.youtube-workflow-form input.youtube-material-link-input {
+.youtube-workflow-form input.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
   min-height: 44px;
   padding: 8px 12px;
   border-color: rgba(37, 99, 235, 0.32);
@@ -2588,7 +2588,7 @@ body {
        have one owner; this preserves a visible ring for every workflow control. */
     .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):focus-visible,
     .youtube-workflow button:where(:not([data-ui-owner="workflow"])):focus-visible,
-    .youtube-workflow input:focus-visible,
+    .youtube-workflow input:where(:not([data-ui-owner="workflow"])):focus-visible,
     .youtube-workflow select:focus-visible {
       outline: none !important;
       border-color: var(--pru-accent) !important;
@@ -2837,7 +2837,7 @@ body {
       min-width: 0;
     }
 
-    .youtube-workflow input:not([type="checkbox"]),
+    .youtube-workflow input:not([type="checkbox"]):where(:not([data-ui-owner="workflow"])),
     .youtube-workflow select {
       width: 100%;
       min-width: 0;
@@ -2858,11 +2858,11 @@ body {
         box-shadow 150ms var(--pru-ease);
     }
 
-    .youtube-workflow input::placeholder {
+    .youtube-workflow input:where(:not([data-ui-owner="workflow"]))::placeholder {
       color: color-mix(in srgb, var(--pru-shell-muted) 72%, transparent);
     }
 
-    .youtube-workflow input[readonly] {
+    .youtube-workflow input:where(:not([data-ui-owner="workflow"]))[readonly] {
       color: var(--pru-shell-muted);
       background: color-mix(in srgb, var(--pru-shell-surface) 82%, var(--pru-shell-row));
       cursor: default;
@@ -2874,7 +2874,7 @@ body {
       accent-color: var(--pru-accent);
     }
 
-    .youtube-workflow-form input.youtube-material-link-input {
+    .youtube-workflow-form input.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
       height: 44px;
       min-height: 44px;
       padding: 0 12px;
@@ -3357,7 +3357,7 @@ body {
     @media (prefers-reduced-motion: reduce) {
       .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
       .youtube-workflow button:where(:not([data-ui-owner="workflow"])),
-      .youtube-workflow input,
+      .youtube-workflow input:where(:not([data-ui-owner="workflow"])),
       .youtube-workflow select,
       .youtube-workflow-job,
       .youtube-link-card,
@@ -4676,7 +4676,7 @@ body {
       min-width: 0;
     }
 
-    .youtube-workflow textarea.youtube-material-link-input {
+    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
       width: 100%;
       min-width: 0;
       min-height: 116px;
@@ -4690,11 +4690,11 @@ body {
       letter-spacing: 0;
     }
 
-    .youtube-workflow textarea.youtube-material-link-input::placeholder {
+    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"]))::placeholder {
       color: color-mix(in srgb, var(--pru-shell-muted) 72%, transparent);
     }
 
-    .youtube-workflow textarea.youtube-material-link-input:focus-visible {
+    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])):focus-visible {
       outline: none;
       border-color: var(--pru-accent);
       box-shadow: 0 0 0 3px var(--pru-focus-ring);
@@ -5305,7 +5305,7 @@ body {
   background: transparent;
 }
 
-.youtube-workflow textarea.youtube-material-link-input {
+.youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
   min-height: 76px;
   max-height: 220px;
   resize: vertical;
@@ -5400,6 +5400,10 @@ body {
 .youtube-workflow .youtube-api-key-field input,
 .youtube-workflow .youtube-advanced-settings input {
   width: 100%;
+}
+
+.youtube-workflow .youtube-api-key-field input:where(:not([data-ui-owner="workflow"])),
+.youtube-workflow .youtube-advanced-settings input:where(:not([data-ui-owner="workflow"])) {
   min-height: 42px;
   padding: 9px 12px;
   border: 1px solid color-mix(in srgb, var(--pru-info) 18%, var(--pru-shell-border));
@@ -5408,8 +5412,8 @@ body {
   font: 500 14px/1.4 var(--pru-ui-font);
 }
 
-.youtube-workflow .youtube-api-key-field input:focus-visible,
-.youtube-workflow .youtube-advanced-settings input:focus-visible {
+.youtube-workflow .youtube-api-key-field input:where(:not([data-ui-owner="workflow"])):focus-visible,
+.youtube-workflow .youtube-advanced-settings input:where(:not([data-ui-owner="workflow"])):focus-visible {
   outline: none;
   border-color: var(--pru-info);
   box-shadow: 0 0 0 3px var(--pru-focus-ring);

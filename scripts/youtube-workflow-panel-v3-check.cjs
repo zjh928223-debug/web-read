@@ -9,6 +9,8 @@ const outboxStorage = fs.readFileSync(path.join(root, 'src/services/persistence/
 const styles = fs.readFileSync(path.join(root, 'styles.css'), 'utf8')
 const workflowStyles = fs.readFileSync(path.join(root, 'src/styles/workflow-ui.css'), 'utf8')
 const buttonVariants = fs.readFileSync(path.join(root, 'src/components/ui/button/index.js'), 'utf8')
+const inputComponent = fs.readFileSync(path.join(root, 'src/components/ui/input/Input.vue'), 'utf8')
+const textareaComponent = fs.readFileSync(path.join(root, 'src/components/ui/textarea/Textarea.vue'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow-client.js'), 'utf8')
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
 const core = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/core.py'), 'utf8')
@@ -100,6 +102,28 @@ assert.ok(panel.includes('clearMaterialNotice()') && panel.includes('clearMateri
 assert.equal(panel.includes('打开失败'), false, 'load notices should not add a redundant failure prefix')
 assert.match(panel, /<Teleport to="body">\s*<div v-if="qualityModal" class="youtube-workflow youtube-subwindow youtube-quality-backdrop">/, 'quality report should teleport above the material center stacking context')
 assert.ok(panel.includes("import { Button } from './ui/button/index.js'") && panel.includes('data-ui-owner="workflow"'), 'workflow actions should use the local shadcn Button owner boundary')
+assert.ok(panel.includes("import { Input } from './ui/input/index.js'") && panel.includes("import { Textarea } from './ui/textarea/index.js'"), 'workflow fields should use the local shadcn Input and Textarea components')
+assert.equal(panel.includes('<input'), false, 'workflow panel should not keep raw input component markup')
+assert.equal(panel.includes('<textarea'), false, 'workflow panel should not keep raw textarea component markup')
+assert.ok(panel.includes('rw:min-h-[76px]') && panel.includes('rw:max-h-[220px]') && panel.includes('rw:resize-y'), 'link textarea should keep its workflow-local geometry through prefixed utilities')
+assert.ok(panel.includes('type="password"') && panel.includes('youtube-gemini-api-key-settings') && panel.includes('data-ui-owner="workflow"'), 'API key input should retain its password and owner contract')
+for (const fieldName of [
+  'youtube-workflow-settings-model',
+  'youtube-workflow-base-url',
+  'youtube-workflow-proxy-url',
+  'youtube-workflow-cookies-path',
+  'youtube-workflow-output-dir',
+  'youtube-workflow-ytdlp-path',
+  'youtube-workflow-whisperx-path',
+]) {
+  assert.ok(panel.includes(`name="${fieldName}"`) && panel.includes(`name="${fieldName}" autocomplete="off"`), `${fieldName} should retain its form attributes`)
+}
+assert.ok(inputComponent.includes('modelModifiers') && inputComponent.includes('props.modelModifiers.trim') && inputComponent.includes('data-slot="input"'), 'Input should adapt v-model modifiers while keeping the native input root')
+assert.ok(inputComponent.includes('const isComposing = ref(false)') && inputComponent.includes('if (isComposing.value || !props.modelModifiers.trim'), 'Input should preserve its DOM buffer while composition is active')
+assert.ok(inputComponent.includes('rw:disabled:pointer-events-none') && inputComponent.includes('rw:disabled:cursor-not-allowed') && inputComponent.includes('rw:disabled:opacity-50'), 'Input should retain the generated disabled recipe')
+assert.ok(textareaComponent.includes('modelModifiers') && textareaComponent.includes('props.modelModifiers.trim') && textareaComponent.includes('data-slot="textarea"'), 'Textarea should adapt v-model modifiers while keeping the native textarea root')
+assert.ok(textareaComponent.includes('const isComposing = ref(false)') && textareaComponent.includes('if (isComposing.value || !props.modelModifiers.trim'), 'Textarea should preserve its DOM buffer while composition is active')
+assert.ok(textareaComponent.includes('rw:disabled:cursor-not-allowed') && textareaComponent.includes('rw:disabled:opacity-50'), 'Textarea should retain the generated disabled recipe')
 assert.ok((panel.match(/data-ui-owner="workflow"/g) || []).length >= 20, 'workflow button migration should cover the panel and its teleported actions')
 assert.ok(panel.includes('variant="default"') && panel.includes('variant="outline"') && panel.includes('variant="destructive"') && panel.includes('variant="ghost"'), 'workflow buttons should cover the mapped semantic variants')
 assert.ok(panel.includes('size="icon-sm"') && panel.includes('size="xs"'), 'workflow buttons should keep icon and compact filter sizes')
@@ -127,6 +151,9 @@ assert.equal(styles.includes('.youtube-workflow .youtube-workflow-section-tabs.y
 assert.equal(styles.includes('.youtube-workflow .youtube-filter-tabs button {'), false, 'migrated filter actions must leave the old visual rule')
 assert.ok(styles.includes('.youtube-workflow button:where(:not([data-ui-owner="workflow"]))'), 'legacy workflow button rules must remain available only to unowned controls')
 assert.ok(styles.includes('.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"]))'), 'the retained entry hook must not re-enable legacy styling for the workflow owner')
+assert.ok(styles.includes('.youtube-workflow input:where(:not([data-ui-owner="workflow"])):focus-visible'), 'legacy workflow input focus styling must remain available only to unowned controls')
+assert.ok(styles.includes('.youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"]))'), 'legacy workflow textarea styling must remain available only to unowned controls')
+assert.ok(styles.includes('.youtube-workflow .youtube-api-key-field input:where(:not([data-ui-owner="workflow"]))'), 'legacy API input styling must not compete with the migrated owner')
 const backdropRules = ruleBodies('.youtube-workflow-backdrop', 'background')
 const effectiveBackdropRule = backdropRules.at(-1)
 assert.ok(effectiveBackdropRule, 'the backdrop must have an effective background declaration')
@@ -143,6 +170,7 @@ assert.ok(
 assert.ok(styles.includes('--card-bg: #ffffff') && styles.includes('--card-bg: #252525'), 'light and dark panel surfaces must be concrete opaque theme colors')
 assert.ok(styles.includes('.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"]))'), 'legacy notice close styling must be restricted to unowned controls')
 assert.ok(workflowStyles.includes('@layer base') && workflowStyles.includes('appearance: none') && workflowStyles.includes('border-width: 0') && workflowStyles.includes('background-color: transparent'), 'workflow owner should provide only the local no-Preflight button base reset')
+assert.ok(workflowStyles.includes('[data-ui-owner="workflow"]:is(input, textarea)') && workflowStyles.includes('[data-ui-owner="workflow"]:is(button, [role="button"])'), 'workflow owner cursor rules should distinguish editable fields from actions')
 assert.equal(workflowStyles.includes('[data-ui-owner="workflow"]:focus'), false, 'workflow base must not override mouse focus or component focus-visible recipes')
 assert.ok(buttonVariants.includes('rw:focus-visible:ring-ring/50') && buttonVariants.includes('rw:focus-visible:ring-destructive/20'), 'Button recipes must own normal and destructive focus-visible rings')
 assert.match(styles, /\.youtube-reader-controls \.small-btn:where\(:not\(\[data-ui-owner="workflow"\]\)\):hover,[\s\S]*?\.youtube-workflow \.youtube-quality-card \.youtube-workflow-actions button(?:\:not\(\[data-ui-owner="workflow"\]\)|\:where\(\:not\(\[data-ui-owner="workflow"\]\)\))?:first-child:hover \{[\s\S]*?transform: none !important;/, 'unmigrated material capsules should not lift or enlarge on hover')

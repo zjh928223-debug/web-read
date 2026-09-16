@@ -114,13 +114,14 @@
               <form class="youtube-workflow-form youtube-add-material-form" @submit.prevent="enqueueUrls">
                 <label class="youtube-material-link-label">
                   <span>视频链接</span>
-                  <textarea
+                  <Textarea
                     v-model.trim="linkInput"
-                    class="youtube-material-link-input"
+                    class="youtube-material-link-input rw:min-w-0 rw:min-h-[76px] rw:max-h-[220px] rw:resize-y"
                     name="youtube-material-link"
                     autocomplete="off"
                     rows="2"
                     placeholder="粘贴 YouTube 链接；多个链接请每行一个"
+                    data-ui-owner="workflow"
                     @keydown.enter.ctrl.prevent="commitLinkInput"
                     @paste="handleLinkPaste"
                     @blur="commitLinkInput"
@@ -453,7 +454,7 @@
                   <span v-else>尚未保存</span>
                 </div>
                 <label class="youtube-api-key-field">
-                  <input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" aria-label="Gemini API Key" placeholder="输入新的 API Key">
+                  <Input v-model="apiKey" type="password" name="youtube-gemini-api-key-settings" autocomplete="off" aria-label="Gemini API Key" placeholder="输入新的 API Key" data-ui-owner="workflow" />
                 </label>
                 <div class="youtube-credential-actions">
                   <Button
@@ -485,31 +486,31 @@
               <div v-if="showAdvanced" class="youtube-advanced-settings">
                 <label>
                   <span>模型</span>
-                  <input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash">
+                  <Input v-model.trim="model" type="text" name="youtube-workflow-settings-model" autocomplete="off" placeholder="gemini-2.5-flash" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>Base URL（可选，使用代理网关时填写）</span>
-                  <input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址">
+                  <Input v-model.trim="baseUrl" type="text" name="youtube-workflow-base-url" autocomplete="off" placeholder="留空使用官方默认地址" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>代理</span>
-                  <input v-model.trim="proxyUrl" type="text" name="youtube-workflow-proxy-url" autocomplete="off" placeholder="例如 http://127.0.0.1:7897，留空关闭">
+                  <Input v-model.trim="proxyUrl" type="text" name="youtube-workflow-proxy-url" autocomplete="off" placeholder="例如 http://127.0.0.1:7897，留空关闭" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>cookies 文件</span>
-                  <input v-model.trim="cookiesPath" type="text" name="youtube-workflow-cookies-path" autocomplete="off" placeholder="YouTube cookies 文件路径">
+                  <Input v-model.trim="cookiesPath" type="text" name="youtube-workflow-cookies-path" autocomplete="off" placeholder="YouTube cookies 文件路径" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>输出目录</span>
-                  <input v-model.trim="outputDir" type="text" name="youtube-workflow-output-dir" autocomplete="off" placeholder="生成文件输出目录">
+                  <Input v-model.trim="outputDir" type="text" name="youtube-workflow-output-dir" autocomplete="off" placeholder="生成文件输出目录" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>yt-dlp 路径</span>
-                  <input v-model.trim="ytDlpPath" type="text" name="youtube-workflow-ytdlp-path" autocomplete="off" placeholder="yt-dlp.exe">
+                  <Input v-model.trim="ytDlpPath" type="text" name="youtube-workflow-ytdlp-path" autocomplete="off" placeholder="yt-dlp.exe" data-ui-owner="workflow" />
                 </label>
                 <label>
                   <span>WhisperX 路径</span>
-                  <input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe">
+                  <Input v-model.trim="whisperxPath" type="text" name="youtube-workflow-whisperx-path" autocomplete="off" placeholder="whisperx.exe" data-ui-owner="workflow" />
                 </label>
                 <div class="youtube-primary-actions">
                   <Button type="button" variant="default" size="default" data-ui-owner="workflow" @click="saveBackendConfig">保存后台配置</Button>
@@ -598,6 +599,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import '../styles/workflow-ui.css'
 import { Button } from './ui/button/index.js'
+import { Input } from './ui/input/index.js'
+import { Textarea } from './ui/textarea/index.js'
 import { useAudioStore } from '../pinia-stores/audio.js'
 import { useChunkStore } from '../pinia-stores/chunk.js'
 import { useMarksStore } from '../pinia-stores/marks.js'
