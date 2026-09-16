@@ -338,13 +338,6 @@
   border-top: 1px solid var(--pru-row-border);
 }
 
-.youtube-workflow .youtube-library-more:where(:not([data-ui-owner="workflow"])) {
-  min-width: 38px !important;
-  padding-inline: 9px !important;
-  font-size: 18px;
-  letter-spacing: 1px;
-}
-
 .youtube-library-load-more {
   justify-self: center;
   margin-top: 4px;
@@ -406,26 +399,6 @@
   -webkit-backdrop-filter: var(--glass-blur-sm);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 13px;
-}
-
-.youtube-material-notice .small-btn:where(:not([data-ui-owner="workflow"])) {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  background: var(--glass-button-bg);
-  color: var(--text-main);
-}
-
-.youtube-material-notice-close:where(:not([data-ui-owner="workflow"])) {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-sub);
-  font-size: 17px;
-  cursor: pointer;
 }
 
 @media (max-width: 760px) {
@@ -766,17 +739,6 @@ body {
   font-size: 13px;
 }
 
-.youtube-workflow-form input:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow-form select,
-.youtube-import-panel input:where(:not([data-ui-owner="workflow"])),
-.youtube-folder-choice select {
-  min-height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.7);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font: inherit;
-}
-
 .youtube-material-link-label {
   gap: 6px;
 }
@@ -784,16 +746,6 @@ body {
 .youtube-material-link-label > span {
   font-size: 14px;
   font-weight: 700;
-}
-
-.youtube-workflow-form input.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
-  min-height: 44px;
-  padding: 8px 12px;
-  border-color: rgba(37, 99, 235, 0.32);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  font-size: 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 1px 0 rgba(15, 23, 42, 0.03);
 }
 
 .youtube-workflow-row > label {
@@ -895,13 +847,6 @@ body {
   color: #b91c1c;
 }
 
-.youtube-link-card .small-btn:where(:not([data-ui-owner="workflow"])) {
-  min-height: 24px;
-  padding: 3px 8px !important;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
 .youtube-import-panel {
   padding: 10px;
   border: 1px solid rgba(37, 99, 235, 0.18);
@@ -951,16 +896,6 @@ body {
   font-size: 12px;
 }
 
-.youtube-advanced-toggle:where(:not([data-ui-owner="workflow"])) {
-  justify-self: start;
-  border: 0;
-  background: transparent;
-  color: #2563eb;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
-}
-
 .youtube-advanced-settings {
   display: grid;
   gap: 6px;
@@ -976,12 +911,6 @@ body {
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
-}
-
-.youtube-primary-actions button:where(:not([data-ui-owner="workflow"]))[type="submit"] {
-  border-color: rgba(37, 99, 235, 0.45);
-  background: #dbeafe;
-  font-weight: 700;
 }
 
 .youtube-recent-search {
@@ -1012,12 +941,6 @@ body {
 .youtube-workflow-actions,
 .youtube-workflow-job-actions {
   flex-wrap: wrap;
-}
-
-.youtube-workflow-actions .primary:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])) {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: #dbeafe;
 }
 
 .youtube-workflow-summary {
@@ -1078,11 +1001,6 @@ body {
 
 .youtube-workflow-history-job {
   background: rgba(255, 255, 255, 0.74);
-}
-
-.youtube-workflow-job-actions .danger:where(:not([data-ui-owner="workflow"])) {
-  border-color: rgba(185, 28, 28, 0.28);
-  color: #991b1b;
 }
 
 .youtube-quality-card {
@@ -1485,7 +1403,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) .glass-button:where(:not([data-ui-owner="workflow"])) {
@@ -1496,7 +1414,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) .glass-button:where(:not([data-ui-owner="workflow"]))::before {
@@ -1517,7 +1435,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) .glass-button:where(:not([data-ui-owner="workflow"])) > * {
@@ -1527,7 +1445,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) .ui-glass-dynamic.glass-button:where(:not([data-ui-owner="workflow"]))::before {
@@ -1892,7 +1810,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])),
@@ -1926,7 +1844,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]))::before,
@@ -1946,7 +1864,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before,
@@ -1957,7 +1875,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])):hover,
@@ -1970,7 +1888,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])):active,
@@ -1982,7 +1900,7 @@ body {
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])):focus-visible,
@@ -2238,7 +2156,7 @@ body {
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
-      .youtube-workflow, .youtube-reader-controls, .youtube-material-notice,
+      .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"])),
@@ -2559,11 +2477,8 @@ body {
       box-sizing: border-box;
     }
 
-    /* Workflow compatibility geometry: important padding, active, focus, and
-       disabled rules still arbitrate against compact, icon, breakpoint, and
-       submit variants. Revisit after those local consumers share one owner. */
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow button:where(:not([data-ui-owner="workflow"])) {
+    /* Keep legacy reader-control compatibility until that toolbar is migrated. */
+    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])) {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -2579,51 +2494,27 @@ body {
       touch-action: manipulation;
     }
 
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):active,
-    .youtube-workflow button:where(:not([data-ui-owner="workflow"])):active {
+    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):active {
       background: color-mix(in srgb, var(--pru-shell-row-hover) 78%, var(--pru-accent) 8%) !important;
     }
 
-    /* Keep the focus ring important until API/input focus and capsule focus
-       have one owner; this preserves a visible ring for every workflow control. */
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):focus-visible,
-    .youtube-workflow button:where(:not([data-ui-owner="workflow"])):focus-visible,
-    .youtube-workflow input:where(:not([data-ui-owner="workflow"])):focus-visible,
-    .youtube-workflow select:focus-visible {
+    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):focus-visible {
       outline: none !important;
       border-color: var(--pru-accent) !important;
       box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
     }
 
-    /* Keep ordinary .48 opacity important ahead of the submit-specific disabled
-       exception; revisit after both states are owned by one local rule. */
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):disabled,
-    .youtube-workflow button:where(:not([data-ui-owner="workflow"])):disabled {
+    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):disabled {
       opacity: 0.48 !important;
       pointer-events: none;
       cursor: default;
       box-shadow: none !important;
     }
 
-    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow .youtube-workflow-job-actions .small-btn:where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow .youtube-link-card .small-btn:where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow .youtube-primary-actions .small-btn:where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow .youtube-secondary-actions .small-btn:where(:not([data-ui-owner="workflow"])) {
+    .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])) {
       min-height: var(--pru-control-h-sm);
       padding: 0 10px !important;
       font-size: 12px;
-    }
-
-    .youtube-workflow .youtube-advanced-toggle:where(:not([data-ui-owner="workflow"])) {
-      min-height: auto;
-      justify-self: start;
-      padding: 0 !important;
-      border: 0 !important;
-      background: transparent !important;
-      color: var(--pru-accent) !important;
-      box-shadow: none !important;
-      font-size: 13px;
     }
 
     .youtube-workflow-backdrop {
@@ -2688,17 +2579,6 @@ body {
     .youtube-workflow-health.offline,
     .youtube-workflow-error {
       color: var(--pru-danger);
-    }
-
-    .youtube-workflow .youtube-workflow-icon-btn:where(:not([data-ui-owner="workflow"])) {
-      width: var(--pru-control-h-sm);
-      min-width: var(--pru-control-h-sm);
-      height: var(--pru-control-h-sm);
-      min-height: var(--pru-control-h-sm);
-      padding: 0 !important;
-      border-radius: var(--pru-radius-control) !important;
-      font-size: 15px;
-      line-height: 1;
     }
 
     .youtube-workflow-form,
@@ -2775,37 +2655,6 @@ body {
       background: color-mix(in srgb, var(--pru-reader-muted) 72%, var(--pru-shell-surface));
     }
 
-    .youtube-workflow .youtube-workflow-section-tabs button:where(:not([data-ui-owner="workflow"])) {
-      min-height: 28px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 8px !important;
-      border: 1px solid transparent;
-      border-radius: var(--pru-radius-control) !important;
-      background: transparent !important;
-      color: var(--pru-shell-muted) !important;
-      box-shadow: none !important;
-      font-size: 12px;
-      font-weight: 650;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    .youtube-workflow .youtube-workflow-section-tabs button:where(:not([data-ui-owner="workflow"])):hover {
-      border-color: var(--pru-row-border) !important;
-      background: color-mix(in srgb, var(--pru-shell-surface) 72%, transparent) !important;
-      color: var(--pru-shell-text) !important;
-      box-shadow: none !important;
-    }
-
-    .youtube-workflow .youtube-workflow-section-tabs button:where(:not([data-ui-owner="workflow"]))[data-active="true"] {
-      border-color: var(--pru-row-border) !important;
-      background: var(--pru-shell-surface) !important;
-      color: var(--pru-shell-text) !important;
-      box-shadow: 0 1px 1px rgba(35, 28, 18, 0.04);
-    }
-
     .youtube-workflow-form label,
     .youtube-import-panel label,
     .youtube-folder-choice label {
@@ -2835,54 +2684,6 @@ body {
 
     .youtube-workflow-check span {
       min-width: 0;
-    }
-
-    .youtube-workflow input:not([type="checkbox"]):where(:not([data-ui-owner="workflow"])),
-    .youtube-workflow select {
-      width: 100%;
-      min-width: 0;
-      height: var(--pru-control-h);
-      min-height: var(--pru-control-h);
-      box-sizing: border-box;
-      padding: 0 11px;
-      border: 1px solid var(--pru-shell-border);
-      border-radius: var(--pru-radius-control);
-      background: var(--pru-shell-surface);
-      color: var(--pru-shell-text);
-      box-shadow: none;
-      font: 500 13px/1.35 var(--pru-ui-font);
-      letter-spacing: 0;
-      transition:
-        background-color 150ms var(--pru-ease),
-        border-color 150ms var(--pru-ease),
-        box-shadow 150ms var(--pru-ease);
-    }
-
-    .youtube-workflow input:where(:not([data-ui-owner="workflow"]))::placeholder {
-      color: color-mix(in srgb, var(--pru-shell-muted) 72%, transparent);
-    }
-
-    .youtube-workflow input:where(:not([data-ui-owner="workflow"]))[readonly] {
-      color: var(--pru-shell-muted);
-      background: color-mix(in srgb, var(--pru-shell-surface) 82%, var(--pru-shell-row));
-      cursor: default;
-    }
-
-    .youtube-workflow input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      accent-color: var(--pru-accent);
-    }
-
-    .youtube-workflow-form input.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
-      height: 44px;
-      min-height: 44px;
-      padding: 0 12px;
-      border-color: color-mix(in srgb, var(--pru-accent) 34%, var(--pru-shell-border));
-      border-radius: var(--pru-radius-control) !important;
-      background: var(--pru-shell-surface);
-      box-shadow: none;
-      font-size: 14px;
     }
 
     .youtube-recent-search {
@@ -3042,19 +2843,6 @@ body {
       line-height: 1.4;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .youtube-workflow-recent-job .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])) {
-      min-width: 54px;
-      border-color: var(--pru-row-border) !important;
-      background: var(--pru-shell-surface) !important;
-      color: var(--pru-shell-text) !important;
-    }
-
-    .youtube-workflow-recent-job .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])):hover {
-      border-color: color-mix(in srgb, var(--pru-accent) 34%, var(--pru-row-border)) !important;
-      background: var(--pru-shell-row-hover) !important;
-      box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
     }
 
     .youtube-job-log {
@@ -3221,13 +3009,6 @@ body {
       flex: 0 0 auto;
     }
 
-    .youtube-primary-actions button[type="submit"]:disabled {
-      opacity: 1 !important;
-      border-color: var(--pru-row-border) !important;
-      background: var(--pru-shell-row) !important;
-      color: var(--pru-shell-muted) !important;
-    }
-
     .youtube-job-opened-state {
       padding: 6px 8px;
       border: 1px solid var(--pru-row-border);
@@ -3356,9 +3137,6 @@ body {
 
     @media (prefers-reduced-motion: reduce) {
       .youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
-      .youtube-workflow button:where(:not([data-ui-owner="workflow"])),
-      .youtube-workflow input:where(:not([data-ui-owner="workflow"])),
-      .youtube-workflow select,
       .youtube-workflow-job,
       .youtube-link-card,
       .youtube-import-item {
@@ -4517,29 +4295,6 @@ body {
       background: color-mix(in srgb, var(--pru-reader-muted) 46%, transparent);
     }
 
-    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"])) {
-      min-height: 34px;
-      justify-content: space-between;
-      padding: 0 9px !important;
-      font-size: 13px;
-    }
-
-    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"]))[data-active="true"] {
-      position: relative;
-    }
-
-    .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"]))[data-active="true"]::before {
-      content: "";
-      display: block !important;
-      position: absolute;
-      left: 0;
-      top: 8px;
-      bottom: 8px;
-      width: 3px;
-      border-radius: 999px;
-      background: var(--pru-accent);
-    }
-
     .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav small {
       min-width: 20px;
       padding: 2px 6px;
@@ -4643,12 +4398,6 @@ body {
       background: color-mix(in srgb, var(--pru-reader-muted) 56%, transparent);
     }
 
-    .youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"])) {
-      min-height: 26px;
-      padding: 0 8px !important;
-      font-size: 12px;
-    }
-
     .youtube-workflow-form,
     .youtube-import-panel,
     .youtube-workflow-settings-strip,
@@ -4674,30 +4423,6 @@ body {
       display: grid;
       gap: 6px;
       min-width: 0;
-    }
-
-    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
-      width: 100%;
-      min-width: 0;
-      min-height: 116px;
-      resize: vertical;
-      padding: 11px 12px;
-      border: 1px solid color-mix(in srgb, var(--pru-accent) 34%, var(--pru-shell-border));
-      border-radius: 7px;
-      background: var(--pru-shell-surface);
-      color: var(--pru-shell-text);
-      font: 500 14px/1.45 var(--pru-ui-font);
-      letter-spacing: 0;
-    }
-
-    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"]))::placeholder {
-      color: color-mix(in srgb, var(--pru-shell-muted) 72%, transparent);
-    }
-
-    .youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])):focus-visible {
-      outline: none;
-      border-color: var(--pru-accent);
-      box-shadow: 0 0 0 3px var(--pru-focus-ring);
     }
 
     .youtube-workflow .youtube-workflow-job,
@@ -4797,10 +4522,6 @@ body {
       max-width: 190px;
     }
 
-    .youtube-workflow .youtube-workflow-job-actions .small-btn {
-      min-width: 52px;
-    }
-
     .youtube-workflow .youtube-workflow-history-job {
       grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
     }
@@ -4830,11 +4551,6 @@ body {
       justify-content: flex-end;
       gap: 6px;
       grid-column: 1 / -1;
-    }
-
-    .youtube-workflow .youtube-danger-actions .danger:where(:not([data-ui-owner="workflow"])) {
-      border-color: color-mix(in srgb, var(--pru-danger) 36%, var(--pru-shell-border)) !important;
-      color: var(--pru-danger) !important;
     }
 
     .youtube-link-card {
@@ -4889,12 +4605,6 @@ body {
         padding: 8px;
         border-right: 0;
         border-bottom: 1px solid var(--pru-shell-border);
-      }
-
-      .youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"])) {
-        justify-content: center;
-        gap: 4px;
-        padding: 0 6px !important;
       }
 
       .youtube-workflow-content {
@@ -4963,24 +4673,7 @@ body {
   background: color-mix(in srgb, var(--btn-bg) 54%, transparent);
 }
 
-.youtube-workflow .small-btn:where(:not([data-ui-owner="workflow"])).primary,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])).primary,
-.youtube-workflow .youtube-workflow-actions .primary:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-primary-actions button:where(:not([data-ui-owner="workflow"]))[type="submit"],
-.youtube-workflow .youtube-switch-modal .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child,
-.youtube-workflow .youtube-quality-card .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child {
-  border-color: color-mix(in srgb, var(--pru-accent) 40%, transparent) !important;
-  background: color-mix(in srgb, var(--pru-accent) 82%, transparent) !important;
-  color: #fff !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"])) {
-  border-radius: 10px !important;
-}
-
-.youtube-workflow .youtube-filter-tabs,
-.youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"])) {
+.youtube-workflow .youtube-filter-tabs {
   border-radius: 999px !important;
 }
 
@@ -5033,267 +4726,6 @@ body {
   }
 }
 
-/* Material center: quiet liquid-glass capsules shared by every action surface. */
-.youtube-workflow,
-.youtube-reader-controls,
-.youtube-material-notice {
-  --youtube-capsule-top: rgba(249, 252, 255, 0.72);
-  --youtube-capsule-bottom: rgba(229, 238, 248, 0.54);
-  --youtube-capsule-hover-top: rgba(255, 255, 255, 0.82);
-  --youtube-capsule-hover-bottom: rgba(235, 243, 251, 0.64);
-  --youtube-capsule-border: rgba(255, 255, 255, 0.78);
-  --youtube-capsule-text: var(--text-main);
-  --youtube-capsule-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.76),
-    0 2px 7px rgba(15, 23, 42, 0.07);
-  --youtube-capsule-hover-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.84),
-    0 3px 9px rgba(15, 23, 42, 0.09);
-}
-
-[data-theme="dark"] .youtube-workflow,
-[data-theme="dark"] .youtube-reader-controls,
-[data-theme="dark"] .youtube-material-notice {
-  --youtube-capsule-top: rgba(55, 62, 77, 0.72);
-  --youtube-capsule-bottom: rgba(38, 43, 55, 0.68);
-  --youtube-capsule-hover-top: rgba(64, 72, 89, 0.78);
-  --youtube-capsule-hover-bottom: rgba(44, 50, 64, 0.74);
-  --youtube-capsule-border: rgba(255, 255, 255, 0.16);
-  --youtube-capsule-text: var(--text-main);
-  --youtube-capsule-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 2px 7px rgba(0, 0, 0, 0.18);
-  --youtube-capsule-hover-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 3px 9px rgba(0, 0, 0, 0.22);
-}
-
-/* Capsule foundation keeps important surface properties and font-weight because
-   more-specific link-card and submit rules still compete. Letter-spacing also
-   stays important while .youtube-library-more has its more-specific 1px rule;
-   revisit both priority boundaries after those local rules are retired. */
-.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])),
-.youtube-material-notice button:where(:not([data-ui-owner="workflow"])) {
-  overflow: hidden;
-  isolation: isolate;
-  border: 1px solid var(--youtube-capsule-border) !important;
-  border-radius: 999px !important;
-  background: linear-gradient(
-    180deg,
-    var(--youtube-capsule-top),
-    var(--youtube-capsule-bottom)
-  ) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  backdrop-filter: blur(18px) saturate(1.42) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.42) !important;
-  font-family: var(--pru-ui-font);
-  font-weight: 500 !important;
-  letter-spacing: 0 !important;
-  /* Keep this post-cascade transition important while it and reduced-motion are
-     consolidated in a future motion cleanup. */
-  transition:
-    transform var(--glass-duration-fast) var(--glass-ease),
-    box-shadow var(--glass-duration-fast) var(--glass-ease),
-    background-color var(--glass-duration-fast) var(--glass-ease),
-    border-color var(--glass-duration-fast) var(--glass-ease) !important;
-}
-
-.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"])) {
-  background: transparent !important;
-}
-
-.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"])):focus,
-.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"])):focus-visible {
-  outline: none !important;
-  border-color: var(--pru-accent) !important;
-  box-shadow: 0 0 0 3px var(--pru-focus-ring) !important;
-}
-
-.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"]))::before,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"]))::before,
-.youtube-material-notice button:where(:not([data-ui-owner="workflow"]))::before {
-  display: block !important;
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  background: radial-gradient(
-    100px circle at var(--glass-mx, 50%) var(--glass-my, 50%),
-    rgba(255, 255, 255, 0.44),
-    rgba(255, 255, 255, 0) 76%
-  );
-  opacity: 0;
-  transition: opacity var(--glass-duration-fast) var(--glass-ease);
-}
-
-.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before,
-.youtube-material-notice button:where(:not([data-ui-owner="workflow"])).ui-glass-dynamic::before {
-  opacity: 0.36;
-}
-
-/* Primary state still needs important to override the broad capsule foundation;
-   remove it after primary and base button ownership are consolidated. */
-.youtube-workflow .small-btn:where(:not([data-ui-owner="workflow"])).primary,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])).primary,
-.youtube-workflow .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-primary-actions button:where(:not([data-ui-owner="workflow"]))[type="submit"],
-.youtube-workflow .youtube-quality-card .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child {
-  --youtube-capsule-top: rgba(246, 250, 255, 0.80);
-  --youtube-capsule-bottom: rgba(207, 226, 252, 0.62);
-  --youtube-capsule-hover-top: rgba(255, 255, 255, 0.88);
-  --youtube-capsule-hover-bottom: rgba(217, 233, 253, 0.72);
-  border-color: color-mix(in srgb, var(--pru-info) 16%, var(--youtube-capsule-border)) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  font-weight: 500 !important;
-}
-
-[data-theme="dark"] .youtube-workflow .small-btn:where(:not([data-ui-owner="workflow"])).primary,
-[data-theme="dark"] .youtube-workflow button:where(:not([data-ui-owner="workflow"])).primary,
-[data-theme="dark"] .youtube-workflow .youtube-workflow-actions .primary:where(:not([data-ui-owner="workflow"])),
-[data-theme="dark"] .youtube-workflow .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])),
-[data-theme="dark"] .youtube-workflow .youtube-primary-actions button:where(:not([data-ui-owner="workflow"]))[type="submit"],
-[data-theme="dark"] .youtube-workflow .youtube-switch-modal .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child,
-[data-theme="dark"] .youtube-workflow .youtube-quality-card .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child {
-  --youtube-capsule-top: rgba(55, 73, 101, 0.78);
-  --youtube-capsule-bottom: rgba(39, 53, 75, 0.74);
-  --youtube-capsule-hover-top: rgba(64, 84, 115, 0.84);
-  --youtube-capsule-hover-bottom: rgba(45, 61, 85, 0.80);
-}
-
-.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-material-notice button:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow .small-btn:where(:not([data-ui-owner="workflow"])).primary:hover,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])).primary:hover,
-.youtube-workflow .youtube-workflow-actions .primary:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow .youtube-workflow-job-actions .primary:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow .youtube-primary-actions button:where(:not([data-ui-owner="workflow"]))[type="submit"]:hover,
-.youtube-workflow .youtube-switch-modal .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child:hover,
-.youtube-workflow .youtube-quality-card .youtube-workflow-actions button:where(:not([data-ui-owner="workflow"])):first-child:hover {
-  border-color: color-mix(in srgb, var(--pru-info) 12%, var(--youtube-capsule-border)) !important;
-  background: linear-gradient(
-    180deg,
-    var(--youtube-capsule-hover-top),
-    var(--youtube-capsule-hover-bottom)
-  ) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-hover-shadow) !important;
-  transform: none !important;
-}
-
-.youtube-reader-controls .small-btn:where(:not([data-ui-owner="workflow"])):active,
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])):active,
-.youtube-material-notice button:where(:not([data-ui-owner="workflow"])):active {
-  box-shadow:
-    inset 0 1px 3px rgba(15, 23, 42, 0.13),
-    0 1px 3px rgba(15, 23, 42, 0.05) !important;
-  transform: scale(0.985) !important;
-}
-
-.youtube-workflow .youtube-workflow-icon-btn:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-library-more:where(:not([data-ui-owner="workflow"])),
-.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"])) {
-  border-radius: 999px !important;
-  padding-inline: 0 !important;
-}
-
-.youtube-workflow .youtube-workflow-icon-btn:where(:not([data-ui-owner="workflow"])),
-.youtube-material-notice .youtube-material-notice-close:where(:not([data-ui-owner="workflow"])) {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
-}
-
-/* Navigation, filter, and advanced-toggle surfaces retain important state
-   declarations because they override the generic capsule foundation above. */
-.youtube-workflow .youtube-advanced-toggle:where(:not([data-ui-owner="workflow"])) {
-  border: 1px solid var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  backdrop-filter: blur(18px) saturate(1.42) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.42) !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"])) {
-  border-color: transparent !important;
-  border-radius: 10px !important;
-  background: transparent !important;
-  color: var(--pru-shell-muted) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"]))[data-active="true"] {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  backdrop-filter: blur(18px) saturate(1.42) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.42) !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"]))[data-active="true"]::before {
-  display: none !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"])):hover {
-  border-color: color-mix(in srgb, var(--youtube-capsule-border) 72%, transparent) !important;
-  background: color-mix(in srgb, var(--youtube-capsule-bottom) 46%, transparent) !important;
-  color: var(--youtube-capsule-text) !important;
-}
-
-.youtube-workflow .youtube-workflow-section-tabs.youtube-workflow-nav button:where(:not([data-ui-owner="workflow"]))[data-active="true"]:hover {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-hover-top), var(--youtube-capsule-hover-bottom)) !important;
-  box-shadow: var(--youtube-capsule-hover-shadow) !important;
-}
-
-.youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"])) {
-  border-color: transparent !important;
-  background: transparent !important;
-  color: var(--pru-shell-muted) !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"]))[data-active="true"] {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  backdrop-filter: blur(18px) saturate(1.42) !important;
-  -webkit-backdrop-filter: blur(18px) saturate(1.42) !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"])):hover {
-  background: color-mix(in srgb, var(--youtube-capsule-bottom) 46%, transparent) !important;
-  color: var(--youtube-capsule-text) !important;
-}
-
-.youtube-workflow .youtube-filter-tabs button:where(:not([data-ui-owner="workflow"]))[data-active="true"]:hover {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-hover-top), var(--youtube-capsule-hover-bottom)) !important;
-  box-shadow: var(--youtube-capsule-hover-shadow) !important;
-}
-
-.youtube-workflow button:where(:not([data-ui-owner="workflow"])):disabled {
-  box-shadow: none !important;
-}
-
 .youtube-workflow .youtube-add-material-form,
 .youtube-workflow .youtube-api-key-settings {
   display: grid;
@@ -5303,16 +4735,6 @@ body {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-.youtube-workflow textarea.youtube-material-link-input:where(:not([data-ui-owner="workflow"])) {
-  min-height: 76px;
-  max-height: 220px;
-  resize: vertical;
-  padding: 14px 16px;
-  border-color: color-mix(in srgb, var(--pru-info) 26%, var(--pru-shell-border));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--pru-shell-surface) 88%, transparent);
 }
 
 .youtube-add-submit-row {
@@ -5402,50 +4824,6 @@ body {
   width: 100%;
 }
 
-.youtube-workflow .youtube-api-key-field input:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-advanced-settings input:where(:not([data-ui-owner="workflow"])) {
-  min-height: 42px;
-  padding: 9px 12px;
-  border: 1px solid color-mix(in srgb, var(--pru-info) 18%, var(--pru-shell-border));
-  background: color-mix(in srgb, var(--pru-shell-surface) 88%, transparent);
-  color: var(--pru-shell-text);
-  font: 500 14px/1.4 var(--pru-ui-font);
-}
-
-.youtube-workflow .youtube-api-key-field input:where(:not([data-ui-owner="workflow"])):focus-visible,
-.youtube-workflow .youtube-advanced-settings input:where(:not([data-ui-owner="workflow"])):focus-visible {
-  outline: none;
-  border-color: var(--pru-info);
-  box-shadow: 0 0 0 3px var(--pru-focus-ring);
-}
-
-.youtube-workflow .youtube-advanced-toggle:where(:not([data-ui-owner="workflow"])) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  justify-self: start;
-  min-width: 156px;
-  min-height: 42px;
-  padding: 8px 18px !important;
-  line-height: 1.35;
-}
-
-.youtube-workflow .youtube-library-open:where(:not([data-ui-owner="workflow"])) {
-  min-width: 64px;
-  border-radius: 12px !important;
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--youtube-capsule-text) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-library-open:where(:not([data-ui-owner="workflow"])):hover {
-  background: linear-gradient(180deg, var(--youtube-capsule-hover-top), var(--youtube-capsule-hover-bottom)) !important;
-  border-color: color-mix(in srgb, var(--pru-info) 12%, var(--youtube-capsule-border)) !important;
-  box-shadow: var(--youtube-capsule-hover-shadow) !important;
-}
-
 .youtube-workflow .youtube-advanced-settings {
   gap: 14px;
   padding: 18px 0 0;
@@ -5459,27 +4837,6 @@ body {
   display: flex;
   justify-content: flex-start;
   padding-top: 4px;
-}
-
-/* Danger state follows the same compatibility boundary as primary: keep its
-   important surface until the old and new danger owners are merged. */
-.youtube-workflow .youtube-workflow-job-actions .danger:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-danger-actions .danger:where(:not([data-ui-owner="workflow"])),
-.youtube-workflow .youtube-advanced-danger-row .danger:where(:not([data-ui-owner="workflow"])) {
-  border-color: var(--youtube-capsule-border) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-top), var(--youtube-capsule-bottom)) !important;
-  color: var(--pru-danger) !important;
-  box-shadow: var(--youtube-capsule-shadow) !important;
-  font-weight: 500 !important;
-}
-
-.youtube-workflow .youtube-workflow-job-actions .danger:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow .youtube-danger-actions .danger:where(:not([data-ui-owner="workflow"])):hover,
-.youtube-workflow .youtube-advanced-danger-row .danger:where(:not([data-ui-owner="workflow"])):hover {
-  border-color: color-mix(in srgb, var(--pru-danger) 12%, var(--youtube-capsule-border)) !important;
-  background: linear-gradient(180deg, var(--youtube-capsule-hover-top), var(--youtube-capsule-hover-bottom)) !important;
-  color: var(--pru-danger) !important;
-  box-shadow: var(--youtube-capsule-hover-shadow) !important;
 }
 
 .youtube-library-source-detail {
