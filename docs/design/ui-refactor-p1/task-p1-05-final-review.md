@@ -83,9 +83,30 @@
 - UI-Dev `5195`／测试数据实测：工作流库视图有 32 个 `data-ui-owner="workflow"` 按钮、0 个未归属按钮；设置视图的 owner Input 与组件样式生效，未发现工作流 raw input／textarea／select。
 - 手工确认 light → dark → custom → light、custom 硬刷新恢复，主题仍由既有 `theme.js` 和 `theme`／`data-theme-mode` 管理；工作流按钮没有旧玻璃伪元素或 hover 位移，截图为 `output/playwright/ui-p1-05-final-library.png`。
 - 通过：`npm run build`、`npm run verify:youtube-workflow-panel`、`npm run verify:youtube-workflow-panel-behavior`、`npm run verify:script-order`、`git diff --check`。行为检查覆盖工作流按钮状态、表单 trim／paste／submit、质量报告焦点／Teleport、通知和 760／640 响应式边界。
-- `npm run verify:vite` 在 `READ_WEB_PORT=5195` 下的 load 子检查通过；通用 playback 子检查在 `scripts/read-web-playback-check.cjs:149` 等待 `#word-1.word-highlight` 超时，因而未进入 interactions 子检查。该失败不命中本轮删除的工作流选择器，作为现有 reader 播放高亮契约的独立遗留问题记录，未为本轮放宽阈值或改动播放逻辑。
+- 首次 `npm run verify:vite` 在 `READ_WEB_PORT=5195` 下暴露 playback 超时，且未进入 interactions；后续补充记录已完成定位与修复，见下方“补充修复与验收闭环”。
 
 ### 下一项需要注意的问题
 
-- 先处理 `verify:vite` 的 reader 播放高亮超时，再把它恢复为全绿门禁；不要把该问题归因到 P1-05 的工作流 CSS 清理。
+- P1-05 的清理实现与整体回归已闭环；后续若再次出现播放门禁失败，先区分会话恢复竞态、验收夹具和业务播放逻辑，不要直接归因到工作流 CSS 清理。
 - 后续 UI 顺序仍是主工具栏／动态样式工具、SRS／预习共享控件，再进入 Dialog 行为迁移。`App.vue`／`index.html` 的旧 `small-btn`、主阅读器控件、`VideoPlayerFloat` 原生视频按钮等未迁移消费者继续保留旧样式边界。
+
+## P1-05 补充修复与验收闭环（2026-09-17）
+
+### 实际修改和关键配置决定
+
+- 修复 `scripts/read-web-playback-check.cjs` 的播放夹具：等待 `AnnotationDiagnostics` 报告会话恢复完成／拒绝后再注入测试音频，若已恢复 AI chunk 模式则先退出；这样不会让旧会话在测试中途重新加载音频或把 transcript 视图留在隐藏状态。
+- 将播放高亮断言从固定的 `#word-1.word-highlight` 改为当前 `activeWordIdx` 对应节点必须带 `.word-highlight`，并同步更新报告条件；不放宽播放业务逻辑，只修正验收对推进中播放位置的错误假设。
+- 父提交 `HEAD^` 已在临时归档目录、同一 Host 与 5195 端口做对照：旧断言没有复现超时；当前提交的失败由固定词索引与会话恢复竞态共同暴露。临时归档未进入工作区，stable 未触碰。
+- 未修改 Tailwind、shadcn、主题、端口、业务 CSS 清理范围、IndexedDB schema 或业务播放逻辑。
+
+### 审核结果
+
+- `npm run verify:vite`（`READ_WEB_PORT=5195`、`READ_WEB_URL=http://127.0.0.1:5195/`）全绿：load、playback、interactions 均通过。
+- playback 独立连续复跑 5 轮全部通过；最终报告同时确认句／词高亮模式、前后跳句、AI chunk 切换与点击状态。
+- 通过：`npm run build`、`npm run verify:youtube-workflow-panel`、`npm run verify:youtube-workflow-panel-behavior`、`npm run verify:script-order`、`git diff --check`。
+- 最终状态：**清理实现完成；整体回归已闭环。**
+
+### 下一项需要注意的问题
+
+- 下一项按既定顺序进入主工具栏／动态样式工具、SRS／预习共享控件，再评估 Dialog 行为迁移；继续保留 `VideoPlayerFloat` 原生视频按钮和主阅读器旧兼容规则。
+- playback 验收依赖会话恢复终态；若后续调整 session startup 或 owner 恢复协议，应优先保留该等待与夹具隔离，否则容易重新出现 `play()` 被新加载请求中断。

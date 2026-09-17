@@ -57,6 +57,22 @@ async function main() {
     window.__playbackRuntimeState = (await import('/src/composables/runtime-state-facade.js')).runtimeState;
     window.__playbackStores = (await import('/src/pinia-stores/runtime-registry.js')).requirePiniaRuntimeStores();
   });
+  await page.waitForFunction(
+    () => {
+      const events = window.AnnotationGenerationDiagnostics?.getEvents?.() || [];
+      return events.some((entry) => (
+        entry.event === 'app.restore_session_complete'
+        || entry.event === 'app.restore_session_rejected'
+      ));
+    },
+    null,
+    { timeout: 15000 }
+  );
+  await page.evaluate(() => {
+    if (window.__playbackRuntimeState.isChunkMode) {
+      window.toggleChunkMode(false);
+    }
+  });
 
   const defaultHighlightUi = await page.evaluate(() => ({
     stateHighlightMode: window.__playbackRuntimeState.highlightMode,
@@ -142,11 +158,15 @@ async function main() {
     await document.getElementById('audio-player').play();
   });
   await page.waitForFunction(
-    () => window.__playbackStores.transcript.activeWordIdx >= 1,
+    () => {
+      const activeWordIdx = window.__playbackStores.transcript.activeWordIdx;
+      if (activeWordIdx < 1) return false;
+      const activeWord = document.getElementById(`word-${activeWordIdx}`);
+      return activeWord?.classList.contains('word-highlight') === true;
+    },
     null,
-    { timeout: 5000 }
+    { timeout: 10000 }
   );
-  await page.waitForSelector('#word-1.word-highlight', { timeout: 10000 });
 
   await page.screenshot({ path: screenshotPath, fullPage: false });
   const result = await page.evaluate(() => {
@@ -216,7 +236,7 @@ async function main() {
       && wordHighlightUi.buttonText === '高亮:词'
       && wordHighlightUi.bodySentenceClass === false
       && result.activeWordIdx >= 1
-      && result.highlighted.includes('word-1')
+      && result.highlighted.includes(`word-${result.activeWordIdx}`)
       && navigationResult.afterForward.time >= 1.9
       && navigationResult.afterBackward.time <= 0.1
       && chunkClickResult.beforeClick.activeChunkIdx === 1
