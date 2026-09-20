@@ -9,7 +9,7 @@
       ].join(', ');
 
     var buttonSelector = [
-      'button','.file-btn','.mini-toggle','.style-btn-toggle'
+      'button','.file-btn','.style-btn-toggle'
     ].join(', ');
     function decorateButton(el) {
       if (!el) return;

@@ -1519,31 +1519,6 @@ body {
       left: 20px;
       z-index: 2000;
     }
-    #theme-toggle:where(:not([data-ui-owner="reader"])) {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 1px solid var(--glass-border);
-      background: var(--glass-button-bg);
-      backdrop-filter: var(--glass-blur-sm);
-      -webkit-backdrop-filter: var(--glass-blur-sm);
-      color: var(--text-main);
-      cursor: pointer;
-      font-size: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
-      transition: transform var(--glass-duration-fast) var(--glass-ease), box-shadow var(--glass-duration-fast) var(--glass-ease), background-color var(--glass-duration-fast) var(--glass-ease);
-    }
-    #theme-toggle:where(:not([data-ui-owner="reader"])):hover {
-      background: var(--glass-panel-bg-strong);
-      transform: translateY(-1px) scale(1.04);
-      box-shadow: inset 1px 1px 0 rgba(255,255,255,0.85), var(--glass-shadow-md);
-    }
-    #theme-toggle:where(:not([data-ui-owner="reader"])):active {
-      transform: scale(0.96);
-    }
     #theme-custom-panel {
       margin-top: 8px;
       width: 156px;
@@ -1898,15 +1873,14 @@ body {
     }
 
     /* 鎸夐挳閫氱敤鏍峰紡 */
-    #toggle-follow:where(:not([data-ui-owner="reader"])), .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
-    .speed-controls button:where(:not([data-ui-owner="reader"])), .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), #highlight-mode-btn:where(:not([data-ui-owner="reader"])), #toggle-chunk-btn:where(:not([data-ui-owner="reader"])) {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
       padding: 5px 12px;
       border: 1px solid var(--glass-border);
       background: var(--glass-button-bg);
@@ -1932,7 +1906,7 @@ body {
       isolation: isolate;
       overflow: hidden;
     }
-    #toggle-follow:where(:not([data-ui-owner="reader"]))::before, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
@@ -1940,7 +1914,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before,
-    .speed-controls button:where(:not([data-ui-owner="reader"]))::before, .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"]))::before, #highlight-mode-btn:where(:not([data-ui-owner="reader"]))::before, #toggle-chunk-btn:where(:not([data-ui-owner="reader"]))::before, .file-btn::before, .mini-toggle:where(:not([data-ui-owner="reader"]))::before {
+    .file-btn::before {
       content: "";
       position: absolute;
       inset: 0;
@@ -1951,7 +1925,6 @@ body {
       transition: opacity var(--glass-duration-fast) var(--glass-ease);
       z-index: 0;
     }
-    #toggle-follow:where(:not([data-ui-owner="reader"])).ui-glass-dynamic::before,
     .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
     :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
@@ -1960,8 +1933,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])).ui-glass-dynamic::before,
-    .file-btn.ui-glass-dynamic::before,
-    .mini-toggle:where(:not([data-ui-owner="reader"])).ui-glass-dynamic::before {
+    .file-btn.ui-glass-dynamic::before {
       opacity: 0.72;
     }
     :where(
@@ -1971,7 +1943,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover,
-    #toggle-follow:where(:not([data-ui-owner="reader"])):hover, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):hover {
       transform: translateY(-1px) scale(1.01);
       background: var(--glass-panel-bg-strong);
       border-color: rgba(255,255,255,0.68);
@@ -1984,7 +1956,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active,
-    #toggle-follow:where(:not([data-ui-owner="reader"])):active, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):active {
       transform: translateY(0) scale(0.985);
       background: rgba(226,232,242,0.52);
       box-shadow: inset 0 1px 2px rgba(0,0,0,0.18), 0 1px 3px rgba(0,0,0,0.12);
@@ -1996,7 +1968,7 @@ body {
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
     ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible,
-    #toggle-follow:where(:not([data-ui-owner="reader"])):focus-visible, .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
+    .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])):focus-visible, .file-btn:focus-visible {
       outline: 2px solid rgba(10, 132, 255, 0.78);
       outline-offset: 2px;
     }
@@ -2016,15 +1988,6 @@ body {
       background: rgba(34, 197, 94, 0.14) !important;
       border-color: rgba(34, 197, 94, 0.32);
     }
-    /* 婵€娲荤姸鎬?*/
-    #toggle-follow:where(:not([data-ui-owner="reader"])).on, .speed-button-active:where(:not([data-ui-owner="reader"])), #highlight-mode-btn:where(:not([data-ui-owner="reader"])).active, #toggle-sidebar-btn.active, #toggle-chunk-btn:where(:not([data-ui-owner="reader"])).active, #btn-chunk-focus:where(:not([data-ui-owner="reader"])).active {
-      background: linear-gradient(180deg, rgba(10,132,255,0.24), rgba(10,132,255,0.18)) !important;
-      border-color: rgba(10,132,255,0.35);
-      color: #0a84ff !important;
-      font-weight: 600;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.20) inset, 0 -0.5px 0 rgba(255,255,255,0.16) inset;
-    }
-    
     .hotkey-box {
       display: inline-flex;
       align-items: center;
@@ -2038,116 +2001,6 @@ body {
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
       backdrop-filter: var(--glass-blur-sm);
       -webkit-backdrop-filter: var(--glass-blur-sm);
-    }
-    .mini-toggle:where(:not([data-ui-owner="reader"])) {
-      padding: 3px 8px;
-      border: 1px solid var(--glass-border);
-      background: var(--glass-button-bg);
-      color: var(--btn-text) !important;
-      cursor: pointer;
-      border-radius: 10px;
-      font-size: 11px;
-      user-select: none;
-      transition:
-        transform var(--glass-duration-fast) var(--glass-ease),
-        box-shadow var(--glass-duration-fast) var(--glass-ease),
-        background-color var(--glass-duration-fast) var(--glass-ease) !important;
-      line-height: 1.2;
-      min-height: 22px;
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
-      backdrop-filter: var(--glass-blur-sm);
-      -webkit-backdrop-filter: var(--glass-blur-sm);
-      position: relative;
-      isolation: isolate;
-      overflow: hidden;
-    }
-    .mini-toggle:where(:not([data-ui-owner="reader"])).active {
-      background: linear-gradient(180deg, rgba(10,132,255,0.24), rgba(10,132,255,0.18)) !important;
-      border-color: rgba(10,132,255,0.35);
-      color: #0a84ff !important;
-      font-weight: 600;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.20) inset, 0 -0.5px 0 rgba(255,255,255,0.16) inset;
-    }
-    .deprecated-options {
-      display: inline-flex;
-      align-items: center;
-      position: relative;
-      flex: 0 0 auto;
-    }
-    .deprecated-options > summary.small-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      height: 28px;
-      min-height: 28px;
-      box-sizing: border-box;
-      padding: 5px 10px 5px 12px;
-      border-radius: 10px;
-      list-style: none;
-      white-space: nowrap;
-    }
-    .deprecated-options > summary::-webkit-details-marker {
-      display: none;
-    }
-    .deprecated-options > summary::marker {
-      content: "";
-    }
-    .deprecated-options > summary.small-btn::after {
-      content: "";
-      width: 0;
-      height: 0;
-      border-left: 4px solid transparent;
-      border-right: 4px solid transparent;
-      border-top: 5px solid currentColor;
-      opacity: 0.72;
-      transform: translateY(1px);
-      transition: transform var(--glass-duration-fast) var(--glass-ease);
-      z-index: 1;
-    }
-    .deprecated-options[open] > summary.small-btn {
-      border-color: rgba(10,132,255,0.42);
-      background: color-mix(in srgb, var(--glass-panel-bg-strong) 86%, rgba(10,132,255,0.14)) !important;
-    }
-    .deprecated-options[open] > summary.small-btn::after {
-      transform: translateY(-1px) rotate(180deg);
-    }
-    .deprecated-options-body {
-      position: absolute;
-      top: calc(100% + 8px);
-      right: 0;
-      z-index: 1400;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      box-sizing: border-box;
-      padding: 8px;
-      border: 1px solid var(--glass-border);
-      border-radius: 10px;
-      background: color-mix(in srgb, var(--glass-panel-bg-strong) 92%, white 8%);
-      box-shadow: var(--glass-shadow-md);
-      backdrop-filter: blur(18px) saturate(1.25);
-      -webkit-backdrop-filter: blur(18px) saturate(1.25);
-      transform-origin: top right;
-      animation: deprecated-options-pop 120ms var(--glass-ease);
-      white-space: nowrap;
-    }
-    .deprecated-options:not([open]) .deprecated-options-body {
-      display: none;
-    }
-    @keyframes deprecated-options-pop {
-      from { opacity: 0; transform: translateY(-3px) scale(0.98); }
-      to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    .speed-controls .speed-btn:where(:not([data-ui-owner="reader"])) { min-width: 64px; font-weight: 600; min-height: 28px; }
-    #btn-chunk-style:where(:not([data-ui-owner="reader"])), #open-style-editor {
-      min-width: 30px;
-      height: 26px;
-      padding: 0 7px !important;
-      border-radius: 6px !important;
-      font-family: 'Noto Serif SC', serif !important;
-      font-weight: 700 !important;
-      letter-spacing: 0.2px;
     }
     .modal-backdrop {
       display: none;
@@ -2244,15 +2097,14 @@ body {
       color: var(--text-main);
       cursor: pointer;
     }
-    [data-theme="dark"] #toggle-follow:where(:not([data-ui-owner="reader"])), [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
+    [data-theme="dark"] .small-btn:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
     [data-theme="dark"] :where(
       #theme-controls, .controls, .extra-controls, .transcript-header,
       #style-editor-modal, #chunk-style-modal,
       .youtube-reader-controls, .youtube-material-notice,
       .annotation-backfill-dialog, .vocabulary-preview-dialog,
       .annotation-bubble, .youtube-video-player
-    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])),
-    [data-theme="dark"] .speed-controls button:where(:not([data-ui-owner="reader"])), [data-theme="dark"] .seek-controls button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])), [data-theme="dark"] #highlight-mode-btn:where(:not([data-ui-owner="reader"])), [data-theme="dark"] #toggle-chunk-btn:where(:not([data-ui-owner="reader"])) {
+    ) button:where(:not([data-ui-owner="workflow"]):not([data-ui-owner="reader"]):not([data-ui-owner="style-controls"])) {
       border-color: rgba(255,255,255,0.2);
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
@@ -2262,57 +2114,6 @@ body {
       background: var(--glass-button-bg);
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
     }
-    [data-theme="dark"] .mini-toggle:where(:not([data-ui-owner="reader"])) {
-      border-color: rgba(255,255,255,0.2);
-      background: var(--glass-button-bg);
-      box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
-    }
-    [data-theme="dark"] .deprecated-options-body {
-      border-color: rgba(255,255,255,0.18);
-      background: color-mix(in srgb, rgba(20,24,30,0.94) 92%, transparent);
-    }
-    [data-theme="dark"] #toggle-follow:where(:not([data-ui-owner="reader"])).on, [data-theme="dark"] .speed-button-active:where(:not([data-ui-owner="reader"])), [data-theme="dark"] #highlight-mode-btn:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] #toggle-sidebar-btn.active, [data-theme="dark"] #toggle-chunk-btn:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] #btn-chunk-focus:where(:not([data-ui-owner="reader"])).active, [data-theme="dark"] .mini-toggle:where(:not([data-ui-owner="reader"])).active {
-      color: #409cff !important;
-      border-color: rgba(64,156,255,0.45);
-      background: linear-gradient(180deg, rgba(64,156,255,0.26), rgba(64,156,255,0.18)) !important;
-    }
-    [data-theme="dark"] .hotkey-input.is-hotkey-waiting:where(:not([data-ui-owner="reader"])),
-    [data-theme="dark"] .hotkey-input-wide.is-hotkey-waiting:where(:not([data-ui-owner="reader"])) {
-      color: #ff6b62;
-      border-color: rgba(255, 107, 98, 0.72);
-      background: linear-gradient(180deg, rgba(255, 107, 98, 0.22), rgba(255, 107, 98, 0.15));
-      box-shadow: 0 0 0 2px rgba(255, 107, 98, 0.18), inset 0 1px 0 rgba(255,255,255,0.16);
-    }
-
-    .hotkey-input:where(:not([data-ui-owner="reader"])),
-    .hotkey-input-wide:where(:not([data-ui-owner="reader"])) {
-      text-align: center;
-      border: 1px solid color-mix(in srgb, var(--glass-border) 72%, transparent);
-      border-radius: 8px;
-      padding: 1px 3px;
-      background: color-mix(in srgb, var(--glass-button-bg) 76%, transparent);
-      color: var(--text-main);
-      font-size: 11px;
-      cursor: pointer;
-      user-select: none;
-      transition: border-color var(--glass-duration-fast) var(--glass-ease), box-shadow var(--glass-duration-fast) var(--glass-ease);
-    }
-    .hotkey-input:where(:not([data-ui-owner="reader"])):focus,
-    .hotkey-input-wide:where(:not([data-ui-owner="reader"])):focus {
-      border-color: rgba(10, 132, 255, 0.65);
-      box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.18);
-      outline: none;
-    }
-    .hotkey-input.is-hotkey-waiting:where(:not([data-ui-owner="reader"])),
-    .hotkey-input-wide.is-hotkey-waiting:where(:not([data-ui-owner="reader"])) {
-      border-color: rgba(255, 59, 48, 0.72);
-      background: linear-gradient(180deg, rgba(255, 59, 48, 0.20), rgba(255, 59, 48, 0.14));
-      color: #d70015;
-      font-weight: 700;
-      box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.18), inset 0 1px 0 rgba(255,255,255,0.45);
-    }
-    .hotkey-input:where(:not([data-ui-owner="reader"])) { width: 3em; }
-    .hotkey-input-wide:where(:not([data-ui-owner="reader"])) { width: 4.5em; }
     .color-input { width: 16px; height: 16px; border: none; border-radius: 50%; cursor: pointer; background: transparent; vertical-align: middle; }
 
 #vue-root {

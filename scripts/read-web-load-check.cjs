@@ -11,6 +11,7 @@ const expectedGlobals = [
   'ImportExportSharedHelpers',
   'IdentityStorageKeys'
 ];
+const vueMountTimeoutMs = 15000;
 
 async function ensureArtifactsDir() {
   await fs.promises.mkdir(artifactsDir, { recursive: true });
@@ -88,7 +89,32 @@ async function main() {
   });
 
   const gotoResponse = await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
-  await page.waitForTimeout(1500);
+  const vueMountWaitStartedAt = Date.now();
+  let vueMountWait = {
+    ok: false,
+    timeoutMs: vueMountTimeoutMs,
+    waitedMs: 0,
+    error: null,
+  };
+  try {
+    await page.waitForFunction(
+      () => Boolean(
+        document.querySelector('[data-vue-mounted]')
+          && document.querySelector('#transcript-vue-container')
+          && document.querySelector('#chunk-vue-container')
+      ),
+      null,
+      { timeout: vueMountTimeoutMs }
+    );
+    vueMountWait.ok = true;
+  } catch (error) {
+    vueMountWait.error = {
+      name: error.name,
+      message: error.message,
+    };
+  } finally {
+    vueMountWait.waitedMs = Date.now() - vueMountWaitStartedAt;
+  }
 
   const symbolStatus = await page.evaluate((symbols) => {
     return symbols.map((name) => ({
@@ -127,6 +153,7 @@ async function main() {
       && requestFailures.length === 0
       && responseErrors.length === 0
       && undefinedSymbols.length === 0
+      && vueMountWait.ok
       && renderingOwnership.vueTranscriptMounted
       && renderingOwnership.vueChunkMounted
       && renderingOwnership.legacyTranscriptHidden
@@ -144,6 +171,7 @@ async function main() {
     responseErrors,
     symbolStatus,
     undefinedSymbols,
+    vueMountWait,
     renderingOwnership,
     startupLayoutShifts,
     startupLayoutShiftTotal,
