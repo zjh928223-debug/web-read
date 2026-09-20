@@ -1,10 +1,18 @@
 <template>
-  <main class="srs-review-page" :class="{ 'is-overlay': !standalone }">
+  <main class="srs-review-page" data-ui-theme="light" :class="{ 'is-overlay': !standalone }">
     <header class="srs-review-header">
-      <button class="srs-review-back" type="button" aria-label="返回阅读器" @click="close">
-        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
+      <Button
+        variant="ghost"
+        size="sm"
+        data-ui-owner="learning"
+        class="srs-review-back"
+        type="button"
+        aria-label="返回阅读器"
+        @click="close"
+      >
+        <svg class="rw:size-3.5" aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6" /></svg>
         返回
-      </button>
+      </Button>
       <div class="srs-review-heading">
         <p class="srs-review-progress" aria-live="polite">
           {{ review.progress.value || '今日复习' }}
@@ -373,6 +381,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { Button } from '../../components/ui/button/index.js'
 import {
   buildReviewContext,
   describeReviewSourceError,

@@ -16,7 +16,7 @@
       var owner = typeof el.getAttribute === 'function'
         ? el.getAttribute('data-ui-owner')
         : el.dataset && el.dataset.uiOwner;
-      if (owner === 'workflow' || owner === 'reader' || owner === 'style-controls') {
+      if (owner === 'workflow' || owner === 'reader' || owner === 'style-controls' || owner === 'learning') {
         el.classList.remove('glass-button');
         return;
       }

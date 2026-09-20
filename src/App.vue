@@ -125,6 +125,7 @@ import { createIndexedDbReviewStateReader } from './services/vocabulary/srs-revi
 import { getWindowsOwnerVocabularySrsIntegration } from './services/vocabulary/windows-owner-vocabulary-srs.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
 import './features/srs-review/srs-review.css'
+import './features/learning-ui/learning-ui.css'
 import './features/passage-preview/passage-preview.css'
 
 function createLearningPage(loader) {

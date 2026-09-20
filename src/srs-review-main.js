@@ -2,7 +2,9 @@ import { createApp } from 'vue'
 import SrsReviewPage from './features/srs-review/SrsReviewPage.vue'
 import { createInMemoryVocabularyRepository, createVocabularyService } from './services/vocabulary/index.js'
 import { createOptionalLocalDictionaryClient } from './dictionary/ecdict/browser/optional-local-dictionary-client.mjs'
+import './styles/workflow-ui.css'
 import './features/srs-review/srs-review.css'
+import './features/learning-ui/learning-ui.css'
 
 const SAMPLE_URL = '/src/features/srs-review/srs-review.sample.local.json'
 

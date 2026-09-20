@@ -75,6 +75,11 @@ assert.ok(
   'glass-effects should export initGlassEffects'
 );
 
+assert.ok(
+  glassEffectsSource.includes("owner === 'learning'"),
+  'glass-effects should leave explicitly migrated learning controls undecorated'
+);
+
 function verifyGlassLifecycle() {
   class FakeElement {
     constructor(matches = []) {

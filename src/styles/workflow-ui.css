@@ -3,7 +3,7 @@
 @import "tailwindcss/theme.css" layer(theme) prefix(rw);
 @import "tailwindcss/utilities.css" layer(utilities) source(none) prefix(rw);
 
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *):not([data-ui-theme="light"]):not([data-ui-theme="light"] *));
 
 @source "../components/ui";
 @source "../components/ui/input";
@@ -12,6 +12,9 @@
 @source "../lib/native-input-styles.js";
 @source "../main.js";
 @source "../composables/style-editor.js";
+@source "../features/srs-review";
+@source "../features/passage-preview";
+@source "../features/learning-ui";
 
 @theme inline {
   --color-background: var(--background);

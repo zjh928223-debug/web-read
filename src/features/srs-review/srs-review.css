@@ -17,7 +17,7 @@ html.srs-review-standalone-document body {
   box-sizing: border-box;
 }
 
-.srs-review-page button,
+.srs-review-page button:not([data-ui-owner="learning"]),
 .srs-review-page audio {
   font: inherit;
 }
@@ -94,6 +94,9 @@ html.srs-review-standalone-document body {
   gap: 5px;
   align-items: center;
   width: fit-content;
+}
+
+.srs-review-back:where(:not([data-ui-owner="learning"])) {
   min-height: 28px;
   padding: 6px 8px;
   border: 1px solid transparent;
@@ -108,14 +111,14 @@ html.srs-review-standalone-document body {
   transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.srs-review-back:hover {
+.srs-review-back:where(:not([data-ui-owner="learning"])):hover {
   border-color: rgba(218, 224, 234, .72);
   color: rgba(92, 105, 124, .94) !important;
   background: rgba(255, 255, 255, .62);
   box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
 }
 
-:where(.srs-review-page) button:focus-visible,
+:where(.srs-review-page) button:where(:not([data-ui-owner="learning"])):focus-visible,
 :where(.srs-review-page) audio:focus-visible {
   outline: 3px solid rgba(36, 84, 198, .35);
   outline-offset: 3px;
@@ -274,8 +277,8 @@ html.srs-review-standalone-document body {
   box-shadow: 0 4px 12px rgba(35, 49, 76, .045);
 }
 
-.srs-review-back:focus-visible,
-.srs-review-history-toggle:focus-visible,
+.srs-review-back:where(:not([data-ui-owner="learning"])):focus-visible,
+.srs-review-history-toggle:where(:not([data-ui-owner="learning"])):focus-visible,
 .srs-review-shadow-link:focus-visible,
 .srs-review-play-sequence:focus-visible,
 .srs-review-remove-word:focus-visible {
@@ -283,8 +286,8 @@ html.srs-review-standalone-document body {
   box-shadow: none;
 }
 
-.srs-review-back > *,
-.srs-review-history-toggle > *,
+.srs-review-back:where(:not([data-ui-owner="learning"])) > *,
+.srs-review-history-toggle:where(:not([data-ui-owner="learning"])) > *,
 .srs-review-shadow-link > *,
 .srs-review-play-sequence > *,
 .srs-review-remove-word > * {
