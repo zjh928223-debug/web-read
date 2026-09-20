@@ -11,6 +11,7 @@ const workflowStyles = fs.readFileSync(path.join(root, 'src/styles/workflow-ui.c
 const buttonIndex = fs.readFileSync(path.join(root, 'src/components/ui/button/index.js'), 'utf8')
 const buttonVariants = fs.readFileSync(path.join(root, 'src/components/ui/button/button-variants.js'), 'utf8')
 const inputComponent = fs.readFileSync(path.join(root, 'src/components/ui/input/Input.vue'), 'utf8')
+const inputStyles = fs.readFileSync(path.join(root, 'src/components/ui/input/input-styles.js'), 'utf8')
 const textareaComponent = fs.readFileSync(path.join(root, 'src/components/ui/textarea/Textarea.vue'), 'utf8')
 const client = fs.readFileSync(path.join(root, 'src/composables/youtube-workflow-client.js'), 'utf8')
 const service = fs.readFileSync(path.join(root, 'tools/subtitle-workflow/youtube_workflow/service.py'), 'utf8')
@@ -121,7 +122,7 @@ for (const fieldName of [
 }
 assert.ok(inputComponent.includes('modelModifiers') && inputComponent.includes('props.modelModifiers.trim') && inputComponent.includes('data-slot="input"'), 'Input should adapt v-model modifiers while keeping the native input root')
 assert.ok(inputComponent.includes('const isComposing = ref(false)') && inputComponent.includes('if (isComposing.value || !props.modelModifiers.trim'), 'Input should preserve its DOM buffer while composition is active')
-assert.ok(inputComponent.includes('rw:disabled:pointer-events-none') && inputComponent.includes('rw:disabled:cursor-not-allowed') && inputComponent.includes('rw:disabled:opacity-50'), 'Input should retain the generated disabled recipe')
+assert.ok(inputStyles.includes('rw:disabled:pointer-events-none') && inputStyles.includes('rw:disabled:cursor-not-allowed') && inputStyles.includes('rw:disabled:opacity-50'), 'Input style recipe should retain the generated disabled recipe')
 assert.ok(textareaComponent.includes('modelModifiers') && textareaComponent.includes('props.modelModifiers.trim') && textareaComponent.includes('data-slot="textarea"'), 'Textarea should adapt v-model modifiers while keeping the native textarea root')
 assert.ok(textareaComponent.includes('const isComposing = ref(false)') && textareaComponent.includes('if (isComposing.value || !props.modelModifiers.trim'), 'Textarea should preserve its DOM buffer while composition is active')
 assert.ok(textareaComponent.includes('rw:disabled:cursor-not-allowed') && textareaComponent.includes('rw:disabled:opacity-50'), 'Textarea should retain the generated disabled recipe')

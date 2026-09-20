@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import './styles/workflow-ui.css'
 import { applyNativeControlStyles } from './lib/native-control-styles.js'
+import { applyNativeInputStyles } from './lib/native-input-styles.js'
 import { flushPendingUiNotifications } from './composables/ui-facades.js'
 import { initializeWindowsOwnerReaderSessionComposition } from './services/windows-owner-reader-session-composition.js'
 import { initializeWindowsOwnerDomainCutoverComposition } from './services/windows-owner-domain-cutover.js'
@@ -113,6 +114,32 @@ applyNativeControlStyles(document.getElementById('btn-chunk-style'), {
   owner: 'reader',
   variant: 'outline',
   size: 'xs',
+})
+
+const readerHotkeyInputIds = [
+  'hotkey-input',
+  'hotkey-annotation-bubble-input',
+  'hotkey-chunk-cn-input',
+  'hotkey-chunk-shadow-input',
+  'hotkey-backward-input',
+  'hotkey-forward-input',
+]
+
+readerHotkeyInputIds.forEach((id) => {
+  applyNativeInputStyles(document.getElementById(id))
+})
+
+applyNativeControlStyles(document.getElementById('theme-toggle'), {
+  owner: 'reader',
+  variant: 'outline',
+  size: 'icon-sm',
+  className: 'rw:rounded-full rw:p-0',
+})
+applyNativeControlStyles(document.getElementById('theme-custom-reset'), {
+  owner: 'reader',
+  variant: 'outline',
+  size: 'sm',
+  className: 'rw:w-full rw:mt-1',
 })
 
 // Host-backed domains are optional until the Host explicitly reports a

@@ -6,8 +6,11 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 @source "../components/ui";
+@source "../components/ui/input";
 @source "../components/YouTubeWorkflowPanel.vue";
 @source "../lib/native-control-styles.js";
+@source "../lib/native-input-styles.js";
+@source "../main.js";
 
 @theme inline {
   --color-background: var(--background);
@@ -69,9 +72,9 @@
 }
 
 @layer base {
-  [data-ui-owner="workflow"],
-  [data-ui-owner="reader"],
-  [data-ui-owner="style-controls"] {
+  [data-ui-owner="workflow"]:not(input[type="color"]):not(input[type="file"]),
+  [data-ui-owner="reader"]:not(input[type="color"]):not(input[type="file"]),
+  [data-ui-owner="style-controls"]:not(input[type="color"]):not(input[type="file"]) {
     appearance: none;
     box-sizing: border-box;
     margin: 0;
@@ -84,9 +87,9 @@
     font-family: var(--pru-ui-font);
   }
 
-  [data-ui-owner="workflow"]:is(input, textarea),
-  [data-ui-owner="reader"]:is(input, textarea),
-  [data-ui-owner="style-controls"]:is(input, textarea) {
+  [data-ui-owner="workflow"]:is(input, textarea):not([type="color"]):not([type="file"]),
+  [data-ui-owner="reader"]:is(input, textarea):not([type="color"]):not([type="file"]),
+  [data-ui-owner="style-controls"]:is(input, textarea):not([type="color"]):not([type="file"]) {
     cursor: text;
   }
 
@@ -95,6 +98,36 @@
   [data-ui-owner="style-controls"]:is(button, [role="button"]):not(:disabled) {
     cursor: pointer;
   }
+}
+
+/* Hotkey inputs keep their native nodes and keyboard bindings, but share the
+   Input recipe. Width remains local to this owner boundary so the compact
+   single-character and named-key controls do not inherit w-full. */
+[data-ui-owner="reader"].hotkey-input,
+[data-ui-owner="reader"].hotkey-input-wide {
+  cursor: pointer;
+  text-align: center;
+  user-select: none;
+}
+
+[data-ui-owner="reader"].hotkey-input {
+  width: var(--reader-hotkey-single-width);
+}
+
+[data-ui-owner="reader"].hotkey-input-wide {
+  width: var(--reader-hotkey-wide-width);
+}
+
+[data-ui-owner="reader"].is-hotkey-waiting {
+  background-color: color-mix(in srgb, var(--destructive) 12%, var(--background));
+  border-color: var(--destructive);
+  color: var(--destructive);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--destructive) 28%, transparent);
+}
+
+[data-ui-owner="reader"].is-hotkey-waiting:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--destructive) 36%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

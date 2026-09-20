@@ -1519,7 +1519,7 @@ body {
       left: 20px;
       z-index: 2000;
     }
-    #theme-toggle {
+    #theme-toggle:where(:not([data-ui-owner="reader"])) {
       width: 32px;
       height: 32px;
       border-radius: 50%;
@@ -1536,12 +1536,12 @@ body {
       box-shadow: inset 1px 1px 0 var(--glass-highlight), var(--glass-shadow-sm);
       transition: transform var(--glass-duration-fast) var(--glass-ease), box-shadow var(--glass-duration-fast) var(--glass-ease), background-color var(--glass-duration-fast) var(--glass-ease);
     }
-    #theme-toggle:hover {
+    #theme-toggle:where(:not([data-ui-owner="reader"])):hover {
       background: var(--glass-panel-bg-strong);
       transform: translateY(-1px) scale(1.04);
       box-shadow: inset 1px 1px 0 rgba(255,255,255,0.85), var(--glass-shadow-md);
     }
-    #theme-toggle:active {
+    #theme-toggle:where(:not([data-ui-owner="reader"])):active {
       transform: scale(0.96);
     }
     #theme-custom-panel {
@@ -1575,11 +1575,6 @@ body {
       background: transparent;
       cursor: pointer;
     }
-    #theme-custom-reset {
-      width: 100%;
-      margin-top: 4px;
-    }
-
     /* === 椤堕儴鎺у埗鏍?=== */
     .controls {
       display: flex;
@@ -1845,6 +1840,26 @@ body {
       }
       [data-ui-owner="reader"]#btn-chunk-style {
         width: 30px;
+      }
+      [data-ui-owner="reader"]#theme-toggle {
+        width: 32px;
+        padding: 0;
+      }
+      [data-ui-owner="reader"].hotkey-input,
+      [data-ui-owner="reader"].hotkey-input-wide {
+        --reader-hotkey-single-width: 42px;
+        --reader-hotkey-wide-width: 63px;
+        display: inline-block;
+        box-sizing: border-box;
+        min-height: 32px;
+        height: 32px;
+        padding: 0 10px;
+      }
+      [data-ui-owner="reader"].hotkey-input {
+        width: var(--reader-hotkey-single-width);
+      }
+      [data-ui-owner="reader"].hotkey-input-wide {
+        width: var(--reader-hotkey-wide-width);
       }
       [data-ui-owner="reader"]#import-marks-btn { width: 68px; }
       [data-ui-owner="reader"]#export-json { width: 76px; }
@@ -2261,15 +2276,16 @@ body {
       border-color: rgba(64,156,255,0.45);
       background: linear-gradient(180deg, rgba(64,156,255,0.26), rgba(64,156,255,0.18)) !important;
     }
-    [data-theme="dark"] .hotkey-input.is-hotkey-waiting,
-    [data-theme="dark"] .hotkey-input-wide.is-hotkey-waiting {
+    [data-theme="dark"] .hotkey-input.is-hotkey-waiting:where(:not([data-ui-owner="reader"])),
+    [data-theme="dark"] .hotkey-input-wide.is-hotkey-waiting:where(:not([data-ui-owner="reader"])) {
       color: #ff6b62;
       border-color: rgba(255, 107, 98, 0.72);
       background: linear-gradient(180deg, rgba(255, 107, 98, 0.22), rgba(255, 107, 98, 0.15));
       box-shadow: 0 0 0 2px rgba(255, 107, 98, 0.18), inset 0 1px 0 rgba(255,255,255,0.16);
     }
 
-    .hotkey-input, .hotkey-input-wide {
+    .hotkey-input:where(:not([data-ui-owner="reader"])),
+    .hotkey-input-wide:where(:not([data-ui-owner="reader"])) {
       text-align: center;
       border: 1px solid color-mix(in srgb, var(--glass-border) 72%, transparent);
       border-radius: 8px;
@@ -2281,21 +2297,22 @@ body {
       user-select: none;
       transition: border-color var(--glass-duration-fast) var(--glass-ease), box-shadow var(--glass-duration-fast) var(--glass-ease);
     }
-    .hotkey-input:focus, .hotkey-input-wide:focus {
+    .hotkey-input:where(:not([data-ui-owner="reader"])):focus,
+    .hotkey-input-wide:where(:not([data-ui-owner="reader"])):focus {
       border-color: rgba(10, 132, 255, 0.65);
       box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.18);
       outline: none;
     }
-    .hotkey-input.is-hotkey-waiting,
-    .hotkey-input-wide.is-hotkey-waiting {
+    .hotkey-input.is-hotkey-waiting:where(:not([data-ui-owner="reader"])),
+    .hotkey-input-wide.is-hotkey-waiting:where(:not([data-ui-owner="reader"])) {
       border-color: rgba(255, 59, 48, 0.72);
       background: linear-gradient(180deg, rgba(255, 59, 48, 0.20), rgba(255, 59, 48, 0.14));
       color: #d70015;
       font-weight: 700;
       box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.18), inset 0 1px 0 rgba(255,255,255,0.45);
     }
-    .hotkey-input { width: 3em; }
-    .hotkey-input-wide { width: 4.5em; }
+    .hotkey-input:where(:not([data-ui-owner="reader"])) { width: 3em; }
+    .hotkey-input-wide:where(:not([data-ui-owner="reader"])) { width: 4.5em; }
     .color-input { width: 16px; height: 16px; border: none; border-radius: 50%; cursor: pointer; background: transparent; vertical-align: middle; }
 
 #vue-root {

@@ -10,7 +10,7 @@
 <body>
   
   <div id="theme-controls">
-    <button id="theme-toggle" title="切换浅色/深色/自定义模式">☀</button>
+    <button id="theme-toggle" data-ui-owner="reader" title="切换浅色/深色/自定义模式">☀</button>
     <div id="theme-custom-panel" hidden>
       <div class="theme-custom-row">
         <label for="theme-custom-bg">背景</label>
@@ -32,7 +32,7 @@
         <label for="theme-custom-button">按钮</label>
         <input type="color" id="theme-custom-button" value="#dbeafe">
       </div>
-      <button type="button" id="theme-custom-reset" class="small-btn">重置配色</button>
+      <button type="button" id="theme-custom-reset" data-ui-owner="reader">重置配色</button>
     </div>
   </div>
   <div id="main-app-area">
@@ -66,9 +66,9 @@
       <div class="extra-controls">
         <div class="control-group seek-controls">
           <button id="btn-prev-sentence" data-ui-owner="reader">上一句</button>
-          <input id="hotkey-backward-input" class="hotkey-input-wide" type="text" value="ArrowLeft" title="设置后退快捷键" />
+          <input id="hotkey-backward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowLeft" title="设置后退快捷键" />
           <button id="btn-next-sentence" data-ui-owner="reader">下一句</button>
-          <input id="hotkey-forward-input" class="hotkey-input-wide" type="text" value="ArrowRight" title="设置前进快捷键" />
+          <input id="hotkey-forward-input" class="hotkey-input-wide" data-ui-owner="reader" type="text" value="ArrowRight" title="设置前进快捷键" />
         </div>
         <div class="control-group speed-controls">
           <button class="speed-btn" data-speed="0.85" data-ui-owner="reader">0.85x</button>
@@ -82,11 +82,11 @@
           <button id="toggle-follow" class="on" data-ui-owner="reader">跟随:开</button>
           
           <span class="hotkey-box">
-            标记 <input id="hotkey-input" class="hotkey-input" type="text" maxlength="1" value="m" />
+            标记 <input id="hotkey-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="m" />
           </span>
 
           <span class="hotkey-box" title="开关独立标注释义泡泡">
-            泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" type="text" maxlength="1" value="b" />
+            泡 <input id="hotkey-annotation-bubble-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="b" />
           </span>
           
           <button id="highlight-mode-btn" data-ui-owner="reader">高亮:句</button>
@@ -107,14 +107,14 @@
           <div id="srs-review-entry-root"></div>
 
           <span class="hotkey-box">
-            中<input id="hotkey-chunk-cn-input" class="hotkey-input" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
+            中<input id="hotkey-chunk-cn-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="c" title="AI切分模式下开关中文" />
             <button id="btn-chunk-cn-hold" class="active" data-ui-owner="reader" title="切换：按住快捷键才显示中文">按住</button>
           </span>
 
           <button id="btn-chunk-focus" class="active" data-ui-owner="reader" title="切换中文显示模式：全局/聚焦">聚焦</button>
           
           <span class="hotkey-box" title="AI切分模式下开关高亮背景（阴影）">
-            影<input id="hotkey-chunk-shadow-input" class="hotkey-input" type="text" maxlength="1" value="s" />
+            影<input id="hotkey-chunk-shadow-input" class="hotkey-input" data-ui-owner="reader" type="text" maxlength="1" value="s" />
           </span>
 
         </div>
