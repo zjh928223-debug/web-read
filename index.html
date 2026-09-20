@@ -132,18 +132,18 @@
   <div id="chunk-style-modal" role="dialog" aria-modal="true" aria-labelledby="chunk-style-modal-title" tabindex="-1">
       <div class="modal-header">
           <span class="modal-title" id="chunk-style-modal-title">AI切分模式样式</span>
-          <button type="button" id="btn-close-chunk-style-modal" class="close-modal" aria-label="关闭 AI切分模式样式">&times;</button>
+          <button type="button" id="btn-close-chunk-style-modal" class="close-modal" data-ui-owner="style-controls" aria-label="关闭 AI切分模式样式">&times;</button>
       </div>
       
       <div class="style-section">
           <h4>字体大小</h4>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px;">英文</span>
-              <input type="number" id="chunk-en-size-input" class="style-input-num" value="20"> px
+              <input type="number" id="chunk-en-size-input" class="style-input-num" data-ui-owner="style-controls" value="20"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px;">中文</span>
-              <input type="number" id="chunk-cn-size-input" class="style-input-num" value="16"> px
+              <input type="number" id="chunk-cn-size-input" class="style-input-num" data-ui-owner="style-controls" value="16"> px
           </div>
       </div>
 
@@ -151,16 +151,16 @@
           <h4>布局与颜色</h4>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">块间距</span>
-              <input type="number" id="chunk-gap-input" class="style-input-num" value="20" step="1"> px
+              <input type="number" id="chunk-gap-input" class="style-input-num" data-ui-owner="style-controls" value="20" step="1"> px
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">中文字色</span>
-              <input type="color" id="chunk-cn-color-input" class="color-input" value="#4b5563">
+              <input type="color" id="chunk-cn-color-input" class="color-input" data-ui-owner="style-controls" value="#4b5563">
           </div>
           <div class="control-row">
               <span style="font-size:12px; margin-right:4px; width:50px;">高亮背景</span>
-              <input type="color" id="chunk-bg-color-input" class="color-input" value="#e5e7eb">
-              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" style="margin-left:5px; font-size:10px;">开关 S</button>
+              <input type="color" id="chunk-bg-color-input" class="color-input" data-ui-owner="style-controls" value="#e5e7eb">
+              <button class="style-btn-toggle" id="btn-toggle-shadow-manual" data-ui-owner="style-controls">开关 S</button>
           </div>
       </div>
   </div>

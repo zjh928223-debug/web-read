@@ -1,4 +1,6 @@
-  import { createDialogController } from '../services/runtime/dialog-controller.js';
+import { createDialogController } from '../services/runtime/dialog-controller.js';
+import { applyNativeControlStyles } from '../lib/native-control-styles.js';
+import { applyNativeInputStyles } from '../lib/native-input-styles.js';
 
   function safeParseLocalJSON(key, fallbackValue) {
     try {
@@ -31,6 +33,50 @@
       '--v-not-size': '12px', '--v-not-color': '#999999', '--v-not-weight': '400', '--v-not-style': 'normal', '--v-not-spacing': '0px',
       '--v-word-display': 'block', '--v-context-display': 'block', '--v-meaning-display': 'block', '--v-not-display': 'block', '--v-gap': '8px'
     };
+
+    var styleControlOwner = 'style-controls';
+    var styleNumberInputClass = 'style-input-num rw:w-[86px]';
+
+    function applyStyleButton(element, options) {
+      return applyNativeControlStyles(element, Object.assign({
+        owner: styleControlOwner,
+        variant: 'outline',
+        size: 'xs'
+      }, options || {}));
+    }
+
+    function applyStyleNumberInput(element) {
+      return applyNativeInputStyles(element, {
+        owner: styleControlOwner,
+        size: 'sm',
+        interaction: 'text',
+        className: styleNumberInputClass
+      });
+    }
+
+    function applyStyleColorInput(element) {
+      if (element && element.setAttribute) element.setAttribute('data-ui-owner', styleControlOwner);
+      return element;
+    }
+
+    function applyChunkStyleControlStyles() {
+      applyStyleButton(document.getElementById('btn-close-chunk-style-modal'), {
+        variant: 'ghost',
+        size: 'icon-sm',
+        className: 'close-modal rw:rounded-full rw:p-0'
+      });
+      applyStyleButton(document.getElementById('btn-toggle-shadow-manual'), {
+        className: 'style-btn-toggle rw:ml-1'
+      });
+      ['chunk-en-size-input', 'chunk-cn-size-input', 'chunk-gap-input'].forEach(function (id) {
+        applyStyleNumberInput(document.getElementById(id));
+      });
+      ['chunk-cn-color-input', 'chunk-bg-color-input'].forEach(function (id) {
+        applyStyleColorInput(document.getElementById(id));
+      });
+    }
+
+    applyChunkStyleControlStyles();
 
     function applyStyle(varName, value) {
       document.documentElement.style.setProperty(varName, value);
