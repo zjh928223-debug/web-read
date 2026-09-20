@@ -167,6 +167,50 @@ async function run() {
     path.join(repoRoot, 'src', 'features', 'srs-review', 'srs-review.css'),
     'utf8',
   )
+  const learningCssSource = fs.readFileSync(
+    path.join(repoRoot, 'src', 'features', 'learning-ui', 'learning-ui.css'),
+    'utf8',
+  )
+  const standaloneEntrySource = fs.readFileSync(
+    path.join(repoRoot, 'src', 'srs-review-main.js'),
+    'utf8',
+  )
+  const appSource = fs.readFileSync(path.join(repoRoot, 'src', 'App.vue'), 'utf8')
+  const buttonBlocks = reviewPageSource.match(/<Button\b[^>]*>[\s\S]*?<\/Button>/g) || []
+  const buttonOpening = (block) => block.match(/^<Button\b[^>]*>/)?.[0] || ''
+  const assertButtonTokens = (description, blocks, tokens) => blocks.forEach((block, index) => {
+    tokens.forEach((token) => assert.ok(
+      buttonOpening(block).includes(token),
+      `${description} #${index + 1} should include ${token}`,
+    ))
+  })
+  const assertButtonGroup = (description, className, count, tokens) => {
+    const blocks = buttonBlocks.filter((block) => block.includes(`class="${className}"`) || block.includes(`class="${className} `))
+    assert.equal(blocks.length, count, `${description} should have ${count} Button block(s)`)
+    assertButtonTokens(description, blocks, tokens)
+    return blocks
+  }
+  const assertButton = (description, predicate, tokens) => {
+    const blocks = buttonBlocks.filter(predicate)
+    assert.equal(blocks.length, 1, `${description} should have one Button block`)
+    assertButtonTokens(description, blocks, tokens)
+    return blocks[0] || ''
+  }
+  assert.match(
+    reviewPageSource,
+    /<Button\s+variant="ghost"\s+size="sm"\s+data-ui-owner="learning"\s+class="srs-review-back"/,
+    'the SRS return action should use the shared ghost/sm Button with the learning owner',
+  )
+  assert.match(reviewPageSource, /data-ui-theme="light"/, 'the SRS root should declare its fixed light theme')
+  assert.match(
+    learningCssSource,
+    /\.srs-review-page\[data-ui-theme="light"\][\s\S]*--background:\s*var\(--learning-background\)[\s\S]*--ring:\s*var\(--learning-ring\)/,
+    'learning controls should receive local semantic theme tokens',
+  )
+  assert.doesNotMatch(learningCssSource, /var\(--(?:pru|btn)-/, 'learning tokens must not depend on reader or workflow roots')
+  assert.match(standaloneEntrySource, /import ['"]\.\/styles\/workflow-ui\.css['"]/, 'standalone SRS should load the shared Tailwind entry')
+  assert.match(standaloneEntrySource, /import ['"]\.\/features\/learning-ui\/learning-ui\.css['"]/, 'standalone SRS should load learning styles')
+  assert.match(appSource, /import ['"]\.\/features\/learning-ui\/learning-ui\.css['"]/, 'the main app should load learning styles')
   assert.doesNotMatch(
     reviewCssSource,
     /font-family:\s*(?:Georgia|"Segoe UI")/,
@@ -351,15 +395,49 @@ async function run() {
     /<span>播放单词<\/span>[\s\S]*<span>播放原句<\/span>/,
     'word and sentence playback should use separate compact controls',
   )
+  const learningGhostSmall = ['variant="ghost"', 'size="sm"', 'data-ui-owner="learning"', 'type="button"']
+  const learningOutlineSmall = ['variant="outline"', 'size="sm"', 'data-ui-owner="learning"', 'type="button"']
+  const learningOutlineAdaptive = ['variant="outline"', 'data-ui-owner="learning"', 'type="button"']
+  const historyButton = assertButton(
+    'the history toggle',
+    (block) => block.includes('class="srs-review-history-toggle"'),
+    learningGhostSmall,
+  )
+  assert.match(historyButton, /:aria-expanded="historyOpen"[\s\S]*@click="historyOpen = !historyOpen"/)
+  const shortcutButtons = assertButtonGroup(
+    'shortcut recording controls',
+    'srs-review-shortcut-control rw:h-auto',
+    2,
+    learningOutlineAdaptive,
+  )
+  for (const [description, marker] of [
+    ['one shortcut control should edit the word shortcut', "beginShortcutEditing('word')"],
+    ['one shortcut control should edit the sentence shortcut', "beginShortcutEditing('sentence')"],
+  ]) assert.equal(shortcutButtons.filter((block) => block.includes(marker)).length, 1, description)
+  const speakerButton = assertButton('the word speaker', (block) => block.includes('class="srs-review-speaker"'), ['variant="outline"', 'size="icon-lg"', 'data-ui-owner="learning"', 'type="button"'])
+  assert.match(speakerButton, /:disabled="!canSpeak"[\s\S]*@click="speakWord"/)
+  assert.match(speakerButton, /<svg class="rw:size-\[19px\]"/)
+  const playButtons = assertButtonGroup('word and sentence playback controls', 'srs-review-play-sequence', 2, learningGhostSmall)
+  for (const [description, handler, label] of [
+    ['one playback control should play the word', '@click="speakWord"', '播放单词'],
+    ['one playback control should play the sentence', '@click="playSentenceOnly"', '播放原句'],
+  ]) assert.equal(playButtons.filter((block) => block.includes(handler) && block.includes(label)).length, 1, description)
+  const removeButton = assertButton('the mistaken-word removal control', (block) => block.includes('class="srs-review-remove-word"'), learningGhostSmall)
+  assert.match(removeButton, /:disabled="review\.pending\.value \|\| !review\.canRemoveCurrent\.value"[\s\S]*@click="removeCurrentWord"/)
+  assertButtonGroup('retry and return states', 'srs-review-retry', 3, learningOutlineSmall)
+  assertButtonGroup('legacy migration retry', 'srs-review-migration-button', 1, learningOutlineSmall)
+  for (const [description, handler] of [
+    ['target sentence reveal', 'revealTargetSentence'],
+    ['sentence translation retry', 'hydrateCurrentSentenceTranslation'],
+    ['surrounding context reveal', 'revealSurroundingContext'],
+    ['source audio retry', 'retrySourceAudio'],
+  ]) {
+    assertButton(description, (block) => block.includes(`@click="${handler}"`), learningOutlineSmall)
+  }
   assert.doesNotMatch(
     reviewPageSource,
     /正在朗读(?:单词|短语|原句)/,
     'playback status hints should not interrupt the review content',
-  )
-  assert.match(
-    reviewCssSource,
-    /\.srs-review-play-sequence\s*\{[^}]*background:\s*transparent[^}]*font-size:\s*11px[^}]*font-weight:\s*500/s,
-    'the target playback control should remain as quiet as the removal action',
   )
   for (const selector of [
     '.srs-review-back',
@@ -367,7 +445,8 @@ async function run() {
     '.srs-review-play-sequence',
     '.srs-review-remove-word',
   ]) {
-    const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const compatibilitySelector = `${selector}:where(:not([data-ui-owner="learning"]))`
+    const escapedSelector = compatibilitySelector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const block = reviewCssSource.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, 's'))?.[0] || ''
     assert.match(block, /min-height:\s*28px/, `${selector} should use the shared compact height`)
     assert.match(
@@ -382,12 +461,22 @@ async function run() {
   }
   assert.match(
     reviewCssSource,
-    /\.srs-review-remove-word:hover:not\(:disabled\)\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*\.62\)[^}]*box-shadow:\s*0 4px 12px/s,
+    /\.srs-review-back\s*\{[^}]*display:\s*inline-flex[^}]*width:\s*fit-content/s,
+    'the shared return layout should keep the button width constrained to its contents',
+  )
+  assert.match(
+    reviewCssSource,
+    /@media[\s\S]*\.srs-review-back\s*\{\s*font-size:\s*0;/s,
+    'the shared return layout should keep the mobile icon-only form',
+  )
+  assert.match(
+    reviewCssSource,
+    /\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\):hover:not\(:disabled\)\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*\.62\)[^}]*box-shadow:\s*0 4px 12px/s,
     'the removal action should only gain its button surface on hover',
   )
   assert.match(
     reviewCssSource,
-    /\.srs-review-back > \*,[\s\S]*\.srs-review-remove-word > \*\s*\{[^}]*color:\s*inherit\s*!important[^}]*-webkit-text-fill-color:\s*currentColor/s,
+    /\.srs-review-back:where\(:not\(\[data-ui-owner="learning"\]\)\) > \*,[\s\S]*\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\) > \*\s*\{[^}]*color:\s*inherit\s*!important[^}]*-webkit-text-fill-color:\s*currentColor/s,
     'auxiliary control labels, shortcut keys, and icons should inherit the muted button color',
   )
   assert.match(reviewPageSource, /srs-review-meaning-group is-general/, 'general meanings should have a primary style hook')
@@ -402,7 +491,7 @@ async function run() {
   assert.match(reviewPageSource, /review\.removeCurrent\(\)/, 'the removal control should update the active review queue')
   assert.match(
     reviewCssSource,
-    /\.srs-review-remove-word\s*\{[^}]*font-size:\s*11px/s,
+    /\.srs-review-remove-word:where\(:not\(\[data-ui-owner="learning"\]\)\)\s*\{[^}]*font-size:\s*11px/s,
     'the removal control should remain visually quiet',
   )
   assert.match(

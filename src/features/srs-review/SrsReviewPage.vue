@@ -19,7 +19,10 @@
         </p>
       </div>
       <div ref="historyContainer" class="srs-review-summary">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
+          data-ui-owner="learning"
           class="srs-review-history-toggle"
           type="button"
           :aria-expanded="historyOpen"
@@ -27,7 +30,7 @@
           @click="historyOpen = !historyOpen"
         >
           快捷键
-        </button>
+        </Button>
         <section
           v-if="historyOpen"
           :id="historyId"
@@ -39,7 +42,10 @@
           <div class="srs-review-shortcut-settings">
             <div class="srs-review-playback-shortcut-setting">
               <span>播放单词</span>
-              <button
+              <Button
+                variant="outline"
+                data-ui-owner="learning"
+                class="srs-review-shortcut-control rw:h-auto"
                 type="button"
                 :class="{ 'is-editing': shortcutEditingTarget === 'word' }"
                 :aria-label="shortcutEditingTarget === 'word' ? '请按新的单词播放快捷键，按 Escape 取消' : `修改单词播放快捷键，当前为 ${wordShortcutDisplay}`"
@@ -47,11 +53,14 @@
               >
                 <kbd>{{ shortcutEditingTarget === 'word' ? '…' : wordShortcutDisplay }}</kbd>
                 <small>{{ shortcutEditingTarget === 'word' ? '等待按键' : '点击修改' }}</small>
-              </button>
+              </Button>
             </div>
             <div class="srs-review-playback-shortcut-setting">
               <span>播放原句</span>
-              <button
+              <Button
+                variant="outline"
+                data-ui-owner="learning"
+                class="srs-review-shortcut-control rw:h-auto"
                 type="button"
                 :class="{ 'is-editing': shortcutEditingTarget === 'sentence' }"
                 :aria-label="shortcutEditingTarget === 'sentence' ? '请按新的原句播放快捷键，按 Escape 取消' : `修改原句播放快捷键，当前为 ${sentenceShortcutDisplay}`"
@@ -59,7 +68,7 @@
               >
                 <kbd>{{ shortcutEditingTarget === 'sentence' ? '…' : sentenceShortcutDisplay }}</kbd>
                 <small>{{ shortcutEditingTarget === 'sentence' ? '等待按键' : '点击修改' }}</small>
-              </button>
+              </Button>
             </div>
           </div>
           <p class="srs-review-fixed-shortcuts">
@@ -85,14 +94,17 @@
         <strong>复习数据后台整理暂停</strong>
         <p>原记录未受影响，可以稍后重试。</p>
       </div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
+        data-ui-owner="learning"
         type="button"
         class="srs-review-migration-button"
         :disabled="migrationBusy"
         @click="startLegacyMigration"
       >
         重新整理
-      </button>
+      </Button>
       <p v-if="migrationMessage" class="srs-review-migration-message" role="status">
         {{ migrationMessage }}
       </p>
@@ -106,13 +118,27 @@
     <section v-else-if="review.error.value && !review.current.value" class="srs-review-state" role="alert">
       <h2>加载失败</h2>
       <p>{{ review.error.value }}</p>
-      <button type="button" class="srs-review-retry" @click="review.load">重试</button>
+      <Button
+        variant="outline"
+        size="sm"
+        data-ui-owner="learning"
+        type="button"
+        class="srs-review-retry"
+        @click="review.load"
+      >重试</Button>
     </section>
 
     <section v-else-if="review.empty.value" class="srs-review-state" aria-live="polite">
       <h2>今日复习已完成</h2>
       <p>当前没有需要复习的词。</p>
-      <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
+      <Button
+        variant="outline"
+        size="sm"
+        data-ui-owner="learning"
+        type="button"
+        class="srs-review-retry"
+        @click="close"
+      >返回阅读器</Button>
     </section>
 
     <section v-else-if="review.completed.value" class="srs-review-state" aria-live="polite">
@@ -125,7 +151,14 @@
         <li>Good 一般：{{ review.sessionRatingCounts.value.good }}</li>
         <li>Easy 容易：{{ review.sessionRatingCounts.value.easy }}</li>
       </ul>
-      <button type="button" class="srs-review-retry" @click="close">返回阅读器</button>
+      <Button
+        variant="outline"
+        size="sm"
+        data-ui-owner="learning"
+        type="button"
+        class="srs-review-retry"
+        @click="close"
+      >返回阅读器</Button>
     </section>
 
     <template v-else-if="review.current.value">
@@ -137,13 +170,16 @@
             aria-live="polite"
           >
             <p>当前为仅单词模式，原句尚未显示。</p>
-            <button
+            <Button
+              variant="outline"
+              size="sm"
+              data-ui-owner="learning"
               type="button"
               :disabled="!hasTargetContext"
               @click="revealTargetSentence"
             >
               {{ hasTargetContext ? '显示目标句' : '暂无可显示的目标句' }}
-            </button>
+            </Button>
           </div>
           <div v-if="displayParagraphs.length" class="srs-review-passages">
             <p
@@ -201,14 +237,26 @@
               class="srs-review-sentence-translation is-unavailable"
             >
               <span>整句翻译暂时不可用</span>
-              <button type="button" @click="hydrateCurrentSentenceTranslation">重试</button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-ui-owner="learning"
+                type="button"
+                @click="hydrateCurrentSentenceTranslation"
+              >重试</Button>
             </p>
           </div>
           <div
             v-if="review.contextCueLevel.value === 'target_sentence' && hasSurroundingContext"
             class="srs-review-context-gate is-followup"
           >
-            <button type="button" @click="revealSurroundingContext">显示周边语境</button>
+            <Button
+              variant="outline"
+              size="sm"
+              data-ui-owner="learning"
+              type="button"
+              @click="revealSurroundingContext"
+            >显示周边语境</Button>
           </div>
 
           <div
@@ -222,7 +270,13 @@
             </div>
             <div v-else-if="sourceAudioNotice" class="srs-review-audio-notice" role="alert">
               <p>{{ sourceAudioNotice }}</p>
-              <button type="button" @click="retrySourceAudio">重试</button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-ui-owner="learning"
+                type="button"
+                @click="retrySourceAudio"
+              >重试</Button>
             </div>
             <audio
               v-else
@@ -241,7 +295,10 @@
         <article class="srs-review-word-panel" aria-label="单词信息">
           <div class="srs-review-word-content">
             <div ref="wordLine" class="srs-review-word-line">
-              <button
+              <Button
+                variant="outline"
+                size="icon-lg"
+                data-ui-owner="learning"
                 class="srs-review-speaker"
                 :class="{ 'is-playing': playbackPhase === 'word' }"
                 type="button"
@@ -250,11 +307,11 @@
                 :aria-label="`朗读 ${word.word}`"
                 @click="speakWord"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24">
+                <svg class="rw:size-[19px]" aria-hidden="true" viewBox="0 0 24 24">
                   <path d="M11 5 6 9H3v6h3l5 4V5Z" />
                   <path d="M15 9.5a4 4 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" />
                 </svg>
-              </button>
+              </Button>
               <audio
                 ref="pronunciationAudio"
                 class="srs-review-pronunciation-audio"
@@ -299,34 +356,43 @@
           </div>
           <div class="srs-review-word-toolbar">
             <div class="srs-review-play-sequence-group">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
+              data-ui-owner="learning"
               class="srs-review-play-sequence"
               type="button"
               :aria-keyshortcuts="wordShortcutDisplay"
               :disabled="!canSpeak || Boolean(playbackPhase)"
               @click="speakWord"
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
+              <svg class="rw:size-3.5" aria-hidden="true" viewBox="0 0 24 24">
                 <path class="is-play" d="m8 5 11 7-11 7V5Z" />
               </svg>
               <span>播放单词</span>
               <kbd>{{ wordShortcutDisplay }}</kbd>
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-ui-owner="learning"
               class="srs-review-play-sequence"
               type="button"
               :aria-keyshortcuts="sentenceShortcutDisplay"
               :disabled="!canPlaySentence || Boolean(playbackPhase)"
               @click="playSentenceOnly"
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24">
+              <svg class="rw:size-3.5" aria-hidden="true" viewBox="0 0 24 24">
                 <path class="is-play" d="m8 5 11 7-11 7V5Z" />
               </svg>
               <span>播放原句</span>
               <kbd>{{ sentenceShortcutDisplay }}</kbd>
-            </button>
+            </Button>
             </div>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            data-ui-owner="learning"
             class="srs-review-remove-word"
             type="button"
             :disabled="review.pending.value || !review.canRemoveCurrent.value"
@@ -334,11 +400,11 @@
             :title="review.canRemoveCurrent.value ? '移除误加入的单词' : review.removeUnavailableReason.value"
             @click="removeCurrentWord"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24">
+            <svg class="rw:size-[13px]" aria-hidden="true" viewBox="0 0 24 24">
               <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
             </svg>
             <span>移除误收录</span>
-          </button>
+          </Button>
           </div>
         </article>
       </div>
